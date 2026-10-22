@@ -431,7 +431,11 @@ def _register_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail="That conversation has expired. Re-run the report.")
         try:
             answer = getattr(chat.send_message(request.message), "text", "") or ""
-        except Exception as e:  # the model SDK raises its own error types
+        except FrontOfficeError:
+            # Already a sentence — "every model is out of quota" says more
+            # than "did not answer", and the handler renders it with its code.
+            raise
+        except Exception as e:  # anything the adapters did not translate
             # Its message is a repr of a Google RPC payload; the log is where
             # that belongs, not a panel someone is reading.
             logger.error(f"Follow-up failed: {e}")

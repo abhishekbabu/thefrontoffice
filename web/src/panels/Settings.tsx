@@ -37,7 +37,7 @@ const GROUPS: { title: string; note: string; keys: string[] }[] = [
   },
   {
     title: "AI",
-    note: "Optional, and each provider is free to start. Any one key turns on the report, trade evaluation and follow-up questions; without one, everything read from the platforms works exactly as it does now. With several, the first configured is used — Gemini, then Groq, then OpenRouter. Models are settings because free catalogs change.",
+    note: "Optional, and each provider is free to start. Any one key turns on the report, trade evaluation and follow-up questions; without one, everything read from the platforms works exactly as it does now. With several, each backs up the one before when its free quota runs out — Gemini, then Groq, then OpenRouter. Models are settings because free catalogs change.",
     keys: [
       "GOOGLE_API_KEY",
       "DEFAULT_MODEL",

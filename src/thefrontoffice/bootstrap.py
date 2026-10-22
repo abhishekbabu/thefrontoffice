@@ -8,14 +8,19 @@ provider can open an OAuth flow, and a user who does not play that sport must
 never be made to sit through one.
 """
 
+import functools
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.ports import AnalysisModel, CompetitionProvider, TradeProvider
+
+if TYPE_CHECKING:
+    from thefrontoffice.adapters.outbound.llm.routing import Cooldowns
 
 logger = logging.getLogger(__name__)
 
@@ -205,10 +210,21 @@ def ai_providers() -> list[str]:
 
 
 def default_model() -> AnalysisModel:
-    """The first configured provider, or Gemini unconfigured — which raises
-    AIUnavailableError when called, and is never offered to be."""
-    models = _models()
-    return next((model for _, model in models if getattr(model, "is_available", False)), models[0][1])
+    """Every configured provider as one model, failing over between them.
+
+    Built per call, so a key saved in Settings counts at once; the cooldowns
+    are the process's, so a provider out of quota stays rested across requests.
+    """
+    from thefrontoffice.adapters.outbound.llm.routing import RoutedModel
+
+    return RoutedModel(_models(), _cooldowns())
+
+
+@functools.cache
+def _cooldowns() -> "Cooldowns":
+    from thefrontoffice.adapters.outbound.llm.routing import Cooldowns
+
+    return Cooldowns()
 
 
 def ai_available() -> bool:
