@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from reports import MOCK_FPL_REPORT, MOCK_NBA_VERDICT
+from reports import MOCK_FPL_REPORT
 
 from thefrontoffice.adapters.inbound.web import api as web
 from thefrontoffice.domain.models import CompetitionContext, PlayerCard
@@ -77,18 +77,14 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """A client whose providers and engines are fakes, so nothing leaves the process."""
     monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider())
     monkeypatch.setattr(web, "scout_engine", lambda p: _Engine())
-    monkeypatch.setattr(web, "trade_engine", lambda p: _Engine())
     return TestClient(web.create_app())
 
 
 class _Engine:
     """Stands in for a wired engine."""
 
-    def start_analysis(self, league_id: str) -> Any:
-        return MOCK_FPL_REPORT, FakeChat()
-
-    def evaluate(self, league_id: str, text: str) -> Any:
-        return MOCK_NBA_VERDICT, FakeChat()
+    def report(self, league_id: str) -> Any:
+        return MOCK_FPL_REPORT
 
     judged: Any = None
 
@@ -107,13 +103,6 @@ def test_sports_include_the_unconfigured_ones(client: TestClient) -> None:
     # And each carries the sport it belongs to, which is what groups them.
     assert {s["sport"] for s in body} == {"basketball", "football", "soccer"}
     assert all("requires" in s for s in body)
-
-
-def test_a_sport_declares_whether_it_can_trade(client: TestClient) -> None:
-    by_sport = {s["competition"]: s for s in client.get("/api/competitions").json()}
-
-    assert by_sport["nfl"]["supports_trades"] is True
-    assert by_sport["premier-league"]["supports_trades"] is False
 
 
 # ── leagues and rosters ─────────────────────────────────────────────────
@@ -176,36 +165,8 @@ def test_a_report_crosses_the_wire_as_the_domain_model(client: TestClient) -> No
     """No second representation to keep in step with ScoutReport."""
     body = client.post("/api/premier-league/leagues/900/scout").json()
 
-    assert body["report"]["situation"] == MOCK_FPL_REPORT.situation
-    assert body["report"]["moves"][0]["action"] == "CAPTAIN"
-    assert body["chat_id"]
-
-
-def test_a_verdict_crosses_the_wire_as_the_domain_model(client: TestClient) -> None:
-    body = client.post("/api/nfl/leagues/900/trade", json={"text": "Give A, Get B"}).json()
-
-    assert body["verdict"]["verdict"] == MOCK_NBA_VERDICT.verdict
-    assert body["verdict"]["gains"] == MOCK_NBA_VERDICT.gains
-
-
-def test_an_empty_trade_description_is_rejected_before_the_model(client: TestClient) -> None:
-    assert client.post("/api/nfl/leagues/900/trade", json={"text": ""}).status_code == 422
-
-
-def test_a_sport_without_trade_support_is_refused_by_name(client: TestClient) -> None:
-    """FPL has no build_trade_context; without this the failure is an AttributeError."""
-    response = client.post("/api/premier-league/leagues/900/trade", json={"text": "Give A, Get B"})
-
-    assert response.status_code == 400
-    assert "does not support trade evaluation" in response.json()["detail"]
-
-
-def test_a_trade_is_evaluated_at_the_address_the_ui_uses(client: TestClient) -> None:
-    """Routes carry the registry key; matching the bare competition alone
-    refused every trade the page asked for."""
-    response = client.post("/api/nfl-sleeper/leagues/900/trade", json={"text": "Give A, Get B"})
-
-    assert response.status_code == 200
+    assert body["situation"] == MOCK_FPL_REPORT.situation
+    assert body["moves"][0]["action"] == "CAPTAIN"
 
 
 def test_free_agents_are_judged_where_the_competition_can(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -249,15 +210,20 @@ def test_a_competition_says_whether_its_free_agents_can_be_judged(client: TestCl
 
 
 def test_an_unknown_sport_is_a_404(client: TestClient) -> None:
-    response = client.post("/api/cricket/leagues/900/trade", json={"text": "Give A, Get B"})
+    response = client.post("/api/cricket/leagues/900/free-agents/judge", json={"player_ids": ["p1"]})
     assert response.status_code == 404
 
 
 # ── follow-up chat ──────────────────────────────────────────────────────
 
 
-def test_a_follow_up_reaches_the_chat_the_report_opened(client: TestClient) -> None:
-    chat_id = client.post("/api/premier-league/leagues/900/scout").json()["chat_id"]
+def _opened(chat: FakeChat | None = None) -> str:
+    """A conversation as a thread would have opened it."""
+    return web._remember(chat or FakeChat())  # type: ignore[arg-type]
+
+
+def test_a_follow_up_reaches_the_chat_it_names(client: TestClient) -> None:
+    chat_id = _opened()
 
     body = client.post(f"/api/chat/{chat_id}", json={"message": "Why bench him?"}).json()
 
@@ -273,8 +239,7 @@ def test_an_expired_conversation_says_so(client: TestClient) -> None:
 
 
 def test_a_model_failure_is_a_bad_gateway_not_a_crash(client: TestClient) -> None:
-    chat_id = client.post("/api/premier-league/leagues/900/scout").json()["chat_id"]
-    web._chats[chat_id] = FakeChat(RuntimeError("quota exhausted"))  # type: ignore[assignment]
+    chat_id = _opened(FakeChat(RuntimeError("quota exhausted")))
 
     response = client.post(f"/api/chat/{chat_id}", json={"message": "Why?"})
 
@@ -287,9 +252,8 @@ def test_a_follow_up_every_model_refused_says_why(client: TestClient) -> None:
     would hide that the quota, not the question, is the problem."""
     from thefrontoffice.domain.errors import AIQuotaError
 
-    chat_id = client.post("/api/premier-league/leagues/900/scout").json()["chat_id"]
     error = AIQuotaError("Gemini, Groq")
-    web._chats[chat_id] = FakeChat(error)  # type: ignore[assignment]
+    chat_id = _opened(FakeChat(error))
 
     response = client.post(f"/api/chat/{chat_id}", json={"message": "Why?"})
 
@@ -364,8 +328,7 @@ def test_a_thread_must_name_what_it_is_about(client: TestClient) -> None:
 
 
 def test_an_empty_follow_up_is_rejected(client: TestClient) -> None:
-    chat_id = client.post("/api/premier-league/leagues/900/scout").json()["chat_id"]
-    assert client.post(f"/api/chat/{chat_id}", json={"message": ""}).status_code == 422
+    assert client.post(f"/api/chat/{_opened()}", json={"message": ""}).status_code == 422
 
 
 # ── serving the built UI ────────────────────────────────────────────────

@@ -1,4 +1,3 @@
-import { Loader2 } from "lucide-react";
 import { m } from "motion/react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fade, rise } from "@/lib/motion";
@@ -31,16 +30,6 @@ export function Loading({ lines = 3, className }: { lines?: number; className?: 
         <Skeleton key={i} className={cn("h-12 w-full", i === 0 && "h-8 w-64")} />
       ))}
     </m.div>
-  );
-}
-
-/** For work someone started, where a placeholder would look like a mistake. */
-export function Working({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-2.5 p-5 text-[13.5px] text-muted-foreground" role="status" aria-live="polite">
-      <Loader2 className="size-4 animate-spin" aria-hidden />
-      {label}
-    </div>
   );
 }
 

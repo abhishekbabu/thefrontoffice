@@ -15,7 +15,6 @@ export type Competition = {
   competition: string;
   platform: string;
   label: string;
-  supports_trades: boolean;
   /** Whether its free agents can be judged — offered only where they can. */
   judges_wire: boolean;
   /** Whether the credentials this competition needs are set. */
@@ -140,19 +139,6 @@ export type Subject = { kind: "task" | "player"; key: string };
 /** The model's last word on a league, kept so a reload still shows it. */
 export type Judgment = { report: ScoutReport; judged_at: string; inputs: string };
 
-export type TradeVerdict = {
-  verdict: "ACCEPT" | "REJECT" | "COUNTER";
-  verdict_detail: string;
-  gains: string[];
-  losses: string[];
-  impact: string;
-  schedule: string;
-  risk: string;
-  strategy: string;
-};
-
-export type Analysis = { report: ScoutReport; chat_id: string };
-
 /** What this installation can do, as opposed to what it knows how to do. */
 export type Capabilities = { ai: boolean };
 
@@ -173,7 +159,6 @@ export type Setting = {
    *  mistaken for an unset one. */
   effective: string;
 };
-export type Evaluation = { verdict: TradeVerdict; chat_id: string };
 /** A player as a table row: the competition's own columns, plus what a column cannot be. */
 export type PlayerCard = {
   player_id: string;
@@ -360,13 +345,11 @@ export const api = {
   teams: (competition: string, league: string) => request<TeamRef[]>(`/api/${competition}/leagues/${league}/teams`),
   teamRoster: (competition: string, league: string, team: string) =>
     request<PlayerCard[]>(`/api/${competition}/leagues/${league}/teams/${encodeURIComponent(team)}/roster`),
-  scout: (competition: string, league: string) => post<Analysis>(`/api/${competition}/leagues/${league}/scout`, {}),
+  scout: (competition: string, league: string) => post<ScoutReport>(`/api/${competition}/leagues/${league}/scout`, {}),
   thread: (competition: string, league: string, subject: Subject) =>
     post<{ chat_id: string }>(`/api/${competition}/leagues/${league}/threads`, subject),
   judgment: (competition: string, league: string) =>
     request<Judgment | null>(`/api/${competition}/leagues/${league}/judgment`),
-  trade: (competition: string, league: string, text: string) =>
-    post<Evaluation>(`/api/${competition}/leagues/${league}/trade`, { text }),
   ask: (chatId: string, message: string) => post<{ answer: string }>(`/api/chat/${chatId}`, { message }),
   capabilities: () => request<Capabilities>("/api/capabilities"),
   settings: () => request<Setting[]>("/api/settings"),

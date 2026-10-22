@@ -31,7 +31,6 @@ from thefrontoffice.bootstrap import (
     ask_engine,
     find,
     scout_engine,
-    trade_engine,
     wire_engine,
 )
 from thefrontoffice.config import env_file
@@ -51,7 +50,6 @@ from thefrontoffice.domain.models import (
     Subject,
     Summary,
     TeamRef,
-    TradeVerdict,
 )
 from thefrontoffice.domain.ports import ChatSession
 
@@ -80,7 +78,6 @@ class Competition(BaseModel):
 
     platform: str
     label: str
-    supports_trades: bool
     judges_wire: bool
     """Whether its free agents can be judged — offered only where it is."""
     configured: bool
@@ -102,10 +99,6 @@ class League(BaseModel):
     detail: str
     url: str = ""
     """This league on its own platform, so a view can offer the way across."""
-
-
-class TradeRequest(BaseModel):
-    text: str = Field(min_length=1)
 
 
 class ChatRequest(BaseModel):
@@ -160,13 +153,6 @@ class LoginState(BaseModel):
     detail: str = ""
 
 
-class Analysis(BaseModel):
-    """A finished report plus the handle for asking about it."""
-
-    report: ScoutReport
-    chat_id: str
-
-
 class JudgeRequest(BaseModel):
     """The free agents on screen to judge, best first."""
 
@@ -176,11 +162,6 @@ class JudgeRequest(BaseModel):
 class Thread(BaseModel):
     """A conversation opened about one thing; asked through the chat endpoint."""
 
-    chat_id: str
-
-
-class Evaluation(BaseModel):
-    verdict: TradeVerdict
     chat_id: str
 
 
@@ -336,7 +317,6 @@ def _register_routes(app: FastAPI) -> None:
             competition=entry.competition,
             platform=entry.platform,
             label=entry.label,
-            supports_trades=entry.supports_trades,
             judges_wire=entry.judges_wire,
             configured=configured,
             requires=entry.requires,
@@ -437,11 +417,10 @@ def _register_routes(app: FastAPI) -> None:
         """
         return data.build_provider(competition).schedule(league_id)
 
-    @app.post("/api/{competition}/leagues/{league_id}/scout", response_model=Analysis)
-    def scout(competition: str, league_id: str) -> Analysis:
-        provider = data.build_provider(competition)
-        report, chat = scout_engine(provider).start_analysis(league_id)
-        return Analysis(report=report, chat_id=_remember(chat))
+    @app.post("/api/{competition}/leagues/{league_id}/scout", response_model=ScoutReport)
+    def scout(competition: str, league_id: str) -> ScoutReport:
+        """Judge the week's to-do list — or return the kept judgment where nothing has changed."""
+        return scout_engine(data.build_provider(competition)).report(league_id)
 
     @app.get("/api/{competition}/leagues/{league_id}/judgment", response_model=Judgment | None)
     def judgment(competition: str, league_id: str) -> Judgment | None:
@@ -471,16 +450,9 @@ def _register_routes(app: FastAPI) -> None:
         provider = data.build_provider(entry.key)
         return wire_engine(provider).judge(league_id, request.player_ids)
 
-    @app.post("/api/{competition}/leagues/{league_id}/trade", response_model=Evaluation)
-    def trade(competition: str, league_id: str, request: TradeRequest) -> Evaluation:
-        entry = _capable(competition, "trade evaluation", lambda e: e.supports_trades)
-        provider = data.build_provider(entry.key)
-        verdict, chat = trade_engine(provider).evaluate(league_id, request.text)
-        return Evaluation(verdict=verdict, chat_id=_remember(chat))
-
     @app.post("/api/chat/{chat_id}", response_model=Reply)
     def ask(chat_id: str, request: ChatRequest) -> Reply:
-        """Ask a follow-up about a report that is already on screen."""
+        """Ask the next question in a conversation a thread opened."""
         chat = _chats.get(chat_id)
         if chat is None:
             # The server restarted, or the report predates it. Saying so is

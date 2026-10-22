@@ -33,6 +33,15 @@ class ScoutEngine:
         """The last judgment of this league, without asking anything new."""
         return self.judgments.latest(judgment_scope(self.provider.label, league_id))
 
+    def report(self, league_id: str) -> ScoutReport:
+        """The judged report alone, with no conversation opened beside it.
+
+        What the week's Judge asks for: its questions go to the row they are
+        about, not to a chat about the whole report.
+        """
+        context = self.provider.build_context(league_id)
+        return self._judge(league_id, context.prompt, context.headline, context.tasks)
+
     def start_analysis(self, league_id: str) -> tuple[ScoutReport, ChatSession]:
         """Produce a validated report and open a chat seeded with it.
 
