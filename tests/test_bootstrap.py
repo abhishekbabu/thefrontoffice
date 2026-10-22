@@ -92,11 +92,8 @@ def test_the_nba_entry_discovers_leagues_and_wraps_them(monkeypatch: pytest.Monk
 
     leagues = [SimpleNamespace(id="1", name="One", league_type="head"), SimpleNamespace(id="2", name="Two")]
     monkeypatch.setattr(yahoo_mod.YahooClient, "ensure_authorized", classmethod(lambda cls: None))
-    monkeypatch.setattr(
-        yahoo_mod.YahooClient,
-        "get_context",
-        classmethod(lambda cls: SimpleNamespace(get_leagues=lambda sport, season: leagues)),
-    )
+    monkeypatch.setattr(yahoo_mod.YahooClient, "get_context", classmethod(lambda cls: SimpleNamespace()))
+    monkeypatch.setattr(yahoo_mod.YahooClient, "find_leagues", staticmethod(lambda ctx, game, season: leagues))
 
     entry = registry.find("nba")
     assert entry is not None
@@ -111,11 +108,8 @@ def test_no_nba_leagues_is_a_clear_error(monkeypatch: pytest.MonkeyPatch) -> Non
     from thefrontoffice.domain.errors import LeagueNotFoundError
 
     monkeypatch.setattr(yahoo_mod.YahooClient, "ensure_authorized", classmethod(lambda cls: None))
-    monkeypatch.setattr(
-        yahoo_mod.YahooClient,
-        "get_context",
-        classmethod(lambda cls: SimpleNamespace(get_leagues=lambda sport, season: [])),
-    )
+    monkeypatch.setattr(yahoo_mod.YahooClient, "get_context", classmethod(lambda cls: SimpleNamespace()))
+    monkeypatch.setattr(yahoo_mod.YahooClient, "find_leagues", staticmethod(lambda ctx, game, season: []))
     entry = registry.find("nba")
     assert entry is not None
     with pytest.raises(LeagueNotFoundError, match="no Yahoo NBA leagues"):
