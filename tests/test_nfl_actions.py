@@ -384,3 +384,39 @@ def test_news_that_will_not_load_leaves_the_list_as_it_was() -> None:
     [action] = _actions(client, FakeESPN(error=ESPNAPIError("down")))
 
     assert action.player_id == "rb2"
+
+
+# ── identity, so a verdict can find its row again ───────────────────────
+
+
+def test_every_task_has_a_key_and_no_two_share_one() -> None:
+    better = replace(BENCH_WR, points=12.0)
+    client = _client(
+        [QB, _ruled_out(RB), WR, replace(FLEX, points=5.0), BENCH_RB, better],
+        ["qb", "rb", "wr", "te"],
+        ["rb2", "wr2"],
+        league=replace(LEAGUE, trade_deadline=4),
+    )
+
+    keys = [a.key for a in _actions(client)]
+
+    assert all(keys) and len(set(keys)) == len(keys)
+
+
+def test_a_hole_keeps_its_key_when_a_better_answer_turns_up() -> None:
+    """Keyed on the problem, so a verdict on the old answer reads as stale
+    beside the new one rather than disappearing."""
+    worse = _proj("fa1", "Free Back", "RB", 8.0, team="KC", opp="LV")
+    better = _proj("fa2", "Other Back", "RB", 15.0, team="KC", opp="LV")
+    before = _actions(_client([QB, _ruled_out(RB), WR, FLEX, worse], ["qb", "rb", "wr", "te"], []))
+    after = _actions(_client([QB, _ruled_out(RB), WR, FLEX, worse, better], ["qb", "rb", "wr", "te"], []))
+
+    assert before[0].key == after[0].key
+    assert before[0].fingerprint != after[0].fingerprint
+
+
+def test_the_same_task_on_a_fresh_read_has_the_same_fingerprint() -> None:
+    def read() -> Action:
+        return _actions(_client([QB, _ruled_out(RB), WR, FLEX, BENCH_RB], ["qb", "rb", "wr", "te"], ["rb2"]))[0]
+
+    assert read().fingerprint == read().fingerprint

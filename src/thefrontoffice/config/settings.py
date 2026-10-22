@@ -42,6 +42,8 @@ class AppSettings(BaseSettings):
     openrouter_api_key: str | None = None
     openrouter_analysis_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
     openrouter_parsing_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    judgment_cache_dir: str = ".judgment_cache"
+    """Where each league's latest judgment is kept, so a reload shows it."""
 
     # ── Yahoo ───────────────────────────────────────────────────────────
     yahoo_client_id: str | None = None

@@ -66,6 +66,10 @@ export type Urgency = "now" | "soon" | "later";
 export type Action = {
   kind: "lineup" | "waiver" | "trade";
   urgency: Urgency;
+  /** Which decision this is, stable while it stays the same one. */
+  key: string;
+  /** What the item currently says; a verdict on a different one is stale. */
+  fingerprint: string;
   title: string;
   reason: string;
   /** The deadline as a label; empty where the platform publishes none. */
@@ -118,6 +122,9 @@ export type ScoutReport = {
       application, never by the model; empty where none are computed. */
   tasks: Action[];
 };
+
+/** The model's last word on a league, kept so a reload still shows it. */
+export type Judgment = { report: ScoutReport; judged_at: string; inputs: string };
 
 export type TradeVerdict = {
   verdict: "ACCEPT" | "REJECT" | "COUNTER";
@@ -338,6 +345,8 @@ export const api = {
   teamRoster: (competition: string, league: string, team: string) =>
     request<PlayerCard[]>(`/api/${competition}/leagues/${league}/teams/${encodeURIComponent(team)}/roster`),
   scout: (competition: string, league: string) => post<Analysis>(`/api/${competition}/leagues/${league}/scout`, {}),
+  judgment: (competition: string, league: string) =>
+    request<Judgment | null>(`/api/${competition}/leagues/${league}/judgment`),
   trade: (competition: string, league: string, text: string) =>
     post<Evaluation>(`/api/${competition}/leagues/${league}/trade`, { text }),
   ask: (chatId: string, message: string) => post<{ answer: string }>(`/api/chat/${chatId}`, { message }),

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from thefrontoffice.domain.models import (
     CompetitionContext,
+    Judgment,
     LeagueSchedule,
     PlayerCard,
     PlayerDetail,
@@ -52,6 +53,16 @@ class HistoryTurn(TypedDict):
 
     role: str
     parts: list[str]
+
+
+class JudgmentStore(Protocol):
+    """Where a league's latest judgment is kept between requests."""
+
+    def latest(self, scope: str) -> Judgment | None:
+        """The last judgment for `scope`, or None where there is none recent enough."""
+        ...
+
+    def save(self, scope: str, judgment: Judgment) -> None: ...
 
 
 class ChatSession(Protocol):

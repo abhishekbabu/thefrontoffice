@@ -6,7 +6,7 @@ is what the engine does with the model's answer — not how a context is built.
 
 from typing import Any
 
-from conftest import FakeAI
+from conftest import FakeAI, FakeJudgments
 from reports import MOCK_NBA_REPORT
 
 from thefrontoffice.application.scouting import ScoutEngine
@@ -19,12 +19,13 @@ TASKS = [
 
 
 class ContextOnly:
-    """A provider that has already gathered its week."""
+    """A provider that has already gathered its week, whose prompt a test can change."""
 
     competition = "nfl"
+    label = "NFL (Sleeper)"
 
-    def __init__(self, tasks: list[Action]) -> None:
-        self.context = CompetitionContext(prompt="prompt", headline=[Stat(label="Week", value="7")], tasks=tasks)
+    def __init__(self, tasks: list[Action], prompt: str = "prompt") -> None:
+        self.context = CompetitionContext(prompt=prompt, headline=[Stat(label="Week", value="7")], tasks=tasks)
 
     def build_context(self, league_id: str) -> CompetitionContext:
         return self.context
@@ -39,7 +40,7 @@ def _verdict(position: int, decision: Any = "AGREE") -> TaskVerdict:
 
 
 def _run(report: ScoutReport, tasks: list[Action] = TASKS) -> ScoutReport:
-    engine = ScoutEngine(ContextOnly(tasks), ai=FakeAI(report=report))  # type: ignore[arg-type]
+    engine = ScoutEngine(ContextOnly(tasks), ai=FakeAI(report=report), judgments=FakeJudgments())  # type: ignore[arg-type]
     judged, _ = engine.start_analysis("L1")
     return judged
 
@@ -90,3 +91,45 @@ def test_a_competition_with_no_tasks_reports_none() -> None:
 
 def test_the_headline_still_comes_from_the_provider() -> None:
     assert [s.label for s in _run(_report()).headline] == ["Week"]
+
+
+# ── keeping the judgment ────────────────────────────────────────────────
+
+
+def test_an_unchanged_week_is_answered_from_the_last_judgment_without_a_call() -> None:
+    """On a free tier a call is the scarce thing, and the answer would be the same."""
+    ai, judgments = FakeAI(report=_report(_verdict(1))), FakeJudgments()
+    engine = ScoutEngine(ContextOnly(TASKS), ai=ai, judgments=judgments)  # type: ignore[arg-type]
+
+    first, _ = engine.start_analysis("L1")
+    second, _ = engine.start_analysis("L1")
+
+    assert len(ai.prompts) == 1
+    assert second == first
+
+
+def test_a_changed_week_is_judged_afresh_and_kept() -> None:
+    ai, judgments = FakeAI(report=_report(_verdict(1))), FakeJudgments()
+    ScoutEngine(ContextOnly(TASKS, prompt="monday"), ai=ai, judgments=judgments).start_analysis("L1")  # type: ignore[arg-type]
+
+    engine = ScoutEngine(ContextOnly(TASKS, prompt="tuesday"), ai=ai, judgments=judgments)  # type: ignore[arg-type]
+    engine.start_analysis("L1")
+
+    assert ai.prompts == ["monday", "tuesday"]
+    latest = engine.latest("L1")
+    assert latest is not None and latest.report.tasks[0].verdict is not None
+
+
+def test_a_league_never_judged_has_no_latest() -> None:
+    engine = ScoutEngine(ContextOnly(TASKS), ai=FakeAI(), judgments=FakeJudgments())  # type: ignore[arg-type]
+
+    assert engine.latest("L1") is None
+
+
+def test_judgments_are_kept_per_league() -> None:
+    ai, judgments = FakeAI(report=_report()), FakeJudgments()
+    engine = ScoutEngine(ContextOnly(TASKS), ai=ai, judgments=judgments)  # type: ignore[arg-type]
+
+    engine.start_analysis("L1")
+
+    assert engine.latest("L2") is None

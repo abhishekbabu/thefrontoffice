@@ -430,6 +430,19 @@ class FakeNBA:
         return {t.upper(): self.games.get(t.upper(), 0) for t in teams}
 
 
+class FakeJudgments:
+    """Stands in for the judgment store: each scope's latest, in memory."""
+
+    def __init__(self) -> None:
+        self.saved: dict[str, Any] = {}
+
+    def latest(self, scope: str) -> Any:
+        return self.saved.get(scope)
+
+    def save(self, scope: str, judgment: Any) -> None:
+        self.saved[scope] = judgment
+
+
 class FakeChat:
     """Stands in for a genai Chat."""
 

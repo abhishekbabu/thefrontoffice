@@ -6,10 +6,13 @@ the same shape in each: read the situation, propose a ranked set of moves,
 summarize the plan. One renderer, one chat-seeding path and one UI serve them all.
 """
 
+import hashlib
+import json
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 MoveAction = Literal[
     "ADD",  # claim from the waiver wire / free agency
@@ -298,6 +301,13 @@ class Action(BaseModel):
 
     kind: ActionKind
     urgency: Urgency
+    key: str = Field(
+        default="",
+        description=(
+            "LEAVE THIS EMPTY. Which decision this is — the hole it fills or the swap it makes — "
+            "stable while the decision stays the same one, so a verdict finds its row again."
+        ),
+    )
     title: str = Field(description="The move, as an instruction: 'Start Jordyn Tyson over Chris Olave'.")
     reason: str = Field(description="Why, in the league's own facts: 'Olave is ruled out. +11.2 proj pts'.")
     when: str = Field(
@@ -319,6 +329,17 @@ class Action(BaseModel):
         default=None,
         description="The model's judgement, once a report has been run. None before, and for an item it skipped.",
     )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def fingerprint(self) -> str:
+        """What this item currently says, so a verdict on an older version of it reads as stale.
+
+        Everything a judgement rested on and nothing it produced: the move,
+        the reason, the deadline and the evidence — not the verdict itself.
+        """
+        said = [self.title, self.reason, self.when, [[line.label, line.value] for line in self.evidence]]
+        return hashlib.sha256(json.dumps(said).encode("utf-8")).hexdigest()[:12]
 
 
 class Summary(BaseModel):
@@ -474,6 +495,18 @@ class ScoutReport(BaseModel):
             "platform, so anything put here is discarded."
         ),
     )
+
+
+class Judgment(BaseModel):
+    """The model's last word on a league, kept so it outlives the request.
+
+    Re-asking about an unchanged week returns this rather than spending a
+    call, and the week can show its verdicts on load without running anything.
+    """
+
+    report: ScoutReport
+    judged_at: datetime
+    inputs: str = Field(description="A digest of the prompt it answered, which a re-run compares against.")
 
 
 class TradeVerdict(BaseModel):

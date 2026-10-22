@@ -42,6 +42,7 @@ plans/
 .sleeper_cache/
 .fpl_cache/
 .espn_cache/
+.judgment_cache/
 web/node_modules/
 web/dist/
 *.tsbuildinfo
