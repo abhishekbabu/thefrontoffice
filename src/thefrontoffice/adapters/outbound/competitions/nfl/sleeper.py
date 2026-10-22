@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
-from thefrontoffice.adapters.outbound.competitions.nfl import league, prompt
+from thefrontoffice.adapters.outbound.competitions.nfl import actions, league, prompt
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupSlot,
     current_lineup,
@@ -34,6 +34,7 @@ from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL, SleeperClient
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     PlayerMeta,
+    ScheduledGame,
     SeasonStats,
     SleeperLeague,
     SleeperRoster,
@@ -511,6 +512,7 @@ class SleeperNFLProvider:
         # flagging every player for having no game turns the page amber over a
         # date rather than a decision. It only means something when others do.
         scheduled = any(p.opponent for p in state.projected)
+        games = games_by_week(self.client, state.season)
 
         return Summary(
             headline=prompt.headline(state.roster, state.week, state.current_points, state.best_points, state.on_bench)
@@ -540,16 +542,36 @@ class SleeperNFLProvider:
                 Stat(label=club, value="no game this week", tone="warning")
                 for club in sorted({p.team for p in state.projected if scheduled and not p.opponent})
             ],
-            window=self._window(state),
+            actions=actions.build(state, games, self._wire(state, league_id)),
+            window=self._window(state, games),
         )
 
-    def _window(self, state: Week) -> str:
+    def _wire(self, state: Week, league_id: str) -> list[WeeklyProjection]:
+        """Who could be picked up and play this week, best projection first.
+
+        Cut to players with a game and no ruling against them: the wire is
+        asked to fill a hole, and a player on bye fills nothing.
+        """
+        owned = {pid for r in self.client.get_rosters(league_id) for pid in r.player_ids}
+        return sorted(
+            (
+                p
+                for pid, p in state.projections.items()
+                if pid not in owned
+                and p.opponent
+                and p.injury_status.upper() not in actions.RULED_OUT
+                and self._is_signing(state.players.get(pid) or PlayerMeta())
+            ),
+            key=lambda p: -p.points,
+        )
+
+    def _window(self, state: Week, games: dict[int, list[ScheduledGame]]) -> str:
         """Which week, and when it is actually played.
 
         A week with no dates on it is a number, and the number is the one thing
         somebody already knows.
         """
-        span = week_dates(games_by_week(self.client, state.season).get(state.week, []))
+        span = week_dates(games.get(state.week, []))
         return f"Week {state.week} · {span}" if span else f"Week {state.week}"
 
     def schedule(self, league_id: str) -> LeagueSchedule:

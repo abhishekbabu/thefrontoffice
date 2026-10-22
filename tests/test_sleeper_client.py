@@ -184,6 +184,17 @@ def test_leagues_are_parsed_with_format_and_slots(tmp_path: Path) -> None:
     assert league.starting_slots == ["QB", "RB", "FLEX"]  # BN excluded
 
 
+def test_a_league_carries_its_trade_deadline(tmp_path: Path) -> None:
+    payload = [{**LEAGUE_PAYLOAD[0], "settings": {"trade_deadline": 11}}]
+    client, _ = _client({"leagues/nfl": payload}, tmp_path)
+    assert client.get_leagues("42", "2026")[0].trade_deadline == 11
+
+
+def test_a_league_with_no_trade_deadline_reads_as_none(tmp_path: Path) -> None:
+    client, _ = _client({"leagues/nfl": LEAGUE_PAYLOAD}, tmp_path)
+    assert client.get_leagues("42", "2026")[0].trade_deadline == 0
+
+
 def test_rosters_carry_record_and_bench(tmp_path: Path) -> None:
     payload = [
         {
