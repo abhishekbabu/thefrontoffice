@@ -110,6 +110,20 @@ verdict on an item that has since changed stays, faded and marked *stale*. The
 list itself is the application's: the model cannot add, drop or restate an
 item, and a verdict naming no listed item is discarded.
 
+**Win chance.** The NFL week is also simulated 10,000 times: each starter's
+outcome drawn from his own games rescaled to this week's projection (thin
+histories borrow from his position), whether he plays from his designation,
+and finished or live games held at what they have scored. The header carries
+the chance of winning and the likely margin; every to-do move carries what it
+does to that chance — computed on the same draws, so the difference is the
+decision rather than noise — and a move projections would not make but the
+simulation rates by a point or more gets a row of its own. A questionable
+starter's chance of a zero is why "+2.5 proj pts" can still cost you. The
+engine (`application/forecasting.py`) is generic: a competition supplies its
+players' ranges through the `ForecastProvider` port. `just backtest` rebuilds
+every finished week's matchups as they stood before kickoff and scores the
+chances against who won.
+
 Every item can be **dismissed** — hidden while it reads as it did, and back,
 marked *back — changed since you dismissed it*, the moment its reason, evidence
 or deadline changes — or **snoozed** for three hours, until tomorrow at 8am, or
@@ -304,6 +318,7 @@ Without `LOGFIRE_TOKEN` nothing is exported and no network call is made.
 
 ```bash
 just doctor             # what this machine is configured for
+just backtest           # score the win-chance simulation on finished weeks (live data)
 just check              # lint + format + types + tests + 95% coverage floor
 just check-web          # lint + typecheck + tests + bundle budget (UI)
 just fmt                # auto-fix lint findings, then format

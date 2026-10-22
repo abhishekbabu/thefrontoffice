@@ -95,6 +95,11 @@ class Evidence:
 
     roles: dict[str, Role] = field(default_factory=dict)
     allowed: dict[tuple[str, str], Matchup] = field(default_factory=dict)
+    games: dict[str, tuple[float, ...]] = field(default_factory=dict)
+    """Each player's points in every game he played this season, oldest first."""
+
+    positions: dict[str, str] = field(default_factory=dict)
+    """The position he played those games at."""
 
     def matchup(self, player: WeeklyProjection) -> Matchup | None:
         return self.allowed.get((player.opponent, player.position)) if player.opponent else None
@@ -116,7 +121,23 @@ class Evidence:
 
 def gather(lines: list[NFLGameLine], scoring: str) -> Evidence:
     """Roles and matchups from the season's played game lines."""
-    return Evidence(roles=_roles(lines, scoring), allowed=_allowed(lines, scoring))
+    games, positions = _games(lines, scoring)
+    return Evidence(roles=_roles(lines, scoring), allowed=_allowed(lines, scoring), games=games, positions=positions)
+
+
+def _games(lines: list[NFLGameLine], scoring: str) -> tuple[dict[str, tuple[float, ...]], dict[str, str]]:
+    """Each player's scores in the games he took the field in, by the same rule his role is read by."""
+    played: dict[str, list[NFLGameLine]] = defaultdict(list)
+    for line in lines:
+        if line.position in SNAP_POSITIONS and not line.stats.get("off_snp"):
+            continue
+        played[line.player_id].append(line)
+    games = {
+        pid: tuple(game.stats.get(scoring, 0.0) for game in sorted(each, key=lambda game: game.week))
+        for pid, each in played.items()
+    }
+    positions = {pid: each[-1].position for pid, each in played.items()}
+    return games, positions
 
 
 def _roles(lines: list[NFLGameLine], scoring: str) -> dict[str, Role]:

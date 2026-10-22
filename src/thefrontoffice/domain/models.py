@@ -318,6 +318,20 @@ class Action(BaseModel):
         ),
     )
     player_id: str = Field(default="", description="The player the move turns on, to open their detail.")
+    replaces: str = Field(
+        default="",
+        description=(
+            "LEAVE THIS EMPTY. The player the move takes out of the lineup, by id — empty where it "
+            "fills an empty slot or moves nobody. With `player_id`, what the move does to a lineup."
+        ),
+    )
+    win_change: float | None = Field(
+        default=None,
+        description=(
+            "LEAVE THIS EMPTY. The application sets how much the move changes the chance of winning "
+            "this week, from simulating the matchup — 0.028 for +2.8 points of probability."
+        ),
+    )
     evidence: list[Stat] = Field(
         default_factory=list,
         description=(
@@ -421,6 +435,111 @@ class Summary(BaseModel):
             "'GW 2 · deadline Sat 22 Aug 10:30'. A week with no dates on it is a number."
         ),
     )
+
+    forecast: "Forecast | None" = None
+    """The matchup simulated, where the competition can be. None where it cannot
+    or there is no opponent this week."""
+
+
+# ── simulating a matchup ────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class Outcomes:
+    """One player's week as a range of equally likely scores.
+
+    What the simulation draws from. The provider builds it — from his own
+    games, his position's, and this week's projection — so the engine never
+    needs to know which sport it is.
+    """
+
+    player_id: str
+    name: str
+    projection: float
+    samples: tuple[float, ...]
+    """Equally likely full-game scores. Empty means he scores only `floor`."""
+
+    plays: float = 1.0
+    """The chance he plays at all; otherwise he adds nothing past `floor`."""
+
+    floor: float = 0.0
+    """Points already on the board — what a game under way has given him so far."""
+
+    remaining: float = 1.0
+    """How much of a full game is still to come: 1 before kickoff, 0 once it is over."""
+
+
+@dataclass(frozen=True)
+class LineupMove:
+    """One change to the manager's lineup the simulation should price."""
+
+    key: str
+    title: str
+    out: tuple[str, ...]
+    """Player ids the move takes out of the lineup."""
+
+    into: tuple[Outcomes, ...]
+    """Who comes in instead."""
+
+
+@dataclass(frozen=True)
+class MatchupInput:
+    """Both lineups, the moves to price, and a seed so the answer holds still between reloads."""
+
+    mine: tuple[Outcomes, ...]
+    theirs: tuple[Outcomes, ...]
+    moves: tuple[LineupMove, ...] = ()
+    seed: int = 0
+
+
+@dataclass(frozen=True)
+class PlayedMatchup:
+    """A matchup already played, as it stood before kickoff — what a backtest scores the simulation on."""
+
+    week: int
+    matchup: MatchupInput
+    mine: float
+    theirs: float
+
+
+class MarginRange(BaseModel):
+    """How the margin falls across the simulated weeks: positive is a win."""
+
+    low: float = Field(description="Tenth percentile: four weeks in five end above it.")
+    median: float
+    high: float = Field(description="Ninetieth percentile: four weeks in five end below it.")
+
+
+class Forecast(BaseModel):
+    """The week played many times over, and what each move does to it."""
+
+    win: float = Field(description="Chance of winning, a tie counting half.")
+    margin: MarginRange
+    simulations: int
+    moves: dict[str, float] = Field(
+        default_factory=dict, description="Each move's key, and the chance of winning with it."
+    )
+    best_move: str = Field(
+        default="", description="The move that most raises the chance, if any does; empty otherwise."
+    )
+
+
+class CalibrationBucket(BaseModel):
+    """Matchups the simulation gave a similar chance, and how often that side won."""
+
+    low: float
+    high: float
+    matchups: int
+    predicted: float
+    won: float
+
+
+class Calibration(BaseModel):
+    """How the simulation's chances compared with what happened."""
+
+    matchups: int
+    brier: float = Field(description="Mean squared error of the chances; 0 is perfect, 0.25 is a coin flip.")
+    buckets: list[CalibrationBucket] = Field(default_factory=list)
 
 
 class ScheduleRow(BaseModel):
@@ -696,3 +815,7 @@ class CompetitionContext:
             ),
         ]
         return "\n\n".join(s for s in sections if s)
+
+
+# `Summary.forecast` names a model defined after it.
+Summary.model_rebuild()

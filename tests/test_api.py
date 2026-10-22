@@ -770,3 +770,47 @@ def test_a_snooze_into_the_past_is_refused_by_name(client: TestClient) -> None:
     )
 
     assert response.json()["code"] == ItemDecisionError.code
+
+
+# ── the week, simulated ─────────────────────────────────────────────────
+
+
+class _ForecastProvider(_SummaryProvider):
+    """A provider whose matchup can be simulated, or whose forecast fails."""
+
+    def __init__(self, summary: Any, error: Exception | None = None) -> None:
+        super().__init__(summary)
+        self.error = error
+
+    def matchup_input(self, league_id: str) -> Any:
+        from thefrontoffice.domain.models import MatchupInput, Outcomes
+
+        if self.error:
+            raise self.error
+        return MatchupInput(mine=(Outcomes("a", "A", 20.0, (20.0,)),), theirs=(Outcomes("b", "B", 10.0, (10.0,)),))
+
+    def played_matchups(self, league_id: str, week: int) -> Any:
+        return []
+
+
+def test_the_week_carries_its_chance_of_winning(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from thefrontoffice.domain.models import Summary
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: _ForecastProvider(Summary()))
+
+    body = client.get("/api/nfl-sleeper/leagues/L1/summary").json()
+
+    assert body["forecast"]["win"] == 1.0
+    assert "Win chance" in [s["label"] for s in body["headline"]]
+
+
+def test_a_week_that_cannot_be_simulated_is_still_the_week(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from thefrontoffice.domain.errors import SleeperAPIError
+    from thefrontoffice.domain.models import Stat, Summary
+
+    week = Summary(headline=[Stat(label="Week", value="7")])
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: _ForecastProvider(week, SleeperAPIError("down")))
+
+    body = client.get("/api/nfl-sleeper/leagues/L1/summary").json()
+
+    assert body["forecast"] is None and [s["label"] for s in body["headline"]] == ["Week"]

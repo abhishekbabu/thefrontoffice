@@ -15,6 +15,8 @@ from thefrontoffice.domain.models import (
     CompetitionContext,
     ItemState,
     LeagueSchedule,
+    MatchupInput,
+    PlayedMatchup,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
@@ -265,4 +267,24 @@ class WireProvider(Protocol):
         Raises:
             PlayerNotFoundError: an id is not an available player here.
         """
+        ...
+
+
+@runtime_checkable
+class ForecastProvider(Protocol):
+    """A competition whose matchup can be simulated.
+
+    It supplies the inputs — each player's range, whether he plays, what is
+    already on the board, which lineup moves to price — and the generic
+    engine does the rest, so a new competition is a provider, not a new engine.
+    """
+
+    label: str
+
+    def matchup_input(self, league_id: str) -> MatchupInput | None:
+        """This week's matchup, ready to simulate; None where there is no opponent."""
+        ...
+
+    def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
+        """Every matchup of a week already played, as it stood before kickoff, with the result."""
         ...

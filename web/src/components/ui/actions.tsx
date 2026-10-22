@@ -92,6 +92,7 @@ export function ActionList({
                 title={action.title}
                 reason={action.reason}
                 when={action.when}
+                odds={action.win_change}
                 evidence={action.evidence}
                 open={action.player_id && onOpen ? () => onOpen(action.player_id) : undefined}
               >
@@ -211,6 +212,7 @@ function Row({
   title,
   reason,
   when,
+  odds = null,
   evidence = [],
   open,
   children,
@@ -219,6 +221,8 @@ function Row({
   title: string;
   reason: string;
   when: string;
+  /** What the move does to the chance of winning, where it was simulated. */
+  odds?: number | null;
   evidence?: Action["evidence"];
   open?: () => void;
   children?: React.ReactNode;
@@ -260,8 +264,14 @@ function Row({
             </ul>
           )}
         </div>
-        {when && (
-          <span className="max-w-[11rem] shrink-0 pt-0.5 text-right font-mono text-[11px] text-muted-foreground">
+        {(when || odds !== null) && (
+          <span className="flex max-w-[11rem] shrink-0 flex-col items-end gap-0.5 pt-0.5 text-right font-mono text-[11px] text-muted-foreground">
+            {/* The sign is in the words; the color only lets a cost be found at a glance. */}
+            {odds !== null && (
+              <span className={cn("font-semibold", odds >= 0.0005 && "text-ok", odds <= -0.0005 && "text-warn")}>
+                {chance(odds)}
+              </span>
+            )}
             {when}
           </span>
         )}
@@ -373,4 +383,10 @@ export function WhyThread({
       )}
     </div>
   );
+}
+
+/** "+2.8% to win", "−0.4% to win", or "no change to win" for less than a twentieth of a point. */
+function chance(change: number): string {
+  if (Math.abs(change) < 0.0005) return "no change to win";
+  return `${change > 0 ? "+" : "−"}${Math.abs(change * 100).toFixed(1)}% to win`;
 }

@@ -15,12 +15,19 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from thefrontoffice.application.asking import AskEngine
+from thefrontoffice.application.forecasting import ForecastEngine
 from thefrontoffice.application.items import ItemDecisions
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.application.wire import WireEngine
 from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.ports import AnalysisModel, CompetitionProvider, TradeProvider, WireProvider
+from thefrontoffice.domain.ports import (
+    AnalysisModel,
+    CompetitionProvider,
+    ForecastProvider,
+    TradeProvider,
+    WireProvider,
+)
 
 if TYPE_CHECKING:
     from thefrontoffice.adapters.outbound.llm.routing import Cooldowns
@@ -248,6 +255,11 @@ def scout_engine(provider: CompetitionProvider) -> ScoutEngine:
     from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
 
     return ScoutEngine(provider, ai=default_model(), answers=DiskAnswerStore())
+
+
+def forecast_engine(provider: ForecastProvider) -> ForecastEngine:
+    """A provider's matchup, simulated. Needs no model and no key."""
+    return ForecastEngine(provider)
 
 
 def item_decisions() -> ItemDecisions:

@@ -8,6 +8,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupSlot,
     best_upgrade,
     eligible_positions,
+    fits,
     lineup_changes,
     lineup_points,
     optimal_lineup,
@@ -203,3 +204,24 @@ def test_an_empty_slot_he_can_fill_is_worth_his_whole_projection() -> None:
 
 def test_a_candidate_no_slot_takes_does_not_fit() -> None:
     assert best_upgrade([LineupSlot(slot="QB", player=p("q", "QB", 20.0))], p("fa", "K", 9.0)) is None
+
+
+# ── whether a set of starters is legal ──────────────────────────────────
+
+
+def test_a_set_of_starters_fits_when_any_assignment_works() -> None:
+    """An RB can replace a WR when the flex slides across to cover the WR slot."""
+    slots = ["RB", "WR", "FLEX"]
+
+    assert fits(slots, [p("r1", "RB", 1), p("r2", "RB", 1), p("w1", "WR", 1)])
+    assert fits(slots, [p("r1", "RB", 1), p("w1", "WR", 1), p("w2", "WR", 1)])
+
+
+def test_a_set_of_starters_that_no_assignment_fits_does_not() -> None:
+    assert not fits(["RB", "WR", "FLEX"], [p("r1", "RB", 1), p("r2", "RB", 1), p("r3", "RB", 1)])
+    assert not fits(["QB"], [p("w1", "WR", 1)])
+
+
+def test_a_lineup_may_leave_a_slot_empty_but_not_overflow() -> None:
+    assert fits(["QB", "RB"], [p("q", "QB", 1)])
+    assert not fits(["QB"], [p("q", "QB", 1), p("q2", "QB", 1)])

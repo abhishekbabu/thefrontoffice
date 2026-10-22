@@ -465,3 +465,57 @@ def test_judging_the_wire_names_each_candidate_by_id_with_how_he_fits() -> None:
 def test_a_rostered_player_cannot_be_judged_as_a_free_agent() -> None:
     with pytest.raises(PlayerNotFoundError):
         _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_wire_context("L1", ["qb1"])
+
+
+# ── the matchup, simulated ──────────────────────────────────────────────
+
+
+def _paired() -> FakeSleeper:
+    """The default two rosters, paired this week, with the starters and points each played."""
+    client = _league_client()
+    client.matchups = [
+        {"roster_id": 1, "matchup_id": 7, "starters": ["qb1"], "points": 101.5},
+        {"roster_id": 2, "matchup_id": 7, "starters": ["rb2"], "points": 88.0},
+    ]
+    return client
+
+
+def test_the_matchup_to_simulate_has_both_lineups() -> None:
+    matchup = _provider(_paired()).matchup_input("L1")
+
+    assert matchup is not None
+    assert [o.player_id for o in matchup.mine] == ["qb1"]
+    assert [o.player_id for o in matchup.theirs] == ["rb2"]
+
+
+def test_a_bench_player_who_can_fill_an_empty_slot_is_a_move_to_price() -> None:
+    matchup = _provider(_paired()).matchup_input("L1")
+
+    assert matchup is not None
+    assert any(m.into[0].player_id == "rb1" and m.out == () for m in matchup.moves)
+
+
+def test_the_simulation_of_the_same_week_holds_still() -> None:
+    first, second = (_provider(_paired()).matchup_input("L1") for _ in range(2))
+
+    assert first is not None and second is not None and first.seed == second.seed
+
+
+def test_a_week_with_no_opponent_has_nothing_to_simulate() -> None:
+    assert _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).matchup_input("L1") is None
+
+
+def test_a_played_week_is_rebuilt_from_its_starters_and_its_result() -> None:
+    [played] = _provider(_paired()).played_matchups("L1", 3)
+
+    assert (played.week, played.mine, played.theirs) == (3, 101.5, 88.0)
+    assert [o.player_id for o in played.matchup.mine] == ["qb1"]
+
+
+def test_a_played_week_is_shaped_only_by_the_games_before_it() -> None:
+    """A range drawn from the week being predicted is the answer leaking into the question."""
+    client = _paired()
+
+    _provider(client).played_matchups("L1", 3)
+
+    assert client.game_line_weeks == [1, 2]

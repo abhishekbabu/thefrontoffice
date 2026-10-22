@@ -1,0 +1,223 @@
+"""The week played many times over: win probability, and what each move does to it.
+
+Generic on purpose. A provider describes its matchup — each player's range of
+outcomes, whether he plays, what is already on the board, which lineup moves
+to price — and this plays it out, sums each side, and counts the wins. The
+engine never learns which sport it is simulating.
+
+Every player is drawn once per simulated week, and a move reuses those same
+draws: the players it does not touch roll identical dice with and without it.
+So the difference between two lineups is the decision, not two different
+lots of random noise — which is what makes a "+2.8% to win" worth reading.
+"""
+
+import logging
+import random
+from collections.abc import Sequence
+
+from thefrontoffice.domain.models import (
+    Action,
+    Calibration,
+    CalibrationBucket,
+    Forecast,
+    LineupMove,
+    MarginRange,
+    MatchupInput,
+    Outcomes,
+    PlayedMatchup,
+    Stat,
+    Summary,
+    Urgency,
+)
+from thefrontoffice.domain.ports import ForecastProvider
+
+logger = logging.getLogger(__name__)
+
+SIMULATIONS = 10_000
+"""Enough that a win chance moves by well under a point between seeds."""
+
+WORTH_A_ROW = 0.01
+"""A move the to-do list lacks earns its own row once it adds a point of win chance."""
+
+URGENCY_ORDER: dict[Urgency, int] = {"now": 0, "soon": 1, "later": 2}
+
+
+def simulate(matchup: MatchupInput, simulations: int = SIMULATIONS) -> Forecast:
+    """Play the matchup `simulations` times, with and without each move."""
+    rng = random.Random(matchup.seed)
+    draws: dict[str, list[float]] = {}
+    # Both lineups first, then the movers: adding a move to price never
+    # changes the dice anybody already in the matchup rolls.
+    for outcomes in (*matchup.mine, *matchup.theirs, *(o for m in matchup.moves for o in m.into)):
+        if outcomes.player_id not in draws:
+            draws[outcomes.player_id] = _draw(outcomes, rng, simulations)
+
+    mine = _totals(matchup.mine, draws, simulations)
+    theirs = _totals(matchup.theirs, draws, simulations)
+    margins = [m - t for m, t in zip(mine, theirs, strict=True)]
+    win = _win_rate(margins)
+
+    moves = {move.key: _win_rate(_with(move, mine, theirs, draws)) for move in matchup.moves}
+    best = max(moves, key=lambda key: moves[key], default="")
+    return Forecast(
+        win=win,
+        margin=_range(margins),
+        simulations=simulations,
+        moves=moves,
+        best_move=best if best and moves[best] > win else "",
+    )
+
+
+def _draw(outcomes: Outcomes, rng: random.Random, simulations: int) -> list[float]:
+    """His score in each simulated week: what is on the board, plus the rest of a game if he plays."""
+    draws = []
+    for _ in range(simulations):
+        played = rng.random() < outcomes.plays
+        game = rng.choice(outcomes.samples) if outcomes.samples else 0.0
+        draws.append(outcomes.floor + (outcomes.remaining * game if played else 0.0))
+    return draws
+
+
+def _totals(lineup: Sequence[Outcomes], draws: dict[str, list[float]], simulations: int) -> list[float]:
+    totals = [0.0] * simulations
+    for outcomes in lineup:
+        for i, points in enumerate(draws[outcomes.player_id]):
+            totals[i] += points
+    return totals
+
+
+def _with(move: LineupMove, mine: list[float], theirs: list[float], draws: dict[str, list[float]]) -> list[float]:
+    """The margins with `move` made: the same weeks, his draws swapped for theirs."""
+    out = [draws[pid] for pid in move.out if pid in draws]
+    into = [draws[o.player_id] for o in move.into]
+    return [mine[i] - sum(d[i] for d in out) + sum(d[i] for d in into) - theirs[i] for i in range(len(mine))]
+
+
+def _win_rate(margins: list[float]) -> float:
+    wins = sum(1.0 if m > 0 else 0.5 if m == 0 else 0.0 for m in margins)
+    return wins / len(margins) if margins else 0.5
+
+
+def _range(margins: list[float]) -> MarginRange:
+    ordered = sorted(margins)
+
+    def at(share: float) -> float:
+        return round(ordered[min(len(ordered) - 1, int(share * len(ordered)))], 1) if ordered else 0.0
+
+    return MarginRange(low=at(0.1), median=at(0.5), high=at(0.9))
+
+
+# ── onto the page ───────────────────────────────────────────────────────
+
+
+def attach(summary: Summary, forecast: Forecast, matchup: MatchupInput) -> Summary:
+    """The week with its forecast: a win chance in the header, each move's effect on its row.
+
+    Rows stay grouped by urgency and are ordered within it by what they do to
+    the chance of winning. A move the list does not hold but the simulation
+    rates — usually a riskier start when you are behind — becomes a row of its own.
+    """
+    by_move = {_identity(m): m for m in matchup.moves}
+    actions = []
+    for action in summary.actions or []:
+        move = by_move.get((action.player_id, action.replaces))
+        change = forecast.moves[move.key] - forecast.win if move and move.key in forecast.moves else None
+        actions.append(action.model_copy(update={"win_change": change}) if change is not None else action)
+
+    best = next((m for m in matchup.moves if m.key == forecast.best_move), None)
+    listed = {(a.player_id, a.replaces) for a in actions}
+    if best is not None and forecast.moves[best.key] - forecast.win >= WORTH_A_ROW and _identity(best) not in listed:
+        actions.append(_odds_row(best, forecast))
+
+    ordered = sorted(
+        actions,
+        key=lambda a: (URGENCY_ORDER[a.urgency], -(a.win_change if a.win_change is not None else float("-inf"))),
+    )
+    headline = [*summary.headline, *_headline(forecast)]
+    return summary.model_copy(
+        update={"forecast": forecast, "headline": headline, "actions": ordered if summary.actions is not None else None}
+    )
+
+
+def _identity(move: LineupMove) -> tuple[str, str]:
+    """What a single move does — who comes in, who goes out — as a to-do item names it."""
+    return (move.into[0].player_id if move.into else "", move.out[0] if move.out else "")
+
+
+def _odds_row(move: LineupMove, forecast: Forecast) -> Action:
+    gain = forecast.moves[move.key] - forecast.win
+    return Action(
+        kind="lineup",
+        urgency="soon",
+        key=f"odds:{move.key}",
+        title=move.title,
+        reason=(
+            f"The best single change for your chance of winning: +{gain:.1%}. The projections would not make "
+            "it — the spread of his outcomes is what suits where this matchup stands."
+        ),
+        player_id=move.into[0].player_id if move.into else "",
+        replaces=move.out[0] if move.out else "",
+        win_change=gain,
+    )
+
+
+def _headline(forecast: Forecast) -> list[Stat]:
+    tone = "good" if forecast.win >= 0.6 else "warning" if forecast.win <= 0.4 else "neutral"
+    margin = forecast.margin
+    return [
+        Stat(label="Win chance", value=f"{forecast.win:.0%}", tone=tone),
+        Stat(label="Likely margin", value=f"{margin.low:+.0f} to {margin.high:+.0f}"),
+    ]
+
+
+# ── how well it predicts ────────────────────────────────────────────────
+
+
+def calibrate(played: list[PlayedMatchup], simulations: int = SIMULATIONS) -> Calibration:
+    """Score the simulation on matchups already played: its chances against what happened."""
+    pairs = []
+    for game in played:
+        chance = simulate(game.matchup, simulations).win
+        outcome = 1.0 if game.mine > game.theirs else 0.5 if game.mine == game.theirs else 0.0
+        pairs.append((chance, outcome))
+    if not pairs:
+        return Calibration(matchups=0, brier=0.0)
+
+    buckets = []
+    for low in (0.0, 0.2, 0.4, 0.6, 0.8):
+        high = low + 0.2
+        inside = [(c, o) for c, o in pairs if low <= c < high or (high >= 1.0 and c == 1.0)]
+        if inside:
+            buckets.append(
+                CalibrationBucket(
+                    low=low,
+                    high=high,
+                    matchups=len(inside),
+                    predicted=sum(c for c, _ in inside) / len(inside),
+                    won=sum(o for _, o in inside) / len(inside),
+                )
+            )
+    return Calibration(
+        matchups=len(pairs),
+        brier=sum((c - o) ** 2 for c, o in pairs) / len(pairs),
+        buckets=buckets,
+    )
+
+
+class ForecastEngine:
+    """A provider's matchup, simulated."""
+
+    def __init__(self, provider: ForecastProvider):
+        self.provider = provider
+
+    def forecast(self, league_id: str) -> tuple[Forecast, MatchupInput] | None:
+        """This week's forecast and the matchup it came from; None where there is no opponent."""
+        matchup = self.provider.matchup_input(league_id)
+        if matchup is None:
+            return None
+        return simulate(matchup), matchup
+
+    def backtest(self, league_id: str, weeks: list[int], simulations: int = SIMULATIONS) -> Calibration:
+        played = [game for week in weeks for game in self.provider.played_matchups(league_id, week)]
+        logger.info(f"{self.provider.label}: backtesting {len(played)} matchups over weeks {weeks}")
+        return calibrate(played, simulations)
