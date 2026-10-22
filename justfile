@@ -56,6 +56,10 @@ shots *args: web-build
 yahoo-login *args:
     uv run python scripts/yahoo_login.py {{ args }}
 
+# Score the win-probability simulation on weeks already played (reads the live league)
+backtest *args:
+    uv run python scripts/backtest.py {{ args }}
+
 # Report what this machine is configured for, and flag typo'd .env keys
 doctor:
     uv run python scripts/doctor.py

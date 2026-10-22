@@ -140,3 +140,34 @@ def best_upgrade(lineup: list[LineupSlot], candidate: WeeklyProjection) -> tuple
         return None
     weakest = min(eligible, key=lambda slot: slot.points)
     return round(candidate.points - weakest.points, 2), weakest
+
+
+def fits(slots: list[str], players: list[WeeklyProjection]) -> bool:
+    """Whether `players` can fill `slots` legally, each in a slot his position allows.
+
+    Exact rather than greedy: a set of starters is legal if *any* assignment
+    works, and a swap that slides a flex player into a vacated slot is the
+    common case a slot-by-slot check misses. Lineups are a dozen slots, so
+    trying assignments in the order of the most restrictive slot is instant.
+    """
+    if len(players) > len(slots):
+        return False
+    order = sorted(range(len(slots)), key=lambda i: len(eligible_positions(slots[i])))
+    remaining = list(players)
+
+    def place(at: int) -> bool:
+        if not remaining:
+            return True
+        if at == len(order):
+            return False
+        slot = slots[order[at]]
+        for i, player in enumerate(remaining):
+            if player.position in eligible_positions(slot):
+                remaining.pop(i)
+                if place(at + 1):
+                    return True
+                remaining.insert(i, player)
+        # Or leave this slot empty, where there are more slots than players.
+        return len(remaining) < len(order) - at and place(at + 1)
+
+    return place(0)

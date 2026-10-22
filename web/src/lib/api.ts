@@ -77,6 +77,10 @@ export type Action = {
   when: string;
   /** The player the move turns on, to open their detail. */
   player_id: string;
+  /** Who the move takes out of the lineup, by id; empty where nobody. */
+  replaces: string;
+  /** What the move does to the chance of winning — 0.028 for +2.8 points; null where unpriced. */
+  win_change: number | null;
   /** What the move rests on beyond the projection, one line per player:
       the matchup and the role. Toned by the matchup, which the text also says. */
   evidence: Stat[];
@@ -102,6 +106,15 @@ export type TaskVerdict = {
   reason: string;
 };
 
+/** The week played many times over: the chance of winning, and the likely margin. */
+export type Forecast = {
+  win: number;
+  margin: { low: number; median: number; high: number };
+  simulations: number;
+  moves: Record<string, number>;
+  best_move: string;
+};
+
 /** One team in a matchup — yours, or the one you are playing. */
 export type Side = { name: string; detail: string; points: string; lineup: Spot[]; bench: Spot[] };
 
@@ -117,6 +130,8 @@ export type Summary = {
   fixtures: Stat[];
   /** One-time advantages the manager can spend; null in a competition with none. */
   boosts: StatGroup | null;
+  /** The matchup simulated; null where it cannot be, or there is no opponent. */
+  forecast: Forecast | null;
   /** When this week actually is, already formatted. A week with no dates on it
       is a number, and the number is the one thing already known. */
   window: string;

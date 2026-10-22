@@ -124,6 +124,7 @@ def _lineup(
                     f"projected {pick.position} available, at {pick.points:.1f}."
                 ),
                 player_id=pick.player_id,
+                replaces=player.player_id if player else "",
                 evidence=_evidence(state, [pick]),
                 key=_hole(slot.slot, player),
             )
@@ -218,6 +219,7 @@ def _swap(
         reason=reason,
         when=f"before kickoff, {day(dates[0])}" if dates else "",
         player_id=change.start.player_id,
+        replaces=change.bench.player_id if change.bench else "",
         evidence=evidence,
         key=key,
     )

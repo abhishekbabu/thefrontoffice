@@ -1,0 +1,203 @@
+"""Tests for simulating a matchup: `application/forecasting.py`.
+
+Players here are built by hand, so each test can say exactly what the
+simulation should conclude — a sure thing, a coin flip, a move that cannot
+hurt — without depending on any sport's data.
+"""
+
+import pytest
+
+from thefrontoffice.application.forecasting import WORTH_A_ROW, attach, calibrate, simulate
+from thefrontoffice.domain.models import (
+    Action,
+    LineupMove,
+    MatchupInput,
+    Outcomes,
+    PlayedMatchup,
+    Stat,
+    Summary,
+)
+
+FEW = 2_000
+
+
+def _player(pid: str, *samples: float, plays: float = 1.0, floor: float = 0.0, remaining: float = 1.0) -> Outcomes:
+    projection = sum(samples) / len(samples) if samples else 0.0
+    return Outcomes(pid, pid.upper(), projection, samples, plays=plays, floor=floor, remaining=remaining)
+
+
+def _match(mine: list[Outcomes], theirs: list[Outcomes], *moves: LineupMove, seed: int = 7) -> MatchupInput:
+    return MatchupInput(mine=tuple(mine), theirs=tuple(theirs), moves=moves, seed=seed)
+
+
+# ── the chance of winning ───────────────────────────────────────────────
+
+
+def test_a_lineup_that_always_outscores_always_wins() -> None:
+    forecast = simulate(_match([_player("a", 20, 25)], [_player("b", 5, 10)]), FEW)
+
+    assert forecast.win == 1.0
+    assert forecast.margin.low > 0
+
+
+def test_two_identical_sides_are_a_coin_flip() -> None:
+    forecast = simulate(_match([_player("a", 0, 10, 20, 30)], [_player("b", 0, 10, 20, 30)]), FEW)
+
+    assert forecast.win == pytest.approx(0.5, abs=0.05)
+
+
+def test_a_tie_counts_half() -> None:
+    assert simulate(_match([_player("a", 10)], [_player("b", 10)]), FEW).win == 0.5
+
+
+def test_a_player_who_will_not_play_adds_nothing() -> None:
+    forecast = simulate(_match([_player("a", 30, plays=0.0)], [_player("b", 1)]), FEW)
+
+    assert forecast.win == 0.0
+
+
+def test_a_game_already_over_counts_what_it_scored_and_nothing_more() -> None:
+    finished = _player("a", 100, floor=12.0, remaining=0.0)
+
+    forecast = simulate(_match([finished], [_player("b", 11)]), FEW)
+
+    assert forecast.win == 1.0 and forecast.margin.median == 1.0
+
+
+def test_the_margin_range_runs_low_to_high() -> None:
+    margin = simulate(_match([_player("a", 0, 10, 20, 40)], [_player("b", 5, 15)]), FEW).margin
+
+    assert margin.low <= margin.median <= margin.high
+
+
+def test_the_same_matchup_gives_the_same_answer_every_time() -> None:
+    """A win chance that flickered between reloads would read as news."""
+    matchup = _match([_player("a", 0, 10, 20, 30)], [_player("b", 5, 15, 25)])
+
+    assert simulate(matchup, FEW) == simulate(matchup, FEW)
+
+
+# ── what each move does ─────────────────────────────────────────────────
+
+
+def test_a_move_that_is_better_in_every_way_never_lowers_the_chance() -> None:
+    """Same draws with and without it: the difference is the decision, not noise."""
+    worse, better = _player("w", 0, 5, 10), _player("x", 20, 25, 30)
+    move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(better,))
+
+    forecast = simulate(_match([worse, _player("m", 0, 30)], [_player("t", 10, 20, 30)], move), FEW)
+
+    assert forecast.moves["x>w"] >= forecast.win
+    assert forecast.best_move == "x>w"
+
+
+def test_pricing_a_move_does_not_change_the_chance_without_it() -> None:
+    base = _match([_player("a", 0, 10, 20)], [_player("b", 5, 15)])
+    move = LineupMove(key="c>a", title="Start C", out=("a",), into=(_player("c", 0, 40),))
+
+    assert simulate(base, FEW).win == simulate(_match(list(base.mine), list(base.theirs), move), FEW).win
+
+
+def test_no_move_is_called_best_unless_it_helps() -> None:
+    move = LineupMove(key="z>a", title="Start Z", out=("a",), into=(_player("z", 0),))
+
+    assert simulate(_match([_player("a", 10, 20)], [_player("b", 5, 25)], move), FEW).best_move == ""
+
+
+# ── onto the page ───────────────────────────────────────────────────────
+
+
+SWAP = Action(
+    kind="lineup", urgency="soon", title="Start X over W", reason="+3", key="swap:x:w", player_id="x", replaces="w"
+)
+DEADLINE = Action(kind="trade", urgency="later", title="Trade by week 11", reason="deadline", key="deadline:11")
+
+
+def _attached(*actions: Action, moves: tuple[LineupMove, ...] = ()) -> Summary:
+    matchup = _match([_player("w", 0, 5, 10), _player("m", 0, 30)], [_player("t", 10, 20, 30)], *moves)
+    summary = Summary(headline=[Stat(label="Week", value="7")], actions=list(actions))
+    return attach(summary, simulate(matchup, FEW), matchup)
+
+
+def test_the_header_carries_the_chance_of_winning_and_the_likely_margin() -> None:
+    labels = [s.label for s in _attached().headline]
+
+    assert labels[0] == "Week" and len(labels) == 3
+
+
+def test_a_to_do_move_carries_what_it_does_to_the_chance() -> None:
+    move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
+
+    [swap] = _attached(SWAP, moves=(move,)).actions or []
+
+    assert swap.win_change is not None and swap.win_change > 0
+
+
+def test_an_item_that_moves_nobody_has_no_change_to_show() -> None:
+    [deadline] = _attached(DEADLINE).actions or []
+
+    assert deadline.win_change is None
+
+
+def test_a_better_move_the_list_lacks_becomes_a_row_of_its_own() -> None:
+    move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
+
+    actions = _attached(DEADLINE, moves=(move,)).actions or []
+
+    added = [a for a in actions if a.key.startswith("odds:")]
+    assert len(added) == 1 and (added[0].player_id, added[0].replaces) == ("x", "w")
+    assert added[0].win_change is not None and added[0].win_change >= WORTH_A_ROW
+
+
+def test_a_move_already_on_the_list_is_not_added_twice() -> None:
+    move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
+
+    actions = _attached(SWAP, moves=(move,)).actions or []
+
+    assert [a.key for a in actions] == [SWAP.key]
+
+
+def test_rows_keep_their_urgency_and_sort_within_it_by_what_they_add() -> None:
+    small = LineupMove(key="y>w", title="Start Y over W", out=("w",), into=(_player("y", 6, 8, 12),))
+    big = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
+    lesser = SWAP.model_copy(update={"key": "swap:y:w", "player_id": "y"})
+
+    actions = _attached(DEADLINE, lesser, SWAP, moves=(small, big)).actions or []
+
+    assert [a.key for a in actions] == [SWAP.key, lesser.key, DEADLINE.key]
+
+
+def test_a_competition_without_a_to_do_list_still_has_none() -> None:
+    matchup = _match([_player("a", 10)], [_player("b", 5)])
+
+    assert attach(Summary(), simulate(matchup, FEW), matchup).actions is None
+
+
+# ── how well it predicts ────────────────────────────────────────────────
+
+
+def _played(mine: float, theirs: float, ours: float, others: float) -> PlayedMatchup:
+    return PlayedMatchup(week=2, matchup=_match([_player("a", ours)], [_player("b", others)]), mine=mine, theirs=theirs)
+
+
+def test_certain_calls_that_came_true_score_perfectly() -> None:
+    calibration = calibrate([_played(30, 10, 25, 5), _played(5, 20, 5, 25)], FEW)
+
+    assert (calibration.matchups, calibration.brier) == (2, 0.0)
+
+
+def test_a_coin_flip_scores_a_quarter() -> None:
+    calibration = calibrate([_played(30, 10, 10, 10), _played(10, 30, 10, 10)], FEW)
+
+    assert calibration.brier == pytest.approx(0.25)
+
+
+def test_matchups_are_grouped_by_the_chance_they_were_given() -> None:
+    calibration = calibrate([_played(30, 10, 25, 5), _played(5, 20, 5, 25), _played(10, 30, 10, 10)], FEW)
+
+    assert sum(b.matchups for b in calibration.buckets) == 3
+    assert {(b.low, b.won) for b in calibration.buckets} >= {(0.8, 1.0), (0.0, 0.0)}
+
+
+def test_nothing_to_score_scores_nothing() -> None:
+    assert calibrate([]).matchups == 0

@@ -8,17 +8,20 @@ Unlike the Yahoo path there is no OAuth — Sleeper's API is public, so a userna
 is the only configuration.
 """
 
+import hashlib
 import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
+from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
-from thefrontoffice.adapters.outbound.competitions.nfl import actions, evidence, league, news, prompt
+from thefrontoffice.adapters.outbound.competitions.nfl import actions, evidence, league, news, outcomes, prompt
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupSlot,
     best_upgrade,
     current_lineup,
+    fits,
     lineup_changes,
     lineup_points,
     optimal_lineup,
@@ -59,6 +62,10 @@ from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
     LeagueSchedule,
+    LineupMove,
+    MatchupInput,
+    Outcomes,
+    PlayedMatchup,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
@@ -165,6 +172,9 @@ class SleeperNFLProvider:
         self.client = client or SleeperClient()
         self.espn = espn or ESPNClient()
         self._user_id: str | None = None
+        # One request's week, kept for that request: the summary and the
+        # forecast beside it both need it, and gathering it is most of the wait.
+        self._weeks: dict[str, Week] = {}
 
     # ── leagues ─────────────────────────────────────────────────────
 
@@ -587,6 +597,12 @@ class SleeperNFLProvider:
         return max(1, state.week if state.is_regular_season else 1)
 
     def _week(self, league_id: str) -> Week:
+        """The week, gathered once per provider — which is once per request."""
+        if league_id not in self._weeks:
+            self._weeks[league_id] = self._gather_week(league_id)
+        return self._weeks[league_id]
+
+    def _gather_week(self, league_id: str) -> Week:
         """Everything both the header and the prompt are derived from.
 
         Gathered once because the two would otherwise fetch the same
@@ -777,24 +793,10 @@ class SleeperNFLProvider:
             logger.warning(f"Skipping the opponent: {e}")
             return None
 
-        mine = next((m for m in matchups if m.get("roster_id") == state.roster.roster_id), None)
-        if not mine or mine.get("matchup_id") is None:
+        found = self._opponent_roster(state, league_id, matchups)
+        if found is None:
             return None
-        theirs = next(
-            (
-                m
-                for m in matchups
-                if m.get("matchup_id") == mine.get("matchup_id") and m.get("roster_id") != state.roster.roster_id
-            ),
-            None,
-        )
-        if not theirs:
-            return None
-
-        by_roster = {r.roster_id: r for r in self.client.get_rosters(league_id)}
-        roster = by_roster.get(int(theirs.get("roster_id", 0)))
-        if roster is None:
-            return None
+        roster, theirs = found
 
         names = self.client.get_league_users(league_id)
         projected = [
@@ -828,6 +830,183 @@ class SleeperNFLProvider:
             lineup=lineup,
             bench=[self._spot(p, scheduled, live=live) for p in projected if p.player_id not in starting],
         )
+
+    def _opponent_roster(
+        self, state: Week, league_id: str, matchups: list[dict[str, Any]]
+    ) -> tuple[SleeperRoster, dict[str, Any]] | None:
+        """The roster you play this week and its matchup entry; None on a bye or an unpaired week."""
+        mine = next((m for m in matchups if m.get("roster_id") == state.roster.roster_id), None)
+        if not mine or mine.get("matchup_id") is None:
+            return None
+        theirs = next(
+            (
+                m
+                for m in matchups
+                if m.get("matchup_id") == mine.get("matchup_id") and m.get("roster_id") != state.roster.roster_id
+            ),
+            None,
+        )
+        if not theirs:
+            return None
+        by_roster = {r.roster_id: r for r in self.client.get_rosters(league_id)}
+        roster = by_roster.get(int(theirs.get("roster_id", 0)))
+        return (roster, theirs) if roster is not None else None
+
+    # ── the matchup, simulated ──────────────────────────────────────
+
+    def matchup_input(self, league_id: str) -> MatchupInput | None:
+        """This week's matchup, ready to simulate: both lineups, and the moves worth pricing.
+
+        The moves are every single swap your bench allows — the simulation
+        finds the one a projection would not — and every waiver pickup the
+        to-do list names.
+        """
+        state = self._week(league_id)
+        try:
+            matchups = self.client.get_matchups(league_id, state.week)
+        except SleeperAPIError as e:
+            logger.warning(f"No forecast without the matchup: {e}")
+            return None
+        found = self._opponent_roster(state, league_id, matchups)
+        if found is None:
+            return None
+        roster, _ = found
+
+        games = games_by_week(self.client, state.season)
+        status = {club: game.status for game in games.get(state.week, []) for club in (game.home, game.away)}
+        live = self._live(state, league_id)
+        spread = outcomes.spreads(state.evidence)
+
+        def outcome(player: WeeklyProjection) -> Outcomes:
+            return outcomes.outcomes(
+                player,
+                spread,
+                status=status.get(player.team, ""),
+                scored=live.points.get(player.player_id, 0.0),
+            )
+
+        mine = tuple(outcome(slot.player) for slot in state.lineup if slot.player)
+        theirs = tuple(
+            outcome(p)
+            for p in (projection_for(pid, state.projections, state.players) for pid in roster.starter_ids if pid != "0")
+            if p
+        )
+        started = {club for club, s in status.items() if s and s != "pre_game"}
+        moves = self._swaps(state, outcome, started) + self._pickups(state, league_id, games, outcome)
+        return MatchupInput(mine=mine, theirs=theirs, moves=moves, seed=_seed(self.label, league_id, state.week))
+
+    def _swaps(
+        self, state: Week, outcome: Callable[[WeeklyProjection], Outcomes], started: set[str]
+    ) -> tuple[LineupMove, ...]:
+        """Every single bench-for-starter swap that leaves a legal lineup, among players not yet locked.
+
+        A lineup is a set of starters, so a swap is one in and one out — legal
+        if the new set fills the slots any way at all. Hall for Bernard is one,
+        though Hall cannot play Bernard's WR slot: the flex slides across.
+        """
+        starters = [slot.player for slot in state.lineup if slot.player]
+        slots = state.league.starting_slots
+        bench = [
+            p
+            for p in state.projected
+            if p.player_id not in state.starter_ids
+            and p.team not in started
+            and p.injury_status.upper() not in actions.RULED_OUT
+            and p.opponent
+        ]
+        moves = []
+        for candidate in bench:
+            if len(starters) < len(slots) and fits(slots, [*starters, candidate]):
+                moves.append(
+                    LineupMove(
+                        key=f"{candidate.player_id}>",
+                        title=f"Start {candidate.name} in your empty slot",
+                        out=(),
+                        into=(outcome(candidate),),
+                    )
+                )
+            for out in starters:
+                if out.team in started:
+                    continue
+                lineup = [p for p in starters if p.player_id != out.player_id] + [candidate]
+                if fits(slots, lineup):
+                    moves.append(
+                        LineupMove(
+                            key=f"{candidate.player_id}>{out.player_id}",
+                            title=f"Start {candidate.name} over {out.name}",
+                            out=(out.player_id,),
+                            into=(outcome(candidate),),
+                        )
+                    )
+        return tuple(moves)
+
+    def _pickups(
+        self,
+        state: Week,
+        league_id: str,
+        games: dict[int, list[ScheduledGame]],
+        outcome: Callable[[WeeklyProjection], Outcomes],
+    ) -> tuple[LineupMove, ...]:
+        """The waiver pickups the to-do list names, priced as if already claimed."""
+        moves = []
+        for action in self._actions(state, league_id, games):
+            projection = state.projections.get(action.player_id)
+            if action.kind != "waiver" or projection is None:
+                continue
+            moves.append(
+                LineupMove(
+                    key=f"{action.player_id}>{action.replaces}",
+                    title=action.title,
+                    out=(action.replaces,) if action.replaces else (),
+                    into=(outcome(projection),),
+                )
+            )
+        return tuple(moves)
+
+    def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
+        """Every matchup of `week`, rebuilt as it stood before kickoff, with how it ended.
+
+        As it stood: that week's projections and starters, and only the games
+        played before it — a range shaped by the week being predicted would
+        be the answer leaking into the question.
+        """
+        league = self._league(league_id)
+        season = self.client.get_state(NFL).season
+        projections = self.client.get_projections(season, week, league.scoring_format)
+        players = self.client.get_players()
+        earlier = list(range(1, week))
+        lines = self.client.get_nfl_game_lines(season, earlier) if earlier else []
+        spread = outcomes.spreads(evidence.gather(lines, league.scoring_format))
+
+        def side(entry: dict[str, Any]) -> tuple[Outcomes, ...]:
+            starters = [str(pid) for pid in entry.get("starters") or [] if str(pid) not in ("0", "")]
+            return tuple(
+                outcomes.outcomes(p, spread)
+                for p in (projection_for(pid, projections, players) for pid in starters)
+                if p
+            )
+
+        paired: dict[Any, list[dict[str, Any]]] = {}
+        for entry in self.client.get_matchups(league_id, week):
+            if entry.get("matchup_id") is not None:
+                paired.setdefault(entry["matchup_id"], []).append(entry)
+
+        played = []
+        for matchup_id, entries in paired.items():
+            if len(entries) != 2:
+                continue
+            first, second = sorted(entries, key=lambda e: int(e.get("roster_id") or 0))
+            played.append(
+                PlayedMatchup(
+                    week=week,
+                    matchup=MatchupInput(
+                        mine=side(first), theirs=side(second), seed=_seed(self.label, league_id, week, matchup_id)
+                    ),
+                    mine=float(first.get("points") or 0),
+                    theirs=float(second.get("points") or 0),
+                )
+            )
+        return played
 
     def _season_table(self, player_id: str, state: Week) -> StatTable | None:
         """This season beside the two before it, read across rather than down.
@@ -964,3 +1143,8 @@ class SleeperNFLProvider:
         return "warning" if scheduled and not projection.opponent else "neutral"
 
     # ── helpers ─────────────────────────────────────────────────────
+
+
+def _seed(*parts: object) -> int:
+    """The same simulation for the same week, so the numbers hold still between reloads."""
+    return int(hashlib.sha256(":".join(map(str, parts)).encode("utf-8")).hexdigest()[:12], 16)

@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from thefrontoffice.adapters.inbound.web import data
+from thefrontoffice.application.forecasting import attach
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import (
     CompetitionEntry,
@@ -30,6 +31,7 @@ from thefrontoffice.bootstrap import (
     all_competitions,
     ask_engine,
     find,
+    forecast_engine,
     item_decisions,
     scout_engine,
     wire_engine,
@@ -54,7 +56,7 @@ from thefrontoffice.domain.models import (
     Summary,
     TeamRef,
 )
-from thefrontoffice.domain.ports import ChatSession
+from thefrontoffice.domain.ports import ChatSession, ForecastProvider
 
 logger = logging.getLogger(__name__)
 
@@ -385,6 +387,8 @@ def _register_routes(app: FastAPI) -> None:
         """
         provider = data.build_provider(competition)
         summary = provider.summary(league_id)
+        if isinstance(provider, ForecastProvider):
+            summary = _forecast(provider, league_id, summary)
         if summary.actions is None:
             return summary
         actions = item_decisions().apply(provider.label, league_id, summary.actions)
@@ -502,6 +506,20 @@ def _register_routes(app: FastAPI) -> None:
             logger.error(f"Follow-up failed: {e}")
             raise HTTPException(status_code=502, detail="The model did not answer. Try asking again.") from e
         return Reply(answer=answer or "(no answer)")
+
+
+def _forecast(provider: ForecastProvider, league_id: str, summary: Summary) -> Summary:
+    """The week with its matchup simulated, or as it was where that cannot be done.
+
+    Enrichment, like news and evidence: a week that cannot be simulated is
+    still the week, and a page that failed over a forecast would show nothing.
+    """
+    try:
+        result = forecast_engine(provider).forecast(league_id)
+    except FrontOfficeError as e:
+        logger.warning(f"Showing the week without a forecast: {e}")
+        return summary
+    return attach(summary, *result) if result else summary
 
 
 def _capable(competition: str, what: str, has: Callable[[CompetitionEntry], bool]) -> CompetitionEntry:
