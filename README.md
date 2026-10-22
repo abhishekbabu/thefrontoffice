@@ -110,6 +110,15 @@ verdict on an item that has since changed stays, faded and marked *stale*. The
 list itself is the application's: the model cannot add, drop or restate an
 item, and a verdict naming no listed item is discarded.
 
+Every item can be **dismissed** — hidden while it reads as it did, and back,
+marked *back — changed since you dismissed it*, the moment its reason, evidence
+or deadline changes — or **snoozed** for three hours, until tomorrow at 8am, or
+three days. Hidden items wait under a closed *Hidden* at the foot of the list,
+each with a way back. Neither needs a model: the list clears itself when league
+state settles an item, and these are for the decisions it cannot see — not to
+act, or not yet. Decisions are kept per league on this machine
+(`ITEM_STATE_DIR`), keyed by the same item key verdicts use.
+
 Questions are asked of the thing they are about. **Why?** under any to-do item
 opens a conversation inline, seeded with that item alone — the move, its reason
 and evidence, any earlier verdict, the roster and the week's situation — and

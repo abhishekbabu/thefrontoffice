@@ -82,7 +82,18 @@ export type Action = {
   evidence: Stat[];
   /** The model's judgement, once a report has been run; null before. */
   verdict: TaskVerdict | null;
+  /** What the manager decided: hidden until it changes, or until a time. */
+  hidden: "dismissed" | "snoozed" | null;
+  snoozed_until: string | null;
+  /** Dismissed earlier, and changed since — so shown again, saying why. */
+  resurfaced: boolean;
 };
+
+/** One decision about one to-do item. */
+export type ItemDecision =
+  | { key: string; decision: "dismiss"; fingerprint: string }
+  | { key: string; decision: "snooze"; until: string }
+  | { key: string; decision: "restore" };
 
 /** The model's word on one computed to-do item, by its id. */
 export type TaskVerdict = {
@@ -336,6 +347,8 @@ export const api = {
   summary: (competition: string, league: string) => request<Summary>(`/api/${competition}/leagues/${league}/summary`),
   schedule: (competition: string, league: string) =>
     request<LeagueSchedule>(`/api/${competition}/leagues/${league}/schedule`),
+  decide: (competition: string, league: string, decision: ItemDecision) =>
+    post<unknown>(`/api/${competition}/leagues/${league}/items`, decision),
   freeAgentCalls: (competition: string, league: string, playerIds: string[]) =>
     post<PlayerCall[]>(`/api/${competition}/leagues/${league}/free-agents/calls`, { player_ids: playerIds }),
   judgeFreeAgents: (competition: string, league: string, playerIds: string[]) =>

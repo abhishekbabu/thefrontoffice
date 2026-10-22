@@ -45,6 +45,8 @@ class AppSettings(BaseSettings):
     answer_cache_dir: str = ".answer_cache"
     """Where every model answer is kept — a week's judgment, each free agent's
     call — so a reload shows it and an unchanged question costs no call."""
+    item_state_dir: str = ".item_state"
+    """Where the to-do items you dismissed or snoozed are remembered, per league."""
 
     # ── Yahoo ───────────────────────────────────────────────────────────
     yahoo_client_id: str | None = None

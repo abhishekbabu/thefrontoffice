@@ -8,10 +8,12 @@ crosses the wire unchanged. The reports themselves are the engines' tests.
 from typing import Any
 
 import pytest
+from conftest import FakeItemStates
 from fastapi.testclient import TestClient
 from reports import MOCK_FPL_REPORT
 
 from thefrontoffice.adapters.inbound.web import api as web
+from thefrontoffice.application.items import ItemDecisions
 from thefrontoffice.domain.models import CompetitionContext, PlayerCard
 from thefrontoffice.domain.ports import LeagueRef
 
@@ -77,6 +79,8 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """A client whose providers and engines are fakes, so nothing leaves the process."""
     monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider())
     monkeypatch.setattr(web, "scout_engine", lambda p: _Engine())
+    decisions = ItemDecisions(FakeItemStates())
+    monkeypatch.setattr(web, "item_decisions", lambda: decisions)
     return TestClient(web.create_app())
 
 
@@ -708,3 +712,61 @@ def test_every_model_key_saved_in_settings_reaches_the_file_and_turns_analysis_o
     assert all(s["present"] and s["secret"] for s in listed.values())
     assert not any(value in response.text for value in keys.values())
     assert client.get("/api/capabilities").json()["ai"] is True
+
+
+# ── deciding about to-do items ──────────────────────────────────────────
+
+
+def _week_with_one_item() -> Any:
+    from thefrontoffice.domain.models import Action, Summary
+
+    item = Action(kind="lineup", urgency="soon", title="Start A over B", reason="+2.5", key="swap:a:b")
+    return _SummaryProvider(Summary(actions=[item])), item
+
+
+def test_a_dismissed_item_comes_back_marked_rather_than_gone(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Marked, so the page can hide it and still offer it back."""
+    provider, item = _week_with_one_item()
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: provider)
+
+    kept = client.post(
+        "/api/nfl-sleeper/leagues/L1/items",
+        json={"key": item.key, "decision": "dismiss", "fingerprint": item.fingerprint},
+    ).json()
+    [shown] = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["actions"]
+
+    assert kept["dismissed_as"] == item.fingerprint
+    assert shown["hidden"] == "dismissed"
+
+
+def test_a_restored_item_is_shown_again(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    provider, item = _week_with_one_item()
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: provider)
+    client.post(
+        "/api/nfl-sleeper/leagues/L1/items",
+        json={"key": item.key, "decision": "dismiss", "fingerprint": item.fingerprint},
+    )
+
+    restored = client.post("/api/nfl-sleeper/leagues/L1/items", json={"key": item.key, "decision": "restore"})
+    [shown] = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["actions"]
+
+    assert restored.json() is None
+    assert shown["hidden"] is None
+
+
+def test_a_decision_that_says_too_little_is_rejected(client: TestClient) -> None:
+    for incomplete in ({"key": "k", "decision": "dismiss"}, {"key": "k", "decision": "snooze"}):
+        assert client.post("/api/nfl-sleeper/leagues/L1/items", json=incomplete).status_code == 422
+
+
+def test_a_snooze_into_the_past_is_refused_by_name(client: TestClient) -> None:
+    from thefrontoffice.domain.errors import ItemDecisionError
+
+    response = client.post(
+        "/api/nfl-sleeper/leagues/L1/items",
+        json={"key": "k", "decision": "snooze", "until": "2001-01-01T00:00:00+00:00"},
+    )
+
+    assert response.json()["code"] == ItemDecisionError.code

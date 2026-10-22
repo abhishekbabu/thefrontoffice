@@ -139,6 +139,12 @@ class SubjectGoneError(FrontOfficeError):
         super().__init__("That item is no longer on the list — the week has changed since this page loaded.")
 
 
+class ItemDecisionError(FrontOfficeError):
+    """A decision about a to-do item that cannot be kept as given."""
+
+    code = "item_decision"
+
+
 class AIUnavailableError(FrontOfficeError):
     """No model is configured, so there is no analysis to give.
 

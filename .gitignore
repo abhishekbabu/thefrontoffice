@@ -43,6 +43,7 @@ plans/
 .fpl_cache/
 .espn_cache/
 .answer_cache/
+.item_state/
 web/node_modules/
 web/dist/
 *.tsbuildinfo

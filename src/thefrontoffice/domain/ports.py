@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from thefrontoffice.domain.models import (
     CompetitionContext,
+    ItemState,
     LeagueSchedule,
     PlayerCard,
     PlayerDetail,
@@ -63,6 +64,16 @@ class AnswerStore(Protocol):
         ...
 
     def save(self, scope: str, remembered: Remembered[TModel]) -> None: ...
+
+
+class ItemStateStore(Protocol):
+    """Where the manager's decisions about to-do items are kept, per league."""
+
+    def states(self, scope: str) -> dict[str, ItemState]:
+        """Every kept decision for `scope`, keyed by item key."""
+        ...
+
+    def save(self, scope: str, states: dict[str, ItemState]) -> None: ...
 
 
 class ChatSession(Protocol):
