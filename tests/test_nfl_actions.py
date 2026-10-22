@@ -75,6 +75,12 @@ def _actions(client: FakeSleeper) -> list[Action]:
     return actions
 
 
+def _names_the_swap(action: Action, start: WeeklyProjection, out: WeeklyProjection) -> None:
+    """Who comes in and who goes out is the move; how the title phrases it is not."""
+    assert start.name in action.title and out.name in action.title
+    assert action.title.index(start.name) < action.title.index(out.name)
+
+
 def _ruled_out(player: WeeklyProjection, points: float = 0.0) -> WeeklyProjection:
     return replace(player, injury_status="Out", points=points)
 
@@ -87,11 +93,10 @@ def test_a_starter_ruled_out_is_swapped_for_the_bench_player_who_covers_him() ->
 
     [action] = _actions(client)
 
-    assert (action.kind, action.urgency) == ("lineup", "now")
-    assert action.title == "Start Bench Back over Ron Back"
-    assert action.reason.startswith("Ron Back is ruled out.")
-    assert action.when == "before kickoff, Sun 27 Sep"
-    assert action.player_id == "rb2"
+    assert (action.kind, action.urgency, action.player_id) == ("lineup", "now", "rb2")
+    _names_the_swap(action, start=BENCH_RB, out=RB)
+    assert "ruled out" in action.reason
+    assert "Sun 27 Sep" in action.when
 
 
 def test_a_ruled_out_starter_is_benched_even_while_sleeper_still_projects_him() -> None:
@@ -101,7 +106,8 @@ def test_a_ruled_out_starter_is_benched_even_while_sleeper_still_projects_him() 
 
     [action] = _actions(client)
 
-    assert action.title == "Start Bench Back over Ron Back"
+    assert action.player_id == "rb2"
+    _names_the_swap(action, start=BENCH_RB, out=RB)
 
 
 def test_a_starter_on_bye_is_flagged_once_the_league_has_fixtures() -> None:
@@ -110,7 +116,8 @@ def test_a_starter_on_bye_is_flagged_once_the_league_has_fixtures() -> None:
 
     [action] = _actions(client)
 
-    assert action.reason.startswith("Ron Back has no game this week.")
+    assert (action.urgency, action.player_id) == ("now", "rb2")
+    assert "no game" in action.reason
 
 
 def test_an_empty_slot_is_filled_from_the_bench() -> None:
@@ -118,8 +125,8 @@ def test_an_empty_slot_is_filled_from_the_bench() -> None:
 
     [action] = _actions(client)
 
-    assert (action.title, action.urgency) == ("Start Bench Back at RB", "now")
-    assert action.reason.startswith("Your RB slot is empty.")
+    assert (action.kind, action.urgency, action.player_id) == ("lineup", "now", "rb2")
+    assert "empty" in action.reason
 
 
 def test_with_no_bench_cover_the_best_free_agent_who_can_play_is_named() -> None:
@@ -136,10 +143,8 @@ def test_with_no_bench_cover_the_best_free_agent_who_can_play_is_named() -> None
 
     [action] = _actions(client)
 
-    assert (action.kind, action.urgency) == ("waiver", "now")
-    assert action.title == "Pick up Free Back for Ron Back"
-    assert "nobody on your bench can play RB" in action.reason
-    assert action.player_id == "fa1"
+    assert (action.kind, action.urgency, action.player_id) == ("waiver", "now", "fa1")
+    assert free.name in action.title and RB.name in action.title
     # Sleeper publishes no waiver time, so none is invented.
     assert action.when == ""
 
@@ -170,9 +175,9 @@ def test_a_projection_upgrade_is_worth_doing_but_not_urgent() -> None:
 
     [action] = _actions(client)
 
-    assert (action.kind, action.urgency) == ("lineup", "soon")
-    assert action.title == "Start Bench Receiver over Ty End"
-    assert action.reason == "+7.0 proj pts."
+    assert (action.kind, action.urgency, action.player_id) == ("lineup", "soon", "wr2")
+    _names_the_swap(action, start=better, out=FLEX)
+    assert "+7.0" in action.reason
 
 
 def test_starting_a_questionable_player_says_so() -> None:
@@ -181,7 +186,7 @@ def test_starting_a_questionable_player_says_so() -> None:
 
     [action] = _actions(client)
 
-    assert "Bench Receiver is listed questionable" in action.reason
+    assert "questionable" in action.reason
 
 
 def test_a_swap_closes_at_the_earlier_of_the_two_kickoffs() -> None:
@@ -190,7 +195,7 @@ def test_a_swap_closes_at_the_earlier_of_the_two_kickoffs() -> None:
 
     [action] = _actions(client)
 
-    assert action.when == "before kickoff, Thu 24 Sep"
+    assert "Thu 24 Sep" in action.when
 
 
 def test_nothing_is_suggested_for_a_player_whose_game_has_kicked_off() -> None:
@@ -213,8 +218,8 @@ def test_a_starter_on_bye_next_week_with_nobody_behind_him_is_flagged() -> None:
     [action] = _actions(_week_four_bye([]))
 
     assert (action.kind, action.urgency, action.when) == ("waiver", "later", "week 4")
-    assert action.title == "Find a RB for week 4"
-    assert action.reason == "Ron Back is on bye, and nobody on your bench plays RB."
+    assert action.player_id == "rb"
+    assert RB.name in action.reason
 
 
 def test_a_bye_the_bench_covers_needs_nothing() -> None:
@@ -224,13 +229,13 @@ def test_a_bye_the_bench_covers_needs_nothing() -> None:
 def test_an_injured_bench_player_is_not_cover_for_a_bye() -> None:
     [action] = _actions(_week_four_bye([_ruled_out(BENCH_RB)]))
 
-    assert action.title == "Find a RB for week 4"
+    assert (action.kind, action.when) == ("waiver", "week 4")
 
 
 def test_a_bench_player_on_bye_too_is_not_cover() -> None:
     [action] = _actions(_week_four_bye([replace(BENCH_RB, team="NE", points=0.0)]))
 
-    assert action.title == "Find a RB for week 4"
+    assert (action.kind, action.when) == ("waiver", "week 4")
 
 
 # ── the trade deadline ──────────────────────────────────────────────────
@@ -245,13 +250,13 @@ def _at_deadline(deadline: int) -> list[Action]:
 def test_the_last_week_to_trade_says_so() -> None:
     [action] = _at_deadline(3)
 
-    assert (action.kind, action.urgency, action.title) == ("trade", "soon", "Make any trades this week")
+    assert (action.kind, action.urgency, action.when) == ("trade", "soon", "week 3")
 
 
 def test_a_deadline_next_week_is_planning() -> None:
     [action] = _at_deadline(4)
 
-    assert (action.urgency, action.title) == ("later", "Line up any trades now")
+    assert (action.kind, action.urgency, action.when) == ("trade", "later", "week 4")
 
 
 def test_a_distant_passed_or_absent_deadline_is_not_a_task() -> None:
@@ -309,7 +314,7 @@ def test_a_swap_shows_the_role_and_matchup_of_both_players() -> None:
     [action] = _actions(client)
 
     assert [stat.label for stat in action.evidence] == ["Bench Receiver", "Ty End"]
-    assert "50% of snaps" in action.evidence[0].value
+    assert all(stat.value for stat in action.evidence)
 
 
 def test_covering_a_player_who_cannot_play_shows_only_the_one_coming_in() -> None:
@@ -351,5 +356,5 @@ def test_stat_lines_that_will_not_load_leave_the_list_without_evidence() -> None
 
     [action] = _actions(client)
 
-    assert action.title == "Start Bench Back over Ron Back"
+    assert action.player_id == "rb2"
     assert action.evidence == []

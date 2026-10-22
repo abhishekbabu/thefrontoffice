@@ -94,6 +94,12 @@ player drawer shows the same under *Role and matchup*, and the model reads it
 on every player line, told to weigh it over the projection and hardest before
 a drop.
 
+With a model configured, the list links to a **second opinion**: the report
+judges each to-do item by its id — *agree*, *overrule* or *wait for news* — and
+the verdict appears inside the row it is about. Its own moves are only the ones
+the list misses. The list itself is the application's: the model cannot add,
+drop or restate an item, and a verdict naming no listed item is discarded.
+
 ![Free agents](docs/screenshots/free-agents.png)
 
 **Free agents** — everyone available, ranked by projection, searchable and

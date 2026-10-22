@@ -1,4 +1,4 @@
-import type { MoveAction, TradeVerdict } from "@/lib/api";
+import type { MoveAction, TaskVerdict, TradeVerdict } from "@/lib/api";
 
 export type Tone = "ok" | "info" | "warn" | "fail" | "muted";
 
@@ -24,3 +24,7 @@ export const moveTone = (action: MoveAction): Tone => MOVE_TONES[action] ?? "mut
 
 export const verdictTone = (verdict: TradeVerdict["verdict"]): Tone =>
   verdict === "ACCEPT" ? "ok" : verdict === "REJECT" ? "fail" : "warn";
+
+/** Agreeing costs nothing to act on; an overrule is the one to stop and read. */
+export const decisionTone = (decision: TaskVerdict["decision"]): Tone =>
+  decision === "AGREE" ? "ok" : decision === "OVERRULE" ? "fail" : "warn";

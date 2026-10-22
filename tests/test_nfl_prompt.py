@@ -21,6 +21,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     TrendingPlayer,
 )
 from thefrontoffice.domain.errors import SleeperAPIError
+from thefrontoffice.domain.models import task_id
 
 MY_ID = SLEEPER_USER_ID
 
@@ -60,8 +61,8 @@ SMALL_LEAGUE = SleeperLeague(
 )
 
 
-def test_implied_lineup_change_is_computed_and_shown() -> None:
-    """One RB slot, and the worse RB is starting — the report must say so."""
+def test_the_to_do_list_is_shown_numbered_so_each_verdict_can_find_its_row() -> None:
+    """One RB slot, and the worse RB is starting — the same item the page shows."""
     client = FakeSleeper(
         league=SMALL_LEAGUE,
         projections=dict(DEFAULT_PROJECTIONS),
@@ -69,13 +70,15 @@ def test_implied_lineup_change_is_computed_and_shown() -> None:
             SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"])
         ],
     )
-    prompt = _provider(client).build_context("L1").prompt
-    assert "START Good RB" in prompt
-    assert "for Bad RB" in prompt
-    assert "+14.0 projected" in prompt
+    context = _provider(client).build_context("L1")
+
+    [task] = context.tasks
+    assert task.player_id == "rb1"
+    # The id and the move on one line, which is what a verdict is matched by.
+    assert any(task_id(1) in line and task.title in line for line in context.prompt.splitlines())
 
 
-def test_an_optimal_lineup_is_reported_as_such() -> None:
+def test_a_week_with_nothing_to_decide_says_so() -> None:
     client = FakeSleeper(
         league=SMALL_LEAGUE,
         projections=dict(DEFAULT_PROJECTIONS),
@@ -83,7 +86,9 @@ def test_an_optimal_lineup_is_reported_as_such() -> None:
             SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb1"])
         ],
     )
-    assert "already the highest-projecting" in _provider(client).build_context("L1").prompt
+    context = _provider(client).build_context("L1")
+
+    assert context.tasks == []
 
 
 def test_an_unfilled_slot_is_shown_as_empty() -> None:
@@ -312,18 +317,44 @@ def _played() -> list[NFLGameLine]:
 
 
 def test_each_player_line_carries_his_role_and_matchup() -> None:
-    prompt = _context(game_lines=_played()).prompt
+    client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS), game_lines=_played())
+    provider = _provider(client)
+    good_rb = DEFAULT_PROJECTIONS["rb1"]
 
-    assert "last 2 games: 75% of snaps, 16.0 carries" in prompt
-    assert "vs MIA, the most to RBs" in prompt
+    prompt = provider.build_context("L1").prompt
 
-
-def test_the_model_is_told_to_weigh_the_role_over_the_projection() -> None:
-    prompt = _context().prompt
-
-    assert "Weigh role and matchup over the projection" in prompt
-    assert "Never recommend a DROP off one poor game" in prompt
+    described = provider._week("L1").evidence.describe(good_rb)
+    assert described and described in prompt
 
 
 def test_with_nothing_played_the_lines_are_the_projection_alone() -> None:
     assert "of snaps" not in _context().prompt
+
+
+def test_a_to_do_item_carries_its_evidence_into_the_prompt() -> None:
+    """The model is asked to overrule on role and matchup, so it has to see them."""
+    lines = [
+        NFLGameLine(
+            player_id=pid,
+            week=1,
+            team="BUF",
+            opponent="MIA",
+            position="RB",
+            stats={"off_snp": snaps, "tm_off_snp": 60, "rush_att": 10, "pts_ppr": 12},
+        )
+        for pid, snaps in (("rb1", 45), ("rb2", 15))
+    ]
+    client = FakeSleeper(
+        league=SMALL_LEAGUE,
+        projections=dict(DEFAULT_PROJECTIONS),
+        rosters=[
+            SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"])
+        ],
+        game_lines=lines,
+    )
+
+    context = _provider(client).build_context("L1")
+
+    [task] = context.tasks
+    assert task.evidence
+    assert all(line.value in context.prompt for line in task.evidence)

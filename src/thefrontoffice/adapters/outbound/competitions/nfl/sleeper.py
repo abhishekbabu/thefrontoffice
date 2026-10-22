@@ -46,6 +46,7 @@ from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, SleeperAPIError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
+    Action,
     CompetitionContext,
     LeagueSchedule,
     PlayerCard,
@@ -474,8 +475,14 @@ class SleeperNFLProvider:
     # ── context ─────────────────────────────────────────────────────
 
     def build_context(self, league_id: str) -> CompetitionContext:
-        """Gather the week, then render it as the text a model reads."""
-        return prompt.build(self.client, self._week(league_id), league_id)
+        """Gather the week, then render it as the text a model reads.
+
+        Carries the same to-do list the page shows, numbered, so the model
+        judges the moves somebody is looking at rather than inventing its own.
+        """
+        state = self._week(league_id)
+        tasks = self._actions(state, league_id, games_by_week(self.client, state.season))
+        return prompt.build(self.client, state, league_id, tasks)
 
     def _current_week(self) -> int:
         """The week the report is about; the opener while still in preseason."""
@@ -580,9 +587,12 @@ class SleeperNFLProvider:
                 Stat(label=club, value="no game this week", tone="warning")
                 for club in sorted({p.team for p in state.projected if scheduled and not p.opponent})
             ],
-            actions=actions.build(state, games, self._wire(state, league_id)),
+            actions=self._actions(state, league_id, games),
             window=self._window(state, games),
         )
+
+    def _actions(self, state: Week, league_id: str, games: dict[int, list[ScheduledGame]]) -> list[Action]:
+        return actions.build(state, games, self._wire(state, league_id))
 
     def _wire(self, state: Week, league_id: str) -> list[WeeklyProjection]:
         """Who could be picked up and play this week, best projection first.

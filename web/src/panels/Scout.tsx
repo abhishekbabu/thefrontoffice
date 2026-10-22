@@ -1,5 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, type Action, type League, type Competition, type Summary, type Urgency } from "@/lib/api";
+import { Link } from "react-router-dom";
+import { api, type League, type Competition, type Summary } from "@/lib/api";
+import { ActionList } from "@/components/ui/actions";
+import { href } from "@/lib/route";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Loading } from "@/components/ui/state";
@@ -21,6 +24,9 @@ import { LeagueHeader } from "@/components/ui/page-header";
 export function ScoutPanel({ competition, league }: { competition: Competition; league: League }) {
   const { openPlayer, drawer } = usePlayerDrawer(competition, league);
 
+  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
+  const ai = capabilities.data?.ai ?? false;
+
   const week = useQuery<Summary, Error>({
     queryKey: ["summary", competition.key, league.league_id],
     queryFn: () => api.summary(competition.key, league.league_id),
@@ -38,7 +44,25 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
 
       {week.data && (
         <div className="flex flex-col gap-4 p-5">
-          {week.data.actions && <ActionList actions={week.data.actions} onOpen={openPlayer} />}
+          {week.data.actions && (
+            <ActionList
+              actions={week.data.actions}
+              onOpen={openPlayer}
+              aside={
+                // Only where a model is configured: a link to a page that is
+                // not offered would be an offer and then a refusal.
+                ai &&
+                week.data.actions.length > 0 && (
+                  <Link
+                    to={href(competition.key, league.league_id, "report")}
+                    className="normal-case tracking-normal text-accent-foreground hover:underline"
+                  >
+                    Get a second opinion
+                  </Link>
+                )
+              }
+            />
+          )}
 
           {week.data.opponent ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -137,89 +161,5 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       )}
       {drawer}
     </>
-  );
-}
-
-/** Said in words as well as color, so the order survives without the hue. */
-const URGENCY: Record<Urgency, { label: string; variant: "warn" | "info" | "muted" }> = {
-  now: { label: "Now", variant: "warn" },
-  soon: { label: "Soon", variant: "info" },
-  later: { label: "Later", variant: "muted" },
-};
-
-/**
- * What to do about the week, most urgent first.
- *
- * At the top because it is the reason to open the page: the lineups below are
- * the evidence, and this is the conclusion. Each row names its deadline where
- * the platform has one and opens the player it turns on. An empty list is
- * said out loud — "nothing to do" is an answer worth having, and a missing
- * card would look the same as a page that never checked.
- */
-function ActionList({ actions, onOpen }: { actions: Action[]; onOpen: (id: string) => void }) {
-  return (
-    <Card>
-      <CardHeader>
-        <span>To do</span>
-        {actions.length > 0 && <span>{actions.length}</span>}
-      </CardHeader>
-      {actions.length === 0 ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">Nothing to do — your lineup is set for the week.</p>
-      ) : (
-        <ol className="flex flex-col">
-          {actions.map((action) => {
-            const open = action.player_id ? () => onOpen(action.player_id) : undefined;
-            const urgency = URGENCY[action.urgency];
-            return (
-              <li
-                key={`${action.kind}-${action.title}`}
-                onClick={open}
-                onKeyDown={open && ((e) => e.key === "Enter" && open())}
-                tabIndex={open ? 0 : undefined}
-                role={open ? "button" : undefined}
-                className={cn(
-                  "flex items-start gap-3 border-t border-border px-4 py-3 first:border-t-0",
-                  open && "cursor-pointer hover:bg-muted",
-                )}
-              >
-                <Badge variant={urgency.variant} appearance="status" className="mt-0.5 w-16 shrink-0">
-                  {urgency.label}
-                </Badge>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13.5px] font-medium">{action.title}</div>
-                  <div className="mt-0.5 text-[12.5px] text-muted-foreground">{action.reason}</div>
-                  {action.evidence.length > 0 && (
-                    <ul className="mt-1.5 flex flex-col gap-1">
-                      {action.evidence.map((line) => (
-                        <li key={line.label} className="flex items-baseline gap-2 text-[12px] text-muted-foreground">
-                          {/* The rank is in the words; the dot only lets a
-                              soft or tough matchup be found at a glance. */}
-                          <span
-                            aria-hidden
-                            className={cn(
-                              "size-1.5 shrink-0 -translate-y-px rounded-full bg-border",
-                              line.tone === "good" && "bg-ok",
-                              line.tone === "warning" && "bg-warn",
-                            )}
-                          />
-                          <span>
-                            <span className="font-medium text-foreground">{line.label}</span> {line.value}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                {action.when && (
-                  <span className="shrink-0 pt-0.5 text-right font-mono text-[11px] text-muted-foreground">
-                    {action.when}
-                  </span>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </Card>
   );
 }

@@ -75,6 +75,15 @@ export type Action = {
   /** What the move rests on beyond the projection, one line per player:
       the matchup and the role. Toned by the matchup, which the text also says. */
   evidence: Stat[];
+  /** The model's judgement, once a report has been run; null before. */
+  verdict: TaskVerdict | null;
+};
+
+/** The model's word on one computed to-do item, by its id. */
+export type TaskVerdict = {
+  task: string;
+  decision: "AGREE" | "OVERRULE" | "WAIT";
+  reason: string;
 };
 
 /** One team in a matchup — yours, or the one you are playing. */
@@ -104,6 +113,10 @@ export type ScoutReport = {
   strategy: string;
   /** Read off the platform by the provider, not written by the model. */
   headline: Stat[];
+  verdicts: TaskVerdict[];
+  /** The to-do items as computed, each carrying its verdict. Filled by the
+      application, never by the model; empty where none are computed. */
+  tasks: Action[];
 };
 
 export type TradeVerdict = {
