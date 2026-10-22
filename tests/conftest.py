@@ -162,7 +162,8 @@ class FakeSleeper:
     ) -> None:
         self.game_lines = game_lines if game_lines is not None else []
         self.game_lines_error = game_lines_error
-        self.game_line_weeks: list[int] = []
+        self.last_season_lines: list[NFLGameLine] = []
+        self.game_line_calls: list[tuple[str, list[int]]] = []
         self.season_stats = season_stats if season_stats is not None else {}
         self.season_stats_error = season_stats_error
         self.season_schedule = season_schedule if season_schedule is not None else []
@@ -214,10 +215,17 @@ class FakeSleeper:
         return self.transactions.get(week, [])
 
     def get_nfl_game_lines(self, season: str, weeks: list[int]) -> list[NFLGameLine]:
-        self.game_line_weeks = weeks
+        self.game_line_calls.append((season, weeks))
         if self.game_lines_error:
             raise self.game_lines_error
-        return [line for line in self.game_lines if line.week in weeks]
+        source = self.game_lines if season == self.get_state().season else self.last_season_lines
+        return [line for line in source if line.week in weeks]
+
+    @property
+    def game_line_weeks(self) -> list[int]:
+        """The weeks of this season last asked for: what a range could have been shaped by."""
+        this = [weeks for season, weeks in self.game_line_calls if season == self.get_state().season]
+        return this[-1] if this else []
 
     def get_season_stats(self, season: str, sport: str = "nfl") -> dict[str, SeasonStats]:
         if self.season_stats_error:

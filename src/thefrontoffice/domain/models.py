@@ -468,6 +468,10 @@ class Outcomes:
     remaining: float = 1.0
     """How much of a full game is still to come: 1 before kickoff, 0 once it is over."""
 
+    projection_error: float = 0.0
+    """Spread of a factor around 1 that scales his whole game in each simulated week —
+    for how far the projection his range is centred on may itself be off."""
+
 
 @dataclass(frozen=True)
 class LineupMove:
@@ -532,6 +536,18 @@ class CalibrationBucket(BaseModel):
     matchups: int
     predicted: float
     won: float
+
+
+class RangeScore(BaseModel):
+    """How well players' ranges held what they then scored."""
+
+    players: int = Field(description="Player-games scored.")
+    inside: float = Field(description="Share whose score fell between the 10th and 90th percentile: 0.8 if right.")
+    below: float = Field(description="Share below the 10th percentile: 0.1 if right.")
+    above: float = Field(description="Share above the 90th percentile: 0.1 if right.")
+    loss: float = Field(
+        description="Mean quantile loss across the deciles, in points: lower is a sharper, truer range."
+    )
 
 
 class Calibration(BaseModel):

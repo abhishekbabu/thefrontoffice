@@ -8,7 +8,6 @@ from conftest import _proj
 
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.outcomes import (
-    MAX_RATIO,
     PLAYS,
     UNDER_WAY,
     Spreads,
@@ -48,11 +47,15 @@ def test_a_steady_player_keeps_a_narrow_range_and_a_streaky_one_a_wide_one() -> 
     assert pstdev(steady.samples) < pstdev(streaky.samples)
 
 
-def test_no_single_game_counts_for_more_than_the_cap() -> None:
-    """A two-point backup's one big week, lent to a star, reads as fiction."""
+def test_a_boom_game_is_trimmed_to_the_cap_before_the_range_is_recentred() -> None:
+    """A backup's one big week, lent to a star, reads as fiction — but trimming it
+    must not drag the range's centre below the projection."""
     spread = spreads(_evidence(rb1=((6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 100.0), "RB")))
 
-    assert max(spread.own["rb1"]) == MAX_RATIO
+    ratios = spread.own["rb1"]
+    uncapped = 100.0 / (sum((6.0,) * 7 + (100.0,)) / 8)
+    assert sum(ratios) / len(ratios) == pytest.approx(1.0)
+    assert max(ratios) < uncapped
 
 
 def test_a_player_averaging_almost_nothing_shapes_no_range() -> None:
@@ -116,3 +119,22 @@ def test_a_game_under_way_keeps_what_he_has_and_adds_what_is_left() -> None:
 
 def test_every_ruled_out_designation_means_he_does_not_play() -> None:
     assert all(PLAYS[s] == 0.0 for s in ("OUT", "IR", "PUP", "SUS", "NA", "DNR"))
+
+
+# ── last season, for the shape of a position ────────────────────────────
+
+
+def test_last_season_shapes_a_positions_range_but_not_a_players_own() -> None:
+    """Position spreads barely move year to year; a player's role can."""
+    this = _evidence(rb1=((12.0,), "RB"))
+    last = _evidence(rb1=(STREAKY, "RB"), rb2=(STREAKY, "RB"))
+
+    spread = spreads(this, pool_from=last)
+
+    assert spread.own["rb1"] == (1.0,)
+    assert len(set(spread.pool["RB"])) > 1
+
+
+def test_without_last_season_the_opening_weeks_have_no_pool() -> None:
+    """Why last season is read at all: nobody has the games yet."""
+    assert spreads(_evidence(rb1=((12.0,), "RB"))).pool == {}
