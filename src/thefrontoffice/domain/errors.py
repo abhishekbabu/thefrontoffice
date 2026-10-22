@@ -125,6 +125,20 @@ class TradeParseError(FrontOfficeError):
         self.text = text
 
 
+class SubjectGoneError(FrontOfficeError):
+    """A question was asked about a to-do item the week no longer holds.
+
+    Not a failure: the item was settled — the swap made, the player back —
+    between the page loading and the question. Saying so beats answering
+    about a move that is no longer on the table.
+    """
+
+    code = "subject_gone"
+
+    def __init__(self) -> None:
+        super().__init__("That item is no longer on the list — the week has changed since this page loaded.")
+
+
 class AIUnavailableError(FrontOfficeError):
     """No model is configured, so there is no analysis to give.
 

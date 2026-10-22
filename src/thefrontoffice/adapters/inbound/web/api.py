@@ -22,7 +22,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from thefrontoffice.adapters.inbound.web import data
-from thefrontoffice.bootstrap import CompetitionEntry, ai_available, all_competitions, scout_engine, trade_engine
+from thefrontoffice.bootstrap import (
+    CompetitionEntry,
+    ai_available,
+    all_competitions,
+    ask_engine,
+    scout_engine,
+    trade_engine,
+)
 from thefrontoffice.config import env_file
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.config.settings import PROJECT_ROOT, settings
@@ -36,6 +43,7 @@ from thefrontoffice.domain.models import (
     PlayerPage,
     PlayerQuery,
     ScoutReport,
+    Subject,
     Summary,
     TeamRef,
     TradeVerdict,
@@ -149,6 +157,12 @@ class Analysis(BaseModel):
     """A finished report plus the handle for asking about it."""
 
     report: ScoutReport
+    chat_id: str
+
+
+class Thread(BaseModel):
+    """A conversation opened about one thing; asked through the chat endpoint."""
+
     chat_id: str
 
 
@@ -424,6 +438,17 @@ def _register_routes(app: FastAPI) -> None:
         """
         provider = data.build_provider(competition)
         return scout_engine(provider).latest(league_id)
+
+    @app.post("/api/{competition}/leagues/{league_id}/threads", response_model=Thread)
+    def thread(competition: str, league_id: str, subject: Subject) -> Thread:
+        """Open a conversation about one to-do item or one player.
+
+        Seeded with that subject alone, so a question about Hall's row is
+        answered about Hall's row; the turns then go through the chat endpoint
+        like any other conversation.
+        """
+        provider = data.build_provider(competition)
+        return Thread(chat_id=_remember(ask_engine(provider).open(league_id, subject)))
 
     @app.post("/api/{competition}/leagues/{league_id}/trade", response_model=Evaluation)
     def trade(competition: str, league_id: str, request: TradeRequest) -> Evaluation:
