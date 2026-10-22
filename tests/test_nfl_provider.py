@@ -26,7 +26,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperRoster,
     TrendingPlayer,
 )
-from thefrontoffice.domain.errors import LeagueNotFoundError, SleeperAPIError, TeamNotFoundError
+from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, SleeperAPIError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery
 
 MY_ID = SLEEPER_USER_ID
@@ -406,3 +406,62 @@ def test_the_opponent_is_named_in_full_where_there_is_room() -> None:
     detail = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).player("L1", "qb1")
     opponent = next(s for s in detail.groups[0].stats if s.label == "Opponent")
     assert opponent.value == "vs Miami Dolphins"
+
+
+# ── the wire, for this roster ───────────────────────────────────────────
+
+
+def _available(client: FakeSleeper, **query: object) -> dict[str, dict[str, str]]:
+    page = _provider(client).free_agents("L1", PlayerQuery(**query))  # type: ignore[arg-type]
+    return {card.player_id: card.columns for card in page.players}
+
+
+def test_a_free_agent_shows_what_he_would_add_to_this_lineup() -> None:
+    """The default roster starts nobody at WR, so a receiver fills an empty slot."""
+    cards = _available(FakeSleeper(projections=DEFAULT_PROJECTIONS))
+
+    assert cards["wr9"]["Fits"].startswith("+14.0")
+
+
+def test_a_free_agent_short_of_every_starter_says_by_how_much() -> None:
+    """In a deep league nobody on the wire outprojects a starter; how close
+    each comes is then the whole question, so a shortfall is shown too."""
+    league = SleeperLeague(
+        league_id="L1", name="Deep", season="2026", total_rosters=14, scoring_format="pts_ppr", roster_positions=["WR"]
+    )
+    starter = _proj("wr1", "Star WR", "WR", 20.0)
+    client = FakeSleeper(
+        projections={**DEFAULT_PROJECTIONS, "wr1": starter},
+        league=league,
+        rosters=[SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["wr1"], starter_ids=["wr1"])],
+    )
+    client.players_catalog = {
+        **client.get_players(),
+        "wr1": PlayerMeta(player_id="wr1", name="Star WR", position="WR", team="BUF"),
+    }
+
+    fits = _available(client)["wr9"]["Fits"]
+
+    assert fits.startswith("-6.0") and "Star WR" in fits
+
+
+def test_the_wire_sorts_by_fit_across_the_whole_pool() -> None:
+    cards = _available(FakeSleeper(projections=DEFAULT_PROJECTIONS), sort="Fits")
+
+    assert next(iter(cards)) == "wr9"
+
+
+def test_judging_the_wire_names_each_candidate_by_id_with_how_he_fits() -> None:
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    fits = _available(client)["wr9"]["Fits"]
+
+    context = _provider(client).build_wire_context("L1", ["wr9"])
+
+    [line] = context.candidate_lines.values()
+    assert "wr9" in line and fits in line
+    assert line in context.prompt
+
+
+def test_a_rostered_player_cannot_be_judged_as_a_free_agent() -> None:
+    with pytest.raises(PlayerNotFoundError):
+        _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_wire_context("L1", ["qb1"])

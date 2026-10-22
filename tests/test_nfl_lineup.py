@@ -6,6 +6,7 @@ computed rather than asked of the model — and therefore worth pinning hard.
 
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupSlot,
+    best_upgrade,
     eligible_positions,
     lineup_changes,
     lineup_points,
@@ -174,3 +175,31 @@ def test_a_swap_that_loses_points_is_not_recommended() -> None:
     players = [p("qb1", "QB", 22), p("wr1", "WR", 10)]
     changes = lineup_changes(["WR"], ["qb1"], players)
     assert all(c.gain > 0 for c in changes)
+
+
+# ── how a candidate fits ────────────────────────────────────────────────
+
+
+def test_a_candidate_is_measured_against_the_weakest_starter_he_could_replace() -> None:
+    lineup = [
+        LineupSlot(slot="RB", player=p("r1", "RB", 20.0)),
+        LineupSlot(slot="WR", player=p("w1", "WR", 9.0)),
+        LineupSlot(slot="FLEX", player=p("r2", "RB", 11.0)),
+    ]
+
+    upgrade = best_upgrade(lineup, p("fa", "RB", 14.0))
+
+    # The RB slot holds 20 and FLEX 11; he would replace the FLEX.
+    assert upgrade is not None
+    gain, slot = upgrade
+    assert (gain, slot.slot) == (3.0, "FLEX")
+
+
+def test_an_empty_slot_he_can_fill_is_worth_his_whole_projection() -> None:
+    upgrade = best_upgrade([LineupSlot(slot="TE", player=None)], p("fa", "TE", 7.5))
+
+    assert upgrade is not None and upgrade[0] == 7.5
+
+
+def test_a_candidate_no_slot_takes_does_not_fit() -> None:
+    assert best_upgrade([LineupSlot(slot="QB", player=p("q", "QB", 20.0))], p("fa", "K", 9.0)) is None

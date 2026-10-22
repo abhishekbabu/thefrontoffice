@@ -14,6 +14,7 @@ back here across the proxy configured in `web/vite.config.ts`.
 import logging
 import threading
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -22,13 +23,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from thefrontoffice.adapters.inbound.web import data
+from thefrontoffice.application.wire import MAX_JUDGED
 from thefrontoffice.bootstrap import (
     CompetitionEntry,
     ai_available,
     all_competitions,
     ask_engine,
+    find,
     scout_engine,
     trade_engine,
+    wire_engine,
 )
 from thefrontoffice.config import env_file
 from thefrontoffice.config.logging import setup_logging
@@ -38,6 +42,7 @@ from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import (
     Judgment,
     LeagueSchedule,
+    PlayerCall,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
@@ -76,6 +81,8 @@ class Competition(BaseModel):
     platform: str
     label: str
     supports_trades: bool
+    judges_wire: bool
+    """Whether its free agents can be judged — offered only where it is."""
     configured: bool
     """Whether the credentials this competition needs are set."""
 
@@ -158,6 +165,12 @@ class Analysis(BaseModel):
 
     report: ScoutReport
     chat_id: str
+
+
+class JudgeRequest(BaseModel):
+    """The free agents on screen to judge, best first."""
+
+    player_ids: list[str] = Field(min_length=1, max_length=MAX_JUDGED)
 
 
 class Thread(BaseModel):
@@ -324,6 +337,7 @@ def _register_routes(app: FastAPI) -> None:
             platform=entry.platform,
             label=entry.label,
             supports_trades=entry.supports_trades,
+            judges_wire=entry.judges_wire,
             configured=configured,
             requires=entry.requires,
             ready=configured and not reason,
@@ -450,10 +464,17 @@ def _register_routes(app: FastAPI) -> None:
         provider = data.build_provider(competition)
         return Thread(chat_id=_remember(ask_engine(provider).open(league_id, subject)))
 
+    @app.post("/api/{competition}/leagues/{league_id}/free-agents/judge", response_model=list[PlayerCall])
+    def judge_free_agents(competition: str, league_id: str, request: JudgeRequest) -> list[PlayerCall]:
+        """A call on each of the free agents on screen, to show on their rows."""
+        entry = _capable(competition, "judging free agents", lambda e: e.judges_wire)
+        provider = data.build_provider(entry.key)
+        return wire_engine(provider).judge(league_id, request.player_ids)
+
     @app.post("/api/{competition}/leagues/{league_id}/trade", response_model=Evaluation)
     def trade(competition: str, league_id: str, request: TradeRequest) -> Evaluation:
-        entry = _tradeable(competition)
-        provider = data.build_provider(entry.competition)
+        entry = _capable(competition, "trade evaluation", lambda e: e.supports_trades)
+        provider = data.build_provider(entry.key)
         verdict, chat = trade_engine(provider).evaluate(league_id, request.text)
         return Evaluation(verdict=verdict, chat_id=_remember(chat))
 
@@ -479,18 +500,21 @@ def _register_routes(app: FastAPI) -> None:
         return Reply(answer=answer or "(no answer)")
 
 
-def _tradeable(competition: str) -> CompetitionEntry:
-    """The entry for `competition`, refusing one that cannot evaluate trades.
+def _capable(competition: str, what: str, has: Callable[[CompetitionEntry], bool]) -> CompetitionEntry:
+    """The entry a route names, refusing one without the capability asked for.
 
-    Checked here rather than left to the provider: a competition without trade
-    support has no `build_trade_context` at all, so the failure would otherwise
-    be an AttributeError rather than something the user can read.
+    Checked here rather than left to the provider: one without the capability
+    lacks the method entirely, so the failure would otherwise be an
+    AttributeError rather than something the user can read. Resolved through
+    `find`, which takes the registry key every route uses ("nfl-sleeper") as
+    well as a bare competition — matching the bare name alone refused every
+    request the UI made.
     """
-    entry = next((e for e in all_competitions() if e.competition == competition.lower()), None)
+    entry = find(competition)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"Unknown competition {competition!r}.")
-    if not entry.supports_trades:
-        raise HTTPException(status_code=400, detail=f"{entry.label} does not support trade evaluation.")
+    if not has(entry):
+        raise HTTPException(status_code=400, detail=f"{entry.label} does not support {what}.")
     return entry
 
 

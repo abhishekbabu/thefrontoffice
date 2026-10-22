@@ -17,8 +17,9 @@ from typing import TYPE_CHECKING
 from thefrontoffice.application.asking import AskEngine
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.application.trading import TradeEngine
+from thefrontoffice.application.wire import WireEngine
 from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.ports import AnalysisModel, CompetitionProvider, TradeProvider
+from thefrontoffice.domain.ports import AnalysisModel, CompetitionProvider, TradeProvider, WireProvider
 
 if TYPE_CHECKING:
     from thefrontoffice.adapters.outbound.llm.routing import Cooldowns
@@ -63,6 +64,8 @@ class CompetitionEntry:
     """
 
     supports_trades: bool = False
+    judges_wire: bool = False
+    """Whether its available players can be judged — the provider is a WireProvider."""
     """Whether trade evaluation works for this sport.
 
     Declared here rather than tested as `sport == "nba"` at each call site, so
@@ -140,6 +143,7 @@ REGISTRY: tuple[CompetitionEntry, ...] = (
         is_configured=lambda: bool(settings.sleeper_username),
         requires="SLEEPER_USERNAME",
         supports_trades=True,
+        judges_wire=True,
     ),
     CompetitionEntry(
         sport="soccer",
@@ -250,6 +254,11 @@ def ask_engine(provider: CompetitionProvider) -> AskEngine:
     from thefrontoffice.adapters.outbound.llm.judgments import DiskJudgmentStore
 
     return AskEngine(provider, ai=default_model(), judgments=DiskJudgmentStore())
+
+
+def wire_engine(provider: WireProvider) -> WireEngine:
+    """Calls on available players, wired to the configured model."""
+    return WireEngine(provider, ai=default_model())
 
 
 def trade_engine(provider: TradeProvider) -> TradeEngine:

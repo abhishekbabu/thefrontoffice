@@ -16,6 +16,8 @@ export type Competition = {
   platform: string;
   label: string;
   supports_trades: boolean;
+  /** Whether its free agents can be judged — offered only where they can. */
+  judges_wire: boolean;
   /** Whether the credentials this competition needs are set. */
   configured: boolean;
   requires: string;
@@ -121,6 +123,15 @@ export type ScoutReport = {
   /** The to-do items as computed, each carrying its verdict. Filled by the
       application, never by the model; empty where none are computed. */
   tasks: Action[];
+};
+
+/** The model's call on one available player, shown on his row. */
+export type PlayerCall = {
+  player_id: string;
+  decision: "ADD" | "WATCH" | "PASS";
+  /** For ADD, who on the roster makes way. */
+  drop: string;
+  reason: string;
 };
 
 /** What a conversation is about: one to-do item by its key, or one player by id. */
@@ -337,6 +348,8 @@ export const api = {
   summary: (competition: string, league: string) => request<Summary>(`/api/${competition}/leagues/${league}/summary`),
   schedule: (competition: string, league: string) =>
     request<LeagueSchedule>(`/api/${competition}/leagues/${league}/schedule`),
+  judgeFreeAgents: (competition: string, league: string, playerIds: string[]) =>
+    post<PlayerCall[]>(`/api/${competition}/leagues/${league}/free-agents/judge`, { player_ids: playerIds }),
   freeAgents: (competition: string, league: string, query: FreeAgentQuery = {}) => {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) {

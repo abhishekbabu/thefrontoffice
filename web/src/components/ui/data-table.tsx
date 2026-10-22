@@ -23,8 +23,15 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
   onSelect,
   sort,
   onSort,
+  detail,
 }: {
   rows: Row[];
+  /**
+   * A full-width line under a row, where there is one. For a note about the
+   * row that a cell is too narrow to hold — the model's call on a player —
+   * kept beside the row it is about rather than in a list of its own.
+   */
+  detail?: (row: Row) => React.ReactNode;
   /** Columns whose values are figures, so they align right like numbers. */
   numeric?: Set<string>;
   /** Per-column rendering, for the few that are more than text. */
@@ -150,7 +157,9 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
         </tr>
       </thead>
       <m.tbody variants={list} initial="hidden" animate="shown">
-        {rows.map((row) => (
+        {rows.flatMap((row) => {
+          const note = detail?.(row);
+          return [
           // A motion row rather than a wrapped one: anything between <tbody>
           // and <tr> breaks the table's own layout.
           <m.tr
@@ -169,8 +178,18 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
                 </Td>
               );
             })}
-          </m.tr>
-        ))}
+          </m.tr>,
+            ...(note
+              ? [
+                  <tr key={`${row.player_id}-detail`}>
+                    <td colSpan={columns.length} className="border-b border-border px-4 pb-3 pt-0">
+                      {note}
+                    </td>
+                  </tr>,
+                ]
+              : []),
+          ];
+        })}
       </m.tbody>
     </Table>
   );

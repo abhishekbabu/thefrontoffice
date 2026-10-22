@@ -122,7 +122,13 @@ page loaded is said to be gone rather than answered about.
 ![Free agents](docs/screenshots/free-agents.png)
 
 **Free agents** — everyone available, ranked by projection, searchable and
-filterable by position. **League** covers the season: your results so far, the
+filterable by position. On NFL a **Fits** column compares each with the weakest
+starter he could replace — "+3.2 over Bernard", or "−0.4 vs Cleveland Browns" in
+a deep league where nobody on the wire outprojects a starter — and sorts the
+whole pool by it, so the closest replacements come first. With a model, **Judge**
+puts the first ten rows on screen to it: each gets a call — *add* (and who to
+drop), *watch* or *pass* — on a line under its row, grounded in the role,
+matchup and news its prompt line carries. **League** covers the season: your results so far, the
 table, every roster, the fixture list and the transaction feed. **My team** is
 your squad in more depth, and any row opens a player.
 

@@ -77,7 +77,23 @@ Return the evaluation in the required structured form. Field guidance:
 """
 
 
-NFL_SCOUT_PROMPT = """
+# How every NFL prompt's player lines read. Shared, because the lines are
+# built by one function for every prompt, and two explanations of one format
+# would drift apart.
+NFL_READING_PLAYER_LINES = """READING THE PLAYER LINES:
+- Under a player, where games have been played, is what the projection rests on. The matchup:
+  how many points a game this week's opponent has given up to the position, ranked 1 (the most,
+  the softest) to 32. The role, over his last games: share of the offense's snaps, carries,
+  targets and share of the team's targets, and points.
+- Weigh role and matchup over the projection itself. A projection is a single number that hides
+  why; a rising target share or a soft defense is the why.
+- Never recommend a DROP off one poor game, or of a player whose role grows while a teammate
+  ahead of him is out. A drop is the least reversible move, so it needs the strongest case.
+- A "news" line under a player is a recent headline about him, dated, from his own club's feed."""
+
+
+NFL_SCOUT_PROMPT = (
+    """
 You are an elite NFL fantasy football manager.
 Produce a concise, high-impact weekly report.
 
@@ -87,15 +103,9 @@ LEAGUE RULES:
 - Winning means out-scoring one opponent this week. Chasing season-long upside at the cost of this
   week's points is only correct when the roster is already comfortably ahead.
 
-READING THE PLAYER LINES:
-- Under a player, where games have been played, is what the projection rests on. The matchup:
-  how many points a game this week's opponent has given up to the position, ranked 1 (the most,
-  the softest) to 32. The role, over his last games: share of the offense's snaps, carries,
-  targets and share of the team's targets, and points.
-- Weigh role and matchup over the projection itself. A projection is a single number that hides
-  why; a rising target share or a soft defense is the why.
-- Never recommend a DROP off one poor game, or of a player whose role grows while a teammate
-  ahead of him is out. A drop is the least reversible move, so it needs the strongest case.
+"""
+    + NFL_READING_PLAYER_LINES
+    + """
 
 {situation}
 
@@ -137,6 +147,7 @@ Return your analysis in the required structured form. Field guidance:
   (e.g. "14.2 proj pts, +4.1 over Smith"). Pair every ADD with the player it `replaces`.
 - Be specific and tactical. Do not restate the inputs.
 """
+)
 
 
 NFL_TRADE_PROMPT = """
@@ -235,3 +246,38 @@ Return your analysis in the required structured form. Field guidance:
   TRANSFER with the player it `replaces`.
 - Be specific and tactical. Do not restate the inputs.
 """
+
+
+NFL_WIRE_PROMPT = (
+    """
+You are an elite NFL fantasy football manager deciding which available players are worth a roster spot.
+
+LEAGUE RULES:
+- Scoring: {scoring_label}. Every projection below is in that currency.
+- A claim costs a roster spot, so every ADD names who on the roster makes way.
+
+"""
+    + NFL_READING_PLAYER_LINES
+    + """
+- "Fits" compares an available player with the weakest starter he could replace: the gap in
+  projected points this week, positive where he would start.
+
+{situation}
+
+{constraints}
+
+YOUR ROSTER (who could make way):
+{roster_str}
+
+THE AVAILABLE PLAYERS TO JUDGE, each with its id:
+{candidates_str}
+
+YOUR TASK:
+Give exactly one call per available player above, by id. ADD to claim him now, naming in `drop`
+who on the roster makes way. WATCH when a change in his situation — a teammate's injury, a role
+trending up — would make him worth it. PASS otherwise. Ground each reason in role, matchup or
+news, not the projection alone.
+
+Return the calls in the required structured form.
+"""
+)

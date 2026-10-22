@@ -48,7 +48,10 @@ repos:
             # The whole tree rather than the staged files: it takes under two
             # seconds, and the config lives in web/ so a path relative to the
             # repo root would not resolve against it.
-            entry: pnpm --dir web run lint
+            # Through just, which runs it from inside web/: started from the
+            # repo root, corepack ignores web/'s pnpm pin and a newer default
+            # refuses to run there at all.
+            entry: just lint-web
             pass_filenames: false
             files: ^web/(src/.*\.tsx?|eslint\.config\.js|package\.json)$
 

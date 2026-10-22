@@ -125,3 +125,18 @@ def current_lineup(slots: list[str], starter_ids: list[str], players: list[Weekl
             player = None
         filled.append(LineupSlot(slot=slot, player=player))
     return filled
+
+
+def best_upgrade(lineup: list[LineupSlot], candidate: WeeklyProjection) -> tuple[float, LineupSlot] | None:
+    """What `candidate` would add starting in place of the weakest starter he can replace.
+
+    The slot he can fill with the least in it, and how much more he projects
+    than whoever — or nobody — is there. None where he can fill no slot.
+    Projections only: this ranks a list, and the judgment of whether to act
+    on it is the model's, made with the role and the matchup beside it.
+    """
+    eligible = [slot for slot in lineup if candidate.position in eligible_positions(slot.slot)]
+    if not eligible:
+        return None
+    weakest = min(eligible, key=lambda slot: slot.points)
+    return round(candidate.points - weakest.points, 2), weakest

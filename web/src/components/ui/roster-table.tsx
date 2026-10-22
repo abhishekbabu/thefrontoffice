@@ -6,6 +6,7 @@ import type { PlayerCard } from "@/lib/api";
 
 /** Columns whose values are figures, so they align right like numbers. */
 const NUMERIC = new Set([
+  "Fits",
   "xPts",
   "Price",
   "Proj",
@@ -68,8 +69,11 @@ export function RosterTable({
   onOpen,
   sort,
   onSort,
+  detail,
 }: {
   players: PlayerCard[];
+  /** A line under a row, for what a caller has to say about that player. */
+  detail?: (player: PlayerCard) => React.ReactNode;
   empty: { title: string; detail?: string };
   onOpen?: (playerId: string) => void;
   /** Supplied by a caller that sorts server-side; omitted to sort in place. */
@@ -91,6 +95,7 @@ export function RosterTable({
       sort={active}
       onSort={onSort ?? setLocal}
       onSelect={onOpen && ((row) => onOpen(row.player_id))}
+      detail={detail}
       render={(column, value) =>
         column === "Status" && value ? (
           <Badge variant={statusTone(value)} appearance="status">
