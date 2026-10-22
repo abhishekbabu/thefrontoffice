@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from thefrontoffice.application.asking import AskEngine
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.config.settings import settings
@@ -242,6 +243,13 @@ def scout_engine(provider: CompetitionProvider) -> ScoutEngine:
     from thefrontoffice.adapters.outbound.llm.judgments import DiskJudgmentStore
 
     return ScoutEngine(provider, ai=default_model(), judgments=DiskJudgmentStore())
+
+
+def ask_engine(provider: CompetitionProvider) -> AskEngine:
+    """Questions about one thing on screen, wired like the scouting engine."""
+    from thefrontoffice.adapters.outbound.llm.judgments import DiskJudgmentStore
+
+    return AskEngine(provider, ai=default_model(), judgments=DiskJudgmentStore())
 
 
 def trade_engine(provider: TradeProvider) -> TradeEngine:

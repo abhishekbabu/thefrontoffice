@@ -1,5 +1,9 @@
+import { useState } from "react";
 import type * as React from "react";
+import { MessageCircleQuestion } from "lucide-react";
 import type { Action, Move, MoveAction, TaskVerdict, Urgency } from "@/lib/api";
+import { Thread } from "@/components/ui/chat";
+import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { decisionTone } from "@/lib/tone";
@@ -206,6 +210,42 @@ function VerdictLine({ verdict, stale }: { verdict: TaskVerdict; stale: boolean 
         <span className="ml-auto shrink-0 font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
           stale — re-judge
         </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * "Why?" under a to-do item: a conversation about that item alone.
+ *
+ * Mounted on first open and only hidden after, so closing it and opening it
+ * again shows the same conversation instead of a blank one.
+ */
+export function WhyThread({ competition, league, action }: { competition: string; league: string; action: Action }) {
+  const [opened, setOpened] = useState(false);
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="flex flex-col gap-2">
+      <IconButton
+        label={shown ? "Hide the conversation" : "Why this move?"}
+        icon={<MessageCircleQuestion />}
+        onClick={() => {
+          setOpened(true);
+          setShown((s) => !s);
+        }}
+        aria-expanded={shown}
+      />
+      {opened && (
+        <div className={cn("rounded-md border border-border p-3", !shown && "hidden")}>
+          <Thread
+            competition={competition}
+            league={league}
+            subject={{ kind: "task", key: action.key }}
+            opener="Why this move — and what would change your mind?"
+            placeholder="Ask about this move"
+            bare
+          />
+        </div>
       )}
     </div>
   );

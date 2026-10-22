@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { api, type Analysis, type Judgment, type League, type Competition, type Summary } from "@/lib/api";
-import { ActionList } from "@/components/ui/actions";
+import { ActionList, WhyThread } from "@/components/ui/actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -68,6 +68,14 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
               judged={report?.tasks}
               suggested={report?.moves}
               onOpen={openPlayer}
+              footer={
+                ai
+                  ? (action) =>
+                      action.key && (
+                        <WhyThread competition={competition.key} league={league.league_id} action={action} />
+                      )
+                  : undefined
+              }
               aside={
                 // Only where a model is configured: a control that cannot
                 // work would be an offer and then a refusal.

@@ -123,6 +123,9 @@ export type ScoutReport = {
   tasks: Action[];
 };
 
+/** What a conversation is about: one to-do item by its key, or one player by id. */
+export type Subject = { kind: "task" | "player"; key: string };
+
 /** The model's last word on a league, kept so a reload still shows it. */
 export type Judgment = { report: ScoutReport; judged_at: string; inputs: string };
 
@@ -345,6 +348,8 @@ export const api = {
   teamRoster: (competition: string, league: string, team: string) =>
     request<PlayerCard[]>(`/api/${competition}/leagues/${league}/teams/${encodeURIComponent(team)}/roster`),
   scout: (competition: string, league: string) => post<Analysis>(`/api/${competition}/leagues/${league}/scout`, {}),
+  thread: (competition: string, league: string, subject: Subject) =>
+    post<{ chat_id: string }>(`/api/${competition}/leagues/${league}/threads`, subject),
   judgment: (competition: string, league: string) =>
     request<Judgment | null>(`/api/${competition}/leagues/${league}/judgment`),
   trade: (competition: string, league: string, text: string) =>

@@ -110,6 +110,15 @@ list itself is the application's: the model cannot add, drop or restate an
 item, and a verdict naming no listed item is discarded. The Report page shows
 the same judgment at length.
 
+Questions are asked of the thing they are about. **Why?** under any to-do item
+opens a conversation inline, seeded with that item alone — the move, its reason
+and evidence, any earlier verdict, the roster and the week's situation — and
+asks why, and what would change the call. The player drawer ends with **Ask
+about** that player, seeded with everything the drawer shows. Both are smaller
+than the report's whole-week context, so cheaper on every resent turn, and both
+go through the same failover as everything else. An item settled since the
+page loaded is said to be gone rather than answered about.
+
 ![Free agents](docs/screenshots/free-agents.png)
 
 **Free agents** — everyone available, ranked by projection, searchable and

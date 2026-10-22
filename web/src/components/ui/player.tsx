@@ -7,6 +7,7 @@ import { useLoadedImage } from "@/lib/useLoadedImage";
 import { IconButton } from "@/components/ui/icon-button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Loading } from "@/components/ui/state";
+import { Thread } from "@/components/ui/chat";
 import {
   NOT_APPLICABLE,
   api,
@@ -215,6 +216,9 @@ export function PlayerPanel({
   if (playerId) last.current = playerId;
   const shown = playerId ?? last.current;
 
+  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
+  const ai = capabilities.data?.ai ?? false;
+
   const player = useQuery<PlayerDetail, Error>({
     queryKey: ["player", competition, league, shown],
     queryFn: () => api.player(competition, league, shown),
@@ -331,6 +335,21 @@ export function PlayerPanel({
                 </m.section>
               ))}
             </m.div>
+          )}
+
+          {/* Last, under everything it can be asked about. Keyed by player, so
+              opening someone else starts their conversation, not his. */}
+          {ai && player.data && (
+            <div className="px-5 pb-6">
+              <Thread
+                key={player.data.player_id}
+                competition={competition}
+                league={league}
+                subject={{ kind: "player", key: player.data.player_id }}
+                title={`Ask about ${player.data.name}`}
+                placeholder="Is he the lead back now?"
+              />
+            </div>
           )}
         </m.aside>
       </m.div>

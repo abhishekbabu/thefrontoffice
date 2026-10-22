@@ -9,7 +9,7 @@ import hashlib
 import logging
 from datetime import datetime, timezone
 
-from thefrontoffice.domain.models import Action, Judgment, ScoutReport, Stat, TaskVerdict, task_id
+from thefrontoffice.domain.models import Action, Judgment, ScoutReport, Stat, TaskVerdict, judgment_scope, task_id
 from thefrontoffice.domain.ports import AnalysisModel, ChatSession, CompetitionProvider, JudgmentStore
 
 logger = logging.getLogger(__name__)
@@ -29,14 +29,9 @@ class ScoutEngine:
         self.ai = ai
         self.judgments = judgments
 
-    @property
-    def _scope(self) -> str:
-        """Whose judgment this is: the competition on its platform, then the league."""
-        return self.provider.label
-
     def latest(self, league_id: str) -> Judgment | None:
         """The last judgment of this league, without asking anything new."""
-        return self.judgments.latest(f"{self._scope}:{league_id}")
+        return self.judgments.latest(judgment_scope(self.provider.label, league_id))
 
     def start_analysis(self, league_id: str) -> tuple[ScoutReport, ChatSession]:
         """Produce a validated report and open a chat seeded with it.
@@ -66,7 +61,7 @@ class ScoutEngine:
         Asking again about an unchanged week spends a call for the same answer,
         and on a free tier a call is the scarce thing.
         """
-        scope = f"{self._scope}:{league_id}"
+        scope = judgment_scope(self.provider.label, league_id)
         inputs = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         stored = self.judgments.latest(scope)
         if stored is not None and stored.inputs == inputs:

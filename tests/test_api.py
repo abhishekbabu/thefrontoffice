@@ -271,6 +271,50 @@ def test_the_last_judgment_is_shown_without_running_the_model(monkeypatch: pytes
     assert body["judged_at"]
 
 
+def test_a_thread_about_one_thing_opens_and_is_asked_through_the_chat(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened: list[Any] = []
+
+    class _Asker:
+        def open(self, league_id: str, subject: Any) -> Any:
+            opened.append((league_id, subject.kind, subject.key))
+            return FakeChat()
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider())
+    monkeypatch.setattr(web, "ask_engine", lambda p: _Asker())
+    client = TestClient(web.create_app())
+
+    chat_id = client.post("/api/premier-league/leagues/900/threads", json={"kind": "task", "key": "swap:a:b"}).json()[
+        "chat_id"
+    ]
+    answer = client.post(f"/api/chat/{chat_id}", json={"message": "Why?"}).json()["answer"]
+
+    assert opened == [("900", "task", "swap:a:b")]
+    assert answer
+
+
+def test_a_thread_about_an_item_since_settled_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
+    from thefrontoffice.domain.errors import SubjectGoneError
+
+    class _Asker:
+        def open(self, league_id: str, subject: Any) -> Any:
+            raise SubjectGoneError()
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider())
+    monkeypatch.setattr(web, "ask_engine", lambda p: _Asker())
+
+    response = TestClient(web.create_app()).post(
+        "/api/premier-league/leagues/900/threads", json={"kind": "task", "key": "gone"}
+    )
+
+    assert response.json()["code"] == SubjectGoneError.code
+
+
+def test_a_thread_must_name_what_it_is_about(client: TestClient) -> None:
+    response = client.post("/api/premier-league/leagues/900/threads", json={"kind": "league", "key": "x"})
+
+    assert response.status_code == 422
+
+
 def test_an_empty_follow_up_is_rejected(client: TestClient) -> None:
     chat_id = client.post("/api/premier-league/leagues/900/scout").json()["chat_id"]
     assert client.post(f"/api/chat/{chat_id}", json={"message": ""}).status_code == 422
