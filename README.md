@@ -85,6 +85,15 @@ behind them, the trade deadline. Each names the fix — the bench player who
 covers, or the best free agent who can play when nobody does — and its deadline
 where Sleeper publishes one: a game's day, never a guessed kickoff or waiver time.
 
+Every player a move involves carries what his projection rests on, computed
+from Sleeper's per-game stat lines for the weeks already finished: his
+**matchup** — how many points a game this week's opponent has given up to his
+position, ranked against every defense — and his **role** over his last three
+games: snap share, carries, targets and share of the team's targets. The
+player drawer shows the same under *Role and matchup*, and the model reads it
+on every player line, told to weigh it over the projection and hardest before
+a drop.
+
 ![Free agents](docs/screenshots/free-agents.png)
 
 **Free agents** — everyone available, ranked by projection, searchable and

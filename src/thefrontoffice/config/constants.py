@@ -87,6 +87,16 @@ LEAGUE RULES:
 - Winning means out-scoring one opponent this week. Chasing season-long upside at the cost of this
   week's points is only correct when the roster is already comfortably ahead.
 
+READING THE PLAYER LINES:
+- Under a player, where games have been played, is what the projection rests on. The matchup:
+  how many points a game this week's opponent has given up to the position, ranked 1 (the most,
+  the softest) to 32. The role, over his last games: share of the offense's snaps, carries,
+  targets and share of the team's targets, and points.
+- Weigh role and matchup over the projection itself. A projection is a single number that hides
+  why; a rising target share or a soft defense is the why.
+- Never recommend a DROP off one poor game, or of a player whose role grows while a teammate
+  ahead of him is out. A drop is the least reversible move, so it needs the strongest case.
+
 {situation}
 
 {constraints}
@@ -110,7 +120,7 @@ TRENDING ADDS ACROSS SLEEPER (crowd signal, often ahead of projections):
 
 YOUR TASK:
 1. Read the matchup: are we favored or chasing, and by how much?
-2. Recommend START/BENCH moves where the projection gap is real and you believe it.
+2. Recommend START/BENCH moves where the projection gap is real and the role and matchup support it.
 3. Recommend ADD moves from the available list, each paired with a DROP from the bench.
 4. Skip any move you would not actually make. Three good moves beat six padded ones.
 
@@ -151,7 +161,9 @@ projection above is in that currency. Judge this trade on:
 3. **Byes and availability**: a bye week or an injury designation is a zero, not a reduced
    score. Check whether the incoming side leaves a hole in a given week.
 4. **Rest of season**: weigh the remaining schedule, especially the fantasy playoff weeks.
-5. **Roster awareness**: do not recommend acquiring a player already on this roster.
+5. **Role over projection**: where a player line carries snap share, targets and carries, judge
+   him on that usage. A projection hides whether a role is growing or shrinking.
+6. **Roster awareness**: do not recommend acquiring a player already on this roster.
 
 Return the evaluation in the required structured form. Field guidance:
 - gains / losses: short labels in this league's own terms, e.g. ['RB depth', 'WR ceiling'].

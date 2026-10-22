@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
-from thefrontoffice.adapters.outbound.competitions.nfl import actions, league, prompt
+from thefrontoffice.adapters.outbound.competitions.nfl import actions, evidence, league, prompt
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupSlot,
     current_lineup,
@@ -33,6 +33,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL, SleeperClient
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
+    FANTASY_POSITIONS,
     PlayerMeta,
     ScheduledGame,
     SeasonStats,
@@ -137,10 +138,6 @@ def _split_value(key: str, value: float | None) -> str:
 # flex is worth around ten.
 HAUL_POINTS = 20.0
 BLANK_POINTS = 5.0
-
-# What a fantasy league actually scores. The catalog carries every practice
-# squad body in the league, and none of them are a waiver decision.
-FANTASY_POSITIONS = frozenset({"QB", "RB", "WR", "TE", "K", "DEF"})
 
 
 class SleeperNFLProvider:
@@ -316,6 +313,25 @@ class SleeperNFLProvider:
         return f"Not projected to feature in week {week}"
 
     @staticmethod
+    def _role_and_matchup(projection: WeeklyProjection, state: Week) -> StatGroup | None:
+        """What sits behind the projection: the defense he faces, and how he has been used."""
+        stats = []
+        if matchup := state.evidence.matchup(projection):
+            stats.append(Stat(label="Matchup", value=matchup.describe(), tone=matchup.tone))
+        if role := state.evidence.roles.get(projection.player_id):
+            games = f"last {role.games}" if role.games > 1 else "last game"
+            if role.snap_share is not None:
+                stats.append(Stat(label=f"Snap share, {games}", value=f"{role.snap_share:.0%}"))
+            if role.position in evidence.CARRY_POSITIONS:
+                stats.append(Stat(label="Carries a game", value=f"{role.carries:.1f}"))
+            if role.position in evidence.TARGET_POSITIONS:
+                stats.append(Stat(label="Targets a game", value=f"{role.targets:.1f}"))
+                if role.target_share is not None:
+                    stats.append(Stat(label="Target share", value=f"{role.target_share:.0%}"))
+            stats.append(Stat(label=f"Points a game, {games}", value=f"{role.points:.1f}"))
+        return StatGroup(title="Role and matchup", stats=stats) if stats else None
+
+    @staticmethod
     def _team_name(team: str, players: dict[str, PlayerMeta]) -> str:
         """A club in full, at no extra request.
 
@@ -369,6 +385,8 @@ class SleeperNFLProvider:
         ]
         if projection and projection.stats:
             groups.append(StatGroup(title="Projected line", stats=_projection_lines(projection.stats)))
+        if projection and (context := self._role_and_matchup(projection, state)):
+            groups.append(context)
         groups.append(
             StatGroup(
                 title="Player",
@@ -417,8 +435,9 @@ class SleeperNFLProvider:
         giving, receiving = resolve_sides(proposal, index.lookup)
 
         rostered = [projection_for(pid, projections, players) for pid in roster.player_ids]
+        known = self._evidence(season, week, league.scoring_format, state.is_regular_season)
         roster_lines = {
-            p.name: prompt.player_line(p) for p in sorted((p for p in rostered if p), key=lambda x: -x.points)
+            p.name: prompt.player_line(p, known) for p in sorted((p for p in rostered if p), key=lambda x: -x.points)
         }
 
         situation, _ = prompt.matchup(self.client, league, roster, league_id, week)
@@ -428,8 +447,8 @@ class SleeperNFLProvider:
             "insurance or as a future starter."
         )
         text = NFL_TRADE_PROMPT.format(
-            giving_str="".join(prompt.player_line(p) for p in giving),
-            receiving_str="".join(prompt.player_line(p) for p in receiving),
+            giving_str="".join(prompt.player_line(p, known) for p in giving),
+            receiving_str="".join(prompt.player_line(p, known) for p in receiving),
             situation=situation,
             constraints=constraints,
             roster_str="".join(roster_lines.values()),
@@ -486,6 +505,7 @@ class SleeperNFLProvider:
         best_points = round(lineup_points(best), 1)
 
         return Week(
+            evidence=self._evidence(season, week, league.scoring_format, state.is_regular_season),
             is_regular_season=state.is_regular_season,
             league=league,
             roster=roster,
@@ -501,6 +521,24 @@ class SleeperNFLProvider:
             best_points=best_points,
             on_bench=round(best_points - current_points, 1),
         )
+
+    def _evidence(self, season: str, week: int, scoring: str, started: bool) -> evidence.Evidence:
+        """Roles and matchups from every week finished so far.
+
+        The current week is left out even when it is part played: a player
+        whose game is on Monday has a line of noughts until then, and a
+        role computed from it says he has none.
+        """
+        played = list(range(1, week)) if started else []
+        if not played:
+            return evidence.Evidence()
+        try:
+            lines = self.client.get_nfl_game_lines(season, played)
+        except SleeperAPIError as e:
+            # Enrichment: a week with no evidence is the week as it was before.
+            logger.warning(f"Continuing without role and matchup evidence: {e}")
+            return evidence.Evidence()
+        return evidence.gather(lines, scoring)
 
     def summary(self, league_id: str) -> Summary:
         """The week as it stands: both lineups, the swaps, the byes. No model."""

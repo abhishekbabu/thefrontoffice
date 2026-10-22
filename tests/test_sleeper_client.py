@@ -567,3 +567,39 @@ def test_the_basketball_schedule_nests_its_clubs_one_level_deeper(tmp_path: Path
     game = client.get_nba_schedule("2026")[0]
 
     assert (game.home, game.away, game.status) == ("DET", "BOS", "pre_game")
+
+
+# ── football game lines ─────────────────────────────────────────────────
+
+
+def _nfl_row(pid: str, position: str, opponent: str = "LV", **stats: float) -> dict[str, Any]:
+    return {"player_id": pid, "team": "KC", "opponent": opponent, "player": {"position": position}, "stats": stats}
+
+
+NFL_LINES = [
+    _nfl_row("wr1", "WR", off_snp=50, tm_off_snp=60, rec_tgt=8, pts_ppr=14.5, rec_yd=88, h1_rec_yd=40),
+    _nfl_row("KC", "DEF", pts_ppr=9),
+    _nfl_row("TEAM_KC", "TEAM", pts_ppr=0),
+    _nfl_row("lb1", "LB", idp_tkl=7),
+    _nfl_row("wr2", "WR", opponent="", off_snp=10),
+]
+
+
+def test_game_lines_keep_fantasy_players_with_the_usage_behind_their_points(tmp_path: Path) -> None:
+    client, _ = _client({"/stats/nfl/2026/2": NFL_LINES}, tmp_path)
+
+    lines = {line.player_id: line for line in client.get_nfl_game_lines("2026", [2])}
+
+    # A team total, a linebacker and a row with no game are nobody's starter.
+    assert set(lines) == {"wr1", "KC"}
+    wr = lines["wr1"]
+    assert (wr.week, wr.team, wr.opponent, wr.position) == (2, "KC", "LV", "WR")
+    assert wr.stats == {"off_snp": 50.0, "tm_off_snp": 60.0, "rec_tgt": 8.0, "pts_ppr": 14.5}
+
+
+def test_a_week_that_will_not_load_leaves_a_gap_rather_than_failing(tmp_path: Path) -> None:
+    client, _ = _client({"/stats/nfl/2026/2": NFL_LINES}, tmp_path)
+
+    lines = client.get_nfl_game_lines("2026", [1, 2])
+
+    assert {line.week for line in lines} == {2}

@@ -19,6 +19,7 @@ from reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
+    NFLGameLine,
     PlayerMeta,
     ScheduledGame,
     SeasonState,
@@ -155,7 +156,12 @@ class FakeSleeper:
         schedule_error: Exception | None = None,
         transactions: dict[int, list[Transaction]] | None = None,
         transactions_error: Exception | None = None,
+        game_lines: list[NFLGameLine] | None = None,
+        game_lines_error: Exception | None = None,
     ) -> None:
+        self.game_lines = game_lines if game_lines is not None else []
+        self.game_lines_error = game_lines_error
+        self.game_line_weeks: list[int] = []
         self.season_stats = season_stats if season_stats is not None else {}
         self.season_stats_error = season_stats_error
         self.season_schedule = season_schedule if season_schedule is not None else []
@@ -205,6 +211,12 @@ class FakeSleeper:
         if self.transactions_error:
             raise self.transactions_error
         return self.transactions.get(week, [])
+
+    def get_nfl_game_lines(self, season: str, weeks: list[int]) -> list[NFLGameLine]:
+        self.game_line_weeks = weeks
+        if self.game_lines_error:
+            raise self.game_lines_error
+        return [line for line in self.game_lines if line.week in weeks]
 
     def get_season_stats(self, season: str, sport: str = "nfl") -> dict[str, SeasonStats]:
         if self.season_stats_error:

@@ -11,6 +11,7 @@ twice for one report.
 
 import logging
 
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.week import SCORING_LABELS, Week
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -36,16 +37,18 @@ def build(client: SleeperClient, state: Week, league_id: str) -> CompetitionCont
     lineup, changes = state.lineup, state.changes
 
     slots = league.starting_slots
-    roster_lines = {p.name: player_line(p) for p in sorted(projected, key=lambda x: -x.points)}
+    evidence = state.evidence
+    roster_lines = {p.name: player_line(p, evidence) for p in sorted(projected, key=lambda x: -x.points)}
     starter_ids = state.starter_ids
     lineup_str = "".join(
         f"- {slot.slot}: {slot.player.name} ({slot.player.position}, {slot.player.team}) "
         f"{slot.player.points:.1f} pts vs {slot.player.opponent or 'TBD'}\n"
+        + (f"  {behind}\n" if (behind := evidence.describe(slot.player)) else "")
         if slot.player
         else f"- {slot.slot}: (empty)\n"
         for slot in lineup
     )
-    bench_str = "".join(player_line(p) for p in projected if p.player_id not in starter_ids) or "- (none)\n"
+    bench_str = "".join(player_line(p, evidence) for p in projected if p.player_id not in starter_ids) or "- (none)\n"
     changes_str = (
         "".join(
             f"- START {c.start.name} ({c.start.position}) in {c.slot} for "
@@ -56,7 +59,7 @@ def build(client: SleeperClient, state: Week, league_id: str) -> CompetitionCont
     )
 
     available = _available_players(client, league_id, projections, players)
-    available_lines = {p.name: player_line(p) for p in available}
+    available_lines = {p.name: player_line(p, evidence) for p in available}
     trending_str = _trending(client, projections, players)
 
     situation, matchup_stats = matchup(client, league, roster, league_id, week)
@@ -115,10 +118,14 @@ def headline(
     return stats
 
 
-def player_line(p: WeeklyProjection) -> str:
+def player_line(p: WeeklyProjection, evidence: Evidence | None = None) -> str:
+    """One player as the model reads him: the projection, then what it rests on."""
     injury = f" [{p.injury_status}]" if p.is_questionable else ""
     opponent = f" vs {p.opponent}" if p.opponent else " (no game)"
-    return f"- {p.name} ({p.position}, {p.team}){injury}{opponent}: {p.points:.1f} proj pts\n"
+    behind = evidence.describe(p) if evidence else ""
+    return f"- {p.name} ({p.position}, {p.team}){injury}{opponent}: {p.points:.1f} proj pts\n" + (
+        f"  {behind}\n" if behind else ""
+    )
 
 
 def _available_players(

@@ -284,6 +284,13 @@ class Action(BaseModel):
         ),
     )
     player_id: str = Field(default="", description="The player the move turns on, to open their detail.")
+    evidence: list[Stat] = Field(
+        default_factory=list,
+        description=(
+            "What the move rests on beyond the projection, one line per player it involves — "
+            "the matchup and the role behind the number. Empty where nothing has been played yet."
+        ),
+    )
 
 
 class Summary(BaseModel):

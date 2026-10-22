@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 from test_nfl_provider import DEFAULT_PROJECTIONS, MY_ID, FakeSleeper, _proj, _provider
 
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import SleeperRoster
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NFLGameLine, SleeperRoster
 from thefrontoffice.domain.errors import PlayerNotFoundError
 from thefrontoffice.domain.models import TradeProposal
 
@@ -97,3 +97,18 @@ def test_the_waiver_pool_is_not_pulled_for_a_trade() -> None:
     """Pricing a named trade does not need the whole free-agent list."""
     context = _context(["Bad RB"], ["Trade Target"])
     assert context.candidate_lines == {}
+
+
+def test_both_sides_of_a_trade_are_priced_on_their_role_too() -> None:
+    line = NFLGameLine(
+        player_id="wr7",
+        week=2,
+        team="KC",
+        opponent="LV",
+        position="WR",
+        stats={"off_snp": 54, "tm_off_snp": 60, "rec_tgt": 9, "pts_ppr": 19},
+    )
+    context = _context(["Bad RB"], ["Trade Target"], client=_client(game_lines=[line]))
+
+    assert "last game: 90% of snaps, 9.0 targets" in context.prompt
+    assert "Role over projection" in context.prompt

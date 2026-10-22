@@ -21,12 +21,15 @@ from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
+    FANTASY_POSITIONS,
     NBA_STAT_KEYS,
+    NFL_LINE_KEYS,
     SEASON_STAT_KEYS,
     SPLIT_KEYS,
     TEAM_ROW_PREFIX,
     GameProjection,
     NBAGameLog,
+    NFLGameLine,
     PlayerMeta,
     ScheduledGame,
     ScoringFormat,
@@ -75,6 +78,7 @@ SEASON_STATS_TTL = timedelta(hours=12)
 SEASON_SCHEDULE_TTL = timedelta(hours=12)
 # A finished game's line never changes; only the newest week is still moving.
 NBA_LOGS_TTL = timedelta(hours=3)
+NFL_LINES_TTL = timedelta(hours=3)
 TRANSACTIONS_TTL = timedelta(minutes=15)
 
 RETRY_MAX_ATTEMPTS = 3
@@ -363,6 +367,42 @@ class SleeperClient:
         for runs in logs.values():
             runs.sort(key=lambda g: g.date, reverse=True)
         return logs
+
+    def get_nfl_game_lines(self, season: str, weeks: list[int]) -> list[NFLGameLine]:
+        """Every fantasy-relevant player's line from each game in `weeks`.
+
+        The raw material for both a player's role — snaps, targets, carries —
+        and what each defense gives up to each position, which no endpoint
+        publishes directly. Linemen, defensive players and team totals ride in
+        the same feed and are dropped: none of them is anybody's starter.
+        """
+        urls = {f"nfl_lines_{season}_{w}": f"{STATS_URL}/{NFL}/{season}/{w}?season_type=regular" for w in weeks}
+        raw = self._api.cached_many(urls, NFL_LINES_TTL)
+
+        lines: list[NFLGameLine] = []
+        for week in weeks:
+            for row in raw.get(f"nfl_lines_{season}_{week}") or []:
+                if not isinstance(row, dict):
+                    continue
+                player_id = str(row.get("player_id") or "")
+                position = str((row.get("player") or {}).get("position") or "")
+                opponent = str(row.get("opponent") or "")
+                if not player_id or player_id.startswith(TEAM_ROW_PREFIX) or position not in FANTASY_POSITIONS:
+                    continue
+                if not opponent:
+                    continue
+                stats = row.get("stats") or {}
+                lines.append(
+                    NFLGameLine(
+                        player_id=player_id,
+                        week=week,
+                        team=str(row.get("team") or ""),
+                        opponent=opponent,
+                        position=position,
+                        stats={k: float(v) for k in NFL_LINE_KEYS if (v := stats.get(k)) is not None},
+                    )
+                )
+        return lines
 
     def get_nba_schedule(self, season: str) -> list[ScheduledGame]:
         """The basketball season's games, in the same shape football uses.
