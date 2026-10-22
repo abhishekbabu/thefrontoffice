@@ -92,7 +92,9 @@ position, ranked against every defense — and his **role** over his last three
 games: snap share, carries, targets and share of the team's targets. The
 player drawer shows the same under *Role and matchup*, and the model reads it
 on every player line, told to weigh it over the projection and hardest before
-a drop.
+a drop. Beside it sits each player's **latest news** from the last ten days, from
+his own club's ESPN feed — matched on ESPN's tag or his full name, never a
+surname, and never across clubs — in the row, the drawer and the prompt.
 
 With a model configured, the list links to a **second opinion**: the report
 judges each to-do item by its id — *agree*, *overrule* or *wait for news* — and
@@ -147,9 +149,9 @@ fails at startup naming the field, not mid-report.
 | `LOGFIRE_CAPTURE_PROMPTS` | no | `false` | Sends prompt and completion **text**. Off deliberately — a prompt carries your roster and leagues |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` \| `CRITICAL` |
 
-`YAHOO_CACHE_DIR`, `SLEEPER_CACHE_DIR` and `FPL_CACHE_DIR` relocate the
-per-platform response caches; the defaults are `.yahoo_cache`, `.sleeper_cache`
-and `.fpl_cache`.
+`YAHOO_CACHE_DIR`, `SLEEPER_CACHE_DIR`, `FPL_CACHE_DIR` and `ESPN_CACHE_DIR`
+relocate the per-platform response caches; the defaults are `.yahoo_cache`,
+`.sleeper_cache`, `.fpl_cache` and `.espn_cache`.
 
 **On a second machine**, copy `.env` across by hand — the four secrets belong in
 a password manager, not in this public repo — then run `just doctor`. Do not
@@ -213,7 +215,9 @@ sorted by stat category); Sleeper, public and auth-free, which is also the stats
 provider for both football and basketball (projections, box scores, schedules,
 transactions); Fantasy Premier League, public and auth-free, whose one
 `bootstrap-static` call carries the squad, prices, the game's own `ep_next`
-projection and Opta expected goals. Each caches responses in its own directory.
+projection and Opta expected goals; ESPN, public and auth-free, for the news no
+fantasy platform publishes — each NFL club's own feed, joined to Sleeper's
+players by name within the club. Each caches responses in its own directory.
 
 **Model** — Gemini via `google-genai`: `gemini-2.5-pro` for analysis,
 `gemini-2.5-flash` for parsing. Reports come back as Pydantic models through a

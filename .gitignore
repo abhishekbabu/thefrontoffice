@@ -41,6 +41,7 @@ plans/
 .yahoo_cache/
 .sleeper_cache/
 .fpl_cache/
+.espn_cache/
 web/node_modules/
 web/dist/
 *.tsbuildinfo

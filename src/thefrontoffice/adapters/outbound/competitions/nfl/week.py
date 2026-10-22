@@ -17,6 +17,7 @@ from datetime import date, datetime, timezone
 from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot
+from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     PlayerMeta,
@@ -90,6 +91,9 @@ class Week:
     evidence: Evidence = field(default_factory=Evidence)
     """Each player's role and each defense's record, from games already played.
     Empty in week 1, and wherever the stat lines would not load."""
+
+    news: PlayerNews = field(default_factory=PlayerNews)
+    """Recent articles about each player. Empty wherever the feeds would not load."""
 
     @property
     def scheduled(self) -> bool:

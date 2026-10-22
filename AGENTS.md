@@ -29,7 +29,7 @@ through a module-level `logger = logging.getLogger(__name__)`.
 persisted or compared — store aware UTC, convert at the comparison. Basketball
 anchors to `PACIFIC`, because the league schedules by Pacific and a local clock
 shifts the day boundary. `datetime.fromisoformat` rejects a trailing `Z` on 3.10
-and FPL timestamps have one, so parse via `_parse_deadline`. Keep a date label
+and FPL and ESPN timestamps have one, so parse via `platforms/timestamps.parse_utc`. Keep a date label
 (`ScheduledGame.date`, for window tests) distinct from an instant: Sleeper
 publishes no tip-off time, so whether a game has happened is settled by its date
 against today, and only a game today reads its `status`.

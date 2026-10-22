@@ -16,6 +16,7 @@ move says nothing about when.
 from collections import defaultdict
 
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, eligible_positions
+from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame, WeeklyProjection
 from thefrontoffice.domain.models import Action, Stat, Urgency
@@ -170,8 +171,16 @@ def _caveat(player: WeeklyProjection) -> str:
 
 
 def _evidence(state: Week, players: list[WeeklyProjection]) -> list[Stat]:
-    """Each player's matchup and role, for those with any games played."""
-    return [stat for stat in (state.evidence.stat(p) for p in players) if stat]
+    """Each player's matchup and role, then his latest headline, for whoever has them."""
+    lines = []
+    for player in players:
+        if stat := state.evidence.stat(player):
+            lines.append(stat)
+        lines += [
+            Stat(label=player.name, value=f"News, {dated(a)}: {a.headline}")
+            for a in state.news.latest(player.player_id)
+        ]
+    return lines
 
 
 def _swap(change: LineupChange, urgency: Urgency, reason: str, kickoff: dict[str, str], evidence: list[Stat]) -> Action:

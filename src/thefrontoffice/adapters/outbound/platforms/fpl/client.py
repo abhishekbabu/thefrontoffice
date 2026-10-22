@@ -43,6 +43,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
 )
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
+from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
 from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.errors import FPLAPIError
 
@@ -76,19 +77,6 @@ def _is_retryable(exc: BaseException) -> bool:
 
 def _retry() -> Retrying:
     return build_retry(attempts=RETRY_MAX_ATTEMPTS, multiplier=2, min_wait=2, max_wait=20, predicate=_is_retryable)
-
-
-def _parse_deadline(value: str) -> datetime:
-    """Parse an FPL timestamp into an aware UTC datetime.
-
-    Every deadline ends in 'Z', which `datetime.fromisoformat` rejects on Python
-    3.10, so the suffix is rewritten before parsing rather than trusted.
-    """
-    text = value.strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    parsed = datetime.fromisoformat(text)
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _order(value: Any) -> int | None:
@@ -189,7 +177,7 @@ class FPLClient:
             Gameweek(
                 id=int(e["id"]),
                 name=str(e.get("name") or f"Gameweek {e['id']}"),
-                deadline=_parse_deadline(str(e["deadline_time"])),
+                deadline=parse_utc(str(e["deadline_time"])),
                 is_current=bool(e.get("is_current")),
                 is_next=bool(e.get("is_next")),
                 finished=bool(e.get("finished")),
@@ -527,7 +515,7 @@ class FPLClient:
                 away=teams.get(int(f.get("team_a") or 0), "???"),
                 home_difficulty=int(f.get("team_h_difficulty") or 0),
                 away_difficulty=int(f.get("team_a_difficulty") or 0),
-                kickoff=_parse_deadline(str(f["kickoff_time"])) if f.get("kickoff_time") else None,
+                kickoff=parse_utc(str(f["kickoff_time"])) if f.get("kickoff_time") else None,
             )
             for f in data or []
         ]

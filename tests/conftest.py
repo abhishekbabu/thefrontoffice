@@ -18,6 +18,7 @@ import pytest
 from reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
+from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
@@ -277,8 +278,23 @@ class FakeSleeper:
         return self.trending
 
 
-def _provider(client: FakeSleeper) -> SleeperNFLProvider:
-    return SleeperNFLProvider(username="me", client=client)  # type: ignore[arg-type]
+class FakeESPN:
+    """Stands in for ESPNClient: each club's articles, keyed by ESPN's abbreviation."""
+
+    def __init__(self, news: dict[str, list[NewsArticle]] | None = None, error: Exception | None = None) -> None:
+        self.news = news or {}
+        self.error = error
+        self.asked: list[str] = []
+
+    def get_team_news(self, league: str, clubs: list[str]) -> dict[str, list[NewsArticle]]:
+        self.asked = clubs
+        if self.error:
+            raise self.error
+        return {club: self.news[club] for club in clubs if club in self.news}
+
+
+def _provider(client: FakeSleeper, espn: FakeESPN | None = None) -> SleeperNFLProvider:
+    return SleeperNFLProvider(username="me", client=client, espn=espn or FakeESPN())  # type: ignore[arg-type]
 
 
 DEFAULT_PROJECTIONS = {

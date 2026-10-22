@@ -6,7 +6,7 @@ that every scenario can say exactly who is where.
 
 from dataclasses import replace
 
-from conftest import SLEEPER_USER_ID, FakeSleeper, _proj, _provider
+from conftest import SLEEPER_USER_ID, FakeESPN, FakeSleeper, _proj, _provider
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
@@ -69,8 +69,8 @@ def _client(
     return client
 
 
-def _actions(client: FakeSleeper) -> list[Action]:
-    actions = _provider(client).summary("L1").actions
+def _actions(client: FakeSleeper, espn: FakeESPN | None = None) -> list[Action]:
+    actions = _provider(client, espn).summary("L1").actions
     assert actions is not None
     return actions
 
@@ -358,3 +358,29 @@ def test_stat_lines_that_will_not_load_leave_the_list_without_evidence() -> None
 
     assert action.player_id == "rb2"
     assert action.evidence == []
+
+
+def test_a_move_carries_the_latest_headline_about_each_player_in_it() -> None:
+    from datetime import datetime, timezone
+
+    from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
+
+    better = replace(BENCH_WR, points=12.0)
+    client = _client([QB, RB, WR, replace(FLEX, points=5.0), better], ["qb", "rb", "wr", "te"], ["wr2"])
+    article = NewsArticle(
+        article_id="1", published=datetime.now(timezone.utc), headline=f"{better.name} is the new WR1"
+    )
+
+    [action] = _actions(client, FakeESPN({better.team: [article]}))
+
+    assert any(line.label == better.name and article.headline in line.value for line in action.evidence)
+
+
+def test_news_that_will_not_load_leaves_the_list_as_it_was() -> None:
+    from thefrontoffice.domain.errors import ESPNAPIError
+
+    client = _client([QB, _ruled_out(RB), WR, FLEX, BENCH_RB], ["qb", "rb", "wr", "te"], ["rb2"])
+
+    [action] = _actions(client, FakeESPN(error=ESPNAPIError("down")))
+
+    assert action.player_id == "rb2"
