@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type * as React from "react";
-import { MessageCircleQuestion } from "lucide-react";
-import type { Action, Move, MoveAction, TaskVerdict, Urgency } from "@/lib/api";
+import { AlarmClock, EyeOff, MessageCircleQuestion, Undo2 } from "lucide-react";
+import type { Action, ItemDecision, Move, MoveAction, TaskVerdict, Urgency } from "@/lib/api";
+import { SNOOZES, until } from "@/lib/snooze";
 import { Thread } from "@/components/ui/chat";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
@@ -30,12 +31,18 @@ const URGENCY: Record<Urgency, { label: string; variant: "warn" | "info" | "mute
  * on the row with the same key, and marked stale where the row has changed
  * since — a verdict on last night's news is not a verdict on this morning's.
  * `suggested` are the moves the model added that the list did not hold.
+ *
+ * Items the manager dismissed or snoozed are kept out of the list but not out
+ * of reach: they collect under a closed "Hidden" at the foot, each with a way
+ * back. A dismissed item that has changed since is back in the list, saying so.
  */
 export function ActionList({
   actions,
   judged = [],
   suggested = [],
   onOpen,
+  onDecide,
+  deciding = false,
   aside,
   footer,
 }: {
@@ -43,13 +50,18 @@ export function ActionList({
   judged?: Action[];
   suggested?: Move[];
   onOpen?: (id: string) => void;
+  /** Dismiss, snooze or restore an item; absent where decisions cannot be kept. */
+  onDecide?: (decision: ItemDecision) => void;
+  deciding?: boolean;
   /** Beside the count in the header — where the week puts its Judge control. */
   aside?: React.ReactNode;
-  /** Under each row, for what a caller hangs off an item. */
-  footer?: (action: Action) => React.ReactNode;
+  /** Under each row, for what a caller hangs off an item; handed the row's own controls to place. */
+  footer?: (action: Action, controls: React.ReactNode) => React.ReactNode;
 }) {
   const byKey = new Map(judged.filter((task) => task.key).map((task) => [task.key, task]));
-  const count = actions.length + suggested.length;
+  const shown = actions.filter((action) => !action.hidden);
+  const hidden = actions.filter((action) => action.hidden);
+  const count = shown.length + suggested.length;
   return (
     <Card>
       <CardHeader>
@@ -60,12 +72,19 @@ export function ActionList({
         </span>
       </CardHeader>
       {count === 0 ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">Nothing to do — your lineup is set for the week.</p>
+        <p className="px-4 py-3 text-[13px] text-muted-foreground">
+          {hidden.length
+            ? "Nothing left to do — the rest is hidden below."
+            : "Nothing to do — your lineup is set for the week."}
+        </p>
       ) : (
         <ol className="flex flex-col">
-          {actions.map((action) => {
+          {shown.map((action) => {
             const then = byKey.get(action.key);
             const verdict = then?.verdict ?? action.verdict;
+            const controls = onDecide && action.key && (
+              <Decide action={action} onDecide={onDecide} busy={deciding} />
+            );
             return (
               <Row
                 key={action.key || `${action.kind}-${action.title}`}
@@ -76,8 +95,13 @@ export function ActionList({
                 evidence={action.evidence}
                 open={action.player_id && onOpen ? () => onOpen(action.player_id) : undefined}
               >
+                {action.resurfaced && (
+                  <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
+                    back — changed since you dismissed it
+                  </div>
+                )}
                 {verdict && <VerdictLine verdict={verdict} stale={Boolean(then) && then?.fingerprint !== action.fingerprint} />}
-                {footer?.(action)}
+                {footer ? footer(action, controls) : controls}
               </Row>
             );
           })}
@@ -92,7 +116,93 @@ export function ActionList({
           ))}
         </ol>
       )}
+      {hidden.length > 0 && <Hidden actions={hidden} onDecide={onDecide} busy={deciding} />}
     </Card>
+  );
+}
+
+/**
+ * Dismiss or snooze one item. Dismiss hides it until it changes; snooze
+ * offers how long, inline — three choices do not need a menu.
+ */
+function Decide({
+  action,
+  onDecide,
+  busy,
+}: {
+  action: Action;
+  onDecide: (decision: ItemDecision) => void;
+  busy: boolean;
+}) {
+  const [choosing, setChoosing] = useState(false);
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      <IconButton
+        label="Dismiss — hide it until it changes"
+        icon={<EyeOff />}
+        disabled={busy}
+        onClick={() => onDecide({ key: action.key, decision: "dismiss", fingerprint: action.fingerprint })}
+      />
+      <IconButton
+        label={choosing ? "Keep it on the list" : "Snooze"}
+        icon={<AlarmClock />}
+        disabled={busy}
+        aria-expanded={choosing}
+        onClick={() => setChoosing((open) => !open)}
+      />
+      {choosing &&
+        SNOOZES.map((snooze) => (
+          <button
+            key={snooze.label}
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setChoosing(false);
+              onDecide({ key: action.key, decision: "snooze", until: snooze.until(new Date()).toISOString() });
+            }}
+            className="h-7 rounded-md border border-border px-2 font-mono text-[11px] text-muted-foreground hover:bg-muted"
+          >
+            {snooze.label}
+          </button>
+        ))}
+    </span>
+  );
+}
+
+/** Items put aside, closed by default, each with a way back. */
+function Hidden({
+  actions,
+  onDecide,
+  busy,
+}: {
+  actions: Action[];
+  onDecide?: (decision: ItemDecision) => void;
+  busy: boolean;
+}) {
+  return (
+    <details className="border-t border-border">
+      <summary className="cursor-pointer px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground">
+        Hidden ({actions.length})
+      </summary>
+      <ul className="flex flex-col pb-1">
+        {actions.map((action) => (
+          <li key={action.key} className="flex items-center gap-3 px-4 py-1.5 text-[12.5px]">
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">{action.title}</span>
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {action.hidden === "snoozed" && action.snoozed_until ? `snoozed until ${until(action.snoozed_until)}` : "dismissed"}
+            </span>
+            {onDecide && (
+              <IconButton
+                label="Put it back on the list"
+                icon={<Undo2 />}
+                disabled={busy}
+                onClick={() => onDecide({ key: action.key, decision: "restore" })}
+              />
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -221,20 +331,34 @@ function VerdictLine({ verdict, stale }: { verdict: TaskVerdict; stale: boolean 
  * Mounted on first open and only hidden after, so closing it and opening it
  * again shows the same conversation instead of a blank one.
  */
-export function WhyThread({ competition, league, action }: { competition: string; league: string; action: Action }) {
+export function WhyThread({
+  competition,
+  league,
+  action,
+  beside,
+}: {
+  competition: string;
+  league: string;
+  action: Action;
+  /** On the same line as the Why? control — the row's other controls. */
+  beside?: React.ReactNode;
+}) {
   const [opened, setOpened] = useState(false);
   const [shown, setShown] = useState(false);
   return (
     <div className="flex flex-col gap-2">
-      <IconButton
-        label={shown ? "Hide the conversation" : "Why this move?"}
-        icon={<MessageCircleQuestion />}
-        onClick={() => {
-          setOpened(true);
-          setShown((s) => !s);
-        }}
-        aria-expanded={shown}
-      />
+      <span className="flex flex-wrap items-center gap-1">
+        <IconButton
+          label={shown ? "Hide the conversation" : "Why this move?"}
+          icon={<MessageCircleQuestion />}
+          onClick={() => {
+            setOpened(true);
+            setShown((s) => !s);
+          }}
+          aria-expanded={shown}
+        />
+        {beside}
+      </span>
       {opened && (
         <div className={cn("rounded-md border border-border p-3", !shown && "hidden")}>
           <Thread

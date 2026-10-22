@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Generic, Literal, TypeVar
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 MoveAction = Literal[
     "ADD",  # claim from the waiver wire / free agency
@@ -329,6 +329,14 @@ class Action(BaseModel):
         default=None,
         description="The model's judgement, once a report has been run. None before, and for an item it skipped.",
     )
+    hidden: Literal["dismissed", "snoozed"] | None = Field(
+        default=None, description="LEAVE THIS EMPTY. Set by the application from the manager's own decisions."
+    )
+    snoozed_until: datetime | None = Field(default=None, description="LEAVE THIS EMPTY. Set by the application.")
+    resurfaced: bool = Field(
+        default=False,
+        description="LEAVE THIS FALSE. Set by the application where a dismissed item has changed since.",
+    )
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -340,6 +348,37 @@ class Action(BaseModel):
         """
         said = [self.title, self.reason, self.when, [[line.label, line.value] for line in self.evidence]]
         return hashlib.sha256(json.dumps(said).encode("utf-8")).hexdigest()[:12]
+
+
+class ItemState(BaseModel):
+    """What the manager has decided about one to-do item.
+
+    Dismissed against a fingerprint rather than for good: "not this" is a
+    judgment about the item as it read, and an item that changes — new news,
+    a different gain — is new information, which brings it back.
+    """
+
+    key: str
+    dismissed_as: str = Field(default="", description="The fingerprint the item had when dismissed; empty if not.")
+    snoozed_until: datetime | None = Field(default=None, description="Hidden until then, aware UTC; None if not.")
+
+
+class ItemDecision(BaseModel):
+    """One decision about one to-do item, as the page sends it."""
+
+    key: str = Field(min_length=1)
+    decision: Literal["dismiss", "snooze", "restore"]
+    fingerprint: str = Field(default="", description="For dismiss: the item as it read when dismissed.")
+    until: datetime | None = Field(default=None, description="For snooze: when it comes back, with its offset.")
+
+    @model_validator(mode="after")
+    def _says_enough(self) -> "ItemDecision":
+        """A dismissal names what it dismissed, a snooze when it ends; anything less is unreadable."""
+        if self.decision == "dismiss" and not self.fingerprint:
+            raise ValueError("a dismissal needs the fingerprint of the item it dismisses")
+        if self.decision == "snooze" and (self.until is None or self.until.tzinfo is None):
+            raise ValueError("a snooze needs an end time with its offset")
+        return self
 
 
 class Summary(BaseModel):

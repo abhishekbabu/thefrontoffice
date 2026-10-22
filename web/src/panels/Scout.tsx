@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
-import { api, type ScoutReport, type Remembered, type League, type Competition, type Summary } from "@/lib/api";
+import { api, type Action, type ItemDecision, type ScoutReport, type Remembered, type League, type Competition, type Summary } from "@/lib/api";
 import { ActionList, WhyThread } from "@/components/ui/actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +48,28 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: judgmentKey }),
   });
   const report = judgment.data?.answer;
+  // Shown at once, then confirmed: re-reading the week takes a second or two,
+  // which is too long for a row to sit there after it was dismissed. The
+  // re-read still happens, and a failed save puts the row back.
+  const summaryKey = ["summary", competition.key, league.league_id];
+  const decide = useMutation<unknown, Error, ItemDecision, { before?: Summary }>({
+    mutationFn: (decision) => api.decide(competition.key, league.league_id, decision),
+    onMutate: async (decision) => {
+      await queryClient.cancelQueries({ queryKey: summaryKey });
+      const before = queryClient.getQueryData<Summary>(summaryKey);
+      if (before?.actions) {
+        queryClient.setQueryData<Summary>(summaryKey, {
+          ...before,
+          actions: before.actions.map((action) => (action.key === decision.key ? decided(action, decision) : action)),
+        });
+      }
+      return { before };
+    },
+    onError: (_error, _decision, context) => {
+      if (context?.before) queryClient.setQueryData(summaryKey, context.before);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: summaryKey }),
+  });
 
   return (
     <>
@@ -62,17 +84,25 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       {week.data && (
         <div className="flex flex-col gap-4 p-5">
           {judge.isError && <ErrorNote error={judge.error} />}
+          {decide.isError && <ErrorNote error={decide.error} />}
           {week.data.actions && (
             <ActionList
               actions={week.data.actions}
               judged={report?.tasks}
               suggested={report?.moves}
               onOpen={openPlayer}
+              onDecide={(decision) => decide.mutate(decision)}
+              deciding={decide.isPending}
               footer={
                 ai
-                  ? (action) =>
+                  ? (action, controls) =>
                       action.key && (
-                        <WhyThread competition={competition.key} league={league.league_id} action={action} />
+                        <WhyThread
+                          competition={competition.key}
+                          league={league.league_id}
+                          action={action}
+                          beside={controls}
+                        />
                       )
                   : undefined
               }
@@ -204,4 +234,11 @@ function judgedAt(iso: string): string {
   return when.toDateString() === new Date().toDateString()
     ? time
     : `${when.toLocaleDateString([], { weekday: "short" })} ${time}`;
+}
+
+/** An item as it will read once `decision` is kept — what the server will say, said early. */
+function decided(action: Action, decision: ItemDecision): Action {
+  if (decision.decision === "dismiss") return { ...action, hidden: "dismissed", resurfaced: false };
+  if (decision.decision === "snooze") return { ...action, hidden: "snoozed", snoozed_until: decision.until };
+  return { ...action, hidden: null, snoozed_until: null, resurfaced: false };
 }

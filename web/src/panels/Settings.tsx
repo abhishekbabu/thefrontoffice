@@ -64,6 +64,7 @@ const GROUPS: { title: string; note: string; keys: string[] }[] = [
       "YAHOO_CACHE_DIR",
       "ESPN_CACHE_DIR",
       "ANSWER_CACHE_DIR",
+      "ITEM_STATE_DIR",
       "YAHOO_TOKEN_FILE",
     ],
   },

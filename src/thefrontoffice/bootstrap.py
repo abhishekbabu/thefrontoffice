@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from thefrontoffice.application.asking import AskEngine
+from thefrontoffice.application.items import ItemDecisions
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.application.wire import WireEngine
@@ -247,6 +248,13 @@ def scout_engine(provider: CompetitionProvider) -> ScoutEngine:
     from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
 
     return ScoutEngine(provider, ai=default_model(), answers=DiskAnswerStore())
+
+
+def item_decisions() -> ItemDecisions:
+    """The manager's decisions about to-do items, kept on this machine."""
+    from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
+
+    return ItemDecisions(DiskItemStateStore())
 
 
 def ask_engine(provider: CompetitionProvider) -> AskEngine:

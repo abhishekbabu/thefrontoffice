@@ -30,6 +30,7 @@ from thefrontoffice.bootstrap import (
     all_competitions,
     ask_engine,
     find,
+    item_decisions,
     scout_engine,
     wire_engine,
 )
@@ -39,6 +40,8 @@ from thefrontoffice.config.settings import PROJECT_ROOT, settings
 from thefrontoffice.config.telemetry import setup_telemetry
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import (
+    ItemDecision,
+    ItemState,
     LeagueSchedule,
     PlayerCall,
     PlayerCard,
@@ -377,9 +380,21 @@ def _register_routes(app: FastAPI) -> None:
         """Where the team stands, before any report is asked for.
 
         The page would otherwise be blank for as long as a model call takes,
-        showing nothing the app already knows.
+        showing nothing the app already knows. To-do items carry what the
+        manager decided about them — dismissed, snoozed, or back since.
         """
-        return data.build_provider(competition).summary(league_id)
+        provider = data.build_provider(competition)
+        summary = provider.summary(league_id)
+        if summary.actions is None:
+            return summary
+        actions = item_decisions().apply(provider.label, league_id, summary.actions)
+        return summary.model_copy(update={"actions": actions})
+
+    @app.post("/api/{competition}/leagues/{league_id}/items", response_model=ItemState | None)
+    def decide(competition: str, league_id: str, decision: ItemDecision) -> ItemState | None:
+        """Dismiss, snooze or restore one to-do item; the decision kept, or null once restored."""
+        provider = data.build_provider(competition)
+        return item_decisions().decide(provider.label, league_id, decision)
 
     @app.get("/api/{competition}/leagues/{league_id}/free-agents", response_model=PlayerPage)
     def free_agents(
