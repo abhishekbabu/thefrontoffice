@@ -160,6 +160,15 @@ def test_a_player_carries_a_portrait_from_sleepers_own_cdn() -> None:
     assert detail.image_url.endswith("/qb1.jpg")
 
 
+def test_a_team_defense_offers_no_portrait_to_fail_on() -> None:
+    """Sleeper has no headshot for a defense, and offering the URL anyway put
+    an empty photo tile in the drawer until the 404 came back."""
+    detail = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).player("L1", "BUF")
+
+    assert detail.image_url == ""
+    assert detail.team_logo_url.endswith("/buf.png")
+
+
 # ── the rest of the league ──────────────────────────────────────────────
 
 

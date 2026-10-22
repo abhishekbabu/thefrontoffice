@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { X } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
-import { fade, list, listItem, slideOver } from "@/lib/motion";
+import { fade, list, listItem, portrait, slideOver } from "@/lib/motion";
+import { useLoadedImage } from "@/lib/useLoadedImage";
 import { IconButton } from "@/components/ui/icon-button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Loading } from "@/components/ui/state";
@@ -125,13 +126,6 @@ function SeasonTable({ table }: { table: StatTable }) {
 }
 
 /**
- * A player's face, where the platform has one.
- *
- * Removed rather than replaced when it fails to load: the CDNs answer for
- * most players and 404 for the rest, and a broken-image glyph beside a name
- * looks like the app is broken rather than like the photo is missing.
- */
-/**
  * Position and club, with the crest where there is one.
  *
  * The club in full rather than the three letters a table shows: there is room
@@ -144,7 +138,7 @@ function SeasonTable({ table }: { table: StatTable }) {
  * because that is how abbreviations come.
  */
 function TeamLine({ detail }: { detail: PlayerDetail }) {
-  const [failed, setFailed] = useState(false);
+  const crest = useLoadedImage(detail.team_logo_url);
   const club = detail.team_name || detail.team;
   if (!detail.position && !club) return null;
   return (
@@ -153,14 +147,16 @@ function TeamLine({ detail }: { detail: PlayerDetail }) {
       {detail.position && club && <span aria-hidden>·</span>}
       {club && (
         <span className="flex min-w-0 items-center gap-1.5">
-          {/* Removed rather than replaced when it fails, like the portrait: a
-              broken-image glyph beside a club name reads as a broken app. */}
-          {detail.team_logo_url && !failed && (
-            <img
+          {/* Only once loaded, like the portrait: an empty frame beside a
+              club name, gone a moment later, reads as a broken app. */}
+          {crest && (
+            <m.img
               src={detail.team_logo_url}
               alt=""
               aria-hidden
-              onError={() => setFailed(true)}
+              variants={fade}
+              initial="hidden"
+              animate="shown"
               className="size-4 shrink-0 object-contain"
             />
           )}
@@ -171,25 +167,34 @@ function TeamLine({ detail }: { detail: PlayerDetail }) {
   );
 }
 
+/**
+ * A player's face, where the platform has one.
+ *
+ * Shown only once it has loaded: the CDNs answer for most players and 404 for
+ * the rest, and a photo frame that appears and is then taken away reads as
+ * something breaking rather than as a photo that does not exist.
+ */
 function Portrait({ src }: { src: string }) {
-  const [failed, setFailed] = useState(false);
-  if (!src || failed) return null;
+  const loaded = useLoadedImage(src);
   return (
-    <m.img
-      src={src}
-      alt=""
-      aria-hidden
-      variants={fade}
-      initial="hidden"
-      animate="shown"
-      onError={() => setFailed(true)}
-      // Square and centre-cropped, which suits both: FPL ships a 500px square
-      // cut-out, Sleeper a 350x254 studio card whose only loss to a square is
-      // white margin. 96px is as large as the smaller of the two stays sharp
-      // at 2x, so this is the size the sources actually support rather than
-      // the size that would look boldest.
-      className="size-24 shrink-0 rounded-lg bg-photo object-cover"
-    />
+    <AnimatePresence initial={false}>
+      {loaded && (
+        <m.div
+          key={src}
+          variants={portrait}
+          initial="hidden"
+          animate="shown"
+          className="shrink-0 overflow-hidden rounded-lg"
+        >
+          {/* Square and centre-cropped, which suits both: FPL ships a 500px
+              square cut-out, Sleeper a 350x254 studio card whose only loss to
+              a square is white margin. 96px is as large as the smaller of the
+              two stays sharp at 2x, so this is the size the sources actually
+              support rather than the size that would look boldest. */}
+          <img src={src} alt="" aria-hidden className="size-24 max-w-none bg-photo object-cover" />
+        </m.div>
+      )}
+    </AnimatePresence>
   );
 }
 
