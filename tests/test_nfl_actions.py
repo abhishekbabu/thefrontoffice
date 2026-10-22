@@ -9,6 +9,7 @@ from dataclasses import replace
 from conftest import SLEEPER_USER_ID, FakeSleeper, _proj, _provider
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
+    NFLGameLine,
     PlayerMeta,
     ScheduledGame,
     SleeperLeague,
@@ -50,8 +51,10 @@ def _client(
     bench: list[str],
     league: SleeperLeague = LEAGUE,
     schedule: list[ScheduledGame] = SCHEDULE,
+    game_lines: list[NFLGameLine] | None = None,
 ) -> FakeSleeper:
     client = FakeSleeper(
+        game_lines=game_lines,
         projections={p.player_id: p for p in projections},
         league=league,
         season_schedule=schedule,
@@ -274,3 +277,79 @@ def test_the_most_urgent_task_comes_first() -> None:
 def test_a_healthy_week_has_nothing_to_do() -> None:
     """An empty list, which is an answer — not None, which would mean unasked."""
     assert _actions(_client([QB, RB, WR, FLEX], ["qb", "rb", "wr", "te"], [])) == []
+
+
+# ── what each move rests on ─────────────────────────────────────────────
+
+
+def _played(*players: WeeklyProjection) -> list[NFLGameLine]:
+    """One finished week for each player, all against LV."""
+    return [
+        NFLGameLine(
+            player_id=p.player_id,
+            week=2,
+            team=p.team,
+            opponent="LV",
+            position=p.position,
+            stats={"off_snp": 30, "tm_off_snp": 60, "rec_tgt": 5, "pts_ppr": 10},
+        )
+        for p in players
+    ]
+
+
+def test_a_swap_shows_the_role_and_matchup_of_both_players() -> None:
+    """Both, because the choice is between them, and the projection gap alone
+    does not say whether the bench player's role is real."""
+    better = replace(BENCH_WR, points=12.0)
+    benched = replace(FLEX, points=5.0)
+    client = _client(
+        [QB, RB, WR, benched, better], ["qb", "rb", "wr", "te"], ["wr2"], game_lines=_played(better, benched)
+    )
+
+    [action] = _actions(client)
+
+    assert [stat.label for stat in action.evidence] == ["Bench Receiver", "Ty End"]
+    assert "50% of snaps" in action.evidence[0].value
+
+
+def test_covering_a_player_who_cannot_play_shows_only_the_one_coming_in() -> None:
+    client = _client(
+        [QB, _ruled_out(RB), WR, FLEX, BENCH_RB],
+        ["qb", "rb", "wr", "te"],
+        ["rb2"],
+        game_lines=_played(RB, BENCH_RB),
+    )
+
+    [action] = _actions(client)
+
+    assert [stat.label for stat in action.evidence] == ["Bench Back"]
+
+
+def test_a_waiver_pick_shows_what_his_projection_rests_on() -> None:
+    free = _proj("fa1", "Free Back", "RB", 11.0, team="KC", opp="LV")
+    client = _client([QB, _ruled_out(RB), WR, FLEX, free], ["qb", "rb", "wr", "te"], [], game_lines=_played(free))
+
+    [action] = _actions(client)
+
+    assert [stat.label for stat in action.evidence] == ["Free Back"]
+
+
+def test_only_finished_weeks_are_read_for_evidence() -> None:
+    """Week 3 is under way: a Monday starter has a line of noughts until then."""
+    client = _client([QB, RB, WR, FLEX], ["qb", "rb", "wr", "te"], [])
+
+    _actions(client)
+
+    assert client.game_line_weeks == [1, 2]
+
+
+def test_stat_lines_that_will_not_load_leave_the_list_without_evidence() -> None:
+    from thefrontoffice.domain.errors import SleeperAPIError
+
+    client = _client([QB, _ruled_out(RB), WR, FLEX, BENCH_RB], ["qb", "rb", "wr", "te"], ["rb2"])
+    client.game_lines_error = SleeperAPIError("down")
+
+    [action] = _actions(client)
+
+    assert action.title == "Start Bench Back over Ron Back"
+    assert action.evidence == []

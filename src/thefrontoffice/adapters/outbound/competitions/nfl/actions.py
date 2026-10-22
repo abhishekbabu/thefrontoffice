@@ -18,7 +18,7 @@ from collections import defaultdict
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, eligible_positions
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame, WeeklyProjection
-from thefrontoffice.domain.models import Action, Urgency
+from thefrontoffice.domain.models import Action, Stat, Urgency
 
 # Sleeper's statuses for a player who will not play, in the words a person
 # would use. Questionable is deliberately absent: most questionable players
@@ -99,7 +99,9 @@ def _lineup(
         if change is not None:
             moved.update({change.start.player_id, *([player.player_id] if player else [])})
             reason = f"{why}. {change.start.name} projects {change.start.points:.1f}.{_caveat(change.start)}"
-            actions.append(_swap(change, "now", reason, kickoff))
+            # Only the player coming in: the one going out is not playing, and
+            # his matchup is beside the point.
+            actions.append(_swap(change, "now", reason, kickoff, _evidence(state, [change.start])))
             continue
 
         pick = next(
@@ -120,12 +122,15 @@ def _lineup(
                     f"projected {pick.position} available, at {pick.points:.1f}."
                 ),
                 player_id=pick.player_id,
+                evidence=_evidence(state, [pick]),
             )
         )
 
     for change in open_changes:
         if change.start.player_id not in moved and not (change.bench and change.bench.player_id in moved):
-            actions.append(_swap(change, "soon", f"+{change.gain:.1f} proj pts.{_caveat(change.start)}", kickoff))
+            reason = f"+{change.gain:.1f} proj pts.{_caveat(change.start)}"
+            both = [change.start, *([change.bench] if change.bench else [])]
+            actions.append(_swap(change, "soon", reason, kickoff, _evidence(state, both)))
     return actions
 
 
@@ -164,7 +169,12 @@ def _caveat(player: WeeklyProjection) -> str:
     return f" {player.name} is listed {player.injury_status.lower()} — check his status before his game."
 
 
-def _swap(change: LineupChange, urgency: Urgency, reason: str, kickoff: dict[str, str]) -> Action:
+def _evidence(state: Week, players: list[WeeklyProjection]) -> list[Stat]:
+    """Each player's matchup and role, for those with any games played."""
+    return [stat for stat in (state.evidence.stat(p) for p in players) if stat]
+
+
+def _swap(change: LineupChange, urgency: Urgency, reason: str, kickoff: dict[str, str], evidence: list[Stat]) -> Action:
     """A bench player in, a starter out, by the earlier of their two kickoffs."""
     title = (
         f"Start {change.start.name} over {change.bench.name}"
@@ -182,6 +192,7 @@ def _swap(change: LineupChange, urgency: Urgency, reason: str, kickoff: dict[str
         reason=reason,
         when=f"before kickoff, {day(dates[0])}" if dates else "",
         player_id=change.start.player_id,
+        evidence=evidence,
     )
 
 

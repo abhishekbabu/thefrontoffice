@@ -160,6 +160,38 @@ def test_a_player_carries_a_portrait_from_sleepers_own_cdn() -> None:
     assert detail.image_url.endswith("/qb1.jpg")
 
 
+def test_the_drawer_shows_what_the_projection_rests_on() -> None:
+    from thefrontoffice.adapters.outbound.platforms.sleeper.types import NFLGameLine
+
+    lines = [
+        NFLGameLine(
+            player_id="rb1",
+            week=w,
+            team="BUF",
+            opponent="MIA",
+            position="RB",
+            stats={"off_snp": 45, "tm_off_snp": 60, "rush_att": 16, "rec_tgt": 3, "pts_ppr": 17},
+        )
+        for w in (1, 2)
+    ]
+    detail = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS, game_lines=lines)).player("L1", "rb1")
+
+    [group] = [g for g in detail.groups if g.title == "Role and matchup"]
+    stats = {stat.label: stat.value for stat in group.stats}
+    assert stats["Matchup"].startswith("vs MIA, the most to RBs")
+    assert stats["Snap share, last 2"] == "75%"
+    assert stats["Carries a game"] == "16.0"
+    assert stats["Targets a game"] == "3.0"
+    assert stats["Target share"] == "100%"
+    assert stats["Points a game, last 2"] == "17.0"
+
+
+def test_with_nothing_played_the_drawer_has_no_role_section() -> None:
+    detail = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).player("L1", "rb1")
+
+    assert "Role and matchup" not in [g.title for g in detail.groups]
+
+
 def test_a_team_defense_offers_no_portrait_to_fail_on() -> None:
     """Sleeper has no headshot for a defense, and offering the URL anyway put
     an empty photo tile in the drawer until the 404 came back."""

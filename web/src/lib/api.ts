@@ -72,6 +72,9 @@ export type Action = {
   when: string;
   /** The player the move turns on, to open their detail. */
   player_id: string;
+  /** What the move rests on beyond the projection, one line per player:
+      the matchup and the role. Toned by the matchup, which the text also says. */
+  evidence: Stat[];
 };
 
 /** One team in a matchup — yours, or the one you are playing. */

@@ -188,6 +188,27 @@ function ActionList({ actions, onOpen }: { actions: Action[]; onOpen: (id: strin
                 <div className="min-w-0 flex-1">
                   <div className="text-[13.5px] font-medium">{action.title}</div>
                   <div className="mt-0.5 text-[12.5px] text-muted-foreground">{action.reason}</div>
+                  {action.evidence.length > 0 && (
+                    <ul className="mt-1.5 flex flex-col gap-1">
+                      {action.evidence.map((line) => (
+                        <li key={line.label} className="flex items-baseline gap-2 text-[12px] text-muted-foreground">
+                          {/* The rank is in the words; the dot only lets a
+                              soft or tough matchup be found at a glance. */}
+                          <span
+                            aria-hidden
+                            className={cn(
+                              "size-1.5 shrink-0 -translate-y-px rounded-full bg-border",
+                              line.tone === "good" && "bg-ok",
+                              line.tone === "warning" && "bg-warn",
+                            )}
+                          />
+                          <span>
+                            <span className="font-medium text-foreground">{line.label}</span> {line.value}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 {action.when && (
                   <span className="shrink-0 pt-0.5 text-right font-mono text-[11px] text-muted-foreground">

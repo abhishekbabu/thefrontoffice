@@ -237,6 +237,32 @@ NBA_STAT_KEYS = ("pts", "reb", "ast", "stl", "blk", "to", "tpm", "fgm", "fga", "
 # Sleeper files team totals in the same feed as players, under a prefixed id.
 TEAM_ROW_PREFIX = "TEAM_"
 
+# What a fantasy league actually scores. The catalog carries every practice
+# squad body in the league, and none of them are a waiver decision.
+FANTASY_POSITIONS = frozenset({"QB", "RB", "WR", "TE", "K", "DEF"})
+
+# What a football game line is kept for: the points in each scoring format,
+# and the usage behind them. Snaps against the team's snaps is a share no
+# single row states; targets and carries are what a projection is built from.
+NFL_LINE_KEYS = ("pts_ppr", "pts_half_ppr", "pts_std", "off_snp", "tm_off_snp", "rec_tgt", "rush_att")
+
+
+@dataclass(frozen=True)
+class NFLGameLine:
+    """One player's line from one football game.
+
+    Carries the club and opponent of that game rather than of today: a
+    player traded in week 5 scored his week-3 points for somebody else, and
+    against somebody else.
+    """
+
+    player_id: str
+    week: int
+    team: str
+    opponent: str
+    position: str
+    stats: dict[str, float]
+
 
 @dataclass(frozen=True)
 class NBAGameLog:

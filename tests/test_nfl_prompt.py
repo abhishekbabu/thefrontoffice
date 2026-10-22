@@ -15,6 +15,7 @@ from conftest import (
 )
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
+    NFLGameLine,
     SleeperLeague,
     SleeperRoster,
     TrendingPlayer,
@@ -290,3 +291,39 @@ def test_the_matchup_is_fetched_once_for_both_the_prompt_and_the_header() -> Non
     assert client.matchup_fetches == 1
     assert "OPPONENT:" in context.situation
     assert any(s.label == "Opponent" for s in context.headline)
+
+
+# ── what the projections rest on ────────────────────────────────────────
+
+
+def _played() -> list[NFLGameLine]:
+    """Good RB's first two games, both against MIA's run defense."""
+    return [
+        NFLGameLine(
+            player_id="rb1",
+            week=w,
+            team="BUF",
+            opponent="MIA",
+            position="RB",
+            stats={"off_snp": 45, "tm_off_snp": 60, "rush_att": 16, "pts_ppr": 17},
+        )
+        for w in (1, 2)
+    ]
+
+
+def test_each_player_line_carries_his_role_and_matchup() -> None:
+    prompt = _context(game_lines=_played()).prompt
+
+    assert "last 2 games: 75% of snaps, 16.0 carries" in prompt
+    assert "vs MIA, the most to RBs" in prompt
+
+
+def test_the_model_is_told_to_weigh_the_role_over_the_projection() -> None:
+    prompt = _context().prompt
+
+    assert "Weigh role and matchup over the projection" in prompt
+    assert "Never recommend a DROP off one poor game" in prompt
+
+
+def test_with_nothing_played_the_lines_are_the_projection_alone() -> None:
+    assert "of snaps" not in _context().prompt
