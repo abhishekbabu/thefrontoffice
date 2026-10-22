@@ -612,6 +612,11 @@ def test_the_summary_marks_the_captain_and_the_doubts() -> None:
     assert summary.swaps  # P15 is the strongest forward and starts on the bench
 
 
+def test_a_competition_with_no_action_list_says_none_rather_than_nothing_to_do() -> None:
+    """An empty list would read as "all done" on a page that never checked."""
+    assert provider().summary(LEAGUE_ID).actions is None
+
+
 def test_the_summary_reports_a_blank_gameweek_on_the_player_not_just_the_club() -> None:
     """A club with no fixture means every one of its players scores zero."""
     summary = provider(fixtures=[]).summary(LEAGUE_ID)

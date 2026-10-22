@@ -68,6 +68,8 @@ class SleeperLeague:
     total_rosters: int
     scoring_format: ScoringFormat
     roster_positions: list[str] = field(default_factory=list)
+    trade_deadline: int = 0
+    """The last week trades are accepted. Zero where the league set none."""
 
     @property
     def starting_slots(self) -> list[str]:

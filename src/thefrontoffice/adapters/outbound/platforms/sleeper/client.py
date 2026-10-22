@@ -163,6 +163,7 @@ class SleeperClient:
             total_rosters=int(data.get("total_rosters", 0)),
             scoring_format=SleeperClient.detect_scoring_format(settings_blob),
             roster_positions=[str(p) for p in data.get("roster_positions") or []],
+            trade_deadline=int((data.get("settings") or {}).get("trade_deadline") or 0),
         )
 
     @staticmethod

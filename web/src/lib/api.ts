@@ -58,6 +58,22 @@ export type Spot = {
 /** A change the numbers already imply, before anyone has judged them. */
 export type Swap = { start: string; out: string; gain: string };
 
+/** now: costs points this week if left. soon: before this week's next
+    deadline. later: planning for a week still to come. */
+export type Urgency = "now" | "soon" | "later";
+
+/** One decision the week asks of the manager, and why it is one. */
+export type Action = {
+  kind: "lineup" | "waiver" | "trade";
+  urgency: Urgency;
+  title: string;
+  reason: string;
+  /** The deadline as a label; empty where the platform publishes none. */
+  when: string;
+  /** The player the move turns on, to open their detail. */
+  player_id: string;
+};
+
 /** One team in a matchup — yours, or the one you are playing. */
 export type Side = { name: string; detail: string; points: string; lineup: Spot[]; bench: Spot[] };
 
@@ -67,6 +83,9 @@ export type Summary = {
   /** Null when the week has no fixture, which is not a nil-nil scoreline. */
   opponent: Side | null;
   swaps: Swap[];
+  /** Most urgent first. Null where the competition computes none yet, which
+      is not the same answer as an empty list: nothing to do. */
+  actions: Action[] | null;
   fixtures: Stat[];
   /** One-time advantages the manager can spend; null in a competition with none. */
   boosts: StatGroup | null;

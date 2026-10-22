@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, type League, type Competition, type Summary } from "@/lib/api";
+import { api, type Action, type League, type Competition, type Summary, type Urgency } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Loading } from "@/components/ui/state";
@@ -38,6 +38,8 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
 
       {week.data && (
         <div className="flex flex-col gap-4 p-5">
+          {week.data.actions && <ActionList actions={week.data.actions} onOpen={openPlayer} />}
+
           {week.data.opponent ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <SideCard side={week.data.mine} label="You" onOpen={openPlayer} />
@@ -48,14 +50,14 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
               title="Your lineup"
               lineup={week.data.mine?.lineup ?? []}
               bench={week.data.mine?.bench ?? []}
-              swaps={week.data.swaps}
+              swaps={week.data.actions ? [] : week.data.swaps}
               onOpen={openPlayer}
             />
           )}
 
           {/* Shown beside the lineups when there is an opponent, since the
               swaps then have no card of their own to live in. */}
-          {week.data.opponent && week.data.swaps.length > 0 && (
+          {!week.data.actions && week.data.opponent && week.data.swaps.length > 0 && (
             <Card>
               <CardHeader>
                 <span>Changes the projections imply</span>
@@ -135,5 +137,68 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       )}
       {drawer}
     </>
+  );
+}
+
+/** Said in words as well as color, so the order survives without the hue. */
+const URGENCY: Record<Urgency, { label: string; variant: "warn" | "info" | "muted" }> = {
+  now: { label: "Now", variant: "warn" },
+  soon: { label: "Soon", variant: "info" },
+  later: { label: "Later", variant: "muted" },
+};
+
+/**
+ * What to do about the week, most urgent first.
+ *
+ * At the top because it is the reason to open the page: the lineups below are
+ * the evidence, and this is the conclusion. Each row names its deadline where
+ * the platform has one and opens the player it turns on. An empty list is
+ * said out loud — "nothing to do" is an answer worth having, and a missing
+ * card would look the same as a page that never checked.
+ */
+function ActionList({ actions, onOpen }: { actions: Action[]; onOpen: (id: string) => void }) {
+  return (
+    <Card>
+      <CardHeader>
+        <span>To do</span>
+        {actions.length > 0 && <span>{actions.length}</span>}
+      </CardHeader>
+      {actions.length === 0 ? (
+        <p className="px-4 py-3 text-[13px] text-muted-foreground">Nothing to do — your lineup is set for the week.</p>
+      ) : (
+        <ol className="flex flex-col">
+          {actions.map((action) => {
+            const open = action.player_id ? () => onOpen(action.player_id) : undefined;
+            const urgency = URGENCY[action.urgency];
+            return (
+              <li
+                key={`${action.kind}-${action.title}`}
+                onClick={open}
+                onKeyDown={open && ((e) => e.key === "Enter" && open())}
+                tabIndex={open ? 0 : undefined}
+                role={open ? "button" : undefined}
+                className={cn(
+                  "flex items-start gap-3 border-t border-border px-4 py-3 first:border-t-0",
+                  open && "cursor-pointer hover:bg-muted",
+                )}
+              >
+                <Badge variant={urgency.variant} appearance="status" className="mt-0.5 w-16 shrink-0">
+                  {urgency.label}
+                </Badge>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13.5px] font-medium">{action.title}</div>
+                  <div className="mt-0.5 text-[12.5px] text-muted-foreground">{action.reason}</div>
+                </div>
+                {action.when && (
+                  <span className="shrink-0 pt-0.5 text-right font-mono text-[11px] text-muted-foreground">
+                    {action.when}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </Card>
   );
 }

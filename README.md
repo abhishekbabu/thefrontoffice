@@ -79,6 +79,12 @@ path naming a competition you cannot play returns to `/`.
 them, and the swaps the projections already imply. All read or computed from
 league state, so it is complete before a model is asked anything.
 
+On NFL it opens with a **To do** list, most urgent first: a starter ruled out
+or on bye, an empty slot, a swap the bench allows, next week's byes with nobody
+behind them, the trade deadline. Each names the fix — the bench player who
+covers, or the best free agent who can play when nobody does — and its deadline
+where Sleeper publishes one: a game's day, never a guessed kickoff or waiver time.
+
 ![Free agents](docs/screenshots/free-agents.png)
 
 **Free agents** — everyone available, ranked by projection, searchable and

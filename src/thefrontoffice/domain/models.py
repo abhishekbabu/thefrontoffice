@@ -257,6 +257,35 @@ class Swap(BaseModel):
     gain: str
 
 
+ActionKind = Literal["lineup", "waiver", "trade"]
+
+Urgency = Literal["now", "soon", "later"]
+"""now: costs points this week if left alone. soon: worth doing before this
+week's next deadline. later: planning for a week still to come."""
+
+
+class Action(BaseModel):
+    """One decision the week asks of the manager, and why it is one.
+
+    Computed from league state, never by a model: a starter ruled out or a slot
+    left empty is a fact, and the list has to be right before anything is
+    asked to judge it.
+    """
+
+    kind: ActionKind
+    urgency: Urgency
+    title: str = Field(description="The move, as an instruction: 'Start Jordyn Tyson over Chris Olave'.")
+    reason: str = Field(description="Why, in the league's own facts: 'Olave is ruled out. +11.2 proj pts'.")
+    when: str = Field(
+        default="",
+        description=(
+            "The deadline, as a label: 'before kickoff, Thu 22 Oct', 'week 8'. Empty when the "
+            "platform publishes none — a guessed deadline is worse than no deadline."
+        ),
+    )
+    player_id: str = Field(default="", description="The player the move turns on, to open their detail.")
+
+
 class Summary(BaseModel):
     """Where a team stands, with no analysis in it.
 
@@ -272,6 +301,11 @@ class Summary(BaseModel):
     swaps: list[Swap] = Field(default_factory=list)
     """Changes the projections imply. Exact, and the report's job is to endorse
     or overrule them rather than to find them."""
+
+    actions: list[Action] | None = None
+    """What to do about the week, most urgent first. None where a competition
+    computes none yet, which is not the same answer as an empty list: nothing
+    to do."""
 
     fixtures: list[Stat] = Field(default_factory=list)
     """The real-world matches behind the week, one per club in play."""
