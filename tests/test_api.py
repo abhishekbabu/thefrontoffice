@@ -189,6 +189,28 @@ def test_free_agents_are_judged_where_the_competition_can(monkeypatch: pytest.Mo
     assert body[0]["decision"] == "ADD"
 
 
+def test_the_kept_calls_on_free_agents_are_shown_without_judging(monkeypatch: pytest.MonkeyPatch) -> None:
+    from thefrontoffice.domain.models import PlayerCall
+
+    class _Judge:
+        def kept(self, league_id: str, player_ids: list[str]) -> Any:
+            return [PlayerCall(player_id=player_ids[0], decision="WATCH", reason="Role growing.", stale=True)]
+
+        def judge(self, league_id: str, player_ids: list[str]) -> Any:
+            raise AssertionError("must not ask the model")
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider())
+    monkeypatch.setattr(web, "wire_engine", lambda p: _Judge())
+
+    body = (
+        TestClient(web.create_app())
+        .post("/api/nfl-sleeper/leagues/900/free-agents/calls", json={"player_ids": ["p1"]})
+        .json()
+    )
+
+    assert body[0]["decision"] == "WATCH" and body[0]["stale"] is True
+
+
 def test_judging_free_agents_is_refused_where_it_is_not_offered(client: TestClient) -> None:
     response = client.post("/api/premier-league-fpl/leagues/900/free-agents/judge", json={"player_ids": ["p1"]})
 
@@ -270,17 +292,17 @@ def test_a_league_never_judged_has_no_judgment_to_show(client: TestClient) -> No
 def test_the_last_judgment_is_shown_without_running_the_model(monkeypatch: pytest.MonkeyPatch) -> None:
     from datetime import datetime, timezone
 
-    from thefrontoffice.domain.models import Judgment
+    from thefrontoffice.domain.models import Remembered
 
     engine = _Engine()
-    engine.judged = Judgment(report=MOCK_FPL_REPORT, judged_at=datetime.now(timezone.utc), inputs="abc")
+    engine.judged = Remembered(answer=MOCK_FPL_REPORT, answered_at=datetime.now(timezone.utc), inputs="abc")
     monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider())
     monkeypatch.setattr(web, "scout_engine", lambda p: engine)
 
     body = TestClient(web.create_app()).get("/api/premier-league/leagues/900/judgment").json()
 
-    assert body["report"]["strategy"] == MOCK_FPL_REPORT.strategy
-    assert body["judged_at"]
+    assert body["answer"]["strategy"] == MOCK_FPL_REPORT.strategy
+    assert body["answered_at"]
 
 
 def test_a_thread_about_one_thing_opens_and_is_asked_through_the_chat(monkeypatch: pytest.MonkeyPatch) -> None:

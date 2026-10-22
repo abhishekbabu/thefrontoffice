@@ -5,12 +5,11 @@ report back from the model, and open a chat seeded with a briefing rather than
 the whole prompt.
 """
 
-import hashlib
 import logging
-from datetime import datetime, timezone
 
-from thefrontoffice.domain.models import Action, Judgment, ScoutReport, Stat, TaskVerdict, judgment_scope, task_id
-from thefrontoffice.domain.ports import AnalysisModel, ChatSession, CompetitionProvider, JudgmentStore
+from thefrontoffice.application.answers import Answers
+from thefrontoffice.domain.models import Action, Remembered, ScoutReport, Stat, TaskVerdict, answer_scope, task_id
+from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatSession, CompetitionProvider
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ScoutEngine:
     """Turns any CompetitionProvider into a scouting report."""
 
-    def __init__(self, provider: CompetitionProvider, *, ai: AnalysisModel, judgments: JudgmentStore):
+    def __init__(self, provider: CompetitionProvider, *, ai: AnalysisModel, answers: AnswerStore):
         """Every collaborator is a port, and every one is supplied.
 
         Deliberately no default: constructing one here would mean naming a
@@ -27,11 +26,11 @@ class ScoutEngine:
         """
         self.provider = provider
         self.ai = ai
-        self.judgments = judgments
+        self.answers = Answers(answers)
 
-    def latest(self, league_id: str) -> Judgment | None:
+    def latest(self, league_id: str) -> Remembered[ScoutReport] | None:
         """The last judgment of this league, without asking anything new."""
-        return self.judgments.latest(judgment_scope(self.provider.label, league_id))
+        return self.answers.latest(scout_scope(self.provider.label, league_id), ScoutReport)
 
     def report(self, league_id: str) -> ScoutReport:
         """The judged report alone, with no conversation opened beside it.
@@ -65,18 +64,11 @@ class ScoutEngine:
         return report, chat
 
     def _judge(self, league_id: str, prompt: str, headline: list[Stat], tasks: list[Action]) -> ScoutReport:
-        """The model's report on `prompt`, or the stored one where nothing it read has changed.
+        """The model's report on `prompt`, or the kept one where nothing it read has changed."""
+        scope = scout_scope(self.provider.label, league_id)
+        return self.answers.answer(scope, prompt, ScoutReport, lambda: self._ask(prompt, headline, tasks)).answer
 
-        Asking again about an unchanged week spends a call for the same answer,
-        and on a free tier a call is the scarce thing.
-        """
-        scope = judgment_scope(self.provider.label, league_id)
-        inputs = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-        stored = self.judgments.latest(scope)
-        if stored is not None and stored.inputs == inputs:
-            logger.info(f"{scope}: nothing has changed since the last judgment; reusing it")
-            return stored.report
-
+    def _ask(self, prompt: str, headline: list[Stat], tasks: list[Action]) -> ScoutReport:
         report = self.ai.generate_structured(prompt, ScoutReport)
 
         # The provider read these off the platform; the model was told to leave
@@ -85,9 +77,7 @@ class ScoutEngine:
         # likewise: the model judges them, it does not get to restate them.
         verdicts = self._verdicts(report.verdicts, len(tasks))
         judged = [task.model_copy(update={"verdict": verdicts.get(task_id(i))}) for i, task in _numbered(tasks)]
-        report = report.model_copy(update={"headline": headline, "tasks": judged, "verdicts": list(verdicts.values())})
-        self.judgments.save(scope, Judgment(report=report, judged_at=datetime.now(timezone.utc), inputs=inputs))
-        return report
+        return report.model_copy(update={"headline": headline, "tasks": judged, "verdicts": list(verdicts.values())})
 
     def _verdicts(self, verdicts: list[TaskVerdict], count: int) -> dict[str, TaskVerdict]:
         """The model's verdicts keyed by task, keeping only ones that name a real task once.
@@ -112,3 +102,8 @@ class ScoutEngine:
 
 def _numbered(tasks: list[Action]) -> list[tuple[int, Action]]:
     return list(enumerate(tasks, start=1))
+
+
+def scout_scope(competition: str, league_id: str) -> str:
+    """Where a league's judgment of its week is kept."""
+    return answer_scope("scout", competition, league_id)

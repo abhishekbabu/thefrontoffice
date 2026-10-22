@@ -9,9 +9,11 @@ resent; and focused, so the answer is about the thing that was asked about.
 
 import logging
 
+from thefrontoffice.application.answers import Answers
+from thefrontoffice.application.scouting import scout_scope
 from thefrontoffice.domain.errors import SubjectGoneError
-from thefrontoffice.domain.models import Action, PlayerDetail, Subject, judgment_scope
-from thefrontoffice.domain.ports import AnalysisModel, ChatSession, CompetitionProvider, JudgmentStore
+from thefrontoffice.domain.models import Action, PlayerDetail, ScoutReport, Subject
+from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatSession, CompetitionProvider
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +49,11 @@ class AnchoredChat:
 class AskEngine:
     """Opens a conversation about one subject."""
 
-    def __init__(self, provider: CompetitionProvider, *, ai: AnalysisModel, judgments: JudgmentStore):
+    def __init__(self, provider: CompetitionProvider, *, ai: AnalysisModel, answers: AnswerStore):
         """Every collaborator is a port, supplied by `bootstrap.ask_engine`."""
         self.provider = provider
         self.ai = ai
-        self.judgments = judgments
+        self.answers = Answers(answers)
 
     def open(self, league_id: str, subject: Subject) -> ChatSession:
         """A conversation seeded with `subject`.
@@ -74,8 +76,8 @@ class AskEngine:
             logger.info(f"{self.provider.label}: asked about {key!r}, which the week no longer holds")
             raise SubjectGoneError()
 
-        judged = self.judgments.latest(judgment_scope(self.provider.label, league_id))
-        then = next((t for t in judged.report.tasks if t.key == key), None) if judged else None
+        judged = self.answers.latest(scout_scope(self.provider.label, league_id), ScoutReport)
+        then = next((t for t in judged.answer.tasks if t.key == key), None) if judged else None
         verdict = ""
         if then is not None and then.verdict is not None:
             changed = (

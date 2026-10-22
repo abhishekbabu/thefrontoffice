@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from thefrontoffice.adapters.inbound.web import data
-from thefrontoffice.application.wire import MAX_JUDGED
+from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import (
     CompetitionEntry,
     ai_available,
@@ -39,13 +39,13 @@ from thefrontoffice.config.settings import PROJECT_ROOT, settings
 from thefrontoffice.config.telemetry import setup_telemetry
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import (
-    Judgment,
     LeagueSchedule,
     PlayerCall,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    Remembered,
     ScoutReport,
     Subject,
     Summary,
@@ -157,6 +157,12 @@ class JudgeRequest(BaseModel):
     """The free agents on screen to judge, best first."""
 
     player_ids: list[str] = Field(min_length=1, max_length=MAX_JUDGED)
+
+
+class CallsRequest(BaseModel):
+    """The free agents on screen, whose kept calls to show."""
+
+    player_ids: list[str] = Field(min_length=1, max_length=MAX_SHOWN)
 
 
 class Thread(BaseModel):
@@ -422,8 +428,8 @@ def _register_routes(app: FastAPI) -> None:
         """Judge the week's to-do list — or return the kept judgment where nothing has changed."""
         return scout_engine(data.build_provider(competition)).report(league_id)
 
-    @app.get("/api/{competition}/leagues/{league_id}/judgment", response_model=Judgment | None)
-    def judgment(competition: str, league_id: str) -> Judgment | None:
+    @app.get("/api/{competition}/leagues/{league_id}/judgment", response_model=Remembered[ScoutReport] | None)
+    def judgment(competition: str, league_id: str) -> Remembered[ScoutReport] | None:
         """The league's last judgment, or null — read without asking the model anything.
 
         What lets the week show its verdicts on load: judging is a click,
@@ -449,6 +455,17 @@ def _register_routes(app: FastAPI) -> None:
         entry = _capable(competition, "judging free agents", lambda e: e.judges_wire)
         provider = data.build_provider(entry.key)
         return wire_engine(provider).judge(league_id, request.player_ids)
+
+    @app.post("/api/{competition}/leagues/{league_id}/free-agents/calls", response_model=list[PlayerCall])
+    def free_agent_calls(competition: str, league_id: str, request: CallsRequest) -> list[PlayerCall]:
+        """The kept call on each free agent on screen, without asking the model anything.
+
+        What lets the wire show its calls on load. A player whose situation
+        has moved since his call comes back marked stale.
+        """
+        entry = _capable(competition, "judging free agents", lambda e: e.judges_wire)
+        provider = data.build_provider(entry.key)
+        return wire_engine(provider).kept(league_id, request.player_ids)
 
     @app.post("/api/chat/{chat_id}", response_model=Reply)
     def ask(chat_id: str, request: ChatRequest) -> Reply:

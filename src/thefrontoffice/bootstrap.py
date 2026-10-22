@@ -244,21 +244,23 @@ def ai_available() -> bool:
 
 def scout_engine(provider: CompetitionProvider) -> ScoutEngine:
     """A scouting engine wired to the configured model and the judgments kept on disk."""
-    from thefrontoffice.adapters.outbound.llm.judgments import DiskJudgmentStore
+    from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
 
-    return ScoutEngine(provider, ai=default_model(), judgments=DiskJudgmentStore())
+    return ScoutEngine(provider, ai=default_model(), answers=DiskAnswerStore())
 
 
 def ask_engine(provider: CompetitionProvider) -> AskEngine:
     """Questions about one thing on screen, wired like the scouting engine."""
-    from thefrontoffice.adapters.outbound.llm.judgments import DiskJudgmentStore
+    from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
 
-    return AskEngine(provider, ai=default_model(), judgments=DiskJudgmentStore())
+    return AskEngine(provider, ai=default_model(), answers=DiskAnswerStore())
 
 
 def wire_engine(provider: WireProvider) -> WireEngine:
     """Calls on available players, wired to the configured model."""
-    return WireEngine(provider, ai=default_model())
+    from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
+
+    return WireEngine(provider, ai=default_model(), answers=DiskAnswerStore())
 
 
 def trade_engine(provider: TradeProvider) -> TradeEngine:

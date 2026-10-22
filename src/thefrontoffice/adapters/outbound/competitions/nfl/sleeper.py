@@ -521,7 +521,8 @@ class SleeperNFLProvider:
             raise PlayerNotFoundError(unavailable)
 
         candidates = [p for p in (projection_for(pid, state.projections, state.players) for pid in player_ids) if p]
-        candidate_lines = {p.name: self._wire_line(p, state) for p in candidates}
+        targets = {p.player_id: self._wire_line(p, state) for p in candidates}
+        candidate_lines = {p.name: targets[p.player_id] for p in candidates}
         roster_lines = {
             p.name: prompt.player_line(p, state.evidence, state.news)
             for p in sorted(state.projected, key=lambda x: -x.points)
@@ -544,6 +545,7 @@ class SleeperNFLProvider:
             constraints=constraints,
             roster_lines=roster_lines,
             candidate_lines=candidate_lines,
+            targets=targets,
         )
 
     def _wire_line(self, player: WeeklyProjection, state: Week) -> str:

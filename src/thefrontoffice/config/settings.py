@@ -42,8 +42,9 @@ class AppSettings(BaseSettings):
     openrouter_api_key: str | None = None
     openrouter_analysis_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
     openrouter_parsing_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
-    judgment_cache_dir: str = ".judgment_cache"
-    """Where each league's latest judgment is kept, so a reload shows it."""
+    answer_cache_dir: str = ".answer_cache"
+    """Where every model answer is kept — a week's judgment, each free agent's
+    call — so a reload shows it and an unchanged question costs no call."""
 
     # ── Yahoo ───────────────────────────────────────────────────────────
     yahoo_client_id: str | None = None

@@ -7,22 +7,22 @@ the conftest fake, whose chat records what was sent.
 from datetime import datetime, timezone
 
 import pytest
-from conftest import FakeAI, FakeJudgments
+from conftest import FakeAI, FakeAnswers
 from reports import MOCK_FPL_REPORT
 
 from thefrontoffice.application.asking import AskEngine
+from thefrontoffice.application.scouting import scout_scope
 from thefrontoffice.domain.errors import SubjectGoneError
 from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
-    Judgment,
     PlayerCard,
     PlayerDetail,
+    Remembered,
     Stat,
     StatGroup,
     Subject,
     TaskVerdict,
-    judgment_scope,
 )
 
 TASK = Action(
@@ -63,9 +63,9 @@ class OneWeek:
         return [PlayerCard(player_id="gibbs", columns={"Player": "Jahmyr Gibbs", "Pos": "RB"})]
 
 
-def _ask(subject: Subject, *questions: str, judgments: FakeJudgments | None = None) -> list[str]:
+def _ask(subject: Subject, *questions: str, answers: FakeAnswers | None = None) -> list[str]:
     ai = FakeAI()
-    chat = AskEngine(OneWeek(), ai=ai, judgments=judgments or FakeJudgments()).open("L1", subject)  # type: ignore[arg-type]
+    chat = AskEngine(OneWeek(), ai=ai, answers=answers or FakeAnswers()).open("L1", subject)  # type: ignore[arg-type]
     for question in questions:
         chat.send_message(question)
     return ai.chat.sent
@@ -92,17 +92,17 @@ def test_an_earlier_verdict_on_the_item_is_part_of_the_conversation() -> None:
     judged = TASK.model_copy(
         update={"verdict": TaskVerdict(task="T1", decision="WAIT", reason="His status is due Sunday.")}
     )
-    judgments = FakeJudgments()
-    judgments.save(
-        judgment_scope(OneWeek.label, "L1"),
-        Judgment(
-            report=MOCK_FPL_REPORT.model_copy(update={"tasks": [judged]}),
-            judged_at=datetime.now(timezone.utc),
+    answers = FakeAnswers()
+    answers.save(
+        scout_scope(OneWeek.label, "L1"),
+        Remembered(
+            answer=MOCK_FPL_REPORT.model_copy(update={"tasks": [judged]}),
+            answered_at=datetime.now(timezone.utc),
             inputs="x",
         ),
     )
 
-    [sent] = _ask(Subject(kind="task", key=TASK.key), "Why wait?", judgments=judgments)
+    [sent] = _ask(Subject(kind="task", key=TASK.key), "Why wait?", answers=answers)
 
     assert "His status is due Sunday." in sent
 

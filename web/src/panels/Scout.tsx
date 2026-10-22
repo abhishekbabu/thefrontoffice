@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
-import { api, type ScoutReport, type Judgment, type League, type Competition, type Summary } from "@/lib/api";
+import { api, type ScoutReport, type Remembered, type League, type Competition, type Summary } from "@/lib/api";
 import { ActionList, WhyThread } from "@/components/ui/actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +37,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
   // The last judgment, read without asking the model anything: judging is a
   // click, and a reload should not throw the answer away.
   const judgmentKey = ["judgment", competition.key, league.league_id];
-  const judgment = useQuery<Judgment | null, Error>({
+  const judgment = useQuery<Remembered<ScoutReport> | null, Error>({
     queryKey: judgmentKey,
     queryFn: () => api.judgment(competition.key, league.league_id),
     enabled: ai && Boolean(week.data?.actions),
@@ -47,7 +47,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
     mutationFn: () => api.scout(competition.key, league.league_id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: judgmentKey }),
   });
-  const report = judgment.data?.report;
+  const report = judgment.data?.answer;
 
   return (
     <>
@@ -82,7 +82,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
                 ai && (
                   <span className="flex items-center gap-2 normal-case tracking-normal">
                     {judgment.data && !judge.isPending && (
-                      <span className="font-normal">judged {judgedAt(judgment.data.judged_at)}</span>
+                      <span className="font-normal">judged {judgedAt(judgment.data.answered_at)}</span>
                     )}
                     {judge.isPending && <span className="font-normal">judging…</span>}
                     <IconButton

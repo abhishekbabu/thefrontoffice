@@ -103,7 +103,7 @@ With a model configured, the list has a **Judge** control: the model judges
 each to-do item by its id — *agree*, *overrule* or *wait for news* — and the
 verdict appears inside the row it is about, while moves the list missed join it
 as *suggested* rows. Nothing runs on load. The latest judgment of each league
-is kept (`JUDGMENT_CACHE_DIR`, a week), so a reload shows it, and judging an
+is kept (see *Kept answers* below), so a reload shows it, and judging an
 unchanged week again returns it without a call. Each item has a stable key — the
 hole it fills or the swap it makes — and a fingerprint of what it says; a
 verdict on an item that has since changed stays, faded and marked *stale*. The
@@ -128,7 +128,10 @@ a deep league where nobody on the wire outprojects a starter — and sorts the
 whole pool by it, so the closest replacements come first. With a model, **Judge**
 puts the first ten rows on screen to it: each gets a call — *add* (and who to
 drop), *watch* or *pass* — on a line under its row, grounded in the role,
-matchup and news its prompt line carries. **League** covers the season: your results so far, the
+matchup and news its prompt line carries. Calls are kept per player, so a
+reload shows them, judging the page again asks only about the players whose
+situation moved, and a call on one who has moved since shows as *stale*.
+**League** covers the season: your results so far, the
 table, every roster, the fixture list and the transaction feed. **My team** is
 your squad in more depth, and any row opens a player.
 
@@ -139,6 +142,15 @@ in to-do rows, calls under free-agent rows, a conversation under a row or at
 the foot of a player — and none of it appears without a model key: controls
 that cannot work are hidden rather than disabled. The old Report and Trade
 pages are gone; a trade is still evaluated from the CLI.
+
+**Kept answers.** Every model answer goes through one layer
+(`application/answers.py`, behind an `AnswerStore` port, on disk under
+`ANSWER_CACHE_DIR` for a week). Each is kept under a scope naming what it is
+about — a league's week, or one free agent — with a digest of exactly what the
+model was given. Asking again with unchanged input returns the kept answer
+without a call; reading never asks; and a caller compares the digest with what
+it would send now to mark an answer stale. Anything model-backed added later
+asks through the same two calls.
 
 The same three competitions run in the CLI:
 

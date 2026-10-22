@@ -10,7 +10,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -522,6 +522,13 @@ class PlayerCall(BaseModel):
     )
     drop: str = Field(default="", description="For ADD, who on the roster makes way. Empty otherwise.")
     reason: str = Field(description="One sentence, grounded in role, matchup or news — never the projection alone.")
+    judged_at: datetime | None = Field(
+        default=None, description="LEAVE THIS EMPTY. The application sets when the call was made."
+    )
+    stale: bool = Field(
+        default=False,
+        description="LEAVE THIS FALSE. The application sets it where the player's situation has changed since.",
+    )
 
 
 class WireReport(BaseModel):
@@ -530,21 +537,30 @@ class WireReport(BaseModel):
     calls: list[PlayerCall] = Field(description="Exactly one per listed player, by id.")
 
 
-def judgment_scope(competition: str, league_id: str) -> str:
-    """Whose judgment a stored one is: the competition on its platform, then the league."""
-    return f"{competition}:{league_id}"
+def answer_scope(kind: str, *about: str) -> str:
+    """What a kept answer is about: the kind of call, then whose and of what.
+
+    `("scout", "NFL (Sleeper)", league)` for a week's judgment;
+    `("wire", "NFL (Sleeper)", league, player)` for one free agent's call.
+    One answer is kept per scope, so the scope is as fine as the answer.
+    """
+    return ":".join((kind, *about))
 
 
-class Judgment(BaseModel):
-    """The model's last word on a league, kept so it outlives the request.
+AnswerT = TypeVar("AnswerT", bound=BaseModel)
 
-    Re-asking about an unchanged week returns this rather than spending a
-    call, and the week can show its verdicts on load without running anything.
+
+class Remembered(BaseModel, Generic[AnswerT]):
+    """A model's answer, kept with exactly what it was given.
+
+    Every call to a model goes through the same keeping: asked again only
+    when what it would be given has changed, shown again on a reload without
+    asking, and marked stale where its subject has moved on since.
     """
 
-    report: ScoutReport
-    judged_at: datetime
-    inputs: str = Field(description="A digest of the prompt it answered, which a re-run compares against.")
+    answer: AnswerT
+    inputs: str = Field(description="A digest of what the answer was given; a fresh ask compares against it.")
+    answered_at: datetime
 
 
 class TradeVerdict(BaseModel):
@@ -613,6 +629,9 @@ class CompetitionContext:
     """Exact figures for the report header, read from league state rather than written by the model."""
     tasks: list[Action] = field(default_factory=list)
     """The to-do items the prompt lists, in order, so a verdict naming `task_id(n)` finds its item."""
+    targets: dict[str, str] = field(default_factory=dict)
+    """Each subject's own lines in the prompt, keyed by its id — what an answer
+    kept per subject was given, and so what tells whether it is still current."""
 
     def briefing(self, report: ScoutReport) -> str:
         """A compact context for follow-up questions about `report`.

@@ -131,13 +131,16 @@ export type PlayerCall = {
   /** For ADD, who on the roster makes way. */
   drop: string;
   reason: string;
+  judged_at: string | null;
+  /** The player's situation has moved since the call was made. */
+  stale: boolean;
 };
 
 /** What a conversation is about: one to-do item by its key, or one player by id. */
 export type Subject = { kind: "task" | "player"; key: string };
 
-/** The model's last word on a league, kept so a reload still shows it. */
-export type Judgment = { report: ScoutReport; judged_at: string; inputs: string };
+/** Any model answer, kept with a digest of what it was given and when. */
+export type Remembered<T> = { answer: T; answered_at: string; inputs: string };
 
 /** What this installation can do, as opposed to what it knows how to do. */
 export type Capabilities = { ai: boolean };
@@ -333,6 +336,8 @@ export const api = {
   summary: (competition: string, league: string) => request<Summary>(`/api/${competition}/leagues/${league}/summary`),
   schedule: (competition: string, league: string) =>
     request<LeagueSchedule>(`/api/${competition}/leagues/${league}/schedule`),
+  freeAgentCalls: (competition: string, league: string, playerIds: string[]) =>
+    post<PlayerCall[]>(`/api/${competition}/leagues/${league}/free-agents/calls`, { player_ids: playerIds }),
   judgeFreeAgents: (competition: string, league: string, playerIds: string[]) =>
     post<PlayerCall[]>(`/api/${competition}/leagues/${league}/free-agents/judge`, { player_ids: playerIds }),
   freeAgents: (competition: string, league: string, query: FreeAgentQuery = {}) => {
@@ -349,7 +354,7 @@ export const api = {
   thread: (competition: string, league: string, subject: Subject) =>
     post<{ chat_id: string }>(`/api/${competition}/leagues/${league}/threads`, subject),
   judgment: (competition: string, league: string) =>
-    request<Judgment | null>(`/api/${competition}/leagues/${league}/judgment`),
+    request<Remembered<ScoutReport> | null>(`/api/${competition}/leagues/${league}/judgment`),
   ask: (chatId: string, message: string) => post<{ answer: string }>(`/api/chat/${chatId}`, { message }),
   capabilities: () => request<Capabilities>("/api/capabilities"),
   settings: () => request<Setting[]>("/api/settings"),
