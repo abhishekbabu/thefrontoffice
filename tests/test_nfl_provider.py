@@ -11,6 +11,7 @@ import pytest
 from conftest import (
     DEFAULT_PROJECTIONS,
     SLEEPER_USER_ID,
+    FakeESPN,
     FakeSleeper,
     _league_client,
     _proj,
@@ -44,7 +45,7 @@ def test_leagues_are_listed_with_format_and_size() -> None:
 
 
 def test_missing_username_is_a_clear_error() -> None:
-    provider = SleeperNFLProvider(username=None, client=FakeSleeper())  # type: ignore[arg-type]
+    provider = SleeperNFLProvider(username=None, client=FakeSleeper(), espn=FakeESPN())  # type: ignore[arg-type]
     with pytest.raises(LeagueNotFoundError, match="SLEEPER_USERNAME"):
         provider.list_leagues()
 
@@ -184,6 +185,25 @@ def test_the_drawer_shows_what_the_projection_rests_on() -> None:
     assert stats["Targets a game"] == "3.0"
     assert stats["Target share"] == "100%"
     assert stats["Points a game, last 2"] == "17.0"
+
+
+def test_the_drawer_shows_the_latest_news_about_the_player() -> None:
+    from datetime import datetime, timezone
+
+    from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
+
+    article = NewsArticle(article_id="1", published=datetime.now(timezone.utc), headline="Good RB takes over")
+    detail = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS), FakeESPN({"BUF": [article]})).player("L1", "rb1")
+
+    [group] = [g for g in detail.groups if g.title == "Latest news"]
+    assert [s.value for s in group.stats] == [article.headline]
+
+
+def test_every_club_is_asked_for_by_espns_abbreviation() -> None:
+    espn = FakeESPN()
+    _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS), espn).summary("L1")
+
+    assert "BUF" in espn.asked and "FA" not in espn.asked
 
 
 def test_with_nothing_played_the_drawer_has_no_role_section() -> None:

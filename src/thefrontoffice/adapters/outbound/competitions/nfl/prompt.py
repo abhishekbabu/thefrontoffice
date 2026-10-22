@@ -12,6 +12,7 @@ twice for one report.
 import logging
 
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
+from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews, dated
 from thefrontoffice.adapters.outbound.competitions.nfl.week import SCORING_LABELS, Week
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -41,25 +42,28 @@ def build(client: SleeperClient, state: Week, league_id: str, tasks: list[Action
     lineup = state.lineup
 
     slots = league.starting_slots
-    evidence = state.evidence
-    roster_lines = {p.name: player_line(p, evidence) for p in sorted(projected, key=lambda x: -x.points)}
+    evidence, news = state.evidence, state.news
+    roster_lines = {p.name: player_line(p, evidence, news) for p in sorted(projected, key=lambda x: -x.points)}
     starter_ids = state.starter_ids
     lineup_str = "".join(
         f"- {slot.slot}: {slot.player.name} ({slot.player.position}, {slot.player.team}) "
         f"{slot.player.points:.1f} pts vs {slot.player.opponent or 'TBD'}\n"
         + (f"  {behind}\n" if (behind := evidence.describe(slot.player)) else "")
+        + news_lines(news, slot.player.player_id)
         if slot.player
         else f"- {slot.slot}: (empty)\n"
         for slot in lineup
     )
-    bench_str = "".join(player_line(p, evidence) for p in projected if p.player_id not in starter_ids) or "- (none)\n"
+    bench_str = (
+        "".join(player_line(p, evidence, news) for p in projected if p.player_id not in starter_ids) or "- (none)\n"
+    )
     tasks_str = "".join(task_line(i, task) for i, task in enumerate(tasks, start=1)) or (
         "- None. Nothing in league state needs deciding: the lineup is the best legal one and nobody "
         "in it is ruled out.\n"
     )
 
     available = _available_players(client, league_id, projections, players)
-    available_lines = {p.name: player_line(p, evidence) for p in available}
+    available_lines = {p.name: player_line(p, evidence, news) for p in available}
     trending_str = _trending(client, projections, players)
 
     situation, matchup_stats = matchup(client, league, roster, league_id, week)
@@ -126,13 +130,27 @@ def headline(
     return stats
 
 
-def player_line(p: WeeklyProjection, evidence: Evidence | None = None) -> str:
+NEWS_PER_PLAYER = 2
+"""Enough to show a trend in the coverage, few enough that the pool stays readable."""
+
+
+def player_line(p: WeeklyProjection, evidence: Evidence | None = None, news: PlayerNews | None = None) -> str:
     """One player as the model reads him: the projection, then what it rests on."""
     injury = f" [{p.injury_status}]" if p.is_questionable else ""
     opponent = f" vs {p.opponent}" if p.opponent else " (no game)"
     behind = evidence.describe(p) if evidence else ""
-    return f"- {p.name} ({p.position}, {p.team}){injury}{opponent}: {p.points:.1f} proj pts\n" + (
-        f"  {behind}\n" if behind else ""
+    return (
+        f"- {p.name} ({p.position}, {p.team}){injury}{opponent}: {p.points:.1f} proj pts\n"
+        + (f"  {behind}\n" if behind else "")
+        + (news_lines(news, p.player_id) if news else "")
+    )
+
+
+def news_lines(news: PlayerNews, player_id: str) -> str:
+    """A player's latest headlines, dated, with ESPN's one-line summary."""
+    return "".join(
+        f"  news, {dated(a)}: {a.headline}" + (f" — {a.summary}" if a.summary else "") + "\n"
+        for a in news.latest(player_id, NEWS_PER_PLAYER)
     )
 
 

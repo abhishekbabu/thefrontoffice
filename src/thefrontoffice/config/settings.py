@@ -50,6 +50,11 @@ class AppSettings(BaseSettings):
     fpl_entry_id: int | None = Field(default=None, gt=0)
     fpl_cache_dir: str = ".fpl_cache"
 
+    # ── ESPN ────────────────────────────────────────────────────────────
+    # Public news feeds, no credentials. Read for the headlines behind a
+    # player, which no fantasy platform here publishes.
+    espn_cache_dir: str = ".espn_cache"
+
     # ── Telemetry ───────────────────────────────────────────────────────
     # Optional. Without a token nothing is exported and no network call is
     # made, so a fresh clone and the test suite behave identically to before.

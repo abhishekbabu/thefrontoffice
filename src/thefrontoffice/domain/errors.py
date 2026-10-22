@@ -82,6 +82,14 @@ class SleeperAPIError(FrontOfficeError):
     """
 
 
+class ESPNAPIError(FrontOfficeError):
+    """An ESPN API call failed.
+
+    Distinct from an empty result: a club nobody has written about this week
+    is a valid answer, a failed request is not.
+    """
+
+
 class FPLAPIError(FrontOfficeError):
     """A Fantasy Premier League API call failed.
 

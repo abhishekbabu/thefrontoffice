@@ -9,6 +9,7 @@ from typing import Any
 from conftest import (
     DEFAULT_PROJECTIONS,
     SLEEPER_USER_ID,
+    FakeESPN,
     FakeSleeper,
     _proj,
     _provider,
@@ -358,3 +359,18 @@ def test_a_to_do_item_carries_its_evidence_into_the_prompt() -> None:
     [task] = context.tasks
     assert task.evidence
     assert all(line.value in context.prompt for line in task.evidence)
+
+
+def test_each_player_line_carries_his_latest_news() -> None:
+    from datetime import datetime, timezone
+
+    from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
+
+    article = NewsArticle(
+        article_id="1", published=datetime.now(timezone.utc), headline="Good RB takes over", summary="Lead back now."
+    )
+    client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS))
+
+    prompt = _provider(client, FakeESPN({"BUF": [article]})).build_context("L1").prompt
+
+    assert article.headline in prompt and article.summary in prompt

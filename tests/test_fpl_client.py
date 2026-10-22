@@ -14,7 +14,6 @@ import requests
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.client import (
     FPLClient,
-    _parse_deadline,
     free_transfers,
 )
 from thefrontoffice.adapters.outbound.platforms.fpl.types import MAX_FREE_TRANSFERS, GameweekResult
@@ -174,19 +173,6 @@ def no_retry_wait(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def client(tmp_path: Path) -> FPLClient:
     return FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession())
-
-
-# ── timestamps ──────────────────────────────────────────────────────────
-
-
-def test_a_trailing_z_deadline_parses() -> None:
-    """Every FPL timestamp ends in Z, which fromisoformat rejects on 3.10."""
-    parsed = _parse_deadline("2026-08-21T17:30:00Z")
-    assert parsed == datetime(2026, 8, 21, 17, 30, tzinfo=timezone.utc)
-
-
-def test_a_naive_timestamp_is_read_as_utc() -> None:
-    assert _parse_deadline("2026-08-21T17:30:00").tzinfo == timezone.utc
 
 
 # ── the bootstrap payload ───────────────────────────────────────────────

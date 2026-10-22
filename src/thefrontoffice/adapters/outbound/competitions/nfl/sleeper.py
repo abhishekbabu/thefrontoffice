@@ -10,10 +10,11 @@ is the only configuration.
 
 import logging
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
-from thefrontoffice.adapters.outbound.competitions.nfl import actions, evidence, league, prompt
+from thefrontoffice.adapters.outbound.competitions.nfl import actions, evidence, league, news, prompt
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupSlot,
     current_lineup,
@@ -31,6 +32,8 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     zero_projection,
 )
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
+from thefrontoffice.adapters.outbound.platforms.espn import types as espn
+from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL, SleeperClient
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     FANTASY_POSITIONS,
@@ -43,7 +46,13 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
 )
 from thefrontoffice.config.constants import NFL_TRADE_PROMPT
 from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, SleeperAPIError, TeamNotFoundError
+from thefrontoffice.domain.errors import (
+    ESPNAPIError,
+    LeagueNotFoundError,
+    PlayerNotFoundError,
+    SleeperAPIError,
+    TeamNotFoundError,
+)
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
     Action,
@@ -148,9 +157,12 @@ class SleeperNFLProvider:
     competition = "nfl"
     label = "NFL (Sleeper)"
 
-    def __init__(self, username: str | None = None, *, client: SleeperClient | None = None):
+    def __init__(
+        self, username: str | None = None, *, client: SleeperClient | None = None, espn: ESPNClient | None = None
+    ):
         self.username = username or settings.sleeper_username
         self.client = client or SleeperClient()
+        self.espn = espn or ESPNClient()
         self._user_id: str | None = None
 
     # ── leagues ─────────────────────────────────────────────────────
@@ -388,6 +400,8 @@ class SleeperNFLProvider:
             groups.append(StatGroup(title="Projected line", stats=_projection_lines(projection.stats)))
         if projection and (context := self._role_and_matchup(projection, state)):
             groups.append(context)
+        if headlines := state.news.stats(player_id):
+            groups.append(StatGroup(title="Latest news", stats=headlines))
         groups.append(
             StatGroup(
                 title="Player",
@@ -437,8 +451,10 @@ class SleeperNFLProvider:
 
         rostered = [projection_for(pid, projections, players) for pid in roster.player_ids]
         known = self._evidence(season, week, league.scoring_format, state.is_regular_season)
+        heard = self._news(players)
         roster_lines = {
-            p.name: prompt.player_line(p, known) for p in sorted((p for p in rostered if p), key=lambda x: -x.points)
+            p.name: prompt.player_line(p, known, heard)
+            for p in sorted((p for p in rostered if p), key=lambda x: -x.points)
         }
 
         situation, _ = prompt.matchup(self.client, league, roster, league_id, week)
@@ -448,8 +464,8 @@ class SleeperNFLProvider:
             "insurance or as a future starter."
         )
         text = NFL_TRADE_PROMPT.format(
-            giving_str="".join(prompt.player_line(p, known) for p in giving),
-            receiving_str="".join(prompt.player_line(p, known) for p in receiving),
+            giving_str="".join(prompt.player_line(p, known, heard) for p in giving),
+            receiving_str="".join(prompt.player_line(p, known, heard) for p in receiving),
             situation=situation,
             constraints=constraints,
             roster_str="".join(roster_lines.values()),
@@ -513,6 +529,7 @@ class SleeperNFLProvider:
 
         return Week(
             evidence=self._evidence(season, week, league.scoring_format, state.is_regular_season),
+            news=self._news(players),
             is_regular_season=state.is_regular_season,
             league=league,
             roster=roster,
@@ -546,6 +563,19 @@ class SleeperNFLProvider:
             logger.warning(f"Continuing without role and matchup evidence: {e}")
             return evidence.Evidence()
         return evidence.gather(lines, scoring)
+
+    def _news(self, players: dict[str, PlayerMeta]) -> news.PlayerNews:
+        """Recent articles about every player, from each club's own feed."""
+        clubs = sorted(
+            {news.espn_club(str(m.get("team"))) for m in players.values() if m.get("team") not in (None, "", "FA")}
+        )
+        try:
+            feeds = self.espn.get_team_news(espn.NFL, clubs)
+        except ESPNAPIError as e:
+            # Enrichment, like the evidence: the week stands without it.
+            logger.warning(f"Continuing without player news: {e}")
+            return news.PlayerNews()
+        return news.attach(feeds, players, datetime.now(timezone.utc))
 
     def summary(self, league_id: str) -> Summary:
         """The week as it stands: both lineups, the swaps, the byes. No model."""
