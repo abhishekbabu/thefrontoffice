@@ -164,8 +164,8 @@ class AIQuotaError(FrontOfficeError):
 
     code = "ai_quota"
 
-    def __init__(self, provider: str = "Google", retry_after: float | None = None) -> None:
-        super().__init__(f"The {provider} API quota is exhausted. Analysis will work again once it resets.")
+    def __init__(self, provider: str = "Google", retry_after: float | None = None, detail: str = "") -> None:
+        super().__init__(detail or f"The {provider} API quota is exhausted. Analysis will work again once it resets.")
         self.provider = provider
         self.retry_after = retry_after
         """Seconds until the provider says to try again, where it says at all."""

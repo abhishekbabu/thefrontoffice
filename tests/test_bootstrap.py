@@ -206,15 +206,26 @@ def test_providers_are_tried_gemini_then_groq_then_openrouter(keys: Callable[...
 
 
 def test_a_provider_with_no_key_is_skipped(keys: Callable[..., None]) -> None:
-    from thefrontoffice.adapters.outbound.llm.openai_compatible.client import OpenAICompatibleClient
     from thefrontoffice.bootstrap import ai_available, ai_providers, default_model
 
     keys(openrouter_api_key="o")
 
     assert ai_providers() == ["OpenRouter"]
     assert ai_available()
-    model = default_model()
-    assert isinstance(model, OpenAICompatibleClient) and model.provider.name == "OpenRouter"
+    assert getattr(default_model(), "is_available", False)
+
+
+def test_a_rested_provider_stays_rested_across_requests() -> None:
+    """A model is built per request; a cooldown that forgot itself between
+    them would send every report back into the same spent quota."""
+    from thefrontoffice.bootstrap import _cooldowns
+
+    try:
+        _cooldowns().rest("Groq", 60)
+
+        assert _cooldowns().resting("Groq")
+    finally:
+        _cooldowns.cache_clear()
 
 
 def test_with_no_key_at_all_nothing_is_offered(keys: Callable[..., None]) -> None:

@@ -229,6 +229,20 @@ def test_a_model_failure_is_a_bad_gateway_not_a_crash(client: TestClient) -> Non
     assert response.json()["detail"] == "The model did not answer. Try asking again."
 
 
+def test_a_follow_up_every_model_refused_says_why(client: TestClient) -> None:
+    """A domain error is already a sentence; flattening it to "did not answer"
+    would hide that the quota, not the question, is the problem."""
+    from thefrontoffice.domain.errors import AIQuotaError
+
+    chat_id = client.post("/api/premier-league/leagues/900/scout").json()["chat_id"]
+    error = AIQuotaError("Gemini, Groq")
+    web._chats[chat_id] = FakeChat(error)  # type: ignore[assignment]
+
+    response = client.post(f"/api/chat/{chat_id}", json={"message": "Why?"})
+
+    assert response.json()["code"] == error.code
+
+
 def test_an_empty_follow_up_is_rejected(client: TestClient) -> None:
     chat_id = client.post("/api/premier-league/leagues/900/scout").json()["chat_id"]
     assert client.post(f"/api/chat/{chat_id}", json={"message": ""}).status_code == 422

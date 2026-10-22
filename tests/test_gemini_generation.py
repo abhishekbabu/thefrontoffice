@@ -225,3 +225,31 @@ def test_no_vendor_payload_reaches_the_message() -> None:
     assert "@type" not in message
     assert "googleapis" not in message
     assert "{" not in message
+
+
+# ── chats ───────────────────────────────────────────────────────────────
+
+
+def test_a_chat_failure_arrives_as_a_domain_error() -> None:
+    """The SDK's chat raises its own exceptions; a spent quota has to be
+    recognisable as one, or no other provider can take the turn."""
+    from thefrontoffice.domain.errors import AIQuotaError
+
+    def failing(message: str) -> Any:
+        raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+    c = GeminiClient(api_key="fake-key")
+    chats = SimpleNamespace(create=lambda **kwargs: SimpleNamespace(send_message=failing))
+    c.client = SimpleNamespace(chats=chats)  # type: ignore[assignment]
+
+    with pytest.raises(AIQuotaError):
+        c.start_chat().send_message("why?")
+
+
+def test_a_chat_answer_passes_through_untouched() -> None:
+    reply = SimpleNamespace(text="because")
+    c = GeminiClient(api_key="fake-key")
+    chats = SimpleNamespace(create=lambda **kwargs: SimpleNamespace(send_message=lambda message: reply))
+    c.client = SimpleNamespace(chats=chats)  # type: ignore[assignment]
+
+    assert c.start_chat().send_message("why?") is reply

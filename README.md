@@ -47,8 +47,8 @@ one is set, never what it is.
 - **Analysis** — a key from any of [Gemini](https://aistudio.google.com/app/apikey),
   [Groq](https://console.groq.com/keys) or [OpenRouter](https://openrouter.ai/settings/keys),
   all free to start. Optional; without one the app offers no analysis rather
-  than offering and refusing it. With several, the first set is used, in that
-  order.
+  than offering and refusing it. With several, they back each other up: a call
+  goes to the first that has quota, in that order.
 
 **4. Run it.**
 
@@ -146,7 +146,7 @@ fails at startup naming the field, not mid-report.
 | `YAHOO_REDIRECT_URI` | no | `https://localhost:8080` | Must match the app's registered URI |
 | `YAHOO_MAX_WEEKLY_ADDS` | no | `3` | Integer ≥ 0; the scout's add budget |
 | `GOOGLE_API_KEY` | no | — | Gemini. Omit every model key and the app offers no analysis |
-| `GROQ_API_KEY` | no | — | Groq, tried after Gemini |
+| `GROQ_API_KEY` | no | — | Groq, tried after Gemini — and instead of it while Gemini is out of quota |
 | `OPENROUTER_API_KEY` | no | — | OpenRouter, tried after Groq |
 | `GROQ_ANALYSIS_MODEL` / `GROQ_PARSING_MODEL` | no | `openai/gpt-oss-120b` / `openai/gpt-oss-20b` | Free catalogs change; these are settings for that reason |
 | `OPENROUTER_ANALYSIS_MODEL` / `OPENROUTER_PARSING_MODEL` | no | `nvidia/nemotron-3-super-120b-a12b:free` | Pick any `:free` model; one supporting structured outputs is best |
@@ -232,8 +232,17 @@ SDK, each with a configured analysis and parsing model. Answers come back as
 Pydantic models, never prose to be parsed out: Gemini enforces the schema
 itself; for the others the adapter asks in the strongest form the model accepts
 (JSON schema, then JSON mode with the schema in the prompt), validates, and
-repairs once with the validation errors before failing. The first configured
-provider is used. Their calls are traced only under `LOGFIRE_CAPTURE_PROMPTS`,
+repairs once with the validation errors before failing.
+
+The configured providers sit behind one `RoutedModel` that fails over between
+them. A spent quota — a 429, or the 413 Groq returns for a request too large for
+the free tier — rests that provider for its `Retry-After` (a minute if it gives
+none) and the call moves on; a rejected key or a failed answer moves on without
+resting, so a key fixed in Settings counts at once. Cooldowns are shared across
+requests. A follow-up chat keeps its own transcript, so it can carry on with
+another provider mid-conversation. Only when every provider fails does the call
+fail, with the most actionable reason: a key to fix before a quota to wait out.
+Groq and OpenRouter calls are traced only under `LOGFIRE_CAPTURE_PROMPTS`,
 because that instrumentation records message text regardless.
 
 **Web UI** (`web/`) — React 19, Vite, Tailwind v4, Radix primitives, Motion

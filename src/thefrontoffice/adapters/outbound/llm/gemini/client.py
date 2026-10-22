@@ -37,6 +37,24 @@ def translate(error: Exception) -> FrontOfficeError:
     return AIResponseError()
 
 
+class GeminiChat:
+    """A genai chat whose failures arrive as domain errors.
+
+    The SDK's chat raises its own exceptions, so a caller could not tell a
+    spent quota — which another provider can absorb — from anything else.
+    """
+
+    def __init__(self, chat: object) -> None:
+        self._chat = chat
+
+    def send_message(self, message: str) -> object:
+        try:
+            return self._chat.send_message(message)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.error(f"Gemini chat failed: {e}")
+            raise translate(e) from e
+
+
 # The TypeVar the port declares, so the override types match exactly.
 
 
@@ -170,7 +188,7 @@ class GeminiClient(AnalysisModel):
         raise AIResponseError("The model returned nothing usable. Try again.")
 
     def start_chat(self, initial_history: list[HistoryTurn] | None = None, enable_search: bool = False) -> ChatSession:
-        """Start a chat session with the model."""
+        """Start a chat session with the model, its failures translated like every other call's."""
         if not self.client:
             raise AIUnavailableError()
 
@@ -181,10 +199,12 @@ class GeminiClient(AnalysisModel):
             search_tool = types.Tool(google_search=types.GoogleSearch())
             config = types.GenerateContentConfig(tools=[search_tool])
 
-        return self.client.chats.create(
-            model=MODEL_PRO,
-            history=initial_history,  # type: ignore[arg-type]
-            config=config,
+        return GeminiChat(
+            self.client.chats.create(
+                model=MODEL_PRO,
+                history=initial_history,  # type: ignore[arg-type]
+                config=config,
+            )
         )
 
     def parse_trade_string(self, text: str) -> TradeProposal:
