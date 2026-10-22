@@ -391,7 +391,9 @@ class SleeperNFLProvider:
             headline=f"{projection.points:.1f}" if projection else "",
             headline_label=self._headline_label(projection, scheduled, state.week),
             note=str(meta.get("injury_notes") or injury),
-            image_url=PORTRAIT_URL.format(player_id=player_id),
+            # A team defense has no headshot — the CDN 404s on its abbreviation —
+            # and the crest beside the club name already says who it is.
+            image_url="" if meta.get("position") == "DEF" else PORTRAIT_URL.format(player_id=player_id),
             url=PLAYER_URL.format(player_id=player_id),
             tables=[table] if (table := self._season_table(player_id, state)) else [],
             tone="warning" if injury else "neutral",

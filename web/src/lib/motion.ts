@@ -61,3 +61,15 @@ export const listItem: Variants = {
   hidden: { opacity: 0, y: 4 },
   shown: { opacity: 1, y: 0, transition: quick },
 };
+
+/**
+ * A portrait arriving after the name beside it.
+ *
+ * Opens its own room rather than appearing in it: the width grows from nothing
+ * and the negative margin cancels the row's gap until it does, so the name
+ * slides over once instead of jumping. 96px and the 16px gap are the drawer's.
+ */
+export const portrait: Variants = {
+  hidden: { opacity: 0, width: 0, marginRight: -16 },
+  shown: { opacity: 1, width: 96, marginRight: 0, transition: glide },
+};
