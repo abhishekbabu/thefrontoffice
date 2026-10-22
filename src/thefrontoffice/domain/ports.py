@@ -234,3 +234,24 @@ class TradeProvider(Protocol):
                 dropping one would evaluate a different trade than was asked.
         """
         ...
+
+
+@runtime_checkable
+class WireProvider(Protocol):
+    """A competition that can have its available players judged.
+
+    Separate from CompetitionProvider for the reason TradeProvider is: the
+    capability arrives per competition, and the registry advertises which
+    have it via `judges_wire`.
+    """
+
+    sport: str
+    label: str
+
+    def build_wire_context(self, league_id: str, player_ids: list[str]) -> CompetitionContext:
+        """Render the prompt asking for one call per listed available player.
+
+        Raises:
+            PlayerNotFoundError: an id is not an available player here.
+        """
+        ...

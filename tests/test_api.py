@@ -200,6 +200,54 @@ def test_a_sport_without_trade_support_is_refused_by_name(client: TestClient) ->
     assert "does not support trade evaluation" in response.json()["detail"]
 
 
+def test_a_trade_is_evaluated_at_the_address_the_ui_uses(client: TestClient) -> None:
+    """Routes carry the registry key; matching the bare competition alone
+    refused every trade the page asked for."""
+    response = client.post("/api/nfl-sleeper/leagues/900/trade", json={"text": "Give A, Get B"})
+
+    assert response.status_code == 200
+
+
+def test_free_agents_are_judged_where_the_competition_can(monkeypatch: pytest.MonkeyPatch) -> None:
+    from thefrontoffice.domain.models import PlayerCall
+
+    asked: list[Any] = []
+
+    class _Judge:
+        def judge(self, league_id: str, player_ids: list[str]) -> Any:
+            asked.append(player_ids)
+            return [PlayerCall(player_id=player_ids[0], decision="ADD", drop="B", reason="Lead back now.")]
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider())
+    monkeypatch.setattr(web, "wire_engine", lambda p: _Judge())
+    client = TestClient(web.create_app())
+
+    body = client.post("/api/nfl-sleeper/leagues/900/free-agents/judge", json={"player_ids": ["p1", "p2"]}).json()
+
+    assert asked == [["p1", "p2"]]
+    assert body[0]["decision"] == "ADD"
+
+
+def test_judging_free_agents_is_refused_where_it_is_not_offered(client: TestClient) -> None:
+    response = client.post("/api/premier-league-fpl/leagues/900/free-agents/judge", json={"player_ids": ["p1"]})
+
+    assert response.status_code == 400
+
+
+def test_judging_is_bounded_to_a_screen_of_players(client: TestClient) -> None:
+    from thefrontoffice.application.wire import MAX_JUDGED
+
+    ids = [f"p{i}" for i in range(MAX_JUDGED + 1)]
+
+    assert client.post("/api/nfl-sleeper/leagues/900/free-agents/judge", json={"player_ids": ids}).status_code == 422
+
+
+def test_a_competition_says_whether_its_free_agents_can_be_judged(client: TestClient) -> None:
+    flags = {c["key"]: c["judges_wire"] for c in client.get("/api/competitions").json()}
+
+    assert flags["nfl-sleeper"] is True and flags["premier-league-fpl"] is False
+
+
 def test_an_unknown_sport_is_a_404(client: TestClient) -> None:
     response = client.post("/api/cricket/leagues/900/trade", json={"text": "Give A, Get B"})
     assert response.status_code == 404

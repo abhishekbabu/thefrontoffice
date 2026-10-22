@@ -508,6 +508,28 @@ class Subject(BaseModel):
     key: str = Field(description="The to-do item's key, or the player's id.")
 
 
+WireDecision = Literal["ADD", "WATCH", "PASS"]
+"""ADD: claim him now. WATCH: not yet, but his situation could change that.
+PASS: not for this roster."""
+
+
+class PlayerCall(BaseModel):
+    """The model's call on one available player, shown on his row."""
+
+    player_id: str = Field(description="The player's id exactly as listed, e.g. '8155'.")
+    decision: WireDecision = Field(
+        description="ADD to claim now; WATCH if a change in his situation would make him worth it; PASS otherwise."
+    )
+    drop: str = Field(default="", description="For ADD, who on the roster makes way. Empty otherwise.")
+    reason: str = Field(description="One sentence, grounded in role, matchup or news — never the projection alone.")
+
+
+class WireReport(BaseModel):
+    """Calls on the available players a manager asked about."""
+
+    calls: list[PlayerCall] = Field(description="Exactly one per listed player, by id.")
+
+
 def judgment_scope(competition: str, league_id: str) -> str:
     """Whose judgment a stored one is: the competition on its platform, then the league."""
     return f"{competition}:{league_id}"

@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
-import { api, type League, type PlayerPage, type Competition } from "@/lib/api";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { ChevronLeft, ChevronRight, Search, Sparkles, X } from "lucide-react";
+import { api, type League, type PlayerCall, type PlayerPage, type Competition } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { IconButton } from "@/components/ui/icon-button";
 import { RosterTable } from "@/components/ui/roster-table";
@@ -13,6 +14,27 @@ import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
 
 const PAGE = 50;
+/** As many as the server will judge at once: a screen's worth of the best. */
+const JUDGE = 10;
+
+const CALL: Record<PlayerCall["decision"], { label: string; variant: "ok" | "warn" | "muted" }> = {
+  ADD: { label: "Add", variant: "ok" },
+  WATCH: { label: "Watch", variant: "warn" },
+  PASS: { label: "Pass", variant: "muted" },
+};
+
+/** The model's call on one player, under his row — said in words, not only color. */
+function CallLine({ call }: { call: PlayerCall }) {
+  const { label, variant } = CALL[call.decision];
+  return (
+    <div className="flex items-baseline gap-2 whitespace-normal text-[12.5px]">
+      <Badge variant={variant} appearance="status" className="shrink-0">
+        {call.drop ? `${label}, drop ${call.drop}` : label}
+      </Badge>
+      <span className="text-muted-foreground">{call.reason}</span>
+    </div>
+  );
+}
 
 /**
  * Who is still out there.
@@ -53,6 +75,17 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
     setOffset(0);
   };
 
+  // The model's calls, kept across paging and filtering: a call on a player
+  // is still his when he scrolls off the page and back.
+  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
+  const canJudge = (capabilities.data?.ai ?? false) && competition.judges_wire;
+  const [calls, setCalls] = useState<Record<string, PlayerCall>>({});
+  const judge = useMutation<PlayerCall[], Error, string[]>({
+    mutationFn: (ids) => api.judgeFreeAgents(competition.key, league.league_id, ids),
+    onSuccess: (judged) =>
+      setCalls((known) => ({ ...known, ...Object.fromEntries(judged.map((c) => [c.player_id, c])) })),
+  });
+
   const total = page.data?.total ?? 0;
   const shown = page.data?.players.length ?? 0;
   const filtered = Boolean(search || position);
@@ -69,12 +102,26 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
           <Card>
             <CardHeader>
               <span>Available</span>
-              <span>
-                {total === 0
-                  ? "none"
-                  : `${offset + 1}-${offset + shown} of ${total.toLocaleString()}`}
+              <span className="flex items-center gap-2">
+                {judge.isPending && <span className="normal-case tracking-normal">judging…</span>}
+                {/* The first rows on screen: the sort has already put the ones
+                    worth a call first, whichever sort that is. */}
+                {canJudge && shown > 0 && (
+                  <IconButton
+                    label={`Judge the first ${Math.min(shown, JUDGE)} shown`}
+                    icon={<Sparkles />}
+                    onClick={() => judge.mutate(page.data.players.slice(0, JUDGE).map((p) => p.player_id))}
+                    disabled={judge.isPending}
+                  />
+                )}
+                <span>
+                  {total === 0
+                    ? "none"
+                    : `${offset + 1}-${offset + shown} of ${total.toLocaleString()}`}
+                </span>
               </span>
             </CardHeader>
+            {judge.isError && <ErrorNote error={judge.error} />}
 
             <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
               <div className="relative min-w-0 flex-1">
@@ -133,6 +180,10 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
               sort={sort}
               onSort={reset(setSort)}
               onOpen={openPlayer}
+              detail={(player) => {
+                const call = calls[player.player_id];
+                return call && <CallLine call={call} />;
+              }}
             />
 
             {total > PAGE && (

@@ -116,9 +116,14 @@ web-install:
 web-build: web-install
     cd web && pnpm build
 
-# Lint, typecheck, test and build the front end — this is what CI runs
-check-web: web-install
+# Lint the front end. From inside web/, because corepack picks the pnpm
+# version from the directory it starts in: from the repo root, which pins
+# none, it runs its own default, and a newer major refuses web/'s pin outright.
+lint-web:
     cd web && pnpm lint
+
+# Lint, typecheck, test and build the front end — this is what CI runs
+check-web: web-install lint-web
     cd web && pnpm exec tsc -b
     cd web && pnpm test
     # Builds because the bundle budget is checked by the build and nothing

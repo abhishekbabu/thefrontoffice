@@ -17,6 +17,7 @@ from thefrontoffice.adapters.outbound.competitions.names import NameIndex
 from thefrontoffice.adapters.outbound.competitions.nfl import actions, evidence, league, news, prompt
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupSlot,
+    best_upgrade,
     current_lineup,
     lineup_changes,
     lineup_points,
@@ -44,7 +45,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperRoster,
     WeeklyProjection,
 )
-from thefrontoffice.config.constants import NFL_TRADE_PROMPT
+from thefrontoffice.config.constants import NFL_TRADE_PROMPT, NFL_WIRE_PROMPT
 from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.errors import (
     ESPNAPIError,
@@ -252,7 +253,7 @@ class SleeperNFLProvider:
         available.sort(
             key=lambda row: (-(row[0].points if row[0] else 0.0), int(row[2].get("depth_chart_order") or 99))
         )
-        ranked = self._cards(state, [pid for _, pid, _ in available], starters=set(), owned_column=False)
+        ranked = self._cards(state, [pid for _, pid, _ in available], starters=set(), owned_column=False, fits=True)
         return paging.page(ranked, query)
 
     @staticmethod
@@ -274,8 +275,14 @@ class SleeperNFLProvider:
         player_ids: list[str],
         starters: set[str],
         owned_column: bool = True,
+        fits: bool = False,
     ) -> list[PlayerCard]:
-        """One table shape for every list of players this sport shows."""
+        """One table shape for every list of players this sport shows.
+
+        `fits` adds what each would add to your lineup — for the wire, where
+        "how good is he" is only half the question and "how good is he for
+        me" is the other.
+        """
         scheduled = any(p.opponent for p in state.projected)
 
         cards = []
@@ -286,11 +293,13 @@ class SleeperNFLProvider:
             projection = state.projections.get(player_id)
             injury = str(meta.get("injury_status") or "")
             depth = int(meta.get("depth_chart_order") or 0)
+            fit = self._fit(state, projection) if fits and projection else None
             cards.append(
                 PlayerCard(
                     player_id=player_id,
                     tone="warning" if injury else "neutral",
                     values={
+                        **({"Fits": fit[0]} if fit else {}),
                         "Proj": projection.points if projection else 0.0,
                         "Depth": float(depth) if depth else 0.0,
                         "Exp": float(meta.get("years_exp") or 0),
@@ -303,6 +312,7 @@ class SleeperNFLProvider:
                         # column would read "BN" down its whole length.
                         **({"Slot": "START" if player_id in starters else "BN"} if owned_column else {}),
                         "Proj": f"{projection.points:.1f}" if projection else "0.0",
+                        **({"Fits": fit[1] if fit else "—"} if fits else {}),
                         "Opponent": self._opponent_label(projection, scheduled),
                         "Depth": str(depth) if depth else "—",
                         "Exp": f"{int(meta.get('years_exp') or 0)}y",
@@ -324,6 +334,25 @@ class SleeperNFLProvider:
         if not scheduled:
             return f"Week {week} projections are not published yet"
         return f"Not projected to feature in week {week}"
+
+    @staticmethod
+    def _fit(state: Week, projection: WeeklyProjection) -> tuple[float, str] | None:
+        """How he compares with your weakest starter he could replace, either way.
+
+        A shortfall is shown as plainly as a gain: in a deep league nobody on
+        the wire outprojects a starter, and which of them comes closest is
+        then the whole question — a column of blanks would answer none of it.
+        None only where he could fill no slot at all.
+        """
+        upgrade = best_upgrade(state.lineup, projection)
+        if upgrade is None:
+            return None
+        gain, slot = upgrade
+        if slot.player is None:
+            return gain, f"+{gain:.1f} at {slot.slot}, empty"
+        return (
+            (gain, f"+{gain:.1f} over {slot.player.name}") if gain > 0 else (gain, f"{gain:.1f} vs {slot.player.name}")
+        )
 
     @staticmethod
     def _role_and_matchup(projection: WeeklyProjection, state: Week) -> StatGroup | None:
@@ -472,6 +501,56 @@ class SleeperNFLProvider:
             scoring_label=SCORING_LABELS.get(league.scoring_format, league.scoring_format),
         )
         return CompetitionContext(prompt=text, situation=situation, constraints=constraints, roster_lines=roster_lines)
+
+    # ── the wire ────────────────────────────────────────────────────
+
+    def build_wire_context(self, league_id: str, player_ids: list[str]) -> CompetitionContext:
+        """The prompt asking for one call per listed free agent.
+
+        Each candidate carries what every player line carries — projection,
+        role, matchup, news — plus how he fits this lineup, and the id the
+        call has to name. The roster beside them is who could make way.
+
+        Raises:
+            PlayerNotFoundError: an id is rostered in this league, or unknown.
+        """
+        state = self._week(league_id)
+        owned = {pid for r in self.client.get_rosters(league_id) for pid in r.player_ids}
+        unavailable = [pid for pid in player_ids if pid in owned or pid not in state.players]
+        if unavailable:
+            raise PlayerNotFoundError(unavailable)
+
+        candidates = [p for p in (projection_for(pid, state.projections, state.players) for pid in player_ids) if p]
+        candidate_lines = {p.name: self._wire_line(p, state) for p in candidates}
+        roster_lines = {
+            p.name: prompt.player_line(p, state.evidence, state.news)
+            for p in sorted(state.projected, key=lambda x: -x.points)
+        }
+        situation, _ = prompt.matchup(self.client, state.league, state.roster, league_id, state.week)
+        constraints = (
+            f"LINEUP SLOTS: {', '.join(state.league.starting_slots)}\n"
+            "- Only the starting lineup scores; a bench spot is insurance or a future starter."
+        )
+        text = NFL_WIRE_PROMPT.format(
+            scoring_label=SCORING_LABELS.get(state.league.scoring_format, state.league.scoring_format),
+            situation=situation,
+            constraints=constraints,
+            roster_str="".join(roster_lines.values()),
+            candidates_str="".join(candidate_lines.values()),
+        )
+        return CompetitionContext(
+            prompt=text,
+            situation=situation,
+            constraints=constraints,
+            roster_lines=roster_lines,
+            candidate_lines=candidate_lines,
+        )
+
+    def _wire_line(self, player: WeeklyProjection, state: Week) -> str:
+        """One candidate as the model reads him: his id, his line, and how he fits."""
+        line = prompt.player_line(player, state.evidence, state.news)
+        fit = self._fit(state, player)
+        return f"- [id {player.player_id}] {line[2:]}" + (f"  fits: {fit[1]}\n" if fit else "")
 
     @staticmethod
     def _name_index(
