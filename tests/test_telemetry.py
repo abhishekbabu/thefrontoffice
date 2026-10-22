@@ -37,6 +37,9 @@ class FakeLogfire:
     def instrument_pydantic(self) -> None:
         self.instrumented.append("pydantic")
 
+    def instrument_openai(self) -> None:
+        self.instrumented.append("openai")
+
     def LogfireLoggingHandler(self) -> Any:  # noqa: N802 — mirrors the real class name
         import logging
 
@@ -128,3 +131,18 @@ def test_standard_library_logs_are_bridged(fake: FakeLogfire) -> None:
     telemetry.setup_telemetry("front-office-cli")
     assert len(logging.getLogger().handlers) == before + 1
     logging.getLogger().handlers.pop()
+
+
+def test_openai_calls_are_traced_only_where_prompt_text_may_leave(
+    fake: FakeLogfire, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its instrumentation records message text regardless, and a message carries the roster."""
+    from thefrontoffice.config import telemetry
+
+    telemetry.setup_telemetry("api")
+    assert "openai" not in fake.instrumented
+
+    monkeypatch.setattr(telemetry, "_configured", False)
+    monkeypatch.setattr(telemetry.settings, "logfire_capture_prompts", True)
+    telemetry.setup_telemetry("api")
+    assert "openai" in fake.instrumented

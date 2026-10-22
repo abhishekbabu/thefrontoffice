@@ -37,8 +37,17 @@ const GROUPS: { title: string; note: string; keys: string[] }[] = [
   },
   {
     title: "AI",
-    note: "Optional. Without a key the app offers no analysis at all — no report, no trade evaluation, no follow-up questions — and everything read from the platforms works exactly as it does now. Add one and those appear.",
-    keys: ["GOOGLE_API_KEY", "DEFAULT_MODEL"],
+    note: "Optional, and each provider is free to start. Any one key turns on the report, trade evaluation and follow-up questions; without one, everything read from the platforms works exactly as it does now. With several, the first configured is used — Gemini, then Groq, then OpenRouter. Models are settings because free catalogs change.",
+    keys: [
+      "GOOGLE_API_KEY",
+      "DEFAULT_MODEL",
+      "GROQ_API_KEY",
+      "GROQ_ANALYSIS_MODEL",
+      "GROQ_PARSING_MODEL",
+      "OPENROUTER_API_KEY",
+      "OPENROUTER_ANALYSIS_MODEL",
+      "OPENROUTER_PARSING_MODEL",
+    ],
   },
   {
     title: "Tracing",
@@ -50,9 +59,10 @@ const GROUPS: { title: string; note: string; keys: string[] }[] = [
     note: "Rarely worth changing. Each field shows the value already in force; typing replaces it.",
     keys: [
       "LOG_LEVEL",
-      "SLEEPER_CACHE_FILE",
-      "FPL_CACHE_FILE",
-      "YAHOO_CACHE_FILE",
+      "SLEEPER_CACHE_DIR",
+      "FPL_CACHE_DIR",
+      "YAHOO_CACHE_DIR",
+      "ESPN_CACHE_DIR",
       "YAHOO_TOKEN_FILE",
     ],
   },

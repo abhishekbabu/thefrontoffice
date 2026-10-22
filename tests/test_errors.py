@@ -53,6 +53,8 @@ def test_trade_parse_error_shows_the_expected_form() -> None:
     assert "nonsense" in str(e)
 
 
-def test_ai_unavailable_points_at_the_mock_escape_hatch() -> None:
-    assert "GOOGLE_API_KEY" in str(AIUnavailableError())
-    assert "GOOGLE_API_KEY" in str(AIUnavailableError())
+def test_ai_unavailable_names_every_key_that_would_turn_it_on() -> None:
+    from thefrontoffice.config import env_file
+
+    message = str(AIUnavailableError())
+    assert all(key in message for key in env_file.MODEL_KEYS)

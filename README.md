@@ -44,9 +44,11 @@ one is set, never what it is.
 - **NBA** — a [Yahoo developer app](https://developer.yahoo.com/apps/) with
   Fantasy Sports **Read** permission and redirect URI `https://localhost:8080`,
   then `just yahoo-login` (see [Yahoo access](#yahoo-access)).
-- **Analysis** — a [Gemini API key](https://aistudio.google.com/app/apikey).
-  Optional; without it the app offers no analysis rather than offering and
-  refusing it.
+- **Analysis** — a key from any of [Gemini](https://aistudio.google.com/app/apikey),
+  [Groq](https://console.groq.com/keys) or [OpenRouter](https://openrouter.ai/settings/keys),
+  all free to start. Optional; without one the app offers no analysis rather
+  than offering and refusing it. With several, the first set is used, in that
+  order.
 
 **4. Run it.**
 
@@ -114,7 +116,7 @@ your squad in more depth, and any row opens a player.
 **Report** and **Trade** are the model's work: a scouted week with adds, drops
 and lineup changes, and a plain-language trade verdict
 (`Give Bijan, Get Puka`). Both drop into a follow-up chat. They appear only
-when `GOOGLE_API_KEY` is set — commands and views that cannot work are hidden
+when a model key is set — commands and views that cannot work are hidden
 rather than disabled.
 
 The same three competitions run in the CLI:
@@ -143,7 +145,11 @@ fails at startup naming the field, not mid-report.
 | `YAHOO_CLIENT_SECRET` | for NBA | — | From your Yahoo developer app |
 | `YAHOO_REDIRECT_URI` | no | `https://localhost:8080` | Must match the app's registered URI |
 | `YAHOO_MAX_WEEKLY_ADDS` | no | `3` | Integer ≥ 0; the scout's add budget |
-| `GOOGLE_API_KEY` | no | — | Omit and the app offers no analysis |
+| `GOOGLE_API_KEY` | no | — | Gemini. Omit every model key and the app offers no analysis |
+| `GROQ_API_KEY` | no | — | Groq, tried after Gemini |
+| `OPENROUTER_API_KEY` | no | — | OpenRouter, tried after Groq |
+| `GROQ_ANALYSIS_MODEL` / `GROQ_PARSING_MODEL` | no | `openai/gpt-oss-120b` / `openai/gpt-oss-20b` | Free catalogs change; these are settings for that reason |
+| `OPENROUTER_ANALYSIS_MODEL` / `OPENROUTER_PARSING_MODEL` | no | `nvidia/nemotron-3-super-120b-a12b:free` | Pick any `:free` model; one supporting structured outputs is best |
 | `LOGFIRE_TOKEN` | no | — | Write token from a [Logfire](https://logfire.pydantic.dev) project. Omit and nothing is exported |
 | `LOGFIRE_ENVIRONMENT` | no | `local` | Separates traces from a laptop and a deployed run |
 | `LOGFIRE_CAPTURE_PROMPTS` | no | `false` | Sends prompt and completion **text**. Off deliberately — a prompt carries your roster and leagues |
@@ -219,9 +225,16 @@ projection and Opta expected goals; ESPN, public and auth-free, for the news no
 fantasy platform publishes — each NFL club's own feed, joined to Sleeper's
 players by name within the club. Each caches responses in its own directory.
 
-**Model** — Gemini via `google-genai`: `gemini-2.5-pro` for analysis,
-`gemini-2.5-flash` for parsing. Reports come back as Pydantic models through a
-response schema, never as prose to be parsed out.
+**Model** — one `AnalysisModel` port, three providers: Gemini via
+`google-genai` (`gemini-2.5-pro` for analysis, `gemini-2.5-flash` for parsing),
+and Groq and OpenRouter through one OpenAI-compatible adapter on the `openai`
+SDK, each with a configured analysis and parsing model. Answers come back as
+Pydantic models, never prose to be parsed out: Gemini enforces the schema
+itself; for the others the adapter asks in the strongest form the model accepts
+(JSON schema, then JSON mode with the schema in the prompt), validates, and
+repairs once with the validation errors before failing. The first configured
+provider is used. Their calls are traced only under `LOGFIRE_CAPTURE_PROMPTS`,
+because that instrumentation records message text regardless.
 
 **Web UI** (`web/`) — React 19, Vite, Tailwind v4, Radix primitives, Motion
 loaded lazily to hold the entry bundle under 150 kB gzip. Shared pieces live in

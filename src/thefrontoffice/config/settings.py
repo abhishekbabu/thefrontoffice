@@ -31,6 +31,18 @@ class AppSettings(BaseSettings):
     gemini_api_key: str | None = Field(default=None, validation_alias="GOOGLE_API_KEY")
     default_model: str = "gemini-2.5-pro"
 
+    # ── Groq and OpenRouter ─────────────────────────────────────────────
+    # Optional, like Gemini, and both free to start. Either key alone is
+    # enough for analysis. Models are settings rather than constants because
+    # a free catalog turns over within months; each pair is the strong model
+    # that judges and the fast one that parses.
+    groq_api_key: str | None = None
+    groq_analysis_model: str = "openai/gpt-oss-120b"
+    groq_parsing_model: str = "openai/gpt-oss-20b"
+    openrouter_api_key: str | None = None
+    openrouter_analysis_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    openrouter_parsing_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
+
     # ── Yahoo ───────────────────────────────────────────────────────────
     yahoo_client_id: str | None = None
     yahoo_client_secret: str | None = None
@@ -75,6 +87,8 @@ class AppSettings(BaseSettings):
 
     @field_validator(
         "gemini_api_key",
+        "groq_api_key",
+        "openrouter_api_key",
         "yahoo_client_id",
         "yahoo_client_secret",
         "sleeper_username",
