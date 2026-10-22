@@ -5,6 +5,8 @@ entry point named the providers itself, so a new sport meant editing the CLI,
 the UI and the help text and remembering all three.
 """
 
+from collections.abc import Callable
+
 import pytest
 
 from thefrontoffice import bootstrap as registry
@@ -178,3 +180,46 @@ def test_a_pair_is_preferred_over_a_bare_sport_match() -> None:
     first = registry.all_competitions()[0]
     second = dataclasses.replace(first, platform="other")
     assert second.key != first.key
+
+
+# ── which model ─────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def keys(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """Set exactly the model keys named, and no others."""
+    from thefrontoffice.config.settings import settings
+
+    def _set(**present: str) -> None:
+        for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key"):
+            monkeypatch.setattr(settings, field, present.get(field))
+
+    return _set
+
+
+def test_providers_are_tried_gemini_then_groq_then_openrouter(keys: Callable[..., None]) -> None:
+    from thefrontoffice.bootstrap import ai_providers
+
+    keys(gemini_api_key="g", groq_api_key="q", openrouter_api_key="o")
+
+    assert ai_providers() == ["Gemini", "Groq", "OpenRouter"]
+
+
+def test_a_provider_with_no_key_is_skipped(keys: Callable[..., None]) -> None:
+    from thefrontoffice.adapters.outbound.llm.openai_compatible.client import OpenAICompatibleClient
+    from thefrontoffice.bootstrap import ai_available, ai_providers, default_model
+
+    keys(openrouter_api_key="o")
+
+    assert ai_providers() == ["OpenRouter"]
+    assert ai_available()
+    model = default_model()
+    assert isinstance(model, OpenAICompatibleClient) and model.provider.name == "OpenRouter"
+
+
+def test_with_no_key_at_all_nothing_is_offered(keys: Callable[..., None]) -> None:
+    from thefrontoffice.bootstrap import ai_available, ai_providers
+
+    keys()
+
+    assert (ai_providers(), ai_available()) == ([], False)

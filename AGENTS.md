@@ -69,11 +69,11 @@ basketball joins by normalized name — twice, in `competitions/nba/projections.
 rather than to whichever player was indexed first, and an unmatched player
 carries no line rather than borrowing someone else's.
 
-**AI calls.** `gemini-2.5-pro` for analysis, `gemini-2.5-flash` for parsing and
-structuring. Never a `-preview` model. Reports come back as Pydantic models via
-a response schema, never as prose to be regex'd. A response schema cannot be
-combined with the Google Search tool — that is why the trade path structures its
-search-grounded prose in a second Flash pass.
+**AI calls.** A strong model analyses, a fast one parses: Gemini 2.5 Pro/Flash,
+or each Groq/OpenRouter provider's configured pair. Never a `-preview` model.
+Answers are Pydantic models — schema-enforced where the model can, otherwise
+validated with one repair — never prose to be regex'd. Gemini's schema cannot
+be combined with Search, hence the trade path's second structuring pass.
 
 **Dependencies.** Anything imported directly gets declared directly, never
 relied on transitively. Bound both ends (`>=X.Y.Z,<NEXT_MAJOR`), then `just lock`.

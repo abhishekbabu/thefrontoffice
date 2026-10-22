@@ -181,27 +181,44 @@ def find(key: str) -> CompetitionEntry | None:
 # ── models and engines ──────────────────────────────────────────────────
 
 
-def default_model() -> AnalysisModel:
-    """The configured language model.
+def _models() -> list[tuple[str, AnalysisModel]]:
+    """Every model provider, in the order they are preferred, configured or not.
 
-    The single place the vendor is named. Imported lazily so that merely
-    importing the composition root does not pull in the SDK.
+    The single place a vendor is named. Imported lazily so that merely
+    importing the composition root does not pull in an SDK. Gemini first: it
+    alone enforces a response schema itself and grounds a trade in search.
     """
     from thefrontoffice.adapters.outbound.llm.gemini.client import GeminiClient
+    from thefrontoffice.adapters.outbound.llm.openai_compatible import providers
+    from thefrontoffice.adapters.outbound.llm.openai_compatible.client import OpenAICompatibleClient
 
-    return GeminiClient()
+    return [
+        ("Gemini", GeminiClient()),
+        ("Groq", OpenAICompatibleClient(providers.groq())),
+        ("OpenRouter", OpenAICompatibleClient(providers.openrouter())),
+    ]
+
+
+def ai_providers() -> list[str]:
+    """The providers with a key, in the order they are tried."""
+    return [name for name, model in _models() if getattr(model, "is_available", False)]
+
+
+def default_model() -> AnalysisModel:
+    """The first configured provider, or Gemini unconfigured — which raises
+    AIUnavailableError when called, and is never offered to be."""
+    models = _models()
+    return next((model for _, model in models if getattr(model, "is_available", False)), models[0][1])
 
 
 def ai_available() -> bool:
-    """Whether the model can be called at all.
+    """Whether any model can be called at all.
 
     Read before offering anything that needs it. Without a key the app has no
     analysis to give, and the honest response is to not offer it — a button
     that explains why it cannot work is worse than no button.
     """
-    from thefrontoffice.adapters.outbound.llm.gemini.client import GeminiClient
-
-    return GeminiClient().is_available
+    return bool(ai_providers())
 
 
 def scout_engine(provider: CompetitionProvider) -> ScoutEngine:

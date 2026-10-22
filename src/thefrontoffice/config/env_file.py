@@ -25,8 +25,11 @@ logger = logging.getLogger(__name__)
 
 ENV_PATH = PROJECT_ROOT / ".env"
 
+# Any one of these turns analysis on.
+MODEL_KEYS = ("GOOGLE_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY")
+
 # Values whose contents must never be read back out — only their presence.
-SECRET_KEYS = frozenset({"GOOGLE_API_KEY", "YAHOO_CLIENT_ID", "YAHOO_CLIENT_SECRET", "LOGFIRE_TOKEN"})
+SECRET_KEYS = frozenset({*MODEL_KEYS, "YAHOO_CLIENT_ID", "YAHOO_CLIENT_SECRET", "LOGFIRE_TOKEN"})
 
 # Characters that make a bare value ambiguous to a dotenv parser: `#` starts a
 # comment, whitespace and quotes end or nest a token.

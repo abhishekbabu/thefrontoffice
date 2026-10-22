@@ -17,13 +17,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from thefrontoffice.bootstrap import all_competitions  # noqa: E402
+from thefrontoffice.bootstrap import ai_providers, all_competitions  # noqa: E402
+from thefrontoffice.config import env_file  # noqa: E402
 from thefrontoffice.config.settings import PROJECT_ROOT as SETTINGS_ROOT  # noqa: E402
 from thefrontoffice.config.settings import AppSettings, settings  # noqa: E402
 
 ENV_FILE = SETTINGS_ROOT / ".env"
 
-SECRETS = frozenset({"GOOGLE_API_KEY", "YAHOO_CLIENT_ID", "YAHOO_CLIENT_SECRET", "LOGFIRE_TOKEN"})
+SECRETS = env_file.SECRET_KEYS
 """Values never echoed back, only reported as present or absent."""
 
 # Derived state, not configuration — reporting them as unset would be misleading.
@@ -95,8 +96,11 @@ def main() -> int:
     print()
     print("  Features")
     print("  " + "─" * (width + 22))
-    ai = "ready" if settings.gemini_api_key else "no key — reports and trades are not offered"
-    print(f"  {'AI (Gemini)'.ljust(width)}   {ai}")
+    providers = ai_providers()
+    ai = (
+        f"ready — {', '.join(providers)}, in that order" if providers else "no key — reports and trades are not offered"
+    )
+    print(f"  {'AI'.ljust(width)}   {ai}")
     telemetry = "exporting" if settings.logfire_token else "inert — no token, nothing leaves this machine"
     print(f"  {'Tracing (Logfire)'.ljust(width)}   {telemetry}")
     if settings.logfire_capture_prompts:

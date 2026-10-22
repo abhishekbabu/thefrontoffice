@@ -138,7 +138,9 @@ class AIUnavailableError(FrontOfficeError):
 
     def __init__(self, detail: str = "") -> None:
         super().__init__(
-            detail or "Analysis is unavailable because no GOOGLE_API_KEY is set. Add one in Settings to turn it on."
+            detail
+            or "Analysis is unavailable because no model key is set — GOOGLE_API_KEY, GROQ_API_KEY or "
+            "OPENROUTER_API_KEY. Add one in Settings to turn it on."
         )
 
 
@@ -152,8 +154,9 @@ class AIKeyInvalidError(FrontOfficeError):
 
     code = "ai_key_invalid"
 
-    def __init__(self) -> None:
-        super().__init__("Google rejected the API key. Check GOOGLE_API_KEY in Settings.")
+    def __init__(self, provider: str = "Google", setting: str = "GOOGLE_API_KEY") -> None:
+        super().__init__(f"{provider} rejected the API key. Check {setting} in Settings.")
+        self.provider = provider
 
 
 class AIQuotaError(FrontOfficeError):
@@ -161,8 +164,11 @@ class AIQuotaError(FrontOfficeError):
 
     code = "ai_quota"
 
-    def __init__(self) -> None:
-        super().__init__("The Google API quota is exhausted. Analysis will work again once it resets.")
+    def __init__(self, provider: str = "Google", retry_after: float | None = None) -> None:
+        super().__init__(f"The {provider} API quota is exhausted. Analysis will work again once it resets.")
+        self.provider = provider
+        self.retry_after = retry_after
+        """Seconds until the provider says to try again, where it says at all."""
 
 
 class AIResponseError(FrontOfficeError):
