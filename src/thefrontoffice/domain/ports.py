@@ -13,12 +13,12 @@ from pydantic import BaseModel
 
 from thefrontoffice.domain.models import (
     CompetitionContext,
-    Judgment,
     LeagueSchedule,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    Remembered,
     Summary,
     TeamRef,
     TradeProposal,
@@ -55,14 +55,14 @@ class HistoryTurn(TypedDict):
     parts: list[str]
 
 
-class JudgmentStore(Protocol):
-    """Where a league's latest judgment is kept between requests."""
+class AnswerStore(Protocol):
+    """Where every model answer is kept between requests, one per scope."""
 
-    def latest(self, scope: str) -> Judgment | None:
-        """The last judgment for `scope`, or None where there is none recent enough."""
+    def latest(self, scope: str, schema: type[TModel]) -> Remembered[TModel] | None:
+        """The last answer kept for `scope`, read as `schema`; None where there is none recent enough."""
         ...
 
-    def save(self, scope: str, judgment: Judgment) -> None: ...
+    def save(self, scope: str, remembered: Remembered[TModel]) -> None: ...
 
 
 class ChatSession(Protocol):

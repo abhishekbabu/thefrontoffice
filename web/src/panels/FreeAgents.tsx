@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Search, Sparkles, X } from "lucide-react";
 import { api, type League, type PlayerCall, type PlayerPage, type Competition } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -23,15 +23,24 @@ const CALL: Record<PlayerCall["decision"], { label: string; variant: "ok" | "war
   PASS: { label: "Pass", variant: "muted" },
 };
 
-/** The model's call on one player, under his row — said in words, not only color. */
+/**
+ * The model's call on one player, under his row — said in words, not only
+ * color. A stale one stays, faded and labelled: the reasoning may still hold,
+ * but it was about a situation that has since changed.
+ */
 function CallLine({ call }: { call: PlayerCall }) {
   const { label, variant } = CALL[call.decision];
   return (
-    <div className="flex items-baseline gap-2 whitespace-normal text-[12.5px]">
-      <Badge variant={variant} appearance="status" className="shrink-0">
+    <div className={cn("flex items-baseline gap-2 whitespace-normal text-[12.5px]", call.stale && "opacity-60")}>
+      <Badge variant={call.stale ? "muted" : variant} appearance="status" className="shrink-0">
         {call.drop ? `${label}, drop ${call.drop}` : label}
       </Badge>
       <span className="text-muted-foreground">{call.reason}</span>
+      {call.stale && (
+        <span className="ml-auto shrink-0 font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
+          stale — re-judge
+        </span>
+      )}
     </div>
   );
 }
@@ -79,11 +88,21 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
   // is still his when he scrolls off the page and back.
   const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
   const canJudge = (capabilities.data?.ai ?? false) && competition.judges_wire;
-  const [calls, setCalls] = useState<Record<string, PlayerCall>>({});
+  // Kept calls on the rows on screen, read without asking the model: a call
+  // outlives the page, and one whose player has moved on since comes back
+  // marked stale rather than gone.
+  const visible = page.data?.players.map((p) => p.player_id) ?? [];
+  const callsKey = ["free-agent-calls", competition.key, league.league_id, visible.join(",")];
+  const kept = useQuery<PlayerCall[], Error>({
+    queryKey: callsKey,
+    queryFn: () => api.freeAgentCalls(competition.key, league.league_id, visible),
+    enabled: canJudge && visible.length > 0,
+  });
+  const calls = Object.fromEntries((kept.data ?? []).map((c) => [c.player_id, c]));
+  const queryClient = useQueryClient();
   const judge = useMutation<PlayerCall[], Error, string[]>({
     mutationFn: (ids) => api.judgeFreeAgents(competition.key, league.league_id, ids),
-    onSuccess: (judged) =>
-      setCalls((known) => ({ ...known, ...Object.fromEntries(judged.map((c) => [c.player_id, c])) })),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["free-agent-calls", competition.key, league.league_id] }),
   });
 
   const total = page.data?.total ?? 0;

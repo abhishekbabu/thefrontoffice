@@ -430,17 +430,17 @@ class FakeNBA:
         return {t.upper(): self.games.get(t.upper(), 0) for t in teams}
 
 
-class FakeJudgments:
-    """Stands in for the judgment store: each scope's latest, in memory."""
+class FakeAnswers:
+    """Stands in for the answer store: each scope's latest, in memory."""
 
     def __init__(self) -> None:
         self.saved: dict[str, Any] = {}
 
-    def latest(self, scope: str) -> Any:
+    def latest(self, scope: str, schema: type) -> Any:
         return self.saved.get(scope)
 
-    def save(self, scope: str, judgment: Any) -> None:
-        self.saved[scope] = judgment
+    def save(self, scope: str, remembered: Any) -> None:
+        self.saved[scope] = remembered
 
 
 class FakeChat:

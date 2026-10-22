@@ -63,7 +63,7 @@ const GROUPS: { title: string; note: string; keys: string[] }[] = [
       "FPL_CACHE_DIR",
       "YAHOO_CACHE_DIR",
       "ESPN_CACHE_DIR",
-      "JUDGMENT_CACHE_DIR",
+      "ANSWER_CACHE_DIR",
       "YAHOO_TOKEN_FILE",
     ],
   },
