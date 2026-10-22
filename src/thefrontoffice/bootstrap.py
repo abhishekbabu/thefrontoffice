@@ -238,8 +238,10 @@ def ai_available() -> bool:
 
 
 def scout_engine(provider: CompetitionProvider) -> ScoutEngine:
-    """A scouting engine wired to the configured model."""
-    return ScoutEngine(provider, ai=default_model())
+    """A scouting engine wired to the configured model and the judgments kept on disk."""
+    from thefrontoffice.adapters.outbound.llm.judgments import DiskJudgmentStore
+
+    return ScoutEngine(provider, ai=default_model(), judgments=DiskJudgmentStore())
 
 
 def trade_engine(provider: TradeProvider) -> TradeEngine:

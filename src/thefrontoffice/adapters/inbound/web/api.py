@@ -29,6 +29,7 @@ from thefrontoffice.config.settings import PROJECT_ROOT, settings
 from thefrontoffice.config.telemetry import setup_telemetry
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import (
+    Judgment,
     LeagueSchedule,
     PlayerCard,
     PlayerDetail,
@@ -413,6 +414,16 @@ def _register_routes(app: FastAPI) -> None:
         provider = data.build_provider(competition)
         report, chat = scout_engine(provider).start_analysis(league_id)
         return Analysis(report=report, chat_id=_remember(chat))
+
+    @app.get("/api/{competition}/leagues/{league_id}/judgment", response_model=Judgment | None)
+    def judgment(competition: str, league_id: str) -> Judgment | None:
+        """The league's last judgment, or null — read without asking the model anything.
+
+        What lets the week show its verdicts on load: judging is a click,
+        and a reload should not throw the answer away.
+        """
+        provider = data.build_provider(competition)
+        return scout_engine(provider).latest(league_id)
 
     @app.post("/api/{competition}/leagues/{league_id}/trade", response_model=Evaluation)
     def trade(competition: str, league_id: str, request: TradeRequest) -> Evaluation:

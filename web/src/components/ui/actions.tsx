@@ -1,5 +1,5 @@
 import type * as React from "react";
-import type { Action, TaskVerdict, Urgency } from "@/lib/api";
+import type { Action, Move, MoveAction, TaskVerdict, Urgency } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { decisionTone } from "@/lib/tone";
@@ -13,95 +13,174 @@ const URGENCY: Record<Urgency, { label: string; variant: "warn" | "info" | "mute
 };
 
 /**
- * What to do about the week, most urgent first.
+ * What to do about the week, most urgent first — and, once judged, what the
+ * model makes of each item, inside the item.
  *
  * At the top because it is the reason to open the page: the lineups below are
  * the evidence, and this is the conclusion. Each row names its deadline where
  * the platform has one and opens the player it turns on. An empty list is
  * said out loud — "nothing to do" is an answer worth having, and a missing
  * card would look the same as a page that never checked.
+ *
+ * `judged` are the same items as the model last saw them. A verdict is shown
+ * on the row with the same key, and marked stale where the row has changed
+ * since — a verdict on last night's news is not a verdict on this morning's.
+ * `suggested` are the moves the model added that the list did not hold.
  */
 export function ActionList({
   actions,
+  judged = [],
+  suggested = [],
   onOpen,
   aside,
+  footer,
 }: {
   actions: Action[];
+  judged?: Action[];
+  suggested?: Move[];
   onOpen?: (id: string) => void;
-  /** Beside the count in the header — where the week links to a second opinion. */
+  /** Beside the count in the header — where the week puts its Judge control. */
   aside?: React.ReactNode;
+  /** Under each row, for what a caller hangs off an item. */
+  footer?: (action: Action) => React.ReactNode;
 }) {
+  const byKey = new Map(judged.filter((task) => task.key).map((task) => [task.key, task]));
+  const count = actions.length + suggested.length;
   return (
     <Card>
       <CardHeader>
         <span>To do</span>
         <span className="flex items-center gap-3">
           {aside}
-          {actions.length > 0 && <span>{actions.length}</span>}
+          {count > 0 && <span>{count}</span>}
         </span>
       </CardHeader>
-      {actions.length === 0 ? (
+      {count === 0 ? (
         <p className="px-4 py-3 text-[13px] text-muted-foreground">Nothing to do — your lineup is set for the week.</p>
       ) : (
         <ol className="flex flex-col">
           {actions.map((action) => {
-            const open = action.player_id && onOpen ? () => onOpen(action.player_id) : undefined;
-            const urgency = URGENCY[action.urgency];
+            const then = byKey.get(action.key);
+            const verdict = then?.verdict ?? action.verdict;
             return (
-              <li
-                key={`${action.kind}-${action.title}`}
-                onClick={open}
-                onKeyDown={open && ((e) => e.key === "Enter" && open())}
-                tabIndex={open ? 0 : undefined}
-                role={open ? "button" : undefined}
-                className={cn(
-                  "flex items-start gap-3 border-t border-border px-4 py-3 first:border-t-0",
-                  open && "cursor-pointer hover:bg-muted",
-                )}
+              <Row
+                key={action.key || `${action.kind}-${action.title}`}
+                badge={URGENCY[action.urgency]}
+                title={action.title}
+                reason={action.reason}
+                when={action.when}
+                evidence={action.evidence}
+                open={action.player_id && onOpen ? () => onOpen(action.player_id) : undefined}
               >
-                <Badge variant={urgency.variant} appearance="status" className="mt-0.5 w-16 shrink-0">
-                  {urgency.label}
-                </Badge>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13.5px] font-medium">{action.title}</div>
-                  <div className="mt-0.5 text-[12.5px] text-muted-foreground">{action.reason}</div>
-                  {action.verdict && <VerdictLine verdict={action.verdict} />}
-                  {action.evidence.length > 0 && (
-                    <ul className="mt-1.5 flex flex-col gap-1">
-                      {action.evidence.map((line) => (
-                        <li key={line.label} className="flex items-baseline gap-2 text-[12px] text-muted-foreground">
-                          {/* The rank is in the words; the dot only lets a
-                              soft or tough matchup be found at a glance. */}
-                          <span
-                            aria-hidden
-                            className={cn(
-                              "size-1.5 shrink-0 -translate-y-px rounded-full bg-border",
-                              line.tone === "good" && "bg-ok",
-                              line.tone === "warning" && "bg-warn",
-                            )}
-                          />
-                          <span>
-                            <span className="font-medium text-foreground">{line.label}</span> {line.value}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                {action.when && (
-                  <span className="shrink-0 pt-0.5 text-right font-mono text-[11px] text-muted-foreground">
-                    {action.when}
-                  </span>
-                )}
-              </li>
+                {verdict && <VerdictLine verdict={verdict} stale={Boolean(then) && then?.fingerprint !== action.fingerprint} />}
+                {footer?.(action)}
+              </Row>
             );
           })}
+          {suggested.map((move, i) => (
+            <Row
+              key={`suggested-${move.player}-${i}`}
+              badge={{ label: "Suggested", variant: "info" }}
+              title={moveTitle(move)}
+              reason={move.rationale}
+              when={move.metric}
+            />
+          ))}
         </ol>
       )}
     </Card>
   );
 }
 
+function Row({
+  badge,
+  title,
+  reason,
+  when,
+  evidence = [],
+  open,
+  children,
+}: {
+  badge: { label: string; variant: "warn" | "info" | "muted" };
+  title: string;
+  reason: string;
+  when: string;
+  evidence?: Action["evidence"];
+  open?: () => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <li className="border-t border-border first:border-t-0">
+      <div
+        onClick={open}
+        onKeyDown={open && ((e) => e.key === "Enter" && open())}
+        tabIndex={open ? 0 : undefined}
+        role={open ? "button" : undefined}
+        className={cn("flex items-start gap-3 px-4 py-3", open && "cursor-pointer hover:bg-muted")}
+      >
+        <Badge variant={badge.variant} appearance="status" className="mt-0.5 w-[5.5rem] shrink-0">
+          {badge.label}
+        </Badge>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13.5px] font-medium">{title}</div>
+          <div className="mt-0.5 text-[12.5px] text-muted-foreground">{reason}</div>
+          {evidence.length > 0 && (
+            <ul className="mt-1.5 flex flex-col gap-1">
+              {evidence.map((line, i) => (
+                <li key={`${line.label}-${i}`} className="flex items-baseline gap-2 text-[12px] text-muted-foreground">
+                  {/* The rank is in the words; the dot only lets a
+                      soft or tough matchup be found at a glance. */}
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "size-1.5 shrink-0 -translate-y-px rounded-full bg-border",
+                      line.tone === "good" && "bg-ok",
+                      line.tone === "warning" && "bg-warn",
+                    )}
+                  />
+                  <span>
+                    <span className="font-medium text-foreground">{line.label}</span> {line.value}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {when && (
+          <span className="max-w-[11rem] shrink-0 pt-0.5 text-right font-mono text-[11px] text-muted-foreground">
+            {when}
+          </span>
+        )}
+      </div>
+      {/* Outside the clickable area: a verdict or a thread is read, not opened. */}
+      {children && <div className="px-4 pb-3 pl-[calc(5.5rem+1.75rem)]">{children}</div>}
+    </li>
+  );
+}
+
+const MOVE_VERB: Record<MoveAction, string> = {
+  ADD: "Add",
+  DROP: "Drop",
+  START: "Start",
+  BENCH: "Bench",
+  TRANSFER: "Bring in",
+  CAPTAIN: "Captain",
+  MONITOR: "Watch",
+};
+
+const MOVE_JOIN: Partial<Record<MoveAction, string>> = {
+  ADD: "drop",
+  START: "over",
+  TRANSFER: "for",
+  BENCH: "for",
+};
+
+/** "Add Jaylen Warren, drop Roschon Johnson" — the model's move as the list phrases its own. */
+function moveTitle(move: Move): string {
+  const join = MOVE_JOIN[move.action];
+  const rest = move.replaces && join ? (join === "drop" ? `, drop ${move.replaces}` : ` ${join} ${move.replaces}`) : "";
+  return `${MOVE_VERB[move.action]} ${move.player}${rest}`;
+}
 
 const DECISION_LABEL: Record<TaskVerdict["decision"], string> = {
   AGREE: "Agree",
@@ -113,16 +192,21 @@ const DECISION_LABEL: Record<TaskVerdict["decision"], string> = {
  * The model's word on one item, under the item it is about.
  *
  * Inside the row rather than in a list of its own: an overrule only means
- * something next to the move it overrules, and reading two lists in step is
- * the work this layout exists to save.
+ * something next to the move it overrules. A stale one stays, faded and
+ * labelled — the reasoning may still hold, but it was about something else.
  */
-function VerdictLine({ verdict }: { verdict: TaskVerdict }) {
+function VerdictLine({ verdict, stale }: { verdict: TaskVerdict; stale: boolean }) {
   return (
-    <div className="mt-2 flex items-baseline gap-2 rounded-md bg-muted px-2.5 py-1.5 text-[12.5px]">
-      <Badge variant={decisionTone(verdict.decision)} appearance="status" className="shrink-0">
+    <div className={cn("flex items-baseline gap-2 rounded-md bg-muted px-2.5 py-1.5 text-[12.5px]", stale && "opacity-60")}>
+      <Badge variant={stale ? "muted" : decisionTone(verdict.decision)} appearance="status" className="shrink-0">
         {DECISION_LABEL[verdict.decision]}
       </Badge>
       <span className="text-foreground">{verdict.reason}</span>
+      {stale && (
+        <span className="ml-auto shrink-0 font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
+          stale — re-judge
+        </span>
+      )}
     </div>
   );
 }

@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-import { api, type League, type Competition, type Summary } from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Sparkles } from "lucide-react";
+import { api, type Analysis, type Judgment, type League, type Competition, type Summary } from "@/lib/api";
 import { ActionList } from "@/components/ui/actions";
-import { href } from "@/lib/route";
+import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Loading } from "@/components/ui/state";
@@ -16,10 +16,12 @@ import { LeagueHeader } from "@/components/ui/page-header";
 /**
  * The week: where you stand, what you are fielding, and who against.
  *
- * No analysis here. Everything is read or computed from league state, so the
- * page is complete the moment it opens — and the report, which lives on its own
- * view, is then an argument about what is already on screen rather than the
- * only thing on it.
+ * Complete without a model: everything is read or computed from league state,
+ * so the page is whole the moment it opens. Where a model is configured it
+ * annotates what is already here — Judge fills each to-do with a verdict and
+ * adds the moves the list missed, in place — rather than producing a page of
+ * its own to be read beside this one. It never runs on load; the last
+ * judgment does, from where it was kept.
  */
 export function ScoutPanel({ competition, league }: { competition: Competition; league: League }) {
   const { openPlayer, drawer } = usePlayerDrawer(competition, league);
@@ -31,6 +33,21 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
     queryKey: ["summary", competition.key, league.league_id],
     queryFn: () => api.summary(competition.key, league.league_id),
   });
+
+  // The last judgment, read without asking the model anything: judging is a
+  // click, and a reload should not throw the answer away.
+  const judgmentKey = ["judgment", competition.key, league.league_id];
+  const judgment = useQuery<Judgment | null, Error>({
+    queryKey: judgmentKey,
+    queryFn: () => api.judgment(competition.key, league.league_id),
+    enabled: ai && Boolean(week.data?.actions),
+  });
+  const queryClient = useQueryClient();
+  const judge = useMutation<Analysis, Error>({
+    mutationFn: () => api.scout(competition.key, league.league_id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: judgmentKey }),
+  });
+  const report = judgment.data?.report;
 
   return (
     <>
@@ -44,21 +61,29 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
 
       {week.data && (
         <div className="flex flex-col gap-4 p-5">
+          {judge.isError && <ErrorNote error={judge.error} />}
           {week.data.actions && (
             <ActionList
               actions={week.data.actions}
+              judged={report?.tasks}
+              suggested={report?.moves}
               onOpen={openPlayer}
               aside={
-                // Only where a model is configured: a link to a page that is
-                // not offered would be an offer and then a refusal.
-                ai &&
-                week.data.actions.length > 0 && (
-                  <Link
-                    to={href(competition.key, league.league_id, "report")}
-                    className="normal-case tracking-normal text-accent-foreground hover:underline"
-                  >
-                    Get a second opinion
-                  </Link>
+                // Only where a model is configured: a control that cannot
+                // work would be an offer and then a refusal.
+                ai && (
+                  <span className="flex items-center gap-2 normal-case tracking-normal">
+                    {judgment.data && !judge.isPending && (
+                      <span className="font-normal">judged {judgedAt(judgment.data.judged_at)}</span>
+                    )}
+                    {judge.isPending && <span className="font-normal">judging…</span>}
+                    <IconButton
+                      label={judgment.data ? "Judge again" : "Judge this list"}
+                      icon={<Sparkles />}
+                      onClick={() => judge.mutate()}
+                      disabled={judge.isPending}
+                    />
+                  </span>
                 )
               }
             />
@@ -162,4 +187,13 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       {drawer}
     </>
   );
+}
+
+/** "14:05" today, "Thu 14:05" before — when the verdicts were written, in the viewer's own zone. */
+function judgedAt(iso: string): string {
+  const when = new Date(iso);
+  const time = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return when.toDateString() === new Date().toDateString()
+    ? time
+    : `${when.toLocaleDateString([], { weekday: "short" })} ${time}`;
 }

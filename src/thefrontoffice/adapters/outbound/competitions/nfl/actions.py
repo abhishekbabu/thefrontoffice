@@ -102,7 +102,8 @@ def _lineup(
             reason = f"{why}. {change.start.name} projects {change.start.points:.1f}.{_caveat(change.start)}"
             # Only the player coming in: the one going out is not playing, and
             # his matchup is beside the point.
-            actions.append(_swap(change, "now", reason, kickoff, _evidence(state, [change.start])))
+            hole = _hole(slot.slot, player)
+            actions.append(_swap(change, "now", reason, kickoff, _evidence(state, [change.start]), key=hole))
             continue
 
         pick = next(
@@ -124,6 +125,7 @@ def _lineup(
                 ),
                 player_id=pick.player_id,
                 evidence=_evidence(state, [pick]),
+                key=_hole(slot.slot, player),
             )
         )
 
@@ -131,7 +133,7 @@ def _lineup(
         if change.start.player_id not in moved and not (change.bench and change.bench.player_id in moved):
             reason = f"+{change.gain:.1f} proj pts.{_caveat(change.start)}"
             both = [change.start, *([change.bench] if change.bench else [])]
-            actions.append(_swap(change, "soon", reason, kickoff, _evidence(state, both)))
+            actions.append(_swap(change, "soon", reason, kickoff, _evidence(state, both), key=_swap_key(change)))
     return actions
 
 
@@ -183,7 +185,22 @@ def _evidence(state: Week, players: list[WeeklyProjection]) -> list[Stat]:
     return lines
 
 
-def _swap(change: LineupChange, urgency: Urgency, reason: str, kickoff: dict[str, str], evidence: list[Stat]) -> Action:
+def _hole(slot: str, player: WeeklyProjection | None) -> str:
+    """The problem a forced move solves — this starter out, or this slot empty.
+
+    Keyed on the problem rather than the answer, so a better cover turning up
+    makes the old verdict stale instead of making it vanish.
+    """
+    return f"hole:{player.player_id}" if player else f"hole:{slot}"
+
+
+def _swap_key(change: LineupChange) -> str:
+    return f"swap:{change.start.player_id}:{change.bench.player_id if change.bench else change.slot}"
+
+
+def _swap(
+    change: LineupChange, urgency: Urgency, reason: str, kickoff: dict[str, str], evidence: list[Stat], key: str
+) -> Action:
     """A bench player in, a starter out, by the earlier of their two kickoffs."""
     title = (
         f"Start {change.start.name} over {change.bench.name}"
@@ -202,6 +219,7 @@ def _swap(change: LineupChange, urgency: Urgency, reason: str, kickoff: dict[str
         when=f"before kickoff, {day(dates[0])}" if dates else "",
         player_id=change.start.player_id,
         evidence=evidence,
+        key=key,
     )
 
 
@@ -248,6 +266,7 @@ def _next_week_byes(state: Week, next_games: list[ScheduledGame]) -> list[Action
                 reason=f"{names} {verb} on bye, and {behind}.",
                 when=f"week {week}",
                 player_id=out[0].player_id,
+                key=f"bye:{week}:{position}",
             )
         )
     return actions
@@ -269,6 +288,7 @@ def _trade_deadline(state: Week) -> list[Action]:
                 + (", so this is the last week to deal." if final else ", next week.")
             ),
             when=f"week {deadline}",
+            key=f"deadline:{deadline}",
         )
     ]
 

@@ -98,11 +98,17 @@ a drop. Beside it sits each player's **latest news** from the last ten days, fro
 his own club's ESPN feed — matched on ESPN's tag or his full name, never a
 surname, and never across clubs — in the row, the drawer and the prompt.
 
-With a model configured, the list links to a **second opinion**: the report
-judges each to-do item by its id — *agree*, *overrule* or *wait for news* — and
-the verdict appears inside the row it is about. Its own moves are only the ones
-the list misses. The list itself is the application's: the model cannot add,
-drop or restate an item, and a verdict naming no listed item is discarded.
+With a model configured, the list has a **Judge** control: the model judges
+each to-do item by its id — *agree*, *overrule* or *wait for news* — and the
+verdict appears inside the row it is about, while moves the list missed join it
+as *suggested* rows. Nothing runs on load. The latest judgment of each league
+is kept (`JUDGMENT_CACHE_DIR`, a week), so a reload shows it, and judging an
+unchanged week again returns it without a call. Each item has a stable key — the
+hole it fills or the swap it makes — and a fingerprint of what it says; a
+verdict on an item that has since changed stays, faded and marked *stale*. The
+list itself is the application's: the model cannot add, drop or restate an
+item, and a verdict naming no listed item is discarded. The Report page shows
+the same judgment at length.
 
 ![Free agents](docs/screenshots/free-agents.png)
 

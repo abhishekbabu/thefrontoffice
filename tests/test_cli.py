@@ -258,9 +258,11 @@ def test_scout_renders_a_report(monkeypatch: pytest.MonkeyPatch, capsys: pytest.
 
 
 def _scout_with(provider: Any, ai: Any) -> Any:
+    from conftest import FakeJudgments
+
     from thefrontoffice.application.scouting import ScoutEngine
 
-    return ScoutEngine(provider, ai=ai)
+    return ScoutEngine(provider, ai=ai, judgments=FakeJudgments())
 
 
 def test_scout_reports_a_platform_failure(capsys: pytest.CaptureFixture[str]) -> None:

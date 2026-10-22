@@ -7,7 +7,7 @@ IL slots, matchup context) actually get encoded.
 from typing import Any
 
 import pytest
-from conftest import FakeAI, FakeNBA, FakeYahoo, make_player
+from conftest import FakeAI, FakeJudgments, FakeNBA, FakeYahoo, make_player
 from conftest import _team as _yahoo_team
 from reports import MOCK_NBA_REPORT
 
@@ -19,7 +19,7 @@ from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat
 
 def _scout(yahoo: FakeYahoo, ai: FakeAI | None = None, nba: FakeNBA | None = None) -> ScoutEngine:
     provider = YahooNBAProvider(league=None, nba=nba or FakeNBA(), yahoo=yahoo)  # type: ignore[arg-type]
-    return ScoutEngine(provider, ai=ai or FakeAI())  # type: ignore[arg-type]
+    return ScoutEngine(provider, ai=ai or FakeAI(), judgments=FakeJudgments())  # type: ignore[arg-type]
 
 
 def test_returns_a_validated_report_and_an_open_chat() -> None:
