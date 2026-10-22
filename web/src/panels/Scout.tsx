@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
-import { api, type Analysis, type Judgment, type League, type Competition, type Summary } from "@/lib/api";
+import { api, type ScoutReport, type Judgment, type League, type Competition, type Summary } from "@/lib/api";
 import { ActionList, WhyThread } from "@/components/ui/actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
@@ -43,7 +43,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
     enabled: ai && Boolean(week.data?.actions),
   });
   const queryClient = useQueryClient();
-  const judge = useMutation<Analysis, Error>({
+  const judge = useMutation<ScoutReport, Error>({
     mutationFn: () => api.scout(competition.key, league.league_id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: judgmentKey }),
   });

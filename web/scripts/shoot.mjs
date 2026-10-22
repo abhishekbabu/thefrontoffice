@@ -100,10 +100,6 @@ async function main() {
     // Straight to each view by its address. Driving the rail instead would tie
     // this run to the shape of a control, and break whenever that changes.
     const competitions = await (await fetch(`${BASE}/api/competitions`)).json();
-    // Both analysis views need a model. Without one the app does not offer
-    // them, so the address falls back to this week — and a shot taken there
-    // would be filed under a name for a page nobody can reach.
-    const { ai } = await (await fetch(`${BASE}/api/capabilities`)).json();
     for (const competition of competitions.filter((c) => c.ready)) {
       const leagues = await (await fetch(`${BASE}/api/${competition.key}/leagues`)).json();
       const league = leagues[0];
@@ -120,15 +116,6 @@ async function main() {
       if (wanted("week")) {
         await go("week");
         await shoot(`${name}-week`);
-      }
-      if (wanted("report") && ai) {
-        await go("report");
-        const run = page.getByRole("button", { name: /Run report|Run again/i });
-        if (await run.count()) {
-          await run.click();
-          await page.waitForTimeout(1200);
-          await shoot(`${name}-report`);
-        }
       }
       if (wanted("league")) {
         await go("league");
@@ -164,10 +151,6 @@ async function main() {
           await page.waitForTimeout(700);
           await shoot(`${name}-player`);
         }
-      }
-      if (wanted("trade") && ai && competition.supports_trades) {
-        await go("trade");
-        await shoot(`${name}-trade`);
       }
     }
 

@@ -133,3 +133,14 @@ def test_judgments_are_kept_per_league() -> None:
     engine.start_analysis("L1")
 
     assert engine.latest("L2") is None
+
+
+def test_the_report_alone_opens_no_conversation() -> None:
+    """The week's Judge asks its questions on the rows, not in a chat beside them."""
+    ai = FakeAI(report=_report(_verdict(1)))
+    engine = ScoutEngine(ContextOnly(TASKS), ai=ai, judgments=FakeJudgments())  # type: ignore[arg-type]
+
+    report = engine.report("L1")
+
+    assert report.tasks[0].verdict is not None
+    assert ai.history is None

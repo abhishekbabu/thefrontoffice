@@ -14,9 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScoutPanel } from "@/panels/Scout";
 import { LeaguePanel } from "@/panels/LeaguePanel";
 import { FreeAgentsPanel } from "@/panels/FreeAgents";
-import { ReportPanel } from "@/panels/Report";
 import { TeamPanel } from "@/panels/Team";
-import { TradePanel } from "@/panels/Trade";
 import { SettingsPanel } from "@/panels/Settings";
 import { Landing } from "@/panels/Landing";
 import { cn } from "@/lib/utils";
@@ -43,12 +41,6 @@ const PANELS: Record<
   league: { label: "League", Panel: LeaguePanel },
   team: { label: "My team", Panel: TeamPanel },
   "free-agents": { label: "Free agents", Panel: FreeAgentsPanel },
-  report: { label: "Report", Panel: ReportPanel, offered: ({ ai }) => ai },
-  trade: {
-    label: "Trade",
-    Panel: TradePanel,
-    offered: ({ ai, competition }) => ai && competition.supports_trades,
-  },
 };
 
 export default function App() {

@@ -3,8 +3,9 @@
 [![CI](https://github.com/abhishekbabu/thefrontoffice/actions/workflows/ci.yml/badge.svg)](https://github.com/abhishekbabu/thefrontoffice/actions/workflows/ci.yml)
 
 An AI general manager for your fantasy teams. It reads your live league state,
-real stats and the fixtures ahead, then scouts the waiver wire, checks your
-lineup, evaluates trades and answers follow-up questions about any of it.
+real stats and the fixtures ahead, then turns it into a to-do list for the
+week — and, with a model, judges each item in place and answers questions
+about any row or player where it sits.
 
 Three competitions, each on the platform that runs it:
 
@@ -71,7 +72,7 @@ can be linked, bookmarked or reloaded and Back means what it says.
 |---|---|
 | `/` | every league you can play |
 | `/{competition}-{platform}/{league}` | this week, the default view |
-| `/{competition}-{platform}/{league}/{view}` | `league`, `team`, `free-agents`, `report`, `trade` |
+| `/{competition}-{platform}/{league}/{view}` | `league`, `team`, `free-agents` |
 | `/settings` | credentials and appearance |
 
 A competition with no league (`/nfl-sleeper`) resolves to your first one, and a
@@ -107,8 +108,7 @@ unchanged week again returns it without a call. Each item has a stable key — t
 hole it fills or the swap it makes — and a fingerprint of what it says; a
 verdict on an item that has since changed stays, faded and marked *stale*. The
 list itself is the application's: the model cannot add, drop or restate an
-item, and a verdict naming no listed item is discarded. The Report page shows
-the same judgment at length.
+item, and a verdict naming no listed item is discarded.
 
 Questions are asked of the thing they are about. **Why?** under any to-do item
 opens a conversation inline, seeded with that item alone — the move, its reason
@@ -134,11 +134,11 @@ your squad in more depth, and any row opens a player.
 
 ![Player detail](docs/screenshots/player.png)
 
-**Report** and **Trade** are the model's work: a scouted week with adds, drops
-and lineup changes, and a plain-language trade verdict
-(`Give Bijan, Get Puka`). Both drop into a follow-up chat. They appear only
-when a model key is set — commands and views that cannot work are hidden
-rather than disabled.
+The model has no page of its own. It annotates the pages that exist — verdicts
+in to-do rows, calls under free-agent rows, a conversation under a row or at
+the foot of a player — and none of it appears without a model key: controls
+that cannot work are hidden rather than disabled. The old Report and Trade
+pages are gone; a trade is still evaluated from the CLI.
 
 The same three competitions run in the CLI:
 

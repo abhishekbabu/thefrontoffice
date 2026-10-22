@@ -123,11 +123,6 @@ export function Landing({
                       </div>
                     )}
                   </div>
-                  {!competition.supports_trades && (
-                    <Badge variant="muted" appearance="label">
-                      no trades
-                    </Badge>
-                  )}
                   {/* Straight to the platform, for when you already know what
                       you came to do and this app is not it. */}
                   <ExternalLink href={league.url} label={`Open ${league.name} on the platform`} />
