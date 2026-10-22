@@ -107,15 +107,7 @@ def _build_nba() -> CompetitionProvider:
 
     yahoo.YahooClient.ensure_authorized()
     ctx = yahoo.YahooClient.get_context()
-    try:
-        leagues = list(ctx.get_leagues("nba", YahooNBAProvider.season_year()))
-    except Exception as e:
-        # yahoofantasy raises requests' own exceptions. Left alone they escape
-        # as a 500 with a stack trace, which tells the user nothing about the
-        # permission they actually need to change.
-        logger.error(f"Yahoo league lookup failed: {e}")
-        raise yahoo.translate(e) from e
-
+    leagues = yahoo.YahooClient.find_leagues(ctx, "nba", YahooNBAProvider.season_year())
     if not leagues:
         raise LeagueNotFoundError("no Yahoo NBA leagues for this season")
     return YahooNBAProvider(leagues[0], all_leagues=leagues)

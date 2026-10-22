@@ -469,6 +469,70 @@ def test_an_error_without_a_response_is_translated_rather_than_crashing() -> Non
     assert isinstance(translate(ValueError("unparseable")), YahooAPIError)
 
 
+# ── find_leagues ────────────────────────────────────────────────────────
+
+
+def _games(games: Any) -> dict[str, Any]:
+    return {"fantasy_content": {"users": {"user": {"games": games}}}}
+
+
+def _league(key: str, name: str) -> dict[str, Any]:
+    return {"league_key": {"$": key}, "name": {"$": name}}
+
+
+def test_leagues_are_looked_up_by_game_code_and_season() -> None:
+    """A season newer than the SDK's game-key table is still found: the query
+    names the season instead of translating it into a key."""
+    ctx = FakeContext(_games({"game": {"leagues": {"league": [_league("466.l.1", "One"), _league("466.l.2", "Two")]}}}))
+
+    leagues = YahooClient.find_leagues(ctx, "nba", 2031, cache=RecordingCache())  # type: ignore[arg-type]
+
+    assert ctx.raw_requests == ["users;use_login=1/games;game_codes=nba;seasons=2031/leagues"]
+    assert [(league.id, league.name) for league in leagues] == [("466.l.1", "One"), ("466.l.2", "Two")]
+    assert all(league.ctx is ctx for league in leagues)
+
+
+def test_a_single_league_is_not_mistaken_for_a_list() -> None:
+    ctx = FakeContext(_games({"game": {"leagues": {"league": _league("466.l.1", "Only")}}}))
+
+    leagues = YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache())  # type: ignore[arg-type]
+
+    assert [league.name for league in leagues] == ["Only"]
+
+
+@pytest.mark.parametrize("games", ["", {"game": {"leagues": ""}}, {"game": {}}], ids=["no-game", "empty", "absent"])
+def test_playing_in_no_league_is_an_empty_answer(games: Any) -> None:
+    ctx = FakeContext(_games(games))
+
+    assert YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache()) == []  # type: ignore[arg-type]
+
+
+def test_the_league_list_is_served_from_cache_once_fetched() -> None:
+    ctx = FakeContext(_games({"game": {"leagues": {"league": _league("466.l.1", "One")}}}))
+    cache = RecordingCache()
+
+    YahooClient.find_leagues(ctx, "nba", 2026, cache=cache)  # type: ignore[arg-type]
+    YahooClient.find_leagues(ctx, "nba", 2026, cache=cache)  # type: ignore[arg-type]
+
+    assert len(ctx.raw_requests) == 1
+
+
+def test_an_unapproved_app_fails_the_league_lookup_by_name() -> None:
+    from thefrontoffice.domain.errors import YahooAuthError
+
+    ctx = FakeContext(error=_http(403))
+
+    with pytest.raises(YahooAuthError):
+        YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache())  # type: ignore[arg-type]
+
+
+def test_an_unrecognized_league_list_raises() -> None:
+    ctx = FakeContext({"fantasy_content": {"error": "?"}})
+
+    with pytest.raises(YahooAPIError, match="unreadable league list"):
+        YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache())  # type: ignore[arg-type]
+
+
 # ── authorization is never obtained implicitly ──────────────────────────
 
 

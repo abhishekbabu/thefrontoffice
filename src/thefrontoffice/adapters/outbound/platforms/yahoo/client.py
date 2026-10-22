@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from yahoofantasy import Context, League, Player, Team, Week
-from yahoofantasy.api.parse import as_list, from_response_object, parse_response
+from yahoofantasy.api.parse import as_list, from_response_object, get_value, parse_response
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo import oauth
@@ -39,6 +39,7 @@ SCOREBOARD_TTL_SECONDS = 120
 # long as anyone is looking.
 LEADERS_TTL = timedelta(minutes=30)
 SEARCH_TTL = timedelta(hours=6)
+LEAGUES_TTL = timedelta(hours=1)
 
 # The eight category queries are independent; Yahoo tolerates this easily and it
 # is the dominant latency in a scout run.
@@ -133,6 +134,46 @@ class YahooClient:
         except Exception as e:
             logger.error(f"Yahoo token verification failed: {e}")
             raise translate(e) from e
+
+    @staticmethod
+    def find_leagues(context: Context, game_code: str, season: int, cache: JsonDiskCache | None = None) -> list[League]:
+        """Every league the login plays in for one game and season.
+
+        Filters by game code and season rather than through the SDK's
+        `get_leagues`, which resolves the season against a hardcoded table of
+        Yahoo game keys and refuses any season newer than its last release —
+        every October, until somebody publishes one.
+
+        Raises:
+            YahooAuthError: the app is not authorized for Fantasy Sports.
+            YahooAPIError: Yahoo could not be reached, or answered unreadably.
+        """
+        store = cache or JsonDiskCache(Path(settings.yahoo_cache_dir))
+        query = f"users;use_login=1/games;game_codes={game_code};seasons={season}/leagues"
+        try:
+            raw = store.cached(f"leagues_{game_code}_{season}", LEAGUES_TTL, lambda: context.make_request(query))
+        except Exception as e:
+            logger.error(f"Yahoo league lookup failed: {e}")
+            raise translate(e) from e
+        data: Any = parse_response(raw)
+        try:
+            games = data["fantasy_content"]["users"]["user"]["games"]
+        except (KeyError, TypeError) as e:
+            raise YahooAPIError(f"Yahoo returned an unreadable league list: {e}") from e
+
+        # No game for the season (`<games count="0"/>`) and a game with no
+        # leagues in it both mean the login plays nowhere — an answer, not a failure.
+        game = games.get("game") if isinstance(games, dict) else None
+        container = game.get("leagues") if isinstance(game, dict) else None
+        if not isinstance(container, dict) or "league" not in container:
+            return []
+
+        leagues: list[League] = []
+        for league_data in as_list(container["league"]):
+            league = League(context, get_value(league_data["league_key"]))
+            from_response_object(league, league_data)
+            leagues.append(league)
+        return leagues
 
     def __init__(self, league: League, cache: JsonDiskCache | None = None):
         self.league = league
