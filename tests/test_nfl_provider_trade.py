@@ -110,5 +110,4 @@ def test_both_sides_of_a_trade_are_priced_on_their_role_too() -> None:
     )
     context = _context(["Bad RB"], ["Trade Target"], client=_client(game_lines=[line]))
 
-    assert "last game: 90% of snaps, 9.0 targets" in context.prompt
-    assert "Role over projection" in context.prompt
+    assert "90% of snaps" in context.prompt

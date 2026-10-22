@@ -22,7 +22,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
 )
 from thefrontoffice.config.constants import NFL_SCOUT_PROMPT
 from thefrontoffice.domain.errors import SleeperAPIError
-from thefrontoffice.domain.models import CompetitionContext, Stat
+from thefrontoffice.domain.models import Action, CompetitionContext, Stat, task_id
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +30,15 @@ AVAILABLE_PLAYER_LIMIT = 25
 TRENDING_LIMIT = 10
 
 
-def build(client: SleeperClient, state: Week, league_id: str) -> CompetitionContext:
-    """The scouting prompt, and the parts it was assembled from."""
+def build(client: SleeperClient, state: Week, league_id: str, tasks: list[Action]) -> CompetitionContext:
+    """The scouting prompt, and the parts it was assembled from.
+
+    `tasks` is the week's to-do list as the page shows it, numbered here so
+    each verdict the model returns can be put back beside its row.
+    """
     league, roster, week = state.league, state.roster, state.week
     projections, players, projected = state.projections, state.players, state.projected
-    lineup, changes = state.lineup, state.changes
+    lineup = state.lineup
 
     slots = league.starting_slots
     evidence = state.evidence
@@ -49,13 +53,9 @@ def build(client: SleeperClient, state: Week, league_id: str) -> CompetitionCont
         for slot in lineup
     )
     bench_str = "".join(player_line(p, evidence) for p in projected if p.player_id not in starter_ids) or "- (none)\n"
-    changes_str = (
-        "".join(
-            f"- START {c.start.name} ({c.start.position}) in {c.slot} for "
-            f"{c.bench.name if c.bench else 'an empty slot'}: +{c.gain:.1f} projected points\n"
-            for c in changes
-        )
-        or "- None; the current lineup is already the highest-projecting legal one.\n"
+    tasks_str = "".join(task_line(i, task) for i, task in enumerate(tasks, start=1)) or (
+        "- None. Nothing in league state needs deciding: the lineup is the best legal one and nobody "
+        "in it is ruled out.\n"
     )
 
     available = _available_players(client, league_id, projections, players)
@@ -78,7 +78,7 @@ def build(client: SleeperClient, state: Week, league_id: str) -> CompetitionCont
         constraints=constraints,
         lineup_str=lineup_str or "- (no lineup set)\n",
         bench_str=bench_str,
-        changes_str=changes_str,
+        tasks_str=tasks_str,
         available_str="".join(available_lines.values()) or "- (none available)\n",
         trending_str=trending_str,
     )
@@ -87,11 +87,19 @@ def build(client: SleeperClient, state: Week, league_id: str) -> CompetitionCont
         prompt=prompt,
         situation=situation,
         constraints=constraints,
-        extra=f"LINEUP CHANGES IMPLIED BY PROJECTIONS:\n{changes_str}",
+        extra=f"TO DO:\n{tasks_str}",
         roster_lines=roster_lines,
         candidate_lines=available_lines,
         headline=headline(roster, week, current_points, best_points, on_bench) + matchup_stats,
+        tasks=tasks,
     )
+
+
+def task_line(position: int, task: Action) -> str:
+    """One to-do item as the model reads it: its id, the move, why, and what it rests on."""
+    when = f" ({task.when})" if task.when else ""
+    evidence = "".join(f"    {line.label}: {line.value}\n" for line in task.evidence)
+    return f"- {task_id(position)} [{task.urgency}, {task.kind}] {task.title}{when}. {task.reason}\n{evidence}"
 
 
 def headline(

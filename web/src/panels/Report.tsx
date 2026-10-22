@@ -9,6 +9,8 @@ import { Chat } from "@/components/ui/chat";
 import { ErrorNote } from "@/components/ui/error-note";
 import { PageHeader } from "@/components/ui/page-header";
 import { moveTone } from "@/lib/tone";
+import { ActionList } from "@/components/ui/actions";
+import { usePlayerDrawer } from "@/components/ui/player";
 import { splitMetric } from "@/lib/metric";
 
 /**
@@ -19,6 +21,7 @@ import { splitMetric } from "@/lib/metric";
  * considered opinion that costs a model call to produce.
  */
 export function ReportPanel({ competition, league }: { competition: Competition; league: League }) {
+  const { openPlayer, drawer } = usePlayerDrawer(competition, league);
   const run = useMutation<Analysis, Error>({
     mutationFn: () => api.scout(competition.key, league.league_id),
   });
@@ -50,9 +53,13 @@ export function ReportPanel({ competition, league }: { competition: Competition;
 
       {run.data && (
         <div className="flex flex-col gap-4 p-5">
+          {/* The week's own list first, judged: these are the moves somebody
+              is already looking at, and the verdict is what they came for. */}
+          {run.data.report.tasks.length > 0 && <ActionList actions={run.data.report.tasks} onOpen={openPlayer} />}
+
           <Card>
             <CardHeader>
-              <span>What this week turns on</span>
+              <span>{run.data.report.tasks.length > 0 ? "Also worth doing" : "What this week turns on"}</span>
               <span>
                 {run.data.report.moves.length} {run.data.report.moves.length === 1 ? "move" : "moves"}
               </span>
@@ -68,7 +75,7 @@ export function ReportPanel({ competition, league }: { competition: Competition;
 
             {run.data.report.moves.length === 0 && (
               <p className="border-t border-border px-4 py-6 text-center text-[13.5px] text-muted-foreground">
-                No moves worth making this week.
+                {run.data.report.tasks.length > 0 ? "Nothing beyond the to-do list." : "No moves worth making this week."}
               </p>
             )}
 
@@ -80,6 +87,7 @@ export function ReportPanel({ competition, league }: { competition: Competition;
           <Chat chatId={run.data.chat_id} />
         </div>
       )}
+      {drawer}
     </>
   );
 }

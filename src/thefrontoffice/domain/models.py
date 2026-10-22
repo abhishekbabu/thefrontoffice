@@ -259,6 +259,30 @@ class Swap(BaseModel):
 
 ActionKind = Literal["lineup", "waiver", "trade"]
 
+Decision = Literal["AGREE", "OVERRULE", "WAIT"]
+"""AGREE: make the move. OVERRULE: do not, whatever the numbers say. WAIT: it
+turns on news due before the deadline — a questionable player's status."""
+
+
+def task_id(position: int) -> str:
+    """How the prompt names the to-do item at `position` (from 1), and how a
+    verdict refers back to it. One function, so the two cannot drift apart."""
+    return f"T{position}"
+
+
+class TaskVerdict(BaseModel):
+    """The model's judgement on one computed to-do item."""
+
+    task: str = Field(description="The item's id exactly as listed, e.g. 'T1'.")
+    decision: Decision = Field(
+        description=(
+            "AGREE to make the move. OVERRULE when the role, matchup or news says otherwise. "
+            "WAIT when it turns on news due before the deadline."
+        )
+    )
+    reason: str = Field(description="One sentence, grounded in role, matchup or news — never the projection alone.")
+
+
 Urgency = Literal["now", "soon", "later"]
 """now: costs points this week if left alone. soon: worth doing before this
 week's next deadline. later: planning for a week still to come."""
@@ -290,6 +314,10 @@ class Action(BaseModel):
             "What the move rests on beyond the projection, one line per player it involves — "
             "the matchup and the role behind the number. Empty where nothing has been played yet."
         ),
+    )
+    verdict: TaskVerdict | None = Field(
+        default=None,
+        description="The model's judgement, once a report has been run. None before, and for an item it skipped.",
     )
 
 
@@ -423,8 +451,21 @@ class ScoutReport(BaseModel):
             "Short labels, e.g. ['BLK', 'FG%'] or ['RB depth', 'QB bye']."
         )
     )
-    moves: list[Move] = Field(description="Recommended moves, most valuable first.")
+    moves: list[Move] = Field(
+        description="Recommended moves, most valuable first — only those the to-do list does not already hold."
+    )
     strategy: str = Field(description="One-sentence summary of the plan.")
+    verdicts: list[TaskVerdict] = Field(
+        default_factory=list,
+        description="Exactly one per to-do item, by its id. Empty when the prompt lists no to-do items.",
+    )
+    tasks: list[Action] = Field(
+        default_factory=list,
+        description=(
+            "LEAVE THIS EMPTY. The application fills it with the to-do items as computed, each "
+            "carrying its verdict, so anything put here is discarded."
+        ),
+    )
 
     headline: list[Stat] = Field(
         default_factory=list,
@@ -499,6 +540,8 @@ class CompetitionContext:
     candidate_lines: dict[str, str] = field(default_factory=dict)
     headline: list[Stat] = field(default_factory=list)
     """Exact figures for the report header, read from league state rather than written by the model."""
+    tasks: list[Action] = field(default_factory=list)
+    """The to-do items the prompt lists, in order, so a verdict naming `task_id(n)` finds its item."""
 
     def briefing(self, report: ScoutReport) -> str:
         """A compact context for follow-up questions about `report`.

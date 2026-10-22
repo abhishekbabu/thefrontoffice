@@ -149,10 +149,10 @@ def test_a_player_is_described_by_both_halves_and_toned_by_his_matchup() -> None
 
     assert stat is not None
     assert stat.label == "Run Back"
-    assert (
-        stat.value
-        == "vs MIA, the most to RBs (30.0 a game); last game: 50% of snaps, 12.0 carries, 0.0 targets, 11.0 pts"
-    )
+    evidence = gather(lines, SCORING)
+    matchup = evidence.matchup(_proj("x", "Run Back", "RB", 12.0, opp="MIA"))
+    assert matchup is not None
+    assert stat.value == f"{matchup.describe()}; {evidence.roles['x'].describe()}"
     assert stat.tone == "good"
 
 

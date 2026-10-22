@@ -107,10 +107,11 @@ YOUR CURRENT LINEUP (slot, player, projection):
 BENCH:
 {bench_str}
 
-LINEUP CHANGES THE PROJECTIONS ALREADY IMPLY:
-- These were computed exactly, not estimated. Endorse or overrule them with a reason —
-  a bad matchup, an injury designation, or a projection you do not trust.
-{changes_str}
+TO DO — WHAT LEAGUE STATE ALREADY SAYS NEEDS DECIDING:
+- Computed exactly from the league, not estimated: starters who cannot play, empty slots, swaps
+  the bench allows, byes ahead, the trade deadline. The manager sees this list; your verdicts
+  appear beside it, so judge these items rather than restating them.
+{tasks_str}
 
 TOP AVAILABLE PLAYERS (not rostered anywhere in this league):
 {available_str}
@@ -120,13 +121,18 @@ TRENDING ADDS ACROSS SLEEPER (crowd signal, often ahead of projections):
 
 YOUR TASK:
 1. Read the matchup: are we favored or chasing, and by how much?
-2. Recommend START/BENCH moves where the projection gap is real and the role and matchup support it.
-3. Recommend ADD moves from the available list, each paired with a DROP from the bench.
+2. Give a verdict on every TO DO item, by its id. AGREE to make it; OVERRULE when the role, the
+   matchup or the news says otherwise, even where the projection favors it; WAIT when it turns on
+   news due before its deadline, such as a questionable player's final status.
+3. Recommend further moves only where the TO DO list misses one — chiefly ADDs from the available
+   list, each paired with a DROP from the bench. Never repeat a TO DO item as a move.
 4. Skip any move you would not actually make. Three good moves beat six padded ones.
 
 Return your analysis in the required structured form. Field guidance:
 - situation: the matchup, the projected margin, and what it turns on.
 - focus: what this week hinges on — thin positions, byes, injury risk. Short labels.
+- verdicts: exactly one per TO DO item, `task` set to its id ('T1'). Empty if the list is empty.
+- tasks: leave empty; the application fills it.
 - moves: action START/BENCH/ADD/MONITOR. Put the projected points in `metric`
   (e.g. "14.2 proj pts, +4.1 over Smith"). Pair every ADD with the player it `replaces`.
 - Be specific and tactical. Do not restate the inputs.
