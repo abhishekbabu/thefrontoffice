@@ -567,3 +567,39 @@ def test_a_secrets_effective_value_is_withheld_too(
 
     assert entry["effective"] == ""
     assert entry["present"] is True
+
+
+def test_every_model_key_saved_in_settings_reaches_the_file_and_turns_analysis_on(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole loop the Settings page exists for: typed in, written to .env,
+    never read back, and in effect on the next request with no restart."""
+    from thefrontoffice.config import env_file
+    from thefrontoffice.config.settings import AppSettings, settings
+
+    path = tmp_path / ".env"
+    path.write_text("SLEEPER_USERNAME=abhibeast\n", encoding="utf-8")
+    monkeypatch.setattr(env_file, "ENV_PATH", path)
+    for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key"):
+        monkeypatch.setattr(settings, field, None)  # restored after, whatever the reload sets
+
+    def reload_from_tmp() -> None:
+        fresh = AppSettings(_env_file=path)  # type: ignore[call-arg]
+        for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key"):
+            setattr(settings, field, getattr(fresh, field))
+
+    monkeypatch.setattr(env_file, "reload_settings", reload_from_tmp)
+    client = TestClient(web.create_app())
+    keys = {key: f"{key.lower()}-value" for key in env_file.MODEL_KEYS}
+
+    assert client.get("/api/capabilities").json()["ai"] is False
+    response = client.put("/api/settings", json={"values": keys})
+
+    assert response.status_code == 200
+    written = path.read_text(encoding="utf-8")
+    assert all(f"{key}={value}" in written for key, value in keys.items())
+    assert "SLEEPER_USERNAME=abhibeast" in written  # the rest of the file survives
+    listed = {s["key"]: s for s in response.json() if s["key"] in keys}
+    assert all(s["present"] and s["secret"] for s in listed.values())
+    assert not any(value in response.text for value in keys.values())
+    assert client.get("/api/capabilities").json()["ai"] is True
