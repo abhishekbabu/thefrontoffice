@@ -51,6 +51,15 @@ class RangeSettings:
     scales his whole game by a factor around 1 with this spread. Widens a range without
     moving its centre — the honest answer to "the projection is a guess too"."""
 
+    shared_error: float = 0.25
+    """Of `projection_error`, the part a quarterback shares with his own receivers and
+    tight ends: an offense that moves the ball lifts all of them at once. Measured on
+    weeks 2-6 of 2026, where a quarterback's week and a pass-catcher's on the same team
+    correlated at +0.20 against their projections — a shared factor of about 0.29 —
+    chosen a little under that and checked on `just backtest`. Backs are left out:
+    against their quarterback they move independently, and against each other they
+    split the carries, which no shared factor can say."""
+
 
 DEFAULT = RangeSettings()
 MAX_RATIO = DEFAULT.max_ratio
@@ -60,6 +69,9 @@ POOL_SIZE = 200
 
 UNDER_WAY = 0.5
 """How much of a game is left once it has kicked off. Sleeper gives no clock, so a guess."""
+
+PASSING_GAME = frozenset({"QB", "WR", "TE"})
+"""Positions whose weeks rise and fall with their own team's passing game."""
 
 # The chance a player plays, by designation. Rough base rates, and the slot a
 # news reading of his situation would replace.
@@ -149,6 +161,8 @@ def outcomes(
         floor=scored if started else 0.0,
         remaining=UNDER_WAY if started else 1.0,
         projection_error=settings.projection_error,
+        group=f"{player.team}:pass" if player.position in PASSING_GAME and player.team else "",
+        shared_error=settings.shared_error,
     )
 
 

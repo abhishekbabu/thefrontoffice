@@ -138,3 +138,14 @@ def test_last_season_shapes_a_positions_range_but_not_a_players_own() -> None:
 def test_without_last_season_the_opening_weeks_have_no_pool() -> None:
     """Why last season is read at all: nobody has the games yet."""
     assert spreads(_evidence(rb1=((12.0,), "RB"))).pool == {}
+
+
+def test_a_quarterback_and_his_receivers_share_a_passing_game_and_his_backs_do_not() -> None:
+    spread = spreads(Evidence())
+    qb, wr, rb = (
+        outcomes(_proj(pid, pid, position, 10.0, team="KC"), spread)
+        for pid, position in (("qb", "QB"), ("wr", "WR"), ("rb", "RB"))
+    )
+
+    assert qb.group == wr.group != ""
+    assert rb.group == ""
