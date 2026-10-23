@@ -168,6 +168,8 @@ class SleeperClient:
             scoring_format=SleeperClient.detect_scoring_format(settings_blob),
             roster_positions=[str(p) for p in data.get("roster_positions") or []],
             trade_deadline=int((data.get("settings") or {}).get("trade_deadline") or 0),
+            playoff_teams=int((data.get("settings") or {}).get("playoff_teams") or 0),
+            playoff_week_start=int((data.get("settings") or {}).get("playoff_week_start") or 0),
         )
 
     @staticmethod

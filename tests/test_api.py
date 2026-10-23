@@ -873,3 +873,58 @@ def test_free_agents_that_cannot_be_priced_are_still_the_wire(
 
     assert [p["player_id"] for p in body["players"]] == ["bench", "starter"]
     assert all("Win" not in p["columns"] for p in body["players"])
+
+
+class _SeasonProvider(_SummaryProvider):
+    """A provider whose season can be simulated, or whose simulation fails."""
+
+    def __init__(self, summary: Any, error: Exception | None = None) -> None:
+        super().__init__(summary)
+        self.error = error
+
+    def season_input(self, league_id: str) -> Any:
+        from thefrontoffice.domain.models import SeasonInput, TeamRecord
+
+        if self.error:
+            raise self.error
+        teams = (TeamRecord("1", "Me", 6, 0, 0, 900.0), TeamRecord("2", "Them", 0, 6, 0, 500.0))
+        return SeasonInput(teams=teams, fixtures=(), scoring=(), spots=1, mine="1", week=7)
+
+    def schedule(self, league_id: str) -> Any:
+        from thefrontoffice.domain.models import LeagueSchedule, StandingRow
+
+        return LeagueSchedule(standings=[StandingRow(rank=1, name="Me", team_id="1")])
+
+
+def test_the_week_carries_the_playoff_chance(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from thefrontoffice.domain.models import Summary
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: _SeasonProvider(Summary()))
+
+    headline = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["headline"]
+
+    assert {s["label"]: s["value"] for s in headline}["Playoffs"] == "100%"
+
+
+def test_the_table_carries_each_teams_playoff_chance(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from thefrontoffice.domain.models import Summary
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: _SeasonProvider(Summary()))
+
+    [row] = client.get("/api/nfl-sleeper/leagues/L1/schedule").json()["standings"]
+
+    assert row["playoffs"] == "100%"
+
+
+def test_a_season_that_cannot_be_simulated_is_still_the_league(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from thefrontoffice.domain.errors import SleeperAPIError
+    from thefrontoffice.domain.models import Summary
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: _SeasonProvider(Summary(), SleeperAPIError("down")))
+
+    [row] = client.get("/api/nfl-sleeper/leagues/L1/schedule").json()["standings"]
+    headline = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["headline"]
+
+    assert row["playoffs"] == "" and headline == []

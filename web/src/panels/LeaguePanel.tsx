@@ -303,6 +303,14 @@ function Standings({
           )}
           {row.record && <span className="shrink-0 font-mono text-[11.5px] tabular-nums">{row.record}</span>}
           <span className="w-28 shrink-0 text-right font-mono text-[12px] tabular-nums">{row.points}</span>
+          {/* Labelled in the cell rather than by a header the table does not
+              have; on a phone the word is left to screen readers. */}
+          {row.playoffs && (
+            <span className="shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground sm:w-28">
+              {row.playoffs}
+              <span className="sr-only sm:not-sr-only"> playoffs</span>
+            </span>
+          )}
         </Row>
       ))}
     </Section>

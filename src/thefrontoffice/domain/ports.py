@@ -23,6 +23,7 @@ from thefrontoffice.domain.models import (
     PlayerPage,
     PlayerQuery,
     Remembered,
+    SeasonInput,
     Summary,
     TeamRef,
     TradeProposal,
@@ -292,4 +293,19 @@ class ForecastProvider(Protocol):
 
     def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
         """Every matchup of a week already played, as it stood before kickoff, with the result."""
+        ...
+
+
+@runtime_checkable
+class SeasonProvider(Protocol):
+    """A competition whose regular season can be simulated to its end.
+
+    Records, the fixtures left, and how each team is expected to score in
+    each of them; the generic engine plays it out and counts playoff places.
+    """
+
+    label: str
+
+    def season_input(self, league_id: str) -> SeasonInput | None:
+        """The rest of the regular season; None where it is over or has no playoffs to reach."""
         ...

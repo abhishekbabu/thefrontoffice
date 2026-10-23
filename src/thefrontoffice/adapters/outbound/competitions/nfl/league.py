@@ -7,13 +7,33 @@ wait on eighteen weeks of matchups.
 """
 
 import logging
+import statistics
 from typing import Any
 
-from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day, games_by_week, moment, week_dates
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import lineup_points, optimal_lineup
+from thefrontoffice.adapters.outbound.competitions.nfl.week import (
+    Week,
+    day,
+    games_by_week,
+    moment,
+    projection_for,
+    week_dates,
+)
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import SleeperRoster, Transaction
 from thefrontoffice.domain.errors import SleeperAPIError
-from thefrontoffice.domain.models import ActivityRow, LeagueSchedule, Match, ScheduleRow, StandingRow, Tone
+from thefrontoffice.domain.models import (
+    ActivityRow,
+    Fixture,
+    LeagueSchedule,
+    Match,
+    ScheduleRow,
+    SeasonInput,
+    StandingRow,
+    TeamRecord,
+    TeamWeek,
+    Tone,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -198,3 +218,137 @@ def _activity_rows(
 def _name_of(player_id: str, state: Week) -> str:
     meta = state.players.get(player_id)
     return str(meta.get("name") or player_id) if meta else player_id
+
+
+# ── the rest of the season, for the simulation ──────────────────────────
+
+DEFAULT_SPREAD = 25.0
+"""A team's week-to-week spread, in points, before it has played enough weeks to measure one.
+About what a fantasy football team's scores scatter by."""
+
+MIN_WEEKS_FOR_SPREAD = 3
+"""Played weeks the league needs before its own spread replaces the default."""
+
+DEFAULT_STRENGTH_ERROR = 8.0
+"""How far a team's real strength may sit from its projection, before the league has
+played enough weeks to measure it: about what this league measured after six weeks."""
+
+
+def season_input(client: SleeperClient, state: Week, league_id: str, seed: int) -> SeasonInput | None:
+    """The regular season from this week to its last, ready to simulate.
+
+    Each team's mean for a week is the best lineup its roster projects that
+    week — which sees byes and injuries coming — rescaled so the league's
+    projected average matches what it has actually been scoring, since
+    projections run short of what managers score and the points already
+    banked are real points. The spread is the league's own: how far teams
+    have scored from their averages so far.
+
+    None in the playoffs, or where the league says nothing about them.
+    """
+    league = state.league
+    if not league.playoff_teams or not league.playoff_week_start or state.week >= league.playoff_week_start:
+        return None
+    remaining = list(range(state.week, league.playoff_week_start))
+    rosters = client.get_rosters(league_id)
+    names = client.get_league_users(league_id)
+
+    fixtures = []
+    for week, entries in client.get_matchups_bulk(league_id, remaining).items():
+        paired: dict[Any, list[str]] = {}
+        for entry in entries:
+            if entry.get("matchup_id") is not None:
+                paired.setdefault(entry["matchup_id"], []).append(str(entry.get("roster_id")))
+        fixtures += [Fixture(week=week, home=pair[0], away=pair[1]) for pair in paired.values() if len(pair) == 2]
+
+    projected = {
+        (str(roster.roster_id), week): _best_lineup(
+            state, roster, client.get_projections(state.season, week, league.scoring_format)
+        )
+        for week in remaining
+        for roster in rosters
+    }
+    scale = _scale(rosters, projected, state.week)
+    spread = _spread(client, league_id, state.week)
+    strength_error = _strength_error(rosters, projected, scale, spread, state.week)
+    return SeasonInput(
+        teams=tuple(
+            TeamRecord(
+                team_id=str(r.roster_id),
+                name=names.get(r.owner_id, f"Roster {r.roster_id}"),
+                wins=r.wins,
+                losses=r.losses,
+                ties=r.ties,
+                points_for=r.points_for,
+            )
+            for r in rosters
+        ),
+        fixtures=tuple(fixtures),
+        scoring=tuple(
+            TeamWeek(team_id=team, week=week, mean=points * scale, spread=spread)
+            for (team, week), points in projected.items()
+        ),
+        spots=league.playoff_teams,
+        mine=str(state.roster.roster_id),
+        week=state.week,
+        strength_error=strength_error,
+        seed=seed,
+    )
+
+
+def _best_lineup(state: Week, roster: SleeperRoster, projections: dict[str, Any]) -> float:
+    players = [p for p in (projection_for(pid, projections, state.players) for pid in roster.player_ids) if p]
+    return lineup_points(optimal_lineup(state.league.starting_slots, players))
+
+
+def _scale(rosters: list[SleeperRoster], projected: dict[tuple[str, int], float], week: int) -> float:
+    """What the league actually scores per team-week, over what this week's best lineups project."""
+    played = week - 1
+    this_week = [points for (_, w), points in projected.items() if w == week]
+    if played < 1 or not this_week or not sum(this_week):
+        return 1.0
+    actual = sum(r.points_for for r in rosters) / (len(rosters) * played)
+    # Nothing banked yet is a scoreboard that has not loaded, not a league of noughts.
+    return actual / (sum(this_week) / len(this_week)) if actual else 1.0
+
+
+def _spread(client: SleeperClient, league_id: str, week: int) -> float:
+    """How far a team's week has fallen from its own average, pooled across the league."""
+    played = list(range(1, week))
+    if len(played) < MIN_WEEKS_FOR_SPREAD:
+        return DEFAULT_SPREAD
+    scores: dict[str, list[float]] = {}
+    for entries in client.get_matchups_bulk(league_id, played).values():
+        for entry in entries:
+            scores.setdefault(str(entry.get("roster_id")), []).append(float(entry.get("points") or 0))
+    deviations = [s - statistics.fmean(v) for v in scores.values() if len(v) > 1 for s in v]
+    if len(deviations) < 2:
+        return DEFAULT_SPREAD
+    # Corrected for each team's average being measured from the same few weeks,
+    # which pulls every deviation toward nought.
+    weeks = len(played)
+    return statistics.pstdev(deviations) * (weeks / (weeks - 1)) ** 0.5
+
+
+def _strength_error(
+    rosters: list[SleeperRoster], projected: dict[tuple[str, int], float], scale: float, spread: float, week: int
+) -> float:
+    """How far teams' real strength sits from their projected best lineups.
+
+    Each team's average so far, against what its roster projects now: the gap
+    is partly that average's own luck — a few weeks of a spread this wide —
+    and the rest is the projection being wrong about the team. Only the rest
+    is strength the simulation is unsure of.
+    """
+    played = week - 1
+    if played < MIN_WEEKS_FOR_SPREAD:
+        return DEFAULT_STRENGTH_ERROR
+    gaps = [
+        r.points_for / played - projected[(str(r.roster_id), week)] * scale
+        for r in rosters
+        if (str(r.roster_id), week) in projected
+    ]
+    if len(gaps) < 2:
+        return DEFAULT_STRENGTH_ERROR
+    luck = spread**2 / played
+    return max(0.0, statistics.pvariance(gaps) - luck) ** 0.5
