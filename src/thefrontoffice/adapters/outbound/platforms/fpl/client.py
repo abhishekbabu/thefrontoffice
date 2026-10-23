@@ -17,7 +17,7 @@ and everything it holds can be derived from the public history instead — see
 import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from tenacity import Retrying
 
@@ -121,6 +121,72 @@ def free_transfers(history: list[GameweekResult], upcoming: int) -> int:
             continue
         available = min(MAX_FREE_TRANSFERS, max(1, available - row.transfers_made + 1))
     return available
+
+
+class FPLSource(Protocol):
+    """What a provider reads the Fantasy Premier League game through. See `SleeperNFLSource` in platforms/sleeper/client.py for why it exists."""
+
+    def current_gameweek(self) -> Gameweek | None:
+        """The gameweek being played, as the game itself marks it."""
+        ...
+
+    def get_chips(self) -> list[Chip]:
+        """Every chip the game issues this season, with the window for each."""
+        ...
+
+    def get_chips_played(self, entry_id: int) -> list[ChipPlay]:
+        """The chips this manager has already spent, and when."""
+        ...
+
+    def get_clubs(self) -> dict[str, Club]:
+        """Abbreviation -> the club in full, keyed the way a player names it."""
+        ...
+
+    def get_entry(self, entry_id: int) -> Entry:
+        """A manager's team, with the mini-leagues they are in."""
+        ...
+
+    def get_fixtures(self, gameweek: int) -> list[Fixture]:
+        """Every match in one gameweek, with both difficulty ratings."""
+        ...
+
+    def get_gameweeks(self) -> list[Gameweek]: ...
+
+    def get_h2h_match(self, league_id: int, entry_id: int, gameweek: int) -> H2HMatch | None:
+        """The tie this entry is in for `gameweek`, if there is one."""
+        ...
+
+    def get_h2h_season(self, league_id: int, entry_id: int) -> dict[int, H2HMatch]:
+        """Every tie this entry has in the league, keyed by gameweek."""
+        ...
+
+    def get_history(self, entry_id: int) -> list[GameweekResult]:
+        """Every gameweek this manager has played, in order."""
+        ...
+
+    def get_live(self, gameweek: int) -> dict[int, LiveStat]:
+        """What every player has done in the gameweek being played."""
+        ...
+
+    def get_past_seasons(self, element_id: int) -> list[PastSeason]:
+        """Every finished season this player has a record for, oldest first."""
+        ...
+
+    def get_players(self) -> dict[int, Player]:
+        """Every player in the game, keyed by element id."""
+        ...
+
+    def get_squad(self, entry_id: int, gameweek: int) -> Squad:
+        """The fifteen a manager fielded in `gameweek`."""
+        ...
+
+    def get_standings(self, league_id: int, is_h2h: bool) -> list[TableRow]:
+        """The league table. The two formats are different endpoints entirely."""
+        ...
+
+    def upcoming_gameweek(self, now: datetime | None = None) -> Gameweek:
+        """The gameweek a manager can still act on."""
+        ...
 
 
 class FPLClient:

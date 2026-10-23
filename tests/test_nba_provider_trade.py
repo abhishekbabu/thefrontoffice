@@ -19,8 +19,8 @@ YAHOO_LOGGER = YahooNBAProvider.__module__
 def _provider(yahoo: FakeYahoo) -> YahooNBAProvider:
     return YahooNBAProvider(
         SimpleNamespace(id="1", name="One"),  # type: ignore[arg-type]
-        nba=FakeNBA(),  # type: ignore[arg-type]
-        yahoo=yahoo,  # type: ignore[arg-type]
+        nba=FakeNBA(),
+        yahoo=yahoo,
     )
 
 

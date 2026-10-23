@@ -13,7 +13,7 @@ own holds its last fifty, which reaches back a couple of weeks.
 import logging
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from tenacity import Retrying
 
@@ -47,6 +47,14 @@ def _retry() -> Retrying:
         max_wait=20,
         predicate=lambda e: is_transient(e, RETRYABLE_STATUS),
     )
+
+
+class ESPNSource(Protocol):
+    """What a provider reads ESPN through. See `SleeperNFLSource` in platforms/sleeper/client.py for why it exists."""
+
+    def get_team_news(self, league: str, clubs: list[str]) -> dict[str, list[NewsArticle]]:
+        """Each club's recent articles, newest first, keyed by ESPN's abbreviation."""
+        ...
 
 
 class ESPNClient:

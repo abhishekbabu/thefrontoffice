@@ -14,7 +14,7 @@ import logging
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews, dated
 from thefrontoffice.adapters.outbound.competitions.nfl.week import SCORING_LABELS, Week
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     PlayerMeta,
     SleeperLeague,
@@ -31,7 +31,7 @@ AVAILABLE_PLAYER_LIMIT = 25
 TRENDING_LIMIT = 10
 
 
-def build(client: SleeperClient, state: Week, league_id: str, tasks: list[Action]) -> CompetitionContext:
+def build(client: SleeperNFLSource, state: Week, league_id: str, tasks: list[Action]) -> CompetitionContext:
     """The scouting prompt, and the parts it was assembled from.
 
     `tasks` is the week's to-do list as the page shows it, numbered here so
@@ -155,7 +155,7 @@ def news_lines(news: PlayerNews, player_id: str) -> str:
 
 
 def _available_players(
-    client: SleeperClient,
+    client: SleeperNFLSource,
     league_id: str,
     projections: dict[str, WeeklyProjection],
     players: dict[str, PlayerMeta],
@@ -169,7 +169,9 @@ def _available_players(
     return sorted(free, key=lambda p: p.points, reverse=True)[:AVAILABLE_PLAYER_LIMIT]
 
 
-def _trending(client: SleeperClient, projections: dict[str, WeeklyProjection], players: dict[str, PlayerMeta]) -> str:
+def _trending(
+    client: SleeperNFLSource, projections: dict[str, WeeklyProjection], players: dict[str, PlayerMeta]
+) -> str:
     try:
         trending = client.get_trending("add", limit=TRENDING_LIMIT)
     except SleeperAPIError as e:
@@ -191,7 +193,7 @@ def _trending(client: SleeperClient, projections: dict[str, WeeklyProjection], p
 
 
 def matchup(
-    client: SleeperClient,
+    client: SleeperNFLSource,
     league: SleeperLeague,
     roster: SleeperRoster,
     league_id: str,

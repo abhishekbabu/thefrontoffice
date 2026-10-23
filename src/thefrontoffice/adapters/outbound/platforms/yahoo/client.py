@@ -4,7 +4,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from yahoofantasy import Context, League, Player, Team, Week
 from yahoofantasy.api.parse import as_list, from_response_object, get_value, parse_response
@@ -60,6 +60,37 @@ def translate(error: Exception) -> FrontOfficeError:
     if response is not None and getattr(response, "status_code", None) == 403:
         return YahooAuthError()
     return YahooAPIError(f"Yahoo request failed: {error}")
+
+
+class YahooSource(Protocol):
+    """What the basketball provider reads Yahoo through. See `SleeperNFLSource` in platforms/sleeper/client.py for why it exists."""
+
+    @property
+    def league(self) -> League:
+        """The league it reads, which the provider asks for its teams. Read-only here."""
+        ...
+
+    def fetch_available(self, count: int = 100) -> list[Player]:
+        """The best available players in the league, however they became free."""
+        ...
+
+    def fetch_top_by_stat(
+        self, per_stat: int = 10, sort_type: Timeframe = Timeframe.LAST_WEEK
+    ) -> dict[str, list[Player]]:
+        """Top available players per scoutable category, keyed by category name."""
+        ...
+
+    def get_matchup(self, my_team: Team) -> MatchupInfo:
+        """Fetch the current matchup once, returning both context and dates."""
+        ...
+
+    def get_user_team(self) -> Team:
+        """Identify the team owned by the current user."""
+        ...
+
+    def search_players(self, query: str) -> list[Player]:
+        """Search for players by name using the league context."""
+        ...
 
 
 class YahooClient:

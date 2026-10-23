@@ -11,7 +11,7 @@ tab that is always empty is worse than one that is not there.
 import logging
 
 from thefrontoffice.adapters.outbound.competitions.dates import at_time
-from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
+from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
 from thefrontoffice.adapters.outbound.platforms.fpl.types import H2HMatch, MiniLeague
 from thefrontoffice.domain.errors import FPLAPIError
 from thefrontoffice.domain.models import LeagueSchedule, Match, ScheduleRow, StandingRow, Tone
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 HARD_FIXTURE = 4
 
 
-def build(client: FPLClient, league: MiniLeague | None, entry_id: int, playing: int) -> LeagueSchedule:
+def build(client: FPLSource, league: MiniLeague | None, entry_id: int, playing: int) -> LeagueSchedule:
     """The season, the table, and the real matches behind the gameweek.
 
     The matches stand on their own: they are the gameweek itself, and they are
@@ -37,7 +37,7 @@ def build(client: FPLClient, league: MiniLeague | None, entry_id: int, playing: 
     )
 
 
-def _season_rows(client: FPLClient, league: MiniLeague, entry_id: int, playing: int) -> list[ScheduleRow]:
+def _season_rows(client: FPLSource, league: MiniLeague, entry_id: int, playing: int) -> list[ScheduleRow]:
     """Your gameweeks, with the tie in each where the league has one.
 
     A classic league has no season in this sense — it is a running table,
@@ -78,7 +78,7 @@ def _tie_tone(tie: H2HMatch | None, played: bool) -> Tone:
     return "good" if tie.my_points > tie.opponent_points else "warning"
 
 
-def _standings(client: FPLClient, league: MiniLeague, entry_id: int) -> list[StandingRow]:
+def _standings(client: FPLSource, league: MiniLeague, entry_id: int) -> list[StandingRow]:
     try:
         table = client.get_standings(league.id, league.is_h2h)
     except FPLAPIError as e:
@@ -100,7 +100,7 @@ def _standings(client: FPLClient, league: MiniLeague, entry_id: int) -> list[Sta
     ]
 
 
-def _matches(client: FPLClient, gameweek: int) -> list[Match]:
+def _matches(client: FPLSource, gameweek: int) -> list[Match]:
     """The real matches the gameweek is made of, with both difficulties.
 
     Difficulty is per side, so it is carried per side: a fixture is easy

@@ -9,7 +9,7 @@ name the logger it means rather than read whatever the whole process emitted.
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -32,6 +32,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     TrendingPlayer,
     WeeklyProjection,
 )
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Timeframe
 from thefrontoffice.domain.models import Side, Summary
 
 # ── log capture ─────────────────────────────────────────────────────────
@@ -260,7 +261,7 @@ class FakeSleeper:
             raise self.matchups_error
         return self.matchups
 
-    def get_players(self) -> dict[str, PlayerMeta]:
+    def get_players(self, sport: str = "nfl") -> dict[str, PlayerMeta]:
         if self.players_catalog is not None:
             return self.players_catalog
         return {
@@ -283,7 +284,7 @@ class FakeSleeper:
     # Signature mirrors the real client exactly, defaults included: a fake that
     # accepts anything lets a miswired call through, which is how a mangled
     # `get_trending(client, "add")` once degraded silently to "(unavailable)".
-    def get_trending(self, kind: str, lookback_hours: int = 24, limit: int = 25) -> list[TrendingPlayer]:
+    def get_trending(self, kind: str = "add", lookback_hours: int = 24, limit: int = 25) -> list[TrendingPlayer]:
         assert isinstance(kind, str), f"kind must be a string, got {type(kind).__name__}"
         if self.trending_error:
             raise self.trending_error
@@ -425,7 +426,7 @@ class FakeYahoo:
         info = self.get_matchup(my_team)
         return (info.week_start, info.week_end)
 
-    def fetch_top_by_stat(self, per_stat: int = 10) -> dict[str, list[Any]]:
+    def fetch_top_by_stat(self, per_stat: int = 10, sort_type: Timeframe = Timeframe.LAST_WEEK) -> dict[str, list[Any]]:
         return self.stat_leaders
 
     def search_players(self, query: str) -> list[Any]:
@@ -443,11 +444,13 @@ class FakeNBA:
     def get_player_stats(self, full_name: str) -> Any:
         return self.stats.get(full_name)
 
-    def get_remaining_games(self, team_abbr: str, start: date, end: date) -> int:
+    def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
         return self.games.get(team_abbr.upper(), 0)
 
-    def get_remaining_games_bulk(self, teams: list[str], start: date, end: date) -> dict[str, int]:
-        return {t.upper(): self.games.get(t.upper(), 0) for t in teams}
+    def get_remaining_games_bulk(
+        self, team_abbrs: list[str], start_date: date, end_date: date, now: datetime | None = None
+    ) -> dict[str, int]:
+        return {t.upper(): self.games.get(t.upper(), 0) for t in team_abbrs}
 
 
 class FakeItemStates:

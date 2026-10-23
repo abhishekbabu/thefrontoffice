@@ -316,7 +316,7 @@ def _provider_with(sleeper: Any, yahoo: FakeYahoo | None = None) -> Any:
 
     return YahooNBAProvider(
         SimpleNamespace(id="1", name="One"),  # type: ignore[arg-type]
-        nba=FakeNBA(),  # type: ignore[arg-type]
+        nba=FakeNBA(),
         yahoo=yahoo or _rich_yahoo(),  # type: ignore[arg-type]
         sleeper=sleeper,
     )

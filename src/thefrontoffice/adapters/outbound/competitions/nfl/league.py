@@ -19,7 +19,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     projection_for,
     week_dates,
 )
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import SleeperRoster, Transaction
 from thefrontoffice.domain.errors import SleeperAPIError
 from thefrontoffice.domain.models import (
@@ -50,7 +50,7 @@ TRANSACTION_LABELS = {
 }
 
 
-def build(client: SleeperClient, state: Week, league_id: str) -> LeagueSchedule:
+def build(client: SleeperNFLSource, state: Week, league_id: str) -> LeagueSchedule:
     """The season, the table, this week's real games, and what the league did."""
     rosters = client.get_rosters(league_id)
     names = client.get_league_users(league_id)
@@ -65,7 +65,7 @@ def build(client: SleeperClient, state: Week, league_id: str) -> LeagueSchedule:
 
 
 def _season_rows(
-    client: SleeperClient,
+    client: SleeperNFLSource,
     state: Week,
     league_id: str,
     by_roster: dict[int, SleeperRoster],
@@ -143,7 +143,7 @@ def _standings(state: Week, rosters: list[SleeperRoster], names: dict[str, str])
     ]
 
 
-def _matches(client: SleeperClient, state: Week) -> list[Match]:
+def _matches(client: SleeperNFLSource, state: Week) -> list[Match]:
     """The real games this fantasy week is made of.
 
     The whole slate rather than only the clubs you hold: which of them matters
@@ -166,7 +166,7 @@ def _matches(client: SleeperClient, state: Week) -> list[Match]:
 
 
 def _activity(
-    client: SleeperClient,
+    client: SleeperNFLSource,
     state: Week,
     league_id: str,
     by_roster: dict[int, SleeperRoster],
@@ -234,7 +234,7 @@ DEFAULT_STRENGTH_ERROR = 8.0
 played enough weeks to measure it: about what this league measured after six weeks."""
 
 
-def season_input(client: SleeperClient, state: Week, league_id: str, seed: int) -> SeasonInput | None:
+def season_input(client: SleeperNFLSource, state: Week, league_id: str, seed: int) -> SeasonInput | None:
     """The regular season from this week to its last, ready to simulate.
 
     Each team's mean for a week is the best lineup its roster projects that
@@ -312,7 +312,7 @@ def _scale(rosters: list[SleeperRoster], projected: dict[tuple[str, int], float]
     return actual / (sum(this_week) / len(this_week)) if actual else 1.0
 
 
-def _spread(client: SleeperClient, league_id: str, week: int) -> float:
+def _spread(client: SleeperNFLSource, league_id: str, week: int) -> float:
     """How far a team's week has fallen from its own average, pooled across the league."""
     played = list(range(1, week))
     if len(played) < MIN_WEEKS_FOR_SPREAD:

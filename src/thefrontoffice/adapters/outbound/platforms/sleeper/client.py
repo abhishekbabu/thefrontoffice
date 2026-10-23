@@ -13,7 +13,7 @@ effectively forever, trending for an hour.
 import logging
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from tenacity import Retrying
 
@@ -97,6 +97,106 @@ def _is_retryable(exc: BaseException) -> bool:
 
 def _retry() -> Retrying:
     return build_retry(attempts=RETRY_MAX_ATTEMPTS, multiplier=2, min_wait=2, max_wait=20, predicate=_is_retryable)
+
+
+class SleeperNFLSource(Protocol):
+    """What the NFL provider reads Sleeper through: every call it makes, and nothing else.
+
+    Providers ask for an interface like this rather than `SleeperClient` so a
+    test hands them a fake that is checked against it — a fake whose signature
+    drifts from the real client's then fails the type check instead of passing
+    quietly. One per reader, so each fake implements only what its reader calls.
+    """
+
+    def get_league_users(self, league_id: str) -> dict[str, str]:
+        """Map user_id -> display name, for labelling opponents."""
+        ...
+
+    def get_leagues(self, user_id: str, season: str) -> list[SleeperLeague]:
+        """Every NFL league a user is in for a season."""
+        ...
+
+    def get_matchups(self, league_id: str, week: int) -> list[dict[str, Any]]:
+        """Raw matchup entries for a week — one per roster, paired by matchup_id."""
+        ...
+
+    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[dict[str, Any]]]:
+        """Every requested week's matchups, fetched concurrently."""
+        ...
+
+    def get_nfl_game_lines(self, season: str, weeks: list[int]) -> list[NFLGameLine]:
+        """Every fantasy-relevant player's line from each game in `weeks`."""
+        ...
+
+    def get_nfl_state(self) -> SeasonState:
+        """Current NFL week and season type."""
+        ...
+
+    def get_players(self, sport: str = "nfl") -> dict[str, PlayerMeta]:
+        """The player catalog, trimmed to the fields we use."""
+        ...
+
+    def get_projections(self, season: str, week: int, scoring: ScoringFormat) -> dict[str, WeeklyProjection]:
+        """Weekly projections keyed by player_id."""
+        ...
+
+    def get_rosters(self, league_id: str) -> list[SleeperRoster]: ...
+
+    def get_season_schedule(self, season: str, sport: str = "nfl") -> list[ScheduledGame]:
+        """Every real-world game of the season, with the day it is played."""
+        ...
+
+    def get_season_stats(self, season: str, sport: str = "nfl") -> dict[str, SeasonStats]:
+        """A whole season's production, keyed by player_id."""
+        ...
+
+    def get_state(self, sport: str = "nfl") -> SeasonState:
+        """Current week and season type for a sport."""
+        ...
+
+    def get_transactions(self, league_id: str, week: int) -> list[Transaction]:
+        """What the league did in one week: waivers, free agents and trades."""
+        ...
+
+    def get_trending(self, kind: str = "add", lookback_hours: int = 24, limit: int = 25) -> list[TrendingPlayer]:
+        """Most-added or most-dropped players across all of Sleeper."""
+        ...
+
+    def get_user(self, username: str) -> SleeperUser:
+        """Resolve a username to a user. Usernames change; user_ids do not."""
+        ...
+
+
+class SleeperNBASource(Protocol):
+    """What basketball's recent-form reader reads Sleeper through. See `SleeperNFLSource`."""
+
+    def get_nba_game_logs(self, season: str, weeks: list[int]) -> dict[str, list[NBAGameLog]]:
+        """Every player's game-by-game lines over `weeks`, keyed by player_id."""
+        ...
+
+    def get_nba_schedule(self, season: str) -> list[ScheduledGame]:
+        """The basketball season's games, in the same shape football uses."""
+        ...
+
+    def get_players(self, sport: str = "nfl") -> dict[str, PlayerMeta]:
+        """The player catalog, trimmed to the fields we use."""
+        ...
+
+    def get_state(self, sport: str = "nfl") -> SeasonState:
+        """Current week and season type for a sport."""
+        ...
+
+
+class SleeperProjectionSource(Protocol):
+    """What the basketball provider reads Sleeper's projections through. See `SleeperNFLSource`."""
+
+    def get_nba_projections(self, season: str, week: int) -> list[GameProjection]:
+        """Per-game NBA projections for a Sleeper week."""
+        ...
+
+    def get_state(self, sport: str = "nfl") -> SeasonState:
+        """Current week and season type for a sport."""
+        ...
 
 
 class SleeperClient:
