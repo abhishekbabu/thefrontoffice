@@ -11,11 +11,11 @@ or four cannot be cut at.
 
 import logging
 from datetime import date, datetime
-from typing import Literal, TypedDict
+from typing import Literal, Protocol, TypedDict
 from zoneinfo import ZoneInfo
 
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import NBA, SleeperClient
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import NBA, SleeperClient, SleeperNBASource
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.domain.errors import SleeperAPIError
 
@@ -81,6 +81,26 @@ def nine_cat(games: list[NBAGameLog]) -> NineCatStats:
     )
 
 
+class FormSource(Protocol):
+    """What the basketball provider reads recent form and remaining games through.
+    See `SleeperNBASource` for why it exists.
+    """
+
+    def get_player_stats(self, full_name: str) -> PlayerStats | None:
+        """A player's last 5, 10 and 15 games, or nothing where there are none."""
+        ...
+
+    def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
+        """Count a club's not-yet-played games inside a matchup window."""
+        ...
+
+    def get_remaining_games_bulk(
+        self, team_abbrs: list[str], start_date: date, end_date: date, now: datetime | None = None
+    ) -> dict[str, int]:
+        """One schedule load and one `now` for every club asked about."""
+        ...
+
+
 class SleeperNBAForm:
     """Recent form and remaining games for basketball.
 
@@ -89,7 +109,7 @@ class SleeperNBAForm:
     the catalog per question would be the whole cost of the page.
     """
 
-    def __init__(self, client: SleeperClient | None = None, season: str | None = None) -> None:
+    def __init__(self, client: SleeperNBASource | None = None, season: str | None = None) -> None:
         self.client = client or SleeperClient()
         self._season = season
         self._logs: dict[str, list[NBAGameLog]] | None = None

@@ -26,7 +26,7 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
     lineup_changes,
     points_with_captain,
 )
-from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient, free_transfers
+from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient, FPLSource, free_transfers
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Chip,
     Club,
@@ -109,7 +109,7 @@ class FPLProvider:
     competition = "premier-league"
     label = "FPL (Fantasy Premier League)"
 
-    def __init__(self, entry_id: int | None = None, *, client: FPLClient | None = None):
+    def __init__(self, entry_id: int | None = None, *, client: FPLSource | None = None):
         self.entry_id = entry_id if entry_id is not None else settings.fpl_entry_id
         self.client = client or FPLClient()
 

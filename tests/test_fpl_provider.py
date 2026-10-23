@@ -407,7 +407,7 @@ def test_roster_rows_report_a_doubt() -> None:
         3: player(3, "DEF", 6.0, status="d", chance_of_playing=50),
         **MARKET,
     }
-    rows = {c.columns["Player"]: c.columns for c in FPLProvider(ENTRY_ID, client=fake).roster(LEAGUE_ID)}  # type: ignore[arg-type]
+    rows = {c.columns["Player"]: c.columns for c in FPLProvider(ENTRY_ID, client=fake).roster(LEAGUE_ID)}
     assert rows["P3"]["Status"] == "doubtful 50%"
 
 
@@ -541,7 +541,7 @@ def test_an_optimal_eleven_produces_no_change_recommendations() -> None:
     optimal += [Pick(element=p.id, position=i, multiplier=0) for i, p in enumerate(best.bench, start=12)]
     squad = Squad(gameweek=4, picks=optimal, bank=30, value=1004)
 
-    prompt = FPLProvider(ENTRY_ID, client=FakeFPL(squad=squad)).build_context(LEAGUE_ID).prompt  # type: ignore[arg-type]
+    prompt = FPLProvider(ENTRY_ID, client=FakeFPL(squad=squad)).build_context(LEAGUE_ID).prompt
     assert "already the best legal shape" in prompt
 
 
@@ -587,7 +587,7 @@ def test_an_optimal_eleven_leaves_nothing_on_the_bench_to_report() -> None:
     picks += [Pick(element=p.id, position=i, multiplier=0) for i, p in enumerate(best.bench, start=12)]
     squad = Squad(gameweek=4, picks=picks, bank=30, value=1004)
 
-    context = FPLProvider(ENTRY_ID, client=FakeFPL(squad=squad)).build_context(LEAGUE_ID)  # type: ignore[arg-type]
+    context = FPLProvider(ENTRY_ID, client=FakeFPL(squad=squad)).build_context(LEAGUE_ID)
     assert not [stat for stat in context.headline if stat.label == "On bench"]
 
 
@@ -685,7 +685,7 @@ def test_a_flagged_player_is_toned_and_carries_the_news() -> None:
         3: player(3, "DEF", 6.0, status="i", chance_of_playing=0, news="Hamstring - expected back 12 Sep"),
         **MARKET,
     }
-    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "3")  # type: ignore[arg-type]
+    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "3")
 
     assert detail.tone == "warning"
     assert "Hamstring" in detail.note
@@ -712,7 +712,7 @@ def test_set_pieces_list_only_the_duties_actually_held() -> None:
         8: player(8, "MID", 8.0, penalties_order=1, corners_order=2),
         **MARKET,
     }
-    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "8")  # type: ignore[arg-type]
+    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "8")
     pieces = next(g for g in detail.groups if g.title == "Set pieces")
 
     assert [(s.label, s.value) for s in pieces.stats] == [("Penalties", "#1"), ("Corners", "#2")]
@@ -804,7 +804,7 @@ def test_a_player_carries_a_portrait_keyed_by_optas_code() -> None:
     catalog[8] = replace(catalog[8], code=223094)
     fake.get_players = lambda: catalog  # type: ignore[method-assign]
 
-    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "8")  # type: ignore[arg-type]
+    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "8")
     assert detail.image_url.endswith("/p223094.png")
 
 
@@ -815,7 +815,7 @@ def test_a_player_with_no_photo_code_is_given_no_url() -> None:
     catalog[8] = replace(catalog[8], code=0)
     fake.get_players = lambda: catalog  # type: ignore[method-assign]
 
-    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "8")  # type: ignore[arg-type]
+    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "8")
     assert detail.image_url == ""
 
 

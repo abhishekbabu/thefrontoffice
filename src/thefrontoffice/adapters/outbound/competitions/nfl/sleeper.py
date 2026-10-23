@@ -37,8 +37,8 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
 )
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.espn import types as espn
-from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL, SleeperClient
+from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient, ESPNSource
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL, SleeperClient, SleeperNFLSource
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     FANTASY_POSITIONS,
     PlayerMeta,
@@ -167,7 +167,7 @@ class SleeperNFLProvider:
     label = "NFL (Sleeper)"
 
     def __init__(
-        self, username: str | None = None, *, client: SleeperClient | None = None, espn: ESPNClient | None = None
+        self, username: str | None = None, *, client: SleeperNFLSource | None = None, espn: ESPNSource | None = None
     ):
         self.username = username or settings.sleeper_username
         self.client = client or SleeperClient()

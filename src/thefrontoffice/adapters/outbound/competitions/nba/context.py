@@ -11,7 +11,12 @@ from datetime import date
 
 from yahoofantasy import Player  # type: ignore[import-untyped]
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import NineCatStats, PlayerStats, SleeperNBAForm, Window
+from thefrontoffice.adapters.outbound.competitions.nba.form import (
+    FormSource,
+    NineCatStats,
+    PlayerStats,
+    Window,
+)
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 
 
@@ -22,7 +27,7 @@ class PlayerContextBuilder:
     reading two formats and inferring which is which.
     """
 
-    def __init__(self, nba_client: SleeperNBAForm):
+    def __init__(self, nba_client: FormSource):
         self.nba = nba_client
 
     def _format_stats(self, stats_dict: PlayerStats) -> str:

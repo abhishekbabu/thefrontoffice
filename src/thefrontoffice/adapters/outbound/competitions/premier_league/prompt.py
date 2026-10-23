@@ -17,7 +17,7 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
     lineup_changes,
     points_with_captain,
 )
-from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient, free_transfers
+from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource, free_transfers
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     TRANSFER_HIT,
     Entry,
@@ -39,7 +39,7 @@ TRANSFER_LIMIT = 10
 
 
 def build(
-    client: FPLClient,
+    client: FPLSource,
     league_id: str,
     entry_id: int,
     upcoming: Gameweek,
@@ -206,7 +206,7 @@ def _transfer_lines(transfers: list[Transfer]) -> str:
     )
 
 
-def _fixture_lines(client: FPLClient, players: list[Player], gameweek: int) -> str:
+def _fixture_lines(client: FPLSource, players: list[Player], gameweek: int) -> str:
     """Each owned club's next match and how hard the game rates it.
 
     A club with no fixture is a blank gameweek — every player of theirs

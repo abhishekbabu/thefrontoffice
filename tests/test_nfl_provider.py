@@ -48,7 +48,7 @@ def test_leagues_are_listed_with_format_and_size() -> None:
 
 
 def test_missing_username_is_a_clear_error() -> None:
-    provider = SleeperNFLProvider(username=None, client=FakeSleeper(), espn=FakeESPN())  # type: ignore[arg-type]
+    provider = SleeperNFLProvider(username=None, client=FakeSleeper(), espn=FakeESPN())
     with pytest.raises(LeagueNotFoundError, match="SLEEPER_USERNAME"):
         provider.list_leagues()
 

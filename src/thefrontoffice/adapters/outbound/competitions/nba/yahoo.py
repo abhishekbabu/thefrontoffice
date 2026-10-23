@@ -12,16 +12,16 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
+    from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
 
 from yahoofantasy import League, Player  # type: ignore[import-untyped]
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
-from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, SleeperNBAForm
+from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, FormSource, SleeperNBAForm
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
-from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
+from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient, YahooSource
 from thefrontoffice.config.constants import NBA_SCOUT_PROMPT, NBA_TRADE_PROMPT
 from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.errors import (
@@ -104,9 +104,9 @@ class YahooNBAProvider:
         league: League,
         *,
         all_leagues: list[League] | None = None,
-        nba: SleeperNBAForm | None = None,
-        yahoo: YahooClient | None = None,
-        sleeper: SleeperClient | None = None,
+        nba: FormSource | None = None,
+        yahoo: YahooSource | None = None,
+        sleeper: SleeperProjectionSource | None = None,
     ):
         """Collaborators default to real clients; pass them in to test or reuse."""
         self.league = league
@@ -386,7 +386,7 @@ class YahooNBAProvider:
         )
 
     @property
-    def sleeper(self) -> SleeperClient:
+    def sleeper(self) -> SleeperProjectionSource:
         """Lazily constructed — no credentials needed, but no reason to build it
         until a report is actually run."""
         if self._sleeper is None:

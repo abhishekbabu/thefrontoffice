@@ -60,7 +60,7 @@ class FakeSleeper:
 
 
 def _form(**kwargs: Any) -> SleeperNBAForm:
-    return SleeperNBAForm(client=FakeSleeper(**kwargs), season="2026")  # type: ignore[arg-type]
+    return SleeperNBAForm(client=FakeSleeper(**kwargs), season="2026")
 
 
 # ── the nine-category line ──────────────────────────────────────────────
@@ -123,7 +123,7 @@ def test_a_name_that_cannot_be_matched_carries_no_form() -> None:
 def test_an_accented_name_still_matches() -> None:
     """Sleeper spells him Jokić; Yahoo does not."""
     form = SleeperNBAForm(
-        client=FakeSleeper(  # type: ignore[arg-type]
+        client=FakeSleeper(
             logs=_run(20),
             catalog={"p1": PlayerMeta(player_id="p1", name="Nikola Jokić", position="C", team="DEN")},
         ),

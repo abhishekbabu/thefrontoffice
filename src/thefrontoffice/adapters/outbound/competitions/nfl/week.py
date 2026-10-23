@@ -18,7 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekd
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     PlayerMeta,
     ScheduledGame,
@@ -154,7 +154,7 @@ def moment(epoch_ms: int) -> str:
     return day_month(datetime.fromtimestamp(epoch_ms / 1000, tz=UTC))
 
 
-def games_by_week(client: SleeperClient, season: str) -> dict[int, list[ScheduledGame]]:
+def games_by_week(client: SleeperNFLSource, season: str) -> dict[int, list[ScheduledGame]]:
     """The season schedule bucketed by week, or nothing if it will not load.
 
     Dates are enrichment: a week without them is still a week.
