@@ -1,6 +1,6 @@
 """Tests for keeping model answers: `application/answers.py`."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from conftest import FakeAnswers
 from pydantic import BaseModel
@@ -14,7 +14,7 @@ class Note(BaseModel):
 
 class Clock:
     def __init__(self) -> None:
-        self.now = datetime(2026, 10, 22, tzinfo=timezone.utc)
+        self.now = datetime(2026, 10, 22, tzinfo=UTC)
 
     def __call__(self) -> datetime:
         return self.now

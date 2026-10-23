@@ -129,7 +129,7 @@ def main() -> None:
     while True:
         try:
             raw = input("  ⚡ ").strip()
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt, EOFError:
             print("\n")
             _print_header("Goodbye 👋")
             break

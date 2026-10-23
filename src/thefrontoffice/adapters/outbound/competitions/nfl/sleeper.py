@@ -11,7 +11,7 @@ is the only configuration.
 import hashlib
 import logging
 from collections.abc import Callable, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions import paging
@@ -679,7 +679,7 @@ class SleeperNFLProvider:
             # Enrichment, like the evidence: the week stands without it.
             logger.warning(f"Continuing without player news: {e}")
             return news.PlayerNews()
-        return news.attach(feeds, players, datetime.now(timezone.utc))
+        return news.attach(feeds, players, datetime.now(UTC))
 
     def summary(self, league_id: str) -> Summary:
         """The week as it stands: both lineups, the swaps, the byes. No model."""

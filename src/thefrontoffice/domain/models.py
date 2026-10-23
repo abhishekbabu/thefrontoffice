@@ -10,7 +10,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Generic, Literal, TypeVar
+from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field, model_validator
 
@@ -114,7 +114,7 @@ class PlayerQuery(BaseModel):
 class PlayerPage(BaseModel):
     """One window onto a player list, and how much there is to page through."""
 
-    players: list["PlayerCard"] = Field(default_factory=list)
+    players: list[PlayerCard] = Field(default_factory=list)
     total: int = Field(default=0, description="Rows matching the filters, before the window.")
     offset: int = 0
     positions: list[str] = Field(
@@ -386,7 +386,7 @@ class ItemDecision(BaseModel):
     until: datetime | None = Field(default=None, description="For snooze: when it comes back, with its offset.")
 
     @model_validator(mode="after")
-    def _says_enough(self) -> "ItemDecision":
+    def _says_enough(self) -> ItemDecision:
         """A dismissal names what it dismissed, a snooze when it ends; anything less is unreadable."""
         if self.decision == "dismiss" and not self.fingerprint:
             raise ValueError("a dismissal needs the fingerprint of the item it dismisses")
@@ -436,7 +436,7 @@ class Summary(BaseModel):
         ),
     )
 
-    forecast: "Forecast | None" = None
+    forecast: Forecast | None = None
     """The matchup simulated, where the competition can be. None where it cannot
     or there is no opponent this week."""
 
@@ -821,10 +821,7 @@ def answer_scope(kind: str, *about: str) -> str:
     return ":".join((kind, *about))
 
 
-AnswerT = TypeVar("AnswerT", bound=BaseModel)
-
-
-class Remembered(BaseModel, Generic[AnswerT]):
+class Remembered[AnswerT: BaseModel](BaseModel):
     """A model's answer, kept with exactly what it was given.
 
     Every call to a model goes through the same keeping: asked again only

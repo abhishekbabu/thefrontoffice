@@ -7,7 +7,7 @@ name = "thefrontoffice"
 version = "0.1.0"
 description = "All-In-One NBA Fantasy Intelligence — AI-powered General Manager"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.15"
 dependencies = [
     "yahoofantasy>=1.4.9,<2",
     # Imported directly by config/settings.py; pulled in by pydantic-settings
@@ -49,6 +49,11 @@ dev = [
     "httpx2>=2.0.0,<3",
 ]
 
+[tool.uv]
+# The first uv that can fetch Python 3.15.0: an older one fails to find an
+# interpreter at all, which reads like a broken machine rather than an old tool.
+required-version = ">=0.13.5"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["thefrontoffice*"]
@@ -58,12 +63,12 @@ namespaces = false
 venvPath = "."
 venv = ".venv"
 extraPaths = ["./src"]
-pythonVersion = "3.10"
+pythonVersion = "3.15"
 reportMissingImports = false
 
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py315"
 line-length = 120
 src = ["src"]
 

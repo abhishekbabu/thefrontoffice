@@ -1,5 +1,5 @@
 # Type checking config — replaces mypy.ini.
-python-version = "3.10"
+python-version = "3.15"
 project-includes = ["src", "scripts", "tests"]
 # tests/ is on the path so `from conftest import ...` resolves the shared fakes;
 # scripts/ so the agent-docs checker resolves the same way pytest sees it.

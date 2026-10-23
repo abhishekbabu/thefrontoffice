@@ -1,6 +1,6 @@
 """Tests for keeping model answers on disk: `llm/answers.py`."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from reports import MOCK_FPL_REPORT
@@ -20,7 +20,7 @@ TASK = Action(
 
 
 def _kept(answer: object) -> Remembered:  # type: ignore[type-arg]
-    return Remembered(answer=answer, answered_at=datetime.now(timezone.utc), inputs="abc")  # type: ignore[arg-type]
+    return Remembered(answer=answer, answered_at=datetime.now(UTC), inputs="abc")  # type: ignore[arg-type]
 
 
 def test_a_report_survives_the_round_trip_through_the_file(tmp_path: Path) -> None:

@@ -1,11 +1,12 @@
 """Reading the timestamps platforms publish.
 
-FPL deadlines and ESPN articles both stamp UTC with a trailing 'Z', which
-`datetime.fromisoformat` rejects on Python 3.10 — the floor this project
-supports. Every platform timestamp is parsed here so none re-learns that.
+Platforms disagree about offsets: FPL and ESPN stamp UTC with a trailing 'Z',
+others send none at all and mean UTC by it. Every platform timestamp is parsed
+here, so each comes out aware and in UTC — comparable with every other, and
+with an aware `now`.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def parse_utc(value: str) -> datetime:
@@ -15,8 +16,5 @@ def parse_utc(value: str) -> datetime:
     a timestamp with no offset, and comparing it against an aware `now` would
     otherwise raise.
     """
-    text = value.strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    parsed = datetime.fromisoformat(text)
-    return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    parsed = datetime.fromisoformat(value.strip())
+    return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)

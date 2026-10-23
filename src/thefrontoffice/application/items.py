@@ -11,7 +11,7 @@ than dropped, so the page can still offer them back.
 """
 
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from thefrontoffice.domain.errors import ItemDecisionError
 from thefrontoffice.domain.models import Action, ItemDecision, ItemState, answer_scope
@@ -49,7 +49,7 @@ def apply_decisions(actions: list[Action], states: dict[str, ItemState], now: da
 class ItemDecisions:
     """Keeps decisions per league and applies them to the week's items."""
 
-    def __init__(self, store: ItemStateStore, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
+    def __init__(self, store: ItemStateStore, clock: Callable[[], datetime] = lambda: datetime.now(UTC)):
         self._store = store
         self._clock = clock
 
@@ -70,7 +70,7 @@ class ItemDecisions:
             return None
         if decision.decision == "snooze":
             assert decision.until is not None  # the model validates it
-            until = decision.until.astimezone(timezone.utc)
+            until = decision.until.astimezone(UTC)
             if until <= self._clock():
                 raise ItemDecisionError("A snooze has to end in the future.")
             state = ItemState(key=decision.key, snoozed_until=until)

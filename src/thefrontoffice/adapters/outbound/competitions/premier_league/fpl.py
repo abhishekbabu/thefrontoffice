@@ -357,7 +357,7 @@ class FPLProvider:
         try:
             start, end = past[0].season.split("/")
             return f"{int(start) + 1}/{int(end) + 1:02d}"
-        except (ValueError, IndexError):
+        except ValueError, IndexError:
             return "This season"
 
     def _fixture_line(self, player: Player, gameweek: int) -> str:

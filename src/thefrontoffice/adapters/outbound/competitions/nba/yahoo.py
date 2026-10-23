@@ -87,7 +87,7 @@ class YahooNBAProvider:
     label = "NBA (Yahoo)"
 
     @staticmethod
-    def season_year(now: "datetime | None" = None) -> int:
+    def season_year(now: datetime | None = None) -> int:
         """The NBA season a date belongs to. Seasons start in October."""
         from datetime import datetime as _dt
 
@@ -101,7 +101,7 @@ class YahooNBAProvider:
         all_leagues: list[League] | None = None,
         nba: SleeperNBAForm | None = None,
         yahoo: YahooClient | None = None,
-        sleeper: "SleeperClient | None" = None,
+        sleeper: SleeperClient | None = None,
     ):
         """Collaborators default to real clients; pass them in to test or reuse."""
         self.league = league
@@ -381,7 +381,7 @@ class YahooNBAProvider:
         )
 
     @property
-    def sleeper(self) -> "SleeperClient":
+    def sleeper(self) -> SleeperClient:
         """Lazily constructed — no credentials needed, but no reason to build it
         until a report is actually run."""
         if self._sleeper is None:

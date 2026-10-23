@@ -1,6 +1,6 @@
 """Tests for the JSON transport the public-API clients share."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -147,7 +147,7 @@ def test_an_expired_entry_is_refetched(tmp_path: Path) -> None:
     the entry is served rather than refetched.
     """
     cache = JsonDiskCache(tmp_path / "cache")
-    cache.set("k", {"n": 1}, now=datetime.now(timezone.utc) - timedelta(hours=2))
+    cache.set("k", {"n": 1}, now=datetime.now(UTC) - timedelta(hours=2))
 
     session = FakeSession({"n": 2})
     assert _client(tmp_path, session, cache=cache).cached("k", "https://example.test/a", TTL) == {"n": 2}
@@ -180,7 +180,7 @@ def test_a_cache_entry_stores_when_it_was_written(tmp_path: Path) -> None:
     client = _client(tmp_path, FakeSession())
     client.cache_set("k", 1)
     assert client.cache_get("k", timedelta(seconds=1)) == 1
-    stale = JsonDiskCache(tmp_path / "cache").get("k", timedelta(seconds=1), now=datetime.now(timezone.utc) + TTL)
+    stale = JsonDiskCache(tmp_path / "cache").get("k", timedelta(seconds=1), now=datetime.now(UTC) + TTL)
     assert stale is None
 
 

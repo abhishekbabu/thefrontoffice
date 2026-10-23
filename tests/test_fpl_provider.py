@@ -6,7 +6,7 @@ allowance is wrong however well it renders.
 """
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -255,7 +255,7 @@ class FakeFPL:
         return Gameweek(
             id=self.upcoming,
             name=f"Gameweek {self.upcoming}",
-            deadline=datetime(2026, 9, 12, tzinfo=timezone.utc),
+            deadline=datetime(2026, 9, 12, tzinfo=UTC),
             average_score=51,
         )
 
@@ -321,7 +321,7 @@ class FakeFPL:
             Gameweek(
                 id=i,
                 name=f"Gameweek {i}",
-                deadline=datetime(2026, 8, 7 + i, 17, 30, tzinfo=timezone.utc),
+                deadline=datetime(2026, 8, 7 + i, 17, 30, tzinfo=UTC),
                 # The one being played is the one before the next deadline,
                 # which is the whole distinction this fake exists to model.
                 is_current=i == self.upcoming - 1,

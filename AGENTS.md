@@ -28,8 +28,8 @@ through a module-level `logger = logging.getLogger(__name__)`.
 **Dates and times.** Never naive `datetime.now()` or `date.today()` for anything
 persisted or compared — store aware UTC, convert at the comparison. Basketball
 anchors to `PACIFIC`, because the league schedules by Pacific and a local clock
-shifts the day boundary. `datetime.fromisoformat` rejects a trailing `Z` on 3.10
-and FPL and ESPN timestamps have one, so parse via `platforms/timestamps.parse_utc`. Keep a date label
+shifts the day boundary. Parse platform timestamps via `platforms/timestamps.parse_utc`,
+which reads a naive one as UTC and converts the rest to it. Keep a date label
 (`ScheduledGame.date`, for window tests) distinct from an instant: Sleeper
 publishes no tip-off time, so whether a game has happened is settled by its date
 against today, and only a game today reads its `status`.
@@ -179,9 +179,8 @@ New code needs tests in the same commit. Coverage is gated at 95%.
 
 CI runs the same `just` recipes you run locally on Linux, macOS and Windows, so
 adding a gate to the `justfile` extends CI too. The UI is a separate `web` job —
-`just check-web` locally, `--frozen-lockfile` there. `.python-version` pins 3.10 —
-the floor in `requires-python`, and what pyrefly and ruff target — with one
-extra leg on 3.13 for forward compatibility.
+`just check-web` locally, `--frozen-lockfile` there. Python 3.15 is required everywhere
+— `.python-version`, `requires-python`, pyrefly, ruff, CI — and `[tool.uv] required-version` keeps uv new enough to fetch it.
 
 ## Agent documentation
 

@@ -16,6 +16,9 @@ permissions:
 env:
   # Keep uv from picking a different interpreter than pyproject asks for.
   UV_PYTHON_PREFERENCE: only-managed
+# setup-uv takes its version from `[tool.uv] required-version` in pyproject.toml
+# when none is given here — the first uv that can fetch Python 3.15.0 — so the
+# floor lives in one place.
 
 jobs:
   check:
@@ -28,17 +31,10 @@ jobs:
         # `uv run` and the app handles cp1252 consoles and the yahoofantasy.exe
         # probe specifically so it works there. This job is what proves it.
         os: [ubuntu-latest, macos-latest, windows-latest]
-        # .python-version pins 3.10, the floor in requires-python and what
-        # pyrefly and ruff target. Testing only the newest interpreter would
-        # miss floor-specific breakage — datetime.fromisoformat rejects a
-        # trailing "Z" on 3.10 but accepts it from 3.11, and every NBA
-        # timestamp has one.
-        python: ["3.10"]
-        include:
-          # One forward-compatibility leg so a deprecation lands as a CI
-          # failure rather than a surprise at the next interpreter bump.
-          - os: ubuntu-latest
-            python: "3.13"
+        # Python 3.15 is required, so it is the only interpreter there is to
+        # test: requires-python, .python-version and the pyrefly and ruff
+        # targets all say 3.15.
+        python: ["3.15"]
     timeout-minutes: 10
 
     steps:

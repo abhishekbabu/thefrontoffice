@@ -7,7 +7,7 @@ than to everything else already stored.
 """
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -15,7 +15,7 @@ import pytest
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache, within
 
 HOUR = timedelta(hours=1)
-T0 = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+T0 = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
 
 
 def _entry_files(directory: Path) -> list[Path]:
@@ -254,7 +254,7 @@ def test_clear_on_a_cache_never_written_is_harmless(tmp_path: Path) -> None:
 
 def test_a_ttl_is_the_common_rule(tmp_path: Path) -> None:
     cache = JsonDiskCache(tmp_path / "cache")
-    stored = datetime(2026, 2, 9, 12, tzinfo=timezone.utc)
+    stored = datetime(2026, 2, 9, 12, tzinfo=UTC)
     cache.set("k", "v", now=stored)
 
     assert cache.get("k", timedelta(hours=2), now=stored + timedelta(hours=1)) == "v"
@@ -265,7 +265,7 @@ def test_a_rule_a_duration_cannot_express(tmp_path: Path) -> None:
     """The reason freshness is a predicate: basketball's gamelog is good until
     the next boundary passes, which is a moment rather than an interval."""
     cache = JsonDiskCache(tmp_path / "cache")
-    stored = datetime(2026, 2, 9, 12, tzinfo=timezone.utc)
+    stored = datetime(2026, 2, 9, 12, tzinfo=UTC)
     cache.set("k", "v", now=stored)
 
     # Good only while stored and now fall on the same calendar day.
@@ -279,7 +279,7 @@ def test_a_rule_a_duration_cannot_express(tmp_path: Path) -> None:
 def test_within_is_a_ttl_as_a_rule(tmp_path: Path) -> None:
     """So a caller can hold one and a caller can hold the other."""
     cache = JsonDiskCache(tmp_path / "cache")
-    stored = datetime(2026, 2, 9, 12, tzinfo=timezone.utc)
+    stored = datetime(2026, 2, 9, 12, tzinfo=UTC)
     cache.set("k", "v", now=stored)
 
     rule = within(timedelta(minutes=30))

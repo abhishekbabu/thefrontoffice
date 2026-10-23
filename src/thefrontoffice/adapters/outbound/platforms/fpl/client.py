@@ -15,7 +15,7 @@ and everything it holds can be derived from the public history instead — see
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -86,7 +86,7 @@ def _order(value: Any) -> int | None:
     beside "penalties" reads like first choice."""
     try:
         rank = int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return rank or None
 
@@ -99,7 +99,7 @@ def _number(value: Any, default: float = 0.0) -> float:
     """
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
@@ -195,7 +195,7 @@ class FPLClient:
         advice about a decision already made. The final gameweek is returned
         once the season has run out of future deadlines.
         """
-        moment = now or datetime.now(timezone.utc)
+        moment = now or datetime.now(UTC)
         gameweeks = self.get_gameweeks()
         future = [gw for gw in gameweeks if gw.deadline > moment]
         if future:

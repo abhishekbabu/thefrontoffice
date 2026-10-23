@@ -14,7 +14,7 @@ only about the ones whose situation has moved.
 
 import hashlib
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from thefrontoffice.domain.models import Remembered
 from thefrontoffice.domain.ports import AnswerStore, TModel
@@ -28,7 +28,7 @@ def digest(inputs: str) -> str:
 class Answers:
     """The one way an engine asks the model for something worth keeping."""
 
-    def __init__(self, store: AnswerStore, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
+    def __init__(self, store: AnswerStore, clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self._store = store
         self._clock = clock
 
