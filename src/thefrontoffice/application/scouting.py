@@ -9,15 +9,15 @@ import logging
 
 from thefrontoffice.application.answers import Answers
 from thefrontoffice.domain.models import Action, Remembered, ScoutReport, Stat, TaskVerdict, answer_scope, task_id
-from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatSession, CompetitionProvider
+from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatSession, ContextProvider
 
 logger = logging.getLogger(__name__)
 
 
 class ScoutEngine:
-    """Turns any CompetitionProvider into a scouting report."""
+    """Turns any ContextProvider into a scouting report."""
 
-    def __init__(self, provider: CompetitionProvider, *, ai: AnalysisModel, answers: AnswerStore):
+    def __init__(self, provider: ContextProvider, *, ai: AnalysisModel, answers: AnswerStore):
         """Every collaborator is a port, and every one is supplied.
 
         Deliberately no default: constructing one here would mean naming a

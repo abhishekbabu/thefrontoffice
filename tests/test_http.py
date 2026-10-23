@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import pytest
 import requests
@@ -56,8 +56,14 @@ UNAVAILABLE: dict[type, type[PlatformUnavailableError]] = {
 }
 
 
+class Session(Protocol):
+    """What the transport needs of a session: one GET."""
+
+    def get(self, url: str, timeout: int = 0) -> FakeResponse: ...
+
+
 def _client(
-    tmp_path: Path, session: FakeSession, error: type = SleeperAPIError, cache: JsonDiskCache | None = None
+    tmp_path: Path, session: Session, error: type = SleeperAPIError, cache: JsonDiskCache | None = None
 ) -> JsonApiClient:
     return JsonApiClient(
         name="Test",
@@ -215,7 +221,7 @@ URLS = {f"k{i}": f"https://example.test/{i}" for i in range(1, 6)}
 def test_a_batch_returns_every_key(tmp_path: Path) -> None:
     session = RoutedSession(ROUTES)
 
-    result = _client(tmp_path, session).cached_many(URLS, TTL)  # type: ignore[arg-type]
+    result = _client(tmp_path, session).cached_many(URLS, TTL)
 
     assert result == {f"k{i}": {"week": i} for i in range(1, 6)}
 
@@ -235,7 +241,7 @@ def test_a_batch_only_fetches_what_it_does_not_have(tmp_path: Path) -> None:
     cache.set("k2", {"week": 2})
     session = RoutedSession(ROUTES)
 
-    result = _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)  # type: ignore[arg-type]
+    result = _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)
 
     assert sorted(session.requests) == [f"https://example.test/{i}" for i in (3, 4, 5)]
     assert result["k1"] == {"week": 1}
@@ -274,7 +280,7 @@ def test_one_failed_request_leaves_a_hole_rather_than_failing_the_batch(tmp_path
     """Seventeen weeks of a season is worth more than no season at all."""
     session = RoutedSession(ROUTES, failing={"https://example.test/3"})
 
-    result = _client(tmp_path, session).cached_many(URLS, TTL)  # type: ignore[arg-type]
+    result = _client(tmp_path, session).cached_many(URLS, TTL)
 
     assert "k3" not in result
     assert sorted(result) == ["k1", "k2", "k4", "k5"]

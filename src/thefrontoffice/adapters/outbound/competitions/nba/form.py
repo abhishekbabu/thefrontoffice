@@ -11,7 +11,7 @@ or four cannot be cut at.
 
 import logging
 from datetime import date, datetime
-from typing import TypedDict
+from typing import Literal, TypedDict
 from zoneinfo import ZoneInfo
 
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
@@ -29,7 +29,10 @@ than on whatever clock this happens to be running on."""
 # clubs play three or four a week, so six covers about twenty.
 FORM_WEEKS = 6
 
-WINDOWS = (5, 10, 15)
+Window = Literal["last_5", "last_10", "last_15"]
+"""A `PlayerStats` key: the averages over a player's last few games."""
+
+WINDOWS: dict[int, Window] = {5: "last_5", 10: "last_10", 15: "last_15"}
 
 # A basketball regular season runs 25 Sleeper weeks; week 26 comes back empty.
 # Only used to reach back into the season just finished.
@@ -110,9 +113,9 @@ class SleeperNBAForm:
             return None
 
         stats = PlayerStats()
-        for count in WINDOWS:
+        for count, window in WINDOWS.items():
             if len(games) >= count:
-                stats[f"last_{count}"] = nine_cat(games[:count])  # type: ignore[literal-required]
+                stats[window] = nine_cat(games[:count])
         return stats or None
 
     # ── remaining games ─────────────────────────────────────────────

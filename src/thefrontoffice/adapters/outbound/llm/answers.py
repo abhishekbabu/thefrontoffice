@@ -20,11 +20,9 @@ class DiskAnswerStore(AnswerStore):
     def __init__(self, cache: JsonDiskCache | None = None) -> None:
         self._cache = cache or JsonDiskCache(Path(settings.answer_cache_dir))
 
-    # pyrefly: ignore[bad-override]  — identical generic signatures; see GeminiClient.
     def latest(self, scope: str, schema: type[TModel]) -> Remembered[TModel] | None:
         stored = self._cache.get(scope, KEEP_FOR)
-        return Remembered[schema].model_validate(stored) if stored is not None else None  # type: ignore[valid-type]
+        return Remembered[schema].model_validate(stored) if stored is not None else None
 
-    # pyrefly: ignore[bad-override]  — identical generic signatures; see GeminiClient.
     def save(self, scope: str, remembered: Remembered[TModel]) -> None:
         self._cache.set(scope, remembered.model_dump(mode="json"))

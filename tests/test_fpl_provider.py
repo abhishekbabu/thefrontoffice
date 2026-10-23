@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
+from conftest import mine
 
 from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
@@ -605,9 +606,9 @@ def test_the_header_names_the_gameweek_and_when_it_locks() -> None:
 def test_the_summary_marks_the_captain_and_the_doubts() -> None:
     """Starting a ruled-out player is the mistake the page exists to surface."""
     summary = provider().summary(LEAGUE_ID)
-    spots = {spot.player.replace(" (C)", ""): spot for spot in summary.mine.lineup}
+    spots = {spot.player.replace(" (C)", ""): spot for spot in mine(summary).lineup}
 
-    assert any(spot.player.endswith("(C)") for spot in summary.mine.lineup)
+    assert any(spot.player.endswith("(C)") for spot in mine(summary).lineup)
     assert spots["P7"].tone == "neutral"
     assert summary.swaps  # P15 is the strongest forward and starts on the bench
 
@@ -621,8 +622,8 @@ def test_the_summary_reports_a_blank_gameweek_on_the_player_not_just_the_club() 
     """A club with no fixture means every one of its players scores zero."""
     summary = provider(fixtures=[]).summary(LEAGUE_ID)
 
-    assert all("no fixture" in spot.detail for spot in summary.mine.lineup)
-    assert all(spot.tone == "warning" for spot in summary.mine.lineup)
+    assert all("no fixture" in spot.detail for spot in mine(summary).lineup)
+    assert all(spot.tone == "warning" for spot in mine(summary).lineup)
 
 
 # ── the matchup ─────────────────────────────────────────────────────────
@@ -647,7 +648,7 @@ def test_the_squads_say_which_gameweek_they_were_fielded_in() -> None:
     summary = provider().summary(LEAGUE_ID)
 
     assert summary.mine is not None
-    assert "GW4" in summary.mine.detail
+    assert "GW4" in mine(summary).detail
 
 
 def test_only_a_blank_or_a_double_is_worth_warning_about() -> None:
@@ -931,14 +932,14 @@ LIVE = {
 
 def test_a_player_who_has_played_shows_what_they_scored() -> None:
     """The number somebody is looking for once a gameweek is under way."""
-    spots = {s.player: s for s in provider(live=LIVE).summary(H2H_LEAGUE).mine.lineup}
+    spots = {s.player: s for s in mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup}
 
     scored = next(s for s in spots.values() if s.value.endswith("pts"))
     assert scored.value in {"12 pts", "24 pts", "1 pts"}
 
 
 def test_a_haul_and_a_blank_are_toned_apart() -> None:
-    lineup = provider(live=LIVE).summary(H2H_LEAGUE).mine.lineup
+    lineup = mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup
     by_value = {s.value: s.tone for s in lineup}
 
     assert by_value.get("12 pts") == "good" or by_value.get("24 pts") == "good"
@@ -947,7 +948,7 @@ def test_a_haul_and_a_blank_are_toned_apart() -> None:
 
 def test_a_player_yet_to_kick_a_ball_keeps_their_projection() -> None:
     """Nought against somebody whose match is on Sunday says they blanked."""
-    lineup = provider(live=LIVE).summary(H2H_LEAGUE).mine.lineup
+    lineup = mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup
 
     waiting = [s for s in lineup if s.value.endswith("xPts")]
     assert waiting, "a squad of eleven cannot all have played"
@@ -955,7 +956,7 @@ def test_a_player_yet_to_kick_a_ball_keeps_their_projection() -> None:
 
 
 def test_a_captain_scores_double() -> None:
-    lineup = provider(live=LIVE).summary(H2H_LEAGUE).mine.lineup
+    lineup = mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup
     captain = next((s for s in lineup if "(C)" in s.player), None)
 
     if captain and captain.value.endswith("pts"):
@@ -968,7 +969,7 @@ def test_a_week_under_way_says_so_rather_than_naming_a_deadline() -> None:
 
 def test_before_a_ball_is_kicked_there_is_no_score() -> None:
     """Zero reads as a bad week rather than a week that has not started."""
-    assert provider().summary(H2H_LEAGUE).mine.points == ""
+    assert mine(provider().summary(H2H_LEAGUE)).points == ""
 
 
 def test_a_missing_live_feed_falls_back_to_projections() -> None:
@@ -976,7 +977,7 @@ def test_a_missing_live_feed_falls_back_to_projections() -> None:
     summary = provider(live_error=FPLAPIError("down")).summary(H2H_LEAGUE)
 
     assert summary.mine is not None
-    assert all(s.value.endswith("xPts") for s in summary.mine.lineup)
+    assert all(s.value.endswith("xPts") for s in mine(summary).lineup)
 
 
 # ── the rest of the league ──────────────────────────────────────────────
@@ -1113,7 +1114,7 @@ def test_the_vice_captain_is_marked_as_well_as_the_captain() -> None:
     """The vice is the whole point when the captain does not play, so a squad
     that shows only the armband shows half the decision."""
     summary = provider().summary(H2H_LEAGUE)
-    marked = [s.player for s in summary.mine.lineup + summary.mine.bench if "(" in s.player]
+    marked = [s.player for s in mine(summary).lineup + mine(summary).bench if "(" in s.player]
 
     assert any(p.endswith("(C)") for p in marked)
     assert any(p.endswith("(V)") for p in marked)

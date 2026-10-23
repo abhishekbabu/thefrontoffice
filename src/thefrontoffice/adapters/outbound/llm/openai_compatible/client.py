@@ -143,12 +143,10 @@ class OpenAICompatibleClient(AnalysisModel):
 
     # ── the port ────────────────────────────────────────────────────
 
-    # pyrefly: ignore[bad-override]  — identical generic signatures; see GeminiClient.
     def generate_structured(self, prompt: str, schema: type[TModel]) -> TModel:
         """An analysis, from the strong model, validated against `schema`."""
         return self._structured(self.provider.analysis_model, prompt, schema)
 
-    # pyrefly: ignore[bad-override]  — identical generic signatures; see GeminiClient.
     def structure_text(self, text: str, schema: type[TModel], instruction: str) -> TModel:
         """Prose already written, put into `schema` by the fast model without changing it."""
         prompt = (

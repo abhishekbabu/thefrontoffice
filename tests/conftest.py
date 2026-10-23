@@ -32,6 +32,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     TrendingPlayer,
     WeeklyProjection,
 )
+from thefrontoffice.domain.models import Side, Summary
 
 # ── log capture ─────────────────────────────────────────────────────────
 
@@ -232,8 +233,11 @@ class FakeSleeper:
             raise self.season_stats_error
         return self.season_stats.get(season, {})
 
+    week = 3
+    """The NFL week in progress. Set it rather than replacing `get_state`."""
+
     def get_state(self, sport: str = "nfl") -> SeasonState:
-        return SeasonState(week=3, season="2026", season_type="regular")
+        return SeasonState(week=self.week, season="2026", season_type="regular")
 
     def get_nfl_state(self) -> SeasonState:
         return self.get_state()
@@ -301,6 +305,16 @@ class FakeESPN:
         return {club: self.news[club] for club in clubs if club in self.news}
 
 
+def mine(summary: Summary) -> Side:
+    """Your side of the week, which every summary under test has.
+
+    Asserted rather than assumed, so a summary that lost it fails here by name
+    instead of as an AttributeError three attributes later.
+    """
+    assert summary.mine is not None
+    return summary.mine
+
+
 def _provider(client: FakeSleeper, espn: FakeESPN | None = None) -> SleeperNFLProvider:
     return SleeperNFLProvider(username="me", client=client, espn=espn or FakeESPN())  # type: ignore[arg-type]
 
@@ -345,9 +359,7 @@ def _league_client(**extra: Any) -> FakeSleeper:
 
 def _at_week(week: int, **extra: Any) -> FakeSleeper:
     client = _league_client(**extra)
-    client.get_state = lambda competition="nfl": SeasonState(  # type: ignore[method-assign]
-        week=week, season="2026", season_type="regular"
-    )
+    client.week = week
     return client
 
 

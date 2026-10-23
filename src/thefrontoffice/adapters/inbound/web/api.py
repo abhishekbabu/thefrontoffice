@@ -520,7 +520,7 @@ def _register_routes(app: FastAPI) -> None:
             # better than an empty answer the user cannot explain.
             raise HTTPException(status_code=404, detail="That conversation has expired. Re-run the report.")
         try:
-            answer = getattr(chat.send_message(request.message), "text", "") or ""
+            answer = chat.send_message(request.message).text or ""
         except FrontOfficeError:
             # Already a sentence — "every model is out of quota" says more
             # than "did not answer", and the handler renders it with its code.

@@ -28,7 +28,7 @@ from thefrontoffice.domain.errors import (
     FrontOfficeError,
 )
 from thefrontoffice.domain.models import TradeProposal
-from thefrontoffice.domain.ports import AnalysisModel, ChatSession, HistoryTurn, TModel
+from thefrontoffice.domain.ports import AnalysisModel, ChatReply, ChatSession, HistoryTurn, TModel
 
 logger = logging.getLogger(__name__)
 
@@ -113,11 +113,9 @@ class RoutedModel(AnalysisModel):
 
     # ── the port ────────────────────────────────────────────────────
 
-    # pyrefly: ignore[bad-override]  — identical generic signatures; see GeminiClient.
     def generate_structured(self, prompt: str, schema: type[TModel]) -> TModel:
         return self.attempt(lambda model: model.generate_structured(prompt, schema))
 
-    # pyrefly: ignore[bad-override]  — identical generic signatures; see GeminiClient.
     def structure_text(self, text: str, schema: type[TModel], instruction: str) -> TModel:
         return self.attempt(lambda model: model.structure_text(text, schema, instruction))
 
@@ -143,12 +141,12 @@ class RoutedChat:
         self.transcript: list[HistoryTurn] = list(history)
         self._search = enable_search
 
-    def send_message(self, message: str) -> object:
-        def turn(model: AnalysisModel) -> object:
+    def send_message(self, message: str) -> ChatReply:
+        def turn(model: AnalysisModel) -> ChatReply:
             reply = model.start_chat(initial_history=list(self.transcript), enable_search=self._search).send_message(
                 message
             )
-            if not getattr(reply, "text", None):
+            if not reply.text:
                 raise AIResponseError("The model returned an empty answer.")
             return reply
 
