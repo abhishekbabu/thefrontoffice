@@ -99,7 +99,8 @@ Algorithmic and architectural wins, not micro-optimizations.
 - **TTLs that do not match reality.** Too short and the app hammers an API that
   asked for politeness; too long and it shows stale data. Sleeper asks for its
   catalog at most once a day; a finished season never changes again.
-- **Front end.** The entry bundle has a hard budget checked by the build. Watch
+- **Front end.** What the first paint loads — the entry and the chunks it
+  preloads — has a hard budget checked by the build. Watch
   for a heavyweight dependency pulled in for trivial use, motion imported
   outside `lib/motion.ts` (which lands the library in the entry bundle), and
   anything that should be deferred past first paint.

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Moon, Settings, Sun, Trophy } from "lucide-react";
@@ -11,13 +11,16 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { rise } from "@/lib/motion";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScoutPanel } from "@/panels/Scout";
-import { LeaguePanel } from "@/panels/LeaguePanel";
-import { FreeAgentsPanel } from "@/panels/FreeAgents";
-import { TeamPanel } from "@/panels/Team";
-import { SettingsPanel } from "@/panels/Settings";
-import { Landing } from "@/panels/Landing";
 import { cn } from "@/lib/utils";
+
+// Each page loads when it is first opened rather than in the first download:
+// the entry bundle is what every visit waits on, and it was carrying all six.
+const ScoutPanel = lazy(() => import("@/panels/Scout").then((m) => ({ default: m.ScoutPanel })));
+const LeaguePanel = lazy(() => import("@/panels/LeaguePanel").then((m) => ({ default: m.LeaguePanel })));
+const FreeAgentsPanel = lazy(() => import("@/panels/FreeAgents").then((m) => ({ default: m.FreeAgentsPanel })));
+const TeamPanel = lazy(() => import("@/panels/Team").then((m) => ({ default: m.TeamPanel })));
+const SettingsPanel = lazy(() => import("@/panels/Settings").then((m) => ({ default: m.SettingsPanel })));
+const Landing = lazy(() => import("@/panels/Landing").then((m) => ({ default: m.Landing })));
 
 type PanelProps = { competition: Competition; league: League };
 
@@ -251,7 +254,9 @@ export default function App() {
             animate="shown"
             exit="gone"
           >
-            {shell()}
+            {/* While a page's code arrives: the shell's own skeleton, the one it
+                already shows while the leagues load. */}
+            <Suspense fallback={<Loading />}>{shell()}</Suspense>
           </m.div>
         </AnimatePresence>
       </main>

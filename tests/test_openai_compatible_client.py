@@ -10,7 +10,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
-import httpx
+import httpx2
 import openai
 import pytest
 from pydantic import BaseModel
@@ -38,8 +38,8 @@ GOOD = json.dumps({"call": "start", "confidence": 3})
 
 
 def _error(cls: type[openai.APIStatusError], status: int, message: str = "", **headers: str) -> openai.APIStatusError:
-    request = httpx.Request("POST", "https://groq.example/v1/chat/completions")
-    return cls(message or f"{status}", response=httpx.Response(status, headers=headers, request=request), body=None)
+    request = httpx2.Request("POST", "https://groq.example/v1/chat/completions")
+    return cls(message or f"{status}", response=httpx2.Response(status, headers=headers, request=request), body=None)
 
 
 def _format_refused() -> openai.APIStatusError:
