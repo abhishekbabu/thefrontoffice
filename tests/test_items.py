@@ -133,6 +133,6 @@ def test_a_dismissal_must_name_what_it_dismissed() -> None:
 
 
 def test_a_snooze_must_say_when_it_ends_with_an_offset() -> None:
-    for until in (None, datetime(2026, 10, 23, 8)):
+    for until in (None, datetime(2026, 10, 23, 8)):  # noqa: DTZ001 — naive on purpose: it is what is refused
         with pytest.raises(ValidationError):
             ItemDecision(key="k", decision="snooze", until=until)

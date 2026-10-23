@@ -101,7 +101,8 @@ def main() -> None:
     setup_telemetry("front-office-cli")
 
     _print_header("🏆 The Front Office — Fantasy Intelligence")
-    print(f"  {datetime.now().strftime('%A, %B %d %Y  •  %I:%M %p')}")
+    # The reader's own clock, said so: a banner is for the person at the terminal.
+    print(f"  {datetime.now().astimezone().strftime('%A, %B %d %Y  •  %I:%M %p')}")
 
     entries = configured_competitions()
     if not entries:

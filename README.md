@@ -367,6 +367,11 @@ just clean-data         # only the platform caches, forcing a refetch
 
 `just --list` for the full catalog.
 
+Python is checked by **ruff** (lint and format) and **pyrefly** (types); the UI
+by **ESLint** with the React hooks rules and **tsc**. Two of ruff's rule sets
+hold rules this repo would otherwise only state: `DTZ` refuses a naive
+datetime, and `T20` refuses `print` outside `adapters/inbound/` and `scripts/`.
+
 For UI work, run the two halves separately so the front end hot-reloads:
 
 ```bash

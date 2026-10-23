@@ -12,7 +12,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-TOOL_CACHES = (".ruff_cache", ".pytest_cache", ".mypy_cache", ".pyrefly_cache")
+TOOL_CACHES = (".ruff_cache", ".pytest_cache", ".pyrefly_cache")
 
 # The platform caches, one directory each. Named here rather than read from
 # settings so that cleaning never needs a valid .env to run.
