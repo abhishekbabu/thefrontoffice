@@ -1,4 +1,4 @@
-# Type checking config — replaces mypy.ini.
+# Type checking config.
 python-version = "3.15"
 project-includes = ["src", "scripts", "tests"]
 # tests/ is on the path so `from conftest import ...` resolves the shared fakes;
@@ -13,8 +13,7 @@ project-excludes = [
 # yahoofantasy's League/Player/Team attributes are assigned at runtime by
 # `from_response_object`, which setattr()s each key of the API response onto the
 # object. No static analyser can see `player.name.full` or `team.roster_adds`,
-# so this category is pure noise wherever those SDK types are handled. mypy hid
-# the same thing behind `ignore_missing_imports` in mypy.ini.
+# so this category is pure noise wherever those SDK types are handled.
 # It is re-enabled below for every module that does NOT touch the SDK.
 missing-attribute = false
 

@@ -18,7 +18,7 @@ from yahoofantasy import League, Player  # type: ignore[import-untyped]
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
-from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm
+from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, SleeperNBAForm
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
@@ -88,10 +88,15 @@ class YahooNBAProvider:
 
     @staticmethod
     def season_year(now: datetime | None = None) -> int:
-        """The NBA season a date belongs to. Seasons start in October."""
+        """The NBA season a date belongs to. Seasons start in October.
+
+        Read in Pacific time, like the rest of basketball: a local clock would
+        put the night of 31 August in a different season depending on where
+        the machine is.
+        """
         from datetime import datetime as _dt
 
-        moment = now or _dt.now()
+        moment = (now or _dt.now(PACIFIC)).astimezone(PACIFIC)
         return moment.year if moment.month >= 9 else moment.year - 1
 
     def __init__(

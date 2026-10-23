@@ -27,7 +27,7 @@ dependencies = [
     # two instrumentations config/telemetry.py enables; without them logfire
     # imports fine and then raises at instrument_* time.
     "logfire[google-genai,requests]>=5.3.0,<6",
-    "fastapi>=0.161.1,<1",
+    "fastapi>=0.162.0,<1",
     "uvicorn[standard]>=0.54.0,<1",
     "pyreadline3>=3.4,<4; sys_platform == 'win32'",
     # zoneinfo reads the OS tz database, which Windows does not ship. Without
@@ -59,14 +59,6 @@ where = ["src"]
 include = ["thefrontoffice*"]
 namespaces = false
 
-[tool.pyright]
-venvPath = "."
-venv = ".venv"
-extraPaths = ["./src"]
-pythonVersion = "3.15"
-reportMissingImports = false
-
-
 [tool.ruff]
 target-version = "py315"
 line-length = 120
@@ -84,6 +76,8 @@ select = [
     "SIM",    # flake8-simplify
     "TC",     # flake8-type-checking
     "TID252", # ban relative imports
+    "DTZ",    # naive datetimes — AGENTS.md: store aware UTC, basketball anchors to PACIFIC
+    "T20",    # print — AGENTS.md: never outside adapters/inbound/, which render to a person
 ]
 ignore = [
     "E501",  # line too long — handled by ruff format
@@ -91,6 +85,14 @@ ignore = [
     "TC002", # move third-party import into TYPE_CHECKING
     "TC003", # move stdlib import into TYPE_CHECKING
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# The two places output is the job: the inbound adapters render to a person, and
+# scripts/ are command-line tools. A print anywhere else is a library talking
+# over whatever called it.
+"src/thefrontoffice/adapters/inbound/**" = ["T20"]
+"scripts/**" = ["T20"]
+"tests/test_cli_console.py" = ["T20"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["thefrontoffice"]

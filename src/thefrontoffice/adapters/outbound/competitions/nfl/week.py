@@ -116,7 +116,7 @@ class Week:
 def parse_date(iso: str) -> date | None:
     """Sleeper publishes a day, not an instant, so this is a label not a time."""
     try:
-        return datetime.strptime(iso[:10], "%Y-%m-%d").date()
+        return date.fromisoformat(iso[:10])
     except ValueError, TypeError:
         return None
 
