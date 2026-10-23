@@ -20,6 +20,7 @@ from conftest import (
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
+    NFLGameLine,
     PlayerMeta,
     SeasonStats,
     SleeperLeague,
@@ -519,3 +520,42 @@ def test_a_played_week_is_shaped_only_by_the_games_before_it() -> None:
     _provider(client).played_matchups("L1", 3)
 
     assert client.game_line_weeks == [1, 2]
+
+
+def _line(pid: str, week: int, points: float) -> NFLGameLine:
+    return NFLGameLine(
+        player_id=pid,
+        week=week,
+        team="BUF",
+        opponent="MIA",
+        position="RB",
+        stats={"off_snp": 40, "tm_off_snp": 60, "pts_ppr": points},
+    )
+
+
+def test_a_played_week_for_tuning_is_known_only_from_the_games_before_it() -> None:
+    """A range scored against a week it was shaped by would grade itself."""
+    client = _paired()
+    client.game_lines = [_line("rb1", 1, 9.0), _line("rb1", 2, 11.0), _line("rb1", 3, 30.0)]
+
+    before, _last, played = _provider(client).played_week("L1", 3)
+
+    assert before.games["rb1"] == (9.0, 11.0)
+    assert ("rb1", 30.0) in [(p.player_id, actual) for p, actual in played]
+
+
+def test_last_season_is_read_for_the_shape_of_each_position() -> None:
+    client = _paired()
+    client.last_season_lines = [_line("old", w, 10.0 + w) for w in (1, 2, 3)]
+
+    _before, last, _played = _provider(client).played_week("L1", 3)
+
+    assert last.games["old"] == (11.0, 12.0, 13.0)
+    assert any(season != "2026" for season, _ in client.game_line_calls)
+
+
+def test_a_week_that_cannot_read_last_season_still_simulates() -> None:
+    client = _paired()
+    client.game_lines_error = SleeperAPIError("down")
+
+    assert _provider(client).matchup_input("L1") is not None

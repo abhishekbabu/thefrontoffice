@@ -25,6 +25,7 @@ from thefrontoffice.domain.models import (
     MatchupInput,
     Outcomes,
     PlayedMatchup,
+    RangeScore,
     Stat,
     Summary,
     Urgency,
@@ -74,6 +75,10 @@ def _draw(outcomes: Outcomes, rng: random.Random, simulations: int) -> list[floa
     for _ in range(simulations):
         played = rng.random() < outcomes.plays
         game = rng.choice(outcomes.samples) if outcomes.samples else 0.0
+        if outcomes.projection_error:
+            # The projection may be off too: one factor for his whole game,
+            # around 1 so the centre holds, never below 0 so a miss is not a sign flip.
+            game *= max(0.0, rng.gauss(1.0, outcomes.projection_error))
         draws.append(outcomes.floor + (outcomes.remaining * game if played else 0.0))
     return draws
 
@@ -202,6 +207,36 @@ def calibrate(played: list[PlayedMatchup], simulations: int = SIMULATIONS) -> Ca
         brier=sum((c - o) ** 2 for c, o in pairs) / len(pairs),
         buckets=buckets,
     )
+
+
+DECILES = tuple(i / 10 for i in range(1, 10))
+
+
+def score_ranges(played: list[tuple[Outcomes, float]], draws: int = 400, seed: int = 0) -> RangeScore:
+    """How well each range held what its player then scored.
+
+    Quantile loss is a proper score — no range scores better by being wider
+    or narrower than the truth — so it is what settings are chosen on. The
+    shares inside and outside the 10th–90th band say which way a range is wrong.
+    """
+    rng = random.Random(seed)
+    inside = below = above = 0
+    loss = 0.0
+    for outcomes, actual in played:
+        ordered = sorted(_draw(outcomes, rng, draws))
+        quantiles = [ordered[min(draws - 1, int(q * draws))] for q in DECILES]
+        low, high = quantiles[0], quantiles[-1]
+        below += actual < low
+        above += actual > high
+        inside += low <= actual <= high
+        loss += sum(
+            (actual - q) * tau if actual >= q else (q - actual) * (1 - tau)
+            for tau, q in zip(DECILES, quantiles, strict=True)
+        ) / len(DECILES)
+    count = len(played)
+    if not count:
+        return RangeScore(players=0, inside=0.0, below=0.0, above=0.0, loss=0.0)
+    return RangeScore(players=count, inside=inside / count, below=below / count, above=above / count, loss=loss / count)
 
 
 class ForecastEngine:

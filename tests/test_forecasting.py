@@ -201,3 +201,62 @@ def test_matchups_are_grouped_by_the_chance_they_were_given() -> None:
 
 def test_nothing_to_score_scores_nothing() -> None:
     assert calibrate([]).matchups == 0
+
+
+# ── the projection's own uncertainty ────────────────────────────────────
+
+
+def test_projection_error_widens_a_range_without_moving_its_centre() -> None:
+    import random as rng_module
+    from statistics import mean, pstdev
+
+    from thefrontoffice.application.forecasting import _draw
+
+    plain = _player("a", 10, 20)
+    unsure = Outcomes("a", "A", 15.0, (10.0, 20.0), projection_error=0.3)
+
+    certain_draws = _draw(plain, rng_module.Random(1), 20_000)
+    unsure_draws = _draw(unsure, rng_module.Random(1), 20_000)
+
+    assert pstdev(unsure_draws) > pstdev(certain_draws)
+    assert mean(unsure_draws) == pytest.approx(mean(certain_draws), rel=0.03)
+    assert min(unsure_draws) >= 0
+
+
+# ── scoring ranges against what happened ────────────────────────────────
+
+
+def test_a_range_that_matches_reality_holds_four_in_five() -> None:
+    import random as rng_module
+
+    from thefrontoffice.application.forecasting import score_ranges
+
+    truth = tuple(float(x) for x in range(101))
+    rng = rng_module.Random(3)
+    played = [(Outcomes(f"p{i}", "P", 50.0, truth), rng.choice(truth)) for i in range(2_000)]
+
+    result = score_ranges(played)
+
+    assert result.inside == pytest.approx(0.8, abs=0.04)
+    assert result.below == pytest.approx(0.1, abs=0.03) and result.above == pytest.approx(0.1, abs=0.03)
+
+
+def test_a_range_too_narrow_for_reality_holds_less_and_scores_worse() -> None:
+    import random as rng_module
+
+    from thefrontoffice.application.forecasting import score_ranges
+
+    truth = tuple(float(x) for x in range(101))
+    rng = rng_module.Random(3)
+    actuals = [rng.choice(truth) for _ in range(1_000)]
+    true_range = score_ranges([(Outcomes("p", "P", 50.0, truth), a) for a in actuals])
+    narrow = score_ranges([(Outcomes("p", "P", 50.0, (45.0, 50.0, 55.0)), a) for a in actuals])
+
+    assert narrow.inside < true_range.inside
+    assert narrow.loss > true_range.loss
+
+
+def test_no_games_to_score_scores_nothing() -> None:
+    from thefrontoffice.application.forecasting import score_ranges
+
+    assert score_ranges([]).players == 0

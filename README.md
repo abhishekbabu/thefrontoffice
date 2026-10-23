@@ -112,7 +112,9 @@ item, and a verdict naming no listed item is discarded.
 
 **Win chance.** The NFL week is also simulated 10,000 times: each starter's
 outcome drawn from his own games rescaled to this week's projection (thin
-histories borrow from his position), whether he plays from his designation,
+histories borrow from his position, whose spread includes last season's games
+so the opening weeks have one, and a share of uncertainty in the projection
+itself widens every range), whether he plays from his designation,
 and finished or live games held at what they have scored. The header carries
 the chance of winning and the likely margin; every to-do move carries what it
 does to that chance — computed on the same draws, so the difference is the
@@ -122,7 +124,11 @@ starter's chance of a zero is why "+2.5 proj pts" can still cost you. The
 engine (`application/forecasting.py`) is generic: a competition supplies its
 players' ranges through the `ForecastProvider` port. `just backtest` rebuilds
 every finished week's matchups as they stood before kickoff and scores the
-chances against who won.
+chances against who won. `just tune` searches the few settings that shape a
+range (`RangeSettings` in `nfl/outcomes.py`) on individual player-games — a
+season holds thousands, where matchups are too few to tune on — holding the
+last week out, and recommends a change only if it is meaningfully better on
+that week too.
 
 Every item can be **dismissed** — hidden while it reads as it did, and back,
 marked *back — changed since you dismissed it*, the moment its reason, evidence
@@ -319,6 +325,7 @@ Without `LOGFIRE_TOKEN` nothing is exported and no network call is made.
 ```bash
 just doctor             # what this machine is configured for
 just backtest           # score the win-chance simulation on finished weeks (live data)
+just tune               # search the range settings, holding out the last week (live data)
 just check              # lint + format + types + tests + 95% coverage floor
 just check-web          # lint + typecheck + tests + bundle budget (UI)
 just fmt                # auto-fix lint findings, then format

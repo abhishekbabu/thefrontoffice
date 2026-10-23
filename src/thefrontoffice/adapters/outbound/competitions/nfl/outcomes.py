@@ -22,18 +22,38 @@ from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import WeeklyProjection
 from thefrontoffice.domain.models import Outcomes
 
-OWN_HALF = 4
-"""Games of his own at which his history counts as much as his position's."""
 
-MIN_MEAN = 6.0
-"""Below this a player's average is too small to rescale by: a backup's one good game
-against his two-point average reads as a six-fold week, and lent to a star it is fiction."""
+@dataclass(frozen=True)
+class RangeSettings:
+    """What shapes a range — the few numbers `just tune` searches over.
 
-MIN_GAMES = 3
-"""Games a player needs before his spread joins his position's pool."""
+    Defaults are what the app runs with, set by `just tune`: chosen on weeks
+    2-5 of the 2026 season and kept because they also won on week 6, which
+    they never saw — 78% of player-games inside the 10th-90th band (70% with
+    the earlier hand-set values) against the 80% a true range would hold.
+    """
 
-MAX_RATIO = 4.0
-"""No single game counts for more than four times a player's average."""
+    own_half: float = 8
+    """Games of his own at which his history counts as much as his position's."""
+
+    min_mean: float = 6.0
+    """Below this a player's average is too small to rescale by: a backup's one good game
+    against his two-point average reads as a six-fold week, and lent to a star it is fiction."""
+
+    min_games: int = 3
+    """Games a player needs before his spread joins his position's pool."""
+
+    max_ratio: float = 3.0
+    """No single game counts for more than this many times a player's average."""
+
+    projection_error: float = 0.3
+    """How far the projection itself may be off, as a share of it: each simulated week
+    scales his whole game by a factor around 1 with this spread. Widens a range without
+    moving its centre — the honest answer to "the projection is a guess too"."""
+
+
+DEFAULT = RangeSettings()
+MAX_RATIO = DEFAULT.max_ratio
 
 POOL_SIZE = 200
 """Points of the position's spread kept: evenly spaced through it, so the shape survives."""
@@ -63,18 +83,41 @@ class Spreads:
     pool: dict[str, tuple[float, ...]]
 
 
-def spreads(evidence: Evidence) -> Spreads:
-    own: dict[str, tuple[float, ...]] = {}
+def spreads(evidence: Evidence, settings: RangeSettings = DEFAULT, pool_from: Evidence | None = None) -> Spreads:
+    """Each player's own spread from `evidence`; each position's from it and `pool_from` together.
+
+    `pool_from` is last season. A position's spread barely moves from one
+    year to the next, and without it the opening weeks have no pool at all
+    — nobody has the games yet — so every range collapses to its projection.
+    A player's own spread stays this season's: roles change over a summer.
+    """
+    own = {pid: ratios for pid, (ratios, _) in _ratios(evidence, settings).items()}
     pooled: dict[str, list[float]] = {}
+    for source in (evidence, pool_from):
+        if source is None:
+            continue
+        for ratios, position in _ratios(source, settings).values():
+            if len(ratios) >= settings.min_games:
+                pooled.setdefault(position, []).extend(ratios)
+    return Spreads(own=own, pool={position: _evenly(sorted(r), POOL_SIZE) for position, r in pooled.items()})
+
+
+def _ratios(evidence: Evidence, settings: RangeSettings) -> dict[str, tuple[tuple[float, ...], str]]:
+    """Each player's games as ratios to his average, capped, for those averaging enough to rescale.
+
+    Rescaled after the cap so they still average 1: trimming a boom week
+    takes points off the top, and left alone that would centre every
+    streaky player's range below his projection.
+    """
+    found = {}
     for player_id, games in evidence.games.items():
         mean = sum(games) / len(games)
-        if mean < MIN_MEAN:
+        if mean < settings.min_mean:
             continue
-        ratios = tuple(min(points / mean, MAX_RATIO) for points in games)
-        own[player_id] = ratios
-        if len(games) >= MIN_GAMES:
-            pooled.setdefault(evidence.positions[player_id], []).extend(ratios)
-    return Spreads(own=own, pool={position: _evenly(sorted(r), POOL_SIZE) for position, r in pooled.items()})
+        capped = [min(points / mean, settings.max_ratio) for points in games]
+        centre = sum(capped) / len(capped)
+        found[player_id] = (tuple(r / centre for r in capped), evidence.positions[player_id])
+    return found
 
 
 def outcomes(
@@ -83,6 +126,7 @@ def outcomes(
     *,
     status: str = "",
     scored: float = 0.0,
+    settings: RangeSettings = DEFAULT,
 ) -> Outcomes:
     """His week: the range, the chance he plays, and what `status` says of his game.
 
@@ -91,7 +135,7 @@ def outcomes(
     """
     if status == "complete":
         return Outcomes(player.player_id, player.name, player.points, (), floor=scored, remaining=0.0)
-    ratios = _blend(spread.own.get(player.player_id, ()), spread.pool.get(player.position, ()))
+    ratios = _blend(spread.own.get(player.player_id, ()), spread.pool.get(player.position, ()), settings.own_half)
     samples = tuple(player.points * r for r in ratios) if ratios else (player.points,)
     started = bool(status) and status != "pre_game"
     return Outcomes(
@@ -104,16 +148,17 @@ def outcomes(
         plays=1.0 if started else PLAYS.get(player.injury_status.upper(), 1.0) if player.opponent else 0.0,
         floor=scored if started else 0.0,
         remaining=UNDER_WAY if started else 1.0,
+        projection_error=settings.projection_error,
     )
 
 
-def _blend(own: tuple[float, ...], pool: tuple[float, ...]) -> tuple[float, ...]:
-    """His ratios and his position's, mixed so his weigh `n / (n + OWN_HALF)` of the whole."""
+def _blend(own: tuple[float, ...], pool: tuple[float, ...], own_half: float) -> tuple[float, ...]:
+    """His ratios and his position's, mixed so his weigh `n / (n + own_half)` of the whole."""
     if not pool:
         return own
     if not own:
         return pool
-    weight = len(own) / (len(own) + OWN_HALF)
+    weight = len(own) / (len(own) + own_half)
     copies = max(1, round(weight * len(pool) / ((1 - weight) * len(own))))
     return own * copies + pool
 

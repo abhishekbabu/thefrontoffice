@@ -175,6 +175,7 @@ class SleeperNFLProvider:
         # One request's week, kept for that request: the summary and the
         # forecast beside it both need it, and gathering it is most of the wait.
         self._weeks: dict[str, Week] = {}
+        self._previous: dict[str, evidence.Evidence] = {}
 
     # ── leagues ─────────────────────────────────────────────────────
 
@@ -875,7 +876,9 @@ class SleeperNFLProvider:
         games = games_by_week(self.client, state.season)
         status = {club: game.status for game in games.get(state.week, []) for club in (game.home, game.away)}
         live = self._live(state, league_id)
-        spread = outcomes.spreads(state.evidence)
+        spread = outcomes.spreads(
+            state.evidence, pool_from=self._last_season(state.season, state.league.scoring_format)
+        )
 
         def outcome(player: WeeklyProjection) -> Outcomes:
             return outcomes.outcomes(
@@ -894,6 +897,18 @@ class SleeperNFLProvider:
         started = {club for club, s in status.items() if s and s != "pre_game"}
         moves = self._swaps(state, outcome, started) + self._pickups(state, league_id, games, outcome)
         return MatchupInput(mine=mine, theirs=theirs, moves=moves, seed=_seed(self.label, league_id, state.week))
+
+    def _last_season(self, season: str, scoring: str) -> evidence.Evidence:
+        """Last season's games, for the shape of each position's spread. Empty where they will not load."""
+        key = f"{season}:{scoring}"
+        if key not in self._previous:
+            try:
+                lines = self.client.get_nfl_game_lines(str(int(season) - 1), list(range(1, SEASON_WEEKS + 1)))
+            except (SleeperAPIError, ValueError) as e:
+                logger.warning(f"Shaping ranges without last season: {e}")
+                lines = []
+            self._previous[key] = evidence.gather(lines, scoring)
+        return self._previous[key]
 
     def _swaps(
         self, state: Week, outcome: Callable[[WeeklyProjection], Outcomes], started: set[str]
@@ -963,7 +978,33 @@ class SleeperNFLProvider:
             )
         return tuple(moves)
 
-    def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
+    def played_week(
+        self, league_id: str, week: int
+    ) -> tuple[evidence.Evidence, evidence.Evidence, list[tuple[WeeklyProjection, float]]]:
+        """A finished week's players, for scoring ranges: what was known before it, and what each scored.
+
+        Every player who took the field and was projected at least a few
+        points — the ones a range is ever drawn for — paired with his actual
+        score. What was known is the games before it alone, so nothing a
+        range is scored against shaped it.
+        """
+        league = self._league(league_id)
+        season = self.client.get_state(NFL).season
+        lines = self.client.get_nfl_game_lines(season, list(range(1, week + 1)))
+        before = evidence.gather([line for line in lines if line.week < week], league.scoring_format)
+        last = self._last_season(season, league.scoring_format)
+        projections = self.client.get_projections(season, week, league.scoring_format)
+        that_week = evidence.gather([line for line in lines if line.week == week], league.scoring_format)
+        played = [
+            (projections[pid], games[0])
+            for pid, games in that_week.games.items()
+            if pid in projections and projections[pid].points >= SCORED_FROM
+        ]
+        return before, last, played
+
+    def played_matchups(
+        self, league_id: str, week: int, settings: outcomes.RangeSettings = outcomes.DEFAULT
+    ) -> list[PlayedMatchup]:
         """Every matchup of `week`, rebuilt as it stood before kickoff, with how it ended.
 
         As it stood: that week's projections and starters, and only the games
@@ -976,12 +1017,16 @@ class SleeperNFLProvider:
         players = self.client.get_players()
         earlier = list(range(1, week))
         lines = self.client.get_nfl_game_lines(season, earlier) if earlier else []
-        spread = outcomes.spreads(evidence.gather(lines, league.scoring_format))
+        spread = outcomes.spreads(
+            evidence.gather(lines, league.scoring_format),
+            settings,
+            pool_from=self._last_season(season, league.scoring_format),
+        )
 
         def side(entry: dict[str, Any]) -> tuple[Outcomes, ...]:
             starters = [str(pid) for pid in entry.get("starters") or [] if str(pid) not in ("0", "")]
             return tuple(
-                outcomes.outcomes(p, spread)
+                outcomes.outcomes(p, spread, settings=settings)
                 for p in (projection_for(pid, projections, players) for pid in starters)
                 if p
             )
@@ -1143,6 +1188,13 @@ class SleeperNFLProvider:
         return "warning" if scheduled and not projection.opponent else "neutral"
 
     # ── helpers ─────────────────────────────────────────────────────
+
+
+SEASON_WEEKS = 18
+"""A regular season's weeks; last season's are read whole for its spreads."""
+
+SCORED_FROM = 3.0
+"""Projected points below which a player is nobody's start, and his range not worth scoring."""
 
 
 def _seed(*parts: object) -> int:
