@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from thefrontoffice.adapters.inbound.web import data
 from thefrontoffice.application.forecasting import WIN_COLUMN, attach, attach_pickups
+from thefrontoffice.application.season import attach_season, attach_table
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import (
     CompetitionEntry,
@@ -34,6 +35,7 @@ from thefrontoffice.bootstrap import (
     forecast_engine,
     item_decisions,
     scout_engine,
+    season_engine,
     wire_engine,
 )
 from thefrontoffice.config import env_file
@@ -50,13 +52,14 @@ from thefrontoffice.domain.models import (
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    PlayoffOdds,
     Remembered,
     ScoutReport,
     Subject,
     Summary,
     TeamRef,
 )
-from thefrontoffice.domain.ports import ChatSession, ForecastProvider
+from thefrontoffice.domain.ports import ChatSession, ForecastProvider, SeasonProvider
 
 logger = logging.getLogger(__name__)
 
@@ -389,6 +392,10 @@ def _register_routes(app: FastAPI) -> None:
         summary = provider.summary(league_id)
         if isinstance(provider, ForecastProvider):
             summary = _forecast(provider, league_id, summary)
+        # After the forecast, which decides how likely this week's win is.
+        odds = _season(provider, league_id) if isinstance(provider, SeasonProvider) else None
+        if odds is not None:
+            summary = attach_season(summary, odds)
         if summary.actions is None:
             return summary
         actions = item_decisions().apply(provider.label, league_id, summary.actions)
@@ -453,7 +460,10 @@ def _register_routes(app: FastAPI) -> None:
         costs requests the week does not need — nobody checking their lineup
         should wait on the whole season's fixtures.
         """
-        return data.build_provider(competition).schedule(league_id)
+        provider = data.build_provider(competition)
+        schedule = provider.schedule(league_id)
+        odds = _season(provider, league_id) if isinstance(provider, SeasonProvider) else None
+        return attach_table(schedule, odds) if odds is not None else schedule
 
     @app.post("/api/{competition}/leagues/{league_id}/scout", response_model=ScoutReport)
     def scout(competition: str, league_id: str) -> ScoutReport:
@@ -533,6 +543,15 @@ def _forecast(provider: ForecastProvider, league_id: str, summary: Summary) -> S
         logger.warning(f"Showing the week without a forecast: {e}")
         return summary
     return attach(summary, *result) if result else summary
+
+
+def _season(provider: SeasonProvider, league_id: str) -> PlayoffOdds | None:
+    """Every team's playoff chance, or none where the season cannot be simulated — enrichment like the forecast."""
+    try:
+        return season_engine(provider).odds(league_id)
+    except FrontOfficeError as e:
+        logger.warning(f"Showing the league without playoff odds: {e}")
+        return None
 
 
 def _priced(provider: ForecastProvider, league_id: str, page: PlayerPage, order: bool | None) -> PlayerPage:

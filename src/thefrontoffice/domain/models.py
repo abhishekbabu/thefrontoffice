@@ -541,6 +541,81 @@ class PickupChance(BaseModel):
     title: str = Field(description="The start that gets it, in the manager's words: 'Start X over Y'.")
 
 
+# ── simulating a season ─────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class TeamRecord:
+    """One team's regular season so far: what is already banked."""
+
+    team_id: str
+    name: str
+    wins: int
+    losses: int
+    ties: int
+    points_for: float
+
+
+@dataclass(frozen=True)
+class TeamWeek:
+    """How one team is expected to score in one week still to come."""
+
+    team_id: str
+    week: int
+    mean: float
+    spread: float
+    """Standard deviation of a week's score around `mean`."""
+
+
+@dataclass(frozen=True)
+class Fixture:
+    """One head-to-head matchup still to be played."""
+
+    week: int
+    home: str
+    away: str
+
+
+@dataclass(frozen=True)
+class SeasonInput:
+    """The rest of a regular season, ready to simulate: records, fixtures, and each team's weekly scoring.
+
+    Seeded by record, then points for — the tiebreak a league uses unless it says otherwise.
+    """
+
+    teams: tuple[TeamRecord, ...]
+    fixtures: tuple[Fixture, ...]
+    scoring: tuple[TeamWeek, ...]
+    spots: int
+    mine: str
+    week: int
+    """The week in progress: the one whose result the odds are split on."""
+    strength_error: float = 0.0
+    """How far a team's real strength may sit from its means, in points: one offset per
+    team per simulated season, so a team that is better than it looks stays better all
+    season rather than winning a week and losing the next."""
+    seed: int = 0
+
+
+class TeamOdds(BaseModel):
+    """One team's chance of reaching the playoffs."""
+
+    team_id: str
+    name: str
+    playoffs: float
+
+
+class PlayoffOdds(BaseModel):
+    """The rest of the regular season played many times over."""
+
+    spots: int
+    teams: list[TeamOdds] = Field(default_factory=list)
+    playoffs: float = Field(description="Your chance of a playoff place.")
+    with_win: float | None = Field(default=None, description="Your chance if you win this week; None on a bye.")
+    with_loss: float | None = Field(default=None, description="Your chance if you lose this week; None on a bye.")
+    simulations: int
+
+
 class CalibrationBucket(BaseModel):
     """Matchups the simulation gave a similar chance, and how often that side won."""
 
@@ -605,6 +680,9 @@ class StandingRow(BaseModel):
     team_id: str = Field(
         default="",
         description="Addresses this team's roster. Empty where the platform cannot serve one.",
+    )
+    playoffs: str = Field(
+        default="", description="Chance of a playoff place, formatted. Empty where the season is not simulated."
     )
     is_mine: bool = False
     """Yours, so a fourteen-team table does not have to be read to find it."""

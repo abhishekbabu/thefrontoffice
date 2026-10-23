@@ -236,6 +236,8 @@ export type StandingRow = {
   points: string;
   /** Addresses this team's roster. Empty where the platform cannot serve one. */
   team_id: string;
+  /** Chance of a playoff place, formatted. Empty where the season is not simulated. */
+  playoffs: string;
   is_mine: boolean;
 };
 

@@ -18,6 +18,7 @@ from thefrontoffice.application.asking import AskEngine
 from thefrontoffice.application.forecasting import ForecastEngine
 from thefrontoffice.application.items import ItemDecisions
 from thefrontoffice.application.scouting import ScoutEngine
+from thefrontoffice.application.season import SeasonEngine
 from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.application.wire import WireEngine
 from thefrontoffice.config.settings import settings
@@ -25,6 +26,7 @@ from thefrontoffice.domain.ports import (
     AnalysisModel,
     CompetitionProvider,
     ForecastProvider,
+    SeasonProvider,
     TradeProvider,
     WireProvider,
 )
@@ -260,6 +262,11 @@ def scout_engine(provider: CompetitionProvider) -> ScoutEngine:
 def forecast_engine(provider: ForecastProvider) -> ForecastEngine:
     """A provider's matchup, simulated. Needs no model and no key."""
     return ForecastEngine(provider)
+
+
+def season_engine(provider: SeasonProvider) -> SeasonEngine:
+    """A provider's regular season, simulated to the playoffs. Needs no model either."""
+    return SeasonEngine(provider)
 
 
 def item_decisions() -> ItemDecisions:

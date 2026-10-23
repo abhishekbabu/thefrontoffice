@@ -70,6 +70,10 @@ class SleeperLeague:
     roster_positions: list[str] = field(default_factory=list)
     trade_deadline: int = 0
     """The last week trades are accepted. Zero where the league set none."""
+    playoff_teams: int = 0
+    """How many teams the regular season sends to the playoffs. Zero where unknown."""
+    playoff_week_start: int = 0
+    """The first playoff week; the regular season is every week before it. Zero where unknown."""
 
     @property
     def starting_slots(self) -> list[str]:

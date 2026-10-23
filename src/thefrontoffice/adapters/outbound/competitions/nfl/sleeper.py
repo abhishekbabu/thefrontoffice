@@ -70,6 +70,7 @@ from thefrontoffice.domain.models import (
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    SeasonInput,
     Side,
     Spot,
     Stat,
@@ -1062,6 +1063,13 @@ class SleeperNFLProvider:
                 )
             )
         return played
+
+    def season_input(self, league_id: str) -> SeasonInput | None:
+        """The rest of the regular season, ready to simulate to the playoffs."""
+        state = self._week(league_id)
+        return league.season_input(
+            self.client, state, league_id, seed=_seed(self.label, league_id, "season", state.week)
+        )
 
     def _season_table(self, player_id: str, state: Week) -> StatTable | None:
         """This season beside the two before it, read across rather than down.

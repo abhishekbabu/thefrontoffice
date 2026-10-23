@@ -127,3 +127,40 @@ def test_the_week_says_when_it_is_played() -> None:
 
 def test_the_window_carries_the_dates_where_there_are_any() -> None:
     assert _provider(_at_week(2)).summary("L1").window == "Week 2 · 17 Sep"
+
+
+# ── the rest of the season, for the simulation ──────────────────────────
+
+
+def _with_playoffs(week: int, spots: int = 1, start: int = 9) -> object:
+    from dataclasses import replace
+
+    client = _at_week(week)
+    client.league = replace(client.league, playoff_teams=spots, playoff_week_start=start)
+    return client
+
+
+def test_the_season_left_is_every_week_up_to_the_playoffs() -> None:
+    season = _provider(_with_playoffs(7)).season_input("L1")  # type: ignore[arg-type]
+
+    assert season is not None
+    assert [(f.week, f.home, f.away) for f in season.fixtures] == [(7, "1", "2"), (8, "1", "2")]
+    assert (season.spots, season.mine, season.week) == (1, "1", 7)
+
+
+def test_each_team_starts_from_its_record_and_is_scored_by_its_best_lineup() -> None:
+    season = _provider(_with_playoffs(7)).season_input("L1")  # type: ignore[arg-type]
+
+    assert season is not None
+    assert {t.team_id: t.wins for t in season.teams} == {"1": 2, "2": 3}
+    # Mine projects a QB and a RB; theirs only the weak RB, so mine is stronger in every week.
+    means = {(t.team_id, t.week): t.mean for t in season.scoring}
+    assert all(means[("1", w)] > means[("2", w)] for w in (7, 8))
+
+
+def test_a_league_in_its_playoffs_has_no_season_left_to_simulate() -> None:
+    assert _provider(_with_playoffs(9)).season_input("L1") is None  # type: ignore[arg-type]
+
+
+def test_a_league_that_names_no_playoffs_has_none_to_reach() -> None:
+    assert _provider(_at_week(7)).season_input("L1") is None

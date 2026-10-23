@@ -130,6 +130,17 @@ season holds thousands, where matchups are too few to tune on — holding the
 last week out, and recommends a change only if it is meaningfully better on
 that week too.
 
+**Playoff odds.** The rest of the regular season is simulated 5,000 times too
+(`application/season.py`, fed through the `SeasonProvider` port): every
+remaining fixture is played with each team scoring around the best lineup its
+roster projects that week — so byes are seen coming — rescaled to what the
+league actually scores, with the league's own week-to-week spread, and a
+per-team offset for how far real strength may sit from projected strength. The
+table is seeded by record, then points for. The week's header carries your
+chance and what this week is worth to it — "90% · 96% with a win, 83% without"
+— weighing this week by the week's own forecast; the league table carries every
+team's.
+
 Every item can be **dismissed** — hidden while it reads as it did, and back,
 marked *back — changed since you dismissed it*, the moment its reason, evidence
 or deadline changes — or **snoozed** for three hours, until tomorrow at 8am, or
@@ -166,7 +177,7 @@ matchup and news its prompt line carries. Calls are kept per player, so a
 reload shows them, judging the page again asks only about the players whose
 situation moved, and a call on one who has moved since shows as *stale*.
 **League** covers the season: your results so far, the
-table, every roster, the fixture list and the transaction feed. **My team** is
+table (with each team's playoff chance, on NFL), every roster, the fixture list and the transaction feed. **My team** is
 your squad in more depth, and any row opens a player.
 
 ![Player detail](docs/screenshots/player.png)
