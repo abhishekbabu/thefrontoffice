@@ -57,7 +57,7 @@ def build(
     actions += _breakouts(state, free_agents, {a.player_id for a in actions})
     actions += _next_week_byes(state, games.get(state.week + 1, []))
     actions += _trade_deadline(state)
-    return sorted(actions, key=lambda a: URGENCY_ORDER[a.urgency])
+    return sorted(_with_drops(state, actions, started), key=lambda a: URGENCY_ORDER[a.urgency])
 
 
 def _lineup(
@@ -270,6 +270,100 @@ def _breakouts(state: Week, free_agents: list[WeeklyProjection], already: set[st
             )
         )
     return actions
+
+
+PICKUPS = ("hole:", "rise:")
+"""The items that add a player to the roster, and so need room on it."""
+
+MIN_GAMES_FOR_AVERAGE = 2
+"""Games a bench player needs before his season average, not this week's projection, says what he is worth."""
+
+
+def _with_drops(state: Week, actions: list[Action], started: set[str]) -> list[Action]:
+    """Every pickup with who to drop for it, or the open spot it can go into.
+
+    The drop is the bench player worth least for the rest of the season, by
+    his average a game — not this week's projection, which reads a starter on
+    bye as nothing. Never someone another item moves, nobody whose game has
+    kicked off (the platform will not release him), and nobody whose role is
+    growing: that is the player this list would tell you to pick up.
+
+    A pickup that fills a hole needs a body whoever it costs, so it names the
+    cheapest drop regardless. A breakout is optional, and is dropped from the
+    list unless the bench holds someone it already beats — trading a
+    fourteen-point tight end on a one-week injury for a seven-point flier is
+    not a to-do item.
+    """
+    active = [pid for pid in state.roster.player_ids if pid not in state.roster.reserve_ids]
+    open_spots = state.league.roster_spots - len(active)
+    named = {pid for action in actions for pid in (action.player_id, action.replaces) if pid}
+    chosen: set[str] = set()
+    out = []
+    for action in actions:
+        if action.kind != "waiver" or not action.key.startswith(PICKUPS):
+            out.append(action)
+            continue
+        if open_spots > 0:
+            open_spots -= 1
+            out.append(action.model_copy(update={"reason": f"{action.reason} You have a roster spot open for him."}))
+            continue
+        drop = _least_valuable(state, named | chosen, started)
+        if action.key.startswith("rise:") and not _worth_a_spot(state, action.player_id, drop):
+            continue
+        if drop is None:
+            out.append(
+                action.model_copy(
+                    update={
+                        "reason": f"{action.reason} Your roster is full and nobody on the bench can be released yet."
+                    }
+                )
+            )
+            continue
+        chosen.add(drop.player_id)
+        out.append(
+            action.model_copy(
+                update={
+                    "drop": drop.player_id,
+                    "title": f"{action.title}, drop {drop.name}",
+                    "reason": f"{action.reason} {_drop_reason(state, drop)}",
+                }
+            )
+        )
+    return out
+
+
+def _worth_a_spot(state: Week, player_id: str, drop: WeeklyProjection | None) -> bool:
+    """Whether an optional pickup is worth more than the player it would cost."""
+    pickup = state.projections.get(player_id)
+    return drop is not None and pickup is not None and pickup.points > _season_value(state, drop)
+
+
+def _least_valuable(state: Week, exclude: set[str], started: set[str]) -> WeeklyProjection | None:
+    """The bench player it costs least to lose, among those who can be released now."""
+    bench = [
+        p
+        for p in state.projected
+        if p.player_id not in state.starter_ids
+        and p.player_id not in state.roster.reserve_ids
+        and p.player_id not in exclude
+        and p.player_id not in state.evidence.trends
+        and p.team not in started
+    ]
+    return min(bench, key=lambda p: (_season_value(state, p), p.points), default=None)
+
+
+def _season_value(state: Week, player: WeeklyProjection) -> float:
+    games = state.evidence.games.get(player.player_id, ())
+    return sum(games) / len(games) if len(games) >= MIN_GAMES_FOR_AVERAGE else player.points
+
+
+def _drop_reason(state: Week, player: WeeklyProjection) -> str:
+    games = state.evidence.games.get(player.player_id, ())
+    if len(games) >= MIN_GAMES_FOR_AVERAGE:
+        worth = f"{sum(games) / len(games):.1f} a game this season, {player.points:.1f} projected this week"
+    else:
+        worth = f"{player.points:.1f} projected this week, with too few games to judge him on more"
+    return f"Drop {player.name}, the least on your bench: {worth}."
 
 
 def _next_week_byes(state: Week, next_games: list[ScheduledGame]) -> list[Action]:

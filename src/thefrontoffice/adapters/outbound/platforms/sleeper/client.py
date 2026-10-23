@@ -300,6 +300,7 @@ class SleeperClient:
                     owner_id=str(item.get("owner_id") or ""),
                     player_ids=[str(p) for p in item.get("players") or []],
                     starter_ids=[str(p) for p in item.get("starters") or []],
+                    reserve_ids=[str(p) for p in (item.get("reserve") or []) + (item.get("taxi") or [])],
                     wins=int(record.get("wins", 0)),
                     losses=int(record.get("losses", 0)),
                     ties=int(record.get("ties", 0)),

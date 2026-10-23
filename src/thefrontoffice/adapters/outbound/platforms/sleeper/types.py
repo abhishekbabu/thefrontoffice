@@ -76,6 +76,11 @@ class SleeperLeague:
     """The first playoff week; the regular season is every week before it. Zero where unknown."""
 
     @property
+    def roster_spots(self) -> int:
+        """How many players the roster holds outside its reserve and taxi slots: starters and bench."""
+        return sum(1 for s in self.roster_positions if s not in ("IR", "TAXI"))
+
+    @property
     def starting_slots(self) -> list[str]:
         """Lineup slots that score, in the order Sleeper lists them."""
         return [s for s in self.roster_positions if s in STARTING_SLOTS]
@@ -87,6 +92,8 @@ class SleeperRoster:
     owner_id: str
     player_ids: list[str]
     starter_ids: list[str]
+    reserve_ids: list[str] = field(default_factory=list)
+    """Players in injured-reserve or taxi slots: on the roster, but not taking a spot on it."""
     wins: int = 0
     losses: int = 0
     ties: int = 0

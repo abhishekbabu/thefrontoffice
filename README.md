@@ -90,7 +90,12 @@ behind them, the trade deadline, and up to two free agents whose **role just
 grew** — a jump in his share of snaps or targets, or in carries, in the latest
 week played against the three before it, while his projection is still at least
 five points (one that has fallen back to nothing has usually lost the role
-again). Each names the fix — the bench player who
+again). A pickup on a full roster names who to **drop**: the bench player
+worth least by his average a game this season — not this week's projection,
+which reads a starter on bye as nothing — never one another item moves, one
+whose game has kicked off, or one whose role is growing. A breakout only makes
+the list when it already beats that player; filling a hole names the drop
+whatever it costs. Each names the fix — the bench player who
 covers, or the best free agent who can play when nobody does — and its deadline
 where Sleeper publishes one: a game's day, never a guessed kickoff or waiver time.
 
