@@ -154,6 +154,16 @@ chance and what this week is worth to it — "90% · 96% with a win, 83% without
 — weighing this week by the week's own forecast; the league table carries every
 team's.
 
+**Trades worth offering.** Until the deadline, League → Trades tries every
+one-for-one swap with every team (`nfl/market.py`) and keeps those that raise
+both starting lineups' projected points for the weeks after this one — at least
+half a point a week for them, which is the case for their saying yes. Kickers
+and defenses are left out, being streamed, as are injured-reserve and taxi
+players. The twelve best for you are played out against the season over the
+same simulated seasons as the league without them, and ranked by what they do
+to your playoff chance, which counts what the trade hands the other side: help
+a team you are racing and the trade can cost more than it gains.
+
 Every item can be **dismissed** — hidden while it reads as it did, and back,
 marked *back — changed since you dismissed it*, the moment its reason, evidence
 or deadline changes — or **snoozed** for three hours, until tomorrow at 8am, or
@@ -194,7 +204,7 @@ matchup and news its prompt line carries. Calls are kept per player, so a
 reload shows them, judging the page again asks only about the players whose
 situation moved, and a call on one who has moved since shows as *stale*.
 **League** covers the season: your results so far, the
-table (with each team's playoff chance, on NFL), every roster, the fixture list and the transaction feed. **My team** is
+table (with each team's playoff chance, on NFL), trades worth offering (NFL), every roster, the fixture list and the transaction feed. **My team** is
 your squad in more depth, and any row opens a player.
 
 ![Player detail](docs/screenshots/player.png)

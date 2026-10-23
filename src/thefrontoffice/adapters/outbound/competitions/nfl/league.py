@@ -8,6 +8,8 @@ wait on eighteen weeks of matchups.
 
 import logging
 import statistics
+from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import lineup_points, optimal_lineup
@@ -20,7 +22,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     week_dates,
 )
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import SleeperRoster, Transaction
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import SleeperRoster, Transaction, WeeklyProjection
 from thefrontoffice.domain.errors import SleeperAPIError
 from thefrontoffice.domain.models import (
     ActivityRow,
@@ -234,8 +236,38 @@ DEFAULT_STRENGTH_ERROR = 8.0
 played enough weeks to measure it: about what this league measured after six weeks."""
 
 
+@dataclass(frozen=True)
+class SeasonModel:
+    """The season ready to simulate, and what it was built from.
+
+    Kept together so a trade can rebuild two teams' rows the same way the
+    season built them: the same weeks' projections, the same rescaling, the
+    same spread.
+    """
+
+    season: SeasonInput
+    rosters: list[SleeperRoster]
+    projections: dict[int, dict[str, WeeklyProjection]]
+    """Each remaining week's projections, by week."""
+    scale: float
+    spread: float
+
+    def mean(self, state: Week, player_ids: Iterable[str], week: int) -> float:
+        """What a roster of these players is expected to score in `week`: its best lineup, rescaled."""
+        return _best_lineup(state, player_ids, self.projections[week]) * self.scale
+
+
 def season_input(client: SleeperNFLSource, state: Week, league_id: str, seed: int) -> SeasonInput | None:
     """The regular season from this week to its last, ready to simulate.
+
+    None in the playoffs, or where the league says nothing about them.
+    """
+    model = season_model(client, state, league_id, seed)
+    return model.season if model else None
+
+
+def season_model(client: SleeperNFLSource, state: Week, league_id: str, seed: int) -> SeasonModel | None:
+    """The regular season from this week to its last, with what it was built from.
 
     Each team's mean for a week is the best lineup its roster projects that
     week — which sees byes and injuries coming — rescaled so the league's
@@ -243,8 +275,6 @@ def season_input(client: SleeperNFLSource, state: Week, league_id: str, seed: in
     projections run short of what managers score and the points already
     banked are real points. The spread is the league's own: how far teams
     have scored from their averages so far.
-
-    None in the playoffs, or where the league says nothing about them.
     """
     league = state.league
     if not league.playoff_teams or not league.playoff_week_start or state.week >= league.playoff_week_start:
@@ -261,17 +291,16 @@ def season_input(client: SleeperNFLSource, state: Week, league_id: str, seed: in
                 paired.setdefault(entry["matchup_id"], []).append(str(entry.get("roster_id")))
         fixtures += [Fixture(week=week, home=pair[0], away=pair[1]) for pair in paired.values() if len(pair) == 2]
 
+    projections = {week: client.get_projections(state.season, week, league.scoring_format) for week in remaining}
     projected = {
-        (str(roster.roster_id), week): _best_lineup(
-            state, roster, client.get_projections(state.season, week, league.scoring_format)
-        )
+        (str(roster.roster_id), week): _best_lineup(state, roster.player_ids, projections[week])
         for week in remaining
         for roster in rosters
     }
     scale = _scale(rosters, projected, state.week)
     spread = _spread(client, league_id, state.week)
     strength_error = _strength_error(rosters, projected, scale, spread, state.week)
-    return SeasonInput(
+    season = SeasonInput(
         teams=tuple(
             TeamRecord(
                 team_id=str(r.roster_id),
@@ -294,10 +323,11 @@ def season_input(client: SleeperNFLSource, state: Week, league_id: str, seed: in
         strength_error=strength_error,
         seed=seed,
     )
+    return SeasonModel(season=season, rosters=rosters, projections=projections, scale=scale, spread=spread)
 
 
-def _best_lineup(state: Week, roster: SleeperRoster, projections: dict[str, Any]) -> float:
-    players = [p for p in (projection_for(pid, projections, state.players) for pid in roster.player_ids) if p]
+def _best_lineup(state: Week, player_ids: Iterable[str], projections: dict[str, WeeklyProjection]) -> float:
+    players = [p for p in (projection_for(pid, projections, state.players) for pid in player_ids) if p]
     return lineup_points(optimal_lineup(state.league.starting_slots, players))
 
 

@@ -891,6 +891,24 @@ class _SeasonProvider(_SummaryProvider):
         teams = (TeamRecord("1", "Me", 6, 0, 0, 900.0), TeamRecord("2", "Them", 0, 6, 0, 500.0))
         return SeasonInput(teams=teams, fixtures=(), scoring=(), spots=1, mine="1", week=7)
 
+    def trade_market(self, league_id: str) -> Any:
+        from thefrontoffice.domain.models import (
+            Fixture,
+            SeasonInput,
+            TeamRecord,
+            TeamWeek,
+            TradeMarket,
+            TradeOption,
+        )
+
+        # Level, with one game left between them: whoever is stronger in it goes through.
+        teams = (TeamRecord("1", "Me", 3, 3, 0, 900.0), TeamRecord("2", "Them", 3, 3, 0, 900.0))
+        even = (TeamWeek("1", 8, 100.0, 20.0), TeamWeek("2", 8, 100.0, 20.0))
+        season = SeasonInput(teams=teams, fixtures=(Fixture(8, "1", "2"),), scoring=even, spots=1, mine="1", week=7)
+        rows = (TeamWeek("1", 8, 120.0, 20.0), TeamWeek("2", 8, 100.0, 20.0))
+        option = TradeOption("2", ("A (QB)",), ("B (WR)",), points=20.0, their_points=1.0, scoring=rows)
+        return TradeMarket(season=season, options=(option,))
+
     def schedule(self, league_id: str) -> Any:
         from thefrontoffice.domain.models import LeagueSchedule, StandingRow
 
@@ -905,6 +923,21 @@ def test_the_week_carries_the_playoff_chance(client: TestClient, monkeypatch: py
     headline = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["headline"]
 
     assert {s["label"]: s["value"] for s in headline}["Playoffs"] == "100%"
+
+
+def test_trades_are_priced_in_playoff_chance(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from thefrontoffice.domain.models import Summary
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: _SeasonProvider(Summary()))
+
+    [idea] = client.get("/api/nfl-sleeper/leagues/L1/trades").json()
+
+    assert (idea["team"], idea["giving"], idea["receiving"]) == ("Them", ["A (QB)"], ["B (WR)"])
+    assert idea["playoffs_change"] > 0
+
+
+def test_a_competition_with_no_season_to_play_finds_no_trades(client: TestClient) -> None:
+    assert client.get("/api/nfl-sleeper/leagues/L1/trades").status_code == 400
 
 
 def test_the_table_carries_each_teams_playoff_chance(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

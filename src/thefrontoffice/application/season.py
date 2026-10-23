@@ -12,7 +12,8 @@ worth in a way a single figure cannot.
 
 import logging
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from dataclasses import replace
 
 from thefrontoffice.domain.models import (
     LeagueSchedule,
@@ -21,6 +22,9 @@ from thefrontoffice.domain.models import (
     Stat,
     Summary,
     TeamOdds,
+    TeamWeek,
+    TradeIdea,
+    TradeOption,
 )
 from thefrontoffice.domain.ports import SeasonProvider
 
@@ -28,6 +32,11 @@ logger = logging.getLogger(__name__)
 
 SEASONS = 5_000
 """Enough that a playoff chance moves by about a point between seeds."""
+
+TRADES_SHOWN = 5
+
+MIN_TRADE_CHANGE = 0.005
+"""Half a point of playoff chance: less than that is a trade that changes nothing worth asking for."""
 
 
 def simulate_season(season: SeasonInput, simulations: int = SEASONS) -> PlayoffOdds:
@@ -150,3 +159,45 @@ class SeasonEngine:
             return None
         logger.info(f"{self.provider.label}: simulating {len(season.fixtures)} fixtures to the playoffs")
         return simulate_season(season)
+
+    def trades(self, league_id: str) -> list[TradeIdea]:
+        """The trades that most raise your playoff chance, best first; none past the deadline.
+
+        Every trade is played out over the same seasons as the league without
+        it — one seed, the same draws in the same order — so the difference is
+        the trade and not the luck of two different sets of seasons.
+        """
+        market = self.provider.trade_market(league_id)
+        if market is None or not market.season.spots or not market.options:
+            return []
+        logger.info(f"{self.provider.label}: pricing {len(market.options)} trades against the playoff race")
+        before = simulate_season(market.season)
+        names = {t.team_id: t.name for t in market.season.teams}
+        ideas = [_priced(market.season, before, option, names) for option in market.options]
+        worth = [idea for idea in ideas if idea.playoffs_change >= MIN_TRADE_CHANGE]
+        return sorted(worth, key=lambda idea: (-idea.playoffs_change, -idea.points))[:TRADES_SHOWN]
+
+
+def _priced(season: SeasonInput, before: PlayoffOdds, option: TradeOption, names: dict[str, str]) -> TradeIdea:
+    after = simulate_season(replace(season, scoring=_with_rows(season.scoring, option.scoring)))
+
+    def chance(odds: PlayoffOdds) -> float:
+        return next((t.playoffs for t in odds.teams if t.team_id == option.team_id), 0.0)
+
+    return TradeIdea(
+        team_id=option.team_id,
+        team=names.get(option.team_id, option.team_id),
+        giving=list(option.giving),
+        receiving=list(option.receiving),
+        playoffs=after.playoffs,
+        playoffs_change=after.playoffs - before.playoffs,
+        their_playoffs_change=chance(after) - chance(before),
+        points=option.points,
+        their_points=option.their_points,
+    )
+
+
+def _with_rows(scoring: tuple[TeamWeek, ...], rows: Iterable[TeamWeek]) -> tuple[TeamWeek, ...]:
+    """The season's scoring with some team-weeks replaced."""
+    replaced = {(row.team_id, row.week): row for row in rows}
+    return tuple(replaced.get((row.team_id, row.week), row) for row in scoring)

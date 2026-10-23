@@ -632,6 +632,50 @@ class PlayoffOdds(BaseModel):
     simulations: int
 
 
+@dataclass(frozen=True)
+class TradeOption:
+    """One trade worth simulating: who moves, and how both teams score once it has.
+
+    The provider proposes it, because which trades make sense is a question of
+    lineups and positions; the season engine prices it, by playing the season
+    out with these rows in place of the two teams' own.
+    """
+
+    team_id: str
+    """The other side of the trade."""
+    giving: tuple[str, ...]
+    receiving: tuple[str, ...]
+    """Who moves each way, by name."""
+    points: float
+    """Your starters' projected points a week, with the trade less without it."""
+    their_points: float
+    """The same for theirs: a trade that leaves them worse off is not one they will take."""
+    scoring: tuple[TeamWeek, ...]
+    """Both teams' scoring in each week the trade changes, replacing their rows in the season."""
+
+
+@dataclass(frozen=True)
+class TradeMarket:
+    """The rest of the season, and the trades worth playing it out with."""
+
+    season: SeasonInput
+    options: tuple[TradeOption, ...]
+
+
+class TradeIdea(BaseModel):
+    """A trade worth offering, priced in what it does to the playoff race."""
+
+    team_id: str
+    team: str = Field(description="The manager to offer it to.")
+    giving: list[str]
+    receiving: list[str]
+    playoffs: float = Field(description="Your chance of a playoff place with the trade made.")
+    playoffs_change: float = Field(description="That chance less your chance without it.")
+    their_playoffs_change: float = Field(description="The same for the other side: what you would hand a rival.")
+    points: float = Field(description="Your starters' projected points a week, with the trade less without it.")
+    their_points: float = Field(description="The same for theirs, which is the case for them saying yes.")
+
+
 class CalibrationBucket(BaseModel):
     """Matchups the simulation gave a similar chance, and how often that side won."""
 

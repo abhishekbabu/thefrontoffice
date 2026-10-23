@@ -58,6 +58,7 @@ from thefrontoffice.domain.models import (
     Subject,
     Summary,
     TeamRef,
+    TradeIdea,
 )
 from thefrontoffice.domain.ports import ChatSession, ForecastProvider, SeasonProvider
 
@@ -466,6 +467,18 @@ def _register_routes(app: FastAPI) -> None:
         schedule = provider.schedule(league_id)
         odds = _season(provider, league_id) if isinstance(provider, SeasonProvider) else None
         return attach_table(schedule, odds) if odds is not None else schedule
+
+    @app.get("/api/{competition}/leagues/{league_id}/trades", response_model=list[TradeIdea])
+    def trades(competition: str, league_id: str) -> list[TradeIdea]:
+        """The trades that would most raise your playoff chance and that the other side gains from too.
+
+        Its own route because it plays the season out once per trade tried —
+        seconds, not the instant a table should take to appear.
+        """
+        provider = data.build_provider(competition)
+        if not isinstance(provider, SeasonProvider):
+            raise HTTPException(status_code=400, detail=f"{provider.label} does not support finding trades.")
+        return season_engine(provider).trades(league_id)
 
     @app.post("/api/{competition}/leagues/{league_id}/scout", response_model=ScoutReport)
     def scout(competition: str, league_id: str) -> ScoutReport:
