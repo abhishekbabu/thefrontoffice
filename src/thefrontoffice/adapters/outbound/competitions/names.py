@@ -9,13 +9,10 @@ player's numbers to another, which is worse than no match at all.
 import logging
 import re
 import unicodedata
-from typing import Generic, TypeVar
 
 logger = logging.getLogger(__name__)
 
 _SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
-
-T = TypeVar("T")
 
 
 def normalize_name(name: str) -> str:
@@ -34,7 +31,7 @@ def normalize_name(name: str) -> str:
     return " ".join(parts)
 
 
-class NameIndex(Generic[T]):
+class NameIndex[T]:
     """Values looked up by player name, refusing ambiguity.
 
     An exact normalized match wins. Failing that, a surname match is allowed

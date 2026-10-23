@@ -4,7 +4,7 @@ The provider is a stand-in with one to-do item and one player; the model is
 the conftest fake, whose chat records what was sent.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from conftest import FakeAI, FakeAnswers
@@ -97,7 +97,7 @@ def test_an_earlier_verdict_on_the_item_is_part_of_the_conversation() -> None:
         scout_scope(OneWeek.label, "L1"),
         Remembered(
             answer=MOCK_FPL_REPORT.model_copy(update={"tasks": [judged]}),
-            answered_at=datetime.now(timezone.utc),
+            answered_at=datetime.now(UTC),
             inputs="x",
         ),
     )

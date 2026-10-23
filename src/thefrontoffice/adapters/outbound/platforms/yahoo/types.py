@@ -3,10 +3,10 @@ Yahoo Fantasy API type definitions.
 """
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class PlayerStatus(str, Enum):
+class PlayerStatus(StrEnum):
     """Yahoo API player status filter values."""
 
     ALL_AVAILABLE = "A"
@@ -16,7 +16,7 @@ class PlayerStatus(str, Enum):
     KEEPERS = "K"
 
 
-class PlayerStat(str, Enum):
+class PlayerStat(StrEnum):
     """Yahoo API player stat / sort field values."""
 
     OVERALL_RANK = "OR"
@@ -35,7 +35,7 @@ class PlayerStat(str, Enum):
     TURNOVERS = "19"
 
 
-class Timeframe(str, Enum):
+class Timeframe(StrEnum):
     """Yahoo API time window values for sorting."""
 
     SEASON = "season"

@@ -236,7 +236,7 @@ def default_model() -> AnalysisModel:
 
 
 @functools.cache
-def _cooldowns() -> "Cooldowns":
+def _cooldowns() -> Cooldowns:
     from thefrontoffice.adapters.outbound.llm.routing import Cooldowns
 
     return Cooldowns()

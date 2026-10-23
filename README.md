@@ -20,7 +20,9 @@ Three competitions, each on the platform that runs it:
 ## Quick start
 
 **1. Install the two CLIs.** Python is not installed separately — `uv` provisions
-an interpreter matching `requires-python`.
+the one `requires-python` asks for, Python 3.15. That needs uv 0.13.5 or newer
+(`brew upgrade uv`, or `uv self update`); an older one cannot find 3.15.0 and
+refuses to run here, saying so.
 
 ```bash
 brew bundle                                            # macOS / Linux

@@ -1,6 +1,6 @@
 """Tests for ESPN's news feeds: `platforms/espn/client.py`."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +59,7 @@ def test_a_clubs_news_comes_back_newest_first_with_its_tagged_players(tmp_path: 
     assert [a.headline for a in news["NYJ"]] == ["newer", "older"]
     older = news["NYJ"][1]
     assert older.athletes == ["Breece Hall"]
-    assert older.published == datetime(2026, 10, 15, 12, tzinfo=timezone.utc)
+    assert older.published == datetime(2026, 10, 15, 12, tzinfo=UTC)
     assert older.url and older.summary
     # Asked by ESPN's own id for the club, not its abbreviation.
     assert any("team=20" in url for url in session.requests)

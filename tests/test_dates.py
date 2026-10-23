@@ -6,7 +6,7 @@ rendered on a laptop and raised `ValueError` in CI. Nothing here may reach for
 `strftime` with a dash-modifier again.
 """
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from thefrontoffice.adapters.outbound.competitions.dates import at_time, day_month, weekday_day_month
 
@@ -36,9 +36,9 @@ def test_every_weekday_has_a_name() -> None:
 
 
 def test_a_time_is_shown_beside_the_day() -> None:
-    assert at_time(datetime(2026, 8, 29, 14, 0, tzinfo=timezone.utc)) == "Sat 29 Aug, 14:00"
+    assert at_time(datetime(2026, 8, 29, 14, 0, tzinfo=UTC)) == "Sat 29 Aug, 14:00"
 
 
 def test_a_time_keeps_its_leading_zero() -> None:
     """A clock reads 09:30, not 9:30 — the dash rule is about the date only."""
-    assert at_time(datetime(2026, 8, 29, 9, 5, tzinfo=timezone.utc)) == "Sat 29 Aug, 09:05"
+    assert at_time(datetime(2026, 8, 29, 9, 5, tzinfo=UTC)) == "Sat 29 Aug, 09:05"

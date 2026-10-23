@@ -30,9 +30,8 @@ The highest-trust category — real bugs found by reading, not speculation.
   a path the caller needs to know about, `raise X` without `from e`.
 - **Naive datetimes.** `datetime.now()` or `date.today()` without a timezone for
   anything persisted or compared. Basketball must anchor to `PACIFIC`; a local
-  clock shifts the day boundary. FPL timestamps carry a trailing `Z` that
-  `datetime.fromisoformat` rejects on 3.10 — anything not going through
-  `parse_utc` is a bug on the supported floor.
+  clock shifts the day boundary. A platform timestamp parsed anywhere but
+  `parse_utc` can come out naive, and comparing it to an aware `now` raises.
 - **Date label versus instant.** `ScheduledGame.date` is a label for window
   tests, not a moment. Comparing it to an aware datetime, or reading a game's
   `status` for a game that is not today, is the mistake this distinction exists

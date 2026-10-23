@@ -7,15 +7,12 @@ each side should fix one message, not discover the second on the re-run.
 """
 
 from collections.abc import Callable
-from typing import TypeVar
 
 from thefrontoffice.domain.errors import PlayerNotFoundError
 from thefrontoffice.domain.models import TradeProposal
 
-T = TypeVar("T")
 
-
-def resolve_sides(proposal: TradeProposal, resolve_one: Callable[[str], T | None]) -> tuple[list[T], list[T]]:
+def resolve_sides[T](proposal: TradeProposal, resolve_one: Callable[[str], T | None]) -> tuple[list[T], list[T]]:
     """Resolve both sides of a trade.
 
     Args:

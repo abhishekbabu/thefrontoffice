@@ -4,6 +4,7 @@ Covers `nfl/prompt.py`. The assertions are on prompt *content* — the league
 rules live there, and a prompt that renders is not a prompt that is right.
 """
 
+from datetime import UTC
 from typing import Any
 
 from conftest import (
@@ -362,12 +363,12 @@ def test_a_to_do_item_carries_its_evidence_into_the_prompt() -> None:
 
 
 def test_each_player_line_carries_his_latest_news() -> None:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 
     article = NewsArticle(
-        article_id="1", published=datetime.now(timezone.utc), headline="Good RB takes over", summary="Lead back now."
+        article_id="1", published=datetime.now(UTC), headline="Good RB takes over", summary="Lead back now."
     )
     client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS))
 

@@ -5,6 +5,7 @@ that every scenario can say exactly who is where.
 """
 
 from dataclasses import replace
+from datetime import UTC
 
 from conftest import SLEEPER_USER_ID, FakeESPN, FakeSleeper, _proj, _provider
 
@@ -362,15 +363,13 @@ def test_stat_lines_that_will_not_load_leave_the_list_without_evidence() -> None
 
 
 def test_a_move_carries_the_latest_headline_about_each_player_in_it() -> None:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 
     better = replace(BENCH_WR, points=12.0)
     client = _client([QB, RB, WR, replace(FLEX, points=5.0), better], ["qb", "rb", "wr", "te"], ["wr2"])
-    article = NewsArticle(
-        article_id="1", published=datetime.now(timezone.utc), headline=f"{better.name} is the new WR1"
-    )
+    article = NewsArticle(article_id="1", published=datetime.now(UTC), headline=f"{better.name} is the new WR1")
 
     [action] = _actions(client, FakeESPN({better.team: [article]}))
 

@@ -33,7 +33,7 @@ import os
 import re
 import tempfile
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -140,18 +140,18 @@ class JsonDiskCache:
             return None
         try:
             stored_at = datetime.fromisoformat(entry["stored_at"])
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
         if stored_at.tzinfo is None:
             return None  # no zone, so it cannot be placed on a timeline
-        moment = now or datetime.now(timezone.utc)
+        moment = now or datetime.now(UTC)
         if not _rule(freshness)(stored_at, moment):
             return None
         return entry.get("value")
 
     def set(self, key: str, value: Any, now: datetime | None = None) -> None:
         """Store `value` under `key` and persist it."""
-        stored_at = (now or datetime.now(timezone.utc)).isoformat()
+        stored_at = (now or datetime.now(UTC)).isoformat()
         entry = {"stored_at": stored_at, "value": value}
         self._entries[key] = entry
         self._write(key, entry)

@@ -48,7 +48,7 @@ def _is_unresolved_symlink(path: Path) -> bool:
     """
     try:
         content = path.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeDecodeError):
+    except OSError, UnicodeDecodeError:
         return False
     return content == "AGENTS.md" and "\n" not in content
 

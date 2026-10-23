@@ -5,6 +5,7 @@ wire, and the links out. The week, the league and the prompt have their own
 modules beside this one.
 """
 
+from datetime import UTC
 from typing import Any
 
 import pytest
@@ -191,11 +192,11 @@ def test_the_drawer_shows_what_the_projection_rests_on() -> None:
 
 
 def test_the_drawer_shows_the_latest_news_about_the_player() -> None:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 
-    article = NewsArticle(article_id="1", published=datetime.now(timezone.utc), headline="Good RB takes over")
+    article = NewsArticle(article_id="1", published=datetime.now(UTC), headline="Good RB takes over")
     detail = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS), FakeESPN({"BUF": [article]})).player("L1", "rb1")
 
     [group] = [g for g in detail.groups if g.title == "Latest news"]

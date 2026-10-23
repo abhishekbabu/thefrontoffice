@@ -224,5 +224,5 @@ class SleeperNBAForm:
 def _parse(iso: str) -> date | None:
     try:
         return date.fromisoformat(iso[:10])
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None

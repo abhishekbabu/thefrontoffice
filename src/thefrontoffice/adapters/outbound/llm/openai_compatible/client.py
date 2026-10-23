@@ -72,7 +72,7 @@ def _retry_after(error: Exception) -> float | None:
     value = getattr(response, "headers", {}).get("retry-after") if response is not None else None
     try:
         return float(value) if value is not None else None
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -106,7 +106,7 @@ class OpenAICompatibleChat:
     turn carry on with a different provider.
     """
 
-    def __init__(self, model: "OpenAICompatibleClient", messages: list[dict[str, str]]) -> None:
+    def __init__(self, model: OpenAICompatibleClient, messages: list[dict[str, str]]) -> None:
         self._model = model
         self.messages = messages
 

@@ -1,12 +1,12 @@
 """Tests for joining ESPN's club news to Sleeper's players: `nfl/news.py`."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from thefrontoffice.adapters.outbound.competitions.nfl.news import NEWS_WINDOW, attach, dated, espn_club
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta
 
-NOW = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 22, 12, tzinfo=UTC)
 
 PLAYERS = {
     "hall": PlayerMeta(player_id="hall", name="Breece Hall", position="RB", team="NYJ"),

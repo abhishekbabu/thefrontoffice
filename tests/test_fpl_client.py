@@ -4,7 +4,7 @@ FPL is public and read-only, so there is nothing to authenticate — only the
 HTTP session and the disk cache stand in.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -226,18 +226,18 @@ def test_availability_reports_a_doubt(client: FPLClient) -> None:
 
 
 def test_the_upcoming_gameweek_is_the_next_open_deadline(client: FPLClient) -> None:
-    now = datetime(2026, 8, 16, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 16, tzinfo=UTC)
     assert client.upcoming_gameweek(now).id == 2
 
 
 def test_a_passed_deadline_is_never_the_upcoming_gameweek(client: FPLClient) -> None:
     """Once a deadline passes that team is locked, so advice about it is too late."""
-    now = datetime(2026, 8, 22, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 22, tzinfo=UTC)
     assert client.upcoming_gameweek(now).id == 3
 
 
 def test_the_last_gameweek_stands_once_the_season_runs_out(client: FPLClient) -> None:
-    now = datetime(2027, 6, 1, tzinfo=timezone.utc)
+    now = datetime(2027, 6, 1, tzinfo=UTC)
     assert client.upcoming_gameweek(now).id == 3
 
 

@@ -373,7 +373,7 @@ def test_a_failed_handshake_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 class FakeWeek:
     """Stands in for yahoofantasy's Week."""
 
-    instances: list["FakeWeek"] = []
+    instances: list[FakeWeek] = []
 
     def __init__(self, ctx: Any, league: Any, week_num: Any) -> None:
         self.matchups = FakeWeek.matchups_to_return

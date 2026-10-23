@@ -57,7 +57,7 @@ class PlayerContextBuilder:
         matchup_end: date | None = None,
         annotations: dict[str, str] | None = None,
         remaining_games: dict[str, int] | None = None,
-        projections: "ProjectionIndex | None" = None,
+        projections: ProjectionIndex | None = None,
     ) -> str:
         """One prompt line per player, concatenated.
 
@@ -76,7 +76,7 @@ class PlayerContextBuilder:
         matchup_end: date | None = None,
         annotations: dict[str, str] | None = None,
         remaining_games: dict[str, int] | None = None,
-        projections: "ProjectionIndex | None" = None,
+        projections: ProjectionIndex | None = None,
     ) -> dict[str, str]:
         """Same as build_context_for_players, keyed by player name.
 

@@ -5,6 +5,7 @@ which status a failure becomes, what a client is told, and that a domain model
 crosses the wire unchanged. The reports themselves are the engines' tests.
 """
 
+from datetime import UTC
 from typing import Any
 
 import pytest
@@ -294,12 +295,12 @@ def test_a_league_never_judged_has_no_judgment_to_show(client: TestClient) -> No
 
 
 def test_the_last_judgment_is_shown_without_running_the_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from thefrontoffice.domain.models import Remembered
 
     engine = _Engine()
-    engine.judged = Remembered(answer=MOCK_FPL_REPORT, answered_at=datetime.now(timezone.utc), inputs="abc")
+    engine.judged = Remembered(answer=MOCK_FPL_REPORT, answered_at=datetime.now(UTC), inputs="abc")
     monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider())
     monkeypatch.setattr(web, "scout_engine", lambda p: engine)
 

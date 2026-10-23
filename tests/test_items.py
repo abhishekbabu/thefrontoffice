@@ -1,6 +1,6 @@
 """Tests for the manager's decisions about to-do items: `application/items.py`."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from conftest import FakeItemStates
@@ -10,7 +10,7 @@ from thefrontoffice.application.items import ItemDecisions, apply_decisions
 from thefrontoffice.domain.errors import ItemDecisionError
 from thefrontoffice.domain.models import Action, ItemDecision, ItemState
 
-NOW = datetime(2026, 10, 22, 18, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 22, 18, tzinfo=UTC)
 
 SWAP = Action(kind="lineup", urgency="soon", title="Start A over B", reason="+2.5 proj pts.", key="swap:a:b")
 BYE = Action(kind="waiver", urgency="later", title="Find a RB for week 8", reason="A is on bye.", key="bye:8:RB")
@@ -107,7 +107,7 @@ def test_a_snooze_is_kept_in_utc_whatever_offset_it_arrived_with() -> None:
         "NFL", "L1", ItemDecision(key=SWAP.key, decision="snooze", until=datetime(2026, 10, 23, 8, tzinfo=pacific))
     )
 
-    assert state is not None and state.snoozed_until == datetime(2026, 10, 23, 15, tzinfo=timezone.utc)
+    assert state is not None and state.snoozed_until == datetime(2026, 10, 23, 15, tzinfo=UTC)
 
 
 def test_a_snooze_into_the_past_is_refused() -> None:

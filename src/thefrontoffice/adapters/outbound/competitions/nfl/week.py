@@ -12,7 +12,7 @@ which of the two it is showing.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
@@ -117,7 +117,7 @@ def parse_date(iso: str) -> date | None:
     """Sleeper publishes a day, not an instant, so this is a label not a time."""
     try:
         return datetime.strptime(iso[:10], "%Y-%m-%d").date()
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -151,7 +151,7 @@ def moment(epoch_ms: int) -> str:
     """
     if not epoch_ms:
         return ""
-    return day_month(datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc))
+    return day_month(datetime.fromtimestamp(epoch_ms / 1000, tz=UTC))
 
 
 def games_by_week(client: SleeperClient, season: str) -> dict[int, list[ScheduledGame]]:
