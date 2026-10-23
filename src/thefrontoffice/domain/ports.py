@@ -26,6 +26,7 @@ from thefrontoffice.domain.models import (
     SeasonInput,
     Summary,
     TeamRef,
+    TradeMarket,
     TradeProposal,
 )
 
@@ -333,4 +334,8 @@ class SeasonProvider(Protocol):
 
     def season_input(self, league_id: str) -> SeasonInput | None:
         """The rest of the regular season; None where it is over or has no playoffs to reach."""
+        ...
+
+    def trade_market(self, league_id: str) -> TradeMarket | None:
+        """The season with the trades worth trying; None past the deadline or where there is no season to play."""
         ...

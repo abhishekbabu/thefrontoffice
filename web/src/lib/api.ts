@@ -268,6 +268,21 @@ export type TeamRef = {
   is_mine: boolean;
 };
 
+/** A trade worth offering, priced in what it does to the playoff race. Fractions, not percents. */
+export type TradeIdea = {
+  team_id: string;
+  team: string;
+  giving: string[];
+  receiving: string[];
+  playoffs: number;
+  playoffs_change: number;
+  /** What it does to theirs: the cost of strengthening a rival. */
+  their_playoffs_change: number;
+  /** Starters' projected points a week, with the trade less without it. */
+  points: number;
+  their_points: number;
+};
+
 export type LeagueSchedule = {
   season: ScheduleRow[];
   standings: StandingRow[];
@@ -366,6 +381,8 @@ export const api = {
   summary: (competition: string, league: string) => request<Summary>(`/api/${competition}/leagues/${league}/summary`),
   schedule: (competition: string, league: string) =>
     request<LeagueSchedule>(`/api/${competition}/leagues/${league}/schedule`),
+  trades: (competition: string, league: string) =>
+    request<TradeIdea[]>(`/api/${competition}/leagues/${league}/trades`),
   decide: (competition: string, league: string, decision: ItemDecision) =>
     post<unknown>(`/api/${competition}/leagues/${league}/items`, decision),
   freeAgentCalls: (competition: string, league: string, playerIds: string[]) =>

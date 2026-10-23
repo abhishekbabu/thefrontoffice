@@ -24,6 +24,8 @@ from thefrontoffice.domain.models import (
     TeamOdds,
     TeamRecord,
     TeamWeek,
+    TradeMarket,
+    TradeOption,
 )
 
 FEW = 2_000
@@ -165,6 +167,80 @@ class _Over:
     def season_input(self, league_id: str) -> SeasonInput | None:
         return None
 
+    def trade_market(self, league_id: str) -> TradeMarket | None:
+        return None
+
 
 def test_a_season_with_nothing_left_to_play_for_has_no_odds() -> None:
     assert SeasonEngine(_Over()).odds("L1") is None
+
+
+# ── pricing trades ──────────────────────────────────────────────────────
+
+# Two places for three teams level on record: who gets them is the season left.
+RACE = _season(
+    [_team("a", 5), _team("b", 5), _team("c", 5)],
+    [Fixture(10, "a", "b"), Fixture(11, "a", "c"), Fixture(11, "b", "c"), Fixture(12, "b", "c")],
+    {"a": 100, "b": 100, "c": 100},
+    spots=1,
+)
+
+RACE_ODDS = simulate_season(RACE).playoffs
+
+
+def _trade(team: str, mine: float, theirs: float, name: str = "X") -> TradeOption:
+    """A trade with `team` that moves your mean to `mine` and theirs to `theirs` in every week."""
+    weeks = {f.week for f in RACE.fixtures}
+    return TradeOption(
+        team_id=team,
+        giving=(name,),
+        receiving=("Y",),
+        points=mine - 100,
+        their_points=theirs - 100,
+        scoring=tuple(TeamWeek(t, w, mean, 20.0) for t, mean in (("a", mine), (team, theirs)) for w in weeks),
+    )
+
+
+class _Market:
+    label = "Test"
+
+    def __init__(self, *options: TradeOption) -> None:
+        self.options = options
+
+    def season_input(self, league_id: str) -> SeasonInput | None:
+        return RACE
+
+    def trade_market(self, league_id: str) -> TradeMarket | None:
+        return TradeMarket(season=RACE, options=self.options)
+
+
+def test_a_trade_that_makes_you_stronger_raises_your_playoff_chance() -> None:
+    [idea] = SeasonEngine(_Market(_trade("b", mine=115, theirs=101))).trades("L1")
+
+    assert idea.playoffs_change > 0
+    assert idea.playoffs == RACE_ODDS + idea.playoffs_change
+    assert (idea.team, idea.points, idea.their_points) == ("B", 15, 1)
+
+
+def test_a_trade_that_changes_nothing_is_not_offered() -> None:
+    assert SeasonEngine(_Market(_trade("b", mine=100, theirs=100))).trades("L1") == []
+
+
+def test_trades_are_ranked_on_the_playoff_chance_not_on_points() -> None:
+    """More points for you can be worth less, when the trade makes a team you are racing as strong as it makes you."""
+    rival = _trade("b", mine=110, theirs=110, name="to the rival")
+    other = _trade("c", mine=108, theirs=100, name="elsewhere")
+
+    ideas = SeasonEngine(_Market(rival, other)).trades("L1")
+
+    assert [i.giving for i in ideas][0] == ["elsewhere"]
+
+
+def test_what_a_trade_hands_the_other_side_is_counted() -> None:
+    [idea] = SeasonEngine(_Market(_trade("b", mine=115, theirs=110))).trades("L1")
+
+    assert idea.their_playoffs_change > 0
+
+
+def test_no_market_is_no_trades() -> None:
+    assert SeasonEngine(_Over()).trades("L1") == []

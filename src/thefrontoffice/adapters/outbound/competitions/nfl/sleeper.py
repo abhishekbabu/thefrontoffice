@@ -16,7 +16,7 @@ from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
-from thefrontoffice.adapters.outbound.competitions.nfl import actions, evidence, league, news, outcomes, prompt
+from thefrontoffice.adapters.outbound.competitions.nfl import actions, evidence, league, market, news, outcomes, prompt
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupSlot,
     best_upgrade,
@@ -81,6 +81,7 @@ from thefrontoffice.domain.models import (
     Swap,
     TeamRef,
     Tone,
+    TradeMarket,
     TradeProposal,
 )
 from thefrontoffice.domain.ports import LeagueRef
@@ -1080,6 +1081,11 @@ class SleeperNFLProvider:
         return league.season_input(
             self.client, state, league_id, seed=_seed(self.label, league_id, "season", state.week)
         )
+
+    def trade_market(self, league_id: str) -> TradeMarket | None:
+        """The rest of the season, with the one-for-one trades that would help both lineups."""
+        state = self._week(league_id)
+        return market.build(self.client, state, league_id, seed=_seed(self.label, league_id, "season", state.week))
 
     def _season_table(self, player_id: str, state: Week) -> StatTable | None:
         """This season beside the two before it, read across rather than down.
