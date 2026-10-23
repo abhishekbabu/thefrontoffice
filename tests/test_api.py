@@ -782,7 +782,7 @@ class _ForecastProvider(_SummaryProvider):
         super().__init__(summary)
         self.error = error
 
-    def matchup_input(self, league_id: str) -> Any:
+    def matchup_input(self, league_id: str, candidates: Any = ()) -> Any:
         from thefrontoffice.domain.models import MatchupInput, Outcomes
 
         if self.error:
@@ -814,3 +814,62 @@ def test_a_week_that_cannot_be_simulated_is_still_the_week(client: TestClient, m
     body = client.get("/api/nfl-sleeper/leagues/L1/summary").json()
 
     assert body["forecast"] is None and [s["label"] for s in body["headline"]] == ["Week"]
+
+
+class _WireProvider(_ForecastProvider):
+    """A forecastable provider with two free agents, one of whom can start."""
+
+    def free_agents(self, league_id: str, query: Any) -> Any:
+        from thefrontoffice.domain.models import PlayerPage
+
+        self.query = query
+        return PlayerPage(
+            players=[PlayerCard(player_id=pid, columns={"Player": pid}) for pid in ("bench", "starter")], total=2
+        )
+
+    def matchup_input(self, league_id: str, candidates: Any = ()) -> Any:
+        from thefrontoffice.domain.models import LineupMove, MatchupInput, Outcomes
+
+        if self.error:
+            raise self.error
+        mine = Outcomes("a", "A", 10.0, (10.0,))
+        moves = tuple(
+            LineupMove(f"{c}>a", f"Start {c}", ("a",), (Outcomes(c, c, 20.0, (20.0,)),))
+            for c in candidates
+            if c == "starter"
+        )
+        return MatchupInput(mine=(mine,), theirs=(Outcomes("b", "B", 15.0, (15.0,)),), moves=moves)
+
+
+def test_free_agents_carry_what_each_does_to_the_chance(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: _WireProvider(None))
+
+    rows = {p["player_id"]: p for p in client.get("/api/nfl-sleeper/leagues/L1/free-agents").json()["players"]}
+
+    assert rows["starter"]["values"]["Win"] == 1.0  # a sure loss turned a sure win
+    assert rows["bench"]["columns"]["Win"] == "—"
+
+
+def test_sorting_by_the_chance_orders_the_page_from_the_default_ranking(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = _WireProvider(None)
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: provider)
+
+    body = client.get("/api/nfl-sleeper/leagues/L1/free-agents?sort=Win").json()
+
+    assert provider.query.sort == ""
+    assert [p["player_id"] for p in body["players"]] == ["starter", "bench"]
+
+
+def test_free_agents_that_cannot_be_priced_are_still_the_wire(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from thefrontoffice.domain.errors import SleeperAPIError
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: _WireProvider(None, SleeperAPIError("down")))
+
+    body = client.get("/api/nfl-sleeper/leagues/L1/free-agents").json()
+
+    assert [p["player_id"] for p in body["players"]] == ["bench", "starter"]
+    assert all("Win" not in p["columns"] for p in body["players"])

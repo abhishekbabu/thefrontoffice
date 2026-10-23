@@ -244,12 +244,13 @@ def matchup(
     )
     stats = [
         Stat(label="Opponent", value=opp_name + (f" ({opp_roster.record})" if opp_roster else "")),
-        Stat(label="Live", value=f"{mine_points:.1f} – {their_points:.1f}"),
-        # The only figure here that is a verdict rather than a reading, so
-        # it is the only one that takes a tone.
+        # Toned by who is ahead: the score is the verdict so far. No separate
+        # margin beside it — that is the same two numbers subtracted, and
+        # read next to the simulated "Likely margin" it looked like a second
+        # forecast that disagreed with the first.
         Stat(
-            label="Margin",
-            value=f"{margin:+.1f}",
+            label="Live",
+            value=f"{mine_points:.1f} – {their_points:.1f}",
             tone="good" if margin > 0 else "warning" if margin < 0 else "neutral",
         ),
     ]

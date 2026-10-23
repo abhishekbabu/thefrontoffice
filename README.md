@@ -154,7 +154,12 @@ page loaded is said to be gone rather than answered about.
 filterable by position. On NFL a **Fits** column compares each with the weakest
 starter he could replace — "+3.2 over Bernard", or "−0.4 vs Cleveland Browns" in
 a deep league where nobody on the wire outprojects a starter — and sorts the
-whole pool by it, so the closest replacements come first. With a model, **Judge**
+whole pool by it, so the closest replacements come first. Beside it, **Win**
+is what starting him would do to this week's chance of winning, at his best
+legal start — priced by the same simulation as the to-do list, so a boom-or-bust
+receiver can rate above a steadier, higher projection when you are the
+underdog. It is priced for the page on screen; sorting by it orders that page.
+With a model, **Judge**
 puts the first ten rows on screen to it: each gets a call — *add* (and who to
 drop), *watch* or *pass* — on a line under its row, grounded in the role,
 matchup and news its prompt line carries. Calls are kept per player, so a

@@ -5,15 +5,29 @@ simulation should conclude — a sure thing, a coin flip, a move that cannot
 hurt — without depending on any sport's data.
 """
 
+from collections.abc import Sequence
+
 import pytest
 
-from thefrontoffice.application.forecasting import WORTH_A_ROW, attach, calibrate, simulate
+from thefrontoffice.application.forecasting import (
+    WIN_COLUMN,
+    WORTH_A_ROW,
+    ForecastEngine,
+    attach,
+    attach_pickups,
+    calibrate,
+    pickup_chances,
+    simulate,
+)
 from thefrontoffice.domain.models import (
     Action,
     LineupMove,
     MatchupInput,
     Outcomes,
+    PickupChance,
     PlayedMatchup,
+    PlayerCard,
+    PlayerPage,
     Stat,
     Summary,
 )
@@ -260,3 +274,92 @@ def test_no_games_to_score_scores_nothing() -> None:
     from thefrontoffice.application.forecasting import score_ranges
 
     assert score_ranges([]).players == 0
+
+
+# ── the wire, priced ────────────────────────────────────────────────────
+
+
+def test_a_free_agent_is_priced_at_the_start_that_helps_most() -> None:
+    weak, weaker = _player("weak", 8.0), _player("weaker", 4.0)
+    signing = _player("fa", 12.0)
+    matchup = _match(
+        [weak, weaker],
+        [_player("them", 17.0)],  # 16 replacing the weak starter loses; 20 replacing the weaker wins
+        LineupMove("fa>weak", "Start FA over WEAK", ("weak",), (signing,)),
+        LineupMove("fa>weaker", "Start FA over WEAKER", ("weaker",), (signing,)),
+    )
+
+    [chance] = pickup_chances(simulate(matchup, FEW), matchup)
+
+    assert (chance.player_id, chance.title) == ("fa", "Start FA over WEAKER")
+    assert chance.win_change > 0
+
+
+def test_a_free_agent_who_only_hurts_says_by_how_much() -> None:
+    """A deep league's wire mostly hurts; the shortfall is still the answer."""
+    matchup = _match(
+        [_player("mine", 20.0, 30.0)],
+        [_player("them", 22.0, 28.0)],
+        LineupMove("fa>mine", "Start FA over MINE", ("mine",), (_player("fa", 2.0),)),
+    )
+
+    [chance] = pickup_chances(simulate(matchup, FEW), matchup)
+
+    assert chance.win_change < 0
+
+
+def _page(*ids: str) -> PlayerPage:
+    return PlayerPage(
+        players=[PlayerCard(player_id=pid, columns={"Player": pid, "Fits": "+1.0", "Opponent": "MIA"}) for pid in ids]
+    )
+
+
+def test_a_priced_page_shows_the_chance_beside_the_fit_and_a_dash_for_the_rest() -> None:
+    page = attach_pickups(_page("a", "b"), [PickupChance(player_id="a", win_change=0.019, title="Start A")])
+
+    a, b = page.players
+    assert list(a.columns) == ["Player", "Fits", WIN_COLUMN, "Opponent"]
+    assert (a.columns[WIN_COLUMN], a.values[WIN_COLUMN]) == ("+1.9%", 0.019)
+    assert b.columns[WIN_COLUMN] == "—" and WIN_COLUMN not in b.values
+
+
+def test_ordering_by_the_chance_keeps_the_unpriced_last_either_way() -> None:
+    chances = [
+        PickupChance(player_id="a", win_change=-0.01, title=""),
+        PickupChance(player_id="c", win_change=0.02, title=""),
+    ]
+
+    for descending, expected in ((True, ["c", "a", "b"]), (False, ["a", "c", "b"])):
+        page = attach_pickups(_page("a", "b", "c"), chances, order=descending)
+        assert [p.player_id for p in page.players] == expected
+
+
+class _Wire:
+    """A matchup whose moves are whatever free agents it is asked about."""
+
+    label = "Test"
+
+    def __init__(self) -> None:
+        self.asked: list[list[str]] = []
+
+    def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput | None:
+        self.asked.append(list(candidates))
+        mine = _player("mine", 10.0)
+        moves = tuple(LineupMove(f"{c}>mine", f"Start {c}", ("mine",), (_player(c, 15.0),)) for c in candidates)
+        return _match([mine], [_player("them", 12.0)], *moves)
+
+    def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
+        return []
+
+
+def test_the_engine_prices_each_free_agent_it_is_given() -> None:
+    chances = ForecastEngine(_Wire()).pickups("L1", ["x", "y"])
+
+    assert {c.player_id for c in chances} == {"x", "y"}
+
+
+def test_no_free_agents_is_no_simulation() -> None:
+    wire = _Wire()
+
+    assert ForecastEngine(wire).pickups("L1", []) == []
+    assert wire.asked == []

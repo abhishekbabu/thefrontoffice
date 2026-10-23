@@ -24,7 +24,9 @@ from thefrontoffice.domain.models import (
     MarginRange,
     MatchupInput,
     Outcomes,
+    PickupChance,
     PlayedMatchup,
+    PlayerPage,
     RangeScore,
     Stat,
     Summary,
@@ -71,15 +73,21 @@ def simulate(matchup: MatchupInput, simulations: int = SIMULATIONS) -> Forecast:
 
 def _draw(outcomes: Outcomes, rng: random.Random, simulations: int) -> list[float]:
     """His score in each simulated week: what is on the board, plus the rest of a game if he plays."""
+    # Hoisted out of the loop, which runs ten thousand times a player and a
+    # page of free agents is fifty players. The dice are rolled in the same
+    # order as ever, so every seed gives the answer it always gave.
+    random_, choice, gauss = rng.random, rng.choice, rng.gauss
+    plays, samples, error = outcomes.plays, outcomes.samples, outcomes.projection_error
+    floor, remaining = outcomes.floor, outcomes.remaining
     draws = []
     for _ in range(simulations):
-        played = rng.random() < outcomes.plays
-        game = rng.choice(outcomes.samples) if outcomes.samples else 0.0
-        if outcomes.projection_error:
+        played = random_() < plays
+        game = choice(samples) if samples else 0.0
+        if error:
             # The projection may be off too: one factor for his whole game,
             # around 1 so the centre holds, never below 0 so a miss is not a sign flip.
-            game *= max(0.0, rng.gauss(1.0, outcomes.projection_error))
-        draws.append(outcomes.floor + (outcomes.remaining * game if played else 0.0))
+            game *= max(0.0, gauss(1.0, error))
+        draws.append(floor + (remaining * game if played else 0.0))
     return draws
 
 
@@ -93,9 +101,13 @@ def _totals(lineup: Sequence[Outcomes], draws: dict[str, list[float]], simulatio
 
 def _with(move: LineupMove, mine: list[float], theirs: list[float], draws: dict[str, list[float]]) -> list[float]:
     """The margins with `move` made: the same weeks, his draws swapped for theirs."""
-    out = [draws[pid] for pid in move.out if pid in draws]
-    into = [draws[o.player_id] for o in move.into]
-    return [mine[i] - sum(d[i] for d in out) + sum(d[i] for d in into) - theirs[i] for i in range(len(mine))]
+    margins = [m - t for m, t in zip(mine, theirs, strict=True)]
+    for pid in move.out:
+        if pid in draws:
+            margins = [m - d for m, d in zip(margins, draws[pid], strict=True)]
+    for o in move.into:
+        margins = [m + d for m, d in zip(margins, draws[o.player_id], strict=True)]
+    return margins
 
 
 def _win_rate(margins: list[float]) -> float:
@@ -175,6 +187,57 @@ def _headline(forecast: Forecast) -> list[Stat]:
     ]
 
 
+WIN_COLUMN = "Win"
+"""The column a free agent's chance is shown in — beside the competition's own columns."""
+
+FIT_COLUMN = "Fits"
+"""Where a competition says how a player fits your lineup: the chance reads best beside it."""
+
+
+def pickup_chances(forecast: Forecast, matchup: MatchupInput) -> list[PickupChance]:
+    """Each player brought in by a move, at the move that does the most for the chance of winning."""
+    best: dict[str, tuple[float, str]] = {}
+    for move in matchup.moves:
+        if not move.into or move.key not in forecast.moves:
+            continue
+        player_id, change = move.into[0].player_id, forecast.moves[move.key] - forecast.win
+        if player_id not in best or change > best[player_id][0]:
+            best[player_id] = (change, move.title)
+    return [PickupChance(player_id=pid, win_change=change, title=title) for pid, (change, title) in best.items()]
+
+
+def attach_pickups(page: PlayerPage, chances: list[PickupChance], *, order: bool | None = None) -> PlayerPage:
+    """The page with each priced player's chance in a column of its own; "—" for the rest.
+
+    `order` re-sorts the page by it, descending when true, with the unpriced
+    kept last either way. Only the page: what it would do is priced for the
+    rows on screen, since pricing four thousand players is a minute nobody waits.
+    """
+    by_player = {c.player_id: c for c in chances}
+    cards = []
+    for card in page.players:
+        chance = by_player.get(card.player_id)
+        columns = _beside(card.columns, FIT_COLUMN, f"{chance.win_change:+.1%}" if chance else "—")
+        values = {**card.values, **({WIN_COLUMN: chance.win_change} if chance else {})}
+        cards.append(card.model_copy(update={"columns": columns, "values": values}))
+    if order is not None:
+        priced = sorted((c for c in cards if WIN_COLUMN in c.values), key=lambda c: c.values[WIN_COLUMN], reverse=order)
+        cards = priced + [c for c in cards if WIN_COLUMN not in c.values]
+    return page.model_copy(update={"players": cards})
+
+
+def _beside(columns: dict[str, str], after: str, value: str) -> dict[str, str]:
+    """`columns` with the chance placed right after `after`, or last where there is no such column."""
+    if after not in columns:
+        return {**columns, WIN_COLUMN: value}
+    placed: dict[str, str] = {}
+    for name, text in columns.items():
+        placed[name] = text
+        if name == after:
+            placed[WIN_COLUMN] = value
+    return placed
+
+
 # ── how well it predicts ────────────────────────────────────────────────
 
 
@@ -251,6 +314,18 @@ class ForecastEngine:
         if matchup is None:
             return None
         return simulate(matchup), matchup
+
+    def pickups(self, league_id: str, player_ids: list[str]) -> list[PickupChance]:
+        """What each of these free agents would do to this week's chance, started at his best.
+
+        Empty where there is no opponent to play, or none of them could start.
+        """
+        if not player_ids:
+            return []
+        matchup = self.provider.matchup_input(league_id, candidates=player_ids)
+        if matchup is None or not matchup.moves:
+            return []
+        return pickup_chances(simulate(matchup), matchup)
 
     def backtest(self, league_id: str, weeks: list[int], simulations: int = SIMULATIONS) -> Calibration:
         played = [game for week in weeks for game in self.provider.played_matchups(league_id, week)]
