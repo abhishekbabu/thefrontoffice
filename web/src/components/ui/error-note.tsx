@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
  */
 export function ErrorNote({ error }: { error: unknown }) {
   const code = error instanceof ApiError ? error.code : "error";
+  const queryClient = useQueryClient();
   return (
     <div className="m-5 flex flex-col items-start gap-3 rounded-md border border-destructive/30 bg-destructive/8 px-4 py-3">
       <p className="max-w-[70ch] text-[13.5px] leading-relaxed text-destructive">
@@ -24,6 +25,17 @@ export function ErrorNote({ error }: { error: unknown }) {
           className="inline-flex h-9 items-center rounded-md border border-border bg-background px-4 text-sm font-medium hover:bg-muted"
         >
           Open Settings
+        </button>
+      )}
+      {/* A platform that is down: waiting is the remedy, and asking again is
+          the one thing this page can do about it. Everything is asked again,
+          because whatever failed on it failed on the same outage. */}
+      {code === "platform_unavailable" && (
+        <button
+          onClick={() => queryClient.invalidateQueries()}
+          className="inline-flex h-9 items-center rounded-md border border-border bg-background px-4 text-sm font-medium hover:bg-muted"
+        >
+          Try again
         </button>
       )}
       {code === "yahoo_not_approved" && (

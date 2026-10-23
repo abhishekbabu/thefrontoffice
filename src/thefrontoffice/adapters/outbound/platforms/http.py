@@ -23,7 +23,7 @@ import requests
 from tenacity import Retrying
 
 from thefrontoffice.adapters.outbound.platforms.cache import Freshness, JsonDiskCache
-from thefrontoffice.domain.errors import FrontOfficeError
+from thefrontoffice.domain.errors import FrontOfficeError, PlatformUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ class JsonApiClient:
         cache: JsonDiskCache,
         retry: Callable[[], Retrying],
         error: type[FrontOfficeError],
+        unavailable: type[PlatformUnavailableError],
         session: Any = None,
         timeout: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
@@ -51,11 +52,15 @@ class JsonApiClient:
             name: the platform, for log lines and error messages.
             retry: builds a fresh policy per call; tenacity's is stateful.
             error: the domain error a failed request is translated into.
+            unavailable: the one raised instead when the platform itself is down —
+                a 5xx, a timeout, a connection that never opened — so the
+                message can say "try again later" rather than "something is wrong".
         """
         self._name = name
         self._cache = cache
         self._retry = retry
         self._error = error
+        self._unavailable = unavailable
         self._session = session or requests.Session()
         self._timeout = timeout
 
@@ -71,6 +76,9 @@ class JsonApiClient:
             return self._retry()(_request)
         except Exception as e:
             logger.error(f"{self._name} request failed ({url}): {e}")
+            outage = _outage(e)
+            if outage:
+                raise self._unavailable(self._name, outage) from e
             raise self._error(f"{self._name} request failed: {e}") from e
 
     def cached(self, key: str, url: str, freshness: timedelta | Freshness, timeout: int | None = None) -> Any:
@@ -117,3 +125,19 @@ class JsonApiClient:
 
     def cache_set(self, key: str, value: Any) -> None:
         self._cache.set(key, value)
+
+
+def _outage(error: Exception) -> str:
+    """What says the platform itself is down, in a few words; empty for any other failure.
+
+    A 5xx is the server saying it cannot answer; a timeout or a refused
+    connection is it not answering at all. A 4xx is a request it understood
+    and turned down, which waiting will not change.
+    """
+    if isinstance(error, requests.HTTPError) and error.response is not None and error.response.status_code >= 500:
+        return f"it answered {error.response.status_code}"
+    if isinstance(error, requests.Timeout):
+        return "it timed out"
+    if isinstance(error, requests.ConnectionError):
+        return "the connection failed"
+    return ""

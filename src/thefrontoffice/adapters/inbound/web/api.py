@@ -42,7 +42,7 @@ from thefrontoffice.config import env_file
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.config.settings import PROJECT_ROOT, settings
 from thefrontoffice.config.telemetry import setup_telemetry
-from thefrontoffice.domain.errors import FrontOfficeError
+from thefrontoffice.domain.errors import FrontOfficeError, PlatformUnavailableError
 from thefrontoffice.domain.models import (
     ItemDecision,
     ItemState,
@@ -236,10 +236,12 @@ def create_app() -> FastAPI:
 
         400 rather than 500: these are all conditions the user can act on — a
         credential that is not set, a league they do not own, a misspelled
-        player — not faults in the server.
+        player — not faults in the server. A platform that is down is the
+        exception, and says so with 503: nothing in the request was wrong.
         """
         logger.info(f"Domain error: {exc}")
-        return JSONResponse(status_code=400, content={"detail": str(exc), "code": exc.code})
+        status = 503 if isinstance(exc, PlatformUnavailableError) else 400
+        return JSONResponse(status_code=status, content={"detail": str(exc), "code": exc.code})
 
     _register_routes(app)
     _serve_frontend(app)

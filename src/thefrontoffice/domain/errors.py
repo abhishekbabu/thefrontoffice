@@ -98,6 +98,38 @@ class FPLAPIError(FrontOfficeError):
     """
 
 
+class PlatformUnavailableError(FrontOfficeError):
+    """A platform is down, overloaded or not answering — nothing the user can fix but wait.
+
+    Told apart from every other failed request because the remedy is different:
+    a league that cannot be found is something to correct, a server answering
+    503 is something to try again later. Each platform has its own subclass,
+    so whatever already catches that platform's error to carry on without it
+    still does.
+    """
+
+    code = "platform_unavailable"
+
+    def __init__(self, platform: str, detail: str) -> None:
+        super().__init__(
+            f"{platform} is not responding right now ({detail}). That is on {platform}'s side, "
+            "not this app's; it usually passes within a few minutes."
+        )
+        self.platform = platform
+
+
+class SleeperUnavailableError(PlatformUnavailableError, SleeperAPIError):
+    """Sleeper is down or not answering."""
+
+
+class ESPNUnavailableError(PlatformUnavailableError, ESPNAPIError):
+    """ESPN is down or not answering."""
+
+
+class FPLUnavailableError(PlatformUnavailableError, FPLAPIError):
+    """The Fantasy Premier League game is down or not answering — often while a gameweek is being updated."""
+
+
 class LeagueNotFoundError(FrontOfficeError):
     """The configured account has no matching league on its platform."""
 

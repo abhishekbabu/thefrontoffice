@@ -23,7 +23,7 @@ from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
 from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
 from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.errors import ESPNAPIError
+from thefrontoffice.domain.errors import ESPNAPIError, ESPNUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,7 @@ class ESPNClient:
             cache=cache or JsonDiskCache(Path(settings.espn_cache_dir)),
             retry=_retry,
             error=ESPNAPIError,
+            unavailable=ESPNUnavailableError,
             session=session,
         )
 

@@ -45,7 +45,7 @@ from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
 from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
 from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.errors import FPLAPIError
+from thefrontoffice.domain.errors import FPLAPIError, FPLUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +132,7 @@ class FPLClient:
             cache=cache or JsonDiskCache(Path(settings.fpl_cache_dir)),
             retry=lambda: _retry(),
             error=FPLAPIError,
+            unavailable=FPLUnavailableError,
             session=session,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )

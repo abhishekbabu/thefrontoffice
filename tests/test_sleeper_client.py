@@ -17,7 +17,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.client import (
     SleeperClient,
     _is_retryable,
 )
-from thefrontoffice.domain.errors import SleeperAPIError
+from thefrontoffice.domain.errors import SleeperAPIError, SleeperUnavailableError
 
 
 class FakeResponse:
@@ -93,7 +93,9 @@ def test_a_missing_league_is_not_retryable() -> None:
 
 def test_request_failure_becomes_a_domain_error(tmp_path: Path, no_retry_wait: None) -> None:
     client, session = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
-    with pytest.raises(SleeperAPIError, match="Sleeper request failed"):
+    # No connection is Sleeper being down: still its own error, so callers that
+    # carry on without Sleeper still catch it, and the outage kind of it.
+    with pytest.raises(SleeperUnavailableError):
         client.get_nfl_state()
     assert len(session.requests) == RETRY_MAX_ATTEMPTS  # retried, then gave up
 
