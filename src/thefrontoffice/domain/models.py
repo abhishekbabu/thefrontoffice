@@ -325,6 +325,13 @@ class Action(BaseModel):
             "fills an empty slot or moves nobody. With `player_id`, what the move does to a lineup."
         ),
     )
+    drop: str = Field(
+        default="",
+        description=(
+            "LEAVE THIS EMPTY. For a pickup, who to release to make room, by id — empty where the "
+            "roster has a spot open, or the move adds nobody."
+        ),
+    )
     win_change: float | None = Field(
         default=None,
         description=(

@@ -460,3 +460,87 @@ def test_a_growing_role_the_projection_has_given_up_on_is_left_alone() -> None:
     free = _proj("wr9", "Rising Receiver", "WR", 1.0, team="KC", opp="LV")
 
     assert all(a.player_id != "wr9" for a in _actions(_with_free_agent(free)))
+
+
+# ── who goes to make room ───────────────────────────────────────────────
+
+
+def _scored(player: WeeklyProjection, *points: float) -> list[NFLGameLine]:
+    """His finished weeks, one game each from week 1, at these scores."""
+    return [
+        NFLGameLine(
+            player_id=player.player_id,
+            week=week,
+            team=player.team,
+            opponent="LV",
+            position=player.position,
+            stats={"off_snp": 40, "tm_off_snp": 60, "pts_ppr": pts},
+        )
+        for week, pts in enumerate(points, start=1)
+    ]
+
+
+FREE_RB = _proj("fa1", "Free Back", "RB", 12.0, team="KC", opp="LV")
+# A bench that cannot play RB, so a ruled-out RB needs a pickup. LEAGUE holds seven.
+WEAK = _proj("wr2", "Weak Receiver", "WR", 6.0, team="KC", opp="LV")
+ON_BYE = _proj("wr3", "Idle Receiver", "WR", 0.0, team="NE", opp="")
+BACKUP_QB = _proj("qb2", "Backup QB", "QB", 9.0, team="KC", opp="LV")
+
+
+def _full_roster(*extra: WeeklyProjection, lines: list[NFLGameLine] | None = None) -> FakeSleeper:
+    return _client(
+        [QB, _ruled_out(RB), WR, FLEX, WEAK, ON_BYE, BACKUP_QB, FREE_RB, *extra],
+        ["qb", "rb", "wr", "te"],
+        ["wr2", "wr3", "qb2"],
+        game_lines=lines
+        if lines is not None
+        else _scored(WEAK, 4.0, 5.0) + _scored(ON_BYE, 18.0, 20.0) + _scored(BACKUP_QB, 8.0, 9.0),
+    )
+
+
+def test_a_pickup_on_a_full_roster_names_who_to_drop() -> None:
+    [action] = [a for a in _actions(_full_roster()) if a.kind == "waiver"]
+
+    assert action.drop == "wr2"
+    assert WEAK.name in action.title
+
+
+def test_the_drop_is_judged_on_his_season_not_a_week_he_is_on_bye() -> None:
+    """The receiver on bye projects nothing this week and averages the most; he stays."""
+    [action] = [a for a in _actions(_full_roster()) if a.kind == "waiver"]
+
+    assert action.drop != ON_BYE.player_id
+
+
+def test_a_roster_with_a_spot_open_drops_nobody() -> None:
+    client = _client([QB, _ruled_out(RB), WR, FLEX, FREE_RB], ["qb", "rb", "wr", "te"], [])
+
+    [action] = [a for a in _actions(client) if a.kind == "waiver"]
+
+    assert action.drop == ""
+
+
+def _with_breakout(projected: float) -> list[Action]:
+    rising = _proj("wr9", "Rising Receiver", "WR", projected, team="KC", opp="LV")
+    client = _client(
+        [QB, RB, WR, FLEX, WEAK, ON_BYE, BACKUP_QB, rising],
+        ["qb", "rb", "wr", "te"],
+        ["wr2", "wr3", "qb2"],
+        game_lines=_scored(WEAK, 4.0, 5.0)
+        + _scored(ON_BYE, 18.0, 20.0)
+        + _scored(BACKUP_QB, 8.0, 9.0)
+        + _rising(rising),
+    )
+    client.week = 4
+    return _actions(client)
+
+
+def test_a_breakout_worth_more_than_the_weakest_on_the_bench_names_him_to_drop() -> None:
+    [action] = [a for a in _with_breakout(8.0) if a.player_id == "wr9"]
+
+    assert action.drop == "wr2"
+
+
+def test_a_breakout_worth_less_than_anyone_on_the_bench_is_not_worth_a_spot() -> None:
+    """Optional, unlike filling a hole: a flier is not worth a better player."""
+    assert all(a.player_id != "wr9" for a in _with_breakout(3.0))

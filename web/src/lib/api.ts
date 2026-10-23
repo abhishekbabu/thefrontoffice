@@ -79,6 +79,8 @@ export type Action = {
   player_id: string;
   /** Who the move takes out of the lineup, by id; empty where nobody. */
   replaces: string;
+  /** For a pickup, who to release to make room. Empty where a spot is open. */
+  drop: string;
   /** What the move does to the chance of winning — 0.028 for +2.8 points; null where unpriced. */
   win_change: number | null;
   /** What the move rests on beyond the projection, one line per player:
