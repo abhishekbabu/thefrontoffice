@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from thefrontoffice.adapters.inbound.web import data
-from thefrontoffice.application.forecasting import attach
+from thefrontoffice.application.forecasting import WIN_COLUMN, attach, attach_pickups
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import (
     CompetitionEntry,
@@ -417,10 +417,23 @@ def _register_routes(app: FastAPI) -> None:
         is four thousand players: a client holding fifty of them can only
         reorder those fifty, which is a worse answer than none.
         """
+        # The chance of winning is priced for the page alone, so it cannot
+        # rank the pool: sorting by it takes the competition's own ranking,
+        # which puts the likeliest to help first, and orders that page.
+        by_chance = sort == WIN_COLUMN
         query = PlayerQuery(
-            offset=offset, limit=limit, sort=sort, descending=descending, position=position, search=search
+            offset=offset,
+            limit=limit,
+            sort="" if by_chance else sort,
+            descending=descending,
+            position=position,
+            search=search,
         )
-        return data.build_provider(competition).free_agents(league_id, query)
+        provider = data.build_provider(competition)
+        page = provider.free_agents(league_id, query)
+        if not isinstance(provider, ForecastProvider):
+            return page
+        return _priced(provider, league_id, page, order=descending if by_chance else None)
 
     @app.get("/api/{competition}/leagues/{league_id}/teams", response_model=list[TeamRef])
     def teams(competition: str, league_id: str) -> list[TeamRef]:
@@ -520,6 +533,16 @@ def _forecast(provider: ForecastProvider, league_id: str, summary: Summary) -> S
         logger.warning(f"Showing the week without a forecast: {e}")
         return summary
     return attach(summary, *result) if result else summary
+
+
+def _priced(provider: ForecastProvider, league_id: str, page: PlayerPage, order: bool | None) -> PlayerPage:
+    """The page with what each player would do to this week's chance; as it was where that cannot be priced."""
+    try:
+        chances = forecast_engine(provider).pickups(league_id, [p.player_id for p in page.players])
+    except FrontOfficeError as e:
+        logger.warning(f"Showing free agents without their chance of winning: {e}")
+        return page
+    return attach_pickups(page, chances, order=order)
 
 
 def _capable(competition: str, what: str, has: Callable[[CompetitionEntry], bool]) -> CompetitionEntry:

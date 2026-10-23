@@ -559,3 +559,17 @@ def test_a_week_that_cannot_read_last_season_still_simulates() -> None:
     client.game_lines_error = SleeperAPIError("down")
 
     assert _provider(client).matchup_input("L1") is not None
+
+
+def test_a_free_agent_is_priced_at_every_start_he_could_make() -> None:
+    """The default roster starts nobody at WR, so a free receiver fills the empty slot."""
+    matchup = _provider(_paired()).matchup_input("L1", candidates=["wr9"])
+
+    assert matchup is not None and matchup.moves
+    assert {m.into[0].player_id for m in matchup.moves} == {"wr9"}
+
+
+def test_a_rostered_player_is_never_priced_as_a_free_agent() -> None:
+    matchup = _provider(_paired()).matchup_input("L1", candidates=["rb2"])
+
+    assert matchup is not None and matchup.moves == ()

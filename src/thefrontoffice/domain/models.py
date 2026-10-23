@@ -528,6 +528,19 @@ class Forecast(BaseModel):
     )
 
 
+class PickupChance(BaseModel):
+    """What one available player would do to this week's chance of winning.
+
+    Priced at his best legal start: every slot he could fill, against whoever
+    he would push out, and the one that helps most — or hurts least, since a
+    deep league's wire mostly hurts, and by how much is still the question.
+    """
+
+    player_id: str
+    win_change: float = Field(description="The chance of winning with him started, less the chance without.")
+    title: str = Field(description="The start that gets it, in the manager's words: 'Start X over Y'.")
+
+
 class CalibrationBucket(BaseModel):
     """Matchups the simulation gave a similar chance, and how often that side won."""
 

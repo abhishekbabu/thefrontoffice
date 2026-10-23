@@ -7,6 +7,7 @@ import type { PlayerCard } from "@/lib/api";
 /** Columns whose values are figures, so they align right like numbers. */
 const NUMERIC = new Set([
   "Fits",
+  "Win",
   "xPts",
   "Price",
   "Proj",

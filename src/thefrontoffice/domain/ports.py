@@ -6,6 +6,7 @@ what it needs, and the adapters satisfy it. Nothing in this package imports an
 adapter.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, TypedDict, TypeVar, runtime_checkable
 
@@ -281,8 +282,12 @@ class ForecastProvider(Protocol):
 
     label: str
 
-    def matchup_input(self, league_id: str) -> MatchupInput | None:
-        """This week's matchup, ready to simulate; None where there is no opponent."""
+    def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput | None:
+        """This week's matchup, ready to simulate; None where there is no opponent.
+
+        With `candidates` — players on nobody's roster — the moves are instead
+        every legal start of each of them, so the wire can be priced like the bench.
+        """
         ...
 
     def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:

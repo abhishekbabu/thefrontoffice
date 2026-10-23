@@ -10,7 +10,7 @@ is the only configuration.
 
 import hashlib
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
@@ -855,12 +855,13 @@ class SleeperNFLProvider:
 
     # ── the matchup, simulated ──────────────────────────────────────
 
-    def matchup_input(self, league_id: str) -> MatchupInput | None:
+    def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput | None:
         """This week's matchup, ready to simulate: both lineups, and the moves worth pricing.
 
         The moves are every single swap your bench allows — the simulation
         finds the one a projection would not — and every waiver pickup the
-        to-do list names.
+        to-do list names. With `candidates` they are instead every legal
+        start of each of those free agents, priced as if already claimed.
         """
         state = self._week(league_id)
         try:
@@ -895,7 +896,13 @@ class SleeperNFLProvider:
             if p
         )
         started = {club for club, s in status.items() if s and s != "pre_game"}
-        moves = self._swaps(state, outcome, started) + self._pickups(state, league_id, games, outcome)
+        if candidates:
+            owned = {pid for r in self.client.get_rosters(league_id) for pid in r.player_ids}
+            wire = [state.projections[pid] for pid in candidates if pid in state.projections and pid not in owned]
+            moves = self._starts(state, wire, outcome, started)
+        else:
+            bench = [p for p in state.projected if p.player_id not in state.starter_ids]
+            moves = self._starts(state, bench, outcome, started) + self._pickups(state, league_id, games, outcome)
         return MatchupInput(mine=mine, theirs=theirs, moves=moves, seed=_seed(self.label, league_id, state.week))
 
     def _last_season(self, season: str, scoring: str) -> evidence.Evidence:
@@ -910,27 +917,30 @@ class SleeperNFLProvider:
             self._previous[key] = evidence.gather(lines, scoring)
         return self._previous[key]
 
-    def _swaps(
-        self, state: Week, outcome: Callable[[WeeklyProjection], Outcomes], started: set[str]
+    @staticmethod
+    def _starts(
+        state: Week,
+        players: list[WeeklyProjection],
+        outcome: Callable[[WeeklyProjection], Outcomes],
+        started: set[str],
     ) -> tuple[LineupMove, ...]:
-        """Every single bench-for-starter swap that leaves a legal lineup, among players not yet locked.
+        """Every single start of one of `players` that leaves a legal lineup, among players not yet locked.
 
         A lineup is a set of starters, so a swap is one in and one out — legal
         if the new set fills the slots any way at all. Hall for Bernard is one,
         though Hall cannot play Bernard's WR slot: the flex slides across.
+        The same for a bench player and a free agent: who he is does not
+        change which lineups he makes.
         """
         starters = [slot.player for slot in state.lineup if slot.player]
         slots = state.league.starting_slots
-        bench = [
+        eligible = [
             p
-            for p in state.projected
-            if p.player_id not in state.starter_ids
-            and p.team not in started
-            and p.injury_status.upper() not in actions.RULED_OUT
-            and p.opponent
+            for p in players
+            if p.team not in started and p.injury_status.upper() not in actions.RULED_OUT and p.opponent
         ]
         moves = []
-        for candidate in bench:
+        for candidate in eligible:
             if len(starters) < len(slots) and fits(slots, [*starters, candidate]):
                 moves.append(
                     LineupMove(

@@ -257,8 +257,8 @@ def test_the_header_carries_the_matchup() -> None:
     labels = {s.label: s for s in _provider(client).build_context("L1").headline}
 
     assert "Opponent" in labels
-    assert labels["Live"].value == "88.5 – 71.0"
-    assert (labels["Margin"].value, labels["Margin"].tone) == ("+17.5", "good")
+    assert (labels["Live"].value, labels["Live"].tone) == ("88.5 – 71.0", "good")
+    assert "Margin" not in labels  # the same two numbers, subtracted
 
 
 def test_trailing_is_the_figure_that_warns() -> None:
@@ -269,16 +269,16 @@ def test_trailing_is_the_figure_that_warns() -> None:
             {"roster_id": 2, "matchup_id": 7, "points": 84.0},
         ],
     )
-    margin = next(s for s in _provider(client).build_context("L1").headline if s.label == "Margin")
+    live = next(s for s in _provider(client).build_context("L1").headline if s.label == "Live")
 
-    assert (margin.value, margin.tone) == ("-24.0", "warning")
+    assert live.tone == "warning"
 
 
 def test_a_week_with_no_opponent_reports_no_matchup_figures() -> None:
     """A bye or a missing scoreboard is not a 0-0 scoreline."""
     labels = {s.label for s in _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1").headline}
 
-    assert "Margin" not in labels
+    assert "Live" not in labels
     assert "Week" in labels  # the rest of the header still stands
 
 
