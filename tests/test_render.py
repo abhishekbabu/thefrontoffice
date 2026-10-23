@@ -18,7 +18,7 @@ def _rec(**overrides: object) -> Move:
         "replaces_rationale": "No categories won.",
     }
     base.update(overrides)
-    return Move(**base)  # type: ignore[arg-type]
+    return Move.model_validate(base)
 
 
 def test_scout_report_surfaces_every_field() -> None:

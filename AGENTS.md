@@ -48,9 +48,9 @@ outgrows one file splits the same way each time — `week.py` (state),
 `league.py` (season, table), `prompt.py` (model text) — leaving the port behind.
 
 **Types.** Avoid `Any`; prefer builtin generics and PEP 604 unions, which ruff's
-`UP` rules enforce. `missing-attribute` is disabled for modules touching the
-yahoofantasy SDK because it sets attributes via `setattr` at runtime — do not
-re-enable it there, and do not disable anything else globally.
+`UP` rules enforce. yahoofantasy is read as `Any` (`replace-imports-with-any`):
+it sets attributes via `setattr` at runtime. There is no `type: ignore` anywhere —
+fix the type, the fake or the port instead, and disable no check globally.
 
 **Yahoo.** Responses go through our own `JsonDiskCache`, not the SDK's store:
 `make_request` is the only fetch that parallelises safely and the vendor's

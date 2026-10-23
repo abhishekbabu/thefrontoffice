@@ -415,7 +415,7 @@ def test_the_opponent_is_named_in_full_where_there_is_room() -> None:
 
 
 def _available(client: FakeSleeper, **query: object) -> dict[str, dict[str, str]]:
-    page = _provider(client).free_agents("L1", PlayerQuery(**query))  # type: ignore[arg-type]
+    page = _provider(client).free_agents("L1", PlayerQuery.model_validate(query))
     return {card.player_id: card.columns for card in page.players}
 
 

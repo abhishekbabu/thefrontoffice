@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
     from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
 
-from yahoofantasy import League, Player  # type: ignore[import-untyped]
+from yahoofantasy import League, Player
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder

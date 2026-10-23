@@ -55,7 +55,7 @@ def test_a_week_nobody_is_scheduled_for_does_not_flag_the_whole_roster() -> None
 def test_the_summary_does_not_ask_for_the_waiver_pool() -> None:
     """It is the expensive half of a report and nothing in the header uses it."""
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
-    client.get_trending = lambda *a, **k: pytest.fail("summary must not fetch trending")  # type: ignore[method-assign]
+    client.get_trending = lambda *a, **k: pytest.fail("summary must not fetch trending")
 
     client_summary = _provider(client).summary("L1")
 

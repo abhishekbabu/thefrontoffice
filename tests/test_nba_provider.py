@@ -18,8 +18,8 @@ from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat
 
 
 def _scout(yahoo: FakeYahoo, ai: FakeAI | None = None, nba: FakeNBA | None = None) -> ScoutEngine:
-    provider = YahooNBAProvider(league=None, nba=nba or FakeNBA(), yahoo=yahoo)  # type: ignore[arg-type]
-    return ScoutEngine(provider, ai=ai or FakeAI(), answers=FakeAnswers())  # type: ignore[arg-type]
+    provider = YahooNBAProvider(league=None, nba=nba or FakeNBA(), yahoo=yahoo)
+    return ScoutEngine(provider, ai=ai or FakeAI(), answers=FakeAnswers())
 
 
 def test_returns_a_validated_report_and_an_open_chat() -> None:
@@ -228,7 +228,7 @@ def test_a_specific_league_can_be_selected() -> None:
 
     one = SimpleNamespace(id="1", name="One", league_type="head")
     two = SimpleNamespace(id="2", name="Two", league_type="head")
-    provider = YahooNBAProvider(one, all_leagues=[one, two], nba=FakeNBA(), yahoo=FakeYahoo())  # type: ignore[arg-type]
+    provider = YahooNBAProvider(one, all_leagues=[one, two], nba=FakeNBA(), yahoo=FakeYahoo())
     assert [r.league_id for r in provider.list_leagues()] == ["1", "2"]
     assert provider._select("2") is two
     assert provider._select("") is one
@@ -240,7 +240,7 @@ def test_selecting_an_unknown_league_raises() -> None:
     from thefrontoffice.domain.errors import LeagueNotFoundError
 
     one = SimpleNamespace(id="1", name="One")
-    provider = YahooNBAProvider(one, all_leagues=[one], nba=FakeNBA(), yahoo=FakeYahoo())  # type: ignore[arg-type]
+    provider = YahooNBAProvider(one, all_leagues=[one], nba=FakeNBA(), yahoo=FakeYahoo())
     with pytest.raises(LeagueNotFoundError, match="not one of yours"):
         provider._select("999")
 
@@ -250,7 +250,7 @@ def test_a_roster_card_carries_the_row_and_what_a_row_cannot() -> None:
     and a column should not be."""
     yahoo = FakeYahoo(roster=[make_player("A B", "PF,C", "LAL", status="O", selected_position="IL")])
 
-    card = YahooNBAProvider(league=None, nba=FakeNBA(), yahoo=yahoo).roster()[0]  # type: ignore[arg-type]
+    card = YahooNBAProvider(league=None, nba=FakeNBA(), yahoo=yahoo).roster()[0]
 
     assert card.columns["Player"] == "A B"
     assert card.columns["Slot"] == "IL"
@@ -262,7 +262,7 @@ def test_recent_form_is_a_dash_when_there_is_none() -> None:
     """Out of season there is no line to show, and a zero would read as a bad
     one rather than an absent one."""
     yahoo = FakeYahoo(roster=[make_player("A B")])
-    card = YahooNBAProvider(league=None, nba=FakeNBA(), yahoo=yahoo).roster()[0]  # type: ignore[arg-type]
+    card = YahooNBAProvider(league=None, nba=FakeNBA(), yahoo=yahoo).roster()[0]
 
     assert card.columns["PTS"] == "—"
 
@@ -315,9 +315,9 @@ def _provider_with(sleeper: Any, yahoo: FakeYahoo | None = None) -> Any:
     from types import SimpleNamespace
 
     return YahooNBAProvider(
-        SimpleNamespace(id="1", name="One"),  # type: ignore[arg-type]
+        SimpleNamespace(id="1", name="One"),
         nba=FakeNBA(),
-        yahoo=yahoo or _rich_yahoo(),  # type: ignore[arg-type]
+        yahoo=yahoo or _rich_yahoo(),
         sleeper=sleeper,
     )
 
@@ -400,7 +400,7 @@ def test_the_prompt_explains_team_games_versus_player_games() -> None:
 
 
 def _provider(yahoo: FakeYahoo) -> YahooNBAProvider:
-    return YahooNBAProvider(league=None, nba=FakeNBA(), yahoo=yahoo)  # type: ignore[arg-type]
+    return YahooNBAProvider(league=None, nba=FakeNBA(), yahoo=yahoo)
 
 
 def test_the_table_comes_back_in_rank_order_and_says_which_is_yours() -> None:

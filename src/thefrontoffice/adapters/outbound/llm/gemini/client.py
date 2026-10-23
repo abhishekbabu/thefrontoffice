@@ -2,8 +2,10 @@
 
 import logging
 import time
+from typing import Protocol
 
 from google import genai
+from google.genai import types
 from google.genai.chats import Chat
 
 from thefrontoffice.config.settings import settings
@@ -56,6 +58,40 @@ class GeminiChat:
             raise translate(e) from e
 
 
+class GenAIModels(Protocol):
+    def generate_content(
+        self,
+        *,
+        model: str,
+        contents: types.ContentListUnionDict,
+        config: types.GenerateContentConfigOrDict | None = None,
+    ) -> types.GenerateContentResponse: ...
+
+
+class GenAIChats(Protocol):
+    def create(
+        self,
+        *,
+        model: str,
+        config: types.GenerateContentConfigOrDict | None = None,
+        history: list[types.ContentOrDict] | None = None,
+    ) -> Chat: ...
+
+
+class GenAISource(Protocol):
+    """What the adapter reads the genai SDK through: one call to generate, one to open a chat.
+
+    `genai.Client` satisfies it, and so does a test's fake, which is then
+    checked against these signatures rather than slipped in as a stand-in.
+    """
+
+    @property
+    def models(self) -> GenAIModels: ...
+
+    @property
+    def chats(self) -> GenAIChats: ...
+
+
 class GeminiClient(AnalysisModel):
     """Gemini's implementation of the AnalysisModel port.
 
@@ -77,7 +113,7 @@ class GeminiClient(AnalysisModel):
         # Read at construction rather than bound as a default, so a key saved in
         # Settings takes effect on the next call instead of the next restart.
         key = api_key if api_key is not None else settings.gemini_api_key
-        self.client = genai.Client(api_key=key) if key else None
+        self.client: GenAISource | None = genai.Client(api_key=key) if key else None
         if not key:
             logger.info("No GOOGLE_API_KEY; the model is unavailable and nothing will offer it.")
 
@@ -187,8 +223,6 @@ class GeminiClient(AnalysisModel):
         """Start a chat session with the model, its failures translated like every other call's."""
         if not self.client:
             raise AIUnavailableError()
-
-        from google.genai import types
 
         config = None
         if enable_search:

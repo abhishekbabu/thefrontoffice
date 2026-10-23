@@ -9,7 +9,7 @@ quantity behind it, which is why they are built together.
 
 from datetime import date
 
-from yahoofantasy import Player  # type: ignore[import-untyped]
+from yahoofantasy import Player
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import (
     FormSource,

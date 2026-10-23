@@ -5,6 +5,7 @@ the prompt has to carry, and a report that omits the captaincy or the transfer
 allowance is wrong however well it renders.
 """
 
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -37,7 +38,19 @@ LEAGUE_ID = "900"
 H2H_LEAGUE_ID = "950"
 
 
-def player(pid: int, position: str, points: float, cost: int = 50, team: str = "ARS", **kwargs: object) -> Player:
+def player(
+    pid: int,
+    position: str,
+    points: float,
+    cost: int = 50,
+    team: str = "ARS",
+    *,
+    status: str = "a",
+    news: str = "",
+    chance_of_playing: int | None = None,
+    penalties_order: int | None = None,
+    corners_order: int | None = None,
+) -> Player:
     return Player(
         id=pid,
         name=f"P{pid}",
@@ -51,7 +64,11 @@ def player(pid: int, position: str, points: float, cost: int = 50, team: str = "
         total_points=int(points * 10),
         selected_by=5.0,
         minutes=900,
-        **kwargs,  # type: ignore[arg-type]
+        status=status,
+        news=news,
+        chance_of_playing=chance_of_playing,
+        penalties_order=penalties_order,
+        corners_order=corners_order,
     )
 
 
@@ -342,8 +359,16 @@ class FakeFPL:
         return self.standings
 
 
-def provider(**kwargs: object) -> FPLProvider:
-    return FPLProvider(ENTRY_ID, client=FakeFPL(**kwargs))  # type: ignore[arg-type]
+def _with_fake[**P](fake: Callable[P, FakeFPL]) -> Callable[P, FPLProvider]:
+    """A provider over a fake built from the same keywords the fake takes, each one checked against it."""
+
+    def build(*args: P.args, **kwargs: P.kwargs) -> FPLProvider:
+        return FPLProvider(ENTRY_ID, client=fake(*args, **kwargs))
+
+    return build
+
+
+provider = _with_fake(FakeFPL)
 
 
 # ── configuration ───────────────────────────────────────────────────────
@@ -351,7 +376,7 @@ def provider(**kwargs: object) -> FPLProvider:
 
 def test_an_unset_entry_id_is_reported_before_any_request() -> None:
     with pytest.raises(LeagueNotFoundError, match="FPL_ENTRY_ID"):
-        FPLProvider(None, client=FakeFPL()).list_leagues()  # type: ignore[arg-type]
+        FPLProvider(None, client=FakeFPL()).list_leagues()
 
 
 def test_the_registry_advertises_no_trade_support() -> None:
@@ -382,7 +407,7 @@ def test_a_manager_in_no_private_league_still_has_something_to_scout() -> None:
 def test_the_squad_read_is_the_last_completed_gameweek() -> None:
     """Picks are published only once a deadline passes."""
     client = FakeFPL()
-    FPLProvider(ENTRY_ID, client=client).roster(LEAGUE_ID)  # type: ignore[arg-type]
+    FPLProvider(ENTRY_ID, client=client).roster(LEAGUE_ID)
     assert client.squad_requests == [4]
 
 
@@ -402,7 +427,7 @@ def test_roster_rows_mark_the_captain_and_the_bench() -> None:
 def test_roster_rows_report_a_doubt() -> None:
     squad = Squad(gameweek=4, picks=_picks(), bank=30, value=1004)
     fake = FakeFPL(squad=squad)
-    fake.get_players = lambda: {  # type: ignore[method-assign]
+    fake.get_players = lambda: {
         **{k: v for k, v in SQUAD_PLAYERS.items() if k != 3},
         3: player(3, "DEF", 6.0, status="d", chance_of_playing=50),
         **MARKET,
@@ -554,8 +579,8 @@ def test_an_empty_bank_with_no_upgrade_says_so() -> None:
 # ── headline figures ────────────────────────────────────────────────────
 
 
-def _headline(**kwargs: object) -> dict[str, str]:
-    context = provider(**kwargs).build_context(LEAGUE_ID)
+def _headline(over: FPLProvider | None = None) -> dict[str, str]:
+    context = (over or provider()).build_context(LEAGUE_ID)
     return {stat.label: stat.value for stat in context.headline}
 
 
@@ -592,7 +617,7 @@ def test_an_optimal_eleven_leaves_nothing_on_the_bench_to_report() -> None:
 
 
 def test_a_manager_in_no_mini_league_gets_no_mini_league_figure() -> None:
-    assert "Mini-league" not in _headline(leagues=[])
+    assert "Mini-league" not in _headline(provider(leagues=[]))
 
 
 def test_the_header_names_the_gameweek_and_when_it_locks() -> None:
@@ -680,7 +705,7 @@ def test_a_players_fixture_is_for_the_gameweek_still_open() -> None:
 
 def test_a_flagged_player_is_toned_and_carries_the_news() -> None:
     fake = FakeFPL()
-    fake.get_players = lambda: {  # type: ignore[method-assign]
+    fake.get_players = lambda: {
         **SQUAD_PLAYERS,
         3: player(3, "DEF", 6.0, status="i", chance_of_playing=0, news="Hamstring - expected back 12 Sep"),
         **MARKET,
@@ -707,7 +732,7 @@ def test_a_players_numbers_are_grouped_rather_than_listed() -> None:
 def test_set_pieces_list_only_the_duties_actually_held() -> None:
     """ "Not on penalties" for every player who is not would be rows of nothing."""
     fake = FakeFPL()
-    fake.get_players = lambda: {  # type: ignore[method-assign]
+    fake.get_players = lambda: {
         **SQUAD_PLAYERS,
         8: player(8, "MID", 8.0, penalties_order=1, corners_order=2),
         **MARKET,
@@ -738,9 +763,9 @@ def test_an_attacker_is_not_given_a_keepers_line() -> None:
 # ── the seasons behind the price ────────────────────────────────────────
 
 
-def _season_table(**kwargs: object) -> dict[str, list[str]]:
+def _season_table(over: FPLProvider | None = None) -> dict[str, list[str]]:
     """The by-season table as {row label: values}, columns newest first."""
-    detail = provider(**kwargs).player(LEAGUE_ID, "8")
+    detail = (over or provider()).player(LEAGUE_ID, "8")
     table = detail.tables[0]
     return {"__columns__": table.columns, **{row.label: row.values for row in table.rows}}
 
@@ -784,7 +809,7 @@ def test_a_price_is_known_whether_or_not_the_season_has_started() -> None:
 
 def test_a_player_with_no_history_still_gets_a_column_for_this_season() -> None:
     """A promoted club's signing has no FPL record, which is not an error."""
-    table = _season_table(past_seasons=[])
+    table = _season_table(provider(past_seasons=[]))
 
     assert table["__columns__"] == ["This season"]
 
@@ -802,7 +827,7 @@ def test_a_player_carries_a_portrait_keyed_by_optas_code() -> None:
     fake = FakeFPL()
     catalog = fake.get_players()
     catalog[8] = replace(catalog[8], code=223094)
-    fake.get_players = lambda: catalog  # type: ignore[method-assign]
+    fake.get_players = lambda: catalog
 
     detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "8")
     assert detail.image_url.endswith("/p223094.png")
@@ -813,7 +838,7 @@ def test_a_player_with_no_photo_code_is_given_no_url() -> None:
     fake = FakeFPL()
     catalog = fake.get_players()
     catalog[8] = replace(catalog[8], code=0)
-    fake.get_players = lambda: catalog  # type: ignore[method-assign]
+    fake.get_players = lambda: catalog
 
     detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "8")
     assert detail.image_url == ""
@@ -1058,8 +1083,8 @@ def test_a_player_has_no_link_because_fpl_publishes_no_player_page() -> None:
 # ── chips, and the armbands ─────────────────────────────────────────────
 
 
-def _chips(**kwargs: object) -> dict[str, str]:
-    boosts = provider(**kwargs).summary(H2H_LEAGUE).boosts
+def _chips(over: FPLProvider | None = None) -> dict[str, str]:
+    boosts = (over or provider()).summary(H2H_LEAGUE).boosts
     assert boosts is not None
     return {stat.label: stat.value for stat in boosts.stats}
 
@@ -1079,11 +1104,11 @@ def test_a_chip_inside_its_window_is_available() -> None:
 def test_a_chip_whose_window_has_not_opened_says_when_it_does() -> None:
     """A Wildcard cannot be played in GW1, and the game says so rather than
     leaving a manager to find that out at the deadline."""
-    assert _chips(upcoming=2)["Wildcard"] == "from GW2"
+    assert _chips(provider(upcoming=2))["Wildcard"] == "from GW2"
 
 
 def test_a_chip_already_played_says_which_week_it_went() -> None:
-    played = _chips(chips_played=[ChipPlay(name="bboost", event=3)])
+    played = _chips(provider(chips_played=[ChipPlay(name="bboost", event=3)]))
 
     assert played["Bench Boost"] == "played GW3"
 
@@ -1091,7 +1116,7 @@ def test_a_chip_already_played_says_which_week_it_went() -> None:
 def test_a_chip_whose_windows_have_all_closed_is_still_listed() -> None:
     """An unplayed Free Hit is a thing that was lost, and a row saying so is
     worth more than a row quietly missing."""
-    gone = _chips(chips=[Chip(name="freehit", start_event=1, stop_event=2)], upcoming=30)
+    gone = _chips(provider(chips=[Chip(name="freehit", start_event=1, stop_event=2)], upcoming=30))
 
     assert gone["Free Hit"] == "gone unplayed"
 

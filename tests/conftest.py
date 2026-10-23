@@ -317,7 +317,7 @@ def mine(summary: Summary) -> Side:
 
 
 def _provider(client: FakeSleeper, espn: FakeESPN | None = None) -> SleeperNFLProvider:
-    return SleeperNFLProvider(username="me", client=client, espn=espn or FakeESPN())  # type: ignore[arg-type]
+    return SleeperNFLProvider(username="me", client=client, espn=espn or FakeESPN())
 
 
 DEFAULT_PROJECTIONS = {

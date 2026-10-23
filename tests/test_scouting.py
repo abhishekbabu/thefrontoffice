@@ -110,7 +110,7 @@ def test_an_unchanged_week_is_answered_from_the_last_judgment_without_a_call() -
 
 def test_a_changed_week_is_judged_afresh_and_kept() -> None:
     ai, answers = FakeAI(report=_report(_verdict(1))), FakeAnswers()
-    ScoutEngine(ContextOnly(TASKS, prompt="monday"), ai=ai, answers=answers).start_analysis("L1")  # type: ignore[arg-type]
+    ScoutEngine(ContextOnly(TASKS, prompt="monday"), ai=ai, answers=answers).start_analysis("L1")
 
     engine = ScoutEngine(ContextOnly(TASKS, prompt="tuesday"), ai=ai, answers=answers)
     engine.start_analysis("L1")

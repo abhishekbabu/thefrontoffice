@@ -1,5 +1,6 @@
 """Tests for GeminiClient's structured-generation paths, with a fake SDK client."""
 
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
@@ -30,10 +31,28 @@ class FakeModels:
         return self.response
 
 
+class FakeChats:
+    """Opens chats whose every turn is answered by `reply`."""
+
+    def __init__(self, reply: Callable[[str], Any]) -> None:
+        self.reply = reply
+
+    def create(self, **kwargs: Any) -> Any:
+        return SimpleNamespace(send_message=self.reply)
+
+
+class FakeGenAI:
+    """Stands in for genai.Client: the two namespaces the adapter calls."""
+
+    def __init__(self, models: FakeModels | None = None, chats: FakeChats | None = None) -> None:
+        self.models = models or FakeModels()
+        self.chats = chats or FakeChats(lambda message: SimpleNamespace(text=""))
+
+
 def _client(response: Any = None, error: Exception | None = None) -> tuple[GeminiClient, FakeModels]:
     c = GeminiClient(api_key="fake-key")
     models = FakeModels(response, error)
-    c.client = SimpleNamespace(models=models)  # type: ignore[assignment]
+    c.client = FakeGenAI(models=models)
     return c, models
 
 
@@ -239,8 +258,7 @@ def test_a_chat_failure_arrives_as_a_domain_error() -> None:
         raise RuntimeError("429 RESOURCE_EXHAUSTED")
 
     c = GeminiClient(api_key="fake-key")
-    chats = SimpleNamespace(create=lambda **kwargs: SimpleNamespace(send_message=failing))
-    c.client = SimpleNamespace(chats=chats)  # type: ignore[assignment]
+    c.client = FakeGenAI(chats=FakeChats(failing))
 
     with pytest.raises(AIQuotaError):
         c.start_chat().send_message("why?")
@@ -249,7 +267,6 @@ def test_a_chat_failure_arrives_as_a_domain_error() -> None:
 def test_a_chat_answer_passes_through_untouched() -> None:
     reply = SimpleNamespace(text="because")
     c = GeminiClient(api_key="fake-key")
-    chats = SimpleNamespace(create=lambda **kwargs: SimpleNamespace(send_message=lambda message: reply))
-    c.client = SimpleNamespace(chats=chats)  # type: ignore[assignment]
+    c.client = FakeGenAI(chats=FakeChats(lambda message: reply))
 
     assert c.start_chat().send_message("why?") is reply

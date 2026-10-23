@@ -1,6 +1,7 @@
 """Tests for PlayerContextBuilder — the prompt lines both engines share."""
 
 from datetime import date
+from typing import Any
 
 from conftest import FakeNBA, make_player
 
@@ -11,7 +12,8 @@ START, END = date(2026, 2, 9), date(2026, 2, 15)
 
 
 def _stats(**overrides: float) -> NineCatStats:
-    base: dict[str, float] = {
+    """A player's averages over a window, with any of them overridden."""
+    defaults = {
         "PTS": 20.0,
         "REB": 10.0,
         "AST": 5.0,
@@ -22,12 +24,22 @@ def _stats(**overrides: float) -> NineCatStats:
         "FG_PCT": 0.523,
         "FT_PCT": 0.781,
     }
-    base.update(overrides)
-    return base  # type: ignore[return-value]
+    value = {**defaults, **overrides}.__getitem__
+    return NineCatStats(
+        PTS=value("PTS"),
+        REB=value("REB"),
+        AST=value("AST"),
+        STL=value("STL"),
+        BLK=value("BLK"),
+        TOV=value("TOV"),
+        FG3M=value("FG3M"),
+        FG_PCT=value("FG_PCT"),
+        FT_PCT=value("FT_PCT"),
+    )
 
 
-def _builder(**kwargs: object) -> PlayerContextBuilder:
-    return PlayerContextBuilder(FakeNBA(**kwargs))  # type: ignore[arg-type]
+def _builder(stats: dict[str, Any] | None = None, games: dict[str, int] | None = None) -> PlayerContextBuilder:
+    return PlayerContextBuilder(FakeNBA(stats=stats, games=games))
 
 
 def test_empty_player_list_yields_empty_context() -> None:

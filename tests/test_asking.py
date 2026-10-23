@@ -65,7 +65,7 @@ class OneWeek:
 
 def _ask(subject: Subject, *questions: str, answers: FakeAnswers | None = None) -> list[str]:
     ai = FakeAI()
-    chat = AskEngine(OneWeek(), ai=ai, answers=answers or FakeAnswers()).open("L1", subject)  # type: ignore[arg-type]
+    chat = AskEngine(OneWeek(), ai=ai, answers=answers or FakeAnswers()).open("L1", subject)
     for question in questions:
         chat.send_message(question)
     return ai.chat.sent

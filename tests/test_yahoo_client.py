@@ -62,6 +62,10 @@ class FakeContext:
         self.request_threads: set[str] = set()
         self.save_threads: set[str] = set()
 
+    def _get_access_token(self) -> str | None:
+        """The SDK's token accessor; a test replaces it to watch refreshes."""
+        return self._access_token
+
     def _load_or_fetch(self, cache_key: str, query: str, **kwargs: Any) -> Any:
         self.queries.append(query)
         if self.error:
@@ -111,7 +115,7 @@ def _client(
 ) -> tuple[YahooClient, FakeContext]:
     ctx = FakeContext(response, error)
     league = SimpleNamespace(id="123", league_key="nba.l.123", name="My League", ctx=ctx, teams=lambda: [])
-    return YahooClient(league, cache=cache or RecordingCache()), ctx  # type: ignore[arg-type]
+    return YahooClient(league, cache=cache or RecordingCache()), ctx
 
 
 # ── fetch_players ───────────────────────────────────────────────────────
@@ -179,7 +183,7 @@ def test_a_token_is_refreshed_once_before_the_pool() -> None:
         refreshes.append(1)
         ctx._access_token = "fresh"
 
-    ctx._get_access_token = _refresh  # type: ignore[attr-defined]
+    ctx._get_access_token = _refresh
     client.fetch_top_by_stat(per_stat=4)
     assert refreshes == [1]
 
@@ -191,7 +195,7 @@ def test_scoreboard_is_refreshed_on_a_short_ttl(monkeypatch: pytest.MonkeyPatch)
     FakeWeek.matchups_to_return = [_matchup()]
     monkeypatch.setattr(mod, "Week", FakeWeek)
     client, ctx = _client(_response(""))
-    client.league.current_week = 5  # type: ignore[attr-defined]
+    client.league.current_week = 5
 
     ttls: list[int] = []
     original = ctx._load_or_fetch
@@ -200,7 +204,7 @@ def test_scoreboard_is_refreshed_on_a_short_ttl(monkeypatch: pytest.MonkeyPatch)
         ttls.append(kwargs.get("persist_ttl", 3600))
         return original(cache_key, query, **kwargs)
 
-    ctx._load_or_fetch = _record  # type: ignore[assignment]
+    ctx._load_or_fetch = _record
     client.get_matchup(_fake_team("t1"))
 
     assert ttls == [mod.SCOREBOARD_TTL_SECONDS]
@@ -215,24 +219,24 @@ def test_a_failed_scoreboard_refresh_falls_back_to_the_persisted_copy(
     FakeWeek.matchups_to_return = [_matchup()]
     monkeypatch.setattr(mod, "Week", FakeWeek)
     client, ctx = _client(_response(""))
-    client.league.current_week = 5  # type: ignore[attr-defined]
+    client.league.current_week = 5
 
     def _boom(*a: Any, **k: Any) -> Any:
         raise RuntimeError("yahoo down")
 
-    ctx._load_or_fetch = _boom  # type: ignore[assignment]
+    ctx._load_or_fetch = _boom
     info = client.get_matchup(_fake_team("t1"))
     assert info.week_start == "2026-02-09"  # still served from Week.sync
 
 
 def test_unpersistable_response_is_skipped_not_fatal() -> None:
     """Persisting is best-effort; a save failure must not lose the fetch."""
-    client, ctx = _client(_response({"player": [_player_payload("A B")]}))
 
-    def _bad_save(key: str, value: Any) -> None:
-        raise OSError("disk full")
+    class FullDisk(RecordingCache):
+        def set(self, key: str, value: Any, now: Any = None) -> None:
+            raise OSError("disk full")
 
-    ctx._save = _bad_save  # type: ignore[assignment]
+    client, _ = _client(_response({"player": [_player_payload("A B")]}), cache=FullDisk())
     results = client.fetch_top_by_stat(per_stat=4)
     assert all(len(v) == 1 for v in results.values())
 
@@ -255,13 +259,13 @@ def test_the_owned_team_is_returned() -> None:
     mine = SimpleNamespace(name="Mine", is_owned_by_current_login=True)
     theirs = SimpleNamespace(name="Theirs", is_owned_by_current_login=False)
     client, _ = _client()
-    client.league.teams = lambda: [theirs, mine]  # type: ignore[attr-defined]
+    client.league.teams = lambda: [theirs, mine]
     assert client.get_user_team() is mine
 
 
 def test_owning_no_team_raises_with_the_league_name() -> None:
     client, _ = _client()
-    client.league.teams = lambda: [SimpleNamespace(name="Theirs", is_owned_by_current_login=False)]  # type: ignore[attr-defined]
+    client.league.teams = lambda: [SimpleNamespace(name="Theirs", is_owned_by_current_login=False)]
     with pytest.raises(TeamNotFoundError, match="My League"):
         client.get_user_team()
 
@@ -424,7 +428,7 @@ def _matchup_client(monkeypatch: pytest.MonkeyPatch, matchups: list[Any], curren
     FakeWeek.instances = []
     monkeypatch.setattr(mod, "Week", FakeWeek)
     client, _ = _client()
-    client.league.current_week = current_week  # type: ignore[attr-defined]
+    client.league.current_week = current_week
     return client
 
 
@@ -485,7 +489,7 @@ def test_leagues_are_looked_up_by_game_code_and_season() -> None:
     names the season instead of translating it into a key."""
     ctx = FakeContext(_games({"game": {"leagues": {"league": [_league("466.l.1", "One"), _league("466.l.2", "Two")]}}}))
 
-    leagues = YahooClient.find_leagues(ctx, "nba", 2031, cache=RecordingCache())  # type: ignore[arg-type]
+    leagues = YahooClient.find_leagues(ctx, "nba", 2031, cache=RecordingCache())
 
     assert ctx.raw_requests == ["users;use_login=1/games;game_codes=nba;seasons=2031/leagues"]
     assert [(league.id, league.name) for league in leagues] == [("466.l.1", "One"), ("466.l.2", "Two")]
@@ -495,7 +499,7 @@ def test_leagues_are_looked_up_by_game_code_and_season() -> None:
 def test_a_single_league_is_not_mistaken_for_a_list() -> None:
     ctx = FakeContext(_games({"game": {"leagues": {"league": _league("466.l.1", "Only")}}}))
 
-    leagues = YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache())  # type: ignore[arg-type]
+    leagues = YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache())
 
     assert [league.name for league in leagues] == ["Only"]
 
@@ -504,15 +508,15 @@ def test_a_single_league_is_not_mistaken_for_a_list() -> None:
 def test_playing_in_no_league_is_an_empty_answer(games: Any) -> None:
     ctx = FakeContext(_games(games))
 
-    assert YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache()) == []  # type: ignore[arg-type]
+    assert YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache()) == []
 
 
 def test_the_league_list_is_served_from_cache_once_fetched() -> None:
     ctx = FakeContext(_games({"game": {"leagues": {"league": _league("466.l.1", "One")}}}))
     cache = RecordingCache()
 
-    YahooClient.find_leagues(ctx, "nba", 2026, cache=cache)  # type: ignore[arg-type]
-    YahooClient.find_leagues(ctx, "nba", 2026, cache=cache)  # type: ignore[arg-type]
+    YahooClient.find_leagues(ctx, "nba", 2026, cache=cache)
+    YahooClient.find_leagues(ctx, "nba", 2026, cache=cache)
 
     assert len(ctx.raw_requests) == 1
 
@@ -523,14 +527,14 @@ def test_an_unapproved_app_fails_the_league_lookup_by_name() -> None:
     ctx = FakeContext(error=_http(403))
 
     with pytest.raises(YahooAuthError):
-        YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache())  # type: ignore[arg-type]
+        YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache())
 
 
 def test_an_unrecognized_league_list_raises() -> None:
     ctx = FakeContext({"fantasy_content": {"error": "?"}})
 
     with pytest.raises(YahooAPIError, match="unreadable league list"):
-        YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache())  # type: ignore[arg-type]
+        YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache())
 
 
 # ── authorization is never obtained implicitly ──────────────────────────

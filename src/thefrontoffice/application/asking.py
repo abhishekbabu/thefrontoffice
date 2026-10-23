@@ -13,7 +13,7 @@ from thefrontoffice.application.answers import Answers
 from thefrontoffice.application.scouting import scout_scope
 from thefrontoffice.domain.errors import SubjectGoneError
 from thefrontoffice.domain.models import Action, PlayerDetail, ScoutReport, Subject
-from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatReply, ChatSession, CompetitionProvider
+from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatReply, ChatSession, SubjectProvider
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class AnchoredChat:
 class AskEngine:
     """Opens a conversation about one subject."""
 
-    def __init__(self, provider: CompetitionProvider, *, ai: AnalysisModel, answers: AnswerStore):
+    def __init__(self, provider: SubjectProvider, *, ai: AnalysisModel, answers: AnswerStore):
         """Every collaborator is a port, supplied by `bootstrap.ask_engine`."""
         self.provider = provider
         self.ai = ai
