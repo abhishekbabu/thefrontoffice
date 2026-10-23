@@ -59,7 +59,7 @@ class Scripted:
 
 def _router(*providers: Scripted, clock: Clock | None = None) -> tuple[RoutedModel, Cooldowns]:
     cooldowns = Cooldowns(clock=clock or Clock())
-    return RoutedModel([(p.name, p) for p in providers], cooldowns), cooldowns  # type: ignore[misc]
+    return RoutedModel([(p.name, p) for p in providers], cooldowns), cooldowns
 
 
 def _text(reply: object) -> str:

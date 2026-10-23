@@ -5,6 +5,7 @@ Covers `nfl/league.py`: the season, the table, the real games, the activity.
 
 from conftest import (
     SLEEPER_USER_ID,
+    FakeSleeper,
     _at_week,
     _league_client,
     _provider,
@@ -132,7 +133,7 @@ def test_the_window_carries_the_dates_where_there_are_any() -> None:
 # ── the rest of the season, for the simulation ──────────────────────────
 
 
-def _with_playoffs(week: int, spots: int = 1, start: int = 9) -> object:
+def _with_playoffs(week: int, spots: int = 1, start: int = 9) -> FakeSleeper:
     from dataclasses import replace
 
     client = _at_week(week)
@@ -141,7 +142,7 @@ def _with_playoffs(week: int, spots: int = 1, start: int = 9) -> object:
 
 
 def test_the_season_left_is_every_week_up_to_the_playoffs() -> None:
-    season = _provider(_with_playoffs(7)).season_input("L1")  # type: ignore[arg-type]
+    season = _provider(_with_playoffs(7)).season_input("L1")
 
     assert season is not None
     assert [(f.week, f.home, f.away) for f in season.fixtures] == [(7, "1", "2"), (8, "1", "2")]
@@ -149,7 +150,7 @@ def test_the_season_left_is_every_week_up_to_the_playoffs() -> None:
 
 
 def test_each_team_starts_from_its_record_and_is_scored_by_its_best_lineup() -> None:
-    season = _provider(_with_playoffs(7)).season_input("L1")  # type: ignore[arg-type]
+    season = _provider(_with_playoffs(7)).season_input("L1")
 
     assert season is not None
     assert {t.team_id: t.wins for t in season.teams} == {"1": 2, "2": 3}
@@ -159,7 +160,7 @@ def test_each_team_starts_from_its_record_and_is_scored_by_its_best_lineup() -> 
 
 
 def test_a_league_in_its_playoffs_has_no_season_left_to_simulate() -> None:
-    assert _provider(_with_playoffs(9)).season_input("L1") is None  # type: ignore[arg-type]
+    assert _provider(_with_playoffs(9)).season_input("L1") is None
 
 
 def test_a_league_that_names_no_playoffs_has_none_to_reach() -> None:

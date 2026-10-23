@@ -59,4 +59,4 @@ class TradeEngine:
             raise AIResponseError("The model returned an empty trade evaluation.")
 
         verdict = self.ai.structure_text(text, TradeVerdict, instruction=STRUCTURE_INSTRUCTION)
-        return verdict, chat  # type: ignore[return-value]
+        return verdict, chat

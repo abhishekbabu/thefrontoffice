@@ -32,7 +32,7 @@ class FakeTradeProvider:
 
 
 def _engine(provider: Any = None, ai: Any = None) -> TradeEngine:
-    return TradeEngine(provider or FakeTradeProvider(), ai=ai or FakeAI())  # type: ignore[arg-type]
+    return TradeEngine(provider or FakeTradeProvider(), ai=ai or FakeAI())
 
 
 def test_a_verdict_and_an_open_chat_are_returned() -> None:

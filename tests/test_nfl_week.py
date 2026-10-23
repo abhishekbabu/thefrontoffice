@@ -10,6 +10,7 @@ from conftest import (
     FakeSleeper,
     _proj,
     _provider,
+    mine,
 )
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -30,13 +31,13 @@ def test_the_summary_carries_the_lineup_and_the_changes() -> None:
     """Every figure in it is already known, so the page need not wait on a model."""
     summary = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).summary("L1")
 
-    assert [spot.slot for spot in summary.mine.lineup] == ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
+    assert [spot.slot for spot in mine(summary).lineup] == ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
     assert any(stat.label == "Week" for stat in summary.headline)
 
 
 def test_a_player_with_no_game_is_flagged_while_others_have_one() -> None:
     summary = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).summary("L1")
-    benched = {spot.player: spot for spot in summary.mine.lineup + summary.mine.bench}
+    benched = {spot.player: spot for spot in mine(summary).lineup + mine(summary).bench}
 
     assert benched["Star QB"].tone == "neutral"  # has an opponent
 
@@ -47,8 +48,8 @@ def test_a_week_nobody_is_scheduled_for_does_not_flag_the_whole_roster() -> None
     preseason = {pid: _proj(pid, proj.name, proj.position, 0.0, opp="") for pid, proj in DEFAULT_PROJECTIONS.items()}
     summary = _provider(FakeSleeper(projections=preseason)).summary("L1")
 
-    assert all(spot.tone == "neutral" for spot in summary.mine.lineup if spot.player != "—")
-    assert all("not scheduled yet" in spot.detail for spot in summary.mine.lineup if spot.player != "—")
+    assert all(spot.tone == "neutral" for spot in mine(summary).lineup if spot.player != "—")
+    assert all("not scheduled yet" in spot.detail for spot in mine(summary).lineup if spot.player != "—")
 
 
 def test_the_summary_does_not_ask_for_the_waiver_pool() -> None:
@@ -182,7 +183,7 @@ def test_both_lineups_are_listed_in_the_same_slot_order() -> None:
 
     assert summary.opponent is not None
     slots = [spot.slot for spot in summary.opponent.lineup]
-    assert slots == [spot.slot for spot in summary.mine.lineup]
+    assert slots == [spot.slot for spot in mine(summary).lineup]
     assert slots == ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
 
 
@@ -202,7 +203,7 @@ def test_a_slot_does_not_repeat_the_position_beside_it() -> None:
     """The slot column already says QB; saying it twice reads as two facts."""
     summary = _provider(_both_sides()).summary("L1")
 
-    quarterback = summary.mine.lineup[0]
+    quarterback = mine(summary).lineup[0]
     assert quarterback.slot == "QB"
     assert not quarterback.detail.startswith("QB")
 
@@ -211,7 +212,7 @@ def test_a_flex_still_says_which_position_is_filling_it() -> None:
     """The one case where place and position genuinely differ."""
     summary = _provider(_both_sides()).summary("L1")
 
-    flex = next(spot for spot in summary.mine.lineup if spot.slot == "FLEX")
+    flex = next(spot for spot in mine(summary).lineup if spot.slot == "FLEX")
     assert flex.detail.startswith("WR")
 
 
@@ -240,14 +241,14 @@ def test_a_player_whose_game_has_started_shows_what_they_scored() -> None:
     """Every fake projection is a BUF player, and BUF has finished."""
     summary = _provider(_live_client({"qb1": 24.5, "rb2": 3.0})).summary("L1")
 
-    values = {spot.player: spot.value for spot in summary.mine.lineup}
+    values = {spot.player: spot.value for spot in mine(summary).lineup}
     assert values["Star QB"] == "24.5 pts"
 
 
 def test_a_haul_and_a_blank_are_toned_apart() -> None:
     summary = _provider(_live_client({"qb1": 24.5, "rb2": 3.0})).summary("L1")
 
-    tones = {spot.player: spot.tone for spot in summary.mine.lineup}
+    tones = {spot.player: spot.tone for spot in mine(summary).lineup}
     assert tones["Star QB"] == "good"
     assert tones["Bad RB"] == "warning"
 
@@ -259,18 +260,18 @@ def test_a_player_whose_game_has_not_kicked_off_keeps_their_projection() -> None
 
     summary = _provider(client).summary("L1")
 
-    assert all(not spot.value.endswith("pts") for spot in summary.mine.lineup)
+    assert all(not spot.value.endswith("pts") for spot in mine(summary).lineup)
 
 
 def test_the_side_total_switches_from_projected_to_scored() -> None:
-    assert _provider(_live_client({"qb1": 24.5, "rb2": 3.0})).summary("L1").mine.points == "27.5 pts"
+    assert mine(_provider(_live_client({"qb1": 24.5, "rb2": 3.0})).summary("L1")).points == "27.5 pts"
 
 
 def test_before_kickoff_the_side_total_is_still_a_projection() -> None:
     client = _live_client({})
     client.season_schedule = [ScheduledGame(week=3, date="2026-09-24", home="BUF", away="MIA", status="pre_game")]
 
-    assert _provider(client).summary("L1").mine.points.endswith("proj")
+    assert mine(_provider(client).summary("L1")).points.endswith("proj")
 
 
 def test_a_missing_scoreboard_falls_back_to_projections() -> None:
@@ -280,4 +281,4 @@ def test_a_missing_scoreboard_falls_back_to_projections() -> None:
     summary = _provider(client).summary("L1")
 
     assert summary.mine is not None
-    assert summary.mine.points.endswith("proj")
+    assert mine(summary).points.endswith("proj")

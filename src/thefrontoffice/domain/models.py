@@ -352,7 +352,7 @@ class Action(BaseModel):
         description="LEAVE THIS FALSE. Set by the application where a dismissed item has changed since.",
     )
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def fingerprint(self) -> str:
         """What this item currently says, so a verdict on an older version of it reads as stale.

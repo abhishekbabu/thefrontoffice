@@ -24,7 +24,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
     ScheduledGame,
-    SeasonState,
     SeasonStats,
     SleeperLeague,
     SleeperRoster,
@@ -595,7 +594,7 @@ def test_a_warning_about_next_weeks_bye_is_not_priced_as_a_move() -> None:
 
 def test_a_free_agent_whose_role_grew_says_so_in_the_usage_column() -> None:
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
-    client.get_state = lambda competition="nfl": SeasonState(week=4, season="2026", season_type="regular")  # type: ignore[method-assign]
+    client.week = 4
     client.game_lines = [
         NFLGameLine(
             player_id="wr9",

@@ -80,10 +80,19 @@ class ItemStateStore(Protocol):
     def save(self, scope: str, states: dict[str, ItemState]) -> None: ...
 
 
+class ChatReply(Protocol):
+    """One answer in a conversation. Gemini's response and our own both satisfy it."""
+
+    @property
+    def text(self) -> str | None:
+        """What the model said; None or empty where it said nothing."""
+        ...
+
+
 class ChatSession(Protocol):
     """An open conversation, for follow-up questions about a finished report."""
 
-    def send_message(self, message: str) -> object: ...
+    def send_message(self, message: str) -> ChatReply: ...
 
 
 @runtime_checkable
@@ -112,8 +121,30 @@ class AnalysisModel(Protocol):
         ...
 
 
+class ContextProvider(Protocol):
+    """A competition as the scouting engine sees it: a name, and the week's context.
+
+    Split out because that is all reading a week needs, and an engine that
+    asks for the whole provider makes every test of it fake one.
+    """
+
+    competition: str
+    """Which competition this provides: 'nba', 'nfl', 'premier-league'."""
+
+    label: str
+    """Human name for pickers: 'NBA (Yahoo)'."""
+
+    def build_context(self, league_id: str) -> CompetitionContext:
+        """Gather this league's state and render the scouting prompt.
+
+        Raises:
+            FrontOfficeError: the league or the user's team within it is missing.
+        """
+        ...
+
+
 @runtime_checkable
-class CompetitionProvider(Protocol):
+class CompetitionProvider(ContextProvider, Protocol):
     """One competition on one platform.
 
     A competition rather than a sport, because that is what a fantasy game is
@@ -126,25 +157,11 @@ class CompetitionProvider(Protocol):
     """The game itself: 'basketball', 'football', 'soccer'. Groups competitions
     that are the same sport; never identifies one on its own."""
 
-    competition: str
-    """Which competition this provides: 'nba', 'nfl', 'premier-league'."""
-
-    label: str
-    """Human name for pickers: 'NBA (Yahoo)'."""
-
     def list_leagues(self) -> list[LeagueRef]:
         """Every league this user plays in for the current season.
 
         Raises:
             FrontOfficeError: the platform is unreachable or unconfigured.
-        """
-        ...
-
-    def build_context(self, league_id: str) -> CompetitionContext:
-        """Gather this league's state and render the scouting prompt.
-
-        Raises:
-            FrontOfficeError: the league or the user's team within it is missing.
         """
         ...
 

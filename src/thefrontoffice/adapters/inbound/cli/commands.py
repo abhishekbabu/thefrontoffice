@@ -5,6 +5,7 @@ from thefrontoffice.adapters.inbound.cli.render import render_scout_report, rend
 from thefrontoffice.adapters.inbound.cli.session import Session
 from thefrontoffice.bootstrap import CompetitionEntry, find, scout_engine, trade_engine
 from thefrontoffice.domain.errors import FrontOfficeError
+from thefrontoffice.domain.ports import TradeProvider
 
 
 def _print_help(entries: list[CompetitionEntry]) -> None:
@@ -174,7 +175,12 @@ def _cmd_trade(session: Session, entries: list[CompetitionEntry], args: list[str
 
     trade_text = " ".join(args)
     provider = session.provider(entry)
-    engine = trade_engine(provider)  # type: ignore[arg-type]
+    if not isinstance(provider, TradeProvider):
+        # The entry says it trades but its provider cannot: a registry slip,
+        # said plainly rather than an AttributeError mid-evaluation.
+        print(f"  ⚠️  {entry.label} does not support trade evaluation.")
+        return
+    engine = trade_engine(provider)
     for ref in provider.list_leagues():
         _print_header(f"{entry.label} — Trade Evaluation — {ref.name}")
         print("  ⏳ Parsing, enriching and evaluating...")

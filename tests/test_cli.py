@@ -387,3 +387,14 @@ def test_a_sport_that_cannot_trade_at_all_says_so(capsys: pytest.CaptureFixture[
     assert entry is None
     assert "does not support trade evaluation" in capsys.readouterr().out
     assert args == ["premier-league", "Give", "Saka"]
+
+
+def test_a_competition_marked_tradeable_whose_provider_cannot_trade_says_so(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A registry slip is reported, not an AttributeError halfway through an evaluation."""
+    cmd._cmd_trade(Session(), [_entry_with(FakeProvider(), trades=True)], ["Give A, Get B"])
+
+    out = capsys.readouterr().out
+    assert "NFL (Sleeper)" in out  # names which competition
+    assert "Parsing" not in out  # and never starts the evaluation

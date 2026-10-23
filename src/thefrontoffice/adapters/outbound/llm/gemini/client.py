@@ -4,6 +4,7 @@ import logging
 import time
 
 from google import genai
+from google.genai.chats import Chat
 
 from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.errors import (
@@ -14,7 +15,7 @@ from thefrontoffice.domain.errors import (
     FrontOfficeError,
 )
 from thefrontoffice.domain.models import TradeProposal
-from thefrontoffice.domain.ports import AnalysisModel, ChatSession, HistoryTurn, TModel
+from thefrontoffice.domain.ports import AnalysisModel, ChatReply, ChatSession, HistoryTurn, TModel
 
 from .constants import MODEL_FLASH, MODEL_PRO
 
@@ -44,18 +45,15 @@ class GeminiChat:
     spent quota — which another provider can absorb — from anything else.
     """
 
-    def __init__(self, chat: object) -> None:
+    def __init__(self, chat: Chat) -> None:
         self._chat = chat
 
-    def send_message(self, message: str) -> object:
+    def send_message(self, message: str) -> ChatReply:
         try:
-            return self._chat.send_message(message)  # type: ignore[attr-defined]
+            return self._chat.send_message(message)
         except Exception as e:
             logger.error(f"Gemini chat failed: {e}")
             raise translate(e) from e
-
-
-# The TypeVar the port declares, so the override types match exactly.
 
 
 class GeminiClient(AnalysisModel):
@@ -104,7 +102,6 @@ class GeminiClient(AnalysisModel):
             f"{prompt_tokens} in, {output_tokens} out, {total} total" + (f", {cached} cached" if cached else "")
         )
 
-    # pyrefly: ignore[bad-override]  — the port and this method have byte-identical
     # signatures (verified by inspect.signature and isinstance at runtime); pyrefly
     # cannot prove two generic method types equivalent across modules.
     def generate_structured(self, prompt: str, schema: type[TModel]) -> TModel:
@@ -138,7 +135,6 @@ class GeminiClient(AnalysisModel):
 
         return self._parsed_or_raise(response, schema)
 
-    # pyrefly: ignore[bad-override]  — the port and this method have byte-identical
     # signatures (verified by inspect.signature and isinstance at runtime); pyrefly
     # cannot prove two generic method types equivalent across modules.
     def structure_text(self, text: str, schema: type[TModel], instruction: str) -> TModel:
@@ -192,20 +188,20 @@ class GeminiClient(AnalysisModel):
         if not self.client:
             raise AIUnavailableError()
 
+        from google.genai import types
+
         config = None
         if enable_search:
-            from google.genai import types
-
             search_tool = types.Tool(google_search=types.GoogleSearch())
             config = types.GenerateContentConfig(tools=[search_tool])
 
-        return GeminiChat(
-            self.client.chats.create(
-                model=MODEL_PRO,
-                history=initial_history,  # type: ignore[arg-type]
-                config=config,
-            )
-        )
+        # Built as the SDK's own type rather than handed our dicts to coerce:
+        # the shape is ours, and a change to theirs then fails here by name.
+        history: list[types.ContentOrDict] = [
+            types.Content(role=turn["role"], parts=[types.Part(text=part) for part in turn["parts"]])
+            for turn in initial_history or []
+        ]
+        return GeminiChat(self.client.chats.create(model=MODEL_PRO, history=history, config=config))
 
     def parse_trade_string(self, text: str) -> TradeProposal:
         """

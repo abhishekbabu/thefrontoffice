@@ -13,7 +13,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
     ScheduledGame,
-    SeasonState,
     SleeperLeague,
     SleeperRoster,
     WeeklyProjection,
@@ -442,7 +441,7 @@ def _rising(player: WeeklyProjection) -> list[NFLGameLine]:
 
 def _with_free_agent(free: WeeklyProjection) -> FakeSleeper:
     client = _client([QB, RB, WR, FLEX, free], ["qb", "rb", "wr", "te"], [], game_lines=_rising(free))
-    client.get_state = lambda competition="nfl": SeasonState(week=4, season="2026", season_type="regular")  # type: ignore[method-assign]
+    client.week = 4
     client.season_schedule = [*SCHEDULE, ScheduledGame(week=4, date="2026-10-04", home="NYJ", away="NE")]
     return client
 

@@ -120,7 +120,7 @@ def test_a_roster_failure_degrades_without_losing_the_evaluation() -> None:
         raise RuntimeError("yahoo hiccup")
 
     team = yahoo.get_user_team()
-    team.players = _explode  # type: ignore[assignment]
+    team.players = _explode
     yahoo.get_user_team = lambda: team  # type: ignore[assignment]
 
     context = _provider(yahoo).build_trade_context(

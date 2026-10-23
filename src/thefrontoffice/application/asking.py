@@ -13,7 +13,7 @@ from thefrontoffice.application.answers import Answers
 from thefrontoffice.application.scouting import scout_scope
 from thefrontoffice.domain.errors import SubjectGoneError
 from thefrontoffice.domain.models import Action, PlayerDetail, ScoutReport, Subject
-from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatSession, CompetitionProvider
+from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatReply, ChatSession, CompetitionProvider
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class AnchoredChat:
         self._chat = chat
         self._briefing: str | None = briefing
 
-    def send_message(self, message: str) -> object:
+    def send_message(self, message: str) -> ChatReply:
         if self._briefing is not None:
             message, self._briefing = f"{self._briefing}\n\nQUESTION: {message}", None
         return self._chat.send_message(message)

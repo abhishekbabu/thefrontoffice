@@ -694,7 +694,7 @@ def test_every_model_key_saved_in_settings_reaches_the_file_and_turns_analysis_o
         monkeypatch.setattr(settings, field, None)  # restored after, whatever the reload sets
 
     def reload_from_tmp() -> None:
-        fresh = AppSettings(_env_file=path)  # type: ignore[call-arg]
+        fresh = AppSettings(_env_file=path)
         for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key"):
             setattr(settings, field, getattr(fresh, field))
 

@@ -11,7 +11,7 @@ from datetime import date
 
 from yahoofantasy import Player  # type: ignore[import-untyped]
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import NineCatStats, PlayerStats, SleeperNBAForm
+from thefrontoffice.adapters.outbound.competitions.nba.form import NineCatStats, PlayerStats, SleeperNBAForm, Window
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 
 
@@ -35,9 +35,10 @@ class PlayerContextBuilder:
             return "No stats available"
 
         parts: list[str] = []
-        for key, label in [("last_5", "L5"), ("last_10", "L10"), ("last_15", "L15")]:
+        labels: tuple[tuple[Window, str], ...] = (("last_5", "L5"), ("last_10", "L10"), ("last_15", "L15"))
+        for key, label in labels:
             if key in stats_dict:
-                s: NineCatStats = stats_dict[key]  # type: ignore[literal-required]
+                s: NineCatStats = stats_dict[key]
                 parts.append(
                     f"{label}: {s['PTS']}p {s['REB']}r {s['AST']}a {s['STL']}s {s['BLK']}b {s['TOV']}to {s['FG3M']}tpm FG{s['FG_PCT']:.1%} FT{s['FT_PCT']:.1%}"
                 )
