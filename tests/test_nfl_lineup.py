@@ -225,3 +225,28 @@ def test_a_set_of_starters_that_no_assignment_fits_does_not() -> None:
 def test_a_lineup_may_leave_a_slot_empty_but_not_overflow() -> None:
     assert fits(["QB", "RB"], [p("q", "QB", 1)])
     assert not fits(["QB"], [p("q", "QB", 1), p("q2", "QB", 1)])
+
+
+def test_a_change_is_never_a_swap_that_leaves_a_slot_unfillable() -> None:
+    """The best lineup swaps the tight end and moves the flex: pairing by points alone
+    said to start the running back over the only tight end, which no platform allows."""
+    slots = ["RB", "WR", "TE", "FLEX"]
+    players = [
+        p("rb1", "RB", 20),
+        p("wr1", "WR", 11),
+        p("te1", "TE", 8),
+        p("flex", "WR", 12),
+        p("rb2", "RB", 14),
+        p("te2", "TE", 10),
+    ]
+
+    changes = lineup_changes(slots, ["rb1", "wr1", "te1", "flex"], players)
+
+    for change in changes:
+        lineup = [q for q in players if q.player_id in {"rb1", "wr1", "te1", "flex"}]
+        out = {change.bench.player_id} if change.bench else set()
+        assert fits(slots, [q for q in lineup if q.player_id not in out] + [change.start])
+    assert {(c.start.player_id, c.bench.player_id if c.bench else None) for c in changes} == {
+        ("rb2", "wr1"),
+        ("te2", "te1"),
+    }
