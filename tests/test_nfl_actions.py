@@ -12,6 +12,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
     ScheduledGame,
+    SeasonState,
     SleeperLeague,
     SleeperRoster,
     WeeklyProjection,
@@ -420,3 +421,44 @@ def test_the_same_task_on_a_fresh_read_has_the_same_fingerprint() -> None:
         return _actions(_client([QB, _ruled_out(RB), WR, FLEX, BENCH_RB], ["qb", "rb", "wr", "te"], ["rb2"]))[0]
 
     assert read().fingerprint == read().fingerprint
+
+
+# ── a role that grew ────────────────────────────────────────────────────
+
+
+def _rising(player: WeeklyProjection) -> list[NFLGameLine]:
+    """Weeks 1 and 2: a part-timer, then most of the snaps in the latest week played."""
+    return [
+        NFLGameLine(
+            player_id=player.player_id,
+            week=week,
+            team=player.team,
+            opponent="LV",
+            position=player.position,
+            stats={"off_snp": snaps, "tm_off_snp": 60, "pts_ppr": 4},
+        )
+        for week, snaps in ((1, 15), (2, 18), (3, 50))
+    ]
+
+
+def _with_free_agent(free: WeeklyProjection) -> FakeSleeper:
+    client = _client([QB, RB, WR, FLEX, free], ["qb", "rb", "wr", "te"], [], game_lines=_rising(free))
+    client.get_state = lambda competition="nfl": SeasonState(week=4, season="2026", season_type="regular")  # type: ignore[method-assign]
+    client.season_schedule = [*SCHEDULE, ScheduledGame(week=4, date="2026-10-04", home="NYJ", away="NE")]
+    return client
+
+
+def test_a_free_agent_whose_role_just_grew_is_worth_picking_up() -> None:
+    free = _proj("wr9", "Rising Receiver", "WR", 8.0, team="KC", opp="LV")
+
+    [action] = [a for a in _actions(_with_free_agent(free)) if a.player_id == "wr9"]
+
+    assert (action.kind, action.key) == ("waiver", "rise:wr9")
+    assert any(stat.label == free.name for stat in action.evidence)
+
+
+def test_a_growing_role_the_projection_has_given_up_on_is_left_alone() -> None:
+    """Projected near nothing again usually means the starter is back."""
+    free = _proj("wr9", "Rising Receiver", "WR", 1.0, team="KC", opp="LV")
+
+    assert all(a.player_id != "wr9" for a in _actions(_with_free_agent(free)))

@@ -22,6 +22,8 @@ from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFL
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
+    ScheduledGame,
+    SeasonState,
     SeasonStats,
     SleeperLeague,
     SleeperRoster,
@@ -573,3 +575,39 @@ def test_a_rostered_player_is_never_priced_as_a_free_agent() -> None:
     matchup = _provider(_paired()).matchup_input("L1", candidates=["rb2"])
 
     assert matchup is not None and matchup.moves == ()
+
+
+def test_a_warning_about_next_weeks_bye_is_not_priced_as_a_move() -> None:
+    """It names your own starter; priced as a pickup it would be him added to his own lineup."""
+    client = _paired()
+    client.season_schedule = [*client.season_schedule, ScheduledGame(week=4, date="2026-10-04", home="KC", away="LV")]
+    provider = _provider(client)
+    summary = provider.summary("L1")
+    assert summary.actions and any(a.key.startswith("bye:") for a in summary.actions)
+
+    matchup = provider.matchup_input("L1")
+
+    assert matchup is not None
+    starters = {o.player_id for o in matchup.mine}
+    assert all(o.player_id not in starters for m in matchup.moves for o in m.into)
+
+
+def test_a_free_agent_whose_role_grew_says_so_in_the_usage_column() -> None:
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    client.get_state = lambda competition="nfl": SeasonState(week=4, season="2026", season_type="regular")  # type: ignore[method-assign]
+    client.game_lines = [
+        NFLGameLine(
+            player_id="wr9",
+            week=week,
+            team="NYJ",
+            opponent="MIA",
+            position="WR",
+            stats={"off_snp": snaps, "tm_off_snp": 60, "pts_ppr": 5},
+        )
+        for week, snaps in ((1, 12), (2, 14), (3, 50))
+    ]
+
+    cards = _available(client, sort="Usage")
+
+    assert next(iter(cards)) == "wr9"
+    assert cards["wr9"]["Usage"].startswith("snaps")

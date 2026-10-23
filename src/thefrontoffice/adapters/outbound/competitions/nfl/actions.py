@@ -15,7 +15,7 @@ move says nothing about when.
 
 from collections import defaultdict
 
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, eligible_positions
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, best_upgrade, eligible_positions
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame, WeeklyProjection
@@ -54,6 +54,7 @@ def build(
     kickoff = {club: game.date for game in week_games for club in (game.home, game.away)}
 
     actions = _lineup(state, started, kickoff, free_agents)
+    actions += _breakouts(state, free_agents, {a.player_id for a in actions})
     actions += _next_week_byes(state, games.get(state.week + 1, []))
     actions += _trade_deadline(state)
     return sorted(actions, key=lambda a: URGENCY_ORDER[a.urgency])
@@ -223,6 +224,52 @@ def _swap(
         evidence=evidence,
         key=key,
     )
+
+
+BREAKOUTS = 2
+"""Pickups suggested for a growing role: the strongest few, not every backup who had a big week."""
+
+BREAKOUT_FROM = 5.0
+"""Projected points a breakout needs this week: one whose projection has fallen back to
+nothing has usually lost the role again — the starter is back."""
+
+
+def _breakouts(state: Week, free_agents: list[WeeklyProjection], already: set[str]) -> list[Action]:
+    """Free agents whose role jumped last week, while the projections and the league catch up.
+
+    A stash rather than a start: whether he beats a starter this week is the
+    free-agent page's question, so the row names the role and leaves the
+    lineup alone.
+    """
+    rising = sorted(
+        (
+            p
+            for p in free_agents
+            if p.player_id in state.evidence.trends
+            and p.player_id not in already
+            and p.points >= BREAKOUT_FROM
+            and best_upgrade(state.lineup, p) is not None
+        ),
+        key=lambda p: -state.evidence.trends[p.player_id].rise,
+    )
+    actions = []
+    for player in rising[:BREAKOUTS]:
+        trend = state.evidence.trends[player.player_id]
+        actions.append(
+            Action(
+                kind="waiver",
+                urgency="soon",
+                title=f"Pick up {player.name} while his role grows",
+                reason=(
+                    f"{player.name}'s {trend.describe()}. He projects {player.points:.1f} at {player.position}, "
+                    "and a projection is slow to read a role that has just changed."
+                ),
+                player_id=player.player_id,
+                evidence=_evidence(state, [player]),
+                key=f"rise:{player.player_id}",
+            )
+        )
+    return actions
 
 
 def _next_week_byes(state: Week, next_games: list[ScheduledGame]) -> list[Action]:

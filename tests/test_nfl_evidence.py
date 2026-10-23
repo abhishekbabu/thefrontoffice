@@ -161,3 +161,60 @@ def test_a_player_with_nothing_played_has_nothing_to_say() -> None:
     player = _proj("x", "Rookie", "RB", 12.0, opp="MIA")
 
     assert (evidence.describe(player), evidence.stat(player)) == ("", None)
+
+
+# ── a role that grew ────────────────────────────────────────────────────
+
+
+def _snaps(pid: str, *shares: float, position: str = "WR") -> list[NFLGameLine]:
+    """One game a week from week 1, at each share of 60 team snaps."""
+    return [
+        _line(pid, week, position=position, off_snp=share * 60, tm_off_snp=60, pts_ppr=5)
+        for week, share in enumerate(shares, start=1)
+    ]
+
+
+def test_a_jump_in_the_latest_week_is_a_growing_role() -> None:
+    trend = gather(_snaps("wr", 0.3, 0.35, 0.4, 0.8), SCORING).trends["wr"]
+
+    assert (trend.measure, trend.week) == ("snaps", 4)
+    assert trend.before == pytest.approx(0.35) and trend.now == pytest.approx(0.8)
+
+
+def test_a_jump_weeks_ago_is_a_role_by_now() -> None:
+    """Somebody else played week 5; his jump in week 4 is old news the projection has read."""
+    lines = _snaps("wr", 0.3, 0.35, 0.4, 0.8) + _snaps("other", 0.5, 0.5, 0.5, 0.5, 0.5)
+
+    assert "wr" not in gather(lines, SCORING).trends
+
+
+def test_one_game_before_is_too_little_to_call_a_change() -> None:
+    assert "wr" not in gather(_snaps("wr", 0.2, 0.9), SCORING).trends
+
+
+def test_a_jump_to_a_role_that_is_still_small_is_no_role() -> None:
+    """From 5% to 30% of snaps is a big jump to a part nobody starts."""
+    assert "wr" not in gather(_snaps("wr", 0.05, 0.05, 0.3), SCORING).trends
+
+
+def test_a_steady_role_is_no_trend() -> None:
+    assert gather(_snaps("wr", 0.7, 0.72, 0.7, 0.71), SCORING).trends == {}
+
+
+def test_carries_count_for_a_back_whose_snaps_stayed_level() -> None:
+    lines = [
+        _line("rb", week, position="RB", off_snp=30, tm_off_snp=60, rush_att=carries, pts_ppr=5)
+        for week, carries in ((1, 2), (2, 3), (3, 16))
+    ]
+
+    trend = gather(lines, SCORING).trends["rb"]
+
+    assert trend.measure == "carries" and trend.now == 16
+
+
+def test_a_growing_role_is_part_of_the_line_a_player_is_read_by() -> None:
+    evidence = gather(_snaps("wr", 0.3, 0.35, 0.4, 0.8), SCORING)
+
+    line = evidence.describe(_proj("wr", "Wide", "WR", 9.0))
+
+    assert evidence.trends["wr"].describe() in line

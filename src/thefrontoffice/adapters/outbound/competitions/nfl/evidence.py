@@ -55,6 +55,49 @@ class Role:
 
 
 @dataclass(frozen=True)
+class Trend:
+    """A role that grew in the latest week: his share of something, then against before.
+
+    The pickups worth making first are the ones whose role has changed and
+    whose projection has not caught up — a backup handed the starter's snaps
+    the week the starter got hurt is a different player from the one his
+    average describes.
+    """
+
+    measure: str
+    """'snaps', 'targets' or 'carries'."""
+    before: float
+    """Per game across the games before the latest: a share for snaps and targets, a count for carries."""
+    now: float
+    week: int
+    rise: float
+    """How big a jump this is against the smallest that counts: 1 is just enough, 2 twice that."""
+
+    def describe(self) -> str:
+        """'snaps 38% → 71% in week 6'."""
+        if self.measure == "carries":
+            return f"carries {self.before:.1f} → {self.now:.0f} in week {self.week}"
+        noun = "target share" if self.measure == "targets" else "snaps"
+        return f"{noun} {self.before:.0%} → {self.now:.0%} in week {self.week}"
+
+    def short(self) -> str:
+        """The same in a table cell: 'snaps 38→71%'."""
+        if self.measure == "carries":
+            return f"carries {self.before:.0f}→{self.now:.0f}"
+        noun = "targets" if self.measure == "targets" else "snaps"
+        return f"{noun} {self.before:.0%}→{self.now:.0%}".replace("%→", "→")
+
+
+# The smallest jump that counts as a changed role, and the least he must now
+# have: a third-string back going from 2% to 12% of snaps has changed nothing.
+RISES = {
+    "snaps": (0.2, 0.5),
+    "targets": (0.1, 0.18),
+    "carries": (6.0, 10.0),
+}
+
+
+@dataclass(frozen=True)
 class Matchup:
     """How much one defense gives up to one position, against the rest."""
 
@@ -101,14 +144,19 @@ class Evidence:
     positions: dict[str, str] = field(default_factory=dict)
     """The position he played those games at."""
 
+    trends: dict[str, Trend] = field(default_factory=dict)
+    """Players whose role jumped in the latest week played, by the biggest of their jumps."""
+
     def matchup(self, player: WeeklyProjection) -> Matchup | None:
         return self.allowed.get((player.opponent, player.position)) if player.opponent else None
 
     def describe(self, player: WeeklyProjection) -> str:
         """Both halves in one line, or empty when there is nothing played to go on."""
-        matchup, role = self.matchup(player), self.roles.get(player.player_id)
+        matchup, role, trend = self.matchup(player), self.roles.get(player.player_id), self.trends.get(player.player_id)
         parts = [matchup.describe()] if matchup else []
-        return "; ".join(parts + [role.describe()] if role else parts)
+        parts += [role.describe()] if role else []
+        parts += [f"role growing: {trend.describe()}"] if trend else []
+        return "; ".join(parts)
 
     def stat(self, player: WeeklyProjection) -> Stat | None:
         """The same line labelled with the player, toned by the matchup."""
@@ -122,7 +170,13 @@ class Evidence:
 def gather(lines: list[NFLGameLine], scoring: str) -> Evidence:
     """Roles and matchups from the season's played game lines."""
     games, positions = _games(lines, scoring)
-    return Evidence(roles=_roles(lines, scoring), allowed=_allowed(lines, scoring), games=games, positions=positions)
+    return Evidence(
+        roles=_roles(lines, scoring),
+        allowed=_allowed(lines, scoring),
+        games=games,
+        positions=positions,
+        trends=_trends(lines),
+    )
 
 
 def _games(lines: list[NFLGameLine], scoring: str) -> tuple[dict[str, tuple[float, ...]], dict[str, str]]:
@@ -171,6 +225,55 @@ def _roles(lines: list[NFLGameLine], scoring: str) -> dict[str, Role]:
             carries=_total(recent, "rush_att") / len(recent),
         )
     return roles
+
+
+def _trends(lines: list[NFLGameLine]) -> dict[str, Trend]:
+    """Whose role jumped in the latest week played, against his games before it.
+
+    The latest week anybody played, not his own latest game: a jump three
+    weeks ago is a role, by now, and the projection has long since read it.
+    """
+    if not lines:
+        return {}
+    latest = max(line.week for line in lines)
+    team_targets: dict[tuple[str, int], float] = defaultdict(float)
+    by_player: dict[str, list[NFLGameLine]] = defaultdict(list)
+    for line in lines:
+        team_targets[(line.team, line.week)] += line.stats.get("rec_tgt", 0.0)
+        if line.position in SNAP_POSITIONS and line.stats.get("off_snp"):
+            by_player[line.player_id].append(line)
+
+    def measures(line: NFLGameLine) -> dict[str, float]:
+        found = {}
+        if line.stats.get("tm_off_snp"):
+            found["snaps"] = line.stats.get("off_snp", 0.0) / line.stats["tm_off_snp"]
+        if line.position in TARGET_POSITIONS and team_targets[(line.team, line.week)]:
+            found["targets"] = line.stats.get("rec_tgt", 0.0) / team_targets[(line.team, line.week)]
+        if line.position in CARRY_POSITIONS:
+            found["carries"] = line.stats.get("rush_att", 0.0)
+        return found
+
+    trends = {}
+    for player_id, played in by_player.items():
+        ordered = sorted(played, key=lambda line: line.week)
+        last, earlier = ordered[-1], ordered[:-1][-ROLE_GAMES:]
+        if last.week != latest or len(earlier) < 2:
+            continue
+        now = measures(last)
+        best: Trend | None = None
+        for measure, (step, floor) in RISES.items():
+            if measure not in now or now[measure] < floor:
+                continue
+            before = [m[measure] for m in map(measures, earlier) if measure in m]
+            if not before:
+                continue
+            average = sum(before) / len(before)
+            rise = (now[measure] - average) / step
+            if rise >= 1 and (best is None or rise > best.rise):
+                best = Trend(measure=measure, before=average, now=now[measure], week=latest, rise=rise)
+        if best is not None:
+            trends[player_id] = best
+    return trends
 
 
 def _allowed(lines: list[NFLGameLine], scoring: str) -> dict[tuple[str, str], Matchup]:
