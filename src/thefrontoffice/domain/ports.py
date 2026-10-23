@@ -143,8 +143,32 @@ class ContextProvider(Protocol):
         ...
 
 
+class SubjectProvider(ContextProvider, Protocol):
+    """A competition as a conversation about one thing sees it: the week, and its players.
+
+    What the ask engine reads to open a thread on a to-do item or a player,
+    and no more, for the same reason `ContextProvider` exists.
+    """
+
+    def roster(self, league_id: str) -> list[PlayerCard]:
+        """The user's roster, one card per player, for a team view.
+
+        Cheaper than build_context — a roster listing should not pull a waiver
+        pool — and richer than a lineup, which shows only what a week turns on.
+        """
+        ...
+
+    def player(self, league_id: str, player_id: str) -> PlayerDetail:
+        """Everything worth knowing about one player.
+
+        Raises:
+            PlayerNotFoundError: nothing in this league has that identifier.
+        """
+        ...
+
+
 @runtime_checkable
-class CompetitionProvider(ContextProvider, Protocol):
+class CompetitionProvider(SubjectProvider, Protocol):
     """One competition on one platform.
 
     A competition rather than a sport, because that is what a fantasy game is
@@ -162,22 +186,6 @@ class CompetitionProvider(ContextProvider, Protocol):
 
         Raises:
             FrontOfficeError: the platform is unreachable or unconfigured.
-        """
-        ...
-
-    def roster(self, league_id: str) -> list[PlayerCard]:
-        """The user's roster, one card per player, for a team view.
-
-        Cheaper than build_context — a roster listing should not pull a waiver
-        pool — and richer than a lineup, which shows only what a week turns on.
-        """
-        ...
-
-    def player(self, league_id: str, player_id: str) -> PlayerDetail:
-        """Everything worth knowing about one player.
-
-        Raises:
-            PlayerNotFoundError: nothing in this league has that identifier.
         """
         ...
 

@@ -246,7 +246,7 @@ def test_an_unknown_sport_is_a_404(client: TestClient) -> None:
 
 def _opened(chat: FakeChat | None = None) -> str:
     """A conversation as a thread would have opened it."""
-    return web._remember(chat or FakeChat())  # type: ignore[arg-type]
+    return web._remember(chat or FakeChat())
 
 
 def test_a_follow_up_reaches_the_chat_it_names(client: TestClient) -> None:

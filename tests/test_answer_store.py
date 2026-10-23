@@ -19,7 +19,7 @@ TASK = Action(
 )
 
 
-def _kept(answer: object) -> Remembered:  # type: ignore[type-arg]
+def _kept(answer: object) -> Remembered:
     return Remembered(answer=answer, answered_at=datetime.now(UTC), inputs="abc")
 
 

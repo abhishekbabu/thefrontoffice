@@ -53,7 +53,7 @@ def _call(pid: str, decision: Any = "ADD") -> PlayerCall:
 
 def _engine(ai: FakeAI | None = None, answers: FakeAnswers | None = None) -> tuple[WireEngine, Wire, FakeAI]:
     wire, model = Wire(), ai or Scripted()
-    return WireEngine(wire, ai=model, answers=answers or FakeAnswers()), wire, model  # type: ignore[arg-type]
+    return WireEngine(wire, ai=model, answers=answers or FakeAnswers()), wire, model
 
 
 # ── what comes back ─────────────────────────────────────────────────────

@@ -137,7 +137,11 @@ class FakeResponse:
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise requests.exceptions.HTTPError(response=self)  # type: ignore[arg-type]
+            # A real Response carrying the status, which is all the retry and
+            # outage checks read off a failure.
+            failed = requests.Response()
+            failed.status_code = self.status_code
+            raise requests.exceptions.HTTPError(response=failed)
 
     def json(self) -> Any:
         return self._payload

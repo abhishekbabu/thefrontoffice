@@ -18,7 +18,7 @@ YAHOO_LOGGER = YahooNBAProvider.__module__
 
 def _provider(yahoo: FakeYahoo) -> YahooNBAProvider:
     return YahooNBAProvider(
-        SimpleNamespace(id="1", name="One"),  # type: ignore[arg-type]
+        SimpleNamespace(id="1", name="One"),
         nba=FakeNBA(),
         yahoo=yahoo,
     )
@@ -108,12 +108,6 @@ def test_the_matchup_is_carried_as_the_situation() -> None:
 def test_a_roster_failure_degrades_without_losing_the_evaluation() -> None:
     """Roster context is enrichment; losing it must not lose the answer."""
 
-    class BadRoster(FakeYahoo):
-        def get_matchup(self, my_team: Any) -> Any:
-            info = super().get_matchup(my_team)
-            self.roster = property(lambda self: (_ for _ in ()).throw(RuntimeError("boom")))  # type: ignore[assignment]
-            return info
-
     yahoo = _yahoo_with("LeBron James", "Jayson Tatum")
 
     def _explode() -> Any:
@@ -121,7 +115,7 @@ def test_a_roster_failure_degrades_without_losing_the_evaluation() -> None:
 
     team = yahoo.get_user_team()
     team.players = _explode
-    yahoo.get_user_team = lambda: team  # type: ignore[assignment]
+    yahoo.get_user_team = lambda: team
 
     context = _provider(yahoo).build_trade_context(
         "", TradeProposal(giving=["LeBron James"], receiving=["Jayson Tatum"])

@@ -9,25 +9,12 @@ project-excludes = [
     "**/.venv/**",
 ]
 
+# yahoofantasy ships no types, and its classes get their attributes at runtime:
+# `from_response_object` setattr()s each key of the API response onto the
+# object, so `player.name.full` or `team.roster_adds` exist on no class. Read
+# as Any, which is what it is, rather than as classes that claim to know.
+replace-imports-with-any = ["yahoofantasy", "yahoofantasy.*"]
+
 [errors]
 # On everywhere, so a typo'd attribute or an unchecked Optional fails the check.
 missing-attribute = true
-
-# Off only where the yahoofantasy SDK is handled. Its League/Player/Team
-# attributes are assigned at runtime by `from_response_object`, which setattr()s
-# each key of the API response onto the object, so no static analyser can see
-# `player.name.full` or `team.roster_adds` and every access would be an error.
-[[sub-config]]
-matches = "src/thefrontoffice/adapters/outbound/platforms/yahoo/**"
-[sub-config.errors]
-missing-attribute = false
-
-[[sub-config]]
-matches = "src/thefrontoffice/adapters/outbound/competitions/nba/**"
-[sub-config.errors]
-missing-attribute = false
-
-[[sub-config]]
-matches = "tests/test_yahoo_client.py"
-[sub-config.errors]
-missing-attribute = false

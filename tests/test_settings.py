@@ -1,14 +1,16 @@
 """Tests for env-var validation in AppSettings."""
 
+from functools import partial
+
 import pytest
 from pydantic import ValidationError
 
 from thefrontoffice.config.settings import AppSettings
 
-
-def _settings(**overrides: object) -> AppSettings:
-    """Build settings from explicit values, ignoring any real .env on disk."""
-    return AppSettings(_env_file=None, **overrides)  # type: ignore[arg-type]
+# Settings from explicit values, ignoring any real .env on disk. A partial
+# rather than a typed wrapper: several tests pass deliberately wrong values to
+# see them refused, which a fully typed signature would reject before they ran.
+_settings = partial(AppSettings, _env_file=None)
 
 
 def test_defaults_match_the_documented_values() -> None:

@@ -28,7 +28,11 @@ class FakeResponse:
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise requests.exceptions.HTTPError(response=self)  # type: ignore[arg-type]
+            # A real Response carrying the status, which is all the retry and
+            # outage checks read off a failure.
+            failed = requests.Response()
+            failed.status_code = self.status_code
+            raise requests.exceptions.HTTPError(response=failed)
 
     def json(self) -> Any:
         return self._payload
@@ -230,7 +234,7 @@ def test_a_batch_fetches_concurrently(tmp_path: Path) -> None:
     """Eighteen weeks run one after another are the whole wait on the page."""
     session = RoutedSession(ROUTES)
 
-    _client(tmp_path, session).cached_many(URLS, TTL)  # type: ignore[arg-type]
+    _client(tmp_path, session).cached_many(URLS, TTL)
 
     assert len(session.threads) > 1, "requests ran on a single thread"
 
@@ -253,7 +257,7 @@ def test_a_fully_cached_batch_touches_the_network_at_all(tmp_path: Path) -> None
         cache.set(f"k{i}", {"week": i})
     session = RoutedSession(ROUTES)
 
-    _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)  # type: ignore[arg-type]
+    _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)
 
     assert session.requests == []
 
@@ -271,7 +275,7 @@ def test_batch_writes_stay_on_the_calling_thread(tmp_path: Path) -> None:
             super().set(key, value, now=now)
 
     session = RoutedSession(ROUTES)
-    _client(tmp_path, session, cache=Recording(tmp_path / "c.json")).cached_many(URLS, TTL)  # type: ignore[arg-type]
+    _client(tmp_path, session, cache=Recording(tmp_path / "c.json")).cached_many(URLS, TTL)
 
     assert len(writes) == 1
 
@@ -290,6 +294,6 @@ def test_a_failed_request_is_not_stored_as_though_it_were_an_answer(tmp_path: Pa
     cache = JsonDiskCache(tmp_path / "cache")
     session = RoutedSession(ROUTES, failing={"https://example.test/3"})
 
-    _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)  # type: ignore[arg-type]
+    _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)
 
     assert cache.get("k3", TTL) is None
