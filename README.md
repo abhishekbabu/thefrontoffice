@@ -84,7 +84,11 @@ league state, so it is complete before a model is asked anything.
 
 On NFL it opens with a **To do** list, most urgent first: a starter ruled out
 or on bye, an empty slot, a swap the bench allows, next week's byes with nobody
-behind them, the trade deadline. Each names the fix — the bench player who
+behind them, the trade deadline, and up to two free agents whose **role just
+grew** — a jump in his share of snaps or targets, or in carries, in the latest
+week played against the three before it, while his projection is still at least
+five points (one that has fallen back to nothing has usually lost the role
+again). Each names the fix — the bench player who
 covers, or the best free agent who can play when nobody does — and its deadline
 where Sleeper publishes one: a game's day, never a guessed kickoff or waiver time.
 
@@ -170,6 +174,10 @@ is what starting him would do to this week's chance of winning, at his best
 legal start — priced by the same simulation as the to-do list, so a boom-or-bust
 receiver can rate above a steadier, higher projection when you are the
 underdog. It is priced for the page on screen; sorting by it orders that page.
+**Usage** names any growing role — "snaps 34→76%", "carries 1→15" — and sorts
+the whole pool by the size of the jump: the pickups a projection has not yet
+caught up with. The same rise is on the player's evidence line wherever it is
+read.
 With a model, **Judge**
 puts the first ten rows on screen to it: each gets a call — *add* (and who to
 drop), *watch* or *pass* — on a line under its row, grounded in the role,

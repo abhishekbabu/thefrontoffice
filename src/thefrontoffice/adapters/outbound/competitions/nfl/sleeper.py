@@ -306,12 +306,14 @@ class SleeperNFLProvider:
             injury = str(meta.get("injury_status") or "")
             depth = int(meta.get("depth_chart_order") or 0)
             fit = self._fit(state, projection) if fits and projection else None
+            trend = state.evidence.trends.get(player_id) if fits else None
             cards.append(
                 PlayerCard(
                     player_id=player_id,
                     tone="warning" if injury else "neutral",
                     values={
                         **({"Fits": fit[0]} if fit else {}),
+                        **({"Usage": trend.rise} if trend else {}),
                         "Proj": projection.points if projection else 0.0,
                         "Depth": float(depth) if depth else 0.0,
                         "Exp": float(meta.get("years_exp") or 0),
@@ -325,6 +327,9 @@ class SleeperNFLProvider:
                         **({"Slot": "START" if player_id in starters else "BN"} if owned_column else {}),
                         "Proj": f"{projection.points:.1f}" if projection else "0.0",
                         **({"Fits": fit[1] if fit else "—"} if fits else {}),
+                        # Whose role just grew: the pickups a projection has
+                        # not caught up with yet. Sorts by the size of the jump.
+                        **({"Usage": trend.short() if trend else "—"} if fits else {}),
                         "Opponent": self._opponent_label(projection, scheduled),
                         "Depth": str(depth) if depth else "—",
                         "Exp": f"{int(meta.get('years_exp') or 0)}y",
@@ -973,11 +978,16 @@ class SleeperNFLProvider:
         games: dict[int, list[ScheduledGame]],
         outcome: Callable[[WeeklyProjection], Outcomes],
     ) -> tuple[LineupMove, ...]:
-        """The waiver pickups the to-do list names, priced as if already claimed."""
+        """The pickups that fill a hole this week, priced as if already claimed.
+
+        Only those: a bye warning names your own starter, and a breakout is a
+        stash for the bench — priced as a start, either would be a player
+        added to a full lineup, which no move can do.
+        """
         moves = []
         for action in self._actions(state, league_id, games):
             projection = state.projections.get(action.player_id)
-            if action.kind != "waiver" or projection is None:
+            if action.kind != "waiver" or not action.key.startswith("hole:") or projection is None:
                 continue
             moves.append(
                 LineupMove(
