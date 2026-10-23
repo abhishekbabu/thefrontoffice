@@ -1,5 +1,5 @@
 /**
- * Fail the build when the entry bundle grows past what this app can justify.
+ * Fail the build when what the first paint loads grows past what this app can justify.
  *
  * Everything here is loaded before anything renders, so its size is time the
  * page is blank. A budget catches the case a dependency is added for one small
@@ -20,22 +20,26 @@ const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../dist
 const BUDGET_KB = 150;
 
 const files = await readdir(DIST);
-const entry = files.find((f) => f.startsWith("index-") && f.endsWith(".js"));
-if (!entry) {
+const html = await readFile(path.join(DIST, "..", "index.html"), "utf8");
+
+// Everything index.html loads before anything renders: the entry script and
+// every chunk it preloads. Counting the entry file alone stopped meaning
+// anything once the bundler began splitting shared code into preloaded chunks —
+// those load at first paint just the same, and a budget that misses them
+// passes a page that is slower than it says.
+const firstPaint = [...html.matchAll(/(?:src|href)="\/assets\/([^"]+\.js)"/g)].map((m) => m[1]);
+if (!firstPaint.some((f) => f.startsWith("index-"))) {
   console.error("  No entry bundle found. Did the build run?");
   process.exit(1);
 }
 
-const gzipped = gzipSync(await readFile(path.join(DIST, entry))).length / 1024;
+const size = async (f) => gzipSync(await readFile(path.join(DIST, f))).length / 1024;
+const gzipped = (await Promise.all(firstPaint.map(size))).reduce((total, kb) => total + kb, 0);
 const deferred = (
-  await Promise.all(
-    files
-      .filter((f) => f.endsWith(".js") && f !== entry)
-      .map(async (f) => gzipSync(await readFile(path.join(DIST, f))).length / 1024),
-  )
-).reduce((total, size) => total + size, 0);
+  await Promise.all(files.filter((f) => f.endsWith(".js") && !firstPaint.includes(f)).map(size))
+).reduce((total, kb) => total + kb, 0);
 
-console.log(`  entry ${gzipped.toFixed(1)} kB gzip (budget ${BUDGET_KB})`);
+console.log(`  first paint ${gzipped.toFixed(1)} kB gzip across ${firstPaint.length} files (budget ${BUDGET_KB})`);
 if (deferred) console.log(`  deferred ${deferred.toFixed(1)} kB gzip, loaded after first paint`);
 
 if (gzipped > BUDGET_KB) {

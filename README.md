@@ -335,8 +335,10 @@ fail, with the most actionable reason: a key to fix before a quota to wait out.
 Groq and OpenRouter calls are traced only under `LOGFIRE_CAPTURE_PROMPTS`,
 because that instrumentation records message text regardless.
 
-**Web UI** (`web/`) — React 19, Vite, Tailwind v4, Radix primitives, Motion
-loaded lazily to hold the entry bundle under 150 kB gzip. Shared pieces live in
+**Web UI** (`web/`) — React 19, Vite 8, TypeScript 6, Tailwind v4, Radix
+primitives, pnpm 12. Each page and Motion are loaded lazily, to hold everything
+the first paint loads — the entry and every chunk it preloads — under 150 kB
+gzip. Shared pieces live in
 `components/ui/`; `panels/` holds one page each. Color is themed in two
 orthogonal dimensions — a palette (`data-theme`) and light/dark
 (`color-scheme`) — so every token is a single `light-dark(light, dark)`

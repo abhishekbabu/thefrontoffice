@@ -77,7 +77,7 @@ The facts the executor needs, inlined — never "as discussed" or "see the audit
 | Tests, filtered | `just test "-k <expr>"` | all pass |
 | Types | `uv run pyrefly check` | 0 errors |
 | Lint + format | `just fmt` then `just check` | exit 0 |
-| Front end | `just check-web` | exit 0, entry bundle within budget |
+| Front end | `just check-web` | exit 0, first-paint bundle within budget |
 
 (Exact commands verified during recon, not guessed. Omit rows the plan does not
 need — a backend-only plan does not run `just check-web`.)

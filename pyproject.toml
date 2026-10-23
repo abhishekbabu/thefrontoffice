@@ -12,23 +12,23 @@ dependencies = [
     "yahoofantasy>=1.4.9,<2",
     # Imported directly by config/settings.py; pulled in by pydantic-settings
     # too, but a direct import belongs in direct dependencies.
-    "pydantic>=2.7.0,<3",
-    "pydantic-settings>=2.7.0,<3",
-    "google-genai>=1.63.0,<2",
+    "pydantic>=2.14.1,<3",
+    "pydantic-settings>=2.16.1,<3",
+    "google-genai>=2.33.0,<3",
     # Groq and OpenRouter, which both speak the OpenAI wire format.
-    "openai>=3.24.0,<4",
+    "openai>=3.37.0,<4",
     # The platform clients catch requests' exception types by name to decide
     # what is retryable, so it is a direct dependency rather than something
     # inherited from whatever else happens to pull it in.
     "requests>=2.32.0,<3",
-    "tenacity>=9.0.0,<10",
+    "tenacity>=9.1.4,<10",
     # Telemetry. Inert without LOGFIRE_TOKEN, so a fresh clone and the test
     # suite never reach the network because it is installed. The extras are the
     # two instrumentations config/telemetry.py enables; without them logfire
     # imports fine and then raises at instrument_* time.
-    "logfire[google-genai,requests]>=4.41.0,<5",
-    "fastapi>=0.118.0,<1",
-    "uvicorn[standard]>=0.34.0,<1",
+    "logfire[google-genai,requests]>=5.3.0,<6",
+    "fastapi>=0.161.1,<1",
+    "uvicorn[standard]>=0.54.0,<1",
     "pyreadline3>=3.4,<4; sys_platform == 'win32'",
     # zoneinfo reads the OS tz database, which Windows does not ship. Without
     # this, ZoneInfo("America/Los_Angeles") raises ZoneInfoNotFoundError there.
@@ -40,13 +40,13 @@ front-office = "thefrontoffice.adapters.inbound.cli.repl:main"
 
 [dependency-groups]
 dev = [
-    "pyrefly>=1.1.1,<2",
+    "pyrefly>=1.4.0,<2",
     "pytest>=8.0.0,<10",
     "pytest-cov>=6.0.0,<8",
-    "ruff>=0.15.0,<1",
-    "pre-commit>=4.0.0,<5",
+    "ruff>=0.17.2,<1",
+    "pre-commit>=4.7.0,<5",
     # starlette's TestClient deprecated the httpx 0.x backend; httpx2 is what it wants now.
-    "httpx2>=2.0.0,<3",
+    "httpx2>=2.16.0,<3",
 ]
 
 [tool.uv]
