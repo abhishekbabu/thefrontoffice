@@ -76,33 +76,38 @@ class LineupChange:
 def lineup_changes(
     slots: list[str], current_starter_ids: list[str], players: list[WeeklyProjection]
 ) -> list[LineupChange]:
-    """What to change to reach the optimal lineup, best gain first.
+    """What to change to reach the optimal lineup, as swaps that can each be made, best gain first.
 
     Compares by player rather than by slot: shuffling the same players between a
     RB and a FLEX slot is not a start/sit decision and should not be reported as
-    one.
+    one. Each player coming in is paired with one going out only where that swap
+    alone leaves a legal lineup — pairing by points instead once told a manager
+    to start a running back over his only tight end, which no platform allows,
+    and hid the tight-end swap the change actually needed.
     """
     best = optimal_lineup(slots, players)
     best_ids = {s.player.player_id for s in best if s.player}
     current_ids = set(current_starter_ids)
-
-    coming_in = [s for s in best if s.player and s.player.player_id not in current_ids]
     by_id = {p.player_id: p for p in players}
-    going_out = sorted(
-        (by_id[pid] for pid in current_ids - best_ids if pid in by_id),
-        key=lambda p: p.points,
-    )
+
+    lineup = [by_id[pid] for pid in current_starter_ids if pid in by_id]
+    coming_in = sorted((s for s in best if s.player and s.player.player_id not in current_ids), key=lambda s: -s.points)
+    going_out = sorted((by_id[pid] for pid in current_ids - best_ids if pid in by_id), key=lambda p: p.points)
 
     changes = []
-    for i, slot in enumerate(sorted(coming_in, key=lambda s: s.points, reverse=True)):
+    for slot in coming_in:
         assert slot.player is not None
-        changes.append(
-            LineupChange(
-                slot=slot.slot,
-                start=slot.player,
-                bench=going_out[i] if i < len(going_out) else None,
-            )
-        )
+        out = next((p for p in going_out if fits(slots, [q for q in lineup if q is not p] + [slot.player])), None)
+        if out is None and not fits(slots, [*lineup, slot.player]):
+            # No single swap brings him in; the change needs several at once,
+            # which the page cannot phrase as one row. Rare, and left out
+            # rather than shown as a swap that cannot be made.
+            continue
+        if out is not None:
+            going_out.remove(out)
+            lineup = [q for q in lineup if q is not out]
+        lineup.append(slot.player)
+        changes.append(LineupChange(slot=slot.slot, start=slot.player, bench=out))
     # A swap that loses points is not a recommendation. It arises when a slot
     # holds someone ineligible for it, making the replacement forced rather than
     # an upgrade.
