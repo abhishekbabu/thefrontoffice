@@ -118,7 +118,9 @@ item, and a verdict naming no listed item is discarded.
 outcome drawn from his own games rescaled to this week's projection (thin
 histories borrow from his position, whose spread includes last season's games
 so the opening weeks have one, and a share of uncertainty in the projection
-itself widens every range), whether he plays from his designation,
+itself widens every range — the part of it a quarterback shares with his own
+receivers drawn once for the whole passing game, so a stack rises and falls
+together), whether he plays from his designation,
 and finished or live games held at what they have scored. The header carries
 the chance of winning and the likely margin; every to-do move carries what it
 does to that chance — computed on the same draws, so the difference is the

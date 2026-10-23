@@ -48,12 +48,14 @@ URGENCY_ORDER: dict[Urgency, int] = {"now": 0, "soon": 1, "later": 2}
 def simulate(matchup: MatchupInput, simulations: int = SIMULATIONS) -> Forecast:
     """Play the matchup `simulations` times, with and without each move."""
     rng = random.Random(matchup.seed)
+    everyone = (*matchup.mine, *matchup.theirs, *(o for m in matchup.moves for o in m.into))
+    shared = _shared(everyone, matchup.seed, simulations)
     draws: dict[str, list[float]] = {}
     # Both lineups first, then the movers: adding a move to price never
     # changes the dice anybody already in the matchup rolls.
-    for outcomes in (*matchup.mine, *matchup.theirs, *(o for m in matchup.moves for o in m.into)):
+    for outcomes in everyone:
         if outcomes.player_id not in draws:
-            draws[outcomes.player_id] = _draw(outcomes, rng, simulations)
+            draws[outcomes.player_id] = _draw(outcomes, rng, simulations, shared.get(outcomes.group))
 
     mine = _totals(matchup.mine, draws, simulations)
     theirs = _totals(matchup.theirs, draws, simulations)
@@ -71,22 +73,47 @@ def simulate(matchup: MatchupInput, simulations: int = SIMULATIONS) -> Forecast:
     )
 
 
-def _draw(outcomes: Outcomes, rng: random.Random, simulations: int) -> list[float]:
-    """His score in each simulated week: what is on the board, plus the rest of a game if he plays."""
+def _shared(everyone: Sequence[Outcomes], seed: int, simulations: int) -> dict[str, list[float]]:
+    """One factor per group per simulated week: the part of a week a quarterback and his receivers share.
+
+    Each group rolls its own dice, seeded by its name, so a move that brings
+    a new group in leaves every other group's weeks exactly as they were.
+    """
+    errors = {o.group: o.shared_error for o in everyone if o.group and o.shared_error}
+    factors = {}
+    for group, error in errors.items():
+        rng = random.Random(f"{seed}:{group}")
+        factors[group] = [max(0.0, rng.gauss(1.0, error)) for _ in range(simulations)]
+    return factors
+
+
+def _draw(outcomes: Outcomes, rng: random.Random, simulations: int, shared: list[float] | None = None) -> list[float]:
+    """His score in each simulated week: what is on the board, plus the rest of a game if he plays.
+
+    `shared` is his group's factor for each week. Without it — a player
+    ranged on his own, as tuning does — he rolls his share himself, so his
+    range is the same whether or not his teammates are in the matchup.
+    """
     # Hoisted out of the loop, which runs ten thousand times a player and a
     # page of free agents is fifty players. The dice are rolled in the same
     # order as ever, so every seed gives the answer it always gave.
     random_, choice, gauss = rng.random, rng.choice, rng.gauss
-    plays, samples, error = outcomes.plays, outcomes.samples, outcomes.projection_error
+    plays, samples = outcomes.plays, outcomes.samples
+    common = min(outcomes.shared_error, outcomes.projection_error) if outcomes.group else 0.0
+    # His own part of the projection's error, with the shared part taken out
+    # of it: variances add, so the two together are as wide as the whole was.
+    error = (outcomes.projection_error**2 - common**2) ** 0.5
     floor, remaining = outcomes.floor, outcomes.remaining
     draws = []
-    for _ in range(simulations):
+    for i in range(simulations):
         played = random_() < plays
         game = choice(samples) if samples else 0.0
         if error:
             # The projection may be off too: one factor for his whole game,
             # around 1 so the centre holds, never below 0 so a miss is not a sign flip.
             game *= max(0.0, gauss(1.0, error))
+        if common:
+            game *= shared[i] if shared is not None else max(0.0, gauss(1.0, common))
         draws.append(floor + (remaining * game if played else 0.0))
     return draws
 

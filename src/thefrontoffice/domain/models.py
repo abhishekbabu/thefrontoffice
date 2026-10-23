@@ -472,6 +472,15 @@ class Outcomes:
     """Spread of a factor around 1 that scales his whole game in each simulated week —
     for how far the projection his range is centred on may itself be off."""
 
+    group: str = ""
+    """Players whose weeks rise and fall together — a quarterback and his receivers.
+    Empty for a player whose week is his own."""
+
+    shared_error: float = 0.0
+    """The part of `projection_error` everyone in `group` shares: one factor per group per
+    simulated week. Taken out of his own share rather than added to it, so his range on
+    its own is the same either way and only how it moves with his teammates changes."""
+
 
 @dataclass(frozen=True)
 class LineupMove:

@@ -5,7 +5,9 @@ simulation should conclude — a sure thing, a coin flip, a move that cannot
 hurt — without depending on any sport's data.
 """
 
+import random
 from collections.abc import Sequence
+from statistics import pstdev
 
 import pytest
 
@@ -13,6 +15,7 @@ from thefrontoffice.application.forecasting import (
     WIN_COLUMN,
     WORTH_A_ROW,
     ForecastEngine,
+    _draw,
     attach,
     attach_pickups,
     calibrate,
@@ -363,3 +366,43 @@ def test_no_free_agents_is_no_simulation() -> None:
 
     assert ForecastEngine(wire).pickups("L1", []) == []
     assert wire.asked == []
+
+
+# ── teammates ───────────────────────────────────────────────────────────
+
+
+def _grouped(pid: str, group: str) -> Outcomes:
+    return Outcomes(pid, pid.upper(), 10.0, (10.0,), projection_error=0.3, group=group, shared_error=0.3)
+
+
+def _width(matchup: MatchupInput) -> float:
+    margin = simulate(matchup, FEW).margin
+    return margin.high - margin.low
+
+
+def test_teammates_who_rise_together_make_a_wider_week_than_strangers() -> None:
+    """A quarterback and his receiver in one lineup: their good weeks come together."""
+    together = _match([_grouped("qb", "KC"), _grouped("wr", "KC")], [_player("them", 20.0)])
+    apart = _match([_grouped("qb", "KC"), _grouped("wr", "BUF")], [_player("them", 20.0)])
+
+    assert _width(together) > _width(apart)
+
+
+def test_a_player_ranged_alone_is_as_wide_with_teammates_as_without() -> None:
+    """Sharing moves part of his error into the group; it adds none."""
+    alone = Outcomes("wr", "WR", 10.0, (10.0,), projection_error=0.3)
+    grouped = _grouped("wr", "KC")
+
+    widths = [pstdev(_draw(o, random.Random(1), 20_000, shared=None)) for o in (alone, grouped)]
+
+    assert widths[0] == pytest.approx(widths[1], rel=0.05)
+
+
+def test_a_move_bringing_in_a_new_group_leaves_every_other_week_as_it_was() -> None:
+    mine, theirs = [_grouped("qb", "KC")], [_grouped("them", "BUF")]
+    move = LineupMove("x>qb", "Start X", ("qb",), (_grouped("x", "DAL"),))
+
+    without = simulate(_match(mine, theirs), FEW)
+    with_move = simulate(_match(mine, theirs, move), FEW)
+
+    assert with_move.win == without.win
