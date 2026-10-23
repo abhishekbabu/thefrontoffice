@@ -10,7 +10,13 @@ import requests
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
-from thefrontoffice.domain.errors import FPLAPIError, SleeperAPIError
+from thefrontoffice.domain.errors import (
+    FPLAPIError,
+    FPLUnavailableError,
+    PlatformUnavailableError,
+    SleeperAPIError,
+    SleeperUnavailableError,
+)
 
 TTL = timedelta(hours=1)
 
@@ -29,9 +35,10 @@ class FakeResponse:
 
 
 class FakeSession:
-    def __init__(self, payload: Any = None, error: Exception | None = None) -> None:
+    def __init__(self, payload: Any = None, error: Exception | None = None, status: int = 200) -> None:
         self.payload = payload
         self.error = error
+        self.status = status
         self.requests: list[str] = []
         self.timeouts: list[int] = []
 
@@ -40,7 +47,13 @@ class FakeSession:
         self.timeouts.append(timeout)
         if self.error:
             raise self.error
-        return FakeResponse(self.payload)
+        return FakeResponse(self.payload, self.status)
+
+
+UNAVAILABLE: dict[type, type[PlatformUnavailableError]] = {
+    SleeperAPIError: SleeperUnavailableError,
+    FPLAPIError: FPLUnavailableError,
+}
 
 
 def _client(
@@ -54,6 +67,7 @@ def _client(
             wait=lambda _: 0
         ),
         error=error,
+        unavailable=UNAVAILABLE[error],
         session=session,
         timeout=11,
     )
@@ -73,9 +87,34 @@ def test_a_call_can_override_the_default_timeout(tmp_path: Path) -> None:
 
 
 def test_a_failure_becomes_the_callers_domain_error(tmp_path: Path) -> None:
-    session = FakeSession(error=requests.exceptions.ConnectionError("down"))
+    session = FakeSession(status=404)
     with pytest.raises(FPLAPIError, match="Test request failed"):
         _client(tmp_path, session, error=FPLAPIError).get("https://example.test/a")
+
+
+@pytest.mark.parametrize(
+    "session",
+    [
+        FakeSession(status=503),
+        FakeSession(error=requests.exceptions.Timeout()),
+        FakeSession(error=requests.exceptions.ConnectionError("refused")),
+    ],
+    ids=["server-error", "timeout", "no-connection"],
+)
+def test_a_platform_that_is_down_says_to_wait(tmp_path: Path, session: FakeSession) -> None:
+    """Still the platform's own error, so whatever carries on without it still catches it."""
+    with pytest.raises(FPLUnavailableError) as raised:
+        _client(tmp_path, session, error=FPLAPIError).get("https://example.test/a")
+
+    assert isinstance(raised.value, FPLAPIError)
+    assert raised.value.code == PlatformUnavailableError.code
+
+
+def test_a_request_the_platform_turned_down_is_not_an_outage(tmp_path: Path) -> None:
+    with pytest.raises(FPLAPIError) as raised:
+        _client(tmp_path, FakeSession(status=404), error=FPLAPIError).get("https://example.test/a")
+
+    assert not isinstance(raised.value, PlatformUnavailableError)
 
 
 def test_each_caller_gets_its_own_error_type(tmp_path: Path) -> None:

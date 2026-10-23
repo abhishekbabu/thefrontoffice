@@ -928,3 +928,17 @@ def test_a_season_that_cannot_be_simulated_is_still_the_league(
     headline = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["headline"]
 
     assert row["playoffs"] == "" and headline == []
+
+
+def test_a_platform_that_is_down_is_a_503_that_says_so(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing in the request was wrong, so it is not a 400."""
+    from thefrontoffice.domain.errors import FPLUnavailableError, PlatformUnavailableError
+
+    monkeypatch.setattr(
+        web.data, "build_provider", lambda sport: FakeProvider(FPLUnavailableError("FPL", "it answered 503"))
+    )
+
+    response = client.get("/api/premier-league-fpl/leagues")
+
+    assert response.status_code == 503
+    assert response.json()["code"] == PlatformUnavailableError.code

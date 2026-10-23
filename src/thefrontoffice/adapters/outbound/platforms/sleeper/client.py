@@ -43,7 +43,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     WeeklyProjection,
 )
 from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.errors import SleeperAPIError
+from thefrontoffice.domain.errors import SleeperAPIError, SleeperUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +110,7 @@ class SleeperClient:
             # policy stays one thing a test can replace.
             retry=lambda: _retry(),
             error=SleeperAPIError,
+            unavailable=SleeperUnavailableError,
             session=session,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )

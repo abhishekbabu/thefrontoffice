@@ -379,7 +379,14 @@ just shots     # screenshot every view into web/.shots (starts its own preview)
 
 Both run the same routes against the same platforms as `just ui` — real data is
 where the awkward cases are. `shots` drives it with Playwright and reports any
-console errors, which a screenshot of a blank panel otherwise hides.
+console errors, which a screenshot of a blank panel otherwise hides. It needs
+Playwright's browser once per machine (about 95 MB):
+`cd web && pnpm exec playwright install --only-shell chromium`.
+
+When Sleeper, ESPN or FPL itself is down — a 5xx, a timeout, no connection —
+the API answers 503 with code `platform_unavailable` and a message saying it is
+on that platform's side, and the page offers **Try again**; any other failed
+request stays a 400 naming what went wrong.
 
 Tests are hermetic: no network, no credentials, no cache on disk. Engines take
 their collaborators by keyword, so the `tests/conftest.py` fakes stand in for
