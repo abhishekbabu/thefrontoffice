@@ -1,4 +1,4 @@
-"""ESPN's public news feeds.
+"""ESPN's public news feeds, and its live scoreboard.
 
 Fantasy platforms publish a player's injury status but not the news behind
 it — who is getting the work, who is back at practice, whose role changed.
@@ -8,6 +8,10 @@ about tagged, and asks for no key.
 One request per club rather than the league-wide feed: that feed holds the
 latest fifty articles across every club, about a day of news, while a club's
 own holds its last fifty, which reaches back a couple of weeks.
+
+The scoreboard is read for the one thing the fantasy platforms leave out: how
+far through a game is. Sleeper says a game is under way, and nothing about
+whether that is the first minute or the last.
 """
 
 import logging
@@ -18,7 +22,7 @@ from typing import Any, Protocol
 from tenacity import Retrying
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
-from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
+from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
 from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
@@ -32,6 +36,8 @@ BASE_URL = "https://site.api.espn.com/apis/site/v2/sports"
 # A club list changes when a franchise moves; news turns over within hours.
 TEAMS_TTL = timedelta(days=1)
 NEWS_TTL = timedelta(minutes=30)
+SCOREBOARD_TTL = timedelta(minutes=1)
+"""A clock that is a minute stale is a minute of a sixty-minute game."""
 NEWS_LIMIT = 50
 """ESPN's own ceiling for one feed; asking for more returns the same fifty."""
 
@@ -54,6 +60,10 @@ class ESPNSource(Protocol):
 
     def get_team_news(self, league: str, clubs: list[str]) -> dict[str, list[NewsArticle]]:
         """Each club's recent articles, newest first, keyed by ESPN's abbreviation."""
+        ...
+
+    def get_scoreboard(self, league: str, season: str, week: int) -> list[ScoreboardGame]:
+        """Every regular-season game of `week`, as it stands right now."""
         ...
 
 
@@ -104,6 +114,36 @@ class ESPNClient:
                 articles = [a for a in (_article(row) for row in payload.get("articles") or []) if a]
                 news[club] = sorted(articles, key=lambda a: a.published, reverse=True)
         return news
+
+    def get_scoreboard(self, league: str, season: str, week: int) -> list[ScoreboardGame]:
+        """Every regular-season game of `week`, as it stands right now."""
+        data = self._api.cached(
+            f"scoreboard_{league.replace('/', '_')}_{season}_{week}",
+            f"{BASE_URL}/{league}/scoreboard?seasontype=2&week={week}&dates={season}",
+            SCOREBOARD_TTL,
+        )
+        if not isinstance(data, dict):
+            raise ESPNAPIError("ESPN returned an unreadable scoreboard.")
+        return [game for game in (_game(event) for event in data.get("events") or []) if game]
+
+
+def _game(event: Any) -> ScoreboardGame | None:
+    """One scoreboard event, or None for one missing either side."""
+    try:
+        competition = event["competitions"][0]
+        sides = {c["homeAway"]: str(c["team"]["abbreviation"]) for c in competition["competitors"]}
+        status = event.get("status") or {}
+        return ScoreboardGame(
+            home=sides["home"],
+            away=sides["away"],
+            state=str((status.get("type") or {}).get("state") or ""),
+            period=int(status.get("period") or 0),
+            clock=float(status.get("clock") or 0.0),
+            label=str((status.get("type") or {}).get("shortDetail") or ""),
+        )
+    except KeyError, IndexError, TypeError, ValueError:
+        logger.debug(f"Skipping an unreadable ESPN scoreboard event: {str(event)[:200]}")
+        return None
 
 
 def _article(row: Any) -> NewsArticle | None:

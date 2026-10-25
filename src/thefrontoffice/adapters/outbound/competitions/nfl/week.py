@@ -52,6 +52,9 @@ class Live:
     points: dict[str, float]
     """What each player has scored, keyed by Sleeper's player_id."""
 
+    clock: dict[str, str] = field(default_factory=dict)
+    """Where each club's game is while it is on — 'Q3 13:02', 'Halftime' — by Sleeper's abbreviation."""
+
     def scored(self, player_id: str, team: str) -> float | None:
         """Points where that club's game has started, and nothing before it."""
         if not self.under_way or team not in self.started:

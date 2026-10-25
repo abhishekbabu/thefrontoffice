@@ -68,7 +68,7 @@ POOL_SIZE = 200
 """Points of the position's spread kept: evenly spaced through it, so the shape survives."""
 
 UNDER_WAY = 0.5
-"""How much of a game is left once it has kicked off. Sleeper gives no clock, so a guess."""
+"""How much of a game is left once it has kicked off, where no scoreboard says: Sleeper gives no clock, so a guess."""
 
 PASSING_GAME = frozenset({"QB", "WR", "TE"})
 """Positions whose weeks rise and fall with their own team's passing game."""
@@ -138,12 +138,14 @@ def outcomes(
     *,
     status: str = "",
     scored: float = 0.0,
+    left: float = UNDER_WAY,
     settings: RangeSettings = DEFAULT,
 ) -> Outcomes:
     """His week: the range, the chance he plays, and what `status` says of his game.
 
     `status` is his game's — Sleeper's `pre_game`, `in_game` or `complete` —
-    and `scored` what he has so far.
+    `scored` what he has so far, and `left` how much of it is still to
+    play — the scoreboard's clock where there is one.
     """
     if status == "complete":
         return Outcomes(player.player_id, player.name, player.points, (), floor=scored, remaining=0.0)
@@ -159,7 +161,7 @@ def outcomes(
         # points so far say he is not.
         plays=1.0 if started else PLAYS.get(player.injury_status.upper(), 1.0) if player.opponent else 0.0,
         floor=scored if started else 0.0,
-        remaining=UNDER_WAY if started else 1.0,
+        remaining=left if started else 1.0,
         projection_error=settings.projection_error,
         group=f"{player.team}:pass" if player.position in PASSING_GAME and player.team else "",
         shared_error=settings.shared_error,

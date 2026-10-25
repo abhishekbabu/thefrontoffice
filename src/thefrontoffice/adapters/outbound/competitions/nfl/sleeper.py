@@ -11,6 +11,7 @@ is the only configuration.
 import hashlib
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -38,6 +39,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.espn import types as espn
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient, ESPNSource
+from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL, SleeperClient, SleeperNFLSource
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     FANTASY_POSITIONS,
@@ -159,6 +161,9 @@ def _split_value(key: str, value: float | None) -> str:
 HAUL_POINTS = 20.0
 BLANK_POINTS = 5.0
 
+SCOREBOARD_STATUS = {"pre": "pre_game", "in": "in_game", "post": "complete"}
+"""ESPN's game states in Sleeper's words, which is what the rest of the week reads."""
+
 
 class SleeperNFLProvider:
     """CompetitionProvider for Sleeper points-league football."""
@@ -178,6 +183,7 @@ class SleeperNFLProvider:
         # forecast beside it both need it, and gathering it is most of the wait.
         self._weeks: dict[str, Week] = {}
         self._previous: dict[str, evidence.Evidence] = {}
+        self._boards: dict[int, dict[str, ScoreboardGame]] = {}
 
     # ── leagues ─────────────────────────────────────────────────────
 
@@ -596,7 +602,7 @@ class SleeperNFLProvider:
         judges the moves somebody is looking at rather than inventing its own.
         """
         state = self._week(league_id)
-        tasks = self._actions(state, league_id, games_by_week(self.client, state.season))
+        tasks = self._actions(state, league_id, self._games(state))
         return prompt.build(self.client, state, league_id, tasks)
 
     def _current_week(self) -> int:
@@ -692,7 +698,7 @@ class SleeperNFLProvider:
         # flagging every player for having no game turns the page amber over a
         # date rather than a decision. It only means something when others do.
         scheduled = any(p.opponent for p in state.projected)
-        games = games_by_week(self.client, state.season)
+        games = self._games(state)
 
         return Summary(
             headline=prompt.headline(state.roster, state.week, state.current_points, state.best_points, state.on_bench)
@@ -761,25 +767,62 @@ class SleeperNFLProvider:
         """The season, the table, this week's real games, and what the league did."""
         return league.build(self.client, self._week(league_id), league_id)
 
+    def _games(self, state: Week) -> dict[int, list[ScheduledGame]]:
+        """The season's games, with this week's read off ESPN's live scoreboard where it answers.
+
+        Sleeper's schedule is a season-long file cached for hours, so the
+        status it carries for a game kicking off now is the status it had this
+        morning. The scoreboard is a minute old at most.
+        """
+        games = games_by_week(self.client, state.season)
+        board = self._board(state)
+        if board and state.week in games:
+            games[state.week] = [
+                replace(game, status=SCOREBOARD_STATUS.get(board[game.home].state, game.status))
+                if game.home in board
+                else game
+                for game in games[state.week]
+            ]
+        return games
+
+    def _board(self, state: Week) -> dict[str, ScoreboardGame]:
+        """This week's games as they stand, keyed by each of the two clubs in Sleeper's abbreviations."""
+        if state.week not in self._boards:
+            try:
+                board = self.espn.get_scoreboard(espn.NFL, state.season, state.week)
+            except ESPNAPIError as e:
+                # The schedule's own status is stale, not wrong about a game long finished.
+                logger.warning(f"Continuing without the live scoreboard: {e}")
+                board = []
+            by_pair = {(game.home, game.away): game for game in board}
+            self._boards[state.week] = {
+                club: by_pair[pair]
+                for game in games_by_week(self.client, state.season).get(state.week, [])
+                if (pair := (news.espn_club(game.home), news.espn_club(game.away))) in by_pair
+                for club in (game.home, game.away)
+            }
+        return self._boards[state.week]
+
     def _live(self, state: Week, league_id: str) -> Live:
-        """What has actually been scored, and whose clubs have kicked off."""
+        """What has actually been scored, whose clubs have kicked off, and where their games are."""
         started = {
             club
-            for game in games_by_week(self.client, state.season).get(state.week, [])
+            for game in self._games(state).get(state.week, [])
             if game.status and game.status != "pre_game"
             for club in (game.home, game.away)
         }
+        clock = {club: game.label for club, game in self._board(state).items() if game.state == "in" and game.label}
         try:
             matchups = self.client.get_matchups(league_id, state.week)
         except SleeperAPIError as e:
             logger.warning(f"Continuing without live scores: {e}")
-            return Live(started=started, points={})
+            return Live(started=started, points={}, clock=clock)
 
         points: dict[str, float] = {}
         for entry in matchups:
             for player_id, scored in (entry.get("players_points") or {}).items():
                 points[str(player_id)] = float(scored or 0)
-        return Live(started=started, points=points)
+        return Live(started=started, points=points, clock=clock)
 
     @staticmethod
     def _side_total(state: Week, live: Live) -> str:
@@ -881,8 +924,9 @@ class SleeperNFLProvider:
             return None
         roster, _ = found
 
-        games = games_by_week(self.client, state.season)
+        games = self._games(state)
         status = {club: game.status for game in games.get(state.week, []) for club in (game.home, game.away)}
+        board = self._board(state)
         live = self._live(state, league_id)
         spread = outcomes.spreads(
             state.evidence, pool_from=self._last_season(state.season, state.league.scoring_format)
@@ -894,6 +938,7 @@ class SleeperNFLProvider:
                 spread,
                 status=status.get(player.team, ""),
                 scored=live.points.get(player.player_id, 0.0),
+                left=board[player.team].left if player.team in board else outcomes.UNDER_WAY,
             )
 
         mine = tuple(outcome(slot.player) for slot in state.lineup if slot.player)
@@ -1177,11 +1222,14 @@ class SleeperNFLProvider:
         """
         scored = live.scored(projection.player_id, projection.team) if live else None
         points = projection.points if projected is None else projected
+        detail = self._spot_detail(projection, scheduled, slot)
+        # Where his game is, while it is on: 6.5 in the first quarter and 6.5 in the fourth are different weeks.
+        clock = live.clock.get(projection.team) if live and scored is not None else None
         return Spot(
             player_id=projection.player_id,
             slot=slot,
             player=projection.name,
-            detail=self._spot_detail(projection, scheduled, slot),
+            detail=f"{detail} · {clock}" if clock else detail,
             value=f"{scored:.1f} pts" if scored is not None else f"{points:.1f}",
             tone=self._live_tone(scored) if scored is not None else self._spot_tone(projection, scheduled),
         )
