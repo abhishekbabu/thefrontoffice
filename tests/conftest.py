@@ -18,7 +18,7 @@ import pytest
 from reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
-from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
+from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
@@ -294,9 +294,17 @@ class FakeSleeper:
 class FakeESPN:
     """Stands in for ESPNClient: each club's articles, keyed by ESPN's abbreviation."""
 
-    def __init__(self, news: dict[str, list[NewsArticle]] | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        news: dict[str, list[NewsArticle]] | None = None,
+        error: Exception | None = None,
+        scoreboard: list[ScoreboardGame] | None = None,
+        scoreboard_error: Exception | None = None,
+    ) -> None:
         self.news = news or {}
         self.error = error
+        self.scoreboard = scoreboard or []
+        self.scoreboard_error = scoreboard_error
         self.asked: list[str] = []
 
     def get_team_news(self, league: str, clubs: list[str]) -> dict[str, list[NewsArticle]]:
@@ -304,6 +312,11 @@ class FakeESPN:
         if self.error:
             raise self.error
         return {club: self.news[club] for club in clubs if club in self.news}
+
+    def get_scoreboard(self, league: str, season: str, week: int) -> list[ScoreboardGame]:
+        if self.scoreboard_error:
+            raise self.scoreboard_error
+        return self.scoreboard
 
 
 def mine(summary: Summary) -> Side:

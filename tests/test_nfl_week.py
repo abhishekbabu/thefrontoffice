@@ -3,23 +3,28 @@
 Covers `nfl/week.py` and the summary the provider builds from it.
 """
 
+from typing import Any
+
 import pytest
 from conftest import (
     DEFAULT_PROJECTIONS,
     SLEEPER_USER_ID,
+    FakeESPN,
     FakeSleeper,
     _proj,
     _provider,
     mine,
 )
 
+from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
+from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     ScheduledGame,
     SleeperLeague,
     SleeperRoster,
     WeeklyProjection,
 )
-from thefrontoffice.domain.errors import PlayerNotFoundError, SleeperAPIError
+from thefrontoffice.domain.errors import ESPNAPIError, PlayerNotFoundError, SleeperAPIError
 
 MY_ID = SLEEPER_USER_ID
 
@@ -281,4 +286,51 @@ def test_a_missing_scoreboard_falls_back_to_projections() -> None:
     summary = _provider(client).summary("L1")
 
     assert summary.mine is not None
+    assert mine(summary).points.endswith("proj")
+
+
+# ── the live scoreboard over a stale schedule ───────────────────────────
+# Sleeper's schedule is cached for hours, so a game kicking off now still reads
+# as not started there; ESPN's scoreboard is what says it has.
+
+STALE = [ScheduledGame(week=3, date="2026-09-24", home="BUF", away="MIA", status="pre_game")]
+UNDERWAY = [ScoreboardGame("BUF", "MIA", "in", period=3, clock=450.0, label="7:30 - 3rd")]
+
+
+def _underway(**espn: Any) -> SleeperNFLProvider:
+    client = _live_client({"qb1": 6.5, "rb2": 1.0})
+    client.season_schedule = STALE
+    return SleeperNFLProvider(username="me", client=client, espn=FakeESPN(**espn))
+
+
+def test_a_game_the_scoreboard_has_under_way_shows_his_points_and_its_clock() -> None:
+    qb = next(spot for spot in mine(_underway(scoreboard=UNDERWAY).summary("L1")).lineup if spot.player == "Star QB")
+
+    assert qb.value == "6.5 pts"
+    assert "7:30 - 3rd" in qb.detail
+
+
+def test_the_side_total_counts_a_game_under_way() -> None:
+    assert mine(_underway(scoreboard=UNDERWAY).summary("L1")).points == "7.5 pts"
+
+
+def test_the_forecast_leaves_as_much_of_a_game_as_its_clock_does() -> None:
+    """Third quarter, seven and a half minutes left: three-eighths of the game to go."""
+    client = _live_client({"qb1": 6.5})
+    client.season_schedule = STALE
+    client.matchups = [
+        {"roster_id": 1, "matchup_id": 4, "players_points": {"qb1": 6.5}, "starters": ["qb1", "rb2"]},
+        {"roster_id": 2, "matchup_id": 4, "players_points": {}, "starters": []},
+    ]
+    client.rosters = [*client.rosters, SleeperRoster(roster_id=2, owner_id="user-2", player_ids=[], starter_ids=[])]
+    matchup = SleeperNFLProvider(username="me", client=client, espn=FakeESPN(scoreboard=UNDERWAY)).matchup_input("L1")
+
+    assert matchup is not None
+    qb = next(o for o in matchup.mine if o.player_id == "qb1")
+    assert (qb.floor, qb.remaining) == (6.5, 0.375)
+
+
+def test_without_the_scoreboard_the_schedule_stands() -> None:
+    summary = _underway(scoreboard_error=ESPNAPIError("down")).summary("L1")
+
     assert mine(summary).points.endswith("proj")

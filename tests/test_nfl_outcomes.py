@@ -117,6 +117,12 @@ def test_a_game_under_way_keeps_what_he_has_and_adds_what_is_left() -> None:
     assert (week.floor, week.remaining, week.plays) == (8.0, UNDER_WAY, 1.0)
 
 
+def test_a_game_under_way_has_as_much_left_as_its_clock_says() -> None:
+    week = outcomes(_proj("x", "X", "RB", 10.0), spreads(Evidence()), status="in_game", scored=8.0, left=0.2)
+
+    assert week.remaining == 0.2
+
+
 def test_every_ruled_out_designation_means_he_does_not_play() -> None:
     assert all(PLAYS[s] == 0.0 for s in ("OUT", "IR", "PUP", "SUS", "NA", "DNR"))
 

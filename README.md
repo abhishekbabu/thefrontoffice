@@ -128,7 +128,11 @@ so the opening weeks have one, and a share of uncertainty in the projection
 itself widens every range — the part of it a quarterback shares with his own
 receivers drawn once for the whole passing game, so a stack rises and falls
 together), whether he plays from his designation,
-and finished or live games held at what they have scored. The header carries
+and finished or live games held at what they have scored — a game under way
+adding only what its clock has left, read off ESPN's scoreboard, since
+Sleeper's schedule carries no clock and is cached for hours. The same
+scoreboard decides which games have kicked off, and a player in one shows his
+points so far and where it is ("12:14 - 3rd"). The header carries
 the chance of winning and the likely margin; every to-do move carries what it
 does to that chance — computed on the same draws, so the difference is the
 decision rather than noise — and a move projections would not make but the
