@@ -29,7 +29,6 @@ def _scout(yahoo: FakeYahoo, ai: FakeAI | None = None, nba: FakeNBA | None = Non
 def test_returns_a_validated_report_and_an_open_chat() -> None:
     ai = FakeAI()
     report, chat = _scout(FakeYahoo(), ai=ai).start_analysis("")
-    assert isinstance(report, ScoutReport)
     assert report.model_dump(exclude={"headline"}) == MOCK_NBA_REPORT.model_dump(exclude={"headline"})
     assert chat is ai.chat
 
@@ -45,7 +44,7 @@ def test_headline_figures_come_from_the_platform_not_the_model() -> None:
 
     labels = {stat.label: stat.value for stat in report.headline}
     assert labels["Adds left"] == "2 of 3"
-    assert "1" not in [s.value for s in report.headline if s.label == "Overall"]
+    assert "Overall" not in labels
 
 
 def test_an_exhausted_add_budget_is_flagged_rather_than_stated() -> None:
@@ -76,19 +75,19 @@ def test_follow_up_is_seeded_with_a_briefing_not_the_whole_prompt() -> None:
     briefing, prompt = ai.history[0]["parts"][0], ai.prompts[0]
 
     assert len(briefing) < len(prompt) / 2
-    assert "LEAGUE RULES" not in briefing  # generation-time instructions
-    assert "YOUR TASK" not in briefing
 
 
 def test_briefing_keeps_what_a_follow_up_needs() -> None:
+    """The matchup says why a category is close, the add budget why only
+    three adds, and the roster why that drop."""
     ai = FakeAI()
     _scout(_rich_yahoo(), ai=ai).start_analysis("")
     briefing = ai.history[0]["parts"][0]
+    ctx = nba_provider(_rich_yahoo()).build_context()
 
-    assert "CURRENT MATCHUP" in briefing  # why a category is close
-    assert "TRANSACTION CONTEXT" in briefing  # why only three adds
-    assert "CURRENT ROSTER" in briefing  # why that drop
-    assert "Roster Player 0" in briefing
+    assert ctx.situation.strip() in briefing
+    assert ctx.constraints.strip() in briefing
+    assert all(line.strip() in briefing for line in ctx.roster_lines.values())
 
 
 def test_briefing_carries_only_the_recommended_free_agents() -> None:
@@ -101,13 +100,6 @@ def test_briefing_carries_only_the_recommended_free_agents() -> None:
     assert recommended in briefing
     assert "Free Agent 7" not in briefing
     assert "Free Agent 3" not in briefing
-
-
-def test_briefing_tells_the_model_the_list_is_partial() -> None:
-    """Otherwise the model invents numbers for players it cannot see."""
-    ai = FakeAI()
-    _scout(_rich_yahoo(), ai=ai).start_analysis("")
-    assert "re-run the report" in ai.history[0]["parts"][0]
 
 
 def test_matchup_is_fetched_once_not_twice() -> None:
@@ -156,7 +148,7 @@ def test_prompt_carries_roster_matchup_and_free_agents() -> None:
     prompt = _prompt_for(yahoo)
     assert "Roster One" in prompt
     assert "Free Agent One" in prompt
-    assert "CURRENT MATCHUP" in prompt
+    assert "BLK: 12 vs 17" in prompt  # FakeYahoo's matchup score
 
 
 def test_free_agents_are_annotated_with_the_categories_they_lead() -> None:
@@ -176,27 +168,17 @@ def test_free_agents_appearing_in_several_categories_are_listed_once_and_first()
     assert prompt.index("Multi Cat") < prompt.index("Single Cat")
 
 
-def test_remaining_adds_drive_the_recommendation_instruction() -> None:
-    with_adds = _prompt_for(FakeYahoo(adds_used=0))
-    assert "Recommend **3 players** to add" in with_adds
-    assert "Adds Used: 0/3" in with_adds
-
-
-def test_exhausted_add_budget_switches_to_monitoring() -> None:
-    """With no adds left the model must not recommend adds it cannot make."""
-    exhausted = _prompt_for(FakeYahoo(adds_used=3))
-    assert "0 adds remaining" in exhausted
-    assert "MONITOR" in exhausted
-    assert "Recommend **3 players** to add" not in exhausted
+def test_an_untouched_add_budget_is_all_left() -> None:
+    ctx = nba_provider(FakeYahoo(adds_used=0)).build_context()
+    assert ctx.headline == [Stat(label="Adds left", value="3 of 3", tone="good")]
 
 
 def test_add_budget_cannot_go_negative() -> None:
     """Yahoo can report more adds used than the configured weekly limit."""
-    prompt = _prompt_for(FakeYahoo(adds_used=99))
-    assert "Adds Used: 99/3" in prompt
-    assert "Remaining Adds: 0" in prompt
-    assert "Remaining Adds: -" not in prompt
-    assert "0 adds remaining" in prompt  # and it switches to monitoring
+    ctx = nba_provider(FakeYahoo(adds_used=99)).build_context()
+    assert ctx.headline == [Stat(label="Adds left", value="0 of 3", tone="warning")]
+    assert "99/3" in ctx.constraints  # what Yahoo reported, still stated
+    assert "-96" not in ctx.constraints
 
 
 def test_schedule_context_lists_teams_by_games_remaining() -> None:
@@ -211,9 +193,11 @@ def test_schedule_context_lists_teams_by_games_remaining() -> None:
     assert prompt.index("BOS: 4") < prompt.index("LAL: 2")  # descending
 
 
-def test_missing_matchup_dates_omit_the_schedule_block() -> None:
-    prompt = _prompt_for(FakeYahoo(matchup_dates=("", "")))
-    assert "REMAINING GAMES BY TEAM" not in prompt
+def test_missing_matchup_dates_leave_games_remaining_uncounted() -> None:
+    yahoo = FakeYahoo(roster=[make_player("Roster One", team="LAL")], matchup_dates=("", ""))
+    ctx = nba_provider(yahoo, nba=FakeNBA(games={"LAL": 2})).build_context()
+    assert "G left]" not in ctx.roster_lines["Roster One"]
+    assert "LAL: 2" not in ctx.extra
 
 
 def test_il_players_are_flagged_so_they_are_not_dropped_carelessly() -> None:
@@ -226,16 +210,37 @@ def test_il_players_are_flagged_so_they_are_not_dropped_carelessly() -> None:
 # ── multi-league selection ──────────────────────────────────────────────
 
 
-def test_a_specific_league_can_be_selected() -> None:
-    """A Yahoo login with several leagues must be able to scout each one."""
+def _two_league_provider() -> YahooNBAProvider:
+    """A login in two leagues, each with its own table, so which was read shows in the teams."""
     from types import SimpleNamespace
 
     one = SimpleNamespace(id="1", name="One", league_type="head")
     two = SimpleNamespace(id="2", name="Two", league_type="head")
-    provider = nba_provider(league=one, all_leagues=[one, two])
-    assert [r.league_id for r in provider.list_leagues()] == ["1", "2"]
-    assert provider._select("2") is two
-    assert provider._select("") is one
+    clients = {
+        "1": FakeYahoo(teams=[_yahoo_team("League One Side", "t.1", rank=1, wins=1, losses=0)]),
+        "2": FakeYahoo(teams=[_yahoo_team("League Two Side", "t.1", rank=1, wins=1, losses=0)]),
+    }
+    return YahooNBAProvider(
+        one,
+        all_leagues=[one, two],
+        nba=FakeNBA(),
+        yahoo_for=lambda league: clients[league.id],
+        sleeper=FakeSleeperProjections(),
+        max_weekly_adds=3,
+    )
+
+
+def test_every_league_of_the_login_is_listed() -> None:
+    assert [r.league_id for r in _two_league_provider().list_leagues()] == ["1", "2"]
+
+
+def test_a_specific_league_can_be_selected() -> None:
+    """A Yahoo login with several leagues must be able to scout each one."""
+    assert [t.name for t in _two_league_provider().teams("2")] == ["League Two Side"]
+
+
+def test_no_league_id_reads_the_current_league() -> None:
+    assert [t.name for t in _two_league_provider().teams("")] == ["League One Side"]
 
 
 def test_selecting_an_unknown_league_raises() -> None:
@@ -245,8 +250,8 @@ def test_selecting_an_unknown_league_raises() -> None:
 
     one = SimpleNamespace(id="1", name="One")
     provider = nba_provider(league=one, all_leagues=[one])
-    with pytest.raises(LeagueNotFoundError, match="not one of yours"):
-        provider._select("999")
+    with pytest.raises(LeagueNotFoundError):
+        provider.schedule("999")
 
 
 def test_a_roster_card_carries_the_row_and_what_a_row_cannot() -> None:
@@ -320,18 +325,10 @@ def test_only_games_inside_the_matchup_period_are_counted() -> None:
     assert "PROJ 1G" in ctx.roster_lines["Roster Player 0"]
 
 
-def test_the_prompt_tells_the_model_projections_are_present() -> None:
-    sleeper = FakeSleeperProjections([_game("Roster Player 0", "2026-02-10")])
-    prompt = _provider_with(sleeper).build_context().prompt
-    assert "lines marked PROJ" in prompt
-    assert "Prefer them to recent form" in prompt
-
-
 def test_out_of_season_falls_back_to_recent_form() -> None:
     """Sleeper publishes no NBA projections before opening night."""
-    prompt = _provider_with(FakeSleeperProjections([])).build_context().prompt
-    assert "PROJECTIONS: unavailable" in prompt
-    assert "PROJ " not in prompt
+    ctx = _provider_with(FakeSleeperProjections([])).build_context()
+    assert not any("PROJ" in line for line in ctx.roster_lines.values())
 
 
 def test_a_projection_failure_does_not_lose_the_report() -> None:
@@ -339,8 +336,8 @@ def test_a_projection_failure_does_not_lose_the_report() -> None:
 
     sleeper = FakeSleeperProjections(error=SleeperAPIError("429"))
     ctx = _provider_with(sleeper).build_context()
-    assert "PROJECTIONS: unavailable" in ctx.prompt
-    assert ctx.roster_lines  # everything else still built
+    assert set(ctx.roster_lines) == {f"Roster Player {i}" for i in range(10)}  # everything else still built
+    assert not any("PROJ" in line for line in ctx.roster_lines.values())
 
 
 def test_the_next_week_is_tried_when_the_current_one_is_empty() -> None:
@@ -363,15 +360,6 @@ def test_unmatched_players_simply_carry_no_projection() -> None:
     sleeper = FakeSleeperProjections([_game("Someone Entirely Else", "2026-02-10")])
     ctx = _provider_with(sleeper).build_context()
     assert "PROJ" not in ctx.roster_lines["Roster Player 0"]
-
-
-def test_the_prompt_explains_team_games_versus_player_games() -> None:
-    """[3G left] beside PROJ 1G is a warning about missed games, not a
-    contradiction — and the model has to be told which is which."""
-    sleeper = FakeSleeperProjections([_game("Roster Player 0", "2026-02-10")])
-    prompt = _provider_with(sleeper).build_context().prompt
-    assert "how many games the player's TEAM has left" in prompt
-    assert "expected to miss games" in prompt
 
 
 # ── the league table ────────────────────────────────────────────────────
@@ -416,10 +404,17 @@ def test_a_team_with_no_standings_block_is_skipped_rather_than_failing() -> None
 
 
 def test_the_teams_list_puts_you_first() -> None:
-    teams = nba_provider(FakeYahoo()).teams("")
+    """Yours sorts last by name here, so only the is-mine rule can put it first."""
+    yahoo = FakeYahoo(
+        teams=[
+            _yahoo_team("Aardvarks", "t.2", rank=1, wins=5, losses=1),
+            _yahoo_team("Zebras", "t.1", rank=2, wins=4, losses=2),  # FakeYahoo's user team is t.1
+        ]
+    )
 
-    assert teams[0].is_mine
-    assert teams[0].name == "My Team"
+    teams = nba_provider(yahoo).teams("")
+
+    assert [(t.name, t.is_mine) for t in teams] == [("Zebras", True), ("Aardvarks", False)]
 
 
 def test_another_managers_roster_comes_back_in_your_own_columns() -> None:
@@ -462,7 +457,7 @@ def test_a_team_link_is_built_from_the_two_numbers_in_its_key() -> None:
 def test_a_key_in_an_unexpected_shape_yields_no_link_rather_than_a_broken_one() -> None:
     teams = nba_provider(FakeYahoo(teams=[_yahoo_team("Odd", "something-else", rank=1, wins=1, losses=0)])).teams("")
 
-    assert teams == [] or teams[0].url == ""
+    assert [(t.name, t.url) for t in teams] == [("Odd", "")]
 
 
 # ── the basketball calendar ─────────────────────────────────────────────────

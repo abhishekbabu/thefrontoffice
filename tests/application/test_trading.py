@@ -4,11 +4,10 @@ The engine knows nothing about a platform: it parses, asks a provider to price
 the trade, and structures the answer.
 """
 
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from support.ai import FakeAI
+from support.ai import FakeAI, FakeChat
 from support.reports import MOCK_NBA_VERDICT
 
 from thefrontoffice.application.trading import TradeEngine
@@ -28,7 +27,10 @@ class FakeTradeProvider:
         self.calls.append((league_id, proposal))
         if self.error:
             raise self.error
-        return CompetitionContext(prompt="TRADE PROMPT", situation="matchup")
+        # The prompt names what it was built from, so a test can see the model is
+        # asked about this league's trade and not some other one.
+        prompt = f"{league_id}: {', '.join(proposal.giving)} for {', '.join(proposal.receiving)}"
+        return CompetitionContext(prompt=prompt, situation="matchup")
 
 
 def _engine(provider: Any = None, ai: Any = None) -> TradeEngine:
@@ -64,13 +66,10 @@ def test_an_unparseable_trade_raises_before_the_provider_is_asked() -> None:
     assert provider.calls == []
 
 
-def test_the_provider_receives_the_league_and_the_parsed_proposal() -> None:
-    provider = FakeTradeProvider()
+def test_the_model_is_asked_about_this_leagues_parsed_trade() -> None:
     ai = FakeAI(proposal=TradeProposal(giving=["A"], receiving=["B"]))
-    _engine(provider, ai).evaluate("L7", "x")
-    league_id, proposal = provider.calls[0]
-    assert league_id == "L7"
-    assert proposal.giving == ["A"]
+    _engine(ai=ai).evaluate("L7", "x")
+    assert ai.chat.sent == ["L7: A for B"]
 
 
 def test_a_provider_failure_propagates_as_a_domain_error() -> None:
@@ -79,21 +78,10 @@ def test_a_provider_failure_propagates_as_a_domain_error() -> None:
 
 
 def test_an_empty_model_response_raises() -> None:
-    class Silent(FakeAI):
-        def start_chat(self, initial_history: Any = None, enable_search: bool = False) -> Any:
-            return SimpleNamespace(send_message=lambda m: SimpleNamespace(text=""))
-
-    with pytest.raises(AIResponseError, match="empty trade evaluation"):
-        _engine(ai=Silent()).evaluate("L1", "x")
+    with pytest.raises(AIResponseError):
+        _engine(ai=FakeAI(chat=FakeChat(reply=""))).evaluate("L1", "x")
 
 
 def test_a_model_failure_is_wrapped_as_a_domain_error() -> None:
-    class Broken(FakeAI):
-        def start_chat(self, initial_history: Any = None, enable_search: bool = False) -> Any:
-            def _boom(message: Any) -> Any:
-                raise RuntimeError("503")
-
-            return SimpleNamespace(send_message=_boom)
-
-    with pytest.raises(AIResponseError, match="did not return a usable answer"):
-        _engine(ai=Broken()).evaluate("L1", "x")
+    with pytest.raises(AIResponseError):
+        _engine(ai=FakeAI(chat=FakeChat(error=RuntimeError("503")))).evaluate("L1", "x")

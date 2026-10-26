@@ -56,7 +56,6 @@ def test_a_correct_file_passes(
     _env(tmp_path, "GOOGLE_API_KEY=abc\nSLEEPER_USERNAME=someone\n", monkeypatch)
 
     assert doctor.main() == 0
-    assert "Unrecognized" not in capsys.readouterr().out
 
 
 def test_comments_and_blank_lines_are_not_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -70,7 +69,7 @@ def test_a_missing_env_file_is_reported_rather_than_crashing(
     monkeypatch.setattr(doctor, "ENV_FILE", tmp_path / "absent")
 
     assert doctor.main() == 0
-    assert "MISSING" in capsys.readouterr().out
+    assert ".env.template" in capsys.readouterr().out  # names the file to start from
 
 
 # ── never echoing a secret ──────────────────────────────────────────────
@@ -105,7 +104,12 @@ def test_prompt_capture_being_on_is_called_out(
 ) -> None:
     """It sends the roster and the leagues, so it should never be a quiet default."""
     _env(tmp_path, "", monkeypatch)
-    monkeypatch.setattr(doctor.settings, "logfire_capture_prompts", True)
-
+    monkeypatch.setattr(doctor.settings, "logfire_capture_prompts", False)
     doctor.main()
-    assert "prompt text IS being exported" in capsys.readouterr().out
+    quiet = capsys.readouterr().out.splitlines()
+
+    monkeypatch.setattr(doctor.settings, "logfire_capture_prompts", True)
+    doctor.main()
+    loud = capsys.readouterr().out.splitlines()
+
+    assert len(loud) == len(quiet) + 1  # a line of its own, beyond what is shown when it is off

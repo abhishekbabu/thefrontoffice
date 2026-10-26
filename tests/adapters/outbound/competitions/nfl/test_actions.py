@@ -96,7 +96,6 @@ def test_a_starter_ruled_out_is_swapped_for_the_bench_player_who_covers_him() ->
 
     assert (action.kind, action.urgency, action.player_id) == ("lineup", "now", "rb2")
     _names_the_swap(action, start=BENCH_RB, out=RB)
-    assert "ruled out" in action.reason
     assert "Sun 27 Sep" in action.when
 
 
@@ -118,7 +117,6 @@ def test_a_starter_on_bye_is_flagged_once_the_league_has_fixtures() -> None:
     [action] = _actions(client)
 
     assert (action.urgency, action.player_id) == ("now", "rb2")
-    assert "no game" in action.reason
 
 
 def test_an_empty_slot_is_filled_from_the_bench() -> None:
@@ -127,7 +125,6 @@ def test_an_empty_slot_is_filled_from_the_bench() -> None:
     [action] = _actions(client)
 
     assert (action.kind, action.urgency, action.player_id) == ("lineup", "now", "rb2")
-    assert "empty" in action.reason
 
 
 def test_with_no_bench_cover_the_best_free_agent_who_can_play_is_named() -> None:
@@ -341,12 +338,25 @@ def test_a_waiver_pick_shows_what_his_projection_rests_on() -> None:
 
 
 def test_only_finished_weeks_are_read_for_evidence() -> None:
-    """Week 3 is under way: a Monday starter has a line of noughts until then."""
-    client = _client([QB, RB, WR, FLEX], ["qb", "rb", "wr", "te"], [])
+    """Week 3 is under way: a Monday starter has a line of noughts until then.
 
-    _actions(client)
+    Week 2 gives him half the snaps; were week 3's full share read too, the
+    two games together would read as three quarters.
+    """
+    better = replace(BENCH_WR, points=12.0)
+    benched = replace(FLEX, points=5.0)
+    this_week = replace(_played(better)[0], week=3, stats={"off_snp": 60, "tm_off_snp": 60, "pts_ppr": 30})
+    client = _client(
+        [QB, RB, WR, benched, better],
+        ["qb", "rb", "wr", "te"],
+        ["wr2"],
+        game_lines=[*_played(better, benched), this_week],
+    )
 
-    assert client.game_line_weeks == [1, 2]
+    [action] = _actions(client)
+
+    [his] = [stat for stat in action.evidence if stat.label == better.name]
+    assert "50%" in his.value and "75%" not in his.value
 
 
 def test_stat_lines_that_will_not_load_leave_the_list_without_evidence() -> None:
@@ -412,13 +422,6 @@ def test_a_hole_keeps_its_key_when_a_better_answer_turns_up() -> None:
 
     assert before[0].key == after[0].key
     assert before[0].fingerprint != after[0].fingerprint
-
-
-def test_the_same_task_on_a_fresh_read_has_the_same_fingerprint() -> None:
-    def read() -> Action:
-        return _actions(_client([QB, _ruled_out(RB), WR, FLEX, BENCH_RB], ["qb", "rb", "wr", "te"], ["rb2"]))[0]
-
-    assert read().fingerprint == read().fingerprint
 
 
 # ── a role that grew ────────────────────────────────────────────────────

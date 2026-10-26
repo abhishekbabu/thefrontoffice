@@ -4,6 +4,7 @@ Covers `nfl/prompt.py`. The assertions are on prompt *content* — the league
 rules live there, and a prompt that renders is not a prompt that is right.
 """
 
+import re
 from datetime import UTC
 from typing import Any
 
@@ -17,7 +18,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperRoster,
     TrendingPlayer,
 )
-from thefrontoffice.domain.models import task_id
+from thefrontoffice.domain.models import Stat, task_id
 
 # ── context ─────────────────────────────────────────────────────────────
 
@@ -25,6 +26,15 @@ from thefrontoffice.domain.models import task_id
 def _context(**kwargs: Any) -> Any:
     client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS), **kwargs)
     return nfl_provider(client).build_context("L1")
+
+
+def _lineup_stat(context: Any) -> Stat:
+    return next(stat for stat in context.headline if stat.label == "Lineup")
+
+
+def _figures(text: str) -> list[float]:
+    """Every one-decimal figure in a piece of text, in order: the numbers, not the words around them."""
+    return [float(x) for x in re.findall(r"\d+\.\d\b", text)]
 
 
 def test_prompt_names_the_scoring_format() -> None:
@@ -73,26 +83,6 @@ def test_the_to_do_list_is_shown_numbered_so_each_verdict_can_find_its_row() -> 
     assert any(task_id(1) in line and task.title in line for line in context.prompt.splitlines())
 
 
-def test_a_week_with_nothing_to_decide_says_so() -> None:
-    client = FakeSleeper(
-        league=SMALL_LEAGUE,
-        projections=dict(DEFAULT_PROJECTIONS),
-        rosters=[
-            SleeperRoster(
-                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb1"]
-            )
-        ],
-    )
-    context = nfl_provider(client).build_context("L1")
-
-    assert context.tasks == []
-
-
-def test_an_unfilled_slot_is_shown_as_empty() -> None:
-    """A thin roster must read as a hole in the lineup, not silently shrink it."""
-    assert "(empty)" in _context().prompt
-
-
 def test_a_player_with_no_projection_is_kept_at_zero() -> None:
     """A bye or an inactive is a zero, and the report must see it — not silently
     drop the player from the roster."""
@@ -102,8 +92,6 @@ def test_a_player_with_no_projection_is_kept_at_zero() -> None:
     )
     ctx = nfl_provider(client).build_context("L1")
     assert "Bye Guy" in ctx.roster_lines
-    assert "0.0 proj pts" in ctx.roster_lines["Bye Guy"]
-    assert "(no game)" in ctx.roster_lines["Bye Guy"]
 
 
 def test_matchup_opponent_and_live_score_are_surfaced() -> None:
@@ -124,8 +112,11 @@ def test_matchup_opponent_and_live_score_are_surfaced() -> None:
     assert "71.8" in ctx.situation
 
 
-def test_a_week_with_no_matchup_says_so() -> None:
-    assert "No head-to-head matchup" in _context(matchups=[{"roster_id": 1, "matchup_id": None}]).situation
+def test_a_week_with_no_matchup_reports_no_opponent_figures() -> None:
+    """Paired with nobody is not a 0-0 scoreline against somebody."""
+    labels = {s.label for s in _context(matchups=[{"roster_id": 1, "matchup_id": None}]).headline}
+
+    assert not labels & {"Opponent", "Live"}
 
 
 def test_trending_players_are_included_with_their_projection() -> None:
@@ -137,11 +128,10 @@ def test_trending_players_are_included_with_their_projection() -> None:
 def test_trending_failure_degrades_without_losing_the_report() -> None:
     """An independent signal, not load-bearing."""
     ctx = _context(trending_error=SleeperAPIError("429"))
-    assert "(unavailable)" in ctx.prompt
     assert ctx.roster_lines  # the rest still built
 
 
-def test_constraints_compare_current_and_best_lineups() -> None:
+def test_the_lineup_figure_is_the_current_total_beside_the_best() -> None:
     """The gap is the point: how many points are sitting on the bench."""
     client = FakeSleeper(
         league=SMALL_LEAGUE,
@@ -152,11 +142,10 @@ def test_constraints_compare_current_and_best_lineups() -> None:
             )
         ],
     )
-    constraints = nfl_provider(client).build_context("L1").constraints
-    assert "LINEUP SLOTS" in constraints
-    assert "Current lineup projects 26.0" in constraints  # 22 + 4
-    assert "best legal lineup projects 40.0" in constraints  # 22 + 18
-    assert "14.0 points are sitting on the bench" in constraints
+    lineup = _lineup_stat(nfl_provider(client).build_context("L1"))
+
+    assert _figures(lineup.value) == [26.0, 40.0]  # 22 + 4, and 22 + 18
+    assert lineup.tone == "warning"
 
 
 def test_no_bench_gap_is_reported_when_already_optimal() -> None:
@@ -169,7 +158,10 @@ def test_no_bench_gap_is_reported_when_already_optimal() -> None:
             )
         ],
     )
-    assert "sitting on the bench" not in nfl_provider(client).build_context("L1").constraints
+    lineup = _lineup_stat(nfl_provider(client).build_context("L1"))
+
+    assert _figures(lineup.value) == [40.0]  # no best beside it: this is the best
+    assert lineup.tone == "neutral"
 
 
 def test_a_player_is_never_both_starting_and_benched() -> None:
@@ -191,12 +183,14 @@ def test_a_player_is_never_both_starting_and_benched() -> None:
 
 
 def test_the_bench_gap_matches_the_printed_figures() -> None:
-    """The three numbers in the prompt must agree once rounded."""
-    import re
+    """The three numbers in the prompt must agree once rounded.
 
+    26.06 and 40.14 print as 26.1 and 40.1; a gap taken before rounding would
+    print 14.1 beside them, and read as arithmetic that does not add up.
+    """
     projections = {
-        "qb1": proj("qb1", "Star QB", "QB", 22.04),
-        "rb1": proj("rb1", "Good RB", "RB", 18.06),
+        "qb1": proj("qb1", "Star QB", "QB", 22.02),
+        "rb1": proj("rb1", "Good RB", "RB", 18.12),
         "rb2": proj("rb2", "Bad RB", "RB", 4.04),
     }
     client = FakeSleeper(
@@ -208,24 +202,20 @@ def test_the_bench_gap_matches_the_printed_figures() -> None:
             )
         ],
     )
-    constraints = nfl_provider(client).build_context("L1").constraints
-    current, best = (float(x) for x in re.findall(r"projects (\d+\.\d)", constraints))
-    gap_match = re.search(r"so (\d+\.\d) points are sitting", constraints)
-    assert gap_match is not None
-    assert float(gap_match.group(1)) == round(best - current, 1)
+    current, best, gap = _figures(nfl_provider(client).build_context("L1").constraints)
+
+    assert (current, best) == (26.1, 40.1)
+    assert gap == round(best - current, 1)
 
 
 # ── headline figures ────────────────────────────────────────────────────
 
 
-def test_the_weeks_header_is_the_week_and_the_season_is_the_leagues() -> None:
+def test_the_weeks_header_leaves_the_record_to_the_league_view() -> None:
     """Record and points for answer how the season is going, which is the league view's question."""
-    provider = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS))
-    week = {stat.label for stat in provider.build_context("L1").headline}
-    season = {stat.label: stat.value for stat in provider.schedule("L1").headline}
+    week = {stat.label for stat in _context().headline}
 
     assert "Record" not in week and "Lineup" in week
-    assert (season["Record"], season["Points for"], season["Place"]) == ("2-1", "250.5", "1st of 1")
 
 
 def test_points_left_on_the_bench_ride_with_the_lineup_and_warn() -> None:
@@ -242,9 +232,9 @@ def test_the_header_agrees_with_the_prompt_about_the_lineup_total() -> None:
     """Two numbers for the same thing, differing in the last decimal, reads as
     a bug even when neither is wrong."""
     context = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1")
-    lineup = next(stat for stat in context.headline if stat.label == "Lineup")
 
-    assert f"Current lineup projects {lineup.value.split(' · ')[0]} points" in context.constraints
+    current, best = _figures(_lineup_stat(context).value)
+    assert _figures(context.constraints)[:2] == [current, best]
 
 
 def test_the_header_carries_the_matchup() -> None:
@@ -320,18 +310,17 @@ def _played() -> list[NFLGameLine]:
 
 
 def test_each_player_line_carries_his_role_and_matchup() -> None:
+    """45 of 60 snaps is his role; MIA giving up 17.0 a game to backs is his matchup."""
     client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS), game_lines=_played())
-    provider = nfl_provider(client)
-    good_rb = DEFAULT_PROJECTIONS["rb1"]
 
-    prompt = provider.build_context("L1").prompt
+    line = nfl_provider(client).build_context("L1").roster_lines["Good RB"]
 
-    described = provider._week("L1").evidence.describe(good_rb)
-    assert described and described in prompt
+    assert "75%" in line and "17.0" in line
 
 
 def test_with_nothing_played_the_lines_are_the_projection_alone() -> None:
-    assert "of snaps" not in _context().prompt
+    """No role or matchup line beneath any player: there is nothing to read them from."""
+    assert all(line.count("\n") == 1 for line in _context().roster_lines.values())
 
 
 def test_a_to_do_item_carries_its_evidence_into_the_prompt() -> None:

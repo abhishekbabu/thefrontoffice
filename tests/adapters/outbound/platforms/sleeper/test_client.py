@@ -50,13 +50,19 @@ def test_a_missing_league_is_not_retryable() -> None:
     assert not _is_retryable(ValueError("bad json"))
 
 
-def test_request_failure_becomes_a_domain_error(tmp_path: Path, no_retry_wait: None) -> None:
-    client, session = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
-    # No connection is Sleeper being down: still its own error, so callers that
-    # carry on without Sleeper still catch it, and the outage kind of it.
+def test_no_connection_is_sleeper_being_down(tmp_path: Path, no_retry_wait: None) -> None:
+    # Still Sleeper's own error, so callers that carry on without Sleeper still
+    # catch it, and the outage kind of it.
+    client, _ = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
     with pytest.raises(SleeperUnavailableError):
         client.get_nfl_state()
-    assert len(session.requests) == RETRY_MAX_ATTEMPTS  # retried, then gave up
+
+
+def test_a_failing_request_is_retried_until_the_attempts_run_out(tmp_path: Path, no_retry_wait: None) -> None:
+    client, session = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
+    with pytest.raises(SleeperUnavailableError):
+        client.get_nfl_state()
+    assert len(session.requests) == RETRY_MAX_ATTEMPTS
 
 
 def test_a_transient_failure_then_success_is_retried(tmp_path: Path, no_retry_wait: None) -> None:
@@ -151,7 +157,7 @@ def test_a_league_carries_its_trade_deadline(tmp_path: Path) -> None:
     assert client.get_leagues("42", "2026")[0].trade_deadline == 11
 
 
-def test_a_league_with_no_trade_deadline_reads_as_none(tmp_path: Path) -> None:
+def test_a_league_with_no_trade_deadline_reads_as_week_zero(tmp_path: Path) -> None:
     client, _ = _client({"leagues/nfl": LEAGUE_PAYLOAD}, tmp_path)
     assert client.get_leagues("42", "2026")[0].trade_deadline == 0
 

@@ -106,15 +106,13 @@ def test_a_named_sport_runs_only_that_one() -> None:
 
 def test_an_unknown_competition_resolves_to_nothing(capsys: pytest.CaptureFixture[str]) -> None:
     assert cmd._resolve_competitions(["cricket"], [fake_entry()]) == []
-    assert "Unknown competition" in capsys.readouterr().out
+    assert "cricket" in capsys.readouterr().out  # names what was not recognised
 
 
 def test_an_unconfigured_sport_names_what_to_set(capsys: pytest.CaptureFixture[str]) -> None:
     """Asking for a sport you have no credentials for must explain, not crash."""
     assert cmd._resolve_competitions(["nba"], [fake_entry("nfl")]) == []
-    out = capsys.readouterr().out
-    assert "not configured" in out
-    assert "YAHOO_CLIENT_ID" in out
+    assert "YAHOO_CLIENT_ID" in capsys.readouterr().out
 
 
 def test_roster_renders_rows_for_the_selected_sport(capsys: pytest.CaptureFixture[str]) -> None:
@@ -148,7 +146,7 @@ def test_quit_raises_the_sentinel() -> None:
 
 def test_unknown_command_is_reported(capsys: pytest.CaptureFixture[str]) -> None:
     cli._dispatch(Session(), [], "/nonsense", [])
-    assert "Unknown command" in capsys.readouterr().out
+    assert "/nonsense" in capsys.readouterr().out
 
 
 def test_help_names_the_configured_competitions(
@@ -166,14 +164,19 @@ def test_rows_are_printed_with_aligned_columns(capsys: pytest.CaptureFixture[str
 
 
 def test_an_empty_roster_says_so(capsys: pytest.CaptureFixture[str]) -> None:
+    """Rather than printing nothing, which reads as a hang or a crash."""
     output._print_rows([])
-    assert "no players found" in capsys.readouterr().out
+    assert capsys.readouterr().out.strip()
 
 
 def test_trade_reports_when_no_sport_supports_it(capsys: pytest.CaptureFixture[str]) -> None:
     """Football is configured but has no trade path yet."""
-    cmd._cmd_trade(Session(), [fake_entry("nfl")], ["Give A, Get B"])
-    assert "supports trade evaluation" in capsys.readouterr().out
+    built: list[int] = []
+
+    cmd._cmd_trade(Session(), [fake_entry("nfl", counter=built)], ["Give A, Get B"])
+
+    assert built == []  # nothing was run
+    assert capsys.readouterr().out.strip()  # and the user is told, not left with silence
 
 
 def test_trade_usage_is_shown_without_arguments(capsys: pytest.CaptureFixture[str]) -> None:
@@ -287,13 +290,16 @@ def test_week_shows_the_figures_and_what_to_do_but_not_what_was_dismissed(
     assert "Gone" not in out
 
 
-def test_week_is_a_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: list[str] = []
-    monkeypatch.setattr(cli, "_cmd_week", lambda session, entries, args: seen.append("week"))
+def test_week_is_a_command(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    from support.stores import FakeItemStates
 
-    cli._dispatch(Session(), [], "/week", [])
+    from thefrontoffice.application.items import ItemDecisions
 
-    assert seen == ["week"]
+    monkeypatch.setattr(cmd, "item_decisions", lambda: ItemDecisions(FakeItemStates()))
+
+    cli._dispatch(Session(), [_entry_with(WeekProvider())], "/week", [])
+
+    assert "123.5" in capsys.readouterr().out
 
 
 def test_scout_renders_a_report(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -328,7 +334,7 @@ def test_scout_warns_when_a_sport_has_no_leagues(capsys: pytest.CaptureFixture[s
             return []
 
     cmd._cmd_scout(Session(), [_entry_with(NoLeagues())], [])
-    assert "No NFL (Sleeper) leagues" in capsys.readouterr().out
+    assert "NFL (Sleeper)" in capsys.readouterr().out
 
 
 def test_trade_renders_a_verdict(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -399,9 +405,7 @@ def test_several_sports_without_one_named_refuses_to_guess(
     entries = [_tradeable("nba"), _tradeable("nfl")]
     entry, _ = cmd._trade_competition(entries, ["Give", "A,", "Get", "B"])
     assert entry is None
-    out = capsys.readouterr().out
-    assert "Name one" in out
-    assert "nba | nfl" in out
+    assert "nba | nfl" in capsys.readouterr().out  # offers the choices
 
 
 def test_a_leading_word_that_is_not_a_sport_stays_in_the_description() -> None:
@@ -415,7 +419,7 @@ def test_an_unconfigured_trading_sport_says_what_to_set(capsys: pytest.CaptureFi
     entry, args = cmd._trade_competition([_tradeable("nfl")], ["nba", "Give", "A"])
 
     assert entry is None
-    assert "is not configured" in capsys.readouterr().out
+    assert "YAHOO_CLIENT_ID" in capsys.readouterr().out
     assert args == ["nba", "Give", "A"]  # left in the text rather than silently dropped
 
 
@@ -426,19 +430,28 @@ def test_usage_is_shown_when_only_a_sport_is_given(capsys: pytest.CaptureFixture
 
 def test_a_sport_that_cannot_trade_at_all_says_so(capsys: pytest.CaptureFixture[str]) -> None:
     """FPL managers transfer against the market, so there is no trade to price."""
+    from thefrontoffice.bootstrap import find
+
+    fpl = find("premier-league")
+    assert fpl is not None
+
     entry, args = cmd._trade_competition([_tradeable("nfl")], ["premier-league", "Give", "Saka"])
 
     assert entry is None
-    assert "does not support trade evaluation" in capsys.readouterr().out
+    assert fpl.label in capsys.readouterr().out  # names the competition that cannot
     assert args == ["premier-league", "Give", "Saka"]
 
 
 def test_a_competition_marked_tradeable_whose_provider_cannot_trade_says_so(
-    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A registry slip is reported, not an AttributeError halfway through an evaluation."""
+
+    def _never(provider: Any) -> Any:
+        raise AssertionError("must not start the evaluation")
+
+    monkeypatch.setattr(cmd, "trade_engine", _never)
+
     cmd._cmd_trade(Session(), [_entry_with(FakeProvider(), trades=True)], ["Give A, Get B"])
 
-    out = capsys.readouterr().out
-    assert "NFL (Sleeper)" in out  # names which competition
-    assert "Parsing" not in out  # and never starts the evaluation
+    assert "NFL (Sleeper)" in capsys.readouterr().out  # names which competition

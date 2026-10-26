@@ -12,7 +12,7 @@ from thefrontoffice.domain.errors import LeagueNotFoundError
 
 
 def test_unknown_competition_raises() -> None:
-    with pytest.raises(LeagueNotFoundError, match="unknown competition"):
+    with pytest.raises(LeagueNotFoundError, match="cricket"):
         data.build_provider("cricket")
 
 

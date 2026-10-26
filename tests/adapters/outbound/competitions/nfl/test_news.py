@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from thefrontoffice.adapters.outbound.competitions.nfl.news import NEWS_WINDOW, attach, dated, espn_club
+from thefrontoffice.adapters.outbound.competitions.nfl.news import NEWS_WINDOW, attach, espn_club
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta
 
@@ -95,4 +95,4 @@ def test_the_drawer_lines_are_dated_and_carry_the_headline() -> None:
 
     [line] = joined.stats("hall")
     assert line.value == "Breece Hall returns"
-    assert line.label == dated(joined.latest("hall")[0])
+    assert line.label == "Thu 22 Oct"

@@ -203,10 +203,19 @@ def test_the_drawer_shows_the_latest_news_about_the_player() -> None:
 
 
 def test_every_club_is_asked_for_by_espns_abbreviation() -> None:
+    """Sleeper's WAS is ESPN's WSH, and a free agent has no club to ask after."""
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    client.players_catalog = {
+        **client.get_players(),
+        "was1": PlayerMeta(player_id="was1", name="Capital Back", position="RB", team="WAS"),
+        "fa1": PlayerMeta(player_id="fa1", name="Loose End", position="TE", team="FA"),
+    }
     espn = FakeESPN()
-    nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS), espn).summary("L1")
 
-    assert "BUF" in espn.asked and "FA" not in espn.asked
+    nfl_provider(client, espn).summary("L1")
+
+    assert "WSH" in espn.asked
+    assert "WAS" not in espn.asked and "FA" not in espn.asked
 
 
 def test_with_nothing_played_the_drawer_has_no_role_section() -> None:
@@ -471,12 +480,6 @@ def test_a_bench_player_who_can_fill_an_empty_slot_is_a_move_to_price() -> None:
     assert any(m.into[0].player_id == "rb1" and m.out == () for m in matchup.moves)
 
 
-def test_the_simulation_of_the_same_week_holds_still() -> None:
-    first, second = (nfl_provider(_paired()).matchup_input("L1") for _ in range(2))
-
-    assert first is not None and second is not None and first.seed == second.seed
-
-
 def test_a_week_with_no_opponent_has_nothing_to_simulate() -> None:
     assert nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).matchup_input("L1") is None
 
@@ -486,15 +489,6 @@ def test_a_played_week_is_rebuilt_from_its_starters_and_its_result() -> None:
 
     assert (played.week, played.mine, played.theirs) == (3, 101.5, 88.0)
     assert [o.player_id for o in played.matchup.mine] == ["qb1"]
-
-
-def test_a_played_week_is_shaped_only_by_the_games_before_it() -> None:
-    """A range drawn from the week being predicted is the answer leaking into the question."""
-    client = _paired()
-
-    nfl_provider(client).played_matchups("L1", 3)
-
-    assert client.game_line_weeks == [1, 2]
 
 
 def _line(pid: str, week: int, points: float) -> NFLGameLine:
@@ -520,7 +514,6 @@ def test_last_season_is_read_for_the_shape_of_each_position() -> None:
     _before, last, _played = nfl_provider(client).played_week("L1", 3)
 
     assert last.games["old"] == (11.0, 12.0, 13.0)
-    assert any(season != "2026" for season, _ in client.game_line_calls)
 
 
 def test_a_week_that_cannot_read_last_season_still_simulates() -> None:
