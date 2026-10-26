@@ -41,7 +41,7 @@ SCHEDULE = [
 QB = _proj("qb", "Quinn Back", "QB", 20.0, team="KC", opp="LV")
 RB = _proj("rb", "Ron Back", "RB", 15.0, team="NYJ", opp="NE")
 WR = _proj("wr", "Wade Receiver", "WR", 14.0, team="KC", opp="LV")
-FLEX = _proj("te", "Ty End", "TE", 9.0, team="KC", opp="LV")
+FLEX = _proj("te", "Ty End", "TE", 9.0, team="MIA", opp="BUF")
 BENCH_RB = _proj("rb2", "Bench Back", "RB", 8.0, team="NYJ", opp="NE")
 BENCH_WR = _proj("wr2", "Bench Receiver", "WR", 6.0, team="KC", opp="LV")
 
@@ -544,3 +544,39 @@ def test_a_breakout_worth_more_than_the_weakest_on_the_bench_names_him_to_drop()
 def test_a_breakout_worth_less_than_anyone_on_the_bench_is_not_worth_a_spot() -> None:
     """Optional, unlike filling a hole: a flier is not worth a better player."""
     assert all(a.player_id != "wr9" for a in _with_breakout(3.0))
+
+
+# ── starters riding on one game ─────────────────────────────────────────
+
+STACK_TE = _proj("te", "Ty End", "TE", 9.0, team="KC", opp="LV")
+"""With the quarterback and the receiver, a third starter in Kansas City against Las Vegas."""
+
+
+def _stacked(*bench: WeeklyProjection, schedule: list[ScheduledGame] = SCHEDULE) -> list[Action]:
+    players = [QB, RB, WR, STACK_TE, *bench]
+    client = _client(players, ["qb", "rb", "wr", "te"], [p.player_id for p in bench], schedule=schedule)
+    return [a for a in _actions(client) if a.key.startswith("stack:")]
+
+
+def test_three_starters_in_one_game_offer_the_bench_start_that_spreads_them() -> None:
+    [action] = _stacked(BENCH_RB)
+
+    # The weakest of the three makes way for the best bench player from another game.
+    assert (action.player_id, action.replaces) == (BENCH_RB.player_id, STACK_TE.player_id)
+
+
+def test_two_starters_in_one_game_are_not_a_stack() -> None:
+    players = [QB, RB, WR, FLEX, BENCH_RB]
+    client = _client(players, ["qb", "rb", "wr", "te"], ["rb2"])
+
+    assert not [a for a in _actions(client) if a.key.startswith("stack:")]
+
+
+def test_a_bench_player_from_the_same_game_spreads_nothing() -> None:
+    assert _stacked(BENCH_WR) == []
+
+
+def test_a_stack_whose_game_has_kicked_off_is_no_longer_a_decision() -> None:
+    started = [replace(g, status="in_game") if g.home == "KC" and g.week == 3 else g for g in SCHEDULE]
+
+    assert _stacked(BENCH_RB, schedule=started) == []

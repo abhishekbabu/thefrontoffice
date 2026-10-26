@@ -95,7 +95,11 @@ worth least by his average a game this season — not this week's projection,
 which reads a starter on bye as nothing — never one another item moves, one
 whose game has kicked off, or one whose role is growing. A breakout only makes
 the list when it already beats that player; filling a hole names the drop
-whatever it costs. Each names the fix — the bench player who
+whatever it costs. Three or more starters in one real game is an item too: one
+bad afternoon there takes them all down together, so it names the best bench
+start from another game for the weakest of them, and the forecast's win chance
+beside it says whether spreading the risk helps — usually when you are ahead,
+rarely when you are behind. Each names the fix — the bench player who
 covers, or the best free agent who can play when nobody does — and its deadline
 where Sleeper publishes one: a game's day, never a guessed kickoff or waiver time.
 
