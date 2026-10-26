@@ -304,8 +304,8 @@ class Action(BaseModel):
     key: str = Field(
         default="",
         description=(
-            "LEAVE THIS EMPTY. Which decision this is — the hole it fills or the swap it makes — "
-            "stable while the decision stays the same one, so a verdict finds its row again."
+            "Which decision this is — the hole it fills or the swap it makes — stable while the "
+            "decision stays the same one, so a verdict finds its row again."
         ),
     )
     title: str = Field(description="The move, as an instruction: 'Start Jordyn Tyson over Chris Olave'.")
@@ -321,22 +321,22 @@ class Action(BaseModel):
     replaces: str = Field(
         default="",
         description=(
-            "LEAVE THIS EMPTY. The player the move takes out of the lineup, by id — empty where it "
-            "fills an empty slot or moves nobody. With `player_id`, what the move does to a lineup."
+            "The player the move takes out of the lineup, by id — empty where it fills an empty "
+            "slot or moves nobody. With `player_id`, what the move does to a lineup."
         ),
     )
     drop: str = Field(
         default="",
         description=(
-            "LEAVE THIS EMPTY. For a pickup, who to release to make room, by id — empty where the "
-            "roster has a spot open, or the move adds nobody."
+            "For a pickup, who to release to make room, by id — empty where the roster has a spot "
+            "open, or the move adds nobody."
         ),
     )
     win_change: float | None = Field(
         default=None,
         description=(
-            "LEAVE THIS EMPTY. The application sets how much the move changes the chance of winning "
-            "this week, from simulating the matchup — 0.028 for +2.8 points of probability."
+            "How much the move changes the chance of winning this week, from simulating the "
+            "matchup — 0.028 for +2.8 points of probability."
         ),
     )
     evidence: list[Stat] = Field(
@@ -351,12 +351,12 @@ class Action(BaseModel):
         description="The model's judgement, once a report has been run. None before, and for an item it skipped.",
     )
     hidden: Literal["dismissed", "snoozed"] | None = Field(
-        default=None, description="LEAVE THIS EMPTY. Set by the application from the manager's own decisions."
+        default=None, description="Hidden by the manager's own decision: dismissed, or snoozed for now."
     )
-    snoozed_until: datetime | None = Field(default=None, description="LEAVE THIS EMPTY. Set by the application.")
+    snoozed_until: datetime | None = Field(default=None, description="When a snooze runs out.")
     resurfaced: bool = Field(
         default=False,
-        description="LEAVE THIS FALSE. Set by the application where a dismissed item has changed since.",
+        description="Whether a dismissed item has changed since, and so is back.",
     )
 
     @computed_field
@@ -813,7 +813,12 @@ class LeagueSchedule(BaseModel):
 
 
 class ScoutReport(BaseModel):
-    """A scouting report for any competition."""
+    """A scouting report for any competition: the model's judgement, with the week's own figures and items.
+
+    What the model writes is `ScoutAnswer`, in `application/formats.py`; the
+    engine adds what it does not get to write, so nothing here asks it to
+    leave a field alone.
+    """
 
     situation: str = Field(description="Where the team stands: the matchup, the run of fixtures, the league position.")
     focus: list[str] = Field(
@@ -831,19 +836,11 @@ class ScoutReport(BaseModel):
         description="Exactly one per to-do item, by its id. Empty when the prompt lists no to-do items.",
     )
     tasks: list[Action] = Field(
-        default_factory=list,
-        description=(
-            "LEAVE THIS EMPTY. The application fills it with the to-do items as computed, each "
-            "carrying its verdict, so anything put here is discarded."
-        ),
+        default_factory=list, description="The to-do items as computed, each carrying its verdict."
     )
 
     headline: list[Stat] = Field(
-        default_factory=list,
-        description=(
-            "LEAVE THIS EMPTY. The application overwrites it with figures read straight from the "
-            "platform, so anything put here is discarded."
-        ),
+        default_factory=list, description="Figures read straight from the platform, never written by the model."
     )
 
 
@@ -872,19 +869,11 @@ class PlayerCall(BaseModel):
     )
     drop: str = Field(default="", description="For ADD, who on the roster makes way. Empty otherwise.")
     reason: str = Field(description="One sentence, grounded in role, matchup or news — never the projection alone.")
-    judged_at: datetime | None = Field(
-        default=None, description="LEAVE THIS EMPTY. The application sets when the call was made."
-    )
+    judged_at: datetime | None = Field(default=None, description="When the call was made.")
     stale: bool = Field(
         default=False,
-        description="LEAVE THIS FALSE. The application sets it where the player's situation has changed since.",
+        description="Whether the player's situation has changed since the call.",
     )
-
-
-class WireReport(BaseModel):
-    """Calls on the available players a manager asked about."""
-
-    calls: list[PlayerCall] = Field(description="Exactly one per listed player, by id.")
 
 
 def answer_scope(kind: str, *about: str) -> str:
