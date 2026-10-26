@@ -136,14 +136,19 @@ def attach_season(summary: Summary, odds: PlayoffOdds) -> Summary:
     return summary.model_copy(update={"headline": [*summary.headline, stat]})
 
 
-def attach_table(schedule: LeagueSchedule, odds: PlayoffOdds) -> LeagueSchedule:
-    """The league table with each team's playoff chance on its row."""
+def attach_table(schedule: LeagueSchedule, odds: PlayoffOdds, win: float | None = None) -> LeagueSchedule:
+    """The league table with each team's playoff chance on its row, and yours in the season's header."""
     by_team = {t.team_id: t.playoffs for t in odds.teams}
     rows = [
         row.model_copy(update={"playoffs": f"{by_team[row.team_id]:.0%}"}) if row.team_id in by_team else row
         for row in schedule.standings
     ]
-    return schedule.model_copy(update={"standings": rows})
+    # The season's header too: what this week is worth to it is the week view's to say.
+    # Weighed by this week's forecast, as the week's header is: two figures for one chance reads as a bug.
+    chance = chance_now(odds, win)
+    tone = "good" if chance >= 0.75 else "warning" if chance <= 0.25 else "neutral"
+    headline = [*schedule.headline, Stat(label="Playoffs", value=f"{chance:.0%}", tone=tone)]
+    return schedule.model_copy(update={"standings": rows, "headline": headline})
 
 
 class SeasonEngine:

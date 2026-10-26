@@ -139,7 +139,7 @@ def _attached(*actions: Action, moves: tuple[LineupMove, ...] = ()) -> Summary:
 def test_the_header_carries_the_chance_of_winning_and_the_likely_margin() -> None:
     labels = [s.label for s in _attached().headline]
 
-    assert labels[0] == "Week" and len(labels) == 3
+    assert labels == ["Week", "Win chance"]  # the margin rides with the chance, not beside it
 
 
 def test_a_to_do_move_carries_what_it_does_to_the_chance() -> None:

@@ -151,3 +151,32 @@ def test_a_player_the_lineup_leans_on_in_one_of_these_weeks_is_never_the_drop() 
     week = _weeks(_client(injured={"rb1": "Out"}))[BYE_WEEK]
 
     assert "Bad RB" not in week.fix
+
+
+# ── next week, on the to-do list ────────────────────────────────────────
+
+
+def _todo(client: FakeSleeper) -> list:
+    client.week = BYE_WEEK - 1
+    actions = _provider(client).summary("L1").actions
+    assert actions is not None
+    return actions
+
+
+def test_a_short_week_next_week_is_on_the_to_do_list() -> None:
+    [short] = [a for a in _todo(_client()) if a.key.startswith("short:")]
+
+    assert short.key == f"short:{BYE_WEEK}"
+
+
+def test_the_short_week_stands_in_for_that_weeks_bye_items() -> None:
+    """It names the byes itself, so the bye items would say the same thing twice."""
+    assert not [a for a in _todo(_client()) if a.key.startswith(f"bye:{BYE_WEEK}:")]
+
+
+def test_a_short_week_further_out_stays_on_my_team() -> None:
+    client = _client()
+    client.week = BYE_WEEK - 2
+    actions = _provider(client).summary("L1").actions or []
+
+    assert not [a for a in actions if a.key.startswith("short:")]

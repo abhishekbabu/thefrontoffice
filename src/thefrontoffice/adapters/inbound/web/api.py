@@ -89,6 +89,8 @@ class Competition(BaseModel):
     platform: str
     label: str
     judges_wire: bool
+    plans_ahead: bool = False
+    """Whether its weeks ahead and trades worth offering can be shown."""
     """Whether its free agents can be judged — offered only where it is."""
     configured: bool
     """Whether the credentials this competition needs are set."""
@@ -336,6 +338,7 @@ def _register_routes(app: FastAPI) -> None:
             platform=entry.platform,
             label=entry.label,
             judges_wire=entry.judges_wire,
+            plans_ahead=entry.plans_ahead,
             configured=configured,
             requires=entry.requires,
             ready=configured and not reason,
@@ -467,7 +470,11 @@ def _register_routes(app: FastAPI) -> None:
         provider = data.build_provider(competition)
         schedule = provider.schedule(league_id)
         odds = _season(provider, league_id) if isinstance(provider, SeasonProvider) else None
-        return attach_table(schedule, odds) if odds is not None else schedule
+        if odds is None:
+            return schedule
+        return attach_table(
+            schedule, odds, _win(provider, league_id) if isinstance(provider, ForecastProvider) else None
+        )
 
     @app.get("/api/{competition}/leagues/{league_id}/weeks-ahead", response_model=list[WeekAhead])
     def weeks_ahead(competition: str, league_id: str) -> list[WeekAhead]:
@@ -569,6 +576,16 @@ def _forecast(provider: ForecastProvider, league_id: str, summary: Summary) -> S
         logger.warning(f"Showing the week without a forecast: {e}")
         return summary
     return attach(summary, *result) if result else summary
+
+
+def _win(provider: ForecastProvider, league_id: str) -> float | None:
+    """This week's chance of winning, to weigh the playoff chance by; none where it cannot be simulated."""
+    try:
+        result = forecast_engine(provider).forecast(league_id)
+    except FrontOfficeError as e:
+        logger.warning(f"Weighing the playoff chance without this week's forecast: {e}")
+        return None
+    return result[0].win if result else None
 
 
 def _season(provider: SeasonProvider, league_id: str) -> PlayoffOdds | None:

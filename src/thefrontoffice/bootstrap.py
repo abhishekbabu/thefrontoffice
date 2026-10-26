@@ -75,6 +75,8 @@ class CompetitionEntry:
 
     supports_trades: bool = False
     judges_wire: bool = False
+    plans_ahead: bool = False
+    """Whether its coming weeks and trades can be planned — the provider is an OutlookProvider and a SeasonProvider."""
     """Whether its available players can be judged — the provider is a WireProvider."""
     """Whether trade evaluation works for this sport.
 
@@ -154,6 +156,7 @@ REGISTRY: tuple[CompetitionEntry, ...] = (
         requires="SLEEPER_USERNAME",
         supports_trades=True,
         judges_wire=True,
+        plans_ahead=True,
     ),
     CompetitionEntry(
         sport="soccer",

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { m } from "motion/react";
 import {
@@ -8,8 +8,8 @@ import {
   type PlayerCard,
   type Competition,
   type TeamRef,
-  type TradeIdea,
 } from "@/lib/api";
+import { StatStrip } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Empty, Loading } from "@/components/ui/state";
@@ -29,12 +29,11 @@ import { LeagueHeader } from "@/components/ui/page-header";
  * than four cards down one page because they are read one at a time — you come
  * here to check the table, or to see what you missed, not both.
  */
-type TabId = "season" | "standings" | "trades" | "rosters" | "matches" | "activity";
+type TabId = "season" | "standings" | "rosters" | "matches" | "activity";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "season", label: "Season" },
   { id: "standings", label: "Table" },
-  { id: "trades", label: "Trades" },
   { id: "rosters", label: "Rosters" },
   { id: "matches", label: "Fixtures" },
   { id: "activity", label: "Activity" },
@@ -56,15 +55,8 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
   // Only the sections this platform actually answers. A tab that is always
   // empty is worse than one that is not there: FPL publishes no transfer feed,
   // and a category league has no fixture list.
-  // Trades are priced by playing the season out, so they are offered exactly
-  // where the table carries playoff odds.
-  const simulated = schedule.data?.standings.some((row) => row.playoffs) ?? false;
   const available = TABS.filter((tab) =>
-    tab.id === "rosters"
-      ? (teams.data?.length ?? 0) > 0
-      : tab.id === "trades"
-        ? simulated
-        : (schedule.data?.[tab.id]?.length ?? 0) > 0,
+    tab.id === "rosters" ? (teams.data?.length ?? 0) > 0 : (schedule.data?.[tab.id]?.length ?? 0) > 0,
   );
   const [tab, setTab] = useState<TabId>("season");
   const [team, setTeam] = useState<string | null>(null);
@@ -92,6 +84,8 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
           </div>
         )}
       </LeagueHeader>
+      {/* The season in figures, here rather than on the week: how it is going, not what Sunday needs. */}
+      <StatStrip stats={schedule.data?.headline ?? []} />
 
       {schedule.isLoading && <Loading lines={6} />}
       {schedule.isError && <ErrorNote error={schedule.error} />}
@@ -108,9 +102,6 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
           {current === "season" && <Season rows={schedule.data.season} />}
           {current === "standings" && (
             <Standings rows={schedule.data.standings} onOpen={(id) => { setTeam(id); setTab("rosters"); }} />
-          )}
-          {current === "trades" && (
-            <Trades competition={competition} league={league} onOpen={(id) => { setTeam(id); setTab("rosters"); }} />
           )}
           {current === "rosters" && (
             <Rosters competition={competition} league={league} teams={teams.data ?? []} team={team} onPick={setTeam} />
@@ -255,8 +246,15 @@ function Section({ title, count, children }: { title: string; count: string; chi
 function Season({ rows }: { rows: LeagueSchedule["season"] }) {
   return (
     <Section title="Your season" count={`${rows.length} weeks`}>
-      {rows.map((row) => (
-        <Row key={row.label} current={row.is_current}>
+      {rows.map((row, i) => (
+        <Fragment key={row.label}>
+          {/* The bracket is a different competition from the weeks before it, so it reads as one. */}
+          {row.playoffs && !rows[i - 1]?.playoffs && (
+            <div className="border-t border-border bg-muted px-4 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              Playoffs
+            </div>
+          )}
+        <Row current={row.is_current}>
           <span className="w-24 shrink-0 font-mono text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
             {row.label}
           </span>
@@ -285,6 +283,7 @@ function Season({ rows }: { rows: LeagueSchedule["season"] }) {
             </Badge>
           )}
         </Row>
+        </Fragment>
       ))}
     </Section>
   );
@@ -330,63 +329,6 @@ function Standings({
               <span className="sr-only sm:not-sr-only"> playoffs</span>
             </span>
           )}
-        </Row>
-      ))}
-    </Section>
-  );
-}
-
-const signed = (change: number) => `${change >= 0 ? "+" : "−"}${Math.abs(change).toFixed(1)}`;
-
-/**
- * The trades that would most raise your playoff chance.
- *
- * Fetched only once the tab is open: each one is a season played out
- * thousands of times, which is seconds the table should not wait on. Every
- * one helps their starters too, which is the case for sending it, so that is
- * on the row beside what it does for yours.
- */
-function Trades({
-  competition,
-  league,
-  onOpen,
-}: {
-  competition: Competition;
-  league: League;
-  onOpen: (teamId: string) => void;
-}) {
-  const trades = useQuery<TradeIdea[], Error>({
-    queryKey: ["trades", competition.key, league.league_id],
-    queryFn: () => api.trades(competition.key, league.league_id),
-  });
-
-  if (trades.isLoading) return <Loading lines={4} />;
-  if (trades.isError) return <ErrorNote error={trades.error} />;
-  if (!trades.data?.length) {
-    return (
-      <Empty
-        title="No trade worth offering"
-        detail="No one-for-one swap improves both starting lineups and raises your playoff chance by half a point or more. Trading is closed after the deadline."
-      />
-    );
-  }
-  return (
-    <Section title="Trades worth offering" count={`${trades.data.length} found`}>
-      {trades.data.map((idea) => (
-        <Row key={`${idea.team_id}-${idea.giving.join()}-${idea.receiving.join()}`} onClick={() => onOpen(idea.team_id)}>
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="truncate">
-              Give {idea.giving.join(", ")} for {idea.receiving.join(", ")}
-            </span>
-            <span className="truncate font-mono text-[11px] text-muted-foreground">
-              with {idea.team} · your starters {signed(idea.points)} a week, theirs {signed(idea.their_points)}
-              {" · "}their playoffs {signed(idea.their_playoffs_change * 100)} pts
-            </span>
-          </span>
-          {/* The figure the list is ranked on, said in words as well as tinted. */}
-          <Badge variant="ok" appearance="pill" className="shrink-0 tabular-nums">
-            {signed(idea.playoffs_change * 100)} pts · {Math.round(idea.playoffs * 100)}% playoffs
-          </Badge>
         </Row>
       ))}
     </Section>

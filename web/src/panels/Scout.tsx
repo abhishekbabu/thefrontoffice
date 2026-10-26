@@ -194,27 +194,6 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
             </Card>
           )}
 
-          {week.data.fixtures.length > 0 && (
-            <Card>
-              <CardHeader>
-                <span>Watch out for</span>
-              </CardHeader>
-              <div className="flex flex-col">
-                {week.data.fixtures.map((fixture) => (
-                  <div
-                    key={fixture.label}
-                    className="flex items-baseline gap-3 border-t border-border px-4 py-2 text-[13px] first:border-t-0"
-                  >
-                    <span className="w-14 shrink-0 font-mono text-[11px] text-muted-foreground">{fixture.label}</span>
-                    <span className={fixture.tone === "warning" ? "text-warn" : "text-muted-foreground"}>
-                      {fixture.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
           {!week.data.opponent && (
             <Badge variant="muted" appearance="label">
               No head-to-head fixture this week

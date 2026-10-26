@@ -228,13 +228,24 @@ def test_roster_rows_skip_players_missing_from_the_catalog() -> None:
 # ── headline figures ────────────────────────────────────────────────────
 
 
-def test_the_header_carries_the_weeks_standing() -> None:
-    context = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1")
-    labels = {stat.label: stat.value for stat in context.headline}
+def test_the_weeks_header_is_the_week_and_the_season_is_the_leagues() -> None:
+    """Record and points for answer how the season is going, which is the league view's question."""
+    provider = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS))
+    week = {stat.label for stat in provider.build_context("L1").headline}
+    season = {stat.label: stat.value for stat in provider.schedule("L1").headline}
 
-    assert labels["Week"] == "3"
-    assert labels["Record"] == "2-1"
-    assert labels["Points for"] == "250.5"
+    assert "Record" not in week and "Lineup" in week
+    assert (season["Record"], season["Points for"], season["Place"]) == ("2-1", "250.5", "1st of 1")
+
+
+def test_points_left_on_the_bench_ride_with_the_lineup_and_warn() -> None:
+    lineup = next(
+        s
+        for s in _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1").headline
+        if s.label == "Lineup"
+    )
+
+    assert lineup.tone == "warning"  # Good RB sits while Bad RB starts
 
 
 def test_the_header_agrees_with_the_prompt_about_the_lineup_total() -> None:
@@ -243,7 +254,7 @@ def test_the_header_agrees_with_the_prompt_about_the_lineup_total() -> None:
     context = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1")
     lineup = next(stat for stat in context.headline if stat.label == "Lineup")
 
-    assert f"Current lineup projects {lineup.value} points" in context.constraints
+    assert f"Current lineup projects {lineup.value.split(' · ')[0]} points" in context.constraints
 
 
 def test_the_header_carries_the_matchup() -> None:
@@ -280,7 +291,7 @@ def test_a_week_with_no_opponent_reports_no_matchup_figures() -> None:
     labels = {s.label for s in _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1").headline}
 
     assert "Live" not in labels
-    assert "Week" in labels  # the rest of the header still stands
+    assert "Lineup" in labels  # the rest of the header still stands
 
 
 def test_the_matchup_is_fetched_once_for_both_the_prompt_and_the_header() -> None:

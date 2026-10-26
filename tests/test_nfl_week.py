@@ -39,7 +39,7 @@ def test_the_summary_carries_the_lineup_and_the_changes() -> None:
     summary = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).summary("L1")
 
     assert [spot.slot for spot in mine(summary).lineup] == ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
-    assert any(stat.label == "Week" for stat in summary.headline)
+    assert any(stat.label == "Lineup" for stat in summary.headline)
 
 
 def test_a_player_with_no_game_is_flagged_while_others_have_one() -> None:
@@ -392,3 +392,11 @@ def test_a_roster_reads_as_a_lineup_starters_then_bench_then_reserve() -> None:
     ]
 
     assert [card.player_id for card in _provider(client).roster("L1")] == ["qb1", "rb1", "rb2"]
+
+
+def test_the_squad_says_why_an_injured_player_sits_too() -> None:
+    def opponent(status: str) -> str:
+        card = next(c for c in _provider(_with_injury(status)).roster("L1") if c.player_id == "rb1")
+        return card.columns["Opponent"]
+
+    assert opponent("Out") != opponent("")

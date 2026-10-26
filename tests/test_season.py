@@ -156,9 +156,11 @@ def test_the_table_carries_each_teams_chance_on_its_row() -> None:
     )
     odds = PlayoffOdds(spots=1, teams=[TeamOdds(team_id="a", name="A", playoffs=0.61)], playoffs=0.61, simulations=1)
 
-    a, z = attach_table(schedule, odds).standings
+    attached = attach_table(schedule, odds)
+    a, z = attached.standings
 
     assert (a.playoffs, z.playoffs) == ("61%", "")
+    assert {s.label: s.value for s in attached.headline}["Playoffs"] == "61%"
 
 
 class _Over:
@@ -244,3 +246,12 @@ def test_what_a_trade_hands_the_other_side_is_counted() -> None:
 
 def test_no_market_is_no_trades() -> None:
     assert SeasonEngine(_Over()).trades("L1") == []
+
+
+def test_the_seasons_header_weighs_this_week_as_the_weeks_header_does() -> None:
+    """One chance shown two ways on two pages reads as a bug in one of them."""
+    odds = PlayoffOdds(spots=1, teams=[], playoffs=0.88, with_win=0.96, with_loss=0.79, simulations=1)
+
+    headline = attach_table(LeagueSchedule(), odds, win=0.01).headline
+
+    assert {s.label: s.value for s in headline}["Playoffs"] == f"{chance_now(odds, 0.01):.0%}"

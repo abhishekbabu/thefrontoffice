@@ -144,6 +144,7 @@ def test_a_bracket_week_still_to_come_names_the_round_not_a_placeholder_opponent
     week14 = next(row for row in season if row.label == "Week 14")
     week13 = next(row for row in season if row.label == "Week 13")
     assert week14.opponent == "" and week14.detail != week13.detail
+    assert (week14.playoffs, week13.playoffs) == (True, False)
     assert week13.detail == "3-0"  # the regular season keeps its opponent, and his record
 
 

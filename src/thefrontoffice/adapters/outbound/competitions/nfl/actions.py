@@ -419,7 +419,7 @@ def _same_game(
                 urgency="later",
                 title=f"{len(stacked)} starters ride on {away} at {home}",
                 reason=(
-                    f"{_join([p.name for p in stacked])} all play in it, so one bad game there takes "
+                    f"{join([p.name for p in stacked])} all play in it, so one bad game there takes "
                     f"them all down together. Starting {swap.name} ({swap.points:.1f}) for {out.name} "
                     f"({out.points:.1f}) spreads the risk: worth it when you are ahead, and often not when "
                     "you are behind, where you need that game to go well."
@@ -462,10 +462,10 @@ def _next_week_byes(state: Week, next_games: list[ScheduledGame]) -> list[Action
         ]
         if len(cover) >= len(out):
             continue
-        names = _join([p.name for p in out])
+        names = join([p.name for p in out])
         verb = "is" if len(out) == 1 else "are"
         behind = (
-            f"only {_join([p.name for p in cover])} can step in" if cover else f"nobody on your bench plays {position}"
+            f"only {join([p.name for p in cover])} can step in" if cover else f"nobody on your bench plays {position}"
         )
         actions.append(
             Action(
@@ -502,6 +502,6 @@ def _trade_deadline(state: Week) -> list[Action]:
     ]
 
 
-def _join(names: list[str]) -> str:
+def join(names: list[str]) -> str:
     """'A', 'A and B', 'A, B and C'."""
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"

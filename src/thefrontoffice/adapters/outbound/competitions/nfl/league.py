@@ -33,6 +33,7 @@ from thefrontoffice.domain.models import (
     ScheduleRow,
     SeasonInput,
     StandingRow,
+    Stat,
     TeamRecord,
     TeamWeek,
     Tone,
@@ -59,9 +60,11 @@ def build(client: SleeperNFLSource, state: Week, league_id: str) -> LeagueSchedu
     names = client.get_league_users(league_id)
     by_roster = {r.roster_id: r for r in rosters}
 
+    standings = _standings(state, rosters, names)
     return LeagueSchedule(
+        headline=_headline(state, standings),
         season=_season_rows(client, state, league_id, by_roster, names),
-        standings=_standings(state, rosters, names),
+        standings=standings,
         matches=_matches(client, state),
         activity=_activity(client, state, league_id, by_roster, names),
     )
@@ -108,6 +111,7 @@ def _season_rows(
                 result=_result(mine, theirs, week, state.week),
                 tone=_week_tone(mine, theirs, week, state.week),
                 is_current=week == state.week,
+                playoffs=bool(playoff),
             )
         )
     return rows
@@ -125,6 +129,21 @@ def _playoff_round(state: Week, week: int) -> str:
     """'Playoffs, round 1' for a bracket week; empty for the regular season."""
     start = state.league.playoff_week_start
     return f"Playoffs, round {week - start + 1}" if start and week >= start else ""
+
+
+def _headline(state: Week, standings: list[StandingRow]) -> list[Stat]:
+    """Your season in figures: the record, where it puts you, and the points behind it."""
+    place = next((row.rank for row in standings if row.is_mine), 0)
+    stats = [Stat(label="Record", value=state.roster.record)]
+    if place:
+        stats.append(Stat(label="Place", value=f"{_ordinal(place)} of {len(standings)}"))
+    return [*stats, Stat(label="Points for", value=f"{state.roster.points_for:.1f}")]
+
+
+def _ordinal(n: int) -> str:
+    """1st, 2nd, 3rd, 4th, 11th, 12th, 13th, 21st."""
+    suffix = "th" if 11 <= n % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
 
 
 def _other_side(matchups: list[dict[str, Any]], mine: dict[str, Any] | None, roster_id: int) -> Any:
