@@ -198,6 +198,8 @@ class FakeSleeper:
             ]
         )
         self.projections = projections or {}
+        self.weekly_projections: dict[int, dict[str, WeeklyProjection]] = {}
+        """Projections for particular weeks, where a test needs them to differ; `projections` otherwise."""
         self.matchups = matchups or []
         self.trending = trending or []
         self.trending_error = trending_error
@@ -279,7 +281,7 @@ class FakeSleeper:
         }
 
     def get_projections(self, season: str, week: int, scoring: str) -> dict[str, WeeklyProjection]:
-        return self.projections
+        return self.weekly_projections.get(week, self.projections)
 
     # Signature mirrors the real client exactly, defaults included: a fake that
     # accepts anything lets a miswired call through, which is how a mangled

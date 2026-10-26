@@ -936,6 +936,29 @@ def test_trades_are_priced_in_playoff_chance(client: TestClient, monkeypatch: py
     assert idea["playoffs_change"] > 0
 
 
+class _OutlookProvider(_SummaryProvider):
+    def weeks_ahead(self, league_id: str) -> Any:
+        from thefrontoffice.domain.models import WeekAhead
+
+        return [
+            WeekAhead(week=8, points=98.0, usual=121.0, missing=["A (bye)"], short=True, fix="Pick up B", gain=12.0)
+        ]
+
+
+def test_the_weeks_ahead_come_back_with_their_fixes(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from thefrontoffice.domain.models import Summary
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: _OutlookProvider(Summary()))
+
+    [week] = client.get("/api/nfl-sleeper/leagues/L1/weeks-ahead").json()
+
+    assert (week["week"], week["short"], week["gain"]) == (8, True, 12.0)
+
+
+def test_a_competition_that_cannot_look_ahead_has_no_weeks_to_plan(client: TestClient) -> None:
+    assert client.get("/api/nfl-sleeper/leagues/L1/weeks-ahead").json() == []
+
+
 def test_a_competition_with_no_season_to_play_finds_no_trades(client: TestClient) -> None:
     assert client.get("/api/nfl-sleeper/leagues/L1/trades").status_code == 400
 
