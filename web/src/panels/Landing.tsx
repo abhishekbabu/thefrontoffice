@@ -4,6 +4,7 @@ import { api, type League, type Competition } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Card, CardHeader } from "@/components/ui/card";
+import { CardNote } from "@/components/ui/state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { m } from "motion/react";
 import { list, listItem } from "@/lib/motion";
@@ -102,9 +103,7 @@ export function Landing({
               )}
 
               {result?.isSuccess && result.data.length === 0 && (
-                <p className="px-4 py-3 text-[13px] text-muted-foreground">
-                  No leagues this season.
-                </p>
+                <CardNote>No leagues this season.</CardNote>
               )}
 
               {result?.data?.map((league) => (

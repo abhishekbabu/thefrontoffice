@@ -7,7 +7,8 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { IconButton } from "@/components/ui/icon-button";
 import { RosterTable } from "@/components/ui/roster-table";
 import type { SortState } from "@/components/ui/data-table";
-import { Loading } from "@/components/ui/state";
+import { Busy, Loading } from "@/components/ui/state";
+import { ToggleChip } from "@/components/ui/toggle";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { cn } from "@/lib/utils";
 import { ErrorNote } from "@/components/ui/error-note";
@@ -122,7 +123,7 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
             <CardHeader>
               <span>Available</span>
               <span className="flex items-center gap-2">
-                {judge.isPending && <span className="normal-case tracking-normal">judging…</span>}
+                {judge.isPending && <Busy>judging…</Busy>}
                 {/* The first rows on screen: the sort has already put the ones
                     worth a call first, whichever sort that is. */}
                 {canJudge && shown > 0 && (
@@ -161,19 +162,14 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
                   edit. Off the unfiltered pool, so choosing one does not
                   remove the others. */}
               {page.data.positions.map((p) => (
-                <button
+                <ToggleChip
                   key={p}
+                  pressed={position === p}
                   onClick={() => reset(setPosition)(position === p ? "" : p)}
-                  aria-pressed={position === p}
-                  className={cn(
-                    "h-9 rounded-md px-3 font-mono text-[11px] uppercase tracking-[0.06em] transition-colors",
-                    position === p
-                      ? "bg-primary text-primary-foreground"
-                      : "border border-border text-muted-foreground hover:bg-muted",
-                  )}
+                  className="font-mono text-[11px] uppercase tracking-[0.06em]"
                 >
                   {p}
-                </button>
+                </ToggleChip>
               ))}
               {filtered && (
                 <IconButton

@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
+import { CardNote } from "@/components/ui/state";
 import type { Side, Spot, Swap } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -63,7 +64,7 @@ export function LineupCard({
 
 function SpotList({ spots, empty, onOpen }: { spots: Spot[]; empty?: string; onOpen?: (id: string) => void }) {
   if (!spots.length) {
-    return <p className="px-4 py-3 text-[13px] text-muted-foreground">{empty ?? "Nothing set."}</p>;
+    return <CardNote>{empty ?? "Nothing set."}</CardNote>;
   }
   return (
     <div className="flex flex-col">

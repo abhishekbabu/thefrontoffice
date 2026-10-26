@@ -5,7 +5,8 @@ import { ActionList, WhyThread } from "@/components/ui/actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
-import { Loading } from "@/components/ui/state";
+import { Busy, Loading } from "@/components/ui/state";
+import { ListCard, ListRow } from "@/components/ui/list";
 import { StatStrip } from "@/components/ui/stat";
 import { LineupCard, SideCard } from "@/components/ui/lineup";
 import { usePlayerDrawer } from "@/components/ui/player";
@@ -114,7 +115,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
                     {judgment.data && !judge.isPending && (
                       <span className="font-normal">judged {judgedAt(judgment.data.answered_at)}</span>
                     )}
-                    {judge.isPending && <span className="font-normal">judging…</span>}
+                    {judge.isPending && <Busy>judging…</Busy>}
                     <IconButton
                       label={judgment.data ? "Judge again" : "Judge this list"}
                       icon={<Sparkles />}
@@ -145,21 +146,15 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
           {/* Shown beside the lineups when there is an opponent, since the
               swaps then have no card of their own to live in. */}
           {!week.data.actions && week.data.opponent && week.data.swaps.length > 0 && (
-            <Card>
-              <CardHeader>
-                <span>Changes the projections imply</span>
-              </CardHeader>
+            <ListCard title="Changes the projections imply">
               {week.data.swaps.map((swap) => (
-                <div
-                  key={swap.start}
-                  className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-border px-4 py-2.5 text-[13px] first:border-t-0"
-                >
+                <ListRow key={swap.start} className="flex-wrap gap-x-2 gap-y-1">
                   <span className="font-medium">{swap.start}</span>
                   <span className="text-muted-foreground">for {swap.out || "an empty place"}</span>
                   <span className="ml-auto font-mono text-[12px] text-ok">{swap.gain}</span>
-                </div>
+                </ListRow>
               ))}
-            </Card>
+            </ListCard>
           )}
 
           {week.data.boosts && week.data.boosts.stats.length > 0 && (
