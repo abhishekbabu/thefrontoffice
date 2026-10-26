@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 
 from thefrontoffice.adapters.outbound.competitions.dates import weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
+from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import FANTASY_POSITIONS, PlayerMeta
 from thefrontoffice.domain.models import Stat
@@ -30,16 +31,9 @@ logger = logging.getLogger(__name__)
 NEWS_WINDOW = timedelta(days=10)
 """Long enough to span a bye week, short enough that it is still this role."""
 
-# Where ESPN's abbreviation differs from Sleeper's. Washington is the only one.
-SLEEPER_TO_ESPN = {"WAS": "WSH"}
-
 # A team defense is filed under the club's own name, and every article about
 # the club would read as news about it.
 NOT_PLAYERS = frozenset({"DEF"})
-
-
-def espn_club(team: str) -> str:
-    return SLEEPER_TO_ESPN.get(team, team)
 
 
 @dataclass(frozen=True)

@@ -14,13 +14,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions import places
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import lineup_points, optimal_lineup
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import lineup_points
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import SEASON_WEEKS
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Week,
     day,
     games_by_week,
+    lineup_for,
     moment,
-    projection_for,
     week_dates,
 )
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
@@ -42,7 +43,6 @@ from thefrontoffice.domain.models import (
 
 logger = logging.getLogger(__name__)
 
-REGULAR_SEASON_WEEKS = 18
 
 # "What did I miss", not the season's whole transaction log.
 ACTIVITY_WEEKS = 3
@@ -122,8 +122,8 @@ def _last_week(state: Week) -> int:
     """The league's final week: the end of its playoffs, or the NFL's last where it names none."""
     start, teams = state.league.playoff_week_start, state.league.playoff_teams
     if not start or not teams:
-        return REGULAR_SEASON_WEEKS
-    return min(REGULAR_SEASON_WEEKS, start + math.ceil(math.log2(teams)) - 1)
+        return SEASON_WEEKS
+    return min(SEASON_WEEKS, start + math.ceil(math.log2(teams)) - 1)
 
 
 def _playoff_round(state: Week, week: int) -> str:
@@ -361,8 +361,7 @@ def season_model(client: SleeperNFLSource, state: Week, league_id: str, seed: in
 
 
 def _best_lineup(state: Week, player_ids: Iterable[str], projections: dict[str, WeeklyProjection]) -> float:
-    players = [p for p in (projection_for(pid, projections, state.players) for pid in player_ids) if p]
-    return lineup_points(optimal_lineup(state.league.starting_slots, players))
+    return lineup_points(lineup_for(state, player_ids, projections))
 
 
 def _scale(rosters: list[SleeperRoster], projected: dict[tuple[str, int], float], week: int) -> float:

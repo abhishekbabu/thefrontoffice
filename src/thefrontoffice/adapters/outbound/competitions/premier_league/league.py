@@ -11,6 +11,7 @@ tab that is always empty is worse than one that is not there.
 import logging
 
 from thefrontoffice.adapters.outbound.competitions.dates import at_time
+from thefrontoffice.adapters.outbound.competitions.places import ordinal
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import H2HMatch, MiniLeague
@@ -35,6 +36,20 @@ def build(client: FPLSource, league: MiniLeague | None, entry_id: int, playing: 
         standings=_standings(client, league, entry_id),
         matches=_matches(client, playing),
     )
+
+
+def standing(league: MiniLeague) -> str:
+    """How a mini-league position reads, in its own format's terms: '3 of 12', '1st · head-to-head'.
+
+    A head-to-head league has no field to be a position in — it is a table of
+    match records, short enough that a placing reads as a placing. A missing
+    field size says nothing about the field rather than '1 of 0'.
+    """
+    if league.is_h2h:
+        return f"{ordinal(league.rank)} · head-to-head"
+    if league.rank_count:
+        return f"{league.rank:,} of {league.rank_count:,}"
+    return f"{league.rank:,}"
 
 
 def _season_rows(client: FPLSource, league: MiniLeague, entry_id: int, playing: int) -> list[ScheduleRow]:

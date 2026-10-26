@@ -143,7 +143,7 @@ class FPLProvider:
                 league_id=str(lg.id),
                 name=lg.name,
                 competition=self.competition,
-                detail=f"{lg.standing} · {entry.name}",
+                detail=f"{league.standing(lg)} · {entry.name}",
                 url=self._league_url(lg),
             )
             for lg in private

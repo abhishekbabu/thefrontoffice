@@ -11,13 +11,19 @@ which of the two it is showing.
 """
 
 import logging
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
+from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot, optimal_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews
+from thefrontoffice.adapters.outbound.platforms.espn import types as espn
+from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
+from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
@@ -225,3 +231,102 @@ def left_in(game: ScoreboardGame) -> float:
         return min(1.0, game.clock / REGULATION)
     played = (max(game.period, 1) - 1) * QUARTER + (QUARTER - game.clock)
     return max(0.0, min(1.0, 1 - played / REGULATION))
+
+
+def lineup_for(state: Week, player_ids: Iterable[str], projections: dict[str, WeeklyProjection]) -> list[LineupSlot]:
+    """The best legal lineup these players make, on these projections: this week's, or one still to come.
+
+    The one place a week's lineup is solved from a set of player ids: the
+    season simulation, the weeks ahead and the trade search all ask it, for
+    weeks and rosters the week itself does not hold.
+    """
+    players = [p for p in (projection_for(pid, projections, state.players) for pid in player_ids) if p]
+    return optimal_lineup(state.league.starting_slots, players)
+
+
+def opponent_entry(state: Week, matchups: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The other side of your matchup this week, as Sleeper lists it; None on a bye or an unpaired week."""
+    mine = next((m for m in matchups if m.get("roster_id") == state.roster.roster_id), None)
+    if not mine or mine.get("matchup_id") is None:
+        return None
+    return next(
+        (
+            m
+            for m in matchups
+            if m.get("matchup_id") == mine.get("matchup_id") and m.get("roster_id") != state.roster.roster_id
+        ),
+        None,
+    )
+
+
+# ── the week as it is being played ──────────────────────────────────────
+
+SCOREBOARD_STATUS = {"pre": "pre_game", "in": "in_game", "post": "complete"}
+"""ESPN's game states in Sleeper's words, which is what the rest of the week reads."""
+
+
+class Scoreboard:
+    """Which games have kicked off, how far they are, and what has been scored: the week while it is played.
+
+    Sleeper's season schedule says which games have started, but it is a
+    season-long file cached for hours, and it carries no clock. ESPN's
+    scoreboard is a minute old at most and says where each game is. Read once
+    per week per request, and shared by everything that asks.
+    """
+
+    def __init__(self, client: SleeperNFLSource, espn: ESPNSource):
+        self.client = client
+        self.espn = espn
+        self._boards: dict[int, dict[str, ScoreboardGame]] = {}
+
+    def games(self, state: Week) -> dict[int, list[ScheduledGame]]:
+        """The season's games, with this week's status read off the live scoreboard where it answers."""
+        games = games_by_week(self.client, state.season)
+        board = self.board(state)
+        if board and state.week in games:
+            games[state.week] = [
+                replace(game, status=SCOREBOARD_STATUS.get(board[game.home].state, game.status))
+                if game.home in board
+                else game
+                for game in games[state.week]
+            ]
+        return games
+
+    def board(self, state: Week) -> dict[str, ScoreboardGame]:
+        """This week's games as they stand, keyed by each of the two clubs in Sleeper's abbreviations."""
+        if state.week not in self._boards:
+            try:
+                board = self.espn.get_scoreboard(espn.NFL, state.season, state.week)
+            except ESPNAPIError as e:
+                # The schedule's own status is stale, not wrong about a game long finished.
+                logger.warning(f"Continuing without the live scoreboard: {e}")
+                board = []
+            by_pair = {(game.home, game.away): game for game in board}
+            self._boards[state.week] = {
+                club: by_pair[pair]
+                for game in games_by_week(self.client, state.season).get(state.week, [])
+                if (pair := (espn_club(game.home), espn_club(game.away))) in by_pair
+                for club in (game.home, game.away)
+            }
+        return self._boards[state.week]
+
+    def live(self, state: Week, league_id: str) -> Live:
+        """What has actually been scored, whose clubs have kicked off, and where their games are."""
+        started = {
+            club
+            for game in self.games(state).get(state.week, [])
+            if game.status and game.status != "pre_game"
+            for club in (game.home, game.away)
+        }
+        clock = {club: game.label for club, game in self.board(state).items() if game.state == "in" and game.label}
+        try:
+            matchups = self.client.get_matchups(league_id, state.week)
+        except SleeperAPIError as e:
+            logger.warning(f"Continuing without live scores: {e}")
+            return Live(started=started, points={}, clock=clock)
+
+        points: dict[str, float] = {}
+        for entry in matchups:
+            for player_id, scored in (entry.get("players_points") or {}).items():
+                points[str(player_id)] = float(scored or 0)
+        return Live(started=started, points=points, clock=clock)

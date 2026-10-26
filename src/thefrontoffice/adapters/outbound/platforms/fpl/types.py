@@ -234,22 +234,6 @@ class MiniLeague:
     rather than a placing among everyone. FPL keeps these in their own list,
     and a manager whose only private league is h2h has none in the other."""
 
-    @property
-    def standing(self) -> str:
-        """How this league's position reads, in its own format's terms."""
-        if self.is_h2h:
-            return f"{_ordinal(self.rank)} · head-to-head"
-        if self.rank_count:
-            return f"{self.rank:,} of {self.rank_count:,}"
-        return f"{self.rank:,}"
-
-
-def _ordinal(value: int) -> str:
-    """1 -> 1st. A h2h table is short enough that a placing reads as a placing."""
-    if 10 <= value % 100 <= 20:
-        return f"{value}th"
-    return f"{value}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(value % 10, 'th') }"
-
 
 @dataclass(frozen=True)
 class Entry:
