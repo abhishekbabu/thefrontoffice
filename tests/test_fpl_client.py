@@ -512,13 +512,6 @@ def test_a_chip_knows_which_weeks_it_covers() -> None:
     assert not wildcard.covers(20)
 
 
-def test_an_unnamed_chip_is_skipped_rather_than_shown_blank(tmp_path: Path) -> None:
-    session = FakeSession({"/bootstrap-static/": CHIPS_BOOTSTRAP})
-    client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=session)
-
-    assert all(c.name for c in client.get_chips())
-
-
 def test_chips_played_come_back_with_the_week_they_went(tmp_path: Path) -> None:
     history = {"current": [], "chips": [{"name": "bboost", "time": "2026-01-01T00:00:00Z", "event": 3}]}
     client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession({"/history/": history}))

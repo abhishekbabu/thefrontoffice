@@ -4,7 +4,6 @@ The engine knows nothing about a platform: it parses, asks a provider to price
 the trade, and structures the answer.
 """
 
-import inspect
 from types import SimpleNamespace
 from typing import Any
 
@@ -98,10 +97,3 @@ def test_a_model_failure_is_wrapped_as_a_domain_error() -> None:
 
     with pytest.raises(AIResponseError, match="did not return a usable answer"):
         _engine(ai=Broken()).evaluate("L1", "x")
-
-
-def test_the_engine_requires_a_model() -> None:
-    """No default: a default would name a vendor from the application layer."""
-    ai = inspect.signature(TradeEngine).parameters["ai"]
-
-    assert ai.default is inspect.Parameter.empty

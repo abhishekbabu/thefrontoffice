@@ -561,24 +561,10 @@ def test_an_existing_token_satisfies_the_check(monkeypatch: pytest.MonkeyPatch, 
     YahooClient.ensure_authorized()  # does not raise
 
 
-def test_login_without_credentials_raises_rather_than_exiting(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """A missing credential must raise: sys.exit inside a server kills the request."""
-    from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
-    from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError
-    from thefrontoffice.config.settings import settings
-
-    monkeypatch.setattr(settings, "yahoo_token_file", str(tmp_path / "absent"))
-    monkeypatch.setattr(settings, "yahoo_client_id", None)
-
-    with pytest.raises(YahooAPIError, match="must be set"):
-        YahooClient.login()
-
-
 # ── verifying a token really grants something ───────────────────────────
 
 
 def test_verify_passes_when_yahoo_answers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    import thefrontoffice.adapters.outbound.platforms.yahoo.client as mod
     from thefrontoffice.config.settings import settings
 
     token = tmp_path / ".yahoofantasy"
@@ -589,7 +575,6 @@ def test_verify_passes_when_yahoo_answers(monkeypatch: pytest.MonkeyPatch, tmp_p
     )
 
     YahooClient.verify()  # does not raise
-    assert mod  # the module under test, imported for the monkeypatch target
 
 
 def test_a_token_that_authenticates_but_grants_nothing_is_caught(

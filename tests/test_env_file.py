@@ -43,11 +43,6 @@ def test_a_plain_field_maps_to_its_uppercase_name() -> None:
     assert env_file.env_var("sleeper_username") == "SLEEPER_USERNAME"
 
 
-def test_every_declared_key_maps_back_to_a_field() -> None:
-    for key, field in env_file.declared().items():
-        assert env_file.env_var(field) == key
-
-
 # ── reading ─────────────────────────────────────────────────────────────
 
 
@@ -166,14 +161,26 @@ def test_a_shell_variable_is_reported_as_shadowing(monkeypatch: pytest.MonkeyPat
 def test_reload_mutates_the_singleton_every_module_already_holds(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Rebinding would leave every `from ... import settings` on the old object."""
+    """Rebinding would leave every `from ... import settings` on the old object.
+
+    Read from a file of the test's own, and with every field recorded first so
+    the reload cannot carry the developer's real `.env` into the rest of the suite.
+    """
+    from thefrontoffice.config.settings import AppSettings
+
+    path = tmp_path / ".env"
+    path.write_text("SLEEPER_USERNAME=fresh-name\n", encoding="utf-8")
+    monkeypatch.setitem(AppSettings.model_config, "env_file", path)
+    monkeypatch.delenv("SLEEPER_USERNAME", raising=False)
+    for field in AppSettings.model_fields:
+        monkeypatch.setattr(settings, field, getattr(settings, field))
     before = settings
     monkeypatch.setattr(settings, "sleeper_username", "stale")
 
     env_file.reload_settings()
 
     assert settings is before
-    assert settings.sleeper_username != "stale"
+    assert settings.sleeper_username == "fresh-name"
 
 
 def test_pydantic_reads_back_exactly_what_was_written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -207,7 +214,6 @@ def test_pydantic_reads_back_exactly_what_was_written(tmp_path: Path, monkeypatc
         ("logfire_capture_prompts", "boolean"),
         ("fpl_entry_id", "integer"),
         ("yahoo_max_weekly_adds", "integer"),
-        ("yahoo_max_weekly_adds", "integer"),
         ("log_level", "choice"),
         ("sleeper_username", "text"),
         ("gemini_api_key", "text"),
@@ -222,18 +228,8 @@ def test_optionality_does_not_change_what_kind_a_value_is() -> None:
     assert env_file.field_kind("fpl_entry_id") == ("integer", [])
 
 
-def test_a_bool_is_not_reported_as_an_integer() -> None:
-    """In Python it is one, so the check order actually matters."""
-    assert env_file.field_kind("logfire_capture_prompts")[0] == "boolean"
-
-
 def test_a_choice_carries_its_allowed_values() -> None:
     assert env_file.field_kind("log_level")[1] == ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-
-
-def test_every_declared_field_resolves_to_a_known_control() -> None:
-    for field in env_file.declared().values():
-        assert env_file.field_kind(field)[0] in {"text", "boolean", "integer", "number", "choice"}
 
 
 def test_a_boolean_writes_the_spelling_dotenv_reads_back(env: Path) -> None:

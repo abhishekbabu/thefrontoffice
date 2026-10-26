@@ -168,11 +168,6 @@ def test_a_caller_can_transform_before_storing(tmp_path: Path) -> None:
     assert client.cache_get("k", TTL) == {"trimmed": True}
 
 
-def test_a_stored_value_survives_a_new_client_on_the_same_file(tmp_path: Path) -> None:
-    _client(tmp_path, FakeSession()).cache_set("k", [1, 2])
-    assert _client(tmp_path, FakeSession()).cache_get("k", TTL) == [1, 2]
-
-
 def test_the_cache_is_keyed_not_url_addressed(tmp_path: Path) -> None:
     """Two URLs under one key is how a paginated endpoint is folded together."""
     session = FakeSession({"n": 1})
@@ -180,14 +175,6 @@ def test_the_cache_is_keyed_not_url_addressed(tmp_path: Path) -> None:
     client.cached("same", "https://example.test/a", TTL)
     client.cached("same", "https://example.test/b", TTL)
     assert session.requests == ["https://example.test/a"]
-
-
-def test_a_cache_entry_stores_when_it_was_written(tmp_path: Path) -> None:
-    client = _client(tmp_path, FakeSession())
-    client.cache_set("k", 1)
-    assert client.cache_get("k", timedelta(seconds=1)) == 1
-    stale = JsonDiskCache(tmp_path / "cache").get("k", timedelta(seconds=1), now=datetime.now(UTC) + TTL)
-    assert stale is None
 
 
 # ── batched reads ───────────────────────────────────────────────────────

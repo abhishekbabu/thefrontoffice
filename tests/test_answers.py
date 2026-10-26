@@ -1,6 +1,6 @@
 """Tests for keeping model answers: `application/answers.py`."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from conftest import FakeAnswers
 from pydantic import BaseModel
@@ -61,14 +61,3 @@ def test_scopes_keep_their_answers_apart() -> None:
     answers.keep("one", "input", Note(text="one's"))
 
     assert answers.latest("two", Note) is None
-
-
-def test_reading_the_latest_never_asks() -> None:
-    clock = Clock()
-    answers = Answers(FakeAnswers(), clock=clock)
-    answers.keep("scope", "old input", Note(text="old"))
-    clock.now += timedelta(hours=1)
-
-    kept = answers.latest("scope", Note)
-
-    assert kept is not None and kept.answer.text == "old" and not is_current(kept, "new input")

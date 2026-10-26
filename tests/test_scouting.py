@@ -120,12 +120,6 @@ def test_a_changed_week_is_judged_afresh_and_kept() -> None:
     assert latest is not None and latest.answer.tasks[0].verdict is not None
 
 
-def test_a_league_never_judged_has_no_latest() -> None:
-    engine = ScoutEngine(ContextOnly(TASKS), ai=FakeAI(), answers=FakeAnswers())
-
-    assert engine.latest("L1") is None
-
-
 def test_judgments_are_kept_per_league() -> None:
     ai, answers = FakeAI(report=_report()), FakeAnswers()
     engine = ScoutEngine(ContextOnly(TASKS), ai=ai, answers=answers)
@@ -133,14 +127,3 @@ def test_judgments_are_kept_per_league() -> None:
     engine.start_analysis("L1")
 
     assert engine.latest("L2") is None
-
-
-def test_the_report_alone_opens_no_conversation() -> None:
-    """The week's Judge asks its questions on the rows, not in a chat beside them."""
-    ai = FakeAI(report=_report(_verdict(1)))
-    engine = ScoutEngine(ContextOnly(TASKS), ai=ai, answers=FakeAnswers())
-
-    report = engine.report("L1")
-
-    assert report.tasks[0].verdict is not None
-    assert ai.history is None

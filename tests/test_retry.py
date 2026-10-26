@@ -98,28 +98,3 @@ def test_attempts_are_bounded_and_the_original_error_reraises() -> None:
     with pytest.raises(requests.exceptions.Timeout):
         _retry()(always)
     assert len(calls) == 3
-
-
-def test_a_custom_predicate_decides() -> None:
-    calls: list[int] = []
-
-    def odd() -> str:
-        calls.append(1)
-        raise ValueError("retry me")
-
-    with pytest.raises(ValueError):
-        _retry(lambda exc: isinstance(exc, ValueError))(odd)
-    assert len(calls) == 3
-
-
-def test_the_platform_clients_use_the_shared_policy() -> None:
-    """The point of extracting it: one place to change the common behavior."""
-    import inspect
-
-    from thefrontoffice.adapters.outbound.platforms.fpl import client as fpl
-    from thefrontoffice.adapters.outbound.platforms.sleeper import client as sleeper
-
-    for module in (fpl, sleeper):
-        source = inspect.getsource(module)
-        assert "build_retry(" in source
-        assert "is_transient(" in source

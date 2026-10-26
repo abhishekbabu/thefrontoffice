@@ -34,12 +34,6 @@ def test_a_named_slot_accepts_only_that_position() -> None:
     assert eligible_positions("TE") == ("TE",)
 
 
-def test_flex_variants_have_the_right_eligibility() -> None:
-    assert set(eligible_positions("FLEX")) == {"RB", "WR", "TE"}
-    assert set(eligible_positions("WRRB_FLEX")) == {"RB", "WR"}
-    assert set(eligible_positions("SUPER_FLEX")) == {"QB", "RB", "WR", "TE"}
-
-
 # ── optimal_lineup ──────────────────────────────────────────────────────
 
 

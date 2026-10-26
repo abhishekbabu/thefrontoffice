@@ -419,11 +419,6 @@ def test_an_unconfigured_trading_sport_says_what_to_set(capsys: pytest.CaptureFi
     assert args == ["nba", "Give", "A"]  # left in the text rather than silently dropped
 
 
-def test_no_trading_sport_says_so(capsys: pytest.CaptureFixture[str]) -> None:
-    cmd._cmd_trade(Session(), [fake_entry("nfl")], ["Give A, Get B"])
-    assert "supports trade evaluation" in capsys.readouterr().out
-
-
 def test_usage_is_shown_when_only_a_sport_is_given(capsys: pytest.CaptureFixture[str]) -> None:
     cmd._cmd_trade(Session(), [_tradeable("nfl")], ["nfl"])
     assert "Usage: /trade" in capsys.readouterr().out

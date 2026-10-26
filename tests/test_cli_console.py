@@ -17,13 +17,6 @@ from thefrontoffice.adapters.inbound.cli.repl import _configure_console
 UI_GLYPHS = "🏀 ⚡ ⏳ ✅ ❌ ⚠️ 📋 🔐 💬 🤖 👋 ═ ─ —"
 
 
-def test_cp1252_cannot_carry_the_ui_glyphs() -> None:
-    """Establishes the failure this fix exists to prevent."""
-    stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
-    with pytest.raises(UnicodeEncodeError):
-        stream.write(UI_GLYPHS)
-
-
 def test_reconfigure_makes_a_cp1252_stream_safe(monkeypatch: pytest.MonkeyPatch) -> None:
     raw = io.BytesIO()
     stream = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")

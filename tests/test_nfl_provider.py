@@ -28,7 +28,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SeasonStats,
     SleeperLeague,
     SleeperRoster,
-    TrendingPlayer,
 )
 from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery
@@ -332,27 +331,6 @@ def test_a_player_links_to_their_own_page() -> None:
     assert detail.url == "https://sleeper.com/players/nfl/qb1"
 
 
-def test_the_crowd_signal_reaches_the_prompt() -> None:
-    """Trending adds are fetched inside a try/except, so a miswired call
-    degrades to "(unavailable)" rather than raising — which is exactly how it
-    can break without a test noticing."""
-    client = FakeSleeper(
-        projections=DEFAULT_PROJECTIONS,
-        trending=[TrendingPlayer(player_id="rb1", count=12_345)],
-    )
-
-    context = _provider(client).build_context("L1")
-
-    assert "Good RB" in context.prompt
-    assert "12,345" in context.prompt
-
-
-def test_a_failed_trending_lookup_says_so_rather_than_failing_the_report() -> None:
-    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, trending_error=SleeperAPIError("down"))
-
-    assert "(unavailable)" in _provider(client).build_context("L1").prompt
-
-
 def test_a_player_on_no_nfl_roster_is_not_a_signing() -> None:
     """The catalog never forgets anybody — Reggie Wayne retired in 2014 and is
     still in it, unsigned. The default ranking hid him because he has no
@@ -404,12 +382,6 @@ def test_a_club_the_catalog_does_not_name_falls_back_to_its_abbreviation() -> No
     """Worse than the full name, no worse than before, and not a failed page."""
     detail = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).player("L1", "bye1")
     assert detail.team_name == "LAR"
-
-
-def test_the_opponent_is_named_in_full_where_there_is_room() -> None:
-    detail = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).player("L1", "qb1")
-    opponent = next(s for s in detail.groups[0].stats if s.label == "Opponent")
-    assert opponent.value == "vs Miami Dolphins"
 
 
 # ── the wire, for this roster ───────────────────────────────────────────

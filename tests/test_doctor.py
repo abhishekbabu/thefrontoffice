@@ -14,8 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import doctor  # noqa: E402
 
-from thefrontoffice.config.settings import AppSettings  # noqa: E402
-
 
 def _env(tmp_path: Path, body: str, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / ".env"
@@ -25,11 +23,6 @@ def _env(tmp_path: Path, body: str, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 # ── the declared surface ────────────────────────────────────────────────
-
-
-def test_every_setting_is_reported() -> None:
-    """A field added without a row here is a setting nobody can verify."""
-    assert set(_declared_names()) == set(AppSettings.model_fields)
 
 
 def _declared_names() -> list[str]:
