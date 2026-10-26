@@ -736,6 +736,8 @@ class ScheduleRow(BaseModel):
     tone: Tone = "neutral"
     is_current: bool = False
     """The week in progress, so a long table can say where you are in it."""
+    playoffs: bool = False
+    """A bracket week rather than the regular season, so the two can be read apart."""
 
 
 class TeamRef(BaseModel):
@@ -800,6 +802,9 @@ class LeagueSchedule(BaseModel):
     an empty promise.
     """
 
+    headline: list[Stat] = Field(
+        default_factory=list, description="Your season in figures: record, place, points, playoff chance."
+    )
     season: list[ScheduleRow] = Field(default_factory=list)
     standings: list[StandingRow] = Field(default_factory=list)
     matches: list[Match] = Field(default_factory=list)

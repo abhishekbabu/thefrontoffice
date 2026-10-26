@@ -137,7 +137,7 @@ adding only what its clock has left, read off ESPN's scoreboard, since
 Sleeper's schedule carries no clock and is cached for hours. The same
 scoreboard decides which games have kicked off, and a player in one shows his
 points so far and where it is ("12:14 - 3rd"). The header carries
-the chance of winning and the likely margin; every to-do move carries what it
+the chance of winning with its likely margin; every to-do move carries what it
 does to that chance — computed on the same draws, so the difference is the
 decision rather than noise — and a move projections would not make but the
 simulation rates by a point or more gets a row of its own. A questionable
@@ -159,8 +159,8 @@ league actually scores, with the league's own week-to-week spread, and a
 per-team offset for how far real strength may sit from projected strength. The
 table is seeded by record, then points for. The week's header carries your
 chance and what this week is worth to it — "90% · 96% with a win, 83% without"
-— weighing this week by the week's own forecast; the league table carries every
-team's.
+— weighing this week by the week's own forecast; the league view's header
+carries your chance alone, and its table every team's.
 
 **Weeks ahead.** My team opens on the next four weeks as the roster stands
 (`nfl/outlook.py`), each one's best legal lineup projected from Sleeper's own
@@ -171,10 +171,11 @@ long one (injured reserve, PUP, suspension) every week, and past that the
 projection Sleeper keeps publishing stands. A week ten points or more short
 names the free agent at a missing player's position who adds most to it, where
 he adds at least two points, and, on a full roster, who to drop: never a
-regular, anyone a lineup in those weeks leans on, or anyone only away for the week. Players in reserve slots are not counted on, and are
+regular, anyone a lineup in those weeks leans on, or anyone only away for the week. When next week is the short one it is also a to-do
+item, standing in for that week's bye items. Players in reserve slots are not counted on, and are
 marked as such on the week's bench.
 
-**Trades worth offering.** Until the deadline, League → Trades tries every
+**Trades worth offering.** Until the deadline, My team tries every
 one-for-one swap with every team (`nfl/market.py`) and keeps those that raise
 both starting lineups' projected points for the weeks after this one — at least
 half a point a week for them, which is the case for their saying yes. Kickers
@@ -223,9 +224,15 @@ drop), *watch* or *pass* — on a line under its row, grounded in the role,
 matchup and news its prompt line carries. Calls are kept per player, so a
 reload shows them, judging the page again asks only about the players whose
 situation moved, and a call on one who has moved since shows as *stale*.
-**League** covers the season: your results so far, the
-table (with each team's playoff chance, on NFL), trades worth offering (NFL), every roster, the fixture list and the transaction feed. **My team** is
-your squad in more depth, opening on the weeks ahead, and any row opens a player.
+Each page answers one question. **This week** is what to do before kickoff and
+how the game is going: the lineup (and what the bench holds), the opponent, the
+score, the chance of winning, what the week is worth to the playoffs, and the
+to-do list. **My team** is the roster beyond this week: the weeks ahead, the
+trades worth offering (NFL), and the squad in lineup order. **League** is the
+season and everyone else in it: your record, place, points and playoff chance;
+your results, with the playoff bracket set apart; the table (with each team's
+playoff chance, on NFL); every roster; the fixture list; and the transaction
+feed. Any player row opens the player.
 
 ![Player detail](docs/screenshots/player.png)
 

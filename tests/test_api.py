@@ -236,6 +236,12 @@ def test_a_competition_says_whether_its_free_agents_can_be_judged(client: TestCl
     assert flags["nfl-sleeper"] is True and flags["premier-league-fpl"] is False
 
 
+def test_a_competition_says_whether_its_weeks_and_trades_can_be_planned(client: TestClient) -> None:
+    flags = {c["key"]: c["plans_ahead"] for c in client.get("/api/competitions").json()}
+
+    assert flags["nfl-sleeper"] is True and flags["premier-league-fpl"] is False
+
+
 def test_an_unknown_sport_is_a_404(client: TestClient) -> None:
     response = client.post("/api/cricket/leagues/900/free-agents/judge", json={"player_ids": ["p1"]})
     assert response.status_code == 404

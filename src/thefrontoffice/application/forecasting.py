@@ -208,9 +208,11 @@ def _odds_row(move: LineupMove, forecast: Forecast) -> Action:
 def _headline(forecast: Forecast) -> list[Stat]:
     tone = "good" if forecast.win >= 0.6 else "warning" if forecast.win <= 0.4 else "neutral"
     margin = forecast.margin
+    # One figure and its range: the chance alone hides how close it is.
     return [
-        Stat(label="Win chance", value=f"{forecast.win:.0%}", tone=tone),
-        Stat(label="Likely margin", value=f"{margin.low:+.0f} to {margin.high:+.0f}"),
+        Stat(
+            label="Win chance", value=f"{forecast.win:.0%} · margin {margin.low:+.0f} to {margin.high:+.0f}", tone=tone
+        )
     ]
 
 

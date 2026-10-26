@@ -113,21 +113,15 @@ def headline(
     best_points: float,
     on_bench: float,
 ) -> list[Stat]:
-    """Where this team stands this week, in points.
+    """Where this team stands this week, in points: the lineup, and what the bench still holds.
 
-    Only points sitting on the bench warns: it is the one figure here that
-    represents a decision still open rather than a result already in.
+    The season's own figures — record, points for — are the league view's,
+    and the week is already in the page's title. Only points left on the
+    bench warns: it is the one figure here that is a decision still open.
     """
-    stats = [
-        Stat(label="Week", value=str(week)),
-        Stat(label="Record", value=roster.record),
-        Stat(label="Points for", value=f"{roster.points_for:.1f}"),
-        Stat(label="Lineup", value=f"{current_points:.1f}"),
-        Stat(label="Best legal", value=f"{best_points:.1f}", tone="good" if on_bench > 0 else "neutral"),
-    ]
     if on_bench > 0:
-        stats.append(Stat(label="On bench", value=f"+{on_bench:.1f}", tone="warning"))
-    return stats
+        return [Stat(label="Lineup", value=f"{current_points:.1f} · best {best_points:.1f}", tone="warning")]
+    return [Stat(label="Lineup", value=f"{current_points:.1f}")]
 
 
 NEWS_PER_PLAYER = 2

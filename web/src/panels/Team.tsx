@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, type League, type PlayerCard, type Competition, type WeekAhead } from "@/lib/api";
+import { api, type League, type PlayerCard, type Competition, type TradeIdea, type WeekAhead } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { RosterTable } from "@/components/ui/roster-table";
@@ -9,10 +9,11 @@ import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
 
 /**
- * The whole squad, in more depth than the week view.
+ * Your roster beyond this week: the weeks coming, the trades worth offering, and the squad itself.
  *
- * This is where you look at your players rather than at this week: the season
- * numbers, the ownership, the depth chart. Any row opens.
+ * This week's page is what to do before kickoff; this is what to do about the
+ * roster over the weeks after — a short week to see coming, a trade to send —
+ * and the squad in more depth than the week shows. Any row opens.
  */
 export function TeamPanel({ competition, league }: { competition: Competition; league: League }) {
   const { openPlayer, drawer } = usePlayerDrawer(competition, league);
@@ -31,7 +32,8 @@ export function TeamPanel({ competition, league }: { competition: Competition; l
 
       {roster.data && (
         <div className="flex flex-col gap-4 p-5">
-          <WeeksAhead competition={competition} league={league} />
+          {competition.plans_ahead && <WeeksAhead competition={competition} league={league} />}
+          {competition.plans_ahead && <Trades competition={competition} league={league} />}
           <Card>
             <CardHeader>
               <span>Squad</span>
@@ -104,6 +106,60 @@ function WeeksAhead({ competition, league }: { competition: Competition; league:
           </div>
         ))}
       </div>
+    </Card>
+  );
+}
+
+const signed = (change: number) => `${change >= 0 ? "+" : "−"}${Math.abs(change).toFixed(1)}`;
+
+/**
+ * The trades that would most raise your playoff chance, and help the other side's starters too.
+ *
+ * Beside the weeks ahead because a trade is a roster move like a pickup, and
+ * often the fix for a short week no free agent closes. Fetched apart from the
+ * squad: each one is a season played out thousands of times, which is seconds
+ * the roster should not wait on.
+ */
+function Trades({ competition, league }: { competition: Competition; league: League }) {
+  const trades = useQuery<TradeIdea[], Error>({
+    queryKey: ["trades", competition.key, league.league_id],
+    queryFn: () => api.trades(competition.key, league.league_id),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <span>Trades worth offering</span>
+        {trades.data && <span>{trades.data.length} found</span>}
+      </CardHeader>
+      {trades.isLoading && <Loading lines={2} />}
+      {trades.isError && <ErrorNote error={trades.error} />}
+      {trades.data?.length === 0 && (
+        <p className="px-4 py-3 text-[13px] text-muted-foreground">
+          No one-for-one swap improves both starting lineups and raises your playoff chance by half a point or
+          more. Trading is closed after the deadline.
+        </p>
+      )}
+      {trades.data?.map((idea) => (
+        <div
+          key={`${idea.team_id}-${idea.giving.join()}-${idea.receiving.join()}`}
+          className="flex items-baseline gap-3 border-t border-border px-4 py-2.5 text-[13px] first:border-t-0"
+        >
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="truncate">
+              Give {idea.giving.join(", ")} for {idea.receiving.join(", ")}
+            </span>
+            <span className="truncate font-mono text-[11px] text-muted-foreground">
+              with {idea.team} · your starters {signed(idea.points)} a week, theirs {signed(idea.their_points)}
+              {" · "}their playoffs {signed(idea.their_playoffs_change * 100)} pts
+            </span>
+          </span>
+          {/* The figure the list is ranked on, said in words as well as tinted. */}
+          <Badge variant="ok" appearance="pill" className="shrink-0 tabular-nums">
+            {signed(idea.playoffs_change * 100)} pts · {Math.round(idea.playoffs * 100)}% playoffs
+          </Badge>
+        </div>
+      ))}
     </Card>
   );
 }

@@ -17,6 +17,8 @@ export type Competition = {
   label: string;
   /** Whether its free agents can be judged — offered only where they can. */
   judges_wire: boolean;
+  /** Whether its weeks ahead and trades worth offering can be shown. */
+  plans_ahead: boolean;
   /** Whether the credentials this competition needs are set. */
   configured: boolean;
   requires: string;
@@ -228,6 +230,8 @@ export type ScheduleRow = {
   result: string;
   tone: Tone;
   is_current: boolean;
+  /** A bracket week rather than the regular season. */
+  playoffs: boolean;
 };
 
 export type StandingRow = {
@@ -296,6 +300,8 @@ export type TradeIdea = {
 };
 
 export type LeagueSchedule = {
+  /** Your season in figures: record, place, points for, playoff chance. */
+  headline: Stat[];
   season: ScheduleRow[];
   standings: StandingRow[];
   matches: Match[];

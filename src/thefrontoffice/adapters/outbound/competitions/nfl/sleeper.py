@@ -355,7 +355,9 @@ class SleeperNFLProvider:
                         # Whose role just grew: the pickups a projection has
                         # not caught up with yet. Sorts by the size of the jump.
                         **({"Usage": trend.short() if trend else "—"} if fits else {}),
-                        "Opponent": self._opponent_label(projection, scheduled),
+                        # Through the zero-point fallback, which carries his ruling
+                        # where Sleeper has published no projection for him.
+                        "Opponent": self._opponent_label(projection or zero_projection(player_id, meta), scheduled),
                         "Depth": str(depth) if depth else "—",
                         "Exp": f"{int(meta.get('years_exp') or 0)}y",
                         "Status": injury,
@@ -437,6 +439,9 @@ class SleeperNFLProvider:
         if projection and projection.opponent:
             opponent = cls._team_name(projection.opponent, players) if players else projection.opponent
             return f"vs {opponent}"
+        if projection and projection.injury_status.upper() in actions.RULED_OUT:
+            # Sleeper projects nobody it has ruled out; his club still plays.
+            return projection.injury_status.lower()
         return "no game" if scheduled else "—"
 
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
@@ -749,12 +754,47 @@ class SleeperNFLProvider:
                 # projection: an injured player has none, and his club still plays.
                 for club in sorted({p.team for p in state.projected if playing and p.team not in playing})
             ],
-            actions=self._actions(state, league_id, games),
+            actions=self._with_short_week(state, league_id, self._actions(state, league_id, games)),
             window=self._window(state, games),
         )
 
     def _actions(self, state: Week, league_id: str, games: dict[int, list[ScheduledGame]]) -> list[Action]:
         return actions.build(state, games, self._wire(state, league_id))
+
+    def _with_short_week(self, state: Week, league_id: str, listed: list[Action]) -> list[Action]:
+        """The list with next week flagged where byes and injuries leave it short, while a waiver run can fix it.
+
+        It names the byes itself, so it replaces next week's bye items rather
+        than sitting beside them saying the same thing twice. The weeks after
+        stay on My team: next week is the one this list can still act on.
+        """
+        try:
+            ahead = outlook.build(
+                self.client, state, league_id, lambda pid: self._is_signing(state.players.get(pid) or PlayerMeta())
+            )
+        except SleeperAPIError as e:
+            logger.warning(f"Continuing without the weeks ahead: {e}")
+            return listed
+        week = next((w for w in ahead if w.week == state.week + 1 and w.short), None)
+        if week is None:
+            return listed
+        without = f", without {actions.join(week.missing)}" if week.missing else ""
+        fix = (
+            f" {week.fix}, +{week.gain:.1f}."
+            if week.fix
+            else " No free agent at those positions adds two points; a trade may: see My team."
+        )
+        short = Action(
+            kind="waiver" if week.fix else "trade",
+            urgency="later",
+            title=f"Week {week.week} is short",
+            reason=(
+                f"Your best lineup projects {week.points:.1f} against {week.usual:.1f} in a usual week{without}.{fix}"
+            ),
+            when=f"week {week.week}",
+            key=f"short:{week.week}",
+        )
+        return [a for a in listed if not a.key.startswith(f"bye:{week.week}:")] + [short]
 
     def _wire(self, state: Week, league_id: str) -> list[WeeklyProjection]:
         """Who could be picked up and play this week, best projection first.
