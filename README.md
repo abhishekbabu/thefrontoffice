@@ -165,10 +165,13 @@ team's.
 **Weeks ahead.** My team opens on the next four weeks as the roster stands
 (`nfl/outlook.py`), each one's best legal lineup projected from Sleeper's own
 projections for that week — so byes land where they fall — against the
-roster's usual week, with the regular starters it will be without and why. A
-week ten points or more short names the free agent who closes most of the
-gap, and, on a full roster, who to drop: never a regular, nor anyone who is
-only away for the week. Players in reserve slots are not counted on, and are
+roster's usual week, with the regular starters it will be without and why. An
+injury ruling counts as far as it reaches: a plain *Out* covers next week, a
+long one (injured reserve, PUP, suspension) every week, and past that the
+projection Sleeper keeps publishing stands. A week ten points or more short
+names the free agent at a missing player's position who adds most to it, where
+he adds at least two points, and, on a full roster, who to drop: never a
+regular, anyone a lineup in those weeks leans on, or anyone only away for the week. Players in reserve slots are not counted on, and are
 marked as such on the week's bench.
 
 **Trades worth offering.** Until the deadline, League → Trades tries every

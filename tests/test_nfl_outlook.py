@@ -21,7 +21,9 @@ BYE_WEEK = 5
 """Buffalo's bye: three of your four on the sideline at once."""
 
 
-def _client(roster_positions: list[str] | None = None, reserve: list[str] | None = None) -> FakeSleeper:
+def _client(
+    roster_positions: list[str] | None = None, reserve: list[str] | None = None, injured: dict[str, str] | None = None
+) -> FakeSleeper:
     client = FakeSleeper(
         projections={**MINE, **WIRE},
         rosters=[
@@ -42,7 +44,9 @@ def _client(roster_positions: list[str] | None = None, reserve: list[str] | None
     )
     client.weekly_projections[BYE_WEEK] = {"wr8": replace(MINE["wr8"], opponent="NYJ"), **WIRE}
     client.players_catalog = {
-        pid: PlayerMeta(player_id=pid, name=p.name, position=p.position, team=p.team)
+        pid: PlayerMeta(
+            player_id=pid, name=p.name, position=p.position, team=p.team, injury_status=(injured or {}).get(pid, "")
+        )
         for pid, p in {**MINE, **WIRE}.items()
     }
     client.league = replace(client.league, roster_positions=roster_positions or ["QB", "RB", "WR", "BN"])
@@ -102,3 +106,48 @@ def test_the_last_regular_season_week_has_nothing_ahead() -> None:
     client.week = 18
 
     assert _provider(client).weeks_ahead("L1") == []
+
+
+def test_a_plain_out_costs_next_week_and_no_further() -> None:
+    """A ruling is for one game; past next week, the projection Sleeper keeps publishing is the better guess."""
+    weeks = _weeks(_client(injured={"rb1": "Out"}))
+
+    assert "Good RB (out)" in weeks[4].missing and weeks[4].points == 36.0  # Bad RB in his place
+    assert weeks[6].missing == [] and weeks[6].points == 50.0
+
+
+def test_a_long_ruling_covers_every_week() -> None:
+    weeks = _weeks(_client(injured={"rb1": "IR"}))
+
+    assert all("Good RB (ir)" in weeks[w].missing for w in (4, 6, 7))
+
+
+def test_the_pickup_is_for_a_position_the_week_is_without() -> None:
+    """Short of a running back and a quarterback, the fix is one of those, whatever else the wire holds."""
+    client = _client()
+    client.weekly_projections[BYE_WEEK]["wr9"] = _proj("wr9", "Big WR", "WR", 30.0, team="NYJ", opp="MIA")
+    client.players_catalog = {
+        **(client.players_catalog or {}),
+        "wr9": PlayerMeta(player_id="wr9", name="Big WR", position="WR", team="NYJ"),
+    }
+
+    assert "Big WR" not in _weeks(client)[BYE_WEEK].fix
+
+
+def test_a_pickup_that_barely_helps_is_not_offered() -> None:
+    client = _client()
+    client.weekly_projections[BYE_WEEK] = {
+        "wr8": replace(MINE["wr8"], opponent="NYJ"),
+        "rb9": _proj("rb9", "Spare RB", "RB", 1.0, team="NYJ", opp="MIA"),
+    }
+
+    week = _weeks(client)[BYE_WEEK]
+
+    assert week.short and week.fix == ""
+
+
+def test_a_player_the_lineup_leans_on_in_one_of_these_weeks_is_never_the_drop() -> None:
+    """Bad RB starts the week Good RB is out, so he is not the spare he looks like the rest of the month."""
+    week = _weeks(_client(injured={"rb1": "Out"}))[BYE_WEEK]
+
+    assert "Bad RB" not in week.fix
