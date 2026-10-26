@@ -7,6 +7,8 @@ import { Thread } from "@/components/ui/chat";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
+import { CardNote } from "@/components/ui/state";
+import { signed } from "@/lib/format";
 import { decisionTone } from "@/lib/tone";
 import { cn } from "@/lib/utils";
 
@@ -72,11 +74,11 @@ export function ActionList({
         </span>
       </CardHeader>
       {count === 0 ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">
+        <CardNote>
           {hidden.length
             ? "Nothing left to do — the rest is hidden below."
             : "Nothing to do — your lineup is set for the week."}
-        </p>
+        </CardNote>
       ) : (
         <ol className="flex flex-col">
           {shown.map((action) => {
@@ -388,5 +390,5 @@ export function WhyThread({
 /** "+2.8% to win", "−0.4% to win", or "no change to win" for less than a twentieth of a point. */
 function chance(change: number): string {
   if (Math.abs(change) < 0.0005) return "no change to win";
-  return `${change > 0 ? "+" : "−"}${Math.abs(change * 100).toFixed(1)}% to win`;
+  return `${signed(change * 100)}% to win`;
 }

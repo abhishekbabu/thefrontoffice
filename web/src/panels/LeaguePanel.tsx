@@ -12,11 +12,13 @@ import {
 import { StatStrip } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
+import { ListCard, ListRow } from "@/components/ui/list";
+import { ToggleChip } from "@/components/ui/toggle";
 import { Empty, Loading } from "@/components/ui/state";
 import { RosterTable } from "@/components/ui/roster-table";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { ExternalLink } from "@/components/ui/external-link";
-import { list, listItem, rise } from "@/lib/motion";
+import { rise } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
@@ -115,44 +117,6 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
 }
 
 /**
- * One row, with the one that is yours marked.
- *
- * A tint alone will not do it: `muted` is a hair off the card in light mode,
- * and a reader who cannot see the hue gets no marker at all. The rule here is
- * the same as everywhere else in this app — state carried in color is also
- * carried in shape, so the row keeps a solid rule down its left edge.
- */
-function Row({
-  children,
-  current,
-  className,
-  onClick,
-}: {
-  children: React.ReactNode;
-  current?: boolean;
-  className?: string;
-  onClick?: () => void;
-}) {
-  return (
-    <m.div
-      variants={listItem}
-      onClick={onClick}
-      onKeyDown={onClick && ((e) => e.key === "Enter" && onClick())}
-      tabIndex={onClick ? 0 : undefined}
-      role={onClick ? "button" : undefined}
-      className={cn(
-        "flex items-baseline gap-3 border-t border-border py-2.5 pr-4 text-[13px] first:border-t-0",
-        current ? "border-l-2 border-l-foreground bg-muted pl-[calc(1rem-2px)]" : "pl-4",
-        onClick && "cursor-pointer hover:bg-muted",
-        className,
-      )}
-    >
-      {children}
-    </m.div>
-  );
-}
-
-/**
  * Somebody else's squad.
  *
  * The reason to look is to see what they are holding before proposing a trade,
@@ -185,22 +149,12 @@ function Rosters({
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap gap-1.5">
         {teams.map((t) => (
-          <button
-            key={t.team_id}
-            onClick={() => onPick(t.team_id)}
-            aria-pressed={t.team_id === selected?.team_id}
-            className={cn(
-              "flex h-9 items-center gap-2 rounded-md px-3 text-[13px] transition-colors",
-              t.team_id === selected?.team_id
-                ? "bg-primary text-primary-foreground"
-                : "border border-border hover:bg-muted",
-            )}
-          >
+          <ToggleChip key={t.team_id} pressed={t.team_id === selected?.team_id} onClick={() => onPick(t.team_id)}>
             <span className="max-w-[14rem] truncate">{t.name}</span>
             {t.is_mine && (
               <span className="font-mono text-[10px] uppercase tracking-[0.08em] opacity-70">you</span>
             )}
-          </button>
+          </ToggleChip>
         ))}
       </div>
 
@@ -229,23 +183,9 @@ function Rosters({
   );
 }
 
-function Section({ title, count, children }: { title: string; count: string; children: React.ReactNode }) {
-  return (
-    <Card>
-      <CardHeader>
-        <span>{title}</span>
-        <span>{count}</span>
-      </CardHeader>
-      <m.div variants={list} initial="hidden" animate="shown" className="flex flex-col">
-        {children}
-      </m.div>
-    </Card>
-  );
-}
-
 function Season({ rows }: { rows: LeagueSchedule["season"] }) {
   return (
-    <Section title="Your season" count={`${rows.length} weeks`}>
+    <ListCard title="Your season" count={`${rows.length} weeks`}>
       {rows.map((row, i) => (
         <Fragment key={row.label}>
           {/* The bracket is a different competition from the weeks before it, so it reads as one. */}
@@ -254,7 +194,7 @@ function Season({ rows }: { rows: LeagueSchedule["season"] }) {
               Playoffs
             </div>
           )}
-        <Row current={row.is_current}>
+        <ListRow current={row.is_current}>
           <span className="w-24 shrink-0 font-mono text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
             {row.label}
           </span>
@@ -282,10 +222,10 @@ function Season({ rows }: { rows: LeagueSchedule["season"] }) {
               {row.tone === "good" ? "W" : row.tone === "warning" ? "L" : "D"} {row.result}
             </Badge>
           )}
-        </Row>
+        </ListRow>
         </Fragment>
       ))}
-    </Section>
+    </ListCard>
   );
 }
 
@@ -297,9 +237,9 @@ function Standings({
   onOpen: (teamId: string) => void;
 }) {
   return (
-    <Section title="Table" count={`${rows.length} teams`}>
+    <ListCard title="Table" count={`${rows.length} teams`}>
       {rows.map((row) => (
-        <Row
+        <ListRow
           key={`${row.rank}-${row.name}`}
           current={row.is_mine}
           // A table is a list of teams, so a row is the obvious way in to one.
@@ -329,17 +269,17 @@ function Standings({
               <span className="sr-only sm:not-sr-only"> playoffs</span>
             </span>
           )}
-        </Row>
+        </ListRow>
       ))}
-    </Section>
+    </ListCard>
   );
 }
 
 function Matches({ rows }: { rows: LeagueSchedule["matches"] }) {
   return (
-    <Section title="This week's fixtures" count={`${rows.length} matches`}>
+    <ListCard title="This week's fixtures" count={`${rows.length} matches`}>
       {rows.map((row, i) => (
-        <Row key={`${row.home}-${row.away}-${i}`}>
+        <ListRow key={`${row.home}-${row.away}-${i}`}>
           <span className="w-36 shrink-0 font-mono text-[11px] text-muted-foreground">{row.label}</span>
           <span className="min-w-0 flex-1 font-mono text-[12.5px]">
             {row.away} <span className="text-muted-foreground">at</span> {row.home}
@@ -349,25 +289,25 @@ function Matches({ rows }: { rows: LeagueSchedule["matches"] }) {
               {row.detail}
             </span>
           )}
-        </Row>
+        </ListRow>
       ))}
-    </Section>
+    </ListCard>
   );
 }
 
 function Activity({ rows }: { rows: LeagueSchedule["activity"] }) {
   return (
-    <Section title="Recent activity" count={`${rows.length} moves`}>
+    <ListCard title="Recent activity" count={`${rows.length} moves`}>
       {rows.map((row, i) => (
-        <Row key={`${row.when}-${i}`} current={row.tone === "good"}>
+        <ListRow key={`${row.when}-${i}`} current={row.tone === "good"}>
           <span className="w-16 shrink-0 font-mono text-[11px] text-muted-foreground">{row.when}</span>
           <span className="w-32 shrink-0 truncate">{row.who}</span>
           <Badge variant="muted" appearance="label" className="shrink-0">
             {row.what}
           </Badge>
           <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">{row.detail}</span>
-        </Row>
+        </ListRow>
       ))}
-    </Section>
+    </ListCard>
   );
 }

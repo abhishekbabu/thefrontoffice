@@ -5,11 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
 import { IconButton } from "@/components/ui/icon-button";
 import { Loading } from "@/components/ui/state";
+import { ToggleChip } from "@/components/ui/toggle";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ArrowLeft, Check, Save } from "lucide-react";
 import { useTheme } from "@/lib/useTheme";
 import { PALETTES } from "@/themes/registry";
-import { cn } from "@/lib/utils";
 import { ErrorNote } from "@/components/ui/error-note";
 import { PageHeader } from "@/components/ui/page-header";
 
@@ -183,21 +183,18 @@ function Appearance() {
       </CardHeader>
       <div className="flex flex-wrap gap-2 p-4">
         {PALETTES.map((p) => (
-          <button
+          <ToggleChip
             key={p.id}
+            pressed={p.id === palette}
             onClick={() => setPalette(p.id)}
-            aria-pressed={p.id === palette}
-            className={cn(
-              "flex items-center gap-2.5 rounded-md border px-3 py-2 text-left transition-colors",
-              p.id === palette ? "border-foreground bg-muted" : "border-border hover:bg-muted",
-            )}
+            className="h-auto gap-2.5 py-2 text-left"
           >
             <span className="size-4 shrink-0 rounded-full border border-border" style={{ background: p.swatch }} />
             <span>
               <span className="block text-[13px] font-medium leading-tight">{p.label}</span>
-              <span className="block font-mono text-[10px] text-muted-foreground">{p.hint}</span>
+              <span className="block font-mono text-[10px] opacity-70">{p.hint}</span>
             </span>
-          </button>
+          </ToggleChip>
         ))}
       </div>
     </Card>

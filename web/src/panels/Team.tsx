@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, type League, type PlayerCard, type Competition, type TradeIdea, type WeekAhead } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { ListCard, ListRow } from "@/components/ui/list";
+import { percent, percentPoints, signed } from "@/lib/format";
 import { Card, CardHeader } from "@/components/ui/card";
 import { RosterTable } from "@/components/ui/roster-table";
-import { Loading } from "@/components/ui/state";
+import { CardNote, Loading } from "@/components/ui/state";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
@@ -60,7 +62,6 @@ export function TeamPanel({ competition, league }: { competition: Competition; l
  * month out, and a pickup made then costs a bench spot rather than whatever
  * is left on the morning. Every week is shown, so a dip reads against the
  * others; one short enough to act on carries the pickup that fixes it.
- * Competitions that cannot look ahead return nothing, and show nothing.
  */
 function WeeksAhead({ competition, league }: { competition: Competition; league: League }) {
   const weeks = useQuery<WeekAhead[], Error>({
@@ -68,49 +69,43 @@ function WeeksAhead({ competition, league }: { competition: Competition; league:
     queryFn: () => api.weeksAhead(competition.key, league.league_id),
   });
 
-  if (weeks.isError) return <ErrorNote error={weeks.error} />;
-  if (!weeks.data?.length) return null;
-  const short = weeks.data.filter((w) => w.short).length;
+  const short = weeks.data?.filter((w) => w.short).length ?? 0;
+  const usual = weeks.data?.[0]?.usual;
   return (
-    <Card>
-      <CardHeader>
-        <span>Weeks ahead</span>
-        <span>{short ? `${short} short` : `usual week ${(weeks.data[0]?.usual ?? 0).toFixed(1)}`}</span>
-      </CardHeader>
-      <div className="flex flex-col">
-        {weeks.data.map((week) => (
-          <div
-            key={week.week}
-            className="flex flex-col gap-1 border-t border-border px-4 py-2.5 text-[13px] first:border-t-0"
-          >
-            <div className="flex items-baseline gap-3">
-              <span className="w-20 shrink-0 font-mono text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                Week {week.week}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                {week.missing.length ? `Without ${week.missing.join(", ")}` : "Everyone available"}
-              </span>
-              <span className="shrink-0 font-mono text-[12px] tabular-nums">{week.points.toFixed(1)} proj</span>
-              {/* Said in words as well as tinted. */}
-              {week.short && (
-                <Badge variant="fail" appearance="pill" className="shrink-0">
-                  short {(week.usual - week.points).toFixed(1)}
-                </Badge>
-              )}
-            </div>
-            {week.fix && (
-              <p className="pl-[5.75rem] text-[12.5px]">
-                {week.fix} <span className="font-mono text-muted-foreground">(+{week.gain.toFixed(1)})</span>
-              </p>
+    <ListCard
+      title="Weeks ahead"
+      count={short ? `${short} short` : usual !== undefined ? `usual week ${usual.toFixed(1)}` : undefined}
+      loading={weeks.isLoading}
+      error={weeks.error}
+    >
+      {weeks.data?.length === 0 && <CardNote>No weeks left in the season to plan.</CardNote>}
+      {weeks.data?.map((week) => (
+        <ListRow key={week.week} className="flex-col items-stretch gap-1">
+          <div className="flex items-baseline gap-3">
+            <span className="w-20 shrink-0 font-mono text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+              Week {week.week}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">
+              {week.missing.length ? `Without ${week.missing.join(", ")}` : "Everyone available"}
+            </span>
+            <span className="shrink-0 font-mono text-[12px] tabular-nums">{week.points.toFixed(1)} proj</span>
+            {/* Said in words as well as tinted. */}
+            {week.short && (
+              <Badge variant="fail" appearance="pill" className="shrink-0">
+                short {(week.usual - week.points).toFixed(1)}
+              </Badge>
             )}
           </div>
-        ))}
-      </div>
-    </Card>
+          {week.fix && (
+            <p className="pl-[5.75rem] text-[12.5px]">
+              {week.fix} <span className="font-mono text-muted-foreground">({signed(week.gain)})</span>
+            </p>
+          )}
+        </ListRow>
+      ))}
+    </ListCard>
   );
 }
-
-const signed = (change: number) => `${change >= 0 ? "+" : "−"}${Math.abs(change).toFixed(1)}`;
 
 /**
  * The trades that would most raise your playoff chance, and help the other side's starters too.
@@ -127,39 +122,35 @@ function Trades({ competition, league }: { competition: Competition; league: Lea
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <span>Trades worth offering</span>
-        {trades.data && <span>{trades.data.length} found</span>}
-      </CardHeader>
-      {trades.isLoading && <Loading lines={2} />}
-      {trades.isError && <ErrorNote error={trades.error} />}
+    <ListCard
+      title="Trades worth offering"
+      count={trades.data ? `${trades.data.length} found` : undefined}
+      loading={trades.isLoading}
+      error={trades.error}
+    >
       {trades.data?.length === 0 && (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">
+        <CardNote>
           No one-for-one swap improves both starting lineups and raises your playoff chance by half a point or
           more. Trading is closed after the deadline.
-        </p>
+        </CardNote>
       )}
       {trades.data?.map((idea) => (
-        <div
-          key={`${idea.team_id}-${idea.giving.join()}-${idea.receiving.join()}`}
-          className="flex items-baseline gap-3 border-t border-border px-4 py-2.5 text-[13px] first:border-t-0"
-        >
+        <ListRow key={`${idea.team_id}-${idea.giving.join()}-${idea.receiving.join()}`}>
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="truncate">
               Give {idea.giving.join(", ")} for {idea.receiving.join(", ")}
             </span>
             <span className="truncate font-mono text-[11px] text-muted-foreground">
               with {idea.team} · your starters {signed(idea.points)} a week, theirs {signed(idea.their_points)}
-              {" · "}their playoffs {signed(idea.their_playoffs_change * 100)} pts
+              {" · "}their playoffs {percentPoints(idea.their_playoffs_change)}
             </span>
           </span>
           {/* The figure the list is ranked on, said in words as well as tinted. */}
           <Badge variant="ok" appearance="pill" className="shrink-0 tabular-nums">
-            {signed(idea.playoffs_change * 100)} pts · {Math.round(idea.playoffs * 100)}% playoffs
+            {percentPoints(idea.playoffs_change)} · {percent(idea.playoffs)} playoffs
           </Badge>
-        </div>
+        </ListRow>
       ))}
-    </Card>
+    </ListCard>
   );
 }

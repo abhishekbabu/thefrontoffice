@@ -4,6 +4,7 @@ import { SendHorizontal } from "lucide-react";
 import { api, type Subject } from "@/lib/api";
 import { IconButton } from "@/components/ui/icon-button";
 import { Card, CardHeader } from "@/components/ui/card";
+import { Busy } from "@/components/ui/state";
 import { ErrorNote } from "@/components/ui/error-note";
 import { cn } from "@/lib/utils";
 
@@ -103,7 +104,7 @@ export function Chat({
     <Card>
       <CardHeader>
         <span>{title}</span>
-        {ask.isPending && <span className="normal-case tracking-normal">Thinking…</span>}
+        {ask.isPending && <Busy>Thinking…</Busy>}
       </CardHeader>
       {body}
     </Card>

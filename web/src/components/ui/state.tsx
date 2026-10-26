@@ -48,3 +48,26 @@ export function Empty({ title, detail, action }: { title: string; detail?: strin
     </m.div>
   );
 }
+
+/**
+ * A line of text inside a card where its rows would be: "Nothing to do", "No leagues this season".
+ *
+ * `Empty` is for a page with nothing on it; this is for one card of a page
+ * that has nothing, where a headline-sized message would shout.
+ */
+export function CardNote({ children }: { children: React.ReactNode }) {
+  return <p className="px-4 py-3 text-[13px] text-muted-foreground">{children}</p>;
+}
+
+/**
+ * Work under way, said in a card header's corner: "judging…", "Thinking…".
+ *
+ * In the header's own type, but in sentence case: it is a status, not a label.
+ */
+export function Busy({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="font-normal normal-case tracking-normal" role="status">
+      {children}
+    </span>
+  );
+}
