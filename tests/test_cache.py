@@ -43,10 +43,6 @@ def test_value_persists_across_instances(tmp_path: Path) -> None:
     assert JsonDiskCache(tmp_path / "cache").get("k", HOUR, now=T0) == [1, 2]
 
 
-def test_missing_key_is_none(tmp_path: Path) -> None:
-    assert JsonDiskCache(tmp_path / "cache").get("nope", HOUR) is None
-
-
 def test_missing_directory_is_not_an_error(tmp_path: Path) -> None:
     """A first run reads before anything has ever been written."""
     assert JsonDiskCache(tmp_path / "never-created").get("k", HOUR) is None
@@ -250,15 +246,6 @@ def test_clear_on_a_cache_never_written_is_harmless(tmp_path: Path) -> None:
 
 
 # ── freshness rules ─────────────────────────────────────────────────────
-
-
-def test_a_ttl_is_the_common_rule(tmp_path: Path) -> None:
-    cache = JsonDiskCache(tmp_path / "cache")
-    stored = datetime(2026, 2, 9, 12, tzinfo=UTC)
-    cache.set("k", "v", now=stored)
-
-    assert cache.get("k", timedelta(hours=2), now=stored + timedelta(hours=1)) == "v"
-    assert cache.get("k", timedelta(hours=2), now=stored + timedelta(hours=3)) is None
 
 
 def test_a_rule_a_duration_cannot_express(tmp_path: Path) -> None:

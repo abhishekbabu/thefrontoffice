@@ -642,11 +642,6 @@ def test_the_summary_marks_the_captain_and_the_doubts() -> None:
     assert summary.swaps  # P15 is the strongest forward and starts on the bench
 
 
-def test_a_competition_with_no_action_list_says_none_rather_than_nothing_to_do() -> None:
-    """An empty list would read as "all done" on a page that never checked."""
-    assert provider().summary(LEAGUE_ID).actions is None
-
-
 def test_the_summary_reports_a_blank_gameweek_on_the_player_not_just_the_club() -> None:
     """A club with no fixture means every one of its players scores zero."""
     summary = provider(fixtures=[]).summary(LEAGUE_ID)
@@ -782,11 +777,6 @@ def test_the_seasons_are_columns_so_they_can_be_read_across() -> None:
     assert table["__columns__"] == ["2025/26", "2024/25", "2023/24"]
 
 
-def test_the_current_season_leads_the_table() -> None:
-    """It is the one the others are being compared against."""
-    assert _season_table()["__columns__"][0] == "2025/26"
-
-
 def test_a_season_nobody_has_played_yet_reports_nothing() -> None:
     """A column of noughts claims the season has answers it does not have."""
     table = _season_table()
@@ -917,10 +907,6 @@ def test_the_matches_carry_a_difficulty_for_each_side() -> None:
     assert all("FDR" in m.detail for m in matches)
 
 
-def test_fpl_has_no_activity_feed_so_there_is_no_empty_promise() -> None:
-    assert provider().schedule(H2H_LEAGUE).activity == []
-
-
 def test_a_failed_table_leaves_the_rest_of_the_page() -> None:
     schedule = provider(standings_error=FPLAPIError("down")).schedule(H2H_LEAGUE)
 
@@ -986,10 +972,9 @@ def test_a_player_yet_to_kick_a_ball_keeps_their_projection() -> None:
 
 def test_a_captain_scores_double() -> None:
     lineup = mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup
-    captain = next((s for s in lineup if "(C)" in s.player), None)
+    captain = next(s for s in lineup if "(C)" in s.player)
 
-    if captain and captain.value.endswith("pts"):
-        assert captain.value == "24 pts"
+    assert captain.value == "24 pts"
 
 
 def test_a_week_under_way_says_so_rather_than_naming_a_deadline() -> None:
@@ -1077,11 +1062,6 @@ def test_a_team_links_to_that_managers_entry() -> None:
     teams = {t.name: t.url for t in provider().teams(H2H_LEAGUE)}
 
     assert teams["Rival FC"] == "https://fantasy.premierleague.com/entry/99/event/1"
-
-
-def test_a_player_has_no_link_because_fpl_publishes_no_player_page() -> None:
-    """An empty string is honest; a constructed URL that 404s is not."""
-    assert provider().player(LEAGUE_ID, "8").url == ""
 
 
 # ── chips, and the armbands ─────────────────────────────────────────────

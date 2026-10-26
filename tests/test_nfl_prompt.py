@@ -14,6 +14,7 @@ from conftest import (
     FakeSleeper,
     _proj,
     _provider,
+    mine,
 )
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
@@ -180,12 +181,11 @@ def test_a_player_is_never_both_starting_and_benched() -> None:
             SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"])
         ],
     )
-    prompt = _provider(client).build_context("L1").prompt
-    lineup_block = prompt.split("YOUR CURRENT LINEUP")[1].split("BENCH:")[0]
-    bench_block = prompt.split("BENCH:")[1].split("LINEUP CHANGES")[0]
-    starting = {line.split(": ")[1].split(" (")[0] for line in lineup_block.strip().splitlines() if ": " in line}
-    benched = {line.split("- ")[1].split(" (")[0] for line in bench_block.strip().splitlines() if line.startswith("- ")}
-    assert not (starting & benched), f"{starting & benched} both starting and benched"
+    side = mine(_provider(client).summary("L1"))
+
+    starting = {spot.player_id for spot in side.lineup if spot.player_id}
+    benched = {spot.player_id for spot in side.bench}
+    assert starting and benched and not (starting & benched)
 
 
 def test_the_bench_gap_matches_the_printed_figures() -> None:

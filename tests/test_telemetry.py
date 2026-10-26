@@ -50,7 +50,11 @@ class FakeLogfire:
 def fake(monkeypatch: pytest.MonkeyPatch) -> FakeLogfire:
     stub = FakeLogfire()
     monkeypatch.setitem(__import__("sys").modules, "logfire", stub)
-    monkeypatch.delenv(telemetry.CAPTURE_CONTENT_VAR, raising=False)
+    # Set, then removed: monkeypatch records a variable only once it has touched
+    # it, and `setup_telemetry` writes os.environ itself — so an absent variable
+    # it sets would otherwise outlive the test.
+    monkeypatch.setenv(telemetry.CAPTURE_CONTENT_VAR, "")
+    monkeypatch.delenv(telemetry.CAPTURE_CONTENT_VAR)
     return stub
 
 

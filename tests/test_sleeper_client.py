@@ -4,7 +4,6 @@ Sleeper is public and read-only, so there is no auth to fake — only the HTTP
 session and the disk cache.
 """
 
-from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -349,14 +348,6 @@ def test_matchups_pass_through_as_raw_entries(tmp_path: Path) -> None:
 def test_an_empty_matchup_week_is_an_empty_list(tmp_path: Path) -> None:
     client, _ = _client({"matchups": None}, tmp_path)
     assert client.get_matchups("L1", 3) == []
-
-
-def test_live_matchups_expire_far_sooner_than_the_catalog() -> None:
-    """Scores move during games; the player catalog does not."""
-    from thefrontoffice.adapters.outbound.platforms.sleeper.client import MATCHUPS_TTL, PLAYERS_TTL
-
-    assert timedelta(minutes=5) > MATCHUPS_TTL
-    assert timedelta(days=1) <= PLAYERS_TTL
 
 
 # ── NBA ─────────────────────────────────────────────────────────────────

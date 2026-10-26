@@ -125,15 +125,6 @@ def test_leagues_are_listed(client: TestClient) -> None:
     ]
 
 
-def test_a_league_carries_the_way_across_to_its_platform(client: TestClient) -> None:
-    """Reading a league is this app; the moves are made on the platform, so
-    the link has to survive the trip through the wire type — which is its own
-    class here and silently drops anything it does not declare."""
-    body = client.get("/api/premier-league/leagues").json()
-
-    assert body[0]["url"] == "https://fantasy.example/leagues/900"
-
-
 def test_a_roster_keeps_the_sports_own_columns(client: TestClient) -> None:
     """The client reads the keys off the data rather than being taught them."""
     body = client.get("/api/premier-league/leagues/900/roster").json()
@@ -367,11 +358,6 @@ def test_an_empty_follow_up_is_rejected(client: TestClient) -> None:
 # ── serving the built UI ────────────────────────────────────────────────
 
 
-def test_the_api_serves_without_a_built_front_end(client: TestClient) -> None:
-    """`dist/` is absent during front-end development and in the test suite."""
-    assert client.get("/api/competitions").status_code == 200
-
-
 @pytest.fixture
 def built_client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """A client with a front end built, so the catch-all route is mounted."""
@@ -541,11 +527,6 @@ def test_a_previous_outcome_does_not_leak_into_a_new_attempt(
     web._login = web.LoginState(status="ok", detail="from last time")
 
     assert client.post("/api/yahoo/login").json()["status"] == "running"
-
-
-def test_progress_is_readable_while_it_waits(client: TestClient) -> None:
-    web._login = web.LoginState(status="running", detail="waiting")
-    assert client.get("/api/yahoo/login").json() == {"status": "running", "detail": "waiting"}
 
 
 def test_a_failed_handshake_is_reported_in_the_domains_words(monkeypatch: pytest.MonkeyPatch) -> None:

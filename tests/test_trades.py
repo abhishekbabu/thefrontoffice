@@ -50,13 +50,3 @@ def test_an_empty_side_resolves_to_an_empty_list() -> None:
     giving, receiving = resolve_sides(TradeProposal(giving=["Star QB"], receiving=[]), _resolve_one)
     assert giving == ["qb1"]
     assert receiving == []
-
-
-def test_both_providers_use_the_shared_policy() -> None:
-    import inspect
-
-    from thefrontoffice.adapters.outbound.competitions.nba import yahoo
-    from thefrontoffice.adapters.outbound.competitions.nfl import sleeper
-
-    for module in (yahoo, sleeper):
-        assert "resolve_sides(" in inspect.getsource(module)

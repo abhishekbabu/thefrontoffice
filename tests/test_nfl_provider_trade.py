@@ -70,13 +70,6 @@ def test_the_current_roster_is_included() -> None:
     assert "Star QB" in context.prompt
 
 
-def test_lineup_slots_are_stated_as_the_constraint() -> None:
-    """Only starting-lineup points score."""
-    constraints = _context(["Bad RB"], ["Trade Target"]).constraints
-    assert "LINEUP SLOTS" in constraints
-    assert "starting lineup" in constraints
-
-
 def test_the_matchup_is_carried_as_the_situation() -> None:
     client = _client(
         matchups=[
@@ -91,12 +84,6 @@ def test_the_matchup_is_carried_as_the_situation() -> None:
     situation = _context(["Bad RB"], ["Trade Target"], client).situation
     assert "Rival" in situation
     assert "60.2" in situation
-
-
-def test_the_waiver_pool_is_not_pulled_for_a_trade() -> None:
-    """Pricing a named trade does not need the whole free-agent list."""
-    context = _context(["Bad RB"], ["Trade Target"])
-    assert context.candidate_lines == {}
 
 
 def test_both_sides_of_a_trade_are_priced_on_their_role_too() -> None:

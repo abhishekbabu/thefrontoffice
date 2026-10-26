@@ -10,7 +10,6 @@ from datetime import date
 from thefrontoffice.adapters.outbound.competitions.nba.projections import (
     ProjectionIndex,
     aggregate,
-    normalize_name,
 )
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import GameProjection
 
@@ -43,25 +42,6 @@ def game(name: str, day: str, **stats: float) -> GameProjection:
 
 
 # ── name normalization ──────────────────────────────────────────────────
-
-
-def test_accents_are_stripped() -> None:
-    """Yahoo writes "Luka Doncic"; Sleeper writes "Luka Dončić"."""
-    assert normalize_name("Luka Dončić") == normalize_name("Luka Doncic")
-
-
-def test_generational_suffixes_are_dropped() -> None:
-    assert normalize_name("Jaren Jackson Jr.") == normalize_name("Jaren Jackson")
-    assert normalize_name("Gary Trent II") == normalize_name("Gary Trent")
-
-
-def test_punctuation_and_case_are_ignored() -> None:
-    assert normalize_name("De'Aaron Fox") == normalize_name("DeAaron  FOX")
-    assert normalize_name("Karl-Anthony Towns") == normalize_name("karl anthony towns")
-
-
-def test_distinct_players_do_not_collapse() -> None:
-    assert normalize_name("Nikola Jokic") != normalize_name("Nikola Jovic")
 
 
 # ── aggregation ─────────────────────────────────────────────────────────

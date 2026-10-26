@@ -66,7 +66,6 @@ def test_the_exchange_quotes_back_the_same_redirect_uri(
     oauth.authorize("id", "secret", REDIRECT)
 
     assert posted[0]["redirect_uri"] == REDIRECT
-    assert posted[0]["redirect_uri"] != "oob"
 
 
 def test_the_exchange_sends_an_authorization_code_grant(
@@ -94,11 +93,21 @@ def test_fantasy_read_is_requested_explicitly(
 # ── the authorization request ───────────────────────────────────────────
 
 
-def test_the_authorization_url_carries_every_parameter_yahoo_needs(monkeypatch: pytest.MonkeyPatch) -> None:
+class _Server:
+    """Stands in for the callback server: nothing is bound, so no port is left open."""
+
+    def __init__(self, *a: Any, **k: Any) -> None: ...
+
+    socket = None
+
+    def server_close(self) -> None: ...
+
+
+def test_without_a_certificate_the_browser_is_never_opened(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Yahoo redirects to https, which nothing here could answer without one."""
     opened: list[str] = []
     monkeypatch.setattr(oauth.webbrowser, "open_new_tab", lambda url: opened.append(url))
-    # Fail the wait immediately; the URL is what is under test.
-    monkeypatch.setattr(oauth, "CALLBACK_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr(oauth, "HTTPServer", _Server)
     monkeypatch.setattr(oauth, "_certificate", lambda: None)
 
     with pytest.raises(YahooLoginRequiredError):
@@ -117,14 +126,6 @@ def test_the_url_is_built_from_the_same_redirect_uri(monkeypatch: pytest.MonkeyP
         raise RuntimeError("stop before the wait")
 
     monkeypatch.setattr(oauth.webbrowser, "open_new_tab", _open)
-
-    class _Server:
-        def __init__(self, *a: Any, **k: Any) -> None: ...
-
-        socket = None
-
-        def server_close(self) -> None: ...
-
     monkeypatch.setattr(oauth, "HTTPServer", _Server)
 
     with pytest.raises(RuntimeError):

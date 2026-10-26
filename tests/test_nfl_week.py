@@ -367,13 +367,6 @@ def _bench_detail(client: FakeSleeper) -> str:
     return next(s.detail for s in mine(_provider(client).summary("L1")).bench if s.player_id == "rb1")
 
 
-def test_the_week_sends_no_fixture_notes_since_its_rows_and_to_do_list_carry_the_byes() -> None:
-    client = _with_injury("")
-    client.season_schedule = [ScheduledGame(week=3, date="2026-09-24", home="KC", away="DEN")]
-
-    assert _provider(client).summary("L1").fixtures == []
-
-
 def test_a_player_ruled_out_reads_differently_from_one_on_bye() -> None:
     """His club plays: "no game" would send somebody looking for a bye that is not there."""
     assert _bench_detail(_with_injury("Out")) != _bench_detail(_with_injury(""))

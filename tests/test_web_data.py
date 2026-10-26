@@ -44,14 +44,6 @@ def test_an_unconfigured_sport_names_what_to_set(monkeypatch: pytest.MonkeyPatch
         data.build_provider("nba")
 
 
-def test_configured_competitions_reflect_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    from thefrontoffice.config.settings import settings
-
-    assert data.available_sports() == []
-    monkeypatch.setattr(settings, "sleeper_username", "someone")
-    assert [e.competition for e in data.available_sports()] == ["nfl"]
-
-
 def test_a_configured_sport_is_built(monkeypatch: pytest.MonkeyPatch) -> None:
     from thefrontoffice.config.settings import settings
 

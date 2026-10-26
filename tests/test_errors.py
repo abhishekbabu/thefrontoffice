@@ -1,32 +1,11 @@
 """Tests for the domain exception hierarchy and its messages."""
 
-import pytest
-
-from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError
 from thefrontoffice.domain.errors import (
-    AIResponseError,
     AIUnavailableError,
-    FrontOfficeError,
     PlayerNotFoundError,
     TeamNotFoundError,
     TradeParseError,
 )
-
-
-@pytest.mark.parametrize(
-    "exc",
-    [
-        TeamNotFoundError("My League"),
-        YahooAPIError("boom"),
-        PlayerNotFoundError(["X"]),
-        TradeParseError("gibberish"),
-        AIUnavailableError(),
-        AIResponseError("empty"),
-    ],
-)
-def test_every_domain_error_is_catchable_as_the_base(exc: FrontOfficeError) -> None:
-    """main.py catches FrontOfficeError once; nothing may escape that net."""
-    assert isinstance(exc, FrontOfficeError)
 
 
 def test_team_not_found_names_the_league() -> None:

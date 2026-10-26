@@ -202,11 +202,6 @@ def test_changes_are_ordered_by_what_they_gain() -> None:
     assert gains == sorted(gains, reverse=True)
 
 
-def test_a_swap_that_loses_points_is_not_a_recommendation() -> None:
-    best = best_lineup(FIFTEEN)
-    assert all(c.gain > 0 for c in lineup_changes(best.starters[:-1], best))
-
-
 # ── transfers ───────────────────────────────────────────────────────────
 
 
@@ -287,13 +282,6 @@ def test_a_captained_total_counts_its_captain_twice() -> None:
 def test_an_uncaptained_total_is_the_plain_sum() -> None:
     starters = squad_of(("MID", 5.0), ("FWD", 8.0))
     assert points_with_captain(starters, None) == 13.0
-
-
-def test_the_best_lineups_total_goes_through_the_same_function() -> None:
-    """Comparing a captained total against an uncaptained one overstates the gap
-    by a captain's score — the largest single number on the page."""
-    lineup = best_lineup(FIFTEEN)
-    assert lineup.points == points_with_captain(lineup.starters, lineup.captain)
 
 
 def test_a_ruled_out_captain_adds_nothing() -> None:

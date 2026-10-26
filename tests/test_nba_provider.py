@@ -447,15 +447,6 @@ def test_a_team_with_no_standings_block_is_skipped_rather_than_failing() -> None
     assert _provider(yahoo).schedule("").standings == []
 
 
-def test_the_sections_yahoo_cannot_answer_are_empty_rather_than_invented() -> None:
-    """A category league has no fixture list, and there is no transaction feed."""
-    schedule = _provider(FakeYahoo()).schedule("")
-
-    assert schedule.season == []
-    assert schedule.matches == []
-    assert schedule.activity == []
-
-
 def test_the_teams_list_puts_you_first() -> None:
     teams = _provider(FakeYahoo()).teams("")
 

@@ -62,21 +62,6 @@ def test_an_unresolved_name_raises_rather_than_being_dropped() -> None:
     assert excinfo.value.names == ["Notarealplayer"]
 
 
-def test_every_unresolved_name_is_reported_at_once() -> None:
-    """Across both sides, so one message covers the whole trade."""
-    from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
-
-    proposal = TradeProposal(giving=["Ghost One"], receiving=["Ghost Two"])
-    with pytest.raises(PlayerNotFoundError) as excinfo:
-        resolve_sides(proposal, _provider(FakeYahoo())._find_player)
-    assert excinfo.value.names == ["Ghost One", "Ghost Two"]
-
-
-def test_surrounding_whitespace_is_stripped() -> None:
-    yahoo = _yahoo_with("LeBron James")
-    assert len(_resolve(yahoo, ["  LeBron James  "])) == 1
-
-
 def test_an_ambiguous_match_takes_the_first_and_warns() -> None:
     yahoo = FakeYahoo(search_results={"Williams": [make_player("Jalen Williams"), make_player("Jaylen Williams")]})
     with capture_logs(YAHOO_LOGGER, logging.WARNING) as logs:

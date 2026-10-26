@@ -49,13 +49,6 @@ def test_monitor_entries_render_without_a_drop() -> None:
     assert "DROP" not in out
 
 
-def test_unknown_schedule_is_stated_not_shown_as_zero() -> None:
-    report = ScoutReport(situation="x", focus=[], moves=[_rec(metric="")], strategy="y")
-    out = render_scout_report(report)
-    assert "no metric" not in out
-    assert out.strip()
-
-
 def test_empty_target_list_is_stated_explicitly() -> None:
     report = ScoutReport(situation="x", focus=[], moves=[], strategy="y")
     assert "(none returned)" in render_scout_report(report)

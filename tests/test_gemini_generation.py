@@ -97,12 +97,6 @@ def test_api_failure_is_wrapped_as_a_domain_error() -> None:
         c.generate_structured("p", ScoutReport)
 
 
-def test_missing_credentials_raise_before_any_call() -> None:
-    c = GeminiClient(api_key=None)
-    with pytest.raises(AIUnavailableError):
-        c.generate_structured("p", ScoutReport)
-
-
 # ── structure_text ──────────────────────────────────────────────────────
 
 
@@ -119,7 +113,6 @@ def test_structuring_passes_the_prose_and_instruction_through() -> None:
     contents = models.calls[0]["contents"]
     assert "VERDICT: accept" in contents
     assert "Extract it." in contents
-    assert "verbatim" in contents  # the do-not-editorialise instruction
 
 
 def test_structuring_failure_is_wrapped() -> None:

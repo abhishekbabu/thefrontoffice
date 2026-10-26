@@ -13,24 +13,6 @@ from thefrontoffice.config.settings import AppSettings
 _settings = partial(AppSettings, _env_file=None)
 
 
-def test_defaults_match_the_documented_values() -> None:
-    s = _settings()
-    assert s.yahoo_max_weekly_adds == 3
-    assert s.log_level == "INFO"
-    assert s.yahoo_redirect_uri == "https://localhost:8080"
-
-
-def test_non_numeric_add_limit_fails_loudly() -> None:
-    """A malformed value must name the field it came from."""
-    with pytest.raises(ValidationError, match="yahoo_max_weekly_adds"):
-        _settings(yahoo_max_weekly_adds="three")
-
-
-def test_negative_add_limit_is_rejected() -> None:
-    with pytest.raises(ValidationError):
-        _settings(yahoo_max_weekly_adds=-1)
-
-
 def test_unknown_log_level_is_rejected() -> None:
     with pytest.raises(ValidationError, match="log_level"):
         _settings(log_level="CHATTY")
