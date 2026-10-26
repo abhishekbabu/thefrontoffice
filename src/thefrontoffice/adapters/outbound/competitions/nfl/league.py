@@ -7,6 +7,7 @@ wait on eighteen weeks of matchups.
 """
 
 import logging
+import math
 import statistics
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -79,7 +80,7 @@ def _season_rows(
     time they are the whole wait on the page.
     """
     games = games_by_week(client, state.season)
-    weeks = list(range(1, REGULAR_SEASON_WEEKS + 1))
+    weeks = list(range(1, _last_week(state) + 1))
     try:
         by_week = client.get_matchups_bulk(league_id, weeks)
     except SleeperAPIError as e:
@@ -93,18 +94,37 @@ def _season_rows(
         theirs = _other_side(matchups, mine, state.roster.roster_id)
         opponent = by_roster.get(int(theirs.get("roster_id", 0))) if theirs else None
 
+        playoff = _playoff_round(state, week)
+        if playoff and week > state.week:
+            # Sleeper fills the bracket weeks with placeholder pairings until
+            # the regular season ends; a name there is not who you will play.
+            opponent = None
         rows.append(
             ScheduleRow(
                 label=f"Week {week}",
                 date=week_dates(games.get(week, [])),
                 opponent=names.get(opponent.owner_id, "") if opponent else "",
-                detail=opponent.record if opponent else "bye",
+                detail=playoff or (opponent.record if opponent else "bye"),
                 result=_result(mine, theirs, week, state.week),
                 tone=_week_tone(mine, theirs, week, state.week),
                 is_current=week == state.week,
             )
         )
     return rows
+
+
+def _last_week(state: Week) -> int:
+    """The league's final week: the end of its playoffs, or the NFL's last where it names none."""
+    start, teams = state.league.playoff_week_start, state.league.playoff_teams
+    if not start or not teams:
+        return REGULAR_SEASON_WEEKS
+    return min(REGULAR_SEASON_WEEKS, start + math.ceil(math.log2(teams)) - 1)
+
+
+def _playoff_round(state: Week, week: int) -> str:
+    """'Playoffs, round 1' for a bracket week; empty for the regular season."""
+    start = state.league.playoff_week_start
+    return f"Playoffs, round {week - start + 1}" if start and week >= start else ""
 
 
 def _other_side(matchups: list[dict[str, Any]], mine: dict[str, Any] | None, roster_id: int) -> Any:

@@ -130,6 +130,23 @@ def test_the_window_carries_the_dates_where_there_are_any() -> None:
     assert _provider(_at_week(2)).summary("L1").window == "Week 2 · 17 Sep"
 
 
+def test_the_season_ends_with_the_playoffs_last_round() -> None:
+    """Six teams take three rounds from week 14: the NFL's week 18 is no week of this league's."""
+    season = _provider(_with_playoffs(7, spots=6, start=14)).schedule("L1").season
+
+    assert season[-1].label == "Week 16"
+
+
+def test_a_bracket_week_still_to_come_names_the_round_not_a_placeholder_opponent() -> None:
+    """Sleeper pairs the bracket weeks like any other until the regular season ends."""
+    season = _provider(_with_playoffs(7, spots=6, start=14)).schedule("L1").season
+
+    week14 = next(row for row in season if row.label == "Week 14")
+    week13 = next(row for row in season if row.label == "Week 13")
+    assert week14.opponent == "" and week14.detail != week13.detail
+    assert week13.detail == "3-0"  # the regular season keeps its opponent, and his record
+
+
 # ── the rest of the season, for the simulation ──────────────────────────
 
 

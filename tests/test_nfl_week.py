@@ -20,6 +20,7 @@ from conftest import (
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
 from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
+    PlayerMeta,
     ScheduledGame,
     SleeperLeague,
     SleeperRoster,
@@ -346,3 +347,48 @@ def test_a_bench_player_in_a_reserve_slot_is_marked_as_such() -> None:
         return next(s.detail for s in mine(_provider(client).summary("L1")).bench if s.player_id == "rb1")
 
     assert bench_detail(["rb1"]) != bench_detail([])
+
+
+# ── who is not playing, and why ─────────────────────────────────────────
+
+
+def _with_injury(status: str) -> FakeSleeper:
+    """Good RB has no projection, as Sleeper publishes none for a player it rules out; BUF still plays."""
+    client = _live_client({})
+    client.season_schedule = STALE
+    client.projections = {pid: p for pid, p in DEFAULT_PROJECTIONS.items() if pid != "rb1"}
+    catalog = client.get_players()
+    client.players_catalog = {
+        **catalog,
+        "rb1": PlayerMeta(player_id="rb1", name="Good RB", position="RB", team="BUF", injury_status=status),
+    }
+    return client
+
+
+def _bench_detail(client: FakeSleeper) -> str:
+    return next(s.detail for s in mine(_provider(client).summary("L1")).bench if s.player_id == "rb1")
+
+
+def test_a_player_ruled_out_reads_differently_from_one_on_bye() -> None:
+    """His club plays: "no game" would send somebody looking for a bye that is not there."""
+    assert _bench_detail(_with_injury("Out")) != _bench_detail(_with_injury(""))
+
+
+def test_an_injured_player_does_not_put_his_club_on_the_bye_list() -> None:
+    assert _provider(_with_injury("Out")).summary("L1").fixtures == []
+
+
+def test_a_club_missing_from_the_weeks_games_is_on_the_bye_list() -> None:
+    client = _with_injury("")
+    client.season_schedule = [ScheduledGame(week=3, date="2026-09-24", home="KC", away="DEN")]
+
+    assert [stat.label for stat in _provider(client).summary("L1").fixtures] == ["BUF"]
+
+
+def test_a_roster_reads_as_a_lineup_starters_then_bench_then_reserve() -> None:
+    client = _live_client({})
+    client.rosters = [
+        replace(client.rosters[0], player_ids=["rb2", "rb1", "qb1"], starter_ids=["qb1"], reserve_ids=["rb2"])
+    ]
+
+    assert [card.player_id for card in _provider(client).roster("L1")] == ["qb1", "rb1", "rb2"]
