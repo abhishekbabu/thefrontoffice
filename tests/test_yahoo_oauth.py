@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from thefrontoffice.adapters.outbound.platforms.yahoo import oauth
-from thefrontoffice.domain.errors import YahooLoginRequiredError
+from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
 
 REDIRECT = "https://localhost:8080"
 

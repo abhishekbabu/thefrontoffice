@@ -6,6 +6,7 @@ without any sport's data.
 """
 
 from thefrontoffice.application.season import (
+    MarketEngine,
     SeasonEngine,
     attach_season,
     attach_table,
@@ -217,7 +218,7 @@ class _Market:
 
 
 def test_a_trade_that_makes_you_stronger_raises_your_playoff_chance() -> None:
-    [idea] = SeasonEngine(_Market(_trade("b", mine=115, theirs=101))).trades("L1")
+    [idea] = MarketEngine(_Market(_trade("b", mine=115, theirs=101))).trades("L1")
 
     assert idea.playoffs_change > 0
     assert idea.playoffs == RACE_ODDS + idea.playoffs_change
@@ -225,7 +226,7 @@ def test_a_trade_that_makes_you_stronger_raises_your_playoff_chance() -> None:
 
 
 def test_a_trade_that_changes_nothing_is_not_offered() -> None:
-    assert SeasonEngine(_Market(_trade("b", mine=100, theirs=100))).trades("L1") == []
+    assert MarketEngine(_Market(_trade("b", mine=100, theirs=100))).trades("L1") == []
 
 
 def test_trades_are_ranked_on_the_playoff_chance_not_on_points() -> None:
@@ -233,19 +234,19 @@ def test_trades_are_ranked_on_the_playoff_chance_not_on_points() -> None:
     rival = _trade("b", mine=110, theirs=110, name="to the rival")
     other = _trade("c", mine=108, theirs=100, name="elsewhere")
 
-    ideas = SeasonEngine(_Market(rival, other)).trades("L1")
+    ideas = MarketEngine(_Market(rival, other)).trades("L1")
 
     assert [i.giving for i in ideas][0] == ["elsewhere"]
 
 
 def test_what_a_trade_hands_the_other_side_is_counted() -> None:
-    [idea] = SeasonEngine(_Market(_trade("b", mine=115, theirs=110))).trades("L1")
+    [idea] = MarketEngine(_Market(_trade("b", mine=115, theirs=110))).trades("L1")
 
     assert idea.their_playoffs_change > 0
 
 
 def test_no_market_is_no_trades() -> None:
-    assert SeasonEngine(_Over()).trades("L1") == []
+    assert MarketEngine(_Over()).trades("L1") == []
 
 
 def test_the_seasons_header_weighs_this_week_as_the_weeks_header_does() -> None:

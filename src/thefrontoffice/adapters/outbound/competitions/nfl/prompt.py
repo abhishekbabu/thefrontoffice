@@ -15,6 +15,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews, dated
 from thefrontoffice.adapters.outbound.competitions.nfl.week import SCORING_LABELS, Week
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     PlayerMeta,
     SleeperLeague,
@@ -22,7 +23,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     WeeklyProjection,
 )
 from thefrontoffice.config.constants import NFL_SCOUT_PROMPT
-from thefrontoffice.domain.errors import SleeperAPIError
 from thefrontoffice.domain.models import Action, CompetitionContext, Stat, task_id
 
 logger = logging.getLogger(__name__)

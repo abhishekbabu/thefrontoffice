@@ -16,8 +16,8 @@ from thefrontoffice.adapters.outbound.platforms.fpl.client import (
     FPLClient,
     free_transfers,
 )
+from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import MAX_FREE_TRANSFERS, GameweekResult
-from thefrontoffice.domain.errors import FPLAPIError
 
 BOOTSTRAP = {
     "events": [

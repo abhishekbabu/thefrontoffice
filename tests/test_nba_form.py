@@ -11,8 +11,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm, nine_cat
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame
-from thefrontoffice.domain.errors import SleeperAPIError
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
 

@@ -34,6 +34,7 @@ from thefrontoffice.bootstrap import (
     find,
     forecast_engine,
     item_decisions,
+    market_engine,
     scout_engine,
     season_engine,
     wire_engine,
@@ -61,7 +62,13 @@ from thefrontoffice.domain.models import (
     TradeIdea,
     WeekAhead,
 )
-from thefrontoffice.domain.ports import ChatSession, ForecastProvider, OutlookProvider, SeasonProvider
+from thefrontoffice.domain.ports import (
+    ChatSession,
+    ForecastProvider,
+    OutlookProvider,
+    SeasonProvider,
+    TradeMarketProvider,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -494,9 +501,9 @@ def _register_routes(app: FastAPI) -> None:
         seconds, not the instant a table should take to appear.
         """
         provider = data.build_provider(competition)
-        if not isinstance(provider, SeasonProvider):
+        if not isinstance(provider, TradeMarketProvider):
             raise HTTPException(status_code=400, detail=f"{provider.label} does not support finding trades.")
-        return season_engine(provider).trades(league_id)
+        return market_engine(provider).trades(league_id)
 
     @app.post("/api/{competition}/leagues/{league_id}/scout", response_model=ScoutReport)
     def scout(competition: str, league_id: str) -> ScoutReport:

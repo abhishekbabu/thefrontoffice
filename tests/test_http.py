@@ -8,15 +8,11 @@ import pytest
 import requests
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
-from thefrontoffice.domain.errors import (
-    FPLAPIError,
-    FPLUnavailableError,
-    PlatformUnavailableError,
-    SleeperAPIError,
-    SleeperUnavailableError,
-)
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
+from thefrontoffice.domain.errors import PlatformUnavailableError
 
 TTL = timedelta(hours=1)
 

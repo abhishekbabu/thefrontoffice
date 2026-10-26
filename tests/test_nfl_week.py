@@ -18,7 +18,10 @@ from conftest import (
 )
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
+from thefrontoffice.adapters.outbound.competitions.nfl.week import left_in
+from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     PlayerMeta,
     ScheduledGame,
@@ -26,7 +29,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperRoster,
     WeeklyProjection,
 )
-from thefrontoffice.domain.errors import ESPNAPIError, PlayerNotFoundError, SleeperAPIError
+from thefrontoffice.domain.errors import PlayerNotFoundError
 
 MY_ID = SLEEPER_USER_ID
 
@@ -391,3 +394,11 @@ def test_the_squad_says_why_an_injured_player_sits_too() -> None:
         return card.columns["Opponent"]
 
     assert opponent("Out") != opponent("")
+
+
+def test_how_much_of_a_game_is_left_follows_its_clock() -> None:
+    assert left_in(ScoreboardGame("A", "B", "pre")) == 1.0
+    assert left_in(ScoreboardGame("A", "B", "post")) == 0.0
+    assert left_in(ScoreboardGame("A", "B", "in", period=2, clock=0.0)) == 0.5  # halftime
+    assert left_in(ScoreboardGame("A", "B", "in", period=4, clock=450.0)) == 0.125
+    assert left_in(ScoreboardGame("A", "B", "in", period=5, clock=360.0)) == 0.1  # six minutes of overtime

@@ -352,6 +352,18 @@ class SeasonProvider(Protocol):
         """The rest of the regular season; None where it is over or has no playoffs to reach."""
         ...
 
+
+@runtime_checkable
+class TradeMarketProvider(Protocol):
+    """A competition whose trades can be found and priced in playoff chance.
+
+    Apart from SeasonProvider because finding trades is a capability of its
+    own: a competition can simulate its season without knowing which trades
+    make sense, which is a question of its lineups and positions.
+    """
+
+    label: str
+
     def trade_market(self, league_id: str) -> TradeMarket | None:
         """The season with the trades worth trying; None past the deadline or where there is no season to play."""
         ...

@@ -19,93 +19,34 @@ class FrontOfficeError(Exception):
 
 
 class TeamNotFoundError(FrontOfficeError):
-    """The current Yahoo login does not own a team in this league."""
+    """The configured account does not own a team in this league, or no team has that identifier."""
 
     def __init__(self, league_name: str) -> None:
         super().__init__(f"Could not identify your team in {league_name}. Are you a manager in this league?")
         self.league_name = league_name
 
 
-class YahooAPIError(FrontOfficeError):
-    """A Yahoo Fantasy API call failed.
+class PlatformError(FrontOfficeError):
+    """A call to one of the platforms the app reads failed.
 
-    Distinct from an empty result: `search_players` returning no matches is a
-    valid answer, while a failed request is not.
+    Distinct from an empty result: a league with no transactions this week is
+    a valid answer, a failed request is not. Each platform's adapter has its
+    own subclass naming it, so the domain never names a vendor: a caller that
+    carries on without a platform catches that adapter's class, and one that
+    only renders an error catches this.
     """
 
-
-class YahooAuthError(FrontOfficeError):
-    """Yahoo authenticated the token and refused the Fantasy Sports API.
-
-    Not a credential problem and not a scope problem, both of which look
-    identical from here. Yahoo reviews each application before granting access
-    to this API, and an unapproved one gets a valid token that every Fantasy
-    endpoint refuses — including endpoints needing no user permission at all,
-    which is what distinguishes it from a consent that went wrong.
-    """
-
-    code = "yahoo_not_approved"
-
-    def __init__(self) -> None:
-        super().__init__(
-            "Yahoo refused the Fantasy Sports API for this application. The token is valid — "
-            "an invalid one returns 401, not 403 — and even endpoints needing no user "
-            "permission are refused, so this is about the app rather than the login. Yahoo "
-            "reviews every application before granting access to this API, so creating the app "
-            "and ticking Fantasy Sports → Read is necessary but not sufficient. Personal, "
-            "single-league use is an accepted category. Authorize again once approved. NFL and "
-            "FPL are unaffected."
-        )
+    platform: str = "the platform"
 
 
-class YahooLoginRequiredError(FrontOfficeError):
-    """No cached Yahoo token, and this process cannot obtain one.
-
-    The handshake opens a browser and waits, which is fine from a terminal and
-    impossible inside a request handler — the caller would wait on a window it
-    cannot see.
-    """
-
-    code = "yahoo_login_required"
-
-    def __init__(self, detail: str = "") -> None:
-        super().__init__(
-            detail or "Yahoo is not authorized on this machine yet. Authorizing caches a token and is done once."
-        )
-
-
-class SleeperAPIError(FrontOfficeError):
-    """A Sleeper API call failed.
-
-    Distinct from an empty result: a league with no transactions this week is a
-    valid answer, a failed request is not.
-    """
-
-
-class ESPNAPIError(FrontOfficeError):
-    """An ESPN API call failed.
-
-    Distinct from an empty result: a club nobody has written about this week
-    is a valid answer, a failed request is not.
-    """
-
-
-class FPLAPIError(FrontOfficeError):
-    """A Fantasy Premier League API call failed.
-
-    Distinct from an empty result: a gameweek with no fixtures for your clubs is
-    a valid answer, a failed request is not.
-    """
-
-
-class PlatformUnavailableError(FrontOfficeError):
+class PlatformUnavailableError(PlatformError):
     """A platform is down, overloaded or not answering — nothing the user can fix but wait.
 
     Told apart from every other failed request because the remedy is different:
     a league that cannot be found is something to correct, a server answering
-    503 is something to try again later. Each platform has its own subclass,
-    so whatever already catches that platform's error to carry on without it
-    still does.
+    503 is something to try again later. Each platform's subclass is also its
+    ordinary error's, so whatever already catches that platform's error to
+    carry on without it still does.
     """
 
     code = "platform_unavailable"
@@ -116,18 +57,6 @@ class PlatformUnavailableError(FrontOfficeError):
             "not this app's; it usually passes within a few minutes."
         )
         self.platform = platform
-
-
-class SleeperUnavailableError(PlatformUnavailableError, SleeperAPIError):
-    """Sleeper is down or not answering."""
-
-
-class ESPNUnavailableError(PlatformUnavailableError, ESPNAPIError):
-    """ESPN is down or not answering."""
-
-
-class FPLUnavailableError(PlatformUnavailableError, FPLAPIError):
-    """The Fantasy Premier League game is down or not answering — often while a gameweek is being updated."""
 
 
 class LeagueNotFoundError(FrontOfficeError):

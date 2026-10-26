@@ -16,13 +16,13 @@ from conftest import (
     _provider,
 )
 
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     SleeperLeague,
     SleeperRoster,
     TrendingPlayer,
 )
-from thefrontoffice.domain.errors import SleeperAPIError
 from thefrontoffice.domain.models import task_id
 
 MY_ID = SLEEPER_USER_ID

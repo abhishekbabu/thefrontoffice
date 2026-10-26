@@ -5,12 +5,14 @@ entry point named the providers itself, so a new sport meant editing the CLI,
 the UI and the help text and remembering all three.
 """
 
+import typing
 from collections.abc import Callable
 
 import pytest
 
 from thefrontoffice import bootstrap as registry
 from thefrontoffice.config.settings import settings
+from thefrontoffice.domain import ports
 
 
 def test_every_registered_sport_is_complete() -> None:
@@ -73,16 +75,42 @@ def test_the_nfl_entry_builds_a_provider(monkeypatch: pytest.MonkeyPatch) -> Non
     assert entry.build().competition == "nfl"
 
 
-def test_every_provider_satisfies_the_protocol() -> None:
-    """A sport that forgets list_leagues, build_context or roster_rows would fail
-    only at the point of use."""
+def _provider_classes() -> dict[str, type]:
     from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
     from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
+    from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
 
-    for provider in (YahooNBAProvider, SleeperNFLProvider):
-        assert provider.competition and provider.label
-        for method in ("list_leagues", "build_context", "roster"):
-            assert callable(getattr(provider, method, None)), f"{provider.__name__}.{method}"
+    return {"nba-yahoo": YahooNBAProvider, "nfl-sleeper": SleeperNFLProvider, "premier-league-fpl": FPLProvider}
+
+
+def _implements(cls: type, port: type) -> bool:
+    """Whether a class has every member a port names: checked on the class, so nothing is built."""
+    return all(hasattr(cls, member) for member in typing.get_protocol_members(port))
+
+
+def test_every_registered_provider_implements_the_competition_port() -> None:
+    """A competition that forgets a method fails here rather than at the point of use."""
+    classes = _provider_classes()
+
+    assert set(classes) == {entry.key for entry in registry.all_competitions()}
+    for key, cls in classes.items():
+        assert _implements(cls, ports.CompetitionProvider), key
+
+
+def test_every_capability_a_registry_entry_declares_is_one_its_provider_implements() -> None:
+    """The flags are what a client is told before any provider is built; the ports are what the routes check.
+
+    Declared in one place and detected in another, the two could disagree
+    silently — a page offering what the server then refuses, or hiding what
+    it would do. This holds them together, both ways.
+    """
+    classes = _provider_classes()
+    for entry in registry.all_competitions():
+        cls = classes[entry.key]
+        assert entry.supports_trades == _implements(cls, ports.TradeProvider), entry.key
+        assert entry.judges_wire == _implements(cls, ports.WireProvider), entry.key
+        plans = _implements(cls, ports.OutlookProvider) and _implements(cls, ports.TradeMarketProvider)
+        assert entry.plans_ahead == plans, entry.key
 
 
 def test_the_nba_entry_discovers_leagues_and_wraps_them(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -15,9 +15,9 @@ from typing import Literal, Protocol, TypedDict
 from zoneinfo import ZoneInfo
 
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import NBA, SleeperClient, SleeperNBASource
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import NBA, SleeperNBASource
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
-from thefrontoffice.domain.errors import SleeperAPIError
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +109,8 @@ class SleeperNBAForm:
     the catalog per question would be the whole cost of the page.
     """
 
-    def __init__(self, client: SleeperNBASource | None = None, season: str | None = None) -> None:
-        self.client = client or SleeperClient()
+    def __init__(self, client: SleeperNBASource, season: str | None = None) -> None:
+        self.client = client
         self._season = season
         self._logs: dict[str, list[NBAGameLog]] | None = None
         self._by_name: NameIndex[str] | None = None

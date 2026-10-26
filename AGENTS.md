@@ -19,8 +19,8 @@ do not add new doc files.
 
 **Errors.** Services never signal failure by return value — no `None`, no `[]`,
 no `"❌ ..."` string, none of which a caller can tell from a real result. Raise a
-`FrontOfficeError` subclass from `domain/errors.py`; an empty list is a valid
-*answer*, a failed request is not. Never `print` or `sys.exit` outside
+`FrontOfficeError` subclass — a platform's from its own `platforms/<p>/errors.py`,
+never the domain's; an empty list is an *answer*, a failed request is not. No `print` or `sys.exit` outside
 `adapters/inbound/` — exiting takes down a request and leaves nothing to render.
 Only inbound adapters render errors. `raise ... from e`, and log before raising
 through a module-level `logger = logging.getLogger(__name__)`.
@@ -151,8 +151,8 @@ exactly as authoritative as a real one.
 the package; `application` imports only `domain`; adapters implement ports;
 `bootstrap.py` is the one module allowed to name a concrete implementation.
 Never import an adapter from `domain/` or `application/` — if an engine needs a
-capability, add a port and let `bootstrap` wire it. Engines take their
-collaborators as required arguments rather than constructing defaults.
+capability, add a port and let `bootstrap` wire it. Engines and providers take their
+collaborators — clients, settings — as required arguments; `tests/test_architecture.py` holds all of this.
 
 **Competitions and platforms.** The registry is keyed by the pair, not the
 competition: the same one runs on more than one platform, with separate credentials and

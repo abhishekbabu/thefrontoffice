@@ -18,7 +18,9 @@ from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekd
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews
+from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     PlayerMeta,
     ScheduledGame,
@@ -26,7 +28,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperRoster,
     WeeklyProjection,
 )
-from thefrontoffice.domain.errors import SleeperAPIError
 
 logger = logging.getLogger(__name__)
 
@@ -202,3 +203,25 @@ def projection_for(
         return projections[player_id]
     meta = players.get(player_id)
     return zero_projection(player_id, meta) if meta else None
+
+
+QUARTER = 15 * 60
+"""Seconds in an NFL quarter; four of them make regulation."""
+
+REGULATION = 4 * QUARTER
+
+
+def left_in(game: ScoreboardGame) -> float:
+    """How much of an NFL game is still to play, from 1 before kickoff to 0 at the end.
+
+    Overtime is read as what is left of its own clock against a whole game,
+    which is about right: a few minutes, and it may end at any snap.
+    """
+    if game.state == "pre":
+        return 1.0
+    if game.state == "post":
+        return 0.0
+    if game.period > 4:
+        return min(1.0, game.clock / REGULATION)
+    played = (max(game.period, 1) - 1) * QUARTER + (QUARTER - game.clock)
+    return max(0.0, min(1.0, 1 - played / REGULATION))

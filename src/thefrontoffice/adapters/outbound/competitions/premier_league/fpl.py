@@ -26,7 +26,8 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
     lineup_changes,
     points_with_captain,
 )
-from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient, FPLSource, free_transfers
+from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource, free_transfers
+from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Chip,
     Club,
@@ -38,13 +39,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Squad,
     as_millions,
 )
-from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.errors import (
-    FPLAPIError,
-    LeagueNotFoundError,
-    PlayerNotFoundError,
-    TeamNotFoundError,
-)
+from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
     CompetitionContext,
@@ -109,9 +104,10 @@ class FPLProvider:
     competition = "premier-league"
     label = "FPL (Fantasy Premier League)"
 
-    def __init__(self, entry_id: int | None = None, *, client: FPLSource | None = None):
-        self.entry_id = entry_id if entry_id is not None else settings.fpl_entry_id
-        self.client = client or FPLClient()
+    def __init__(self, entry_id: int | None, *, client: FPLSource):
+        """Every collaborator from bootstrap, which is the one place a real client is built."""
+        self.entry_id = entry_id
+        self.client = client
 
     def _resolve_entry_id(self) -> int:
         if not self.entry_id:

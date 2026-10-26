@@ -27,7 +27,7 @@ from typing import Any
 
 import requests
 
-from thefrontoffice.domain.errors import YahooLoginRequiredError
+from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
 
 logger = logging.getLogger(__name__)
 

@@ -23,13 +23,13 @@ class NewsArticle:
     without tagging him; matching on the text is the caller's decision."""
 
 
-REGULATION = 4 * 15 * 60
-"""Seconds in a regulation game: four fifteen-minute quarters."""
-
-
 @dataclass(frozen=True)
 class ScoreboardGame:
-    """One game as ESPN's scoreboard has it right now: who, how far in, and the clock."""
+    """One game as ESPN's scoreboard has it right now: who, which period, and the clock.
+
+    As ESPN reports it, for any sport it covers: how long a period is, and so
+    how much of a game is left, is the sport's question, not the platform's.
+    """
 
     home: str
     away: str
@@ -41,19 +41,3 @@ class ScoreboardGame:
     """Seconds left in the period."""
     label: str = ""
     """How ESPN shows it: 'Q3 13:02', 'Halftime', 'Final'."""
-
-    @property
-    def left(self) -> float:
-        """How much of the game is still to play, from 1 before kickoff to 0 at the end.
-
-        Overtime is read as what is left of its own clock against a whole
-        game, which is about right: a few minutes, and it may end at any snap.
-        """
-        if self.state == "pre":
-            return 1.0
-        if self.state == "post":
-            return 0.0
-        if self.period > 4:
-            return min(1.0, self.clock / REGULATION)
-        played = (max(self.period, 1) - 1) * 15 * 60 + (15 * 60 - self.clock)
-        return max(0.0, min(1.0, 1 - played / REGULATION))

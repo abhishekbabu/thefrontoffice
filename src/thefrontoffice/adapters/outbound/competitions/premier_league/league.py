@@ -12,8 +12,8 @@ import logging
 
 from thefrontoffice.adapters.outbound.competitions.dates import at_time
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
+from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import H2HMatch, MiniLeague
-from thefrontoffice.domain.errors import FPLAPIError
 from thefrontoffice.domain.models import LeagueSchedule, Match, ScheduleRow, StandingRow, Tone
 
 logger = logging.getLogger(__name__)
