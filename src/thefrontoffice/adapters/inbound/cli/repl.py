@@ -14,6 +14,7 @@ from thefrontoffice.adapters.inbound.cli.commands import (
     _cmd_roster,
     _cmd_scout,
     _cmd_trade,
+    _cmd_week,
     _print_help,
 )
 from thefrontoffice.adapters.inbound.cli.output import _print_header, print_error
@@ -78,6 +79,8 @@ def _dispatch(session: Session, entries: list[CompetitionEntry], cmd: str, args:
     """
     if cmd == "/scout":
         _cmd_scout(session, entries, args)
+    elif cmd == "/week":
+        _cmd_week(session, entries, args)
     elif cmd in ("/roster", "/rosters", "/my-roster"):
         _cmd_roster(session, entries, args)
     elif cmd == "/leagues":

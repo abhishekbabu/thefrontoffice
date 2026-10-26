@@ -20,6 +20,7 @@ from thefrontoffice.application.items import ItemDecisions
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.application.season import MarketEngine, SeasonEngine
 from thefrontoffice.application.trading import TradeEngine
+from thefrontoffice.application.week import WeekEngine
 from thefrontoffice.application.wire import WireEngine
 from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.ports import (
@@ -298,6 +299,16 @@ def season_engine(provider: SeasonProvider) -> SeasonEngine:
 def market_engine(provider: TradeMarketProvider) -> MarketEngine:
     """The trades worth offering, priced in playoff chance. Needs no model either."""
     return MarketEngine(provider)
+
+
+def week_engine(provider: CompetitionProvider, decisions: ItemDecisions) -> WeekEngine:
+    """A competition's week, season and wire, with whichever generic engines it can feed."""
+    return WeekEngine(
+        provider,
+        decisions=decisions,
+        forecast=ForecastEngine(provider) if isinstance(provider, ForecastProvider) else None,
+        season=SeasonEngine(provider) if isinstance(provider, SeasonProvider) else None,
+    )
 
 
 def item_decisions() -> ItemDecisions:

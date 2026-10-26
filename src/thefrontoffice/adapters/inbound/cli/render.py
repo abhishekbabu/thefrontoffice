@@ -6,7 +6,7 @@ same models its own way, and one renderer serves every competition.
 
 import textwrap
 
-from thefrontoffice.domain.models import Move, ScoutReport, TradeVerdict
+from thefrontoffice.domain.models import Move, ScoutReport, Summary, TradeVerdict
 
 _INDENT = "  "
 
@@ -73,3 +73,22 @@ def render_trade_verdict(verdict: TradeVerdict) -> str:
             _wrap(verdict.strategy),
         ]
     )
+
+
+def render_week(summary: Summary) -> str:
+    """Render the week for the terminal: its figures, then what to do, most urgent first.
+
+    Items the manager dismissed or snoozed stay out, as they do on the page.
+    """
+    parts = [f"{_INDENT}{stat.label}: {stat.value}" for stat in summary.headline]
+    if summary.actions is None:
+        return "\n".join(parts)
+    shown = [action for action in summary.actions if not action.hidden]
+    parts.extend(["", f"{_INDENT}TO DO"])
+    if not shown:
+        parts.append(f"{_INDENT}   Nothing to do.")
+    for action in shown:
+        change = f" ({action.win_change * 100:+.1f}% to win)" if action.win_change is not None else ""
+        parts.append(f"{_INDENT}   [{action.urgency}] {action.title}{change}")
+        parts.append(_wrap(action.reason, indent=_INDENT + "     "))
+    return "\n".join(parts)

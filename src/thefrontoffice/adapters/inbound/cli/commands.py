@@ -1,9 +1,10 @@
 """One function per slash command."""
 
+from thefrontoffice.adapters.inbound import presenting
 from thefrontoffice.adapters.inbound.cli.output import _interactive_followup, _print_header, _print_rows, print_error
-from thefrontoffice.adapters.inbound.cli.render import render_scout_report, render_trade_verdict
+from thefrontoffice.adapters.inbound.cli.render import render_scout_report, render_trade_verdict, render_week
 from thefrontoffice.adapters.inbound.cli.session import Session
-from thefrontoffice.bootstrap import CompetitionEntry, find, scout_engine, trade_engine
+from thefrontoffice.bootstrap import CompetitionEntry, find, item_decisions, scout_engine, trade_engine, week_engine
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.ports import TradeProvider
 
@@ -21,6 +22,7 @@ def _print_help(entries: list[CompetitionEntry]) -> None:
     tradeable = " | ".join(e.competition for e in entries if e.supports_trades) or "none"
     rows = [
         ("/leagues", "Every league you are in, per competition"),
+        ("/week [competition]", "This week: the figures, the chance of winning, and what to do"),
         ("/roster [competition]", "Your squad"),
     ]
     if ai_available():
@@ -99,6 +101,19 @@ def _cmd_scout(session: Session, entries: list[CompetitionEntry], args: list[str
                 continue
             print("\n" + render_scout_report(report))
             _interactive_followup(chat, "report")
+
+
+def _cmd_week(session: Session, entries: list[CompetitionEntry], args: list[str]) -> None:
+    """Show this week for each requested competition and league, as the web page has it."""
+    for entry in _resolve_competitions(args, entries):
+        try:
+            provider = session.provider(entry)
+            engine = week_engine(provider, item_decisions())
+            for ref in provider.list_leagues():
+                _print_header(f"{entry.label} — {ref.name}")
+                print(render_week(presenting.week(engine.week(ref.league_id))))
+        except FrontOfficeError as e:
+            print_error(e, entry.label)
 
 
 def _cmd_roster(session: Session, entries: list[CompetitionEntry], args: list[str]) -> None:

@@ -12,14 +12,12 @@ from statistics import pstdev
 import pytest
 
 from thefrontoffice.application.forecasting import (
-    WIN_COLUMN,
     WORTH_A_ROW,
     ForecastEngine,
     _draw,
-    attach,
-    attach_pickups,
     calibrate,
     pickup_chances,
+    ranked,
     simulate,
 )
 from thefrontoffice.domain.models import (
@@ -27,12 +25,7 @@ from thefrontoffice.domain.models import (
     LineupMove,
     MatchupInput,
     Outcomes,
-    PickupChance,
     PlayedMatchup,
-    PlayerCard,
-    PlayerPage,
-    Stat,
-    Summary,
 )
 
 FEW = 2_000
@@ -121,7 +114,7 @@ def test_no_move_is_called_best_unless_it_helps() -> None:
     assert simulate(_match([_player("a", 10, 20)], [_player("b", 5, 25)], move), FEW).best_move == ""
 
 
-# ── onto the page ───────────────────────────────────────────────────────
+# ── the to-do list, by the chance of winning ───────────────────────────────────────────────────────
 
 
 SWAP = Action(
@@ -130,28 +123,21 @@ SWAP = Action(
 DEADLINE = Action(kind="trade", urgency="later", title="Trade by week 11", reason="deadline", key="deadline:11")
 
 
-def _attached(*actions: Action, moves: tuple[LineupMove, ...] = ()) -> Summary:
+def _attached(*actions: Action, moves: tuple[LineupMove, ...] = ()) -> list[Action]:
     matchup = _match([_player("w", 0, 5, 10), _player("m", 0, 30)], [_player("t", 10, 20, 30)], *moves)
-    summary = Summary(headline=[Stat(label="Week", value="7")], actions=list(actions))
-    return attach(summary, simulate(matchup, FEW), matchup)
-
-
-def test_the_header_carries_the_chance_of_winning_and_the_likely_margin() -> None:
-    labels = [s.label for s in _attached().headline]
-
-    assert labels == ["Week", "Win chance"]  # the margin rides with the chance, not beside it
+    return ranked(list(actions), simulate(matchup, FEW), matchup) or []
 
 
 def test_a_to_do_move_carries_what_it_does_to_the_chance() -> None:
     move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
 
-    [swap] = _attached(SWAP, moves=(move,)).actions or []
+    [swap] = _attached(SWAP, moves=(move,))
 
     assert swap.win_change is not None and swap.win_change > 0
 
 
 def test_an_item_that_moves_nobody_has_no_change_to_show() -> None:
-    [deadline] = _attached(DEADLINE).actions or []
+    [deadline] = _attached(DEADLINE)
 
     assert deadline.win_change is None
 
@@ -159,7 +145,7 @@ def test_an_item_that_moves_nobody_has_no_change_to_show() -> None:
 def test_a_better_move_the_list_lacks_becomes_a_row_of_its_own() -> None:
     move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
 
-    actions = _attached(DEADLINE, moves=(move,)).actions or []
+    actions = _attached(DEADLINE, moves=(move,))
 
     added = [a for a in actions if a.key.startswith("odds:")]
     assert len(added) == 1 and (added[0].player_id, added[0].replaces) == ("x", "w")
@@ -169,7 +155,7 @@ def test_a_better_move_the_list_lacks_becomes_a_row_of_its_own() -> None:
 def test_a_move_already_on_the_list_is_not_added_twice() -> None:
     move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
 
-    actions = _attached(SWAP, moves=(move,)).actions or []
+    actions = _attached(SWAP, moves=(move,))
 
     assert [a.key for a in actions] == [SWAP.key]
 
@@ -179,7 +165,7 @@ def test_rows_keep_their_urgency_and_sort_within_it_by_what_they_add() -> None:
     big = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
     lesser = SWAP.model_copy(update={"key": "swap:y:w", "player_id": "y"})
 
-    actions = _attached(DEADLINE, lesser, SWAP, moves=(small, big)).actions or []
+    actions = _attached(DEADLINE, lesser, SWAP, moves=(small, big))
 
     assert [a.key for a in actions] == [SWAP.key, lesser.key, DEADLINE.key]
 
@@ -187,7 +173,7 @@ def test_rows_keep_their_urgency_and_sort_within_it_by_what_they_add() -> None:
 def test_a_competition_without_a_to_do_list_still_has_none() -> None:
     matchup = _match([_player("a", 10)], [_player("b", 5)])
 
-    assert attach(Summary(), simulate(matchup, FEW), matchup).actions is None
+    assert ranked(None, simulate(matchup, FEW), matchup) is None
 
 
 # ── how well it predicts ────────────────────────────────────────────────
@@ -309,32 +295,6 @@ def test_a_free_agent_who_only_hurts_says_by_how_much() -> None:
     [chance] = pickup_chances(simulate(matchup, FEW), matchup)
 
     assert chance.win_change < 0
-
-
-def _page(*ids: str) -> PlayerPage:
-    return PlayerPage(
-        players=[PlayerCard(player_id=pid, columns={"Player": pid, "Fits": "+1.0", "Opponent": "MIA"}) for pid in ids]
-    )
-
-
-def test_a_priced_page_shows_the_chance_beside_the_fit_and_a_dash_for_the_rest() -> None:
-    page = attach_pickups(_page("a", "b"), [PickupChance(player_id="a", win_change=0.019, title="Start A")])
-
-    a, b = page.players
-    assert list(a.columns) == ["Player", "Fits", WIN_COLUMN, "Opponent"]
-    assert (a.columns[WIN_COLUMN], a.values[WIN_COLUMN]) == ("+1.9%", 0.019)
-    assert b.columns[WIN_COLUMN] == "—" and WIN_COLUMN not in b.values
-
-
-def test_ordering_by_the_chance_keeps_the_unpriced_last_either_way() -> None:
-    chances = [
-        PickupChance(player_id="a", win_change=-0.01, title=""),
-        PickupChance(player_id="c", win_change=0.02, title=""),
-    ]
-
-    for descending, expected in ((True, ["c", "a", "b"]), (False, ["a", "c", "b"])):
-        page = attach_pickups(_page("a", "b", "c"), chances, order=descending)
-        assert [p.player_id for p in page.players] == expected
 
 
 class _Wire:

@@ -263,6 +263,7 @@ The same three competitions run in the CLI:
 | Command | Description |
 |---|---|
 | `/leagues` | Every league you are in, per competition |
+| `/week [competition]` | This week as the page has it: the figures, the chance of winning, the to-do list |
 | `/roster [competition]` | Your squad |
 | `/scout [competition]` | Analyze a week. No competition runs every configured one |
 | `/trade [competition] <text>` | Evaluate a trade. FPL is excluded — its managers transfer against the market rather than trading each other |
@@ -335,7 +336,8 @@ Ports and adapters, dependencies pointing strictly inward:
 ```text
 src/thefrontoffice/
 ├── domain/            models and ports. Imports nothing else in the package.
-├── application/       use cases over ports: ScoutEngine, TradeEngine.
+├── application/       use cases over ports: WeekEngine (the week, season and
+│                      wire, with forecast, odds and decisions), ScoutEngine…
 ├── adapters/
 │   ├── inbound/       drivers: the CLI and the FastAPI + React web app.
 │   └── outbound/      driven: platform clients, the model, and the
@@ -348,7 +350,10 @@ src/thefrontoffice/
 No adapter is named in `domain/` or `application/`; the engines take an
 `AnalysisModel` port rather than a vendor client, and the domain's errors name
 no platform — each platform's live in its own `platforms/<p>/errors.py`.
-Providers are handed their clients by `bootstrap.py`, never build them.
+Providers are handed their clients by `bootstrap.py`, never build them. The
+engines answer in figures; `adapters/inbound/presenting.py` puts the generic
+ones into words for the web page and the terminal alike, and a competition's own
+vocabulary stays its provider's.
 `tests/test_architecture.py` checks the import direction and both of these. Adding a competition is a
 provider, a prompt template and one `CompetitionEntry` — see the
 [`adding-a-competition`](.agents/skills/adding-a-competition/SKILL.md) skill.

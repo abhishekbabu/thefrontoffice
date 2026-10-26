@@ -16,11 +16,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import replace
 
 from thefrontoffice.domain.models import (
-    LeagueSchedule,
     PlayoffOdds,
     SeasonInput,
-    Stat,
-    Summary,
     TeamOdds,
     TeamWeek,
     TradeIdea,
@@ -108,7 +105,7 @@ def _share(mine: float, theirs: float) -> float:
     return 1.0 if mine > theirs else 0.5 if mine == theirs else 0.0
 
 
-# ── onto the page ───────────────────────────────────────────────────────
+# ── this week, weighed in ───────────────────────────────────────────────────────
 
 
 def chance_now(odds: PlayoffOdds, win: float | None) -> float:
@@ -121,34 +118,6 @@ def chance_now(odds: PlayoffOdds, win: float | None) -> float:
     if win is None or odds.with_win is None or odds.with_loss is None:
         return odds.playoffs
     return win * odds.with_win + (1 - win) * odds.with_loss
-
-
-def attach_season(summary: Summary, odds: PlayoffOdds) -> Summary:
-    """The week's header with the playoff chance, and what this week is worth to it."""
-    chance = chance_now(odds, summary.forecast.win if summary.forecast else None)
-    tone = "good" if chance >= 0.75 else "warning" if chance <= 0.25 else "neutral"
-    stake = (
-        f" · {odds.with_win:.0%} with a win, {odds.with_loss:.0%} without"
-        if odds.with_win is not None and odds.with_loss is not None
-        else ""
-    )
-    stat = Stat(label="Playoffs", value=f"{chance:.0%}{stake}", tone=tone)
-    return summary.model_copy(update={"headline": [*summary.headline, stat]})
-
-
-def attach_table(schedule: LeagueSchedule, odds: PlayoffOdds, win: float | None = None) -> LeagueSchedule:
-    """The league table with each team's playoff chance on its row, and yours in the season's header."""
-    by_team = {t.team_id: t.playoffs for t in odds.teams}
-    rows = [
-        row.model_copy(update={"playoffs": f"{by_team[row.team_id]:.0%}"}) if row.team_id in by_team else row
-        for row in schedule.standings
-    ]
-    # The season's header too: what this week is worth to it is the week view's to say.
-    # Weighed by this week's forecast, as the week's header is: two figures for one chance reads as a bug.
-    chance = chance_now(odds, win)
-    tone = "good" if chance >= 0.75 else "warning" if chance <= 0.25 else "neutral"
-    headline = [*schedule.headline, Stat(label="Playoffs", value=f"{chance:.0%}", tone=tone)]
-    return schedule.model_copy(update={"standings": rows, "headline": headline})
 
 
 class SeasonEngine:

@@ -26,10 +26,7 @@ from thefrontoffice.domain.models import (
     Outcomes,
     PickupChance,
     PlayedMatchup,
-    PlayerPage,
     RangeScore,
-    Stat,
-    Summary,
     Urgency,
 )
 from thefrontoffice.domain.ports import ForecastProvider
@@ -151,35 +148,33 @@ def _range(margins: list[float]) -> MarginRange:
     return MarginRange(low=at(0.1), median=at(0.5), high=at(0.9))
 
 
-# ── onto the page ───────────────────────────────────────────────────────
+# ── the to-do list, by the chance of winning ────────────────────────────
 
 
-def attach(summary: Summary, forecast: Forecast, matchup: MatchupInput) -> Summary:
-    """The week with its forecast: a win chance in the header, each move's effect on its row.
+def ranked(actions: list[Action] | None, forecast: Forecast, matchup: MatchupInput) -> list[Action] | None:
+    """The to-do list with what each move does to the chance of winning, ordered by it within each urgency.
 
-    Rows stay grouped by urgency and are ordered within it by what they do to
-    the chance of winning. A move the list does not hold but the simulation
-    rates — usually a riskier start when you are behind — becomes a row of its own.
+    A move the list does not hold but the simulation rates — usually a
+    riskier start when you are behind — becomes a row of its own. A
+    competition with no list still has none.
     """
+    if actions is None:
+        return None
     by_move = {_identity(m): m for m in matchup.moves}
-    actions = []
-    for action in summary.actions or []:
+    priced = []
+    for action in actions:
         move = by_move.get((action.player_id, action.replaces))
         change = forecast.moves[move.key] - forecast.win if move and move.key in forecast.moves else None
-        actions.append(action.model_copy(update={"win_change": change}) if change is not None else action)
+        priced.append(action.model_copy(update={"win_change": change}) if change is not None else action)
 
     best = next((m for m in matchup.moves if m.key == forecast.best_move), None)
-    listed = {(a.player_id, a.replaces) for a in actions}
+    listed = {(a.player_id, a.replaces) for a in priced}
     if best is not None and forecast.moves[best.key] - forecast.win >= WORTH_A_ROW and _identity(best) not in listed:
-        actions.append(_odds_row(best, forecast))
+        priced.append(_odds_row(best, forecast))
 
-    ordered = sorted(
-        actions,
+    return sorted(
+        priced,
         key=lambda a: (URGENCY_ORDER[a.urgency], -(a.win_change if a.win_change is not None else float("-inf"))),
-    )
-    headline = [*summary.headline, *_headline(forecast)]
-    return summary.model_copy(
-        update={"forecast": forecast, "headline": headline, "actions": ordered if summary.actions is not None else None}
     )
 
 
@@ -205,24 +200,6 @@ def _odds_row(move: LineupMove, forecast: Forecast) -> Action:
     )
 
 
-def _headline(forecast: Forecast) -> list[Stat]:
-    tone = "good" if forecast.win >= 0.6 else "warning" if forecast.win <= 0.4 else "neutral"
-    margin = forecast.margin
-    # One figure and its range: the chance alone hides how close it is.
-    return [
-        Stat(
-            label="Win chance", value=f"{forecast.win:.0%} · margin {margin.low:+.0f} to {margin.high:+.0f}", tone=tone
-        )
-    ]
-
-
-WIN_COLUMN = "Win"
-"""The column a free agent's chance is shown in — beside the competition's own columns."""
-
-FIT_COLUMN = "Fits"
-"""Where a competition says how a player fits your lineup: the chance reads best beside it."""
-
-
 def pickup_chances(forecast: Forecast, matchup: MatchupInput) -> list[PickupChance]:
     """Each player brought in by a move, at the move that does the most for the chance of winning."""
     best: dict[str, tuple[float, str]] = {}
@@ -233,38 +210,6 @@ def pickup_chances(forecast: Forecast, matchup: MatchupInput) -> list[PickupChan
         if player_id not in best or change > best[player_id][0]:
             best[player_id] = (change, move.title)
     return [PickupChance(player_id=pid, win_change=change, title=title) for pid, (change, title) in best.items()]
-
-
-def attach_pickups(page: PlayerPage, chances: list[PickupChance], *, order: bool | None = None) -> PlayerPage:
-    """The page with each priced player's chance in a column of its own; "—" for the rest.
-
-    `order` re-sorts the page by it, descending when true, with the unpriced
-    kept last either way. Only the page: what it would do is priced for the
-    rows on screen, since pricing four thousand players is a minute nobody waits.
-    """
-    by_player = {c.player_id: c for c in chances}
-    cards = []
-    for card in page.players:
-        chance = by_player.get(card.player_id)
-        columns = _beside(card.columns, FIT_COLUMN, f"{chance.win_change:+.1%}" if chance else "—")
-        values = {**card.values, **({WIN_COLUMN: chance.win_change} if chance else {})}
-        cards.append(card.model_copy(update={"columns": columns, "values": values}))
-    if order is not None:
-        priced = sorted((c for c in cards if WIN_COLUMN in c.values), key=lambda c: c.values[WIN_COLUMN], reverse=order)
-        cards = priced + [c for c in cards if WIN_COLUMN not in c.values]
-    return page.model_copy(update={"players": cards})
-
-
-def _beside(columns: dict[str, str], after: str, value: str) -> dict[str, str]:
-    """`columns` with the chance placed right after `after`, or last where there is no such column."""
-    if after not in columns:
-        return {**columns, WIN_COLUMN: value}
-    placed: dict[str, str] = {}
-    for name, text in columns.items():
-        placed[name] = text
-        if name == after:
-            placed[WIN_COLUMN] = value
-    return placed
 
 
 # ── how well it predicts ────────────────────────────────────────────────

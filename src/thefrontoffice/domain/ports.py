@@ -169,6 +169,29 @@ class SubjectProvider(ContextProvider, Protocol):
         ...
 
 
+class WeekProvider(Protocol):
+    """A competition as the week engine reads it: its week, its season, and its wire.
+
+    Split out for the reason `ContextProvider` is: that is all putting the
+    week together needs, and an engine that asks for the whole provider makes
+    every test of it fake one.
+    """
+
+    label: str
+
+    def summary(self, league_id: str) -> Summary:
+        """Where this team stands this week. See `CompetitionProvider.summary`."""
+        ...
+
+    def schedule(self, league_id: str) -> LeagueSchedule:
+        """The league beyond this week. See `CompetitionProvider.schedule`."""
+        ...
+
+    def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
+        """One page of the players nobody holds. See `CompetitionProvider.free_agents`."""
+        ...
+
+
 @runtime_checkable
 class CompetitionProvider(SubjectProvider, Protocol):
     """One competition on one platform.
