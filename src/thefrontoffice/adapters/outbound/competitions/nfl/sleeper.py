@@ -236,7 +236,7 @@ class SleeperNFLProvider:
     def roster(self, league_id: str) -> list[PlayerCard]:
         """The full roster, with the depth and experience a week view leaves out."""
         state = self._week(league_id)
-        return self._cards(state, state.roster.player_ids, set(state.roster.starter_ids))
+        return self._cards(state, self._lineup_order(state, state.roster), set(state.roster.starter_ids))
 
     def teams(self, league_id: str) -> list[TeamRef]:
         """Everyone in the league, yours first."""
@@ -259,7 +259,7 @@ class SleeperNFLProvider:
         roster = next((r for r in self.client.get_rosters(league_id) if str(r.roster_id) == team_id), None)
         if roster is None:
             raise TeamNotFoundError(f"roster {team_id}")
-        return self._cards(state, roster.player_ids, set(roster.starter_ids))
+        return self._cards(state, self._lineup_order(state, roster), set(roster.starter_ids))
 
     def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
         """Everyone nobody in the league holds, best projection first.
@@ -284,6 +284,14 @@ class SleeperNFLProvider:
         )
         ranked = self._cards(state, [pid for _, pid, _ in available], starters=set(), owned_column=False, fits=True)
         return paging.page(ranked, query)
+
+    @staticmethod
+    def _lineup_order(state: Week, roster: SleeperRoster) -> list[str]:
+        """Read as a lineup: the starters slot by slot, then the bench best projected first, then reserve."""
+        starters = [pid for pid in roster.starter_ids if pid in roster.player_ids]
+        bench = [pid for pid in roster.player_ids if pid not in starters and pid not in roster.reserve_ids]
+        bench.sort(key=lambda pid: -(state.projections[pid].points if pid in state.projections else 0.0))
+        return starters + bench + [pid for pid in roster.player_ids if pid in roster.reserve_ids]
 
     @staticmethod
     def _is_signing(meta: PlayerMeta) -> bool:
@@ -709,6 +717,7 @@ class SleeperNFLProvider:
         # date rather than a decision. It only means something when others do.
         scheduled = any(p.opponent for p in state.projected)
         games = self._games(state)
+        playing = {club for game in games.get(state.week, []) for club in (game.home, game.away)}
 
         return Summary(
             headline=prompt.headline(state.roster, state.week, state.current_points, state.best_points, state.on_bench)
@@ -736,7 +745,9 @@ class SleeperNFLProvider:
             ],
             fixtures=[
                 Stat(label=club, value="no game this week", tone="warning")
-                for club in sorted({p.team for p in state.projected if scheduled and not p.opponent})
+                # Clubs absent from the week's games, not players without a
+                # projection: an injured player has none, and his club still plays.
+                for club in sorted({p.team for p in state.projected if playing and p.team not in playing})
             ],
             actions=self._actions(state, league_id, games),
             window=self._window(state, games),
@@ -1268,8 +1279,13 @@ class SleeperNFLProvider:
 
     @staticmethod
     def _spot_detail(projection: WeeklyProjection, scheduled: bool, slot: str = "") -> str:
+        ruling = actions.RULED_OUT.get(projection.injury_status.upper())
         if projection.opponent:
             opponent = f"vs {projection.opponent}"
+        elif ruling:
+            # Sleeper projects nobody it has ruled out, which reads as no game
+            # though his club plays: say why he is not playing instead.
+            opponent = projection.injury_status.lower()
         else:
             opponent = "no game" if scheduled else "not scheduled yet"
         # The slot column already says "QB", so repeating it here reads as two
