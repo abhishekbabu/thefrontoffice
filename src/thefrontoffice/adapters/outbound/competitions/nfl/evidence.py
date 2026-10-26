@@ -14,6 +14,7 @@ Monday-night starter as a player who did nothing.
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from thefrontoffice.adapters.outbound.competitions.places import ordinal
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NFLGameLine, WeeklyProjection
 from thefrontoffice.domain.models import Stat, Tone
 
@@ -128,7 +129,7 @@ class Matchup:
         elif self.rank == self.defenses:
             rank = "the fewest"
         else:
-            rank = f"{_ordinal(self.rank)}-most"
+            rank = f"{ordinal(self.rank)}-most"
         return f"vs {self.opponent}, {rank} to {noun} ({self.allowed:.1f} a game)"
 
 
@@ -309,6 +310,14 @@ def _total(lines: list[NFLGameLine], key: str) -> float:
     return sum(line.stats.get(key, 0.0) for line in lines)
 
 
-def _ordinal(n: int) -> str:
-    suffix = "th" if 11 <= n % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
+MIN_GAMES_FOR_AVERAGE = 2
+"""Games a player needs before his average says more about him than his projection does."""
+
+
+def season_average(evidence: Evidence, player: WeeklyProjection) -> float:
+    """What he is worth over a season: his average a game where he has played enough, else his projection.
+
+    Not this week's projection alone, which reads a starter on bye as nothing.
+    """
+    games = evidence.games.get(player.player_id, ())
+    return sum(games) / len(games) if len(games) >= MIN_GAMES_FOR_AVERAGE else player.points

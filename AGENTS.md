@@ -44,8 +44,8 @@ Under `adapters/outbound/competitions/<competition>/`, the provider file is name
 platform that owns the **league** — `nba/yahoo.py`, `nfl/sleeper.py`. Other
 platforms a competition reads from are role-named helpers (`projections.py`,
 `lineup.py`), never a second file named after a platform. A provider that
-outgrows one file splits the same way each time — `week.py` (state),
-`league.py` (season, table), `prompt.py` (model text) — leaving the port behind.
+outgrows one file splits the same way each time — `week.py` (state), `views.py` (how a player reads),
+`league.py` (season, table), `prompt.py` (model text), `rules.py` (shared facts) — leaving the port behind.
 
 **Types.** Avoid `Any`; prefer builtin generics and PEP 604 unions, which ruff's
 `UP` rules enforce. yahoofantasy is read as `Any` (`replace-imports-with-any`):

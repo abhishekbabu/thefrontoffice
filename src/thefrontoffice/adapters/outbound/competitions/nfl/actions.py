@@ -14,7 +14,9 @@ move says nothing about when.
 """
 
 from collections import defaultdict
+from collections.abc import Callable
 
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import MIN_GAMES_FOR_AVERAGE, season_average
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupChange,
     best_upgrade,
@@ -22,21 +24,10 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     fits,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame, WeeklyProjection
 from thefrontoffice.domain.models import Action, Stat, Urgency
-
-# Sleeper's statuses for a player who will not play, in the words a person
-# would use. Questionable is deliberately absent: most questionable players
-# play, and flagging every one buries the starters who will not.
-RULED_OUT = {
-    "OUT": "is ruled out",
-    "IR": "is on injured reserve",
-    "PUP": "is on the PUP list",
-    "SUS": "is suspended",
-    "NA": "is not active",
-    "DNR": "is not with a team",
-}
 
 URGENCY_ORDER: dict[Urgency, int] = {"now": 0, "soon": 1, "later": 2}
 
@@ -284,9 +275,6 @@ def _breakouts(state: Week, free_agents: list[WeeklyProjection], already: set[st
 PICKUPS = ("hole:", "rise:")
 """The items that add a player to the roster, and so need room on it."""
 
-MIN_GAMES_FOR_AVERAGE = 2
-"""Games a bench player needs before his season average, not this week's projection, says what he is worth."""
-
 
 def _with_drops(state: Week, actions: list[Action], started: set[str]) -> list[Action]:
     """Every pickup with who to drop for it, or the open spot it can go into.
@@ -344,7 +332,7 @@ def _with_drops(state: Week, actions: list[Action], started: set[str]) -> list[A
 def _worth_a_spot(state: Week, player_id: str, drop: WeeklyProjection | None) -> bool:
     """Whether an optional pickup is worth more than the player it would cost."""
     pickup = state.projections.get(player_id)
-    return drop is not None and pickup is not None and pickup.points > season_value(state, drop)
+    return drop is not None and pickup is not None and pickup.points > season_average(state.evidence, drop)
 
 
 def _least_valuable(state: Week, exclude: set[str], started: set[str]) -> WeeklyProjection | None:
@@ -358,12 +346,7 @@ def _least_valuable(state: Week, exclude: set[str], started: set[str]) -> Weekly
         and p.player_id not in state.evidence.trends
         and p.team not in started
     ]
-    return min(bench, key=lambda p: (season_value(state, p), p.points), default=None)
-
-
-def season_value(state: Week, player: WeeklyProjection) -> float:
-    games = state.evidence.games.get(player.player_id, ())
-    return sum(games) / len(games) if len(games) >= MIN_GAMES_FOR_AVERAGE else player.points
+    return min(bench, key=lambda p: (season_average(state.evidence, p), p.points), default=None)
 
 
 def _drop_reason(state: Week, player: WeeklyProjection) -> str:
@@ -500,6 +483,22 @@ def _trade_deadline(state: Week) -> list[Action]:
             key=f"deadline:{deadline}",
         )
     ]
+
+
+def wire(state: Week, owned: set[str], signable: Callable[[str], bool]) -> list[WeeklyProjection]:
+    """Who could be picked up and play this week, best projection first.
+
+    Cut to players with a game and no ruling against them: the wire is asked
+    to fill a hole, and a player on bye fills nothing.
+    """
+    return sorted(
+        (
+            p
+            for pid, p in state.projections.items()
+            if pid not in owned and p.opponent and p.injury_status.upper() not in RULED_OUT and signable(pid)
+        ),
+        key=lambda p: -p.points,
+    )
 
 
 def join(names: list[str]) -> str:

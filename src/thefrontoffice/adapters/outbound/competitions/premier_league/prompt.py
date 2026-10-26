@@ -7,6 +7,7 @@ The provider fetches and the prompt describes.
 
 import logging
 
+from thefrontoffice.adapters.outbound.competitions.premier_league.league import standing
 from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
     Lineup,
     LineupChange,
@@ -128,7 +129,7 @@ def season_headline(entry: Entry, league_id: str) -> list[Stat]:
         Stat(label="Overall rank", value=f"{entry.overall_rank:,}"),
     ]
     if league:
-        stats.append(Stat(label="Mini-league", value=league.standing))
+        stats.append(Stat(label="Mini-league", value=standing(league)))
     return stats
 
 
@@ -141,7 +142,7 @@ def _situation(entry: Entry, league_id: str, squad: Squad, gameweek_name: str, a
     ]
     league = next((lg for lg in entry.leagues if str(lg.id) == league_id), None)
     if league:
-        lines.append(f"MINI-LEAGUE: {league.name} — {league.standing}")
+        lines.append(f"MINI-LEAGUE: {league.name} — {standing(league)}")
     lines.append(f"MONEY: {as_millions(squad.bank)} in the bank, squad worth {as_millions(squad.value)}")
     if squad.points_on_bench:
         lines.append(f"LAST GAMEWEEK: {squad.points_on_bench} points were left on the bench.")

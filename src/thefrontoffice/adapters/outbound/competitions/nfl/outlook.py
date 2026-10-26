@@ -12,13 +12,14 @@ import logging
 import statistics
 from collections.abc import Callable
 
-from thefrontoffice.adapters.outbound.competitions.nfl.actions import RULED_OUT, season_value
-from thefrontoffice.adapters.outbound.competitions.nfl.league import REGULAR_SEASON_WEEKS
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, lineup_points, optimal_lineup
-from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, games_by_week, projection_for
+from thefrontoffice.adapters.outbound.competitions.nfl.actions import join
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import season_average
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, lineup_points
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import LONG_TERM, RULED_OUT, SEASON_WEEKS
+from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, games_by_week, lineup_for
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import WeeklyProjection
-from thefrontoffice.domain.models import WeekAhead
+from thefrontoffice.domain.models import Action, WeekAhead
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,6 @@ WEEKS_AHEAD = 4
 
 SHORT_BY = 10.0
 """Points below the usual week that make one worth acting on: about a starter's worth."""
-
-LONG_TERM = {"IR", "PUP", "SUS", "NA", "DNR"}
-"""Rulings that outlast a week. A plain Out is for one game: it covers next week at most,
-and past that his projection, which Sleeper keeps publishing, is the better guess."""
 
 MIN_GAIN = 2.0
 """Points a pickup must add to the week to be worth a roster spot: less is a coin flip, not a fix."""
@@ -45,7 +42,7 @@ def build(client: SleeperNFLSource, state: Week, league_id: str, signable: Calla
     `signable` says whether a player could be added at all — on an NFL roster,
     at a position the league scores — which is the provider's rule, not this one's.
     """
-    weeks = list(range(state.week + 1, min(state.week + WEEKS_AHEAD, REGULAR_SEASON_WEEKS) + 1))
+    weeks = list(range(state.week + 1, min(state.week + WEEKS_AHEAD, SEASON_WEEKS) + 1))
     if not weeks:
         return []
     playing = {
@@ -57,22 +54,14 @@ def build(client: SleeperNFLSource, state: Week, league_id: str, signable: Calla
     projections = {week: client.get_projections(state.season, week, state.league.scoring_format) for week in weeks}
 
     def lineup(ids: list[str], week: int) -> list[LineupSlot]:
-        ids = [pid for pid in ids if not _ruled_out(pid, state, week)]
-        players = [p for p in (projection_for(pid, projections[week], state.players) for pid in ids) if p]
-        return optimal_lineup(state.league.starting_slots, players)
+        return lineup_for(state, [pid for pid in ids if not _ruled_out(pid, state, week)], projections[week])
 
     lineups = {week: lineup(held, week) for week in weeks}
     usual = statistics.median(lineup_points(slots) for slots in lineups.values())
     # A regular is somebody the best lineup uses in most of these weeks: who a
     # short week is short of, and who is never the one to drop.
     # Asked as if everyone were fit, so a starter ruled out for a while is still one of yours.
-    healthy = [
-        optimal_lineup(
-            state.league.starting_slots,
-            [p for p in (projection_for(pid, projections[week], state.players) for pid in held) if p],
-        )
-        for week in weeks
-    ]
+    healthy = [lineup_for(state, held, projections[week]) for week in weeks]
     starts = [slot.player.player_id for slots in healthy for slot in slots if slot.player]
     regulars = {pid for pid in set(starts) if starts.count(pid) * 2 >= len(weeks)}
     # Never the one to drop: a regular, or anyone the lineup leans on in one of these weeks.
@@ -156,4 +145,30 @@ def _cheapest(state: Week, held: list[str], keep: set[str]) -> WeeklyProjection 
         for p in state.projected
         if p.player_id in held and p.player_id not in keep and p.player_id not in state.evidence.trends
     ]
-    return min(candidates, key=lambda p: (season_value(state, p), p.points), default=None)
+    return min(candidates, key=lambda p: (season_average(state.evidence, p), p.points), default=None)
+
+
+def to_do(ahead: list[WeekAhead], state: Week) -> Action | None:
+    """Next week, as a to-do item, where byes and injuries leave it short: while a waiver run can still fix it.
+
+    Only next week: the weeks after stay on My team, and next week is the one
+    the to-do list can act on. It names the byes itself, so it stands in for
+    that week's bye items rather than sitting beside them.
+    """
+    week = next((w for w in ahead if w.week == state.week + 1 and w.short), None)
+    if week is None:
+        return None
+    without = f", without {join(week.missing)}" if week.missing else ""
+    fix = (
+        f" {week.fix}, +{week.gain:.1f}."
+        if week.fix
+        else " No free agent at those positions adds two points; a trade may: see My team."
+    )
+    return Action(
+        kind="waiver" if week.fix else "trade",
+        urgency="later",
+        title=f"Week {week.week} is short",
+        reason=f"Your best lineup projects {week.points:.1f} against {week.usual:.1f} in a usual week{without}.{fix}",
+        when=f"week {week.week}",
+        key=f"short:{week.week}",
+    )
