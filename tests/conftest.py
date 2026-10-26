@@ -439,8 +439,10 @@ class FakeYahoo:
         adds_used: int = 0,
         teams: list[Any] | None = None,
         available: list[Any] | None = None,
+        roster_error: Exception | None = None,
     ) -> None:
         self.roster = roster if roster is not None else [make_player("Roster One")]
+        self.roster_error = roster_error
         self.stat_leaders = stat_leaders or {}
         self.matchup_dates = matchup_dates
         self.search_results = search_results or {}
@@ -456,8 +458,13 @@ class FakeYahoo:
             name="My Team",
             team_key="t.1",
             roster_adds=SimpleNamespace(value=self.adds_used),
-            players=lambda: self.roster,
+            players=self._players,
         )
+
+    def _players(self) -> list[Any]:
+        if self.roster_error:
+            raise self.roster_error
+        return self.roster
 
     @property
     def league(self) -> Any:
@@ -559,14 +566,18 @@ class FakeAnswers:
 
 
 class FakeChat:
-    """Stands in for a genai Chat."""
+    """Stands in for an open conversation: answers with `reply`, or raises `error`."""
 
-    def __init__(self) -> None:
+    def __init__(self, reply: str = "[FAKE] follow-up answer", error: Exception | None = None) -> None:
+        self.reply = reply
+        self.error = error
         self.sent: list[str] = []
 
     def send_message(self, message: Any) -> Any:
         self.sent.append(str(message))
-        return SimpleNamespace(text="[FAKE] follow-up answer")
+        if self.error:
+            raise self.error
+        return SimpleNamespace(text=self.reply)
 
 
 class FakeAI:
@@ -578,6 +589,7 @@ class FakeAI:
         verdict: Any = MOCK_NBA_VERDICT,
         proposal: Any = None,
         prose: str = "[FAKE] trade prose",
+        chat: FakeChat | None = None,
     ) -> None:
         self.report = report
         self.verdict = verdict
@@ -587,7 +599,7 @@ class FakeAI:
         self.structured_text: list[str] = []
         self.history: Any = None
         self.search_enabled: bool | None = None
-        self.chat = FakeChat()
+        self.chat = chat or FakeChat()
 
     def generate_structured(self, prompt: str, schema: type, mock: Any = None) -> Any:
         """The scripted report, in whatever format was asked for: a model answers in the schema it is held to."""
