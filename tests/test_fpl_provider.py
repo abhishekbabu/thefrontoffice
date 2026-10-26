@@ -13,6 +13,7 @@ import pytest
 from conftest import mine
 
 from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
+from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Chip,
     ChipPlay,
@@ -30,7 +31,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Squad,
     TableRow,
 )
-from thefrontoffice.domain.errors import FPLAPIError, LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery
 
 ENTRY_ID = 77

@@ -12,6 +12,11 @@ from yahoofantasy.api.parse import as_list, from_response_object, get_value, par
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo import oauth
 from thefrontoffice.adapters.outbound.platforms.yahoo.constants import SCOUT_CATEGORIES, STAT_CATEGORIES
+from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
+    YahooAPIError,
+    YahooAuthError,
+    YahooLoginRequiredError,
+)
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     MatchupInfo,
     PlayerStat,
@@ -19,13 +24,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Timeframe,
 )
 from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.errors import (
-    FrontOfficeError,
-    TeamNotFoundError,
-    YahooAPIError,
-    YahooAuthError,
-    YahooLoginRequiredError,
-)
+from thefrontoffice.domain.errors import FrontOfficeError, TeamNotFoundError
 
 logger = logging.getLogger(__name__)
 

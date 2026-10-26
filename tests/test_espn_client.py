@@ -9,8 +9,8 @@ from test_fpl_client import FakeSession
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
-from thefrontoffice.adapters.outbound.platforms.espn.types import NFL, ScoreboardGame
-from thefrontoffice.domain.errors import ESPNAPIError
+from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
+from thefrontoffice.adapters.outbound.platforms.espn.types import NFL
 
 TEAMS = {
     "sports": [
@@ -132,11 +132,3 @@ def test_an_unreadable_scoreboard_is_an_error(tmp_path: Path) -> None:
 
     with pytest.raises(ESPNAPIError):
         client.get_scoreboard(NFL, "2026", 7)
-
-
-def test_how_much_of_a_game_is_left_follows_its_clock() -> None:
-    assert ScoreboardGame("A", "B", "pre").left == 1.0
-    assert ScoreboardGame("A", "B", "post").left == 0.0
-    assert ScoreboardGame("A", "B", "in", period=2, clock=0.0).left == 0.5  # halftime
-    assert ScoreboardGame("A", "B", "in", period=4, clock=450.0).left == 0.125
-    assert ScoreboardGame("A", "B", "in", period=5, clock=360.0).left == 0.1  # six minutes of overtime

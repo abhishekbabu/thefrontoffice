@@ -20,6 +20,7 @@ from tenacity import Retrying
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     FANTASY_POSITIONS,
     NBA_STAT_KEYS,
@@ -43,7 +44,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     WeeklyProjection,
 )
 from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.errors import SleeperAPIError, SleeperUnavailableError
 
 logger = logging.getLogger(__name__)
 

@@ -449,6 +449,25 @@ class FakeYahoo:
         return self.search_results.get(query, [])
 
 
+class FakeSleeperProjections:
+    """Stands in for SleeperClient's NBA projection endpoints."""
+
+    def __init__(self, rows: Any = None, error: Exception | None = None, season: str = "2026", week: int = 12):
+        self.rows = rows if rows is not None else []
+        self.error = error
+        self.season, self.week = season, week
+        self.weeks_requested: list[int] = []
+
+    def get_state(self, sport: str = "nfl") -> Any:
+        return SeasonState(week=self.week, season=self.season, season_type="regular")
+
+    def get_nba_projections(self, season: str, week: int) -> Any:
+        self.weeks_requested.append(week)
+        if self.error:
+            raise self.error
+        return self.rows if week == self.week else []
+
+
 class FakeNBA:
     """Stands in for SleeperNBAForm."""
 

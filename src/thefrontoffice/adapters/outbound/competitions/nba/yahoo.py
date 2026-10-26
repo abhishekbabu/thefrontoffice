@@ -6,6 +6,7 @@ is Yahoo's weekly add limit.
 """
 
 import logging
+from collections.abc import Callable
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
@@ -18,12 +19,11 @@ from yahoofantasy import League, Player
 
 from thefrontoffice.adapters.outbound.competitions import paging, places
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
-from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, FormSource, SleeperNBAForm
+from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
-from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient, YahooSource
+from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource
 from thefrontoffice.config.constants import NBA_SCOUT_PROMPT, NBA_TRADE_PROMPT
-from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.errors import (
     FrontOfficeError,
     LeagueNotFoundError,
@@ -104,20 +104,27 @@ class YahooNBAProvider:
         league: League,
         *,
         all_leagues: list[League] | None = None,
-        nba: FormSource | None = None,
-        yahoo: YahooSource | None = None,
-        sleeper: SleeperProjectionSource | None = None,
+        nba: FormSource,
+        yahoo_for: Callable[[League], YahooSource],
+        sleeper: SleeperProjectionSource,
+        max_weekly_adds: int,
     ):
-        """Collaborators default to real clients; pass them in to test or reuse."""
+        """Every collaborator from bootstrap, which is the one place a real client is built.
+
+        `yahoo_for` rather than one client because a Yahoo client is bound to a
+        league, and the provider moves between the login's leagues.
+        """
         self.league = league
         self._all_leagues = all_leagues or [league]
-        self.nba = nba or SleeperNBAForm()
-        self.yahoo = yahoo or YahooClient(league)
+        self.nba = nba
+        self._yahoo_for = yahoo_for
+        self.yahoo = yahoo_for(league)
+        self.max_weekly_adds = max_weekly_adds
         self.context_builder = PlayerContextBuilder(self.nba)
         # Two questions, one platform: Yahoo says who is on the roster, and
         # Sleeper says both what they have been doing and what they are
         # expected to do.
-        self._sleeper = sleeper
+        self.sleeper = sleeper
 
     def list_leagues(self) -> list[LeagueRef]:
         """Every Yahoo NBA league this login is in."""
@@ -146,7 +153,7 @@ class YahooNBAProvider:
         league = self._select(league_id)
         if league is not self.league:
             self.league = league
-            self.yahoo = YahooClient(league)
+            self.yahoo = self._yahoo_for(league)
 
     def summary(self, league_id: str) -> Summary:
         """The header, without the free-agent pool or the model.
@@ -158,7 +165,7 @@ class YahooNBAProvider:
         """
         my_team = self.yahoo.get_user_team()
         used = my_team.roster_adds.value
-        limit = settings.yahoo_max_weekly_adds
+        limit = self.max_weekly_adds
         return Summary(headline=_adds(used, limit))
 
     def schedule(self, league_id: str) -> LeagueSchedule:
@@ -378,16 +385,6 @@ class YahooNBAProvider:
             ],
         )
 
-    @property
-    def sleeper(self) -> SleeperProjectionSource:
-        """Lazily constructed — no credentials needed, but no reason to build it
-        until a report is actually run."""
-        if self._sleeper is None:
-            from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
-
-            self._sleeper = SleeperClient()
-        return self._sleeper
-
     def _projection_index(self, start: date | None, end: date | None) -> ProjectionIndex | None:
         """Projected category totals for the matchup period, or None.
 
@@ -431,7 +428,7 @@ class YahooNBAProvider:
             matchup_end = date.fromisoformat(matchup.week_end)
 
         used_adds = my_team.roster_adds.value
-        limit = settings.yahoo_max_weekly_adds
+        limit = self.max_weekly_adds
         remaining_adds = max(0, limit - used_adds)
         trans_context = (
             f"TRANSACTION CONTEXT:\n- Adds Used: {used_adds}/{limit}\n"

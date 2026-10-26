@@ -24,8 +24,8 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     week_dates,
 )
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import SleeperRoster, Transaction, WeeklyProjection
-from thefrontoffice.domain.errors import SleeperAPIError
 from thefrontoffice.domain.models import (
     ActivityRow,
     Fixture,

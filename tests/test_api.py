@@ -152,7 +152,7 @@ def test_an_unconfigured_sport_is_a_readable_400(monkeypatch: pytest.MonkeyPatch
 
 
 def test_a_platform_failure_reaches_the_client_in_words(monkeypatch: pytest.MonkeyPatch) -> None:
-    from thefrontoffice.domain.errors import SleeperAPIError
+    from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 
     monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider(SleeperAPIError("Sleeper is down")))
     client = TestClient(web.create_app())
@@ -495,7 +495,7 @@ def test_a_shell_variable_is_reported_so_a_futile_edit_is_visible(
 def test_a_domain_error_carries_a_code_the_client_can_act_on(client: TestClient) -> None:
     """The message deliberately names no command, so the client needs this to
     know it can offer a button."""
-    from thefrontoffice.domain.errors import YahooLoginRequiredError
+    from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(web.data, "build_provider", _raising(YahooLoginRequiredError()))
@@ -550,7 +550,7 @@ def test_progress_is_readable_while_it_waits(client: TestClient) -> None:
 
 def test_a_failed_handshake_is_reported_in_the_domains_words(monkeypatch: pytest.MonkeyPatch) -> None:
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
-    from thefrontoffice.domain.errors import YahooAuthError
+    from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAuthError
 
     monkeypatch.setattr(YahooClient, "login", classmethod(lambda cls, force=False: None))
     monkeypatch.setattr(YahooClient, "verify", classmethod(_raising(YahooAuthError())))
@@ -600,7 +600,7 @@ def _with_readiness(monkeypatch: pytest.MonkeyPatch, sport: str, check: Any) -> 
 
 def test_a_configured_sport_can_still_be_unusable(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """Credentials being set says nothing about whether the platform answers."""
-    from thefrontoffice.domain.errors import YahooLoginRequiredError
+    from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
 
     monkeypatch.setattr(web.settings, "yahoo_client_id", "id")
     monkeypatch.setattr(web.settings, "yahoo_client_secret", "secret")
@@ -812,7 +812,7 @@ def test_the_week_carries_its_chance_of_winning(client: TestClient, monkeypatch:
 
 
 def test_a_week_that_cannot_be_simulated_is_still_the_week(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    from thefrontoffice.domain.errors import SleeperAPIError
+    from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
     from thefrontoffice.domain.models import Stat, Summary
 
     week = Summary(headline=[Stat(label="Week", value="7")])
@@ -872,7 +872,7 @@ def test_sorting_by_the_chance_orders_the_page_from_the_default_ranking(
 def test_free_agents_that_cannot_be_priced_are_still_the_wire(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from thefrontoffice.domain.errors import SleeperAPIError
+    from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 
     monkeypatch.setattr(web.data, "build_provider", lambda sport: _WireProvider(None, SleeperAPIError("down")))
 
@@ -982,7 +982,7 @@ def test_the_table_carries_each_teams_playoff_chance(client: TestClient, monkeyp
 def test_a_season_that_cannot_be_simulated_is_still_the_league(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from thefrontoffice.domain.errors import SleeperAPIError
+    from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
     from thefrontoffice.domain.models import Summary
 
     monkeypatch.setattr(web.data, "build_provider", lambda sport: _SeasonProvider(Summary(), SleeperAPIError("down")))
@@ -995,7 +995,8 @@ def test_a_season_that_cannot_be_simulated_is_still_the_league(
 
 def test_a_platform_that_is_down_is_a_503_that_says_so(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """Nothing in the request was wrong, so it is not a 400."""
-    from thefrontoffice.domain.errors import FPLUnavailableError, PlatformUnavailableError
+    from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLUnavailableError
+    from thefrontoffice.domain.errors import PlatformUnavailableError
 
     monkeypatch.setattr(
         web.data, "build_provider", lambda sport: FakeProvider(FPLUnavailableError("FPL", "it answered 503"))

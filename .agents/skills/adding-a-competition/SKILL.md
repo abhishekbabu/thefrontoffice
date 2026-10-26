@@ -31,7 +31,11 @@ several platforms, and one platform hosts several competitions of a sport.
      candidate pool
 2. **Prompt template** in `config/constants.py`, rendered by `build_context`.
    Name it `<SPORT>_<REPORT>_PROMPT`.
-3. **Registration** — one `CompetitionEntry` in `bootstrap.py`.
+3. **Registration** — one `CompetitionEntry` in `bootstrap.py`, whose `build`
+   constructs the platform clients and hands them in: a provider never builds
+   its own. Its capability flags (`supports_trades`, `judges_wire`,
+   `plans_ahead`) must match the ports the provider implements, which
+   `tests/test_bootstrap.py` checks.
 4. **Tests** — a fake platform client, and assertions on the *prompt content*:
    this is where the league rules actually live.
 

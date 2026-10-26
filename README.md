@@ -346,7 +346,10 @@ src/thefrontoffice/
 ```
 
 No adapter is named in `domain/` or `application/`; the engines take an
-`AnalysisModel` port rather than a vendor client. Adding a competition is a
+`AnalysisModel` port rather than a vendor client, and the domain's errors name
+no platform — each platform's live in its own `platforms/<p>/errors.py`.
+Providers are handed their clients by `bootstrap.py`, never build them.
+`tests/test_architecture.py` checks the import direction and both of these. Adding a competition is a
 provider, a prompt template and one `CompetitionEntry` — see the
 [`adding-a-competition`](.agents/skills/adding-a-competition/SKILL.md) skill.
 

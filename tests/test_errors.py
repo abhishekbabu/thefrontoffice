@@ -2,6 +2,7 @@
 
 import pytest
 
+from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError
 from thefrontoffice.domain.errors import (
     AIResponseError,
     AIUnavailableError,
@@ -9,7 +10,6 @@ from thefrontoffice.domain.errors import (
     PlayerNotFoundError,
     TeamNotFoundError,
     TradeParseError,
-    YahooAPIError,
 )
 
 

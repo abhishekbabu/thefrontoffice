@@ -22,6 +22,7 @@ from typing import Any, Protocol
 from tenacity import Retrying
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     MAX_FREE_TRANSFERS,
     POSITIONS,
@@ -45,7 +46,6 @@ from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
 from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
 from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.errors import FPLAPIError, FPLUnavailableError
 
 logger = logging.getLogger(__name__)
 

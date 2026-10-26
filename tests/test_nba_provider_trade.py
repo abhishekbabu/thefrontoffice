@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from conftest import FakeNBA, FakeYahoo, capture_logs, make_player
+from conftest import FakeNBA, FakeSleeperProjections, FakeYahoo, capture_logs, make_player
 
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.domain.errors import PlayerNotFoundError
@@ -20,7 +20,9 @@ def _provider(yahoo: FakeYahoo) -> YahooNBAProvider:
     return YahooNBAProvider(
         SimpleNamespace(id="1", name="One"),
         nba=FakeNBA(),
-        yahoo=yahoo,
+        yahoo_for=lambda _: yahoo,
+        sleeper=FakeSleeperProjections(),
+        max_weekly_adds=3,
     )
 
 

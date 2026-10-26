@@ -26,7 +26,7 @@ from thefrontoffice.domain.models import (
     TradeIdea,
     TradeOption,
 )
-from thefrontoffice.domain.ports import SeasonProvider
+from thefrontoffice.domain.ports import SeasonProvider, TradeMarketProvider
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +164,13 @@ class SeasonEngine:
             return None
         logger.info(f"{self.provider.label}: simulating {len(season.fixtures)} fixtures to the playoffs")
         return simulate_season(season)
+
+
+class MarketEngine:
+    """The trades worth offering, priced against the playoff race."""
+
+    def __init__(self, provider: TradeMarketProvider):
+        self.provider = provider
 
     def trades(self, league_id: str) -> list[TradeIdea]:
         """The trades that most raise your playoff chance, best first; none past the deadline.

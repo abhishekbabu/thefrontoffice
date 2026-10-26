@@ -17,7 +17,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.client import (
     SleeperClient,
     _is_retryable,
 )
-from thefrontoffice.domain.errors import SleeperAPIError, SleeperUnavailableError
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
 
 
 class FakeResponse:

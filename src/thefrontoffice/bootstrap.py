@@ -18,7 +18,7 @@ from thefrontoffice.application.asking import AskEngine
 from thefrontoffice.application.forecasting import ForecastEngine
 from thefrontoffice.application.items import ItemDecisions
 from thefrontoffice.application.scouting import ScoutEngine
-from thefrontoffice.application.season import SeasonEngine
+from thefrontoffice.application.season import MarketEngine, SeasonEngine
 from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.application.wire import WireEngine
 from thefrontoffice.config.settings import settings
@@ -27,11 +27,13 @@ from thefrontoffice.domain.ports import (
     CompetitionProvider,
     ForecastProvider,
     SeasonProvider,
+    TradeMarketProvider,
     TradeProvider,
     WireProvider,
 )
 
 if TYPE_CHECKING:
+    from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
     from thefrontoffice.adapters.outbound.llm.routing import Cooldowns
 
 logger = logging.getLogger(__name__)
@@ -73,17 +75,20 @@ class CompetitionEntry:
     out. Must stay cheap and non-interactive: it runs on every page load.
     """
 
-    supports_trades: bool = False
-    judges_wire: bool = False
-    plans_ahead: bool = False
-    """Whether its coming weeks and trades can be planned — the provider is an OutlookProvider and a SeasonProvider."""
-    """Whether its available players can be judged — the provider is a WireProvider."""
-    """Whether trade evaluation works for this sport.
+    # What the competition can do beyond the CompetitionProvider every one is.
+    # Declared here rather than tested as `sport == "nba"` at each call site,
+    # and because a client asks before any provider is built — building Yahoo's
+    # touches the network. `tests/test_bootstrap.py` holds each to the ports
+    # its provider actually implements, so the two cannot drift.
 
-    Declared here rather than tested as `sport == "nba"` at each call site, so
-    adding trade support to a sport is a flag rather than a hunt through the CLI
-    and the UI.
-    """
+    supports_trades: bool = False
+    """Whether a proposed trade can be evaluated: the provider is a TradeProvider."""
+
+    judges_wire: bool = False
+    """Whether its available players can be judged: the provider is a WireProvider."""
+
+    plans_ahead: bool = False
+    """Whether its coming weeks and trades worth offering can be shown: an OutlookProvider and a TradeMarketProvider."""
 
     @property
     def key(self) -> str:
@@ -95,10 +100,17 @@ class CompetitionEntry:
         return f"{self.competition}-{self.platform}"
 
 
-def _build_nfl() -> CompetitionProvider:
+def nfl_provider() -> SleeperNFLProvider:
+    """The NFL provider, wired to the real clients: for the scripts that need its own methods, not just the port."""
     from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
+    from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
+    from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
 
-    return SleeperNFLProvider()
+    return SleeperNFLProvider(settings.sleeper_username, client=SleeperClient(), espn=ESPNClient())
+
+
+def _build_nfl() -> CompetitionProvider:
+    return nfl_provider()
 
 
 def _check_yahoo_ready() -> None:
@@ -110,8 +122,9 @@ def _check_yahoo_ready() -> None:
 
 def _build_fpl() -> CompetitionProvider:
     from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
+    from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
 
-    return FPLProvider()
+    return FPLProvider(settings.fpl_entry_id, client=FPLClient())
 
 
 def _build_nba() -> CompetitionProvider:
@@ -122,7 +135,9 @@ def _build_nba() -> CompetitionProvider:
     an absent token is reported rather than obtained, because the handshake
     opens a browser and this runs inside a request handler as often as not.
     """
+    from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm
     from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
+    from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
     from thefrontoffice.adapters.outbound.platforms.yahoo import client as yahoo
     from thefrontoffice.domain.errors import LeagueNotFoundError
 
@@ -131,7 +146,15 @@ def _build_nba() -> CompetitionProvider:
     leagues = yahoo.YahooClient.find_leagues(ctx, "nba", YahooNBAProvider.season_year())
     if not leagues:
         raise LeagueNotFoundError("no Yahoo NBA leagues for this season")
-    return YahooNBAProvider(leagues[0], all_leagues=leagues)
+    sleeper = SleeperClient()
+    return YahooNBAProvider(
+        leagues[0],
+        all_leagues=leagues,
+        nba=SleeperNBAForm(sleeper),
+        yahoo_for=yahoo.YahooClient,
+        sleeper=sleeper,
+        max_weekly_adds=settings.yahoo_max_weekly_adds,
+    )
 
 
 REGISTRY: tuple[CompetitionEntry, ...] = (
@@ -270,6 +293,11 @@ def forecast_engine(provider: ForecastProvider) -> ForecastEngine:
 def season_engine(provider: SeasonProvider) -> SeasonEngine:
     """A provider's regular season, simulated to the playoffs. Needs no model either."""
     return SeasonEngine(provider)
+
+
+def market_engine(provider: TradeMarketProvider) -> MarketEngine:
+    """The trades worth offering, priced in playoff chance. Needs no model either."""
+    return MarketEngine(provider)
 
 
 def item_decisions() -> ItemDecisions:

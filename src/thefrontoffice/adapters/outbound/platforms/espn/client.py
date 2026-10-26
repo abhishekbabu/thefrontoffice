@@ -22,12 +22,12 @@ from typing import Any, Protocol
 from tenacity import Retrying
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError, ESPNUnavailableError
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
 from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
 from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.errors import ESPNAPIError, ESPNUnavailableError
 
 logger = logging.getLogger(__name__)
 

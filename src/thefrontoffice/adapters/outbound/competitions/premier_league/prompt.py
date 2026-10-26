@@ -18,6 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
     points_with_captain,
 )
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource, free_transfers
+from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     TRANSFER_HIT,
     Entry,
@@ -27,7 +28,6 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     as_millions,
 )
 from thefrontoffice.config.constants import FPL_SCOUT_PROMPT
-from thefrontoffice.domain.errors import FPLAPIError
 from thefrontoffice.domain.models import CompetitionContext, Stat
 
 logger = logging.getLogger(__name__)

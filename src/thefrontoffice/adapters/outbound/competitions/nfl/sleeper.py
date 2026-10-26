@@ -41,15 +41,18 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,
     Week,
     games_by_week,
+    left_in,
     projection_for,
     week_dates,
     zero_projection,
 )
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.espn import types as espn
-from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient, ESPNSource
+from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
+from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL, SleeperClient, SleeperNFLSource
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL, SleeperNFLSource
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     FANTASY_POSITIONS,
     PlayerMeta,
@@ -60,14 +63,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     WeeklyProjection,
 )
 from thefrontoffice.config.constants import NFL_TRADE_PROMPT, NFL_WIRE_PROMPT
-from thefrontoffice.config.settings import settings
-from thefrontoffice.domain.errors import (
-    ESPNAPIError,
-    LeagueNotFoundError,
-    PlayerNotFoundError,
-    SleeperAPIError,
-    TeamNotFoundError,
-)
+from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
     Action,
@@ -182,12 +178,11 @@ class SleeperNFLProvider:
     competition = "nfl"
     label = "NFL (Sleeper)"
 
-    def __init__(
-        self, username: str | None = None, *, client: SleeperNFLSource | None = None, espn: ESPNSource | None = None
-    ):
-        self.username = username or settings.sleeper_username
-        self.client = client or SleeperClient()
-        self.espn = espn or ESPNClient()
+    def __init__(self, username: str | None, *, client: SleeperNFLSource, espn: ESPNSource):
+        """Every collaborator from bootstrap, which is the one place a real client is built."""
+        self.username = username
+        self.client = client
+        self.espn = espn
         self._user_id: str | None = None
         # One request's week, kept for that request: the summary and the
         # forecast beside it both need it, and gathering it is most of the wait.
@@ -994,7 +989,7 @@ class SleeperNFLProvider:
                 spread,
                 status=status.get(player.team, ""),
                 scored=live.points.get(player.player_id, 0.0),
-                left=board[player.team].left if player.team in board else outcomes.UNDER_WAY,
+                left=left_in(board[player.team]) if player.team in board else outcomes.UNDER_WAY,
             )
 
         mine = tuple(outcome(slot.player) for slot in state.lineup if slot.player)

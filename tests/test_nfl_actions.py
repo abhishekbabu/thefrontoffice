@@ -350,7 +350,7 @@ def test_only_finished_weeks_are_read_for_evidence() -> None:
 
 
 def test_stat_lines_that_will_not_load_leave_the_list_without_evidence() -> None:
-    from thefrontoffice.domain.errors import SleeperAPIError
+    from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 
     client = _client([QB, _ruled_out(RB), WR, FLEX, BENCH_RB], ["qb", "rb", "wr", "te"], ["rb2"])
     client.game_lines_error = SleeperAPIError("down")
@@ -376,7 +376,7 @@ def test_a_move_carries_the_latest_headline_about_each_player_in_it() -> None:
 
 
 def test_news_that_will_not_load_leaves_the_list_as_it_was() -> None:
-    from thefrontoffice.domain.errors import ESPNAPIError
+    from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 
     client = _client([QB, _ruled_out(RB), WR, FLEX, BENCH_RB], ["qb", "rb", "wr", "te"], ["rb2"])
 
