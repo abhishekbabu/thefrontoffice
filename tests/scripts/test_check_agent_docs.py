@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 import check_agent_docs as checker  # noqa: E402
 
@@ -112,7 +112,7 @@ def test_ignored_directories_are_skipped(tmp_path: Path) -> None:
 
 
 def test_this_repo_satisfies_every_convention() -> None:
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[2]
     assert checker.check_symlinks(root) == []
     assert checker.check_siblings(root) == []
     assert checker.check_length(root) == []
@@ -121,7 +121,7 @@ def test_this_repo_satisfies_every_convention() -> None:
 
 def test_every_skill_is_discoverable_through_the_claude_symlink() -> None:
     """Claude finds skills via .claude/skills -> .agents/skills; a copy would rot."""
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[2]
     link = root / ".claude" / "skills"
     assert link.is_symlink() or link.exists()
     assert link.resolve() == (root / ".agents" / "skills").resolve()

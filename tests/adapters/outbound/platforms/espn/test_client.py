@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from test_fpl_client import FakeSession
+from conftest import FakeSession
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient

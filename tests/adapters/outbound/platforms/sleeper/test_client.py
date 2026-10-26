@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 import requests
+from conftest import FakeResponse, FakeSession
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import (
@@ -17,41 +18,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.client import (
     _is_retryable,
 )
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
-
-
-class FakeResponse:
-    def __init__(self, payload: Any, status: int = 200) -> None:
-        self._payload = payload
-        self.status_code = status
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            # A real Response carrying the status, which is all the retry and
-            # outage checks read off a failure.
-            failed = requests.Response()
-            failed.status_code = self.status_code
-            raise requests.exceptions.HTTPError(response=failed)
-
-    def json(self) -> Any:
-        return self._payload
-
-
-class FakeSession:
-    """Serves canned payloads by URL substring, counting requests."""
-
-    def __init__(self, routes: dict[str, Any], error: Exception | None = None) -> None:
-        self.routes = routes
-        self.error = error
-        self.requests: list[str] = []
-
-    def get(self, url: str, timeout: int = 0) -> FakeResponse:
-        self.requests.append(url)
-        if self.error:
-            raise self.error
-        for fragment, payload in self.routes.items():
-            if fragment in url:
-                return FakeResponse(payload)
-        return FakeResponse(None, status=404)
 
 
 @pytest.fixture

@@ -584,3 +584,20 @@ def test_a_free_agent_whose_role_grew_says_so_in_the_usage_column() -> None:
 
     assert next(iter(cards)) == "wr9"
     assert cards["wr9"]["Usage"].startswith("snaps")
+
+
+# ── the roster as rows ──────────────────────────────────────────────────────
+
+
+def test_roster_rows_mark_starters_and_bench() -> None:
+    client = FakeSleeper(
+        projections=dict(DEFAULT_PROJECTIONS),
+        rosters=[SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1"], starter_ids=["qb1"])],
+    )
+    rows = [c.columns for c in _provider(client).roster("L1")]
+    assert {r["Player"]: r["Slot"] for r in rows} == {"Star QB": "START", "Good RB": "BN"}
+
+
+def test_roster_rows_skip_players_missing_from_the_catalog() -> None:
+    client = FakeSleeper(rosters=[SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["ghost"], starter_ids=[])])
+    assert _provider(client).roster("L1") == []

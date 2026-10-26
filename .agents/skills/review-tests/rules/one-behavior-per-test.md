@@ -30,7 +30,7 @@ def test_a_projection_is_carried_per_player() -> None:
 ## Shared setup, separate assertions
 
 Splitting does not mean repeating setup. Hoist it into a helper or fixture and
-keep one assertion each — `tests/test_nba_provider_trade.py` does exactly this
+keep one assertion each — `tests/adapters/outbound/competitions/nba/test_yahoo_trade.py` does exactly this
 with its `_context()` helper.
 
 ## Where several assertions are one behavior

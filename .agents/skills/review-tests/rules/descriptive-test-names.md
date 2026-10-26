@@ -4,7 +4,7 @@ A test name is read far more often than the body — in failure output, in a dif
 in a suite listing. It should say the scenario and the expected outcome, so a
 failure is legible before anyone opens the file.
 
-This repo already sets the bar. From `tests/test_names.py`:
+This repo already sets the bar. From `tests/adapters/outbound/competitions/test_names.py`:
 
 ```python
 def test_an_ambiguous_surname_resolves_to_nothing() -> None:

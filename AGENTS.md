@@ -168,9 +168,9 @@ rather than `categories_gained`.
 
 ## Testing
 
-Mirror the source layout. The default suite must stay hermetic: no network, no
-credentials, no cache on disk. Engines and providers take their collaborators
-by keyword — use the fakes in `tests/conftest.py` rather than monkeypatching. Providers type each client as
+Mirror the source layout: `src/thefrontoffice/<path>/<module>.py` is tested in `tests/<path>/test_<module>.py`
+(scripts in `tests/scripts/`). The default suite must stay hermetic: no network, no credentials, no cache on disk.
+Engines and providers take their collaborators by keyword — use the fakes in `tests/conftest.py`, never monkeypatching. Providers type each client as
 its `…Source` protocol, so a fake is checked against it: fix a drifted fake, never `type: ignore` it. Anything hitting
 a live API gets `@pytest.mark.integration`, which is deselected by default.
 

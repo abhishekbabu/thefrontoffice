@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import requests
 from reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
@@ -377,6 +378,50 @@ def _at_week(week: int, **extra: Any) -> FakeSleeper:
     client = _league_client(**extra)
     client.week = week
     return client
+
+
+# ── HTTP ────────────────────────────────────────────────────────────────
+
+
+class FakeResponse:
+    """A `requests` response carrying a payload and a status."""
+
+    def __init__(self, payload: Any, status: int = 200) -> None:
+        self._payload = payload
+        self.status_code = status
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            # A real Response carrying the status, which is all the retry and
+            # outage checks read off a failure.
+            failed = requests.Response()
+            failed.status_code = self.status_code
+            raise requests.exceptions.HTTPError(response=failed)
+
+    def json(self) -> Any:
+        return self._payload
+
+
+class FakeSession:
+    """Stands in for a `requests` session for the public-API clients: canned payloads by URL substring.
+
+    The first route whose fragment is in the URL answers, so list the most
+    specific first; anything unrouted is a 404. Every URL asked for is kept.
+    """
+
+    def __init__(self, routes: dict[str, Any], error: Exception | None = None) -> None:
+        self.routes = routes
+        self.error = error
+        self.requests: list[str] = []
+
+    def get(self, url: str, timeout: int = 0) -> FakeResponse:
+        self.requests.append(url)
+        if self.error:
+            raise self.error
+        for fragment, payload in self.routes.items():
+            if fragment in url:
+                return FakeResponse(payload)
+        return FakeResponse(None, status=404)
 
 
 # ── basketball ──────────────────────────────────────────────────────────

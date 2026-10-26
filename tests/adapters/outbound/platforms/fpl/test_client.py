@@ -6,10 +6,10 @@ HTTP session and the disk cache stand in.
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import pytest
 import requests
+from conftest import FakeSession
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.client import (
@@ -130,53 +130,9 @@ ROUTES = {
 }
 
 
-class FakeResponse:
-    def __init__(self, payload: Any, status: int = 200) -> None:
-        self._payload = payload
-        self.status_code = status
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            # A real Response carrying the status, which is all the retry and
-            # outage checks read off a failure.
-            failed = requests.Response()
-            failed.status_code = self.status_code
-            raise requests.exceptions.HTTPError(response=failed)
-
-    def json(self) -> Any:
-        return self._payload
-
-
-class FakeSession:
-    """Serves canned payloads by URL substring, most specific route first."""
-
-    def __init__(self, routes: dict[str, Any] | None = None, error: Exception | None = None) -> None:
-        self.routes = ROUTES if routes is None else routes
-        self.error = error
-        self.requests: list[str] = []
-
-    def get(self, url: str, timeout: int = 0) -> FakeResponse:
-        self.requests.append(url)
-        if self.error:
-            raise self.error
-        for fragment, payload in self.routes.items():
-            if fragment in url:
-                return FakeResponse(payload)
-        return FakeResponse(None, status=404)
-
-
-@pytest.fixture
-def no_retry_wait(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep the hermetic suite fast — the backoff is real seconds otherwise."""
-    import thefrontoffice.adapters.outbound.platforms.fpl.client as mod
-
-    original = mod._retry
-    monkeypatch.setattr(mod, "_retry", lambda: original().copy(wait=lambda _: 0))
-
-
 @pytest.fixture
 def client(tmp_path: Path) -> FPLClient:
-    return FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession())
+    return FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession(ROUTES))
 
 
 # ── the bootstrap payload ───────────────────────────────────────────────
@@ -188,7 +144,7 @@ def test_teams_map_to_abbreviations(client: FPLClient) -> None:
 
 def test_the_bootstrap_is_fetched_once_per_instance(tmp_path: Path) -> None:
     """A report reads it five times; re-parsing a megabyte each time is waste."""
-    session = FakeSession()
+    session = FakeSession(ROUTES)
     client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=session)
     client.get_teams()
     client.get_players()
@@ -198,7 +154,7 @@ def test_the_bootstrap_is_fetched_once_per_instance(tmp_path: Path) -> None:
 
 def test_an_empty_bootstrap_raises(tmp_path: Path) -> None:
     """A 200 carrying nothing usable is not a transport failure, so it is not retried."""
-    client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession(routes={"bootstrap-static": {}}))
+    client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession({"bootstrap-static": {}}))
     with pytest.raises(FPLAPIError, match="no player data"):
         client.get_teams()
 
@@ -278,7 +234,7 @@ def test_a_classic_league_is_not_marked_head_to_head(client: FPLClient) -> None:
 
 def test_an_unknown_entry_raises(tmp_path: Path) -> None:
     """A 200 carrying nothing usable is not a transport failure, so it is not retried."""
-    client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession(routes={"/entry/77/": {}}))
+    client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession({"/entry/77/": {}}))
     with pytest.raises(FPLAPIError, match="No FPL entry"):
         client.get_entry(77)
 
@@ -296,7 +252,7 @@ def test_a_squad_reads_its_picks_and_its_money(client: FPLClient) -> None:
 
 def test_a_missing_squad_raises(tmp_path: Path) -> None:
     """A 200 carrying nothing usable is not a transport failure, so it is not retried."""
-    client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession(routes={"/entry/77/event/": {}}))
+    client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession({"/entry/77/event/": {}}))
     with pytest.raises(FPLAPIError, match="No FPL squad"):
         client.get_squad(77, 2)
 
