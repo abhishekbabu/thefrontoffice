@@ -721,8 +721,9 @@ class SleeperNFLProvider:
         # flagging every player for having no game turns the page amber over a
         # date rather than a decision. It only means something when others do.
         scheduled = any(p.opponent for p in state.projected)
+        # No fixture notes: a bye is on the player's own row, and on the to-do
+        # list when it costs a starter, so a list of clubs would say it twice.
         games = self._games(state)
-        playing = {club for game in games.get(state.week, []) for club in (game.home, game.away)}
 
         return Summary(
             headline=prompt.headline(state.roster, state.week, state.current_points, state.best_points, state.on_bench)
@@ -747,12 +748,6 @@ class SleeperNFLProvider:
                     gain=f"+{change.gain:.1f} proj pts",
                 )
                 for change in state.changes
-            ],
-            fixtures=[
-                Stat(label=club, value="no game this week", tone="warning")
-                # Clubs absent from the week's games, not players without a
-                # projection: an injured player has none, and his club still plays.
-                for club in sorted({p.team for p in state.projected if playing and p.team not in playing})
             ],
             actions=self._with_short_week(state, league_id, self._actions(state, league_id, games)),
             window=self._window(state, games),

@@ -234,6 +234,13 @@ your results, with the playoff bracket set apart; the table (with each team's
 playoff chance, on NFL); every roster; the fixture list; and the transaction
 feed. Any player row opens the player.
 
+The other competitions keep the same split. On FPL, the gameweek's header is
+the deadline, the eleven's expected points (with the best eleven's, when the
+bench holds more), the bank and the free transfers; season points, overall rank
+and the mini-league place head League; and **Watch out for** names a club with
+a blank or a double gameweek, which no player row can say. On NBA, the week's
+header is the add budget left, and League is headed by your record and place.
+
 ![Player detail](docs/screenshots/player.png)
 
 The model has no page of its own. It annotates the pages that exist — verdicts

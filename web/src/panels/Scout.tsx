@@ -189,6 +189,21 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
             </Card>
           )}
 
+          {/* Only what a row cannot say for itself: a blank or a double gameweek
+              changes what a whole club's players are worth. */}
+          {week.data.fixtures.length > 0 && (
+            <ListCard title="Watch out for">
+              {week.data.fixtures.map((fixture) => (
+                <ListRow key={fixture.label}>
+                  <span className="w-14 shrink-0 font-mono text-[11px] text-muted-foreground">{fixture.label}</span>
+                  <span className={fixture.tone === "warning" ? "text-warn" : fixture.tone === "good" ? "text-ok" : "text-muted-foreground"}>
+                    {fixture.value}
+                  </span>
+                </ListRow>
+              ))}
+            </ListCard>
+          )}
+
           {!week.data.opponent && (
             <Badge variant="muted" appearance="label">
               No head-to-head fixture this week
