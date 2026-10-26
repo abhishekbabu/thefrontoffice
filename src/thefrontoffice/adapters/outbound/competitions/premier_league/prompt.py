@@ -74,7 +74,7 @@ def build(
     constraints = _constraints(squad, allowance, best, current_points)
 
     return CompetitionContext(
-        headline=headline(entry, league_id, squad, allowance, best, current_points, upcoming),
+        headline=headline(squad, allowance, best, current_points, upcoming),
         prompt=FPL_SCOUT_PROMPT.format(
             situation=situation,
             constraints=constraints,
@@ -95,40 +95,40 @@ def build(
     )
 
 
-def headline(
-    entry: Entry,
-    league_id: str,
-    squad: Squad,
-    allowance: int,
-    best: Lineup,
-    current_points: float,
-    upcoming: Gameweek,
-) -> list[Stat]:
-    """Where this squad stands, in FPL's own currency.
+def headline(squad: Squad, allowance: int, best: Lineup, current_points: float, upcoming: Gameweek) -> list[Stat]:
+    """What the gameweek turns on before its deadline: the eleven, and the money and moves left to change it.
 
-    Points left on the bench is the only figure here that is a mistake
-    rather than a fact, so it is the only one that ever warns — and only
-    when the current eleven really is behind the best legal one.
+    The season's own figures — points, overall rank, the mini-league — are
+    the league view's, and the gameweek is already in the page's title.
+    Points left on the bench is the only figure here that is a mistake rather
+    than a fact, so it is the only one that ever warns — and only when the
+    current eleven really is behind the best legal one.
     """
     behind = round(best.points - current_points, 1)
-    league = next((lg for lg in entry.leagues if str(lg.id) == league_id), None)
-
-    stats = [
-        Stat(label="Gameweek", value=str(upcoming.id)),
+    lineup = (
+        Stat(label="Lineup", value=f"{current_points:.1f} · best {best.points:.1f} xPts", tone="warning")
+        if behind > 0
+        else Stat(label="Lineup", value=f"{current_points:.1f} xPts")
+    )
+    return [
         # Shown in UTC, which is what the API states. A local rendering would
         # be friendlier and would also be a guess about where this is read.
         Stat(label="Deadline", value=f"{upcoming.deadline:%a %d %b %H:%M} UTC"),
-        Stat(label="Points", value=f"{entry.overall_points:,}"),
-        Stat(label="Overall", value=f"{entry.overall_rank:,}"),
-    ]
-    if league:
-        stats.append(Stat(label="Mini-league", value=league.standing))
-    stats += [
+        lineup,
         Stat(label="Bank", value=as_millions(squad.bank)),
         Stat(label="Free transfers", value=str(allowance), tone="good" if allowance else "neutral"),
     ]
-    if behind > 0:
-        stats.append(Stat(label="On bench", value=f"+{behind:.1f} xPts", tone="warning"))
+
+
+def season_headline(entry: Entry, league_id: str) -> list[Stat]:
+    """How the season is going, in FPL's own currency: points, overall rank, and this mini-league."""
+    league = next((lg for lg in entry.leagues if str(lg.id) == league_id), None)
+    stats = [
+        Stat(label="Points", value=f"{entry.overall_points:,}"),
+        Stat(label="Overall rank", value=f"{entry.overall_rank:,}"),
+    ]
+    if league:
+        stats.append(Stat(label="Mini-league", value=league.standing))
     return stats
 
 

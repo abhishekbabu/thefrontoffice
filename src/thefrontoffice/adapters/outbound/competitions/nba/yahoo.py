@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 from yahoofantasy import League, Player
 
-from thefrontoffice.adapters.outbound.competitions import paging
+from thefrontoffice.adapters.outbound.competitions import paging, places
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
 from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, FormSource, SleeperNBAForm
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
@@ -151,7 +151,7 @@ class YahooNBAProvider:
     def summary(self, league_id: str) -> Summary:
         """The header, without the free-agent pool or the model.
 
-        Only the roster and the add budget. Yahoo hands the matchup back as
+        Only the add budget. Yahoo hands the matchup back as
         prose it has already rendered, so there is nothing structured to lift
         out of it without parsing what the model is meant to read — and a
         category league has no lineup to set, so there is no side to show.
@@ -159,15 +159,7 @@ class YahooNBAProvider:
         my_team = self.yahoo.get_user_team()
         used = my_team.roster_adds.value
         limit = settings.yahoo_max_weekly_adds
-        remaining = max(0, limit - used)
-        return Summary(
-            headline=[
-                Stat(label="Team", value=str(my_team.name)),
-                Stat(label="Roster", value=str(len(list(my_team.players())))),
-                Stat(label="Adds used", value=f"{used}/{limit}"),
-                Stat(label="Adds left", value=str(remaining), tone="good" if remaining else "warning"),
-            ]
-        )
+        return Summary(headline=_adds(used, limit))
 
     def schedule(self, league_id: str) -> LeagueSchedule:
         """The league table, which is the only one of these Yahoo gives cheaply.
@@ -180,7 +172,8 @@ class YahooNBAProvider:
         """
         self._select_into(league_id)
         mine = self.yahoo.get_user_team()
-        return LeagueSchedule(standings=self._standings(mine))
+        standings = self._standings(mine)
+        return LeagueSchedule(headline=_season(standings), standings=standings)
 
     def _standings(self, mine: Any) -> list[StandingRow]:
         """Read defensively: yahoofantasy sets these by setattr at runtime, so
@@ -523,18 +516,7 @@ class YahooNBAProvider:
             extra=schedule_context,
             roster_lines=roster_lines,
             candidate_lines=fa_lines,
-            headline=[
-                Stat(label="Team", value=str(my_team.name)),
-                Stat(label="Roster", value=str(len(roster_lines))),
-                Stat(label="Adds used", value=f"{used_adds}/{limit}"),
-                # An exhausted add budget is the constraint the whole report
-                # bends around — it turns every recommendation into a MONITOR.
-                Stat(
-                    label="Adds left",
-                    value=str(remaining_adds),
-                    tone="good" if remaining_adds else "warning",
-                ),
-            ],
+            headline=_adds(used_adds, limit),
         )
 
     def _rank_free_agents(self) -> tuple[list[Player], dict[str, str]]:
@@ -561,3 +543,26 @@ class YahooNBAProvider:
         players = [player_by_key[key] for key, _ in ranked]
         annotations = {key: f"[Top in: {', '.join(cats)}]" for key, cats in ranked}
         return players, annotations
+
+
+def _adds(used: int, limit: int) -> list[Stat]:
+    """The week's add budget, as what is left of it.
+
+    The one figure the week turns on: an exhausted budget is the constraint
+    the whole report bends around, turning every recommendation into a
+    MONITOR, so it warns. The team's name is the page's title already, and
+    the roster's size is My team's to say.
+    """
+    left = max(0, limit - used)
+    return [Stat(label="Adds left", value=f"{left} of {limit}", tone="good" if left else "warning")]
+
+
+def _season(standings: list[StandingRow]) -> list[Stat]:
+    """Your record and where it puts you: the season in figures, at the head of the league view."""
+    mine = next((row for row in standings if row.is_mine), None)
+    if mine is None:
+        return []
+    stats = [Stat(label="Record", value=mine.record)] if mine.record else []
+    if mine.rank:
+        stats.append(Stat(label="Place", value=places.place(mine.rank, len(standings))))
+    return stats

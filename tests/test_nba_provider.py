@@ -40,7 +40,7 @@ def test_headline_figures_come_from_the_platform_not_the_model() -> None:
     report, _ = _scout(FakeYahoo(adds_used=1), ai=FakeAI(report=invented)).start_analysis("")
 
     labels = {stat.label: stat.value for stat in report.headline}
-    assert labels["Adds used"] == "1/3"
+    assert labels["Adds left"] == "2 of 3"
     assert "1" not in [s.value for s in report.headline if s.label == "Overall"]
 
 
@@ -50,7 +50,7 @@ def test_an_exhausted_add_budget_is_flagged_rather_than_stated() -> None:
     report, _ = _scout(FakeYahoo(adds_used=3), ai=FakeAI()).start_analysis("")
 
     left = next(stat for stat in report.headline if stat.label == "Adds left")
-    assert (left.value, left.tone) == ("0", "warning")
+    assert (left.value, left.tone) == ("0 of 3", "warning")
 
 
 def test_follow_up_chat_is_seeded_with_the_report() -> None:
@@ -415,6 +415,20 @@ def test_a_record_includes_ties_only_where_there_are_any() -> None:
 
     assert standings[0].record == "5-1"
     assert standings[1].record == "4-2-1"
+
+
+def test_the_season_is_headed_by_your_record_and_place() -> None:
+    headline = {stat.label: stat.value for stat in _provider(FakeYahoo()).schedule("").headline}
+
+    assert headline == {"Record": "4-2-1", "Place": "2nd of 2"}
+
+
+def test_without_your_row_in_the_table_the_season_has_no_figures_to_head_it() -> None:
+    from types import SimpleNamespace
+
+    yahoo = FakeYahoo(teams=[SimpleNamespace(name="Half-loaded", team_key="t.9")])
+
+    assert _provider(yahoo).schedule("").headline == []
 
 
 def test_a_team_with_no_standings_block_is_skipped_rather_than_failing() -> None:

@@ -97,11 +97,6 @@ def test_a_week_with_no_fixture_shows_no_opponent() -> None:
     assert _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).summary("L1").opponent is None
 
 
-def test_a_bye_is_reported_once_per_club_not_once_per_player() -> None:
-    byes = {stat.label for stat in _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).summary("L1").fixtures}
-    assert byes == set()  # every fake projection has an opponent
-
-
 def test_a_player_carries_their_week_and_their_depth() -> None:
     detail = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).player("L1", "qb1")
     labels = {stat.label: stat.value for group in detail.groups for stat in group.stats}
@@ -369,20 +364,16 @@ def _bench_detail(client: FakeSleeper) -> str:
     return next(s.detail for s in mine(_provider(client).summary("L1")).bench if s.player_id == "rb1")
 
 
-def test_a_player_ruled_out_reads_differently_from_one_on_bye() -> None:
-    """His club plays: "no game" would send somebody looking for a bye that is not there."""
-    assert _bench_detail(_with_injury("Out")) != _bench_detail(_with_injury(""))
-
-
-def test_an_injured_player_does_not_put_his_club_on_the_bye_list() -> None:
-    assert _provider(_with_injury("Out")).summary("L1").fixtures == []
-
-
-def test_a_club_missing_from_the_weeks_games_is_on_the_bye_list() -> None:
+def test_the_week_sends_no_fixture_notes_since_its_rows_and_to_do_list_carry_the_byes() -> None:
     client = _with_injury("")
     client.season_schedule = [ScheduledGame(week=3, date="2026-09-24", home="KC", away="DEN")]
 
-    assert [stat.label for stat in _provider(client).summary("L1").fixtures] == ["BUF"]
+    assert _provider(client).summary("L1").fixtures == []
+
+
+def test_a_player_ruled_out_reads_differently_from_one_on_bye() -> None:
+    """His club plays: "no game" would send somebody looking for a bye that is not there."""
+    assert _bench_detail(_with_injury("Out")) != _bench_detail(_with_injury(""))
 
 
 def test_a_roster_reads_as_a_lineup_starters_then_bench_then_reserve() -> None:

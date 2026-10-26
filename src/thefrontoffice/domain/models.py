@@ -424,7 +424,8 @@ class Summary(BaseModel):
     to do."""
 
     fixtures: list[Stat] = Field(default_factory=list)
-    """The real-world matches behind the week, one per club in play."""
+    """What a player's own row cannot say about his club's week: a blank, a double.
+    Empty where the rows and the to-do list already carry it."""
 
     boosts: StatGroup | None = Field(
         default=None,

@@ -527,8 +527,6 @@ class FPLProvider:
 
         return Summary(
             headline=prompt.headline(
-                entry,
-                league_id,
                 squad,
                 # Keyed to the next deadline, because that is the one an
                 # allowance can still be spent against.
@@ -616,7 +614,10 @@ class FPLProvider:
         # Marked on the week being played, so the season table and the week
         # view agree about which row is "now".
         playing = current.id if current else self.client.upcoming_gameweek().id
-        return league.build(self.client, self._find_league(league_id, entry_id), entry_id, playing)
+        schedule = league.build(self.client, self._find_league(league_id, entry_id), entry_id, playing)
+        # The season's figures head the league view, which is the question they answer.
+        headline = prompt.season_headline(self.client.get_entry(entry_id), league_id)
+        return schedule.model_copy(update={"headline": headline})
 
     @staticmethod
     def _league_url(league: MiniLeague) -> str:

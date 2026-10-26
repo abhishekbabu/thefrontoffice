@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from thefrontoffice.adapters.outbound.competitions import places
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import lineup_points, optimal_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Week,
@@ -136,14 +137,8 @@ def _headline(state: Week, standings: list[StandingRow]) -> list[Stat]:
     place = next((row.rank for row in standings if row.is_mine), 0)
     stats = [Stat(label="Record", value=state.roster.record)]
     if place:
-        stats.append(Stat(label="Place", value=f"{_ordinal(place)} of {len(standings)}"))
+        stats.append(Stat(label="Place", value=places.place(place, len(standings))))
     return [*stats, Stat(label="Points for", value=f"{state.roster.points_for:.1f}")]
-
-
-def _ordinal(n: int) -> str:
-    """1st, 2nd, 3rd, 4th, 11th, 12th, 13th, 21st."""
-    suffix = "th" if 11 <= n % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
 
 
 def _other_side(matchups: list[dict[str, Any]], mine: dict[str, Any] | None, roster_id: int) -> Any:

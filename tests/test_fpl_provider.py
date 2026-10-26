@@ -584,19 +584,20 @@ def _headline(over: FPLProvider | None = None) -> dict[str, str]:
     return {stat.label: stat.value for stat in context.headline}
 
 
-def test_the_header_carries_the_squads_standing_and_its_money() -> None:
-    labels = _headline()
-    assert labels["Points"] == "412"
-    assert labels["Overall"] == "340,112"
-    assert labels["Mini-league"] == "3 of 12"
-    assert labels["Bank"] == "£3.0m"
+def test_the_gameweeks_header_carries_its_money_and_the_seasons_carries_its_standing() -> None:
+    """Points and rank answer how the season is going, which is the league view's question."""
+    week = _headline()
+    season = {stat.label: stat.value for stat in provider().schedule(LEAGUE_ID).headline}
+
+    assert week["Bank"] == "£3.0m" and "Points" not in week
+    assert (season["Points"], season["Overall rank"], season["Mini-league"]) == ("412", "340,112", "3 of 12")
 
 
 def test_points_left_on_the_bench_are_the_figure_that_warns() -> None:
     """The only entry that is a mistake rather than a fact."""
     context = provider().build_context(LEAGUE_ID)
-    bench = next(stat for stat in context.headline if stat.label == "On bench")
-    assert bench.tone == "warning"
+    lineup = next(stat for stat in context.headline if stat.label == "Lineup")
+    assert lineup.tone == "warning"
 
 
 def test_an_optimal_eleven_leaves_nothing_on_the_bench_to_report() -> None:
@@ -613,19 +614,21 @@ def test_an_optimal_eleven_leaves_nothing_on_the_bench_to_report() -> None:
     squad = Squad(gameweek=4, picks=picks, bank=30, value=1004)
 
     context = FPLProvider(ENTRY_ID, client=FakeFPL(squad=squad)).build_context(LEAGUE_ID)
-    assert not [stat for stat in context.headline if stat.label == "On bench"]
+    lineup = next(stat for stat in context.headline if stat.label == "Lineup")
+    assert lineup.tone == "neutral"
 
 
 def test_a_manager_in_no_mini_league_gets_no_mini_league_figure() -> None:
-    assert "Mini-league" not in _headline(provider(leagues=[]))
+    season = provider(leagues=[]).schedule(LEAGUE_ID).headline
+
+    assert "Mini-league" not in {stat.label for stat in season}
 
 
-def test_the_header_names_the_gameweek_and_when_it_locks() -> None:
-    """A transfer after the deadline counts for the week after it."""
+def test_the_header_says_when_the_gameweek_locks() -> None:
+    """A transfer after the deadline counts for the week after it. The gameweek itself is in the page's title."""
     labels = _headline()
 
-    assert labels["Gameweek"] == "5"
-    assert labels["Deadline"].endswith("UTC")
+    assert labels["Deadline"].endswith("UTC") and "Gameweek" not in labels
 
 
 def test_the_summary_marks_the_captain_and_the_doubts() -> None:
