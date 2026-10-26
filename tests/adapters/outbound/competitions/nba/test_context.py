@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Any
 
-from conftest import FakeNBA, make_player
+from support.nba import FakeNBA, make_player
 
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
 from thefrontoffice.adapters.outbound.competitions.nba.form import NineCatStats, PlayerStats

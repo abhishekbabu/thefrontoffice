@@ -10,7 +10,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
-from conftest import mine
+from support.fpl import player
+from support.summary import mine
 
 from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
@@ -37,40 +38,6 @@ from thefrontoffice.domain.models import PlayerQuery
 ENTRY_ID = 77
 LEAGUE_ID = "900"
 H2H_LEAGUE_ID = "950"
-
-
-def player(
-    pid: int,
-    position: str,
-    points: float,
-    cost: int = 50,
-    team: str = "ARS",
-    *,
-    status: str = "a",
-    news: str = "",
-    chance_of_playing: int | None = None,
-    penalties_order: int | None = None,
-    corners_order: int | None = None,
-) -> Player:
-    return Player(
-        id=pid,
-        name=f"P{pid}",
-        full_name=f"Player {pid}",
-        position=position,
-        team=team,
-        cost=cost,
-        expected_points=points,
-        form=points,
-        points_per_game=points,
-        total_points=int(points * 10),
-        selected_by=5.0,
-        minutes=900,
-        status=status,
-        news=news,
-        chance_of_playing=chance_of_playing,
-        penalties_order=penalties_order,
-        corners_order=corners_order,
-    )
 
 
 # A fifteen whose set eleven is deliberately not the best one: P15, the strongest
@@ -546,7 +513,7 @@ def test_a_transfer_beyond_the_bank_is_not_offered() -> None:
 
 
 def test_the_briefing_keeps_the_squad_and_only_the_players_named() -> None:
-    from reports import MOCK_FPL_REPORT
+    from support.reports import MOCK_FPL_REPORT
 
     context = provider().build_context(LEAGUE_ID)
     briefing = context.briefing(MOCK_FPL_REPORT)

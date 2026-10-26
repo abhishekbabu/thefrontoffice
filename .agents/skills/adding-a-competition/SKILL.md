@@ -78,8 +78,9 @@ file on purpose: a category league has no weekly lineup to solve and almost
 none of its methods are free functions, so the same split there would be four
 files holding one idea.
 
-Test modules mirror whatever the source ends up as — `test_nfl_week.py` beside
-`week.py` — with the fakes they share living in `tests/conftest.py`.
+Test modules mirror whatever the source ends up as — `nfl/week.py` is tested in
+`tests/adapters/outbound/competitions/nfl/test_week.py` — with the fakes they share
+in `tests/support/<competition>.py`.
 
 ## Rules
 

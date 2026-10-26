@@ -5,8 +5,8 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from conftest import capture_logs
-from reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
+from support.logs import capture_logs
+from support.reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
 
 from thefrontoffice.adapters.outbound.llm.gemini.client import GeminiClient
 from thefrontoffice.adapters.outbound.llm.gemini.constants import MODEL_FLASH, MODEL_PRO

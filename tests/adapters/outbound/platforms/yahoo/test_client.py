@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 import requests
+from support.http import http_error
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
@@ -418,12 +419,6 @@ def _matchup(my_key: str = "t1") -> Any:
 # ── translating transport failures ──────────────────────────────────────
 
 
-def _http(status: int) -> requests.exceptions.HTTPError:
-    response = requests.Response()
-    response.status_code = status
-    return requests.exceptions.HTTPError(response=response)
-
-
 def test_a_403_names_the_permission_that_is_actually_missing() -> None:
     """Yahoo says only "not authorized to perform this action", which reads like
     a bad token — and re-authorizing a token that was never the problem is an
@@ -431,7 +426,7 @@ def test_a_403_names_the_permission_that_is_actually_missing() -> None:
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import translate
     from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAuthError
 
-    error = translate(_http(403))
+    error = translate(http_error(403))
 
     assert isinstance(error, YahooAuthError)
     assert "reviews every application" in str(error)
@@ -442,7 +437,7 @@ def test_any_other_failure_stays_a_generic_api_error() -> None:
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import translate
     from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooAuthError
 
-    for error in (_http(500), _http(404), requests.exceptions.Timeout()):
+    for error in (http_error(500), http_error(404), requests.exceptions.Timeout()):
         translated = translate(error)
         assert isinstance(translated, YahooAPIError)
         assert not isinstance(translated, YahooAuthError)
@@ -507,7 +502,7 @@ def test_the_league_list_is_served_from_cache_once_fetched() -> None:
 def test_an_unapproved_app_fails_the_league_lookup_by_name() -> None:
     from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAuthError
 
-    ctx = FakeContext(error=_http(403))
+    ctx = FakeContext(error=http_error(403))
 
     with pytest.raises(YahooAuthError):
         YahooClient.find_leagues(ctx, "nba", 2026, cache=RecordingCache())
@@ -581,7 +576,7 @@ def test_a_token_that_authenticates_but_grants_nothing_is_caught(
     monkeypatch.setattr(settings, "yahoo_token_file", str(token))
 
     def _refuse(url: str) -> str:
-        raise _http(403)
+        raise http_error(403)
 
     monkeypatch.setattr(YahooClient, "get_context", classmethod(lambda cls: SimpleNamespace(make_request=_refuse)))
 

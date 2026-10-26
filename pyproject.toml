@@ -132,7 +132,7 @@ python_files = ["test_*.py"]
 # The suite mirrors the source tree, so several directories hold a `test_week.py`
 # or a `test_client.py`: importlib mode imports each by its path rather than as a
 # top-level module of that name, which would collide. `tests/` on the path keeps
-# `from conftest import ...` and `from reports import ...` resolving from any depth.
+# `from support.nfl import ...` and the rest of `tests/support/` resolving from any depth.
 pythonpath = ["tests"]
 markers = [
     "integration: hits a live external API (Yahoo, NBA.com or Gemini). Deselected by default; opt in with `-m integration`.",

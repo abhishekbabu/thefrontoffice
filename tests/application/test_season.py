@@ -5,6 +5,8 @@ must conclude — a team already through, one already out, a tiebreak —
 without any sport's data.
 """
 
+from support.simulation import FEW, odds_split
+
 from thefrontoffice.application.season import (
     MarketEngine,
     SeasonEngine,
@@ -13,15 +15,12 @@ from thefrontoffice.application.season import (
 )
 from thefrontoffice.domain.models import (
     Fixture,
-    PlayoffOdds,
     SeasonInput,
     TeamRecord,
     TeamWeek,
     TradeMarket,
     TradeOption,
 )
-
-FEW = 2_000
 
 
 def _team(team_id: str, wins: int, losses: int = 0, points: float = 0.0) -> TeamRecord:
@@ -121,16 +120,12 @@ def test_the_same_season_gives_the_same_answer_every_time() -> None:
 # ── this week, weighed in ───────────────────────────────────────────────────────
 
 
-def _odds_split(win: float, loss: float) -> PlayoffOdds:
-    return PlayoffOdds(spots=6, playoffs=0.5, with_win=win, with_loss=loss, simulations=1)
-
-
 def test_this_week_is_weighed_by_the_weeks_own_forecast() -> None:
-    assert chance_now(_odds_split(0.9, 0.5), win=0.75) == 0.8
+    assert chance_now(odds_split(0.9, 0.5), win=0.75) == 0.8
 
 
 def test_without_a_forecast_the_season_simulation_stands() -> None:
-    assert chance_now(_odds_split(0.9, 0.5), win=None) == 0.5
+    assert chance_now(odds_split(0.9, 0.5), win=None) == 0.5
 
 
 class _Over:

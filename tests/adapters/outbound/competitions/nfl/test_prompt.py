@@ -7,15 +7,8 @@ rules live there, and a prompt that renders is not a prompt that is right.
 from datetime import UTC
 from typing import Any
 
-from conftest import (
-    DEFAULT_PROJECTIONS,
-    SLEEPER_USER_ID,
-    FakeESPN,
-    FakeSleeper,
-    _proj,
-    _provider,
-    mine,
-)
+from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeESPN, FakeSleeper, nfl_provider, proj
+from support.summary import mine
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -26,15 +19,12 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
 )
 from thefrontoffice.domain.models import task_id
 
-MY_ID = SLEEPER_USER_ID
-
-
 # ── context ─────────────────────────────────────────────────────────────
 
 
 def _context(**kwargs: Any) -> Any:
     client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS), **kwargs)
-    return _provider(client).build_context("L1")
+    return nfl_provider(client).build_context("L1")
 
 
 def test_prompt_names_the_scoring_format() -> None:
@@ -70,10 +60,12 @@ def test_the_to_do_list_is_shown_numbered_so_each_verdict_can_find_its_row() -> 
         league=SMALL_LEAGUE,
         projections=dict(DEFAULT_PROJECTIONS),
         rosters=[
-            SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"])
+            SleeperRoster(
+                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"]
+            )
         ],
     )
-    context = _provider(client).build_context("L1")
+    context = nfl_provider(client).build_context("L1")
 
     [task] = context.tasks
     assert task.player_id == "rb1"
@@ -86,10 +78,12 @@ def test_a_week_with_nothing_to_decide_says_so() -> None:
         league=SMALL_LEAGUE,
         projections=dict(DEFAULT_PROJECTIONS),
         rosters=[
-            SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb1"])
+            SleeperRoster(
+                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb1"]
+            )
         ],
     )
-    context = _provider(client).build_context("L1")
+    context = nfl_provider(client).build_context("L1")
 
     assert context.tasks == []
 
@@ -104,9 +98,9 @@ def test_a_player_with_no_projection_is_kept_at_zero() -> None:
     drop the player from the roster."""
     client = FakeSleeper(
         projections=dict(DEFAULT_PROJECTIONS),
-        rosters=[SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "bye1"], starter_ids=["qb1"])],
+        rosters=[SleeperRoster(roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "bye1"], starter_ids=["qb1"])],
     )
-    ctx = _provider(client).build_context("L1")
+    ctx = nfl_provider(client).build_context("L1")
     assert "Bye Guy" in ctx.roster_lines
     assert "0.0 proj pts" in ctx.roster_lines["Bye Guy"]
     assert "(no game)" in ctx.roster_lines["Bye Guy"]
@@ -119,7 +113,9 @@ def test_matchup_opponent_and_live_score_are_surfaced() -> None:
             {"roster_id": 2, "matchup_id": 7, "points": 71.8},
         ],
         rosters=[
-            SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"]),
+            SleeperRoster(
+                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"]
+            ),
             SleeperRoster(roster_id=2, owner_id="user-2", player_ids=[], starter_ids=[], wins=3, losses=0),
         ],
     )
@@ -151,10 +147,12 @@ def test_constraints_compare_current_and_best_lineups() -> None:
         league=SMALL_LEAGUE,
         projections=dict(DEFAULT_PROJECTIONS),
         rosters=[
-            SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"])
+            SleeperRoster(
+                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"]
+            )
         ],
     )
-    constraints = _provider(client).build_context("L1").constraints
+    constraints = nfl_provider(client).build_context("L1").constraints
     assert "LINEUP SLOTS" in constraints
     assert "Current lineup projects 26.0" in constraints  # 22 + 4
     assert "best legal lineup projects 40.0" in constraints  # 22 + 18
@@ -166,10 +164,12 @@ def test_no_bench_gap_is_reported_when_already_optimal() -> None:
         league=SMALL_LEAGUE,
         projections=dict(DEFAULT_PROJECTIONS),
         rosters=[
-            SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb1"])
+            SleeperRoster(
+                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb1"]
+            )
         ],
     )
-    assert "sitting on the bench" not in _provider(client).build_context("L1").constraints
+    assert "sitting on the bench" not in nfl_provider(client).build_context("L1").constraints
 
 
 def test_a_player_is_never_both_starting_and_benched() -> None:
@@ -178,10 +178,12 @@ def test_a_player_is_never_both_starting_and_benched() -> None:
         league=SMALL_LEAGUE,
         projections=dict(DEFAULT_PROJECTIONS),
         rosters=[
-            SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"])
+            SleeperRoster(
+                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"]
+            )
         ],
     )
-    side = mine(_provider(client).summary("L1"))
+    side = mine(nfl_provider(client).summary("L1"))
 
     starting = {spot.player_id for spot in side.lineup if spot.player_id}
     benched = {spot.player_id for spot in side.bench}
@@ -193,18 +195,20 @@ def test_the_bench_gap_matches_the_printed_figures() -> None:
     import re
 
     projections = {
-        "qb1": _proj("qb1", "Star QB", "QB", 22.04),
-        "rb1": _proj("rb1", "Good RB", "RB", 18.06),
-        "rb2": _proj("rb2", "Bad RB", "RB", 4.04),
+        "qb1": proj("qb1", "Star QB", "QB", 22.04),
+        "rb1": proj("rb1", "Good RB", "RB", 18.06),
+        "rb2": proj("rb2", "Bad RB", "RB", 4.04),
     }
     client = FakeSleeper(
         league=SMALL_LEAGUE,
         projections=projections,
         rosters=[
-            SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"])
+            SleeperRoster(
+                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"]
+            )
         ],
     )
-    constraints = _provider(client).build_context("L1").constraints
+    constraints = nfl_provider(client).build_context("L1").constraints
     current, best = (float(x) for x in re.findall(r"projects (\d+\.\d)", constraints))
     gap_match = re.search(r"so (\d+\.\d) points are sitting", constraints)
     assert gap_match is not None
@@ -216,7 +220,7 @@ def test_the_bench_gap_matches_the_printed_figures() -> None:
 
 def test_the_weeks_header_is_the_week_and_the_season_is_the_leagues() -> None:
     """Record and points for answer how the season is going, which is the league view's question."""
-    provider = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS))
+    provider = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS))
     week = {stat.label for stat in provider.build_context("L1").headline}
     season = {stat.label: stat.value for stat in provider.schedule("L1").headline}
 
@@ -227,7 +231,7 @@ def test_the_weeks_header_is_the_week_and_the_season_is_the_leagues() -> None:
 def test_points_left_on_the_bench_ride_with_the_lineup_and_warn() -> None:
     lineup = next(
         s
-        for s in _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1").headline
+        for s in nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1").headline
         if s.label == "Lineup"
     )
 
@@ -237,7 +241,7 @@ def test_points_left_on_the_bench_ride_with_the_lineup_and_warn() -> None:
 def test_the_header_agrees_with_the_prompt_about_the_lineup_total() -> None:
     """Two numbers for the same thing, differing in the last decimal, reads as
     a bug even when neither is wrong."""
-    context = _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1")
+    context = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1")
     lineup = next(stat for stat in context.headline if stat.label == "Lineup")
 
     assert f"Current lineup projects {lineup.value.split(' · ')[0]} points" in context.constraints
@@ -252,7 +256,7 @@ def test_the_header_carries_the_matchup() -> None:
             {"roster_id": 2, "matchup_id": 7, "points": 71.0},
         ],
     )
-    labels = {s.label: s for s in _provider(client).build_context("L1").headline}
+    labels = {s.label: s for s in nfl_provider(client).build_context("L1").headline}
 
     assert "Opponent" in labels
     assert (labels["Live"].value, labels["Live"].tone) == ("88.5 – 71.0", "good")
@@ -267,14 +271,14 @@ def test_trailing_is_the_figure_that_warns() -> None:
             {"roster_id": 2, "matchup_id": 7, "points": 84.0},
         ],
     )
-    live = next(s for s in _provider(client).build_context("L1").headline if s.label == "Live")
+    live = next(s for s in nfl_provider(client).build_context("L1").headline if s.label == "Live")
 
     assert live.tone == "warning"
 
 
 def test_a_week_with_no_opponent_reports_no_matchup_figures() -> None:
     """A bye or a missing scoreboard is not a 0-0 scoreline."""
-    labels = {s.label for s in _provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1").headline}
+    labels = {s.label for s in nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1").headline}
 
     assert "Live" not in labels
     assert "Lineup" in labels  # the rest of the header still stands
@@ -290,7 +294,7 @@ def test_the_matchup_is_fetched_once_for_both_the_prompt_and_the_header() -> Non
             {"roster_id": 2, "matchup_id": 7, "points": 71.0},
         ],
     )
-    context = _provider(client).build_context("L1")
+    context = nfl_provider(client).build_context("L1")
 
     assert client.matchup_fetches == 1
     assert "OPPONENT:" in context.situation
@@ -317,7 +321,7 @@ def _played() -> list[NFLGameLine]:
 
 def test_each_player_line_carries_his_role_and_matchup() -> None:
     client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS), game_lines=_played())
-    provider = _provider(client)
+    provider = nfl_provider(client)
     good_rb = DEFAULT_PROJECTIONS["rb1"]
 
     prompt = provider.build_context("L1").prompt
@@ -347,12 +351,14 @@ def test_a_to_do_item_carries_its_evidence_into_the_prompt() -> None:
         league=SMALL_LEAGUE,
         projections=dict(DEFAULT_PROJECTIONS),
         rosters=[
-            SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"])
+            SleeperRoster(
+                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"]
+            )
         ],
         game_lines=lines,
     )
 
-    context = _provider(client).build_context("L1")
+    context = nfl_provider(client).build_context("L1")
 
     [task] = context.tasks
     assert task.evidence
@@ -369,6 +375,6 @@ def test_each_player_line_carries_his_latest_news() -> None:
     )
     client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS))
 
-    prompt = _provider(client, FakeESPN({"BUF": [article]})).build_context("L1").prompt
+    prompt = nfl_provider(client, FakeESPN({"BUF": [article]})).build_context("L1").prompt
 
     assert article.headline in prompt and article.summary in prompt

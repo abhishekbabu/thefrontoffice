@@ -8,7 +8,7 @@ module.
 
 import logging
 
-from conftest import capture_logs
+from support.logs import capture_logs
 
 MINE = "thefrontoffice.tests.mine"
 SOMEONE_ELSE = "thefrontoffice.tests.theirs"

@@ -2,8 +2,8 @@
 
 from datetime import UTC, datetime
 
-from conftest import FakeAnswers
 from pydantic import BaseModel
+from support.stores import FakeAnswers
 
 from thefrontoffice.application.answers import Answers, is_current
 

@@ -8,8 +8,8 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from conftest import FakeAI
-from reports import MOCK_NBA_VERDICT
+from support.ai import FakeAI
+from support.reports import MOCK_NBA_VERDICT
 
 from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.domain.errors import AIResponseError, PlayerNotFoundError, TradeParseError

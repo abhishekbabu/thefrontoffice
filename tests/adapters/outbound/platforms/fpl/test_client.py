@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 import requests
-from conftest import FakeSession
+from support.http import FakeSession
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.client import (

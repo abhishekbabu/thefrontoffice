@@ -6,7 +6,7 @@ from typing import Any, Protocol
 
 import pytest
 import requests
-from conftest import FakeResponse
+from support.http import FakeResponse
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError

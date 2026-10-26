@@ -1,7 +1,7 @@
 # Type checking config.
 python-version = "3.15"
 project-includes = ["src", "scripts", "tests"]
-# tests/ is on the path so `from conftest import ...` resolves the shared fakes;
+# tests/ is on the path so `from support... import ...` resolves the shared fakes;
 # scripts/ so the agent-docs checker resolves the same way pytest sees it.
 search-path = ["src", "tests", "scripts"]
 project-excludes = [

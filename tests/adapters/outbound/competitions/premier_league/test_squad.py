@@ -4,6 +4,8 @@ These are the parts with exact answers, so they are asserted exactly rather
 than left to the model.
 """
 
+from support.fpl import player
+
 from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
     Transfer,
     affordable_transfers,
@@ -14,33 +16,6 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
     points_with_captain,
 )
 from thefrontoffice.adapters.outbound.platforms.fpl.types import FORMATION_LIMITS, STARTING_SIZE, Player
-
-
-def player(
-    pid: int,
-    position: str,
-    points: float,
-    cost: int = 50,
-    status: str = "a",
-    chance: int | None = None,
-    team: str = "ARS",
-) -> Player:
-    return Player(
-        id=pid,
-        name=f"P{pid}",
-        full_name=f"Player {pid}",
-        position=position,
-        team=team,
-        cost=cost,
-        expected_points=points,
-        form=points,
-        points_per_game=points,
-        total_points=int(points * 10),
-        selected_by=5.0,
-        status=status,
-        chance_of_playing=chance,
-        minutes=900,
-    )
 
 
 def squad_of(*specs: tuple[str, float]) -> list[Player]:
@@ -71,13 +46,13 @@ FIFTEEN = squad_of(
 
 def test_a_ruled_out_player_is_worth_nothing() -> None:
     """The game leaves a stale projection on a player it has already ruled out."""
-    assert effective_points(player(1, "MID", 6.0, chance=0)) == 0.0
+    assert effective_points(player(1, "MID", 6.0, chance_of_playing=0)) == 0.0
     assert effective_points(player(1, "MID", 6.0, status="i")) == 0.0
     assert effective_points(player(1, "MID", 6.0, status="s")) == 0.0
 
 
 def test_a_doubt_is_not_a_ruling_out() -> None:
-    assert effective_points(player(1, "MID", 6.0, status="d", chance=75)) == 6.0
+    assert effective_points(player(1, "MID", 6.0, status="d", chance_of_playing=75)) == 6.0
 
 
 # ── formations ──────────────────────────────────────────────────────────
@@ -151,7 +126,7 @@ def test_taking_the_best_eleven_outright_would_be_illegal() -> None:
 
 
 def test_a_ruled_out_star_is_benched_for_a_fit_squad_player() -> None:
-    squad = [p for p in FIFTEEN if p.id != 8] + [player(8, "MID", 8.0, chance=0)]
+    squad = [p for p in FIFTEEN if p.id != 8] + [player(8, "MID", 8.0, chance_of_playing=0)]
     starters = {p.id for p in best_lineup(squad).starters}
     assert 8 not in starters
     assert 12 in starters
@@ -285,5 +260,5 @@ def test_an_uncaptained_total_is_the_plain_sum() -> None:
 
 
 def test_a_ruled_out_captain_adds_nothing() -> None:
-    starters = [player(1, "MID", 5.0), player(2, "FWD", 8.0, chance=0)]
+    starters = [player(1, "MID", 5.0), player(2, "FWD", 8.0, chance_of_playing=0)]
     assert points_with_captain(starters, starters[1]) == 5.0
