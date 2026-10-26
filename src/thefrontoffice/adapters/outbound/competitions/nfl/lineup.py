@@ -7,9 +7,11 @@ The model's job is judgement — is the projection trustworthy, is the matchup
 bad, is the injury real — not arithmetic.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import FLEX_ELIGIBILITY, WeeklyProjection
+from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import FLEX_ELIGIBILITY
 
 
 @dataclass(frozen=True)
@@ -17,7 +19,7 @@ class LineupSlot:
     """One filled starting slot."""
 
     slot: str
-    player: WeeklyProjection | None
+    player: Projection | None
 
     @property
     def points(self) -> float:
@@ -29,7 +31,7 @@ def eligible_positions(slot: str) -> tuple[str, ...]:
     return FLEX_ELIGIBILITY.get(slot, (slot,))
 
 
-def optimal_lineup(slots: list[str], players: list[WeeklyProjection]) -> list[LineupSlot]:
+def optimal_lineup(slots: list[str], players: Sequence[Projection]) -> list[LineupSlot]:
     """Assign the highest-projecting legal lineup.
 
     Slots are filled in order of how restrictive they are — a QB slot before a
@@ -65,8 +67,8 @@ class LineupChange:
     """A player who should come into the lineup, and who they displace."""
 
     slot: str
-    start: WeeklyProjection
-    bench: WeeklyProjection | None
+    start: Projection
+    bench: Projection | None
 
     @property
     def gain(self) -> float:
@@ -74,7 +76,7 @@ class LineupChange:
 
 
 def lineup_changes(
-    slots: list[str], current_starter_ids: list[str], players: list[WeeklyProjection]
+    slots: list[str], current_starter_ids: list[str], players: Sequence[Projection]
 ) -> list[LineupChange]:
     """What to change to reach the optimal lineup, as swaps that can each be made, best gain first.
 
@@ -114,7 +116,7 @@ def lineup_changes(
     return sorted((c for c in changes if c.gain > 0), key=lambda c: c.gain, reverse=True)
 
 
-def current_lineup(slots: list[str], starter_ids: list[str], players: list[WeeklyProjection]) -> list[LineupSlot]:
+def current_lineup(slots: list[str], starter_ids: list[str], players: Sequence[Projection]) -> list[LineupSlot]:
     """The lineup as it stands.
 
     Sleeper's `starters` array is positional: entry i is whoever occupies slot i
@@ -132,7 +134,7 @@ def current_lineup(slots: list[str], starter_ids: list[str], players: list[Weekl
     return filled
 
 
-def best_upgrade(lineup: list[LineupSlot], candidate: WeeklyProjection) -> tuple[float, LineupSlot] | None:
+def best_upgrade(lineup: list[LineupSlot], candidate: Projection) -> tuple[float, LineupSlot] | None:
     """What `candidate` would add starting in place of the weakest starter he can replace.
 
     The slot he can fill with the least in it, and how much more he projects
@@ -147,7 +149,7 @@ def best_upgrade(lineup: list[LineupSlot], candidate: WeeklyProjection) -> tuple
     return round(candidate.points - weakest.points, 2), weakest
 
 
-def fits(slots: list[str], players: list[WeeklyProjection]) -> bool:
+def fits(slots: list[str], players: Sequence[Projection]) -> bool:
     """Whether `players` can fill `slots` legally, each in a slot his position allows.
 
     Exact rather than greedy: a set of starters is legal if *any* assignment

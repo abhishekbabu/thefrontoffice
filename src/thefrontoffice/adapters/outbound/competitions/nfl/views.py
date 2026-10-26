@@ -6,23 +6,21 @@ and the provider is the place a week is gathered, not drawn.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, best_upgrade
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out
-from thefrontoffice.adapters.outbound.competitions.nfl.week import Live, Week, projection_for, zero_projection
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
-from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
-    FANTASY_POSITIONS,
-    PlayerMeta,
-    SeasonStats,
-    SleeperRoster,
-    WeeklyProjection,
+from thefrontoffice.adapters.outbound.competitions.nfl.model import (
+    NFLSource,
+    PlayerInfo,
+    Projection,
+    SeasonTotals,
+    Team,
 )
-from thefrontoffice.domain.errors import PlayerNotFoundError
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, ruled_out
+from thefrontoffice.adapters.outbound.competitions.nfl.week import Live, Week, projection_for, zero_projection
+from thefrontoffice.domain.errors import PlatformError, PlayerNotFoundError
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
     PlayerCard,
@@ -59,7 +57,7 @@ PROJECTION_LABELS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _projection_lines(stats: dict[str, float]) -> list[Stat]:
+def _projection_lines(stats: Mapping[str, float]) -> list[Stat]:
     """The projection broken out, skipping what does not apply.
 
     A receiver has no passing line, and printing a column of zeroes for one
@@ -127,7 +125,7 @@ SCOREBOARD_STATUS = {"pre": "pre_game", "in": "in_game", "post": "complete"}
 """ESPN's game states in Sleeper's words, which is what the rest of the week reads."""
 
 
-def lineup_order(state: Week, roster: SleeperRoster) -> list[str]:
+def lineup_order(state: Week, roster: Team) -> list[str]:
     """Read as a lineup: the starters slot by slot, then the bench best projected first, then reserve."""
     starters = [pid for pid in roster.starter_ids if pid in roster.player_ids]
     bench = [pid for pid in roster.player_ids if pid not in starters and pid not in roster.reserve_ids]
@@ -135,7 +133,7 @@ def lineup_order(state: Week, roster: SleeperRoster) -> list[str]:
     return starters + bench + [pid for pid in roster.player_ids if pid in roster.reserve_ids]
 
 
-def is_signing(meta: PlayerMeta) -> bool:
+def is_signing(meta: PlayerInfo) -> bool:
     """Whether adding this player could do anything.
 
     Two cuts, both about what the wire is for. The catalog carries every
@@ -208,7 +206,7 @@ def cards(
     return rows
 
 
-def _headline_label(projection: WeeklyProjection | None, scheduled: bool, week: int) -> str:
+def _headline_label(projection: Projection | None, scheduled: bool, week: int) -> str:
     """What the figure is, or why there is not one.
 
     The two reasons differ and a reader can act on the difference: nothing
@@ -221,7 +219,7 @@ def _headline_label(projection: WeeklyProjection | None, scheduled: bool, week: 
     return f"Not projected to feature in week {week}"
 
 
-def fit(state: Week, projection: WeeklyProjection) -> tuple[float, str] | None:
+def fit(state: Week, projection: Projection) -> tuple[float, str] | None:
     """How he compares with your weakest starter he could replace, either way.
 
     A shortfall is shown as plainly as a gain: in a deep league nobody on
@@ -238,7 +236,7 @@ def fit(state: Week, projection: WeeklyProjection) -> tuple[float, str] | None:
     return (gain, f"+{gain:.1f} over {slot.player.name}") if gain > 0 else (gain, f"{gain:.1f} vs {slot.player.name}")
 
 
-def _role_and_matchup(projection: WeeklyProjection, state: Week) -> StatGroup | None:
+def _role_and_matchup(projection: Projection, state: Week) -> StatGroup | None:
     """What sits behind the projection: the defense he faces, and how he has been used."""
     stats = []
     if matchup := state.evidence.matchup(projection):
@@ -257,7 +255,7 @@ def _role_and_matchup(projection: WeeklyProjection, state: Week) -> StatGroup | 
     return StatGroup(title="Role and matchup", stats=stats) if stats else None
 
 
-def _team_name(team: str, players: dict[str, PlayerMeta]) -> str:
+def _team_name(team: str, players: Mapping[str, PlayerInfo]) -> str:
     """A club in full, at no extra request.
 
     Sleeper files every team defense in the player catalog under the club's
@@ -271,7 +269,7 @@ def _team_name(team: str, players: dict[str, PlayerMeta]) -> str:
 
 
 def _opponent_label(
-    projection: WeeklyProjection | None, scheduled: bool, players: dict[str, PlayerMeta] | None = None
+    projection: Projection | None, scheduled: bool, players: Mapping[str, PlayerInfo] | None = None
 ) -> str:
     """Who they play. In full where a caller has room for it — the drawer
     does, a table column does not."""
@@ -284,7 +282,7 @@ def _opponent_label(
     return "no game" if scheduled else "—"
 
 
-def detail(client: SleeperNFLSource, state: Week, player_id: str) -> PlayerDetail:
+def detail(client: NFLSource, state: Week, player_id: str) -> PlayerDetail:
     """One player: the week, what makes the projection, and who they are.
 
     Raises:
@@ -354,7 +352,7 @@ def detail(client: SleeperNFLSource, state: Week, player_id: str) -> PlayerDetai
     )
 
 
-def _season_table(client: SleeperNFLSource, player_id: str, state: Week) -> StatTable | None:
+def _season_table(client: NFLSource, player_id: str, state: Week) -> StatTable | None:
     """This season beside the two before it, read across rather than down.
 
     A projection is a guess; these are the seasons it is a guess about, and
@@ -370,11 +368,11 @@ def _season_table(client: SleeperNFLSource, player_id: str, state: Week) -> Stat
     """
     scoring = state.league.scoring_format
     columns = [state.season, *_recent_seasons(state.season)]
-    by_season: dict[str, SeasonStats | None] = {}
+    by_season: dict[str, SeasonTotals | None] = {}
     for season in columns:
         try:
             by_season[season] = client.get_season_stats(season).get(player_id)
-        except SleeperAPIError as e:
+        except PlatformError as e:
             logger.warning(f"Skipping {season} totals: {e}")
             by_season[season] = None
 
@@ -385,12 +383,12 @@ def _season_table(client: SleeperNFLSource, player_id: str, state: Week) -> Stat
     if not any(stats and stats.games for stats in by_season.values()):
         return None
 
-    def played(season: str) -> SeasonStats | None:
+    def played(season: str) -> SeasonTotals | None:
         """The season's totals, or nothing where it was never played."""
         stats = by_season.get(season)
         return stats if stats and stats.games else None
 
-    def row(label: str, of: Callable[[SeasonStats], str]) -> StatRow:
+    def row(label: str, of: Callable[[SeasonTotals], str]) -> StatRow:
         return StatRow(
             label=label,
             values=[of(stats) if (stats := played(c)) else NOT_APPLICABLE for c in columns],
@@ -431,7 +429,7 @@ def lineup_spot(slot: LineupSlot, scheduled: bool, live: Live | None = None) -> 
 
 
 def spot(
-    projection: WeeklyProjection,
+    projection: Projection,
     scheduled: bool,
     slot: str = "",
     live: Live | None = None,
@@ -458,7 +456,7 @@ def spot(
     )
 
 
-def reserved(row: Spot, roster: SleeperRoster) -> Spot:
+def reserved(row: Spot, roster: Team) -> Spot:
     """A bench row marked where he is in an injured-reserve or taxi slot, which costs no bench spot."""
     if row.player_id not in roster.reserve_ids:
         return row
@@ -473,7 +471,7 @@ def _live_tone(scored: float) -> Tone:
     return "warning" if scored <= BLANK_POINTS else "neutral"
 
 
-def _spot_detail(projection: WeeklyProjection, scheduled: bool, slot: str = "") -> str:
+def _spot_detail(projection: Projection, scheduled: bool, slot: str = "") -> str:
     if projection.opponent:
         opponent = f"vs {projection.opponent}"
     elif ruled_out(projection.injury_status):
@@ -491,7 +489,7 @@ def _spot_detail(projection: WeeklyProjection, scheduled: bool, slot: str = "") 
     return f"{projection.position} · {projection.team} {opponent}"
 
 
-def _spot_tone(projection: WeeklyProjection | None, scheduled: bool) -> Tone:
+def _spot_tone(projection: Projection | None, scheduled: bool) -> Tone:
     """A player who will not play is a zero, not a small number.
 
     Unless nobody is playing, in which case the week simply has not been
@@ -512,7 +510,7 @@ def side_total(state: Week, live: Live) -> str:
     return f"{scored:.1f} pts"
 
 
-def opponent_side(state: Week, roster: SleeperRoster, entry: dict[str, Any], name: str, live: Live) -> Side:
+def opponent_side(state: Week, roster: Team, entry: dict[str, Any], name: str, live: Live) -> Side:
     """The team you are playing, and what they are starting, in the same rows as your own.
 
     Walked in slot order rather than filtered out of `player_ids`, which

@@ -13,11 +13,10 @@ from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, outcomes
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import fits
+from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueRules, NFLSource, Projection, Team
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import SEASON_WEEKS, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Scoreboard, Week, left_in, projection_for
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
-from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import SleeperLeague, SleeperRoster, WeeklyProjection
+from thefrontoffice.domain.errors import PlatformError
 from thefrontoffice.domain.models import Action, LineupMove, MatchupInput, Outcomes, PlayedMatchup
 
 logger = logging.getLogger(__name__)
@@ -38,7 +37,7 @@ class Forecasts:
     are the same all season, and are the largest fetch in a forecast.
     """
 
-    def __init__(self, client: SleeperNFLSource):
+    def __init__(self, client: NFLSource):
         self.client = client
         self._previous: dict[str, evidence.Evidence] = {}
 
@@ -48,7 +47,7 @@ class Forecasts:
         if key not in self._previous:
             try:
                 lines = self.client.get_nfl_game_lines(str(int(season) - 1), list(range(1, SEASON_WEEKS + 1)))
-            except (SleeperAPIError, ValueError) as e:
+            except (PlatformError, ValueError) as e:
                 logger.warning(f"Shaping ranges without last season: {e}")
                 lines = []
             self._previous[key] = evidence.gather(lines, scoring)
@@ -59,7 +58,7 @@ class Forecasts:
         state: Week,
         league_id: str,
         scoreboard: Scoreboard,
-        opponent: SleeperRoster,
+        opponent: Team,
         to_do: list[Action],
         candidates: Sequence[str],
         owned: set[str],
@@ -78,7 +77,7 @@ class Forecasts:
         live = scoreboard.live(state, league_id)
         spread = outcomes.spreads(state.evidence, pool_from=self.last_season(state.season, state.league.scoring_format))
 
-        def outcome(player: WeeklyProjection) -> Outcomes:
+        def outcome(player: Projection) -> Outcomes:
             return outcomes.outcomes(
                 player,
                 spread,
@@ -105,8 +104,8 @@ class Forecasts:
         return MatchupInput(mine=mine, theirs=theirs, moves=moves, seed=seeded)
 
     def played_week(
-        self, league: SleeperLeague, week: int
-    ) -> tuple[evidence.Evidence, evidence.Evidence, list[tuple[WeeklyProjection, float]]]:
+        self, league: LeagueRules, week: int
+    ) -> tuple[evidence.Evidence, evidence.Evidence, list[tuple[Projection, float]]]:
         """A finished week's players, for scoring ranges: what was known before it, and what each scored.
 
         Every player who took the field and was projected at least a few
@@ -128,7 +127,7 @@ class Forecasts:
         return before, last, played
 
     def played_matchups(
-        self, league: SleeperLeague, week: int, settings: outcomes.RangeSettings, seeded: Callable[[object], int]
+        self, league: LeagueRules, week: int, settings: outcomes.RangeSettings, seeded: Callable[[object], int]
     ) -> list[PlayedMatchup]:
         """Every matchup of `week`, rebuilt as it stood before kickoff, with how it ended.
 
@@ -178,8 +177,8 @@ class Forecasts:
 
 def starts(
     state: Week,
-    players: list[WeeklyProjection],
-    outcome: Callable[[WeeklyProjection], Outcomes],
+    players: Sequence[Projection],
+    outcome: Callable[[Projection], Outcomes],
     started: set[str],
 ) -> tuple[LineupMove, ...]:
     """Every single start of one of `players` that leaves a legal lineup, among players not yet locked.
@@ -220,9 +219,7 @@ def starts(
     return tuple(moves)
 
 
-def pickups(
-    state: Week, to_do: list[Action], outcome: Callable[[WeeklyProjection], Outcomes]
-) -> tuple[LineupMove, ...]:
+def pickups(state: Week, to_do: list[Action], outcome: Callable[[Projection], Outcomes]) -> tuple[LineupMove, ...]:
     """The pickups that fill a hole this week, priced as if already claimed.
 
     Only those: a bye warning names your own starter, and a breakout is a

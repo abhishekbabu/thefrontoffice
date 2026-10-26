@@ -14,7 +14,7 @@ move says nothing about when.
 """
 
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import MIN_GAMES_FOR_AVERAGE, season_average
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
@@ -23,10 +23,10 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     eligible_positions,
     fits,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, Projection
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame, WeeklyProjection
 from thefrontoffice.domain.models import Action, Stat, Urgency
 
 URGENCY_ORDER: dict[Urgency, int] = {"now": 0, "soon": 1, "later": 2}
@@ -37,8 +37,8 @@ STACKED = 3
 
 def build(
     state: Week,
-    games: dict[int, list[ScheduledGame]],
-    free_agents: list[WeeklyProjection],
+    games: Mapping[int, Sequence[Game]],
+    free_agents: Sequence[Projection],
 ) -> list[Action]:
     """Every decision the week asks for, most urgent first.
 
@@ -64,7 +64,7 @@ def _lineup(
     state: Week,
     started: set[str],
     kickoff: dict[str, str],
-    free_agents: list[WeeklyProjection],
+    free_agents: Sequence[Projection],
 ) -> list[Action]:
     """Starters who cannot score, empty slots, and swaps the bench allows."""
     # A player whose game has kicked off is locked in or out, so a move
@@ -139,7 +139,7 @@ def _lineup(
     return actions
 
 
-def _bench_cover(state: Week, slot: str, started: set[str], moved: set[str]) -> WeeklyProjection | None:
+def _bench_cover(state: Week, slot: str, started: set[str], moved: set[str]) -> Projection | None:
     """The best bench player who can play `slot` this week and is still free to move."""
     starters = state.starter_ids
     return max(
@@ -157,7 +157,7 @@ def _bench_cover(state: Week, slot: str, started: set[str], moved: set[str]) -> 
     )
 
 
-def _cannot_play(player: WeeklyProjection, scheduled: bool) -> str:
+def _cannot_play(player: Projection, scheduled: bool) -> str:
     """Why a starter will score nothing this week, or empty if he can."""
     status = RULED_OUT.get(player.injury_status.upper())
     if status:
@@ -167,14 +167,14 @@ def _cannot_play(player: WeeklyProjection, scheduled: bool) -> str:
     return ""
 
 
-def _caveat(player: WeeklyProjection) -> str:
+def _caveat(player: Projection) -> str:
     """The doubt hanging over the player a move starts, so it is weighed, not missed."""
     if not player.is_questionable:
         return ""
     return f" {player.name} is listed {player.injury_status.lower()} — check his status before his game."
 
 
-def _evidence(state: Week, players: list[WeeklyProjection]) -> list[Stat]:
+def _evidence(state: Week, players: Sequence[Projection]) -> list[Stat]:
     """Each player's matchup and role, then his latest headline, for whoever has them."""
     lines = []
     for player in players:
@@ -187,7 +187,7 @@ def _evidence(state: Week, players: list[WeeklyProjection]) -> list[Stat]:
     return lines
 
 
-def _hole(slot: str, player: WeeklyProjection | None) -> str:
+def _hole(slot: str, player: Projection | None) -> str:
     """The problem a forced move solves — this starter out, or this slot empty.
 
     Keyed on the problem rather than the answer, so a better cover turning up
@@ -234,7 +234,7 @@ BREAKOUT_FROM = 5.0
 nothing has usually lost the role again — the starter is back."""
 
 
-def _breakouts(state: Week, free_agents: list[WeeklyProjection], already: set[str]) -> list[Action]:
+def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]) -> list[Action]:
     """Free agents whose role jumped last week, while the projections and the league catch up.
 
     A stash rather than a start: whether he beats a starter this week is the
@@ -329,13 +329,13 @@ def _with_drops(state: Week, actions: list[Action], started: set[str]) -> list[A
     return out
 
 
-def _worth_a_spot(state: Week, player_id: str, drop: WeeklyProjection | None) -> bool:
+def _worth_a_spot(state: Week, player_id: str, drop: Projection | None) -> bool:
     """Whether an optional pickup is worth more than the player it would cost."""
     pickup = state.projections.get(player_id)
     return drop is not None and pickup is not None and pickup.points > season_average(state.evidence, drop)
 
 
-def _least_valuable(state: Week, exclude: set[str], started: set[str]) -> WeeklyProjection | None:
+def _least_valuable(state: Week, exclude: set[str], started: set[str]) -> Projection | None:
     """The bench player it costs least to lose, among those who can be released now."""
     bench = [
         p
@@ -349,7 +349,7 @@ def _least_valuable(state: Week, exclude: set[str], started: set[str]) -> Weekly
     return min(bench, key=lambda p: (season_average(state.evidence, p), p.points), default=None)
 
 
-def _drop_reason(state: Week, player: WeeklyProjection) -> str:
+def _drop_reason(state: Week, player: Projection) -> str:
     games = state.evidence.games.get(player.player_id, ())
     if len(games) >= MIN_GAMES_FOR_AVERAGE:
         worth = f"{sum(games) / len(games):.1f} a game this season, {player.points:.1f} projected this week"
@@ -359,7 +359,7 @@ def _drop_reason(state: Week, player: WeeklyProjection) -> str:
 
 
 def _same_game(
-    state: Week, week_games: list[ScheduledGame], started: set[str], listed: set[tuple[str, str]]
+    state: Week, week_games: Sequence[Game], started: set[str], listed: set[tuple[str, str]]
 ) -> list[Action]:
     """Games carrying three or more of your starters, with the bench start that spreads them.
 
@@ -371,7 +371,7 @@ def _same_game(
     """
     game_of = {club: game for game in week_games for club in (game.home, game.away)}
     starters = [slot.player for slot in state.lineup if slot.player]
-    stacks: dict[tuple[str, str], list[WeeklyProjection]] = defaultdict(list)
+    stacks: dict[tuple[str, str], list[Projection]] = defaultdict(list)
     for player in starters:
         game = game_of.get(player.team)
         if game is not None and player.team not in started:
@@ -415,7 +415,7 @@ def _same_game(
     return actions
 
 
-def _next_week_byes(state: Week, next_games: list[ScheduledGame]) -> list[Action]:
+def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Action]:
     """Positions next week's byes would leave short, while there is time to fix it.
 
     Asked of the starters only: a bench player on bye costs nothing. A
@@ -428,7 +428,7 @@ def _next_week_byes(state: Week, next_games: list[ScheduledGame]) -> list[Action
     starters = state.starter_ids
     week = state.week + 1
 
-    missing: dict[str, list[WeeklyProjection]] = defaultdict(list)
+    missing: dict[str, list[Projection]] = defaultdict(list)
     for slot in state.lineup:
         if slot.player and slot.player.team not in playing:
             missing[slot.player.position].append(slot.player)
@@ -485,7 +485,7 @@ def _trade_deadline(state: Week) -> list[Action]:
     ]
 
 
-def wire(state: Week, owned: set[str], signable: Callable[[str], bool]) -> list[WeeklyProjection]:
+def wire(state: Week, owned: set[str], signable: Callable[[str], bool]) -> Sequence[Projection]:
     """Who could be picked up and play this week, best projection first.
 
     Cut to players with a game and no ruling against them: the wire is asked

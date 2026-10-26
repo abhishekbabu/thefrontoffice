@@ -15,7 +15,7 @@ the trades), `prompt.py` (what a model reads).
 """
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 
 from thefrontoffice.adapters.outbound.competitions import paging
@@ -39,6 +39,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     lineup_points,
     optimal_lineup,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, Projection
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     SCORING_LABELS,
     Scoreboard,
@@ -56,10 +57,8 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL, Sleep
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     PlayerMeta,
-    ScheduledGame,
     SleeperLeague,
     SleeperRoster,
-    WeeklyProjection,
 )
 from thefrontoffice.config.constants import NFL_TRADE_PROMPT, NFL_WIRE_PROMPT
 from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
@@ -299,18 +298,16 @@ class SleeperNFLProvider:
             targets=targets,
         )
 
-    def _wire_line(self, player: WeeklyProjection, state: Week) -> str:
+    def _wire_line(self, player: Projection, state: Week) -> str:
         """One candidate as the model reads him: his id, his line, and how he fits."""
         line = prompt.player_line(player, state.evidence, state.news)
         fit = views.fit(state, player)
         return f"- [id {player.player_id}] {line[2:]}" + (f"  fits: {fit[1]}\n" if fit else "")
 
     @staticmethod
-    def _name_index(
-        projections: dict[str, WeeklyProjection], players: dict[str, PlayerMeta]
-    ) -> NameIndex[WeeklyProjection]:
+    def _name_index(projections: Mapping[str, Projection], players: dict[str, PlayerMeta]) -> NameIndex[Projection]:
         """Every projectable player, looked up by the name a user would type."""
-        index: NameIndex[WeeklyProjection] = NameIndex()
+        index: NameIndex[Projection] = NameIndex()
         for projection in projections.values():
             index.add(projection.name, projection)
         # Players with no projection are still tradeable — a bye, or a stash.
@@ -453,7 +450,7 @@ class SleeperNFLProvider:
             window=self._window(state, games),
         )
 
-    def _actions(self, state: Week, league_id: str, games: dict[int, list[ScheduledGame]]) -> list[Action]:
+    def _actions(self, state: Week, league_id: str, games: Mapping[int, Sequence[Game]]) -> list[Action]:
         return actions.build(state, games, actions.wire(state, self._owned(league_id), self._signable(state)))
 
     def _with_short_week(self, state: Week, league_id: str, listed: list[Action]) -> list[Action]:
@@ -468,7 +465,7 @@ class SleeperNFLProvider:
             return listed
         return [a for a in listed if not a.key.startswith(f"bye:{state.week + 1}:")] + [short]
 
-    def _window(self, state: Week, games: dict[int, list[ScheduledGame]]) -> str:
+    def _window(self, state: Week, games: Mapping[int, Sequence[Game]]) -> str:
         """Which week, and when it is actually played.
 
         A week with no dates on it is a number, and the number is the one thing
@@ -530,7 +527,7 @@ class SleeperNFLProvider:
 
     def played_week(
         self, league_id: str, week: int
-    ) -> tuple[evidence.Evidence, evidence.Evidence, list[tuple[WeeklyProjection, float]]]:
+    ) -> tuple[evidence.Evidence, evidence.Evidence, list[tuple[Projection, float]]]:
         """A finished week's players, for scoring ranges: what was known before it, and what each scored."""
         return self.forecasts.played_week(self._league(league_id), week)
 

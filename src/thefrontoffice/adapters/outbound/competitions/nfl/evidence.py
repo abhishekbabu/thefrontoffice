@@ -12,10 +12,11 @@ Monday-night starter as a player who did nothing.
 """
 
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from thefrontoffice.adapters.outbound.competitions.nfl.model import GameLine, Projection
 from thefrontoffice.adapters.outbound.competitions.places import ordinal
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NFLGameLine, WeeklyProjection
 from thefrontoffice.domain.models import Stat, Tone
 
 ROLE_GAMES = 3
@@ -148,10 +149,10 @@ class Evidence:
     trends: dict[str, Trend] = field(default_factory=dict)
     """Players whose role jumped in the latest week played, by the biggest of their jumps."""
 
-    def matchup(self, player: WeeklyProjection) -> Matchup | None:
+    def matchup(self, player: Projection) -> Matchup | None:
         return self.allowed.get((player.opponent, player.position)) if player.opponent else None
 
-    def describe(self, player: WeeklyProjection) -> str:
+    def describe(self, player: Projection) -> str:
         """Both halves in one line, or empty when there is nothing played to go on."""
         matchup, role, trend = self.matchup(player), self.roles.get(player.player_id), self.trends.get(player.player_id)
         parts = [matchup.describe()] if matchup else []
@@ -159,7 +160,7 @@ class Evidence:
         parts += [f"role growing: {trend.describe()}"] if trend else []
         return "; ".join(parts)
 
-    def stat(self, player: WeeklyProjection) -> Stat | None:
+    def stat(self, player: Projection) -> Stat | None:
         """The same line labelled with the player, toned by the matchup."""
         text = self.describe(player)
         if not text:
@@ -168,7 +169,7 @@ class Evidence:
         return Stat(label=player.name, value=text, tone=matchup.tone if matchup else "neutral")
 
 
-def gather(lines: list[NFLGameLine], scoring: str) -> Evidence:
+def gather(lines: Sequence[GameLine], scoring: str) -> Evidence:
     """Roles and matchups from the season's played game lines."""
     games, positions = _games(lines, scoring)
     return Evidence(
@@ -180,9 +181,9 @@ def gather(lines: list[NFLGameLine], scoring: str) -> Evidence:
     )
 
 
-def _games(lines: list[NFLGameLine], scoring: str) -> tuple[dict[str, tuple[float, ...]], dict[str, str]]:
+def _games(lines: Sequence[GameLine], scoring: str) -> tuple[dict[str, tuple[float, ...]], dict[str, str]]:
     """Each player's scores in the games he took the field in, by the same rule his role is read by."""
-    played: dict[str, list[NFLGameLine]] = defaultdict(list)
+    played: dict[str, list[GameLine]] = defaultdict(list)
     for line in lines:
         if line.position in SNAP_POSITIONS and not line.stats.get("off_snp"):
             continue
@@ -195,9 +196,9 @@ def _games(lines: list[NFLGameLine], scoring: str) -> tuple[dict[str, tuple[floa
     return games, positions
 
 
-def _roles(lines: list[NFLGameLine], scoring: str) -> dict[str, Role]:
+def _roles(lines: Sequence[GameLine], scoring: str) -> dict[str, Role]:
     team_targets: dict[tuple[str, int], float] = defaultdict(float)
-    by_player: dict[str, list[NFLGameLine]] = defaultdict(list)
+    by_player: dict[str, list[GameLine]] = defaultdict(list)
     for line in lines:
         team_targets[(line.team, line.week)] += line.stats.get("rec_tgt", 0.0)
         # A row for a game he never took the field in is not a game he
@@ -228,7 +229,7 @@ def _roles(lines: list[NFLGameLine], scoring: str) -> dict[str, Role]:
     return roles
 
 
-def _trends(lines: list[NFLGameLine]) -> dict[str, Trend]:
+def _trends(lines: Sequence[GameLine]) -> dict[str, Trend]:
     """Whose role jumped in the latest week played, against his games before it.
 
     The latest week anybody played, not his own latest game: a jump three
@@ -238,13 +239,13 @@ def _trends(lines: list[NFLGameLine]) -> dict[str, Trend]:
         return {}
     latest = max(line.week for line in lines)
     team_targets: dict[tuple[str, int], float] = defaultdict(float)
-    by_player: dict[str, list[NFLGameLine]] = defaultdict(list)
+    by_player: dict[str, list[GameLine]] = defaultdict(list)
     for line in lines:
         team_targets[(line.team, line.week)] += line.stats.get("rec_tgt", 0.0)
         if line.position in SNAP_POSITIONS and line.stats.get("off_snp"):
             by_player[line.player_id].append(line)
 
-    def measures(line: NFLGameLine) -> dict[str, float]:
+    def measures(line: GameLine) -> dict[str, float]:
         found = {}
         if line.stats.get("tm_off_snp"):
             found["snaps"] = line.stats.get("off_snp", 0.0) / line.stats["tm_off_snp"]
@@ -277,7 +278,7 @@ def _trends(lines: list[NFLGameLine]) -> dict[str, Trend]:
     return trends
 
 
-def _allowed(lines: list[NFLGameLine], scoring: str) -> dict[tuple[str, str], Matchup]:
+def _allowed(lines: Sequence[GameLine], scoring: str) -> dict[tuple[str, str], Matchup]:
     """Points each defense has given up per game to each position, ranked.
 
     Per game rather than in total, because byes leave defenses with different
@@ -306,7 +307,7 @@ def _allowed(lines: list[NFLGameLine], scoring: str) -> dict[tuple[str, str], Ma
     return allowed
 
 
-def _total(lines: list[NFLGameLine], key: str) -> float:
+def _total(lines: Sequence[GameLine], key: str) -> float:
     return sum(line.stats.get(key, 0.0) for line in lines)
 
 
@@ -314,7 +315,7 @@ MIN_GAMES_FOR_AVERAGE = 2
 """Games a player needs before his average says more about him than his projection does."""
 
 
-def season_average(evidence: Evidence, player: WeeklyProjection) -> float:
+def season_average(evidence: Evidence, player: Projection) -> float:
     """What he is worth over a season: his average a game where he has played enough, else his projection.
 
     Not this week's projection alone, which reads a starter on bye as nothing.

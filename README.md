@@ -350,7 +350,11 @@ src/thefrontoffice/
 No adapter is named in `domain/` or `application/`; the engines take an
 `AnalysisModel` port rather than a vendor client, and the domain's errors name
 no platform — each platform's live in its own `platforms/<p>/errors.py`.
-Providers are handed their clients by `bootstrap.py`, never build them. The
+Providers are handed their clients by `bootstrap.py`, never build them. A
+competition's rules read its own model (`nfl/model.py`: a projection, a team,
+the league's rules, a real game), which the league platform's types already
+fit; only the provider file names that platform, so the NFL on a second
+platform would be one more provider. The
 engines answer in figures; `adapters/inbound/presenting.py` puts the generic
 ones into words for the web page and the terminal alike, and a competition's own
 vocabulary stays its provider's.

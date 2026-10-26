@@ -15,9 +15,8 @@ import logging
 from collections.abc import Iterable
 
 from thefrontoffice.adapters.outbound.competitions.nfl.league import SeasonModel, season_model
+from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Team
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import SleeperRoster
 from thefrontoffice.domain.models import TeamWeek, TradeMarket, TradeOption
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,7 @@ STREAMED = {"K", "DEF"}
 """Positions managers fill from the wire week to week, so nobody gives up a player for one."""
 
 
-def build(client: SleeperNFLSource, state: Week, league_id: str, seed: int) -> TradeMarket | None:
+def build(client: NFLSource, state: Week, league_id: str, seed: int) -> TradeMarket | None:
     """The season, and the trades that improve both lineups the most for you; None once trading is over.
 
     A trade lands after the league's review, so it changes the weeks after
@@ -61,9 +60,7 @@ def build(client: SleeperNFLSource, state: Week, league_id: str, seed: int) -> T
     return TradeMarket(season=model.season, options=tuple(best))
 
 
-def _with(
-    model: SeasonModel, state: Week, weeks: list[int], mine: SleeperRoster, theirs: SleeperRoster
-) -> list[TradeOption]:
+def _with(model: SeasonModel, state: Week, weeks: list[int], mine: Team, theirs: Team) -> list[TradeOption]:
     """Every one-for-one with this team that improves both lineups, best for you first."""
 
     def per_week(ids: Iterable[str]) -> float:
@@ -107,7 +104,7 @@ def _with(
     return sorted(options, key=lambda option: -option.points)
 
 
-def _tradeable(roster: SleeperRoster, state: Week) -> list[str]:
+def _tradeable(roster: Team, state: Week) -> list[str]:
     """Players who could move: not those in injured reserve or taxi, whose slot would not follow them, nor a streamer."""
     return [
         pid
