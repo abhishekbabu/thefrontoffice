@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from statistics import pstdev
 
 import pytest
+from support.simulation import FEW, outcome
 
 from thefrontoffice.application.forecasting import (
     WORTH_A_ROW,
@@ -28,13 +29,6 @@ from thefrontoffice.domain.models import (
     PlayedMatchup,
 )
 
-FEW = 2_000
-
-
-def _player(pid: str, *samples: float, plays: float = 1.0, floor: float = 0.0, remaining: float = 1.0) -> Outcomes:
-    projection = sum(samples) / len(samples) if samples else 0.0
-    return Outcomes(pid, pid.upper(), projection, samples, plays=plays, floor=floor, remaining=remaining)
-
 
 def _match(mine: list[Outcomes], theirs: list[Outcomes], *moves: LineupMove, seed: int = 7) -> MatchupInput:
     return MatchupInput(mine=tuple(mine), theirs=tuple(theirs), moves=moves, seed=seed)
@@ -44,45 +38,45 @@ def _match(mine: list[Outcomes], theirs: list[Outcomes], *moves: LineupMove, see
 
 
 def test_a_lineup_that_always_outscores_always_wins() -> None:
-    forecast = simulate(_match([_player("a", 20, 25)], [_player("b", 5, 10)]), FEW)
+    forecast = simulate(_match([outcome("a", 20, 25)], [outcome("b", 5, 10)]), FEW)
 
     assert forecast.win == 1.0
     assert forecast.margin.low > 0
 
 
 def test_two_identical_sides_are_a_coin_flip() -> None:
-    forecast = simulate(_match([_player("a", 0, 10, 20, 30)], [_player("b", 0, 10, 20, 30)]), FEW)
+    forecast = simulate(_match([outcome("a", 0, 10, 20, 30)], [outcome("b", 0, 10, 20, 30)]), FEW)
 
     assert forecast.win == pytest.approx(0.5, abs=0.05)
 
 
 def test_a_tie_counts_half() -> None:
-    assert simulate(_match([_player("a", 10)], [_player("b", 10)]), FEW).win == 0.5
+    assert simulate(_match([outcome("a", 10)], [outcome("b", 10)]), FEW).win == 0.5
 
 
 def test_a_player_who_will_not_play_adds_nothing() -> None:
-    forecast = simulate(_match([_player("a", 30, plays=0.0)], [_player("b", 1)]), FEW)
+    forecast = simulate(_match([outcome("a", 30, plays=0.0)], [outcome("b", 1)]), FEW)
 
     assert forecast.win == 0.0
 
 
 def test_a_game_already_over_counts_what_it_scored_and_nothing_more() -> None:
-    finished = _player("a", 100, floor=12.0, remaining=0.0)
+    finished = outcome("a", 100, floor=12.0, remaining=0.0)
 
-    forecast = simulate(_match([finished], [_player("b", 11)]), FEW)
+    forecast = simulate(_match([finished], [outcome("b", 11)]), FEW)
 
     assert forecast.win == 1.0 and forecast.margin.median == 1.0
 
 
 def test_the_margin_range_runs_low_to_high() -> None:
-    margin = simulate(_match([_player("a", 0, 10, 20, 40)], [_player("b", 5, 15)]), FEW).margin
+    margin = simulate(_match([outcome("a", 0, 10, 20, 40)], [outcome("b", 5, 15)]), FEW).margin
 
     assert margin.low <= margin.median <= margin.high
 
 
 def test_the_same_matchup_gives_the_same_answer_every_time() -> None:
     """A win chance that flickered between reloads would read as news."""
-    matchup = _match([_player("a", 0, 10, 20, 30)], [_player("b", 5, 15, 25)])
+    matchup = _match([outcome("a", 0, 10, 20, 30)], [outcome("b", 5, 15, 25)])
 
     assert simulate(matchup, FEW) == simulate(matchup, FEW)
 
@@ -92,26 +86,26 @@ def test_the_same_matchup_gives_the_same_answer_every_time() -> None:
 
 def test_a_move_that_is_better_in_every_way_never_lowers_the_chance() -> None:
     """Same draws with and without it: the difference is the decision, not noise."""
-    worse, better = _player("w", 0, 5, 10), _player("x", 20, 25, 30)
+    worse, better = outcome("w", 0, 5, 10), outcome("x", 20, 25, 30)
     move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(better,))
 
-    forecast = simulate(_match([worse, _player("m", 0, 30)], [_player("t", 10, 20, 30)], move), FEW)
+    forecast = simulate(_match([worse, outcome("m", 0, 30)], [outcome("t", 10, 20, 30)], move), FEW)
 
     assert forecast.moves["x>w"] >= forecast.win
     assert forecast.best_move == "x>w"
 
 
 def test_pricing_a_move_does_not_change_the_chance_without_it() -> None:
-    base = _match([_player("a", 0, 10, 20)], [_player("b", 5, 15)])
-    move = LineupMove(key="c>a", title="Start C", out=("a",), into=(_player("c", 0, 40),))
+    base = _match([outcome("a", 0, 10, 20)], [outcome("b", 5, 15)])
+    move = LineupMove(key="c>a", title="Start C", out=("a",), into=(outcome("c", 0, 40),))
 
     assert simulate(base, FEW).win == simulate(_match(list(base.mine), list(base.theirs), move), FEW).win
 
 
 def test_no_move_is_called_best_unless_it_helps() -> None:
-    move = LineupMove(key="z>a", title="Start Z", out=("a",), into=(_player("z", 0),))
+    move = LineupMove(key="z>a", title="Start Z", out=("a",), into=(outcome("z", 0),))
 
-    assert simulate(_match([_player("a", 10, 20)], [_player("b", 5, 25)], move), FEW).best_move == ""
+    assert simulate(_match([outcome("a", 10, 20)], [outcome("b", 5, 25)], move), FEW).best_move == ""
 
 
 # ── the to-do list, by the chance of winning ───────────────────────────────────────────────────────
@@ -124,12 +118,12 @@ DEADLINE = Action(kind="trade", urgency="later", title="Trade by week 11", reaso
 
 
 def _attached(*actions: Action, moves: tuple[LineupMove, ...] = ()) -> list[Action]:
-    matchup = _match([_player("w", 0, 5, 10), _player("m", 0, 30)], [_player("t", 10, 20, 30)], *moves)
+    matchup = _match([outcome("w", 0, 5, 10), outcome("m", 0, 30)], [outcome("t", 10, 20, 30)], *moves)
     return ranked(list(actions), simulate(matchup, FEW), matchup) or []
 
 
 def test_a_to_do_move_carries_what_it_does_to_the_chance() -> None:
-    move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
+    move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(outcome("x", 20, 25, 30),))
 
     [swap] = _attached(SWAP, moves=(move,))
 
@@ -143,7 +137,7 @@ def test_an_item_that_moves_nobody_has_no_change_to_show() -> None:
 
 
 def test_a_better_move_the_list_lacks_becomes_a_row_of_its_own() -> None:
-    move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
+    move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(outcome("x", 20, 25, 30),))
 
     actions = _attached(DEADLINE, moves=(move,))
 
@@ -153,7 +147,7 @@ def test_a_better_move_the_list_lacks_becomes_a_row_of_its_own() -> None:
 
 
 def test_a_move_already_on_the_list_is_not_added_twice() -> None:
-    move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
+    move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(outcome("x", 20, 25, 30),))
 
     actions = _attached(SWAP, moves=(move,))
 
@@ -161,8 +155,8 @@ def test_a_move_already_on_the_list_is_not_added_twice() -> None:
 
 
 def test_rows_keep_their_urgency_and_sort_within_it_by_what_they_add() -> None:
-    small = LineupMove(key="y>w", title="Start Y over W", out=("w",), into=(_player("y", 6, 8, 12),))
-    big = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
+    small = LineupMove(key="y>w", title="Start Y over W", out=("w",), into=(outcome("y", 6, 8, 12),))
+    big = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(outcome("x", 20, 25, 30),))
     lesser = SWAP.model_copy(update={"key": "swap:y:w", "player_id": "y"})
 
     actions = _attached(DEADLINE, lesser, SWAP, moves=(small, big))
@@ -171,7 +165,7 @@ def test_rows_keep_their_urgency_and_sort_within_it_by_what_they_add() -> None:
 
 
 def test_a_competition_without_a_to_do_list_still_has_none() -> None:
-    matchup = _match([_player("a", 10)], [_player("b", 5)])
+    matchup = _match([outcome("a", 10)], [outcome("b", 5)])
 
     assert ranked(None, simulate(matchup, FEW), matchup) is None
 
@@ -180,7 +174,7 @@ def test_a_competition_without_a_to_do_list_still_has_none() -> None:
 
 
 def _played(mine: float, theirs: float, ours: float, others: float) -> PlayedMatchup:
-    return PlayedMatchup(week=2, matchup=_match([_player("a", ours)], [_player("b", others)]), mine=mine, theirs=theirs)
+    return PlayedMatchup(week=2, matchup=_match([outcome("a", ours)], [outcome("b", others)]), mine=mine, theirs=theirs)
 
 
 def test_certain_calls_that_came_true_score_perfectly() -> None:
@@ -215,7 +209,7 @@ def test_projection_error_widens_a_range_without_moving_its_centre() -> None:
 
     from thefrontoffice.application.forecasting import _draw
 
-    plain = _player("a", 10, 20)
+    plain = outcome("a", 10, 20)
     unsure = Outcomes("a", "A", 15.0, (10.0, 20.0), projection_error=0.3)
 
     certain_draws = _draw(plain, rng_module.Random(1), 20_000)
@@ -269,11 +263,11 @@ def test_no_games_to_score_scores_nothing() -> None:
 
 
 def test_a_free_agent_is_priced_at_the_start_that_helps_most() -> None:
-    weak, weaker = _player("weak", 8.0), _player("weaker", 4.0)
-    signing = _player("fa", 12.0)
+    weak, weaker = outcome("weak", 8.0), outcome("weaker", 4.0)
+    signing = outcome("fa", 12.0)
     matchup = _match(
         [weak, weaker],
-        [_player("them", 17.0)],  # 16 replacing the weak starter loses; 20 replacing the weaker wins
+        [outcome("them", 17.0)],  # 16 replacing the weak starter loses; 20 replacing the weaker wins
         LineupMove("fa>weak", "Start FA over WEAK", ("weak",), (signing,)),
         LineupMove("fa>weaker", "Start FA over WEAKER", ("weaker",), (signing,)),
     )
@@ -287,9 +281,9 @@ def test_a_free_agent_is_priced_at_the_start_that_helps_most() -> None:
 def test_a_free_agent_who_only_hurts_says_by_how_much() -> None:
     """A deep league's wire mostly hurts; the shortfall is still the answer."""
     matchup = _match(
-        [_player("mine", 20.0, 30.0)],
-        [_player("them", 22.0, 28.0)],
-        LineupMove("fa>mine", "Start FA over MINE", ("mine",), (_player("fa", 2.0),)),
+        [outcome("mine", 20.0, 30.0)],
+        [outcome("them", 22.0, 28.0)],
+        LineupMove("fa>mine", "Start FA over MINE", ("mine",), (outcome("fa", 2.0),)),
     )
 
     [chance] = pickup_chances(simulate(matchup, FEW), matchup)
@@ -307,9 +301,9 @@ class _Wire:
 
     def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput | None:
         self.asked.append(list(candidates))
-        mine = _player("mine", 10.0)
-        moves = tuple(LineupMove(f"{c}>mine", f"Start {c}", ("mine",), (_player(c, 15.0),)) for c in candidates)
-        return _match([mine], [_player("them", 12.0)], *moves)
+        mine = outcome("mine", 10.0)
+        moves = tuple(LineupMove(f"{c}>mine", f"Start {c}", ("mine",), (outcome(c, 15.0),)) for c in candidates)
+        return _match([mine], [outcome("them", 12.0)], *moves)
 
     def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
         return []
@@ -342,8 +336,8 @@ def _width(matchup: MatchupInput) -> float:
 
 def test_teammates_who_rise_together_make_a_wider_week_than_strangers() -> None:
     """A quarterback and his receiver in one lineup: their good weeks come together."""
-    together = _match([_grouped("qb", "KC"), _grouped("wr", "KC")], [_player("them", 20.0)])
-    apart = _match([_grouped("qb", "KC"), _grouped("wr", "BUF")], [_player("them", 20.0)])
+    together = _match([_grouped("qb", "KC"), _grouped("wr", "KC")], [outcome("them", 20.0)])
+    apart = _match([_grouped("qb", "KC"), _grouped("wr", "BUF")], [outcome("them", 20.0)])
 
     assert _width(together) > _width(apart)
 

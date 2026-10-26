@@ -7,7 +7,8 @@ the test scripts, and records each prompt it was asked.
 
 from typing import Any
 
-from conftest import FakeAI, FakeAnswers
+from support.ai import FakeAI
+from support.stores import FakeAnswers
 
 from thefrontoffice.application.formats import CallAnswer, WireAnswer
 from thefrontoffice.application.wire import MAX_JUDGED, WireEngine

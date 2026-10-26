@@ -7,8 +7,9 @@ the conftest fake, whose chat records what was sent.
 from datetime import UTC, datetime
 
 import pytest
-from conftest import FakeAI, FakeAnswers
-from reports import MOCK_FPL_REPORT
+from support.ai import FakeAI
+from support.reports import MOCK_FPL_REPORT
+from support.stores import FakeAnswers
 
 from thefrontoffice.application.asking import AskEngine
 from thefrontoffice.application.scouting import scout_scope

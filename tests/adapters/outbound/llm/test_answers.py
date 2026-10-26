@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
-from reports import MOCK_FPL_REPORT
+from support.reports import MOCK_FPL_REPORT
 
 from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache

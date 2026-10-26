@@ -8,9 +8,11 @@ from datetime import datetime
 from typing import Any
 
 import pytest
-from conftest import FakeAI, FakeAnswers, FakeNBA, FakeSleeperProjections, FakeYahoo, make_player
-from conftest import _team as _yahoo_team
-from reports import MOCK_NBA_REPORT
+from support.ai import FakeAI
+from support.nba import FakeNBA, FakeSleeperProjections, FakeYahoo, make_player, nba_provider
+from support.nba import yahoo_team as _yahoo_team
+from support.reports import MOCK_NBA_REPORT
+from support.stores import FakeAnswers
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
@@ -20,13 +22,7 @@ from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat
 
 
 def _scout(yahoo: FakeYahoo, ai: FakeAI | None = None, nba: FakeNBA | None = None) -> ScoutEngine:
-    provider = YahooNBAProvider(
-        league=None,
-        nba=nba or FakeNBA(),
-        yahoo_for=lambda _: yahoo,
-        sleeper=FakeSleeperProjections(),
-        max_weekly_adds=3,
-    )
+    provider = nba_provider(yahoo, nba=nba)
     return ScoutEngine(provider, ai=ai or FakeAI(), answers=FakeAnswers())
 
 
@@ -236,14 +232,7 @@ def test_a_specific_league_can_be_selected() -> None:
 
     one = SimpleNamespace(id="1", name="One", league_type="head")
     two = SimpleNamespace(id="2", name="Two", league_type="head")
-    provider = YahooNBAProvider(
-        one,
-        all_leagues=[one, two],
-        nba=FakeNBA(),
-        yahoo_for=lambda _: FakeYahoo(),
-        sleeper=FakeSleeperProjections(),
-        max_weekly_adds=3,
-    )
+    provider = nba_provider(league=one, all_leagues=[one, two])
     assert [r.league_id for r in provider.list_leagues()] == ["1", "2"]
     assert provider._select("2") is two
     assert provider._select("") is one
@@ -255,14 +244,7 @@ def test_selecting_an_unknown_league_raises() -> None:
     from thefrontoffice.domain.errors import LeagueNotFoundError
 
     one = SimpleNamespace(id="1", name="One")
-    provider = YahooNBAProvider(
-        one,
-        all_leagues=[one],
-        nba=FakeNBA(),
-        yahoo_for=lambda _: FakeYahoo(),
-        sleeper=FakeSleeperProjections(),
-        max_weekly_adds=3,
-    )
+    provider = nba_provider(league=one, all_leagues=[one])
     with pytest.raises(LeagueNotFoundError, match="not one of yours"):
         provider._select("999")
 
@@ -272,9 +254,7 @@ def test_a_roster_card_carries_the_row_and_what_a_row_cannot() -> None:
     and a column should not be."""
     yahoo = FakeYahoo(roster=[make_player("A B", "PF,C", "LAL", status="O", selected_position="IL")])
 
-    card = YahooNBAProvider(
-        league=None, nba=FakeNBA(), yahoo_for=lambda _: yahoo, sleeper=FakeSleeperProjections(), max_weekly_adds=3
-    ).roster()[0]
+    card = nba_provider(yahoo).roster()[0]
 
     assert card.columns["Player"] == "A B"
     assert card.columns["Slot"] == "IL"
@@ -286,9 +266,7 @@ def test_recent_form_is_a_dash_when_there_is_none() -> None:
     """Out of season there is no line to show, and a zero would read as a bad
     one rather than an absent one."""
     yahoo = FakeYahoo(roster=[make_player("A B")])
-    card = YahooNBAProvider(
-        league=None, nba=FakeNBA(), yahoo_for=lambda _: yahoo, sleeper=FakeSleeperProjections(), max_weekly_adds=3
-    ).roster()[0]
+    card = nba_provider(yahoo).roster()[0]
 
     assert card.columns["PTS"] == "—"
 
@@ -319,13 +297,7 @@ def _game(name: str, day: str, **stats: float) -> Any:
 def _provider_with(sleeper: Any, yahoo: FakeYahoo | None = None) -> Any:
     from types import SimpleNamespace
 
-    return YahooNBAProvider(
-        SimpleNamespace(id="1", name="One"),
-        nba=FakeNBA(),
-        yahoo_for=lambda _: yahoo or _rich_yahoo(),
-        sleeper=sleeper,
-        max_weekly_adds=3,
-    )
+    return nba_provider(yahoo or _rich_yahoo(), league=SimpleNamespace(id="1", name="One"), sleeper=sleeper)
 
 
 def test_projected_totals_are_attached_to_players() -> None:
@@ -405,28 +377,22 @@ def test_the_prompt_explains_team_games_versus_player_games() -> None:
 # ── the league table ────────────────────────────────────────────────────
 
 
-def _provider(yahoo: FakeYahoo) -> YahooNBAProvider:
-    return YahooNBAProvider(
-        league=None, nba=FakeNBA(), yahoo_for=lambda _: yahoo, sleeper=FakeSleeperProjections(), max_weekly_adds=3
-    )
-
-
 def test_the_table_comes_back_in_rank_order_and_says_which_is_yours() -> None:
-    standings = _provider(FakeYahoo()).schedule("").standings
+    standings = nba_provider(FakeYahoo()).schedule("").standings
 
     assert [row.name for row in standings] == ["Their Team", "My Team"]
     assert [row.is_mine for row in standings] == [False, True]
 
 
 def test_a_record_includes_ties_only_where_there_are_any() -> None:
-    standings = _provider(FakeYahoo()).schedule("").standings
+    standings = nba_provider(FakeYahoo()).schedule("").standings
 
     assert standings[0].record == "5-1"
     assert standings[1].record == "4-2-1"
 
 
 def test_the_season_is_headed_by_your_record_and_place() -> None:
-    headline = {stat.label: stat.value for stat in _provider(FakeYahoo()).schedule("").headline}
+    headline = {stat.label: stat.value for stat in nba_provider(FakeYahoo()).schedule("").headline}
 
     assert headline == {"Record": "4-2-1", "Place": "2nd of 2"}
 
@@ -436,7 +402,7 @@ def test_without_your_row_in_the_table_the_season_has_no_figures_to_head_it() ->
 
     yahoo = FakeYahoo(teams=[SimpleNamespace(name="Half-loaded", team_key="t.9")])
 
-    assert _provider(yahoo).schedule("").headline == []
+    assert nba_provider(yahoo).schedule("").headline == []
 
 
 def test_a_team_with_no_standings_block_is_skipped_rather_than_failing() -> None:
@@ -446,11 +412,11 @@ def test_a_team_with_no_standings_block_is_skipped_rather_than_failing() -> None
 
     yahoo = FakeYahoo(teams=[SimpleNamespace(name="Half-loaded", team_key="t.9")])
 
-    assert _provider(yahoo).schedule("").standings == []
+    assert nba_provider(yahoo).schedule("").standings == []
 
 
 def test_the_teams_list_puts_you_first() -> None:
-    teams = _provider(FakeYahoo()).teams("")
+    teams = nba_provider(FakeYahoo()).teams("")
 
     assert teams[0].is_mine
     assert teams[0].name == "My Team"
@@ -459,24 +425,24 @@ def test_the_teams_list_puts_you_first() -> None:
 def test_another_managers_roster_comes_back_in_your_own_columns() -> None:
     yahoo = FakeYahoo()
 
-    mine = _provider(yahoo).roster("")
-    theirs = _provider(yahoo).roster_of("", "t.2")
+    mine = nba_provider(yahoo).roster("")
+    theirs = nba_provider(yahoo).roster_of("", "t.2")
 
     assert set(theirs[0].columns) == set(mine[0].columns)
 
 
 def test_an_unknown_team_is_refused() -> None:
     with pytest.raises(TeamNotFoundError):
-        _provider(FakeYahoo()).roster_of("", "t.99")
+        nba_provider(FakeYahoo()).roster_of("", "t.99")
 
 
 def test_available_players_have_no_lineup_column() -> None:
     """Somebody on the wire is not in a lineup of yours."""
-    assert "Slot" not in _provider(FakeYahoo()).free_agents("", PlayerQuery()).players[0].columns
+    assert "Slot" not in nba_provider(FakeYahoo()).free_agents("", PlayerQuery()).players[0].columns
 
 
 def test_available_players_carry_the_same_form_columns_as_a_roster() -> None:
-    agents = _provider(FakeYahoo()).free_agents("", PlayerQuery()).players
+    agents = nba_provider(FakeYahoo()).free_agents("", PlayerQuery()).players
 
     assert {"Player", "Pos", "Team", "PTS", "REB", "AST", "Status"} <= set(agents[0].columns)
 
@@ -485,16 +451,16 @@ def test_a_team_link_is_built_from_the_two_numbers_in_its_key() -> None:
     """A team key is `nba.l.<league>.t.<team>` and the URL wants the numbers."""
     teams = {
         t.name: t.url
-        for t in _provider(FakeYahoo(teams=[_yahoo_team("Theirs", "nba.l.123.t.4", rank=1, wins=1, losses=0)])).teams(
-            ""
-        )
+        for t in nba_provider(
+            FakeYahoo(teams=[_yahoo_team("Theirs", "nba.l.123.t.4", rank=1, wins=1, losses=0)])
+        ).teams("")
     }
 
     assert teams["Theirs"] == "https://basketball.fantasysports.yahoo.com/nba/123/4"
 
 
 def test_a_key_in_an_unexpected_shape_yields_no_link_rather_than_a_broken_one() -> None:
-    teams = _provider(FakeYahoo(teams=[_yahoo_team("Odd", "something-else", rank=1, wins=1, losses=0)])).teams("")
+    teams = nba_provider(FakeYahoo(teams=[_yahoo_team("Odd", "something-else", rank=1, wins=1, losses=0)])).teams("")
 
     assert teams == [] or teams[0].url == ""
 

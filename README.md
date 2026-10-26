@@ -459,8 +459,9 @@ on that platform's side, and the page offers **Try again**; any other failed
 request stays a 400 naming what went wrong.
 
 Tests are hermetic: no network, no credentials, no cache on disk. Engines take
-their collaborators by keyword, so the `tests/conftest.py` fakes stand in for
-the platforms and the model. Anything hitting a live API is marked
+their collaborators by keyword, so the fakes in `tests/support/` stand in for
+the platforms and the model; fixtures live in `conftest.py` files, the root's
+for every test and a directory's own for its tests alone. Anything hitting a live API is marked
 `@pytest.mark.integration` and deselected by default. New code needs tests in
 the same commit; coverage is gated at 95%.
 

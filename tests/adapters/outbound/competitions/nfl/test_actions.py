@@ -7,7 +7,7 @@ that every scenario can say exactly who is where.
 from dataclasses import replace
 from datetime import UTC
 
-from conftest import SLEEPER_USER_ID, FakeESPN, FakeSleeper, _proj, _provider
+from support.nfl import SLEEPER_USER_ID, FakeESPN, FakeSleeper, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
@@ -38,12 +38,12 @@ SCHEDULE = [
     ScheduledGame(week=4, date="2026-10-04", home="KC", away="LV"),
 ]
 
-QB = _proj("qb", "Quinn Back", "QB", 20.0, team="KC", opp="LV")
-RB = _proj("rb", "Ron Back", "RB", 15.0, team="NYJ", opp="NE")
-WR = _proj("wr", "Wade Receiver", "WR", 14.0, team="KC", opp="LV")
-FLEX = _proj("te", "Ty End", "TE", 9.0, team="MIA", opp="BUF")
-BENCH_RB = _proj("rb2", "Bench Back", "RB", 8.0, team="NYJ", opp="NE")
-BENCH_WR = _proj("wr2", "Bench Receiver", "WR", 6.0, team="KC", opp="LV")
+QB = proj("qb", "Quinn Back", "QB", 20.0, team="KC", opp="LV")
+RB = proj("rb", "Ron Back", "RB", 15.0, team="NYJ", opp="NE")
+WR = proj("wr", "Wade Receiver", "WR", 14.0, team="KC", opp="LV")
+FLEX = proj("te", "Ty End", "TE", 9.0, team="MIA", opp="BUF")
+BENCH_RB = proj("rb2", "Bench Back", "RB", 8.0, team="NYJ", opp="NE")
+BENCH_WR = proj("wr2", "Bench Receiver", "WR", 6.0, team="KC", opp="LV")
 
 
 def _client(
@@ -71,7 +71,7 @@ def _client(
 
 
 def _actions(client: FakeSleeper, espn: FakeESPN | None = None) -> list[Action]:
-    actions = _provider(client, espn).summary("L1").actions
+    actions = nfl_provider(client, espn).summary("L1").actions
     assert actions is not None
     return actions
 
@@ -132,10 +132,10 @@ def test_an_empty_slot_is_filled_from_the_bench() -> None:
 
 def test_with_no_bench_cover_the_best_free_agent_who_can_play_is_named() -> None:
     """Not merely the best projection: one on bye or ruled out would fill nothing."""
-    free = _proj("fa1", "Free Back", "RB", 11.0, team="KC", opp="LV")
-    free_on_bye = _proj("fa2", "Idle Back", "RB", 30.0, team="KC", opp="")
-    free_injured = replace(_proj("fa3", "Hurt Back", "RB", 25.0, team="KC", opp="LV"), injury_status="IR")
-    wrong_position = _proj("fa4", "Free Receiver", "WR", 40.0, team="KC", opp="LV")
+    free = proj("fa1", "Free Back", "RB", 11.0, team="KC", opp="LV")
+    free_on_bye = proj("fa2", "Idle Back", "RB", 30.0, team="KC", opp="")
+    free_injured = replace(proj("fa3", "Hurt Back", "RB", 25.0, team="KC", opp="LV"), injury_status="IR")
+    wrong_position = proj("fa4", "Free Receiver", "WR", 40.0, team="KC", opp="LV")
     client = _client(
         [QB, _ruled_out(RB), WR, FLEX, free, free_on_bye, free_injured, wrong_position],
         ["qb", "rb", "wr", "te"],
@@ -157,8 +157,8 @@ def test_a_hole_nobody_anywhere_can_fill_is_not_a_task() -> None:
 
 
 def test_two_holes_are_never_pointed_at_the_same_free_agent() -> None:
-    free_a = _proj("fa1", "Free Back", "RB", 11.0, team="KC", opp="LV")
-    free_b = _proj("fa2", "Other Back", "RB", 7.0, team="KC", opp="LV")
+    free_a = proj("fa1", "Free Back", "RB", 11.0, team="KC", opp="LV")
+    free_b = proj("fa2", "Other Back", "RB", 7.0, team="KC", opp="LV")
     rb_out, te_out = _ruled_out(RB), _ruled_out(replace(FLEX, position="RB"))
     client = _client([QB, rb_out, WR, te_out, free_a, free_b], ["qb", "rb", "wr", "te"], [])
 
@@ -191,7 +191,7 @@ def test_starting_a_questionable_player_says_so() -> None:
 
 
 def test_a_swap_closes_at_the_earlier_of_the_two_kickoffs() -> None:
-    thursday = _proj("wr3", "Thursday Receiver", "WR", 12.0, team="BUF", opp="MIA")
+    thursday = proj("wr3", "Thursday Receiver", "WR", 12.0, team="BUF", opp="MIA")
     client = _client([QB, RB, WR, replace(FLEX, points=5.0), thursday], ["qb", "rb", "wr", "te"], ["wr3"])
 
     [action] = _actions(client)
@@ -332,7 +332,7 @@ def test_covering_a_player_who_cannot_play_shows_only_the_one_coming_in() -> Non
 
 
 def test_a_waiver_pick_shows_what_his_projection_rests_on() -> None:
-    free = _proj("fa1", "Free Back", "RB", 11.0, team="KC", opp="LV")
+    free = proj("fa1", "Free Back", "RB", 11.0, team="KC", opp="LV")
     client = _client([QB, _ruled_out(RB), WR, FLEX, free], ["qb", "rb", "wr", "te"], [], game_lines=_played(free))
 
     [action] = _actions(client)
@@ -405,8 +405,8 @@ def test_every_task_has_a_key_and_no_two_share_one() -> None:
 def test_a_hole_keeps_its_key_when_a_better_answer_turns_up() -> None:
     """Keyed on the problem, so a verdict on the old answer reads as stale
     beside the new one rather than disappearing."""
-    worse = _proj("fa1", "Free Back", "RB", 8.0, team="KC", opp="LV")
-    better = _proj("fa2", "Other Back", "RB", 15.0, team="KC", opp="LV")
+    worse = proj("fa1", "Free Back", "RB", 8.0, team="KC", opp="LV")
+    better = proj("fa2", "Other Back", "RB", 15.0, team="KC", opp="LV")
     before = _actions(_client([QB, _ruled_out(RB), WR, FLEX, worse], ["qb", "rb", "wr", "te"], []))
     after = _actions(_client([QB, _ruled_out(RB), WR, FLEX, worse, better], ["qb", "rb", "wr", "te"], []))
 
@@ -447,7 +447,7 @@ def _with_free_agent(free: WeeklyProjection) -> FakeSleeper:
 
 
 def test_a_free_agent_whose_role_just_grew_is_worth_picking_up() -> None:
-    free = _proj("wr9", "Rising Receiver", "WR", 8.0, team="KC", opp="LV")
+    free = proj("wr9", "Rising Receiver", "WR", 8.0, team="KC", opp="LV")
 
     [action] = [a for a in _actions(_with_free_agent(free)) if a.player_id == "wr9"]
 
@@ -457,7 +457,7 @@ def test_a_free_agent_whose_role_just_grew_is_worth_picking_up() -> None:
 
 def test_a_growing_role_the_projection_has_given_up_on_is_left_alone() -> None:
     """Projected near nothing again usually means the starter is back."""
-    free = _proj("wr9", "Rising Receiver", "WR", 1.0, team="KC", opp="LV")
+    free = proj("wr9", "Rising Receiver", "WR", 1.0, team="KC", opp="LV")
 
     assert all(a.player_id != "wr9" for a in _actions(_with_free_agent(free)))
 
@@ -480,11 +480,11 @@ def _scored(player: WeeklyProjection, *points: float) -> list[NFLGameLine]:
     ]
 
 
-FREE_RB = _proj("fa1", "Free Back", "RB", 12.0, team="KC", opp="LV")
+FREE_RB = proj("fa1", "Free Back", "RB", 12.0, team="KC", opp="LV")
 # A bench that cannot play RB, so a ruled-out RB needs a pickup. LEAGUE holds seven.
-WEAK = _proj("wr2", "Weak Receiver", "WR", 6.0, team="KC", opp="LV")
-ON_BYE = _proj("wr3", "Idle Receiver", "WR", 0.0, team="NE", opp="")
-BACKUP_QB = _proj("qb2", "Backup QB", "QB", 9.0, team="KC", opp="LV")
+WEAK = proj("wr2", "Weak Receiver", "WR", 6.0, team="KC", opp="LV")
+ON_BYE = proj("wr3", "Idle Receiver", "WR", 0.0, team="NE", opp="")
+BACKUP_QB = proj("qb2", "Backup QB", "QB", 9.0, team="KC", opp="LV")
 
 
 def _full_roster(*extra: WeeklyProjection, lines: list[NFLGameLine] | None = None) -> FakeSleeper:
@@ -521,7 +521,7 @@ def test_a_roster_with_a_spot_open_drops_nobody() -> None:
 
 
 def _with_breakout(projected: float) -> list[Action]:
-    rising = _proj("wr9", "Rising Receiver", "WR", projected, team="KC", opp="LV")
+    rising = proj("wr9", "Rising Receiver", "WR", projected, team="KC", opp="LV")
     client = _client(
         [QB, RB, WR, FLEX, WEAK, ON_BYE, BACKUP_QB, rising],
         ["qb", "rb", "wr", "te"],
@@ -548,7 +548,7 @@ def test_a_breakout_worth_less_than_anyone_on_the_bench_is_not_worth_a_spot() ->
 
 # ── starters riding on one game ─────────────────────────────────────────
 
-STACK_TE = _proj("te", "Ty End", "TE", 9.0, team="KC", opp="LV")
+STACK_TE = proj("te", "Ty End", "TE", 9.0, team="KC", opp="LV")
 """With the quarterback and the receiver, a third starter in Kansas City against Las Vegas."""
 
 

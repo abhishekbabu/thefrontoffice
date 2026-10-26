@@ -3,8 +3,8 @@
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
-from conftest import FakeItemStates
 from pydantic import ValidationError
+from support.stores import FakeItemStates
 
 from thefrontoffice.application.items import ItemDecisions, apply_decisions
 from thefrontoffice.domain.errors import ItemDecisionError

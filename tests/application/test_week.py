@@ -7,7 +7,8 @@ the week must come back as when one of its parts is missing or fails.
 from datetime import UTC, datetime
 from typing import Any
 
-from conftest import FakeItemStates
+from support.simulation import outcome
+from support.stores import FakeItemStates
 
 from thefrontoffice.application.forecasting import ForecastEngine
 from thefrontoffice.application.items import ItemDecisions, item_scope
@@ -20,7 +21,6 @@ from thefrontoffice.domain.models import (
     LeagueSchedule,
     LineupMove,
     MatchupInput,
-    Outcomes,
     PlayerCard,
     PlayerPage,
     PlayerQuery,
@@ -33,10 +33,6 @@ SWAP = Action(
     kind="lineup", urgency="soon", title="Start X over W", reason="", key="swap:x:w", player_id="x", replaces="w"
 )
 DEADLINE = Action(kind="trade", urgency="soon", title="Trade by week 11", reason="", key="deadline:11")
-
-
-def _player(pid: str, *samples: float) -> Outcomes:
-    return Outcomes(player_id=pid, name=pid.upper(), projection=sum(samples) / len(samples), samples=samples)
 
 
 class _Provider:
@@ -62,8 +58,8 @@ class _Provider:
         self.matchups_asked += 1
         if self.forecast_error:
             raise self.forecast_error
-        move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(_player("x", 20, 25, 30),))
-        return MatchupInput(mine=(_player("w", 0, 5, 10),), theirs=(_player("t", 10, 20, 30),), moves=(move,), seed=1)
+        move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(outcome("x", 20, 25, 30),))
+        return MatchupInput(mine=(outcome("w", 0, 5, 10),), theirs=(outcome("t", 10, 20, 30),), moves=(move,), seed=1)
 
     def played_matchups(self, league_id: str, week: int) -> list:
         return []

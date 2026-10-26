@@ -20,7 +20,7 @@ pass on regressions, and make the suite slower to read.
 - The user invokes `/review-tests <path>`
 - Reviewing tests before a commit, since `just check` runs them anyway
 - Auditing an existing test module
-- Writing or modifying `tests/**/test_*.py`, `tests/conftest.py`, or `web/src/**/*.test.ts`
+- Writing or modifying `tests/**/test_*.py`, `tests/support/`, a `conftest.py`, or `web/src/**/*.test.ts`
 
 ## Input
 
@@ -42,7 +42,7 @@ Detailed rules live in `rules/`:
 | 3 | `rules/invariants-not-snapshots.md` | Test the rule, not a frozen copy of today's output |
 | 4 | `rules/descriptive-test-names.md` | The name is the specification |
 | 5 | `rules/one-behavior-per-test.md` | Each test has one reason to fail |
-| 6 | `rules/fakes-over-monkeypatching.md` | Collaborators arrive by keyword; use the `conftest.py` fakes |
+| 6 | `rules/fakes-over-monkeypatching.md` | Collaborators arrive by keyword; use the `tests/support/` fakes |
 | 7 | `rules/hermetic-by-default.md` | No network, credentials or stray files; `integration` is the opt-out |
 | 8 | `rules/coverage-is-not-the-goal.md` | The 95% floor is a floor, not a target to game |
 | 9 | `rules/no-caplog.md` | Assert on a named logger through `capture_logs`, never `caplog` |
@@ -59,7 +59,7 @@ Before writing a test, ask:
 | Would it survive a refactor that kept behavior? | Decouple it from the implementation |
 | Is the name a sentence about behavior? | Rename it |
 | Does it have exactly one reason to fail? | Split it |
-| Does this collaborator already have a fake in `conftest.py`? | Use it instead of monkeypatching |
+| Does this collaborator already have a fake in `tests/support/`? | Use it instead of monkeypatching |
 | Does it stay off the network and out of the real cache? | Fix it, or mark it `integration` |
 | Does the module mirror the source module it covers? | Move it |
 | Is it asserting on logs? | Use `capture_logs`, naming the logger |

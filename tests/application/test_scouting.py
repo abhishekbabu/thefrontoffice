@@ -6,8 +6,9 @@ is what the engine does with the model's answer — not how a context is built.
 
 from typing import Any
 
-from conftest import FakeAI, FakeAnswers
-from reports import MOCK_NBA_REPORT
+from support.ai import FakeAI
+from support.reports import MOCK_NBA_REPORT
+from support.stores import FakeAnswers
 
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.domain.models import Action, CompetitionContext, ScoutReport, Stat, TaskVerdict, task_id

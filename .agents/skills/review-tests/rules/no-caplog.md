@@ -1,10 +1,10 @@
 # 9. Capture the logger you mean
 
-Assert on logs through `capture_logs` from `tests/conftest.py`, never pytest's
+Assert on logs through `capture_logs` from `tests/support/logs.py`, never pytest's
 `caplog`.
 
 ```python
-from conftest import capture_logs
+from support.logs import capture_logs
 
 GEMINI_LOGGER = GeminiClient.__module__     # the module logs via getLogger(__name__)
 

@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 import requests
-from conftest import FakeResponse, FakeSession
+from support.http import FakeResponse, FakeSession
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import (
@@ -18,16 +18,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.client import (
     _is_retryable,
 )
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
-
-
-@pytest.fixture
-def no_retry_wait(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep the hermetic suite fast — the backoff is real seconds otherwise."""
-    import thefrontoffice.adapters.outbound.platforms.sleeper.client as mod
-
-    original = mod._retry
-    monkeypatch.setattr(mod, "_retry", lambda: original().copy(wait=lambda _: 0))
-
 
 STATE = {"week": 5, "season": "2026", "season_type": "regular", "display_week": 5}
 

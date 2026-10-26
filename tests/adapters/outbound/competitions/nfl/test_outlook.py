@@ -2,20 +2,20 @@
 
 from dataclasses import replace
 
-from conftest import SLEEPER_USER_ID, FakeSleeper, _proj, _provider
+from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, ScheduledGame, SleeperRoster
 from thefrontoffice.domain.models import WeekAhead
 
 MINE = {
-    "qb1": _proj("qb1", "Star QB", "QB", 22.0),
-    "rb1": _proj("rb1", "Good RB", "RB", 18.0),
-    "rb2": _proj("rb2", "Bad RB", "RB", 4.0),
-    "wr8": _proj("wr8", "Steady WR", "WR", 10.0, team="MIA", opp="BUF"),
+    "qb1": proj("qb1", "Star QB", "QB", 22.0),
+    "rb1": proj("rb1", "Good RB", "RB", 18.0),
+    "rb2": proj("rb2", "Bad RB", "RB", 4.0),
+    "wr8": proj("wr8", "Steady WR", "WR", 10.0, team="MIA", opp="BUF"),
 }
 WIRE = {
-    "qb9": _proj("qb9", "Spare QB", "QB", 16.0, team="NYJ", opp="MIA"),
-    "rb9": _proj("rb9", "Spare RB", "RB", 12.0, team="NYJ", opp="MIA"),
+    "qb9": proj("qb9", "Spare QB", "QB", 16.0, team="NYJ", opp="MIA"),
+    "rb9": proj("rb9", "Spare RB", "RB", 12.0, team="NYJ", opp="MIA"),
 }
 BYE_WEEK = 5
 """Buffalo's bye: three of your four on the sideline at once."""
@@ -54,7 +54,7 @@ def _client(
 
 
 def _weeks(client: FakeSleeper) -> dict[int, WeekAhead]:
-    return {w.week: w for w in _provider(client).weeks_ahead("L1")}
+    return {w.week: w for w in nfl_provider(client).weeks_ahead("L1")}
 
 
 def test_the_next_four_weeks_are_projected_soonest_first() -> None:
@@ -105,7 +105,7 @@ def test_the_last_regular_season_week_has_nothing_ahead() -> None:
     client = _client()
     client.week = 18
 
-    assert _provider(client).weeks_ahead("L1") == []
+    assert nfl_provider(client).weeks_ahead("L1") == []
 
 
 def test_a_plain_out_costs_next_week_and_no_further() -> None:
@@ -125,7 +125,7 @@ def test_a_long_ruling_covers_every_week() -> None:
 def test_the_pickup_is_for_a_position_the_week_is_without() -> None:
     """Short of a running back and a quarterback, the fix is one of those, whatever else the wire holds."""
     client = _client()
-    client.weekly_projections[BYE_WEEK]["wr9"] = _proj("wr9", "Big WR", "WR", 30.0, team="NYJ", opp="MIA")
+    client.weekly_projections[BYE_WEEK]["wr9"] = proj("wr9", "Big WR", "WR", 30.0, team="NYJ", opp="MIA")
     client.players_catalog = {
         **(client.players_catalog or {}),
         "wr9": PlayerMeta(player_id="wr9", name="Big WR", position="WR", team="NYJ"),
@@ -138,7 +138,7 @@ def test_a_pickup_that_barely_helps_is_not_offered() -> None:
     client = _client()
     client.weekly_projections[BYE_WEEK] = {
         "wr8": replace(MINE["wr8"], opponent="NYJ"),
-        "rb9": _proj("rb9", "Spare RB", "RB", 1.0, team="NYJ", opp="MIA"),
+        "rb9": proj("rb9", "Spare RB", "RB", 1.0, team="NYJ", opp="MIA"),
     }
 
     week = _weeks(client)[BYE_WEEK]
@@ -158,7 +158,7 @@ def test_a_player_the_lineup_leans_on_in_one_of_these_weeks_is_never_the_drop() 
 
 def _todo(client: FakeSleeper) -> list:
     client.week = BYE_WEEK - 1
-    actions = _provider(client).summary("L1").actions
+    actions = nfl_provider(client).summary("L1").actions
     assert actions is not None
     return actions
 
@@ -177,6 +177,6 @@ def test_the_short_week_stands_in_for_that_weeks_bye_items() -> None:
 def test_a_short_week_further_out_stays_on_my_team() -> None:
     client = _client()
     client.week = BYE_WEEK - 2
-    actions = _provider(client).summary("L1").actions or []
+    actions = nfl_provider(client).summary("L1").actions or []
 
     assert not [a for a in actions if a.key.startswith("short:")]

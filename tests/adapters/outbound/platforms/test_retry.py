@@ -4,16 +4,10 @@ from collections.abc import Callable
 
 import pytest
 import requests
+from support.http import http_error
 from tenacity import Retrying
 
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
-
-
-def _http(status: int) -> requests.exceptions.HTTPError:
-    response = requests.Response()
-    response.status_code = status
-    return requests.exceptions.HTTPError(response=response)
-
 
 # ── classification ──────────────────────────────────────────────────────
 
@@ -28,20 +22,20 @@ def test_network_failures_are_transient() -> None:
 
 
 def test_server_errors_are_transient() -> None:
-    assert is_transient(_http(500))
-    assert is_transient(_http(503))
+    assert is_transient(http_error(500))
+    assert is_transient(http_error(503))
 
 
 def test_client_errors_are_not() -> None:
     """Retrying a 404 burns the budget on a request that will fail identically."""
-    assert not is_transient(_http(400))
-    assert not is_transient(_http(404))
-    assert not is_transient(_http(429))
+    assert not is_transient(http_error(400))
+    assert not is_transient(http_error(404))
+    assert not is_transient(http_error(429))
 
 
 def test_a_platform_can_add_its_own_retryable_codes() -> None:
-    assert is_transient(_http(429), frozenset({429}))
-    assert not is_transient(_http(404), frozenset({429}))
+    assert is_transient(http_error(429), frozenset({429}))
+    assert not is_transient(http_error(404), frozenset({429}))
 
 
 def test_an_http_error_without_a_response_is_not_transient() -> None:
@@ -80,7 +74,7 @@ def test_a_permanent_failure_is_not_retried() -> None:
 
     def broken() -> str:
         calls.append(1)
-        raise _http(404)
+        raise http_error(404)
 
     with pytest.raises(requests.exceptions.HTTPError):
         _retry()(broken)

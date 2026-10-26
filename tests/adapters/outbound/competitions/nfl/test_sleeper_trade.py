@@ -3,7 +3,7 @@
 from typing import Any
 
 import pytest
-from conftest import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeSleeper, _proj, _provider
+from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NFLGameLine, SleeperRoster
 from thefrontoffice.domain.errors import PlayerNotFoundError
@@ -12,13 +12,13 @@ from thefrontoffice.domain.models import TradeProposal
 
 def _client(**kwargs: Any) -> FakeSleeper:
     projections = dict(DEFAULT_PROJECTIONS)
-    projections["wr7"] = _proj("wr7", "Trade Target", "WR", 15.5, team="KC")
+    projections["wr7"] = proj("wr7", "Trade Target", "WR", 15.5, team="KC")
     return FakeSleeper(projections=projections, **kwargs)
 
 
 def _context(giving: list[str], receiving: list[str], client: FakeSleeper | None = None) -> Any:
     proposal = TradeProposal(giving=giving, receiving=receiving)
-    return _provider(client or _client()).build_trade_context("L1", proposal)
+    return nfl_provider(client or _client()).build_trade_context("L1", proposal)
 
 
 # ── resolution ──────────────────────────────────────────────────────────

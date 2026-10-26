@@ -2,21 +2,21 @@
 
 from dataclasses import replace
 
-from conftest import SLEEPER_USER_ID, FakeSleeper, _proj, _provider
+from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, SleeperRoster
 from thefrontoffice.domain.models import TradeMarket
 
 # You hold two quarterbacks and no receiver; they hold receivers and no quarterback.
 PROJECTIONS = {
-    "qb1": _proj("qb1", "Star QB", "QB", 22.0),
-    "qb2": _proj("qb2", "Spare QB", "QB", 15.0),
-    "rb1": _proj("rb1", "Good RB", "RB", 18.0),
-    "wr1": _proj("wr1", "Top WR", "WR", 14.0),
-    "wr2": _proj("wr2", "Next WR", "WR", 12.0),
-    "wr3": _proj("wr3", "Third WR", "WR", 10.0),
-    "k1": _proj("k1", "Big Leg", "K", 9.0),
-    "k2": _proj("k2", "Short Leg", "K", 7.0),
+    "qb1": proj("qb1", "Star QB", "QB", 22.0),
+    "qb2": proj("qb2", "Spare QB", "QB", 15.0),
+    "rb1": proj("rb1", "Good RB", "RB", 18.0),
+    "wr1": proj("wr1", "Top WR", "WR", 14.0),
+    "wr2": proj("wr2", "Next WR", "WR", 12.0),
+    "wr3": proj("wr3", "Third WR", "WR", 10.0),
+    "k1": proj("k1", "Big Leg", "K", 9.0),
+    "k2": proj("k2", "Short Leg", "K", 7.0),
 }
 
 
@@ -47,7 +47,7 @@ def _client(week: int = 7, deadline: int = 11, **mine: list[str]) -> FakeSleeper
 
 
 def _market(client: FakeSleeper) -> TradeMarket:
-    market = _provider(client).trade_market("L1")
+    market = nfl_provider(client).trade_market("L1")
     assert market is not None
     return market
 
@@ -94,14 +94,14 @@ def test_a_trade_only_you_gain_from_is_not_offered() -> None:
         **(client.players_catalog or {}),
         "qb9": PlayerMeta(player_id="qb9", name="Their QB", position="QB"),
     }
-    client.projections = {**PROJECTIONS, "qb9": _proj("qb9", "Their QB", "QB", 20.0)}
+    client.projections = {**PROJECTIONS, "qb9": proj("qb9", "Their QB", "QB", 20.0)}
 
     assert _market(client).options == ()
 
 
 def test_past_the_deadline_there_is_no_market() -> None:
-    assert _provider(_client(week=8, deadline=7)).trade_market("L1") is None
+    assert nfl_provider(_client(week=8, deadline=7)).trade_market("L1") is None
 
 
 def test_the_last_week_before_the_playoffs_has_nothing_left_for_a_trade_to_change() -> None:
-    assert _provider(_client(week=9)).trade_market("L1") is None
+    assert nfl_provider(_client(week=9)).trade_market("L1") is None

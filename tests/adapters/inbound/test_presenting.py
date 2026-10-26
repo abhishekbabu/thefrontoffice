@@ -1,5 +1,7 @@
 """Tests for putting the engines' figures into words: `adapters/inbound/presenting.py`."""
 
+from support.simulation import odds_split
+
 from thefrontoffice.adapters.inbound import presenting
 from thefrontoffice.application.season import chance_now
 from thefrontoffice.application.week import SeasonView, WeekView, WirePage
@@ -20,10 +22,6 @@ from thefrontoffice.domain.models import (
 
 def _forecast(win: float) -> Forecast:
     return Forecast(win=win, margin=MarginRange(low=-36, median=-10, high=-6), simulations=1)
-
-
-def _odds_split(win: float, loss: float) -> PlayoffOdds:
-    return PlayoffOdds(spots=6, playoffs=0.5, with_win=win, with_loss=loss, simulations=1)
 
 
 # ── the week ────────────────────────────────────────────────────────────
@@ -47,7 +45,7 @@ def test_a_week_with_nothing_simulated_is_the_providers_alone() -> None:
 def test_the_week_header_carries_the_playoff_chance_and_what_this_week_is_worth() -> None:
     forecast = Forecast(win=0.5, margin=MarginRange(low=-1, median=0, high=1), simulations=1)
 
-    summary = presenting.week(WeekView(summary=Summary(), forecast=forecast, odds=_odds_split(0.9, 0.5)))
+    summary = presenting.week(WeekView(summary=Summary(), forecast=forecast, odds=odds_split(0.9, 0.5)))
 
     [_, stat] = summary.headline
     assert stat.label == "Playoffs"

@@ -94,3 +94,49 @@ def test_the_nfls_rules_read_its_own_model_and_only_its_provider_names_the_leagu
         and not violation.startswith("adapters/outbound/competitions/nfl/sleeper.py")
     ]
     assert named == []
+
+
+# ── the suite's own shape ───────────────────────────────────────────────
+
+TESTS = PACKAGE.parent.parent / "tests"
+
+
+def _suite(pattern: str) -> list[Path]:
+    return sorted(p for p in TESTS.rglob(pattern) if "__pycache__" not in p.parts)
+
+
+def test_no_test_imports_another_test_or_a_conftest() -> None:
+    """What tests share is imported from `support/`; a conftest is found by pytest, never imported.
+
+    Once there is more than one `conftest.py`, importing one by name reaches
+    whichever the path finds first, and a test module imported by another
+    runs its tests twice.
+    """
+    reached = [
+        f"{path.relative_to(TESTS)}:{node.lineno} imports {node.module}"
+        for path in _suite("*.py")
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.ImportFrom)
+        and node.module
+        and (node.module == "conftest" or node.module.split(".")[-1].startswith("test_"))
+    ]
+    assert reached == []
+
+
+def test_a_conftest_holds_fixtures_and_nothing_a_test_would_need_to_import() -> None:
+    """Anything else in one is a helper no test can reach by name; it belongs in `support/`."""
+
+    def is_fixture(node: ast.FunctionDef) -> bool:
+        return any(
+            (isinstance(d, ast.Attribute) and d.attr == "fixture")
+            or (isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute) and d.func.attr == "fixture")
+            for d in node.decorator_list
+        )
+
+    helpers = [
+        f"{path.relative_to(TESTS)}:{node.lineno} {node.name}"
+        for path in _suite("conftest.py")
+        for node in ast.parse(path.read_text(encoding="utf-8")).body
+        if isinstance(node, ast.ClassDef) or (isinstance(node, ast.FunctionDef) and not is_fixture(node))
+    ]
+    assert helpers == []

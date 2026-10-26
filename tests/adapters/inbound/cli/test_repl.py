@@ -275,7 +275,7 @@ class WeekProvider(FakeProvider):
 def test_week_shows_the_figures_and_what_to_do_but_not_what_was_dismissed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from conftest import FakeItemStates
+    from support.stores import FakeItemStates
 
     from thefrontoffice.application.items import ItemDecisions
 
@@ -297,7 +297,7 @@ def test_week_is_a_command(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_scout_renders_a_report(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    from conftest import FakeAI
+    from support.ai import FakeAI
 
     monkeypatch.setattr(cmd, "scout_engine", lambda provider: _scout_with(provider, FakeAI()))
     cmd._cmd_scout(Session(), [_entry_with(RecordingProvider())], [])
@@ -307,7 +307,7 @@ def test_scout_renders_a_report(monkeypatch: pytest.MonkeyPatch, capsys: pytest.
 
 
 def _scout_with(provider: Any, ai: Any) -> Any:
-    from conftest import FakeAnswers
+    from support.stores import FakeAnswers
 
     from thefrontoffice.application.scouting import ScoutEngine
 
@@ -332,7 +332,7 @@ def test_scout_warns_when_a_sport_has_no_leagues(capsys: pytest.CaptureFixture[s
 
 
 def test_trade_renders_a_verdict(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    from conftest import FakeAI
+    from support.ai import FakeAI
 
     from thefrontoffice.application.trading import TradeEngine
 
@@ -344,7 +344,7 @@ def test_trade_renders_a_verdict(monkeypatch: pytest.MonkeyPatch, capsys: pytest
 
 
 def test_trade_reports_a_domain_error(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    from conftest import FakeAI
+    from support.ai import FakeAI
 
     from thefrontoffice.application.trading import TradeEngine
     from thefrontoffice.domain.errors import PlayerNotFoundError
