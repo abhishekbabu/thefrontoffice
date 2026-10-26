@@ -8,6 +8,7 @@ the whole prompt.
 import logging
 
 from thefrontoffice.application.answers import Answers
+from thefrontoffice.application.formats import ScoutAnswer
 from thefrontoffice.domain.models import Action, Remembered, ScoutReport, Stat, TaskVerdict, answer_scope, task_id
 from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatSession, ContextProvider
 
@@ -69,15 +70,23 @@ class ScoutEngine:
         return self.answers.answer(scope, prompt, ScoutReport, lambda: self._ask(prompt, headline, tasks)).answer
 
     def _ask(self, prompt: str, headline: list[Stat], tasks: list[Action]) -> ScoutReport:
-        report = self.ai.generate_structured(prompt, ScoutReport)
+        answer = self.ai.generate_structured(prompt, ScoutAnswer)
 
-        # The provider read these off the platform; the model was told to leave
-        # the field empty but is not trusted to. Overwriting rather than merging
-        # means a hallucinated rank can never reach the page. The to-do items
-        # likewise: the model judges them, it does not get to restate them.
-        verdicts = self._verdicts(report.verdicts, len(tasks))
+        # The figures are the provider's, read off the platform, and the to-do
+        # items the provider's too: the model judges them and is never given
+        # a field to restate either in, so a hallucinated rank cannot reach
+        # the page however the answer reads.
+        verdicts = self._verdicts(answer.verdicts, len(tasks))
         judged = [task.model_copy(update={"verdict": verdicts.get(task_id(i))}) for i, task in _numbered(tasks)]
-        return report.model_copy(update={"headline": headline, "tasks": judged, "verdicts": list(verdicts.values())})
+        return ScoutReport(
+            situation=answer.situation,
+            focus=answer.focus,
+            moves=answer.moves,
+            strategy=answer.strategy,
+            verdicts=list(verdicts.values()),
+            tasks=judged,
+            headline=headline,
+        )
 
     def _verdicts(self, verdicts: list[TaskVerdict], count: int) -> dict[str, TaskVerdict]:
         """The model's verdicts keyed by task, keeping only ones that name a real task once.

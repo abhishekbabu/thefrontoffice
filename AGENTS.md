@@ -142,10 +142,9 @@ text is exported only under `LOGFIRE_CAPTURE_PROMPTS` — a prompt carries the
 user's roster and leagues. Each `instrument_*` needs its matching dependency
 extra, or it imports fine and raises at call time.
 
-**Headline figures.** `ScoutReport.headline` is filled by the engine from the
-provider's `CompetitionContext`, never by the model, which is told to leave it empty
-and overwritten regardless — a hallucinated rank sits in the header looking
-exactly as authoritative as a real one.
+**Headline figures.** The model writes only an answer format (`application/formats.py`), never a
+domain model: `ScoutReport.headline` and its tasks are the engine's, from the provider, with no field the model
+could fill — a hallucinated rank would sit in the header as authoritative as a real one.
 
 **Layering.** Dependencies point inward only: `domain` imports nothing else in
 the package; `application` imports only `domain`; adapters implement ports;

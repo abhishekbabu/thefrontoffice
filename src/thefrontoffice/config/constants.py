@@ -142,7 +142,6 @@ Return your analysis in the required structured form. Field guidance:
 - situation: the matchup, the projected margin, and what it turns on.
 - focus: what this week hinges on — thin positions, byes, injury risk. Short labels.
 - verdicts: exactly one per TO DO item, `task` set to its id ('T1'). Empty if the list is empty.
-- tasks: leave empty; the application fills it.
 - moves: action START/BENCH/ADD/MONITOR. Put the projected points in `metric`
   (e.g. "14.2 proj pts, +4.1 over Smith"). Pair every ADD with the player it `replaces`.
 - Be specific and tactical. Do not restate the inputs.

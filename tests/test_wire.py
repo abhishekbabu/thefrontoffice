@@ -9,9 +9,10 @@ from typing import Any
 
 from conftest import FakeAI, FakeAnswers
 
+from thefrontoffice.application.formats import CallAnswer, WireAnswer
 from thefrontoffice.application.wire import MAX_JUDGED, WireEngine
 from thefrontoffice.domain.errors import PlayerNotFoundError
-from thefrontoffice.domain.models import CompetitionContext, PlayerCall, WireReport
+from thefrontoffice.domain.models import CompetitionContext
 
 
 class Wire:
@@ -35,20 +36,20 @@ class Wire:
 class Scripted(FakeAI):
     """A model answering each prompt with a call on every player in it, unless told otherwise."""
 
-    def __init__(self, *calls: PlayerCall) -> None:
+    def __init__(self, *calls: CallAnswer) -> None:
         super().__init__()
         self.calls = list(calls)
 
     def generate_structured(self, prompt: str, schema: type, mock: Any = None) -> Any:
         self.prompts.append(prompt)
         if self.calls:
-            return WireReport(calls=self.calls)
+            return WireAnswer(calls=self.calls)
         ids = [line.split(":")[0] for line in prompt.splitlines()]
-        return WireReport(calls=[_call(pid) for pid in ids])
+        return WireAnswer(calls=[_call(pid) for pid in ids])
 
 
-def _call(pid: str, decision: Any = "ADD") -> PlayerCall:
-    return PlayerCall(player_id=pid, decision=decision, reason=f"because of {pid}")
+def _call(pid: str, decision: Any = "ADD") -> CallAnswer:
+    return CallAnswer(player_id=pid, decision=decision, reason=f"because of {pid}")
 
 
 def _engine(ai: FakeAI | None = None, answers: FakeAnswers | None = None) -> tuple[WireEngine, Wire, FakeAI]:

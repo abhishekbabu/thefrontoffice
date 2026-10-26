@@ -545,8 +545,9 @@ class FakeAI:
         self.chat = FakeChat()
 
     def generate_structured(self, prompt: str, schema: type, mock: Any = None) -> Any:
+        """The scripted report, in whatever format was asked for: a model answers in the schema it is held to."""
         self.prompts.append(prompt)
-        return self.report
+        return self.report if isinstance(self.report, schema) else schema.model_validate(self.report.model_dump())
 
     def structure_text(self, text: str, schema: type, instruction: str, mock: Any = None) -> Any:
         self.structured_text.append(text)
