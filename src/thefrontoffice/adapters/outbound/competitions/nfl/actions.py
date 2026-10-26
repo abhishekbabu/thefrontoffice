@@ -15,7 +15,12 @@ move says nothing about when.
 
 from collections import defaultdict
 
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, best_upgrade, eligible_positions
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
+    LineupChange,
+    best_upgrade,
+    eligible_positions,
+    fits,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame, WeeklyProjection
@@ -34,6 +39,9 @@ RULED_OUT = {
 }
 
 URGENCY_ORDER: dict[Urgency, int] = {"now": 0, "soon": 1, "later": 2}
+
+STACKED = 3
+"""Starters riding on one real game at which a bad afternoon there is most of a bad week."""
 
 
 def build(
@@ -55,6 +63,7 @@ def build(
 
     actions = _lineup(state, started, kickoff, free_agents)
     actions += _breakouts(state, free_agents, {a.player_id for a in actions})
+    actions += _same_game(state, week_games, started, {(a.player_id, a.replaces) for a in actions})
     actions += _next_week_byes(state, games.get(state.week + 1, []))
     actions += _trade_deadline(state)
     return sorted(_with_drops(state, actions, started), key=lambda a: URGENCY_ORDER[a.urgency])
@@ -364,6 +373,63 @@ def _drop_reason(state: Week, player: WeeklyProjection) -> str:
     else:
         worth = f"{player.points:.1f} projected this week, with too few games to judge him on more"
     return f"Drop {player.name}, the least on your bench: {worth}."
+
+
+def _same_game(
+    state: Week, week_games: list[ScheduledGame], started: set[str], listed: set[tuple[str, str]]
+) -> list[Action]:
+    """Games carrying three or more of your starters, with the bench start that spreads them.
+
+    Players in one game rise and fall together — the same pace, the same
+    weather, a blowout that sits the starters — so three of them is one bet
+    placed three times. That is a wider week, not a worse one: when you are
+    behind it is the chance you need, and the forecast prices the swap, so the
+    row says which way it cuts rather than telling anyone to break it up.
+    """
+    game_of = {club: game for game in week_games for club in (game.home, game.away)}
+    starters = [slot.player for slot in state.lineup if slot.player]
+    stacks: dict[tuple[str, str], list[WeeklyProjection]] = defaultdict(list)
+    for player in starters:
+        game = game_of.get(player.team)
+        if game is not None and player.team not in started:
+            stacks[(game.away, game.home)].append(player)
+
+    actions = []
+    for (away, home), stacked in stacks.items():
+        if len(stacked) < STACKED:
+            continue
+        out = min(stacked, key=lambda p: p.points)
+        apart = [
+            p
+            for p in state.projected
+            if p.player_id not in state.starter_ids
+            and p.player_id not in state.roster.reserve_ids
+            and p.opponent
+            and p.team not in started
+            and p.team not in (away, home)
+            and p.injury_status.upper() not in RULED_OUT
+            and fits(state.league.starting_slots, [s for s in starters if s.player_id != out.player_id] + [p])
+        ]
+        swap = max(apart, key=lambda p: p.points, default=None)
+        if swap is None or (swap.player_id, out.player_id) in listed:
+            continue
+        actions.append(
+            Action(
+                kind="lineup",
+                urgency="later",
+                title=f"{len(stacked)} starters ride on {away} at {home}",
+                reason=(
+                    f"{_join([p.name for p in stacked])} all play in it, so one bad game there takes "
+                    f"them all down together. Starting {swap.name} ({swap.points:.1f}) for {out.name} "
+                    f"({out.points:.1f}) spreads the risk: worth it when you are ahead, and often not when "
+                    "you are behind, where you need that game to go well."
+                ),
+                player_id=swap.player_id,
+                replaces=out.player_id,
+                key=f"stack:{away}:{home}",
+            )
+        )
+    return actions
 
 
 def _next_week_byes(state: Week, next_games: list[ScheduledGame]) -> list[Action]:
