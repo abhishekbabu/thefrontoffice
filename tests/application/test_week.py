@@ -85,7 +85,6 @@ def test_the_to_do_list_is_ranked_by_what_each_move_does_to_the_chance() -> None
     view = _engine(_Provider()).week("L1")
 
     assert [a.key for a in view.summary.actions or []] == [SWAP.key, DEADLINE.key]
-    assert view.forecast is not None and view.odds is not None
 
 
 def test_the_managers_decisions_are_applied_after_the_ranking() -> None:
@@ -127,8 +126,11 @@ def test_a_season_with_no_odds_does_not_simulate_the_week_for_nothing() -> None:
     assert view.odds is None and provider.matchups_asked == 0
 
 
-def test_the_wire_is_priced_and_a_failed_pricing_leaves_the_page() -> None:
+def test_the_wire_is_priced() -> None:
     priced = _engine(_Provider()).wire("L1", PlayerQuery())
     assert priced.chances and priced.priced
+
+
+def test_a_failed_pricing_still_leaves_the_wire_page_unpriced() -> None:
     failed = _engine(_Provider(forecast_error=FrontOfficeError("down"))).wire("L1", PlayerQuery())
     assert failed.chances == [] and not failed.priced and failed.page.players

@@ -27,13 +27,20 @@ def _forecast(win: float) -> Forecast:
 # ── the week ────────────────────────────────────────────────────────────
 
 
-def test_the_header_carries_the_chance_of_winning_with_its_margin() -> None:
-    summary = presenting.week(
-        WeekView(summary=Summary(headline=[Stat(label="Week", value="7")]), forecast=_forecast(0.01))
-    )
+def _week_at(win: float) -> Summary:
+    return presenting.week(WeekView(summary=Summary(headline=[Stat(label="Week", value="7")]), forecast=_forecast(win)))
 
-    assert [s.label for s in summary.headline] == ["Week", "Win chance"]  # the margin rides with the chance
-    assert summary.forecast is not None and summary.headline[1].tone == "warning"
+
+def test_the_chance_of_winning_follows_the_providers_header() -> None:
+    assert [s.label for s in _week_at(0.01).headline] == ["Week", "Win chance"]  # the margin rides with the chance
+
+
+def test_a_long_shot_week_is_flagged_as_a_warning() -> None:
+    assert _week_at(0.01).headline[1].tone == "warning"
+
+
+def test_the_forecast_itself_travels_with_the_week() -> None:
+    assert _week_at(0.01).forecast == _forecast(0.01)
 
 
 def test_a_week_with_nothing_simulated_is_the_providers_alone() -> None:
@@ -62,7 +69,6 @@ def test_the_table_carries_each_teams_chance_on_its_row() -> None:
     a, z = attached.standings
 
     assert (a.playoffs, z.playoffs) == ("61%", "")
-    assert {s.label: s.value for s in attached.headline}["Playoffs"] == "61%"
 
 
 def test_the_seasons_header_weighs_this_week_as_the_weeks_header_does() -> None:

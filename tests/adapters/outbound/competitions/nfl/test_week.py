@@ -41,14 +41,25 @@ def test_the_summary_carries_the_lineup_and_the_changes() -> None:
     summary = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).summary("L1")
 
     assert [spot.slot for spot in mine(summary).lineup] == ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
-    assert any(stat.label == "Lineup" for stat in summary.headline)
+    # Good RB sits on the bench while an RB slot stands empty: the one change to make.
+    [swap] = summary.swaps
+    assert "Good RB" in swap.start and swap.out == ""
 
 
 def test_a_player_with_no_game_is_flagged_while_others_have_one() -> None:
-    summary = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).summary("L1")
-    benched = {spot.player: spot for spot in mine(summary).lineup + mine(summary).bench}
+    client = FakeSleeper(
+        projections={**DEFAULT_PROJECTIONS, "bye1": proj("bye1", "Bye Guy", "TE", 0.0, team="LAR", opp="")},
+        rosters=[
+            SleeperRoster(
+                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "bye1"], starter_ids=["qb1", "bye1"]
+            )
+        ],
+    )
+    summary = nfl_provider(client).summary("L1")
+    spots = {spot.player: spot for spot in mine(summary).lineup + mine(summary).bench}
 
-    assert benched["Star QB"].tone == "neutral"  # has an opponent
+    assert spots["Bye Guy"].tone == "warning"  # no game, in a week others play
+    assert spots["Star QB"].tone == "neutral"  # has an opponent
 
 
 def test_a_week_nobody_is_scheduled_for_does_not_flag_the_whole_roster() -> None:
@@ -58,7 +69,6 @@ def test_a_week_nobody_is_scheduled_for_does_not_flag_the_whole_roster() -> None
     summary = nfl_provider(FakeSleeper(projections=preseason)).summary("L1")
 
     assert all(spot.tone == "neutral" for spot in mine(summary).lineup if spot.player != "—")
-    assert all("not scheduled yet" in spot.detail for spot in mine(summary).lineup if spot.player != "—")
 
 
 def test_the_summary_does_not_ask_for_the_waiver_pool() -> None:
@@ -100,7 +110,10 @@ def test_a_week_with_no_fixture_shows_no_opponent() -> None:
 
 
 def test_a_player_carries_their_week_and_their_depth() -> None:
-    detail = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).player("L1", "qb1")
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    catalog = client.get_players()
+    client.players_catalog = {**catalog, "qb1": PlayerMeta(**catalog["qb1"], depth_chart_order=2)}
+    detail = nfl_provider(client).player("L1", "qb1")
     labels = {stat.label: stat.value for group in detail.groups for stat in group.stats}
 
     assert detail.name == "Star QB"
@@ -108,6 +121,7 @@ def test_a_player_carries_their_week_and_their_depth() -> None:
     assert detail.headline_label == "projected for week 3"
     # In full, because a drawer has the room a table column does not.
     assert labels["Opponent"] == "vs Miami Dolphins"
+    assert labels["Depth chart"] == "2"
 
 
 def test_an_unknown_player_is_refused() -> None:

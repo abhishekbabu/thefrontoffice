@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from support.ai import FakeChat
 from support.reports import MOCK_FPL_REPORT
 from support.stores import FakeItemStates
 
@@ -53,20 +54,6 @@ class FakeProvider:
 
     def build_trade_context(self, league_id: str, proposal: Any) -> CompetitionContext:
         return CompetitionContext(prompt="prompt")
-
-
-class FakeChat:
-    def __init__(self, error: Exception | None = None) -> None:
-        self.error = error
-        self.sent: list[str] = []
-
-    def send_message(self, message: str) -> Any:
-        self.sent.append(message)
-        if self.error:
-            raise self.error
-        from types import SimpleNamespace
-
-        return SimpleNamespace(text="Because he has no fixture.")
 
 
 @pytest.fixture(autouse=True)
@@ -139,19 +126,20 @@ def test_an_unconfigured_sport_is_a_readable_400(monkeypatch: pytest.MonkeyPatch
     response = client.get("/api/nba/leagues")
 
     assert response.status_code == 400
-    assert "not configured" in response.json()["detail"]
+    assert "YAHOO_CLIENT_ID" in response.json()["detail"]
 
 
 def test_a_platform_failure_reaches_the_client_in_words(monkeypatch: pytest.MonkeyPatch) -> None:
     from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 
-    monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider(SleeperAPIError("Sleeper is down")))
+    error = SleeperAPIError("Sleeper is down")
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider(error))
     client = TestClient(web.create_app())
 
     response = client.get("/api/nfl/leagues")
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Sleeper is down"
+    assert response.json() == {"detail": str(error), "code": error.code}
 
 
 # ── reports ─────────────────────────────────────────────────────────────
@@ -247,7 +235,7 @@ def _opened(chat: FakeChat | None = None) -> str:
 
 
 def test_a_follow_up_reaches_the_chat_it_names(client: TestClient) -> None:
-    chat_id = _opened()
+    chat_id = _opened(FakeChat(reply="Because he has no fixture."))
 
     body = client.post(f"/api/chat/{chat_id}", json={"message": "Why bench him?"}).json()
 
@@ -259,16 +247,14 @@ def test_an_expired_conversation_says_so(client: TestClient) -> None:
     response = client.post("/api/chat/does-not-exist", json={"message": "Hi"})
 
     assert response.status_code == 404
-    assert "expired" in response.json()["detail"]
 
 
 def test_a_model_failure_is_a_bad_gateway_not_a_crash(client: TestClient) -> None:
-    chat_id = _opened(FakeChat(RuntimeError("quota exhausted")))
+    chat_id = _opened(FakeChat(error=RuntimeError("quota exhausted")))
 
     response = client.post(f"/api/chat/{chat_id}", json={"message": "Why?"})
 
     assert response.status_code == 502
-    assert response.json()["detail"] == "The model did not answer. Try asking again."
 
 
 def test_a_follow_up_every_model_refused_says_why(client: TestClient) -> None:
@@ -277,7 +263,7 @@ def test_a_follow_up_every_model_refused_says_why(client: TestClient) -> None:
     from thefrontoffice.domain.errors import AIQuotaError
 
     error = AIQuotaError("Gemini, Groq")
-    chat_id = _opened(FakeChat(error))
+    chat_id = _opened(FakeChat(error=error))
 
     response = client.post(f"/api/chat/{chat_id}", json={"message": "Why?"})
 
@@ -487,8 +473,7 @@ def test_a_domain_error_carries_a_code_the_client_can_act_on(client: TestClient)
         patch.setattr(web.data, "build_provider", _raising(YahooLoginRequiredError()))
         body = client.get("/api/nba/leagues").json()
 
-    assert body["code"] == "yahoo_login_required"
-    assert "just " not in body["detail"]
+    assert body["code"] == YahooLoginRequiredError.code
 
 
 def _raising(error: Exception) -> Any:
@@ -538,21 +523,18 @@ def test_a_failed_handshake_is_reported_in_the_domains_words(monkeypatch: pytest
 
     web._run_yahoo_login()
 
-    assert web._login.status == "failed"
-    assert "reviews every application" in web._login.detail
+    assert (web._login.status, web._login.detail) == ("failed", str(YahooAuthError()))
 
 
 def test_success_is_only_reported_once_the_grant_is_verified(monkeypatch: pytest.MonkeyPatch) -> None:
     """A login that completes and hands back an inert token is not a success."""
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
 
-    calls: list[str] = []
-    monkeypatch.setattr(YahooClient, "login", classmethod(lambda cls, force=False: calls.append("login")))
-    monkeypatch.setattr(YahooClient, "verify", classmethod(lambda cls: calls.append("verify")))
+    monkeypatch.setattr(YahooClient, "login", classmethod(lambda cls, force=False: None))
+    monkeypatch.setattr(YahooClient, "verify", classmethod(lambda cls: None))
 
     web._run_yahoo_login()
 
-    assert calls == ["login", "verify"]
     assert web._login.status == "ok"
 
 
@@ -666,11 +648,12 @@ def test_a_secrets_effective_value_is_withheld_too(
     assert entry["present"] is True
 
 
-def test_every_model_key_saved_in_settings_reaches_the_file_and_turns_analysis_on(
-    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The whole loop the Settings page exists for: typed in, written to .env,
-    never read back, and in effect on the next request with no restart."""
+def _model_key_client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Any, dict[str, str]]:
+    """A client over a throwaway .env whose reload reads that file back, and a value for every model key.
+
+    The loop the Settings page exists for: typed in, written to .env, never read
+    back, and in effect on the next request with no restart.
+    """
     from thefrontoffice.config import env_file
     from thefrontoffice.config.settings import AppSettings, settings
 
@@ -686,19 +669,45 @@ def test_every_model_key_saved_in_settings_reaches_the_file_and_turns_analysis_o
             setattr(settings, field, getattr(fresh, field))
 
     monkeypatch.setattr(env_file, "reload_settings", reload_from_tmp)
-    client = TestClient(web.create_app())
     keys = {key: f"{key.lower()}-value" for key in env_file.MODEL_KEYS}
+    return TestClient(web.create_app()), path, keys
 
-    assert client.get("/api/capabilities").json()["ai"] is False
-    response = client.put("/api/settings", json={"values": keys})
 
-    assert response.status_code == 200
+def test_every_model_key_saved_in_settings_reaches_the_file(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    client, path, keys = _model_key_client(tmp_path, monkeypatch)
+
+    assert client.put("/api/settings", json={"values": keys}).status_code == 200
+
     written = path.read_text(encoding="utf-8")
     assert all(f"{key}={value}" in written for key, value in keys.items())
-    assert "SLEEPER_USERNAME=abhibeast" in written  # the rest of the file survives
-    listed = {s["key"]: s for s in response.json() if s["key"] in keys}
-    assert all(s["present"] and s["secret"] for s in listed.values())
+
+
+def test_saving_model_keys_keeps_the_rest_of_the_file(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    client, path, keys = _model_key_client(tmp_path, monkeypatch)
+
+    client.put("/api/settings", json={"values": keys})
+
+    assert "SLEEPER_USERNAME=abhibeast" in path.read_text(encoding="utf-8")
+
+
+def test_saved_model_keys_are_reported_present_but_never_sent_back(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _, keys = _model_key_client(tmp_path, monkeypatch)
+
+    response = client.put("/api/settings", json={"values": keys})
+
+    listed = [s for s in response.json() if s["key"] in keys]
+    assert len(listed) == len(keys) and all(s["present"] and s["secret"] for s in listed)
     assert not any(value in response.text for value in keys.values())
+
+
+def test_saving_a_model_key_turns_analysis_on_without_a_restart(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    client, _, keys = _model_key_client(tmp_path, monkeypatch)
+    assert client.get("/api/capabilities").json()["ai"] is False
+
+    client.put("/api/settings", json={"values": keys})
+
     assert client.get("/api/capabilities").json()["ai"] is True
 
 

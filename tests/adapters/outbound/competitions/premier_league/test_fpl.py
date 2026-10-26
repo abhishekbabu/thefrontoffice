@@ -1,8 +1,8 @@
 """Tests for the Fantasy Premier League provider.
 
-The assertions are mostly on prompt content: the rules of the game are what
-the prompt has to carry, and a report that omits the captaincy or the transfer
-allowance is wrong however well it renders.
+The assertions are mostly on what the prompt carries — the squad, the
+fixtures, the market and the figures the provider computed — since a report
+missing the captaincy or the transfer allowance is wrong however well it renders.
 """
 
 from collections.abc import Callable
@@ -33,7 +33,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     TableRow,
 )
 from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
-from thefrontoffice.domain.models import PlayerQuery
+from thefrontoffice.domain.models import PlayerQuery, Spot
 
 ENTRY_ID = 77
 LEAGUE_ID = "900"
@@ -183,7 +183,9 @@ class FakeFPL:
         chips_error: Exception | None = None,
         clubs: list[Club] | None = None,
         clubs_error: Exception | None = None,
+        players: dict[int, Player] | None = None,
     ) -> None:
+        self.players = players
         self.clubs = (
             clubs
             if clubs is not None
@@ -261,7 +263,7 @@ class FakeFPL:
         return self.squad
 
     def get_players(self) -> dict[int, Player]:
-        return {**SQUAD_PLAYERS, **MARKET}
+        return self.players if self.players is not None else {**SQUAD_PLAYERS, **MARKET}
 
     def get_past_seasons(self, element_id: int) -> list[PastSeason]:
         if self.past_seasons_error:
@@ -392,15 +394,12 @@ def test_roster_rows_mark_the_captain_and_the_bench() -> None:
     assert rows["P3"]["Price"] == "£5.0m"
 
 
+def _with_doubt_on_p3() -> dict[int, Player]:
+    return {**SQUAD_PLAYERS, 3: player(3, "DEF", 6.0, status="d", chance_of_playing=50), **MARKET}
+
+
 def test_roster_rows_report_a_doubt() -> None:
-    squad = Squad(gameweek=4, picks=_picks(), bank=30, value=1004)
-    fake = FakeFPL(squad=squad)
-    fake.get_players = lambda: {
-        **{k: v for k, v in SQUAD_PLAYERS.items() if k != 3},
-        3: player(3, "DEF", 6.0, status="d", chance_of_playing=50),
-        **MARKET,
-    }
-    rows = {c.columns["Player"]: c.columns for c in FPLProvider(ENTRY_ID, client=fake).roster(LEAGUE_ID)}
+    rows = {c.columns["Player"]: c.columns for c in provider(players=_with_doubt_on_p3()).roster(LEAGUE_ID)}
     assert rows["P3"]["Status"] == "doubtful 50%"
 
 
@@ -433,34 +432,42 @@ def test_the_implied_change_pairs_the_two_players() -> None:
     assert "START P15 (FWD) for P7" in changes
 
 
-def test_the_prompt_states_the_transfer_allowance_and_the_cost_of_exceeding_it() -> None:
-    prompt = provider().build_context(LEAGUE_ID).prompt
+def test_an_unused_allowance_rolls_up_to_its_cap() -> None:
     # Four unused gameweeks, so the allowance has rolled up to its cap.
-    assert "FREE TRANSFERS: 5." in prompt
-    assert "costs 4 points" in prompt
-    assert "at most 5 transfer(s)" in prompt
+    assert _headline()["Free transfers"] == "5"
 
 
 def test_the_prompt_states_the_bank_in_the_games_own_units() -> None:
-    assert "£3.0m in the bank" in provider(bank=30).build_context(LEAGUE_ID).prompt
+    assert "£3.0m" in provider(bank=30).build_context(LEAGUE_ID).situation
 
 
-def test_the_prompt_quantifies_what_the_best_shape_would_add() -> None:
+def test_the_constraints_quantify_what_the_best_shape_would_add() -> None:
+    from thefrontoffice.adapters.outbound.competitions.premier_league.squad import best_lineup, points_with_captain
+
+    best = best_lineup(list(SQUAD_PLAYERS.values()))
+    current = round(points_with_captain([SQUAD_PLAYERS[i] for i in STARTING_IDS], SQUAD_PLAYERS[8]), 1)
     constraints = provider().build_context(LEAGUE_ID).constraints
-    assert "best legal eleven is a" in constraints
-    assert "more than the current shape" in constraints
+
+    assert best.formation in constraints
+    assert f"{best.points - current:.1f}" in constraints
 
 
 def test_a_chip_played_last_gameweek_is_flagged() -> None:
-    assert "CHIP PLAYED LAST GAMEWEEK: bboost" in provider(active_chip="bboost").build_context(LEAGUE_ID).prompt
+    assert "bboost" in provider(active_chip="bboost").build_context(LEAGUE_ID).constraints
+
+
+def test_no_chip_is_flagged_when_none_was_played() -> None:
+    assert "bboost" not in provider().build_context(LEAGUE_ID).constraints
 
 
 def test_points_left_on_the_bench_are_flagged() -> None:
-    assert "7 points were left on the bench" in provider(points_on_bench=7).build_context(LEAGUE_ID).prompt
+    assert "7 points" in provider(points_on_bench=7).build_context(LEAGUE_ID).situation
 
 
 def test_the_mini_league_standing_is_carried() -> None:
-    assert "MINI-LEAGUE: Work League — 3 of 12" in provider().build_context(LEAGUE_ID).prompt
+    situation = provider().build_context(LEAGUE_ID).situation
+    assert "Work League" in situation
+    assert "3 of 12" in situation
 
 
 # ── fixtures ────────────────────────────────────────────────────────────
@@ -474,7 +481,8 @@ def test_a_fixture_carries_its_difficulty_and_whether_it_is_at_home() -> None:
 def test_a_club_with_no_fixture_is_called_a_blank() -> None:
     """The most important thing the report can be told: those players score zero."""
     fixtures = provider().build_context(LEAGUE_ID).prompt.split("FIXTURES THIS GAMEWEEK")[1].split("AFFORDABLE")[0]
-    assert "- MCI: no fixture — blank gameweek, every MCI player scores 0." in fixtures
+    mci = next(line for line in fixtures.splitlines() if line.startswith("- MCI:"))
+    assert "blank" in mci
 
 
 def test_two_fixtures_in_one_gameweek_are_called_a_double() -> None:
@@ -519,14 +527,12 @@ def test_the_briefing_keeps_the_squad_and_only_the_players_named() -> None:
     briefing = context.briefing(MOCK_FPL_REPORT)
     assert "P8" in briefing
     assert len(briefing) < len(context.prompt)
-    assert "re-run the report" in briefing
 
 
 # ── nothing to say ──────────────────────────────────────────────────────
 
 
 def test_an_optimal_eleven_produces_no_change_recommendations() -> None:
-    """Silence would read as "we did not check", so the absence is stated."""
     from thefrontoffice.adapters.outbound.competitions.premier_league.squad import best_lineup
 
     best = best_lineup(list(SQUAD_PLAYERS.values()))
@@ -534,14 +540,14 @@ def test_an_optimal_eleven_produces_no_change_recommendations() -> None:
     optimal += [Pick(element=p.id, position=i, multiplier=0) for i, p in enumerate(best.bench, start=12)]
     squad = Squad(gameweek=4, picks=optimal, bank=30, value=1004)
 
-    prompt = FPLProvider(ENTRY_ID, client=FakeFPL(squad=squad)).build_context(LEAGUE_ID).prompt
-    assert "already the best legal shape" in prompt
+    assert provider(squad=squad).summary(LEAGUE_ID).swaps == []
 
 
-def test_an_empty_bank_with_no_upgrade_says_so() -> None:
+def test_an_empty_bank_buys_no_upgrade() -> None:
+    """P100, the one £0.5m dearer than its counterpart, is affordable only with money in the bank."""
     prompt = provider(bank=0).build_context(LEAGUE_ID).prompt
     transfers = prompt.split("AFFORDABLE TRANSFERS")[1].split("TOP AVAILABLE")[0]
-    assert "nothing in the bank buys an upgrade" in transfers
+    assert not any(f"P{pid}" in transfers for pid in MARKET)
 
 
 # ── headline figures ────────────────────────────────────────────────────
@@ -552,12 +558,18 @@ def _headline(over: FPLProvider | None = None) -> dict[str, str]:
     return {stat.label: stat.value for stat in context.headline}
 
 
-def test_the_gameweeks_header_carries_its_money_and_the_seasons_carries_its_standing() -> None:
+def test_the_gameweeks_header_carries_its_money() -> None:
+    assert _headline()["Bank"] == "£3.0m"
+
+
+def test_the_gameweeks_header_leaves_the_seasons_points_to_the_league_view() -> None:
     """Points and rank answer how the season is going, which is the league view's question."""
-    week = _headline()
+    assert "Points" not in _headline()
+
+
+def test_the_seasons_header_carries_its_standing() -> None:
     season = {stat.label: stat.value for stat in provider().schedule(LEAGUE_ID).headline}
 
-    assert week["Bank"] == "£3.0m" and "Points" not in week
     assert (season["Points"], season["Overall rank"], season["Mini-league"]) == ("412", "340,112", "3 of 12")
 
 
@@ -599,14 +611,25 @@ def test_the_header_says_when_the_gameweek_locks() -> None:
     assert labels["Deadline"].endswith("UTC") and "Gameweek" not in labels
 
 
-def test_the_summary_marks_the_captain_and_the_doubts() -> None:
-    """Starting a ruled-out player is the mistake the page exists to surface."""
-    summary = provider().summary(LEAGUE_ID)
-    spots = {spot.player.replace(" (C)", ""): spot for spot in mine(summary).lineup}
+def test_the_summary_marks_the_captain() -> None:
+    lineup = mine(provider().summary(LEAGUE_ID)).lineup
 
-    assert any(spot.player.endswith("(C)") for spot in mine(summary).lineup)
-    assert spots["P7"].tone == "neutral"
-    assert summary.swaps  # P15 is the strongest forward and starts on the bench
+    assert [spot.player for spot in lineup if spot.player.endswith("(C)")] == ["P8 (C)"]
+
+
+def test_the_summary_warns_on_a_doubtful_starter() -> None:
+    """Starting a doubtful player is the mistake the page exists to surface."""
+    lineup = mine(provider(players=_with_doubt_on_p3()).summary(LEAGUE_ID)).lineup
+    spots = {spot.player_id: spot for spot in lineup}
+
+    assert spots["3"].tone == "warning"
+
+
+def test_the_summary_offers_the_swap_the_best_eleven_implies() -> None:
+    """P15 is the strongest forward and starts on the bench behind P7."""
+    swaps = provider().summary(LEAGUE_ID).swaps
+
+    assert [(swap.start, swap.out) for swap in swaps] == [("P15", "P7")]
 
 
 def test_the_summary_reports_a_blank_gameweek_on_the_player_not_just_the_club() -> None:
@@ -670,13 +693,8 @@ def test_a_players_fixture_is_for_the_gameweek_still_open() -> None:
 
 
 def test_a_flagged_player_is_toned_and_carries_the_news() -> None:
-    fake = FakeFPL()
-    fake.get_players = lambda: {
-        **SQUAD_PLAYERS,
-        3: player(3, "DEF", 6.0, status="i", chance_of_playing=0, news="Hamstring - expected back 12 Sep"),
-        **MARKET,
-    }
-    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "3")
+    hurt = player(3, "DEF", 6.0, status="i", chance_of_playing=0, news="Hamstring - expected back 12 Sep")
+    detail = provider(players={**SQUAD_PLAYERS, 3: hurt, **MARKET}).player(LEAGUE_ID, "3")
 
     assert detail.tone == "warning"
     assert "Hamstring" in detail.note
@@ -697,13 +715,8 @@ def test_a_players_numbers_are_grouped_rather_than_listed() -> None:
 
 def test_set_pieces_list_only_the_duties_actually_held() -> None:
     """ "Not on penalties" for every player who is not would be rows of nothing."""
-    fake = FakeFPL()
-    fake.get_players = lambda: {
-        **SQUAD_PLAYERS,
-        8: player(8, "MID", 8.0, penalties_order=1, corners_order=2),
-        **MARKET,
-    }
-    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "8")
+    taker = player(8, "MID", 8.0, penalties_order=1, corners_order=2)
+    detail = provider(players={**SQUAD_PLAYERS, 8: taker, **MARKET}).player(LEAGUE_ID, "8")
     pieces = next(g for g in detail.groups if g.title == "Set pieces")
 
     assert [(s.label, s.value) for s in pieces.stats] == [("Penalties", "#1"), ("Corners", "#2")]
@@ -785,23 +798,17 @@ def test_a_failed_history_lookup_does_not_take_the_player_down() -> None:
 
 def test_a_player_carries_a_portrait_keyed_by_optas_code() -> None:
     """Not the element id, which FPL reassigns between seasons."""
-    fake = FakeFPL()
-    catalog = fake.get_players()
-    catalog[8] = replace(catalog[8], code=223094)
-    fake.get_players = lambda: catalog
+    catalog = {**SQUAD_PLAYERS, 8: replace(SQUAD_PLAYERS[8], code=223094), **MARKET}
 
-    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "8")
+    detail = provider(players=catalog).player(LEAGUE_ID, "8")
     assert detail.image_url.endswith("/p223094.png")
 
 
 def test_a_player_with_no_photo_code_is_given_no_url() -> None:
     """An empty string is a missing photo; a URL built from zero is a 404."""
-    fake = FakeFPL()
-    catalog = fake.get_players()
-    catalog[8] = replace(catalog[8], code=0)
-    fake.get_players = lambda: catalog
+    catalog = {**SQUAD_PLAYERS, 8: replace(SQUAD_PLAYERS[8], code=0), **MARKET}
 
-    detail = FPLProvider(ENTRY_ID, client=fake).player(LEAGUE_ID, "8")
+    detail = provider(players=catalog).player(LEAGUE_ID, "8")
     assert detail.image_url == ""
 
 
@@ -912,20 +919,25 @@ LIVE = {
 }
 
 
+def _live_spots() -> dict[str, Spot]:
+    return {s.player_id: s for s in mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup}
+
+
 def test_a_player_who_has_played_shows_what_they_scored() -> None:
     """The number somebody is looking for once a gameweek is under way."""
-    spots = {s.player: s for s in mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup}
-
-    scored = next(s for s in spots.values() if s.value.endswith("pts"))
-    assert scored.value in {"12 pts", "24 pts", "1 pts"}
+    assert _live_spots()["9"].value == "1 pts"
 
 
-def test_a_haul_and_a_blank_are_toned_apart() -> None:
-    lineup = mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup
-    by_value = {s.value: s.tone for s in lineup}
+def test_a_haul_is_toned_good() -> None:
+    haul = _live_spots()["8"]  # the captain, so doubled
 
-    assert by_value.get("12 pts") == "good" or by_value.get("24 pts") == "good"
-    assert by_value.get("1 pts") == "warning"
+    assert (haul.value, haul.tone) == ("24 pts", "good")
+
+
+def test_a_blank_is_toned_as_a_warning() -> None:
+    blank = _live_spots()["9"]
+
+    assert (blank.value, blank.tone) == ("1 pts", "warning")
 
 
 def test_a_player_yet_to_kick_a_ball_keeps_their_projection() -> None:

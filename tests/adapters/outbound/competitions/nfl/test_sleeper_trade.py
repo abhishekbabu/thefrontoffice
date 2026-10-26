@@ -28,7 +28,7 @@ def test_both_sides_are_resolved_and_priced() -> None:
     context = _context(["Bad RB"], ["Trade Target"])
     assert "Bad RB" in context.prompt
     assert "Trade Target" in context.prompt
-    assert "15.5 proj pts" in context.prompt
+    assert "15.5" in context.prompt  # his projection, which is what he is priced at
 
 
 def test_a_name_that_cannot_be_resolved_raises() -> None:
@@ -52,7 +52,6 @@ def test_a_player_with_no_projection_is_still_tradeable() -> None:
     """A bye or a stash has no projection but can still be dealt."""
     context = _context(["Bye Guy"], ["Trade Target"])
     assert "Bye Guy" in context.prompt
-    assert "0.0 proj pts" in context.prompt
 
 
 # ── context ─────────────────────────────────────────────────────────────

@@ -21,7 +21,7 @@ def _game(day: str, **stats: float) -> NBAGameLog:
     return NBAGameLog(player_id="p1", date=day, opponent="LAL", stats=stats)
 
 
-class FakeSleeper:
+class FakeSleeperNBA:
     """Stands in for SleeperClient, for basketball only."""
 
     def __init__(
@@ -35,12 +35,10 @@ class FakeSleeper:
         self.schedule = schedule or []
         self.catalog = catalog or {"p1": PlayerMeta(player_id="p1", name="Nikola Jokic", position="C", team="DEN")}
         self.error = error
-        self.weeks_asked: list[int] = []
 
     def get_nba_game_logs(self, season: str, weeks: list[int]) -> dict[str, list[NBAGameLog]]:
         if self.error:
             raise self.error
-        self.weeks_asked = weeks
         return self.logs
 
     def get_nba_schedule(self, season: str) -> list[ScheduledGame]:
@@ -60,7 +58,7 @@ class FakeSleeper:
 
 
 def _form(**kwargs: Any) -> SleeperNBAForm:
-    return SleeperNBAForm(client=FakeSleeper(**kwargs), season="2026")
+    return SleeperNBAForm(client=FakeSleeperNBA(**kwargs), season="2026")
 
 
 # ── the nine-category line ──────────────────────────────────────────────
@@ -123,7 +121,7 @@ def test_a_name_that_cannot_be_matched_carries_no_form() -> None:
 def test_an_accented_name_still_matches() -> None:
     """Sleeper spells him Jokić; Yahoo does not."""
     form = SleeperNBAForm(
-        client=FakeSleeper(
+        client=FakeSleeperNBA(
             logs=_run(20),
             catalog={"p1": PlayerMeta(player_id="p1", name="Nikola Jokić", position="C", team="DEN")},
         ),
@@ -194,7 +192,7 @@ def test_an_unknown_club_has_no_games_rather_than_raising() -> None:
     assert _form(schedule=[_sched("2026-02-12")]).get_remaining_games("XXX", WINDOW_START, WINDOW_END, now=NOW) == 0
 
 
-def test_bulk_uses_one_instant_for_every_club() -> None:
+def test_bulk_counts_each_club_asked_about_keyed_in_upper_case() -> None:
     form = _form(schedule=[_sched("2026-02-12", home="DEN", away="LAL")])
 
     assert form.get_remaining_games_bulk(["DEN", "lal"], WINDOW_START, WINDOW_END, now=NOW) == {"DEN": 1, "LAL": 1}

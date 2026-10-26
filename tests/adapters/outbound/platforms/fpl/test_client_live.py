@@ -6,6 +6,7 @@ summer, and the failure mode is a report built from silently empty data rather
 than an error. Run with `just test-integration` before each season.
 """
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -48,7 +49,12 @@ def test_every_player_resolves_to_a_position_and_a_club(client: FPLClient) -> No
 
 
 def test_the_upcoming_gameweek_has_a_future_deadline(client: FPLClient) -> None:
-    assert client.upcoming_gameweek().id in range(1, 39)
+    """Out of season there is no future deadline, and the last gameweek comes back instead."""
+    now = datetime.now(UTC)
+    upcoming = client.upcoming_gameweek(now)
+    if upcoming.id == 38 and upcoming.deadline <= now:
+        pytest.skip("the season has run out of future deadlines")
+    assert upcoming.deadline > now
 
 
 def test_a_real_squad_reads_back_as_fifteen(client: FPLClient) -> None:

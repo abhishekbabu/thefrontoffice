@@ -3,7 +3,7 @@
 Covers `nfl/league.py`: the season, the table, the real games, the activity.
 """
 
-from support.nfl import FakeSleeper, at_week, league_client, nfl_provider
+from support.nfl import DEFAULT_PROJECTIONS, FakeSleeper, at_week, league_client, nfl_provider
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -11,6 +11,16 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
 )
 
 # ── the league beyond this week ─────────────────────────────────────────
+
+
+def test_the_leagues_header_is_the_season_so_far() -> None:
+    """Record and points for answer how the season is going, which is this view's question."""
+    season = {
+        stat.label: stat.value
+        for stat in nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).schedule("L1").headline
+    }
+
+    assert (season["Record"], season["Points for"], season["Place"]) == ("2-1", "250.5", "1st of 1")
 
 
 def test_the_season_spans_every_regular_season_week() -> None:

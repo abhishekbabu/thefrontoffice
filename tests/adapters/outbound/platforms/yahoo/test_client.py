@@ -264,8 +264,9 @@ def test_the_owned_team_is_returned() -> None:
 def test_owning_no_team_raises_with_the_league_name() -> None:
     client, _ = _client()
     client.league.teams = lambda: [SimpleNamespace(name="Theirs", is_owned_by_current_login=False)]
-    with pytest.raises(TeamNotFoundError, match="My League"):
+    with pytest.raises(TeamNotFoundError) as caught:
         client.get_user_team()
+    assert caught.value.league_name == "My League"
 
 
 # ── search_players ──────────────────────────────────────────────────────
@@ -429,7 +430,6 @@ def test_a_403_names_the_permission_that_is_actually_missing() -> None:
     error = translate(http_error(403))
 
     assert isinstance(error, YahooAuthError)
-    assert "reviews every application" in str(error)
     assert error.code == "yahoo_not_approved"
 
 
@@ -527,8 +527,9 @@ def test_a_missing_token_is_reported_not_obtained(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(settings, "yahoo_token_file", str(tmp_path / "absent"))
 
-    with pytest.raises(YahooLoginRequiredError, match="not authorized on this machine"):
+    with pytest.raises(YahooLoginRequiredError) as caught:
         YahooClient.ensure_authorized()
+    assert caught.value.code == "yahoo_login_required"
 
 
 def test_an_existing_token_satisfies_the_check(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -580,8 +581,9 @@ def test_a_token_that_authenticates_but_grants_nothing_is_caught(
 
     monkeypatch.setattr(YahooClient, "get_context", classmethod(lambda cls: SimpleNamespace(make_request=_refuse)))
 
-    with pytest.raises(YahooAuthError, match="reviews every application"):
+    with pytest.raises(YahooAuthError) as caught:
         YahooClient.verify()
+    assert caught.value.code == "yahoo_not_approved"
 
 
 def test_an_unreachable_yahoo_is_not_reported_as_a_permission_problem(

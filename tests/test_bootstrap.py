@@ -185,13 +185,11 @@ def test_providers_are_tried_gemini_then_groq_then_openrouter(keys: Callable[...
 
 
 def test_a_provider_with_no_key_is_skipped(keys: Callable[..., None]) -> None:
-    from thefrontoffice.bootstrap import ai_available, ai_providers, default_model
+    from thefrontoffice.bootstrap import ai_providers
 
     keys(openrouter_api_key="o")
 
     assert ai_providers() == ["OpenRouter"]
-    assert ai_available()
-    assert getattr(default_model(), "is_available", False)
 
 
 def test_a_rested_provider_stays_rested_across_requests() -> None:

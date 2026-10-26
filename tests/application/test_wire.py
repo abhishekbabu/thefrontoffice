@@ -163,13 +163,20 @@ def test_calls_are_kept_per_league() -> None:
     assert engine.kept("L2", ["a"]) == []
 
 
-def test_a_player_claimed_since_the_page_loaded_is_skipped_not_fatal() -> None:
+def test_a_player_claimed_since_the_page_loaded_is_dropped_from_the_kept_calls() -> None:
     """One player gone from the wire should not cost every other row its call."""
     engine, wire, _ = _engine()
     engine.judge("L1", ["a", "b"])
     wire.claimed.add("a")
 
     assert [c.player_id for c in engine.kept("L1", ["a", "b"])] == ["b"]
+
+
+def test_a_player_claimed_since_the_page_loaded_is_skipped_when_judging_again() -> None:
+    engine, wire, _ = _engine()
+    engine.judge("L1", ["a", "b"])
+    wire.claimed.add("a")
+
     assert [c.player_id for c in engine.judge("L1", ["a", "b"])] == ["b"]
 
 

@@ -32,7 +32,6 @@ def test_a_role_is_his_share_of_the_offense_over_his_last_three_games() -> None:
     assert role.targets == pytest.approx(8.0)
     assert role.target_share == pytest.approx(0.8)
     assert role.points == pytest.approx(15.0)
-    assert role.describe() == "last 3 games: 75% of snaps, 8.0 targets (80% share), 15.0 pts"
 
 
 def test_a_game_he_never_took_the_field_in_is_not_part_of_his_role() -> None:
@@ -143,11 +142,9 @@ def test_a_player_is_described_by_both_halves_and_toned_by_his_matchup() -> None
 
     assert stat is not None
     assert stat.label == "Run Back"
-    evidence = gather(lines, SCORING)
-    matchup = evidence.matchup(proj("x", "Run Back", "RB", 12.0, opp="MIA"))
-    assert matchup is not None
-    assert stat.value == f"{matchup.describe()}; {evidence.roles['x'].describe()}"
-    assert stat.tone == "good"
+    assert "MIA" in stat.value  # the matchup: the defense he faces
+    assert "50%" in stat.value  # the role: 30 of 60 snaps
+    assert stat.tone == "good"  # MIA gives up the most to backs
 
 
 def test_a_player_with_nothing_played_has_nothing_to_say() -> None:

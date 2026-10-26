@@ -36,17 +36,18 @@ def _yahoo_with(*names: str) -> FakeYahoo:
 # ── player resolution ───────────────────────────────────────────────────
 
 
+def _names(players: list[Any]) -> list[str]:
+    return [p.name.full for p in players]
+
+
 def test_an_exact_match_resolves() -> None:
-    yahoo = _yahoo_with("LeBron James")
-    assert len(_resolve(yahoo, ["LeBron James"])) == 1
-    assert yahoo.searches == ["LeBron James"]
+    assert _names(_resolve(_yahoo_with("LeBron James"), ["LeBron James"])) == ["LeBron James"]
 
 
 def test_the_surname_is_tried_when_the_full_name_misses() -> None:
     """'Lebron James' (wrong casing) misses, but 'James' still finds him."""
     yahoo = FakeYahoo(search_results={"James": [make_player("LeBron James")]})
-    assert len(_resolve(yahoo, ["Lebron James"])) == 1
-    assert yahoo.searches == ["Lebron James", "James"]
+    assert _names(_resolve(yahoo, ["Lebron James"])) == ["LeBron James"]
 
 
 def test_an_unresolved_name_raises_rather_than_being_dropped() -> None:
@@ -61,8 +62,8 @@ def test_an_ambiguous_match_takes_the_first_and_warns() -> None:
     yahoo = FakeYahoo(search_results={"Williams": [make_player("Jalen Williams"), make_player("Jaylen Williams")]})
     with capture_logs(YAHOO_LOGGER, logging.WARNING) as logs:
         resolved = _resolve(yahoo, ["Williams"])
-    assert len(resolved) == 1
-    assert "2 matches" in logs.at(logging.WARNING)[0]
+    assert _names(resolved) == ["Jalen Williams"]
+    assert len(logs.at(logging.WARNING)) == 1
 
 
 # ── trade context ───────────────────────────────────────────────────────
@@ -84,22 +85,20 @@ def test_both_sides_and_the_roster_reach_the_prompt() -> None:
 
 
 def test_the_matchup_is_carried_as_the_situation() -> None:
-    assert "CURRENT MATCHUP" in _context().situation
+    yahoo = _yahoo_with("LeBron James", "Jayson Tatum")
+    assert _context(yahoo).situation == yahoo.get_matchup(yahoo.get_user_team()).context
 
 
 def test_a_roster_failure_degrades_without_losing_the_evaluation() -> None:
     """Roster context is enrichment; losing it must not lose the answer."""
-
-    yahoo = _yahoo_with("LeBron James", "Jayson Tatum")
-
-    def _explode() -> Any:
-        raise RuntimeError("yahoo hiccup")
-
-    team = yahoo.get_user_team()
-    team.players = _explode
-    yahoo.get_user_team = lambda: team
-
-    context = _provider(yahoo).build_trade_context(
-        "", TradeProposal(giving=["LeBron James"], receiving=["Jayson Tatum"])
+    yahoo = FakeYahoo(
+        search_results={n: [make_player(n)] for n in ("LeBron James", "Jayson Tatum")},
+        roster=[make_player("Existing Starter")],
+        roster_error=RuntimeError("yahoo hiccup"),
     )
-    assert "Roster data unavailable" in context.prompt
+
+    prompt = _context(yahoo).prompt
+
+    assert "LeBron James" in prompt
+    assert "Jayson Tatum" in prompt
+    assert "Existing Starter" not in prompt

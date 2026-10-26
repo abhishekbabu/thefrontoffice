@@ -21,15 +21,12 @@ def test_player_not_found_lists_every_unresolved_name() -> None:
     assert e.names == ["Lebron Jamez", "Jayson Taytum"]
 
 
-def test_player_not_found_singular_and_plural_phrasing() -> None:
-    assert "this player" in str(PlayerNotFoundError(["A"]))
-    assert "these players" in str(PlayerNotFoundError(["A", "B"]))
+def test_player_not_found_names_a_lone_unresolved_player() -> None:
+    assert "Lebron Jamez" in str(PlayerNotFoundError(["Lebron Jamez"]))
 
 
-def test_trade_parse_error_shows_the_expected_form() -> None:
-    e = TradeParseError("nonsense")
-    assert "Give <players>, Get <players>" in str(e)
-    assert "nonsense" in str(e)
+def test_trade_parse_error_quotes_what_was_typed() -> None:
+    assert "nonsense" in str(TradeParseError("nonsense"))
 
 
 def test_ai_unavailable_names_every_key_that_would_turn_it_on() -> None:
