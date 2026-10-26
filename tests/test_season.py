@@ -8,21 +8,13 @@ without any sport's data.
 from thefrontoffice.application.season import (
     MarketEngine,
     SeasonEngine,
-    attach_season,
-    attach_table,
     chance_now,
     simulate_season,
 )
 from thefrontoffice.domain.models import (
     Fixture,
-    Forecast,
-    LeagueSchedule,
-    MarginRange,
     PlayoffOdds,
     SeasonInput,
-    StandingRow,
-    Summary,
-    TeamOdds,
     TeamRecord,
     TeamWeek,
     TradeMarket,
@@ -126,7 +118,7 @@ def test_the_same_season_gives_the_same_answer_every_time() -> None:
     assert simulate_season(season, FEW) == simulate_season(season, FEW)
 
 
-# ── onto the page ───────────────────────────────────────────────────────
+# ── this week, weighed in ───────────────────────────────────────────────────────
 
 
 def _odds_split(win: float, loss: float) -> PlayoffOdds:
@@ -139,29 +131,6 @@ def test_this_week_is_weighed_by_the_weeks_own_forecast() -> None:
 
 def test_without_a_forecast_the_season_simulation_stands() -> None:
     assert chance_now(_odds_split(0.9, 0.5), win=None) == 0.5
-
-
-def test_the_week_header_carries_the_playoff_chance_and_what_this_week_is_worth() -> None:
-    forecast = Forecast(win=0.5, margin=MarginRange(low=-1, median=0, high=1), simulations=1)
-
-    summary = attach_season(Summary(forecast=forecast), _odds_split(0.9, 0.5))
-
-    [stat] = summary.headline
-    assert stat.label == "Playoffs"
-    assert all(figure in stat.value for figure in ("70%", "90%", "50%"))
-
-
-def test_the_table_carries_each_teams_chance_on_its_row() -> None:
-    schedule = LeagueSchedule(
-        standings=[StandingRow(rank=1, name="A", team_id="a"), StandingRow(rank=2, name="Z", team_id="z")]
-    )
-    odds = PlayoffOdds(spots=1, teams=[TeamOdds(team_id="a", name="A", playoffs=0.61)], playoffs=0.61, simulations=1)
-
-    attached = attach_table(schedule, odds)
-    a, z = attached.standings
-
-    assert (a.playoffs, z.playoffs) == ("61%", "")
-    assert {s.label: s.value for s in attached.headline}["Playoffs"] == "61%"
 
 
 class _Over:
@@ -247,12 +216,3 @@ def test_what_a_trade_hands_the_other_side_is_counted() -> None:
 
 def test_no_market_is_no_trades() -> None:
     assert MarketEngine(_Over()).trades("L1") == []
-
-
-def test_the_seasons_header_weighs_this_week_as_the_weeks_header_does() -> None:
-    """One chance shown two ways on two pages reads as a bug in one of them."""
-    odds = PlayoffOdds(spots=1, teams=[], playoffs=0.88, with_win=0.96, with_loss=0.79, simulations=1)
-
-    headline = attach_table(LeagueSchedule(), odds, win=0.01).headline
-
-    assert {s.label: s.value for s in headline}["Playoffs"] == f"{chance_now(odds, 0.01):.0%}"

@@ -22,9 +22,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from thefrontoffice.adapters.inbound import presenting
 from thefrontoffice.adapters.inbound.web import data
-from thefrontoffice.application.forecasting import WIN_COLUMN, attach, attach_pickups
-from thefrontoffice.application.season import attach_season, attach_table
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import (
     CompetitionEntry,
@@ -32,11 +31,10 @@ from thefrontoffice.bootstrap import (
     all_competitions,
     ask_engine,
     find,
-    forecast_engine,
     item_decisions,
     market_engine,
     scout_engine,
-    season_engine,
+    week_engine,
     wire_engine,
 )
 from thefrontoffice.config import env_file
@@ -53,7 +51,6 @@ from thefrontoffice.domain.models import (
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
-    PlayoffOdds,
     Remembered,
     ScoutReport,
     Subject,
@@ -64,9 +61,7 @@ from thefrontoffice.domain.models import (
 )
 from thefrontoffice.domain.ports import (
     ChatSession,
-    ForecastProvider,
     OutlookProvider,
-    SeasonProvider,
     TradeMarketProvider,
 )
 
@@ -402,18 +397,7 @@ def _register_routes(app: FastAPI) -> None:
         showing nothing the app already knows. To-do items carry what the
         manager decided about them — dismissed, snoozed, or back since.
         """
-        provider = data.build_provider(competition)
-        summary = provider.summary(league_id)
-        if isinstance(provider, ForecastProvider):
-            summary = _forecast(provider, league_id, summary)
-        # After the forecast, which decides how likely this week's win is.
-        odds = _season(provider, league_id) if isinstance(provider, SeasonProvider) else None
-        if odds is not None:
-            summary = attach_season(summary, odds)
-        if summary.actions is None:
-            return summary
-        actions = item_decisions().apply(provider.label, league_id, summary.actions)
-        return summary.model_copy(update={"actions": actions})
+        return presenting.week(week_engine(data.build_provider(competition), item_decisions()).week(league_id))
 
     @app.post("/api/{competition}/leagues/{league_id}/items", response_model=ItemState | None)
     def decide(competition: str, league_id: str, decision: ItemDecision) -> ItemState | None:
@@ -441,7 +425,7 @@ def _register_routes(app: FastAPI) -> None:
         # The chance of winning is priced for the page alone, so it cannot
         # rank the pool: sorting by it takes the competition's own ranking,
         # which puts the likeliest to help first, and orders that page.
-        by_chance = sort == WIN_COLUMN
+        by_chance = sort == presenting.WIN_COLUMN
         query = PlayerQuery(
             offset=offset,
             limit=limit,
@@ -450,11 +434,8 @@ def _register_routes(app: FastAPI) -> None:
             position=position,
             search=search,
         )
-        provider = data.build_provider(competition)
-        page = provider.free_agents(league_id, query)
-        if not isinstance(provider, ForecastProvider):
-            return page
-        return _priced(provider, league_id, page, order=descending if by_chance else None)
+        view = week_engine(data.build_provider(competition), item_decisions()).wire(league_id, query)
+        return presenting.wire(view, order=descending if by_chance else None)
 
     @app.get("/api/{competition}/leagues/{league_id}/teams", response_model=list[TeamRef])
     def teams(competition: str, league_id: str) -> list[TeamRef]:
@@ -474,14 +455,7 @@ def _register_routes(app: FastAPI) -> None:
         costs requests the week does not need — nobody checking their lineup
         should wait on the whole season's fixtures.
         """
-        provider = data.build_provider(competition)
-        schedule = provider.schedule(league_id)
-        odds = _season(provider, league_id) if isinstance(provider, SeasonProvider) else None
-        if odds is None:
-            return schedule
-        return attach_table(
-            schedule, odds, _win(provider, league_id) if isinstance(provider, ForecastProvider) else None
-        )
+        return presenting.season(week_engine(data.build_provider(competition), item_decisions()).season(league_id))
 
     @app.get("/api/{competition}/leagues/{league_id}/weeks-ahead", response_model=list[WeekAhead])
     def weeks_ahead(competition: str, league_id: str) -> list[WeekAhead]:
@@ -569,49 +543,6 @@ def _register_routes(app: FastAPI) -> None:
             logger.error(f"Follow-up failed: {e}")
             raise HTTPException(status_code=502, detail="The model did not answer. Try asking again.") from e
         return Reply(answer=answer or "(no answer)")
-
-
-def _forecast(provider: ForecastProvider, league_id: str, summary: Summary) -> Summary:
-    """The week with its matchup simulated, or as it was where that cannot be done.
-
-    Enrichment, like news and evidence: a week that cannot be simulated is
-    still the week, and a page that failed over a forecast would show nothing.
-    """
-    try:
-        result = forecast_engine(provider).forecast(league_id)
-    except FrontOfficeError as e:
-        logger.warning(f"Showing the week without a forecast: {e}")
-        return summary
-    return attach(summary, *result) if result else summary
-
-
-def _win(provider: ForecastProvider, league_id: str) -> float | None:
-    """This week's chance of winning, to weigh the playoff chance by; none where it cannot be simulated."""
-    try:
-        result = forecast_engine(provider).forecast(league_id)
-    except FrontOfficeError as e:
-        logger.warning(f"Weighing the playoff chance without this week's forecast: {e}")
-        return None
-    return result[0].win if result else None
-
-
-def _season(provider: SeasonProvider, league_id: str) -> PlayoffOdds | None:
-    """Every team's playoff chance, or none where the season cannot be simulated — enrichment like the forecast."""
-    try:
-        return season_engine(provider).odds(league_id)
-    except FrontOfficeError as e:
-        logger.warning(f"Showing the league without playoff odds: {e}")
-        return None
-
-
-def _priced(provider: ForecastProvider, league_id: str, page: PlayerPage, order: bool | None) -> PlayerPage:
-    """The page with what each player would do to this week's chance; as it was where that cannot be priced."""
-    try:
-        chances = forecast_engine(provider).pickups(league_id, [p.player_id for p in page.players])
-    except FrontOfficeError as e:
-        logger.warning(f"Showing free agents without their chance of winning: {e}")
-        return page
-    return attach_pickups(page, chances, order=order)
 
 
 def _capable(competition: str, what: str, has: Callable[[CompetitionEntry], bool]) -> CompetitionEntry:

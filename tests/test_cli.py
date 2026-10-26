@@ -247,6 +247,55 @@ def _entry_with(provider: Any, competition: str = "nfl", trades: bool = False) -
     )
 
 
+class WeekProvider(FakeProvider):
+    """A provider with a week to show: one to-do item, and one the manager dismissed."""
+
+    def summary(self, league_id: str) -> Any:
+        from thefrontoffice.domain.models import Action, Stat, Summary
+
+        return Summary(
+            headline=[Stat(label="Lineup", value="123.5")],
+            actions=[
+                Action(kind="lineup", urgency="soon", title="Start A over B", reason="A projects more.", key="a"),
+                Action(kind="trade", urgency="later", title="Gone", reason="", key="b", hidden="dismissed"),
+            ],
+        )
+
+    def schedule(self, league_id: str) -> Any:
+        from thefrontoffice.domain.models import LeagueSchedule
+
+        return LeagueSchedule()
+
+    def free_agents(self, league_id: str, query: Any) -> Any:
+        from thefrontoffice.domain.models import PlayerPage
+
+        return PlayerPage()
+
+
+def test_week_shows_the_figures_and_what_to_do_but_not_what_was_dismissed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from conftest import FakeItemStates
+
+    from thefrontoffice.application.items import ItemDecisions
+
+    monkeypatch.setattr(cmd, "item_decisions", lambda: ItemDecisions(FakeItemStates()))
+    cmd._cmd_week(Session(), [_entry_with(WeekProvider())], [])
+
+    out = capsys.readouterr().out
+    assert "123.5" in out and "Start A over B" in out
+    assert "Gone" not in out
+
+
+def test_week_is_a_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[str] = []
+    monkeypatch.setattr(cli, "_cmd_week", lambda session, entries, args: seen.append("week"))
+
+    cli._dispatch(Session(), [], "/week", [])
+
+    assert seen == ["week"]
+
+
 def test_scout_renders_a_report(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     from conftest import FakeAI
 
