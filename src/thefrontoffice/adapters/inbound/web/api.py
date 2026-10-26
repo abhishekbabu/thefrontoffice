@@ -59,8 +59,9 @@ from thefrontoffice.domain.models import (
     Summary,
     TeamRef,
     TradeIdea,
+    WeekAhead,
 )
-from thefrontoffice.domain.ports import ChatSession, ForecastProvider, SeasonProvider
+from thefrontoffice.domain.ports import ChatSession, ForecastProvider, OutlookProvider, SeasonProvider
 
 logger = logging.getLogger(__name__)
 
@@ -467,6 +468,16 @@ def _register_routes(app: FastAPI) -> None:
         schedule = provider.schedule(league_id)
         odds = _season(provider, league_id) if isinstance(provider, SeasonProvider) else None
         return attach_table(schedule, odds) if odds is not None else schedule
+
+    @app.get("/api/{competition}/leagues/{league_id}/weeks-ahead", response_model=list[WeekAhead])
+    def weeks_ahead(competition: str, league_id: str) -> list[WeekAhead]:
+        """The next few weeks as your roster stands, and a pickup for any that comes up short.
+
+        None where a competition cannot project its weeks ahead: there is
+        nothing to plan, which is an answer rather than a failure.
+        """
+        provider = data.build_provider(competition)
+        return provider.weeks_ahead(league_id) if isinstance(provider, OutlookProvider) else []
 
     @app.get("/api/{competition}/leagues/{league_id}/trades", response_model=list[TradeIdea])
     def trades(competition: str, league_id: str) -> list[TradeIdea]:

@@ -632,6 +632,25 @@ class PlayoffOdds(BaseModel):
     simulations: int
 
 
+class WeekAhead(BaseModel):
+    """One coming week for your roster: what its best lineup projects, and what to do if that is short.
+
+    Byes and injuries are known weeks out, and a week where several land at
+    once is a loss that can be seen coming: this is where it is seen, while
+    there is a waiver run or two to fix it.
+    """
+
+    week: int
+    points: float = Field(description="Your best legal lineup's projection that week.")
+    usual: float = Field(description="What your best lineup projects in a typical one of these weeks.")
+    missing: list[str] = Field(
+        default_factory=list, description="Regular starters who will not play that week, and why: 'Josh Allen (bye)'."
+    )
+    short: bool = Field(description="Whether the week falls far enough below the usual to act on.")
+    fix: str = Field(default="", description="The pickup that closes most of the gap, and who to drop for him.")
+    gain: float = Field(default=0.0, description="What that pickup adds to the week's best lineup.")
+
+
 @dataclass(frozen=True)
 class TradeOption:
     """One trade worth simulating: who moves, and how both teams score once it has.

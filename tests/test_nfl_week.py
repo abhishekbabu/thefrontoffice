@@ -3,6 +3,7 @@
 Covers `nfl/week.py` and the summary the provider builds from it.
 """
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -334,3 +335,14 @@ def test_without_the_scoreboard_the_schedule_stands() -> None:
     summary = _underway(scoreboard_error=ESPNAPIError("down")).summary("L1")
 
     assert mine(summary).points.endswith("proj")
+
+
+def test_a_bench_player_in_a_reserve_slot_is_marked_as_such() -> None:
+    """He takes no bench spot, which a row reading like every other bench row hides."""
+
+    def bench_detail(reserve: list[str]) -> str:
+        client = _live_client({})
+        client.rosters = [replace(client.rosters[0], reserve_ids=reserve)]
+        return next(s.detail for s in mine(_provider(client).summary("L1")).bench if s.player_id == "rb1")
+
+    assert bench_detail(["rb1"]) != bench_detail([])

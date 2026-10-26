@@ -158,6 +158,15 @@ chance and what this week is worth to it — "90% · 96% with a win, 83% without
 — weighing this week by the week's own forecast; the league table carries every
 team's.
 
+**Weeks ahead.** My team opens on the next four weeks as the roster stands
+(`nfl/outlook.py`), each one's best legal lineup projected from Sleeper's own
+projections for that week — so byes land where they fall — against the
+roster's usual week, with the regular starters it will be without and why. A
+week ten points or more short names the free agent who closes most of the
+gap, and, on a full roster, who to drop: never a regular, nor anyone who is
+only away for the week. Players in reserve slots are not counted on, and are
+marked as such on the week's bench.
+
 **Trades worth offering.** Until the deadline, League → Trades tries every
 one-for-one swap with every team (`nfl/market.py`) and keeps those that raise
 both starting lineups' projected points for the weeks after this one — at least
@@ -209,7 +218,7 @@ reload shows them, judging the page again asks only about the players whose
 situation moved, and a call on one who has moved since shows as *stale*.
 **League** covers the season: your results so far, the
 table (with each team's playoff chance, on NFL), trades worth offering (NFL), every roster, the fixture list and the transaction feed. **My team** is
-your squad in more depth, and any row opens a player.
+your squad in more depth, opening on the weeks ahead, and any row opens a player.
 
 ![Player detail](docs/screenshots/player.png)
 

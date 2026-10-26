@@ -268,6 +268,18 @@ export type TeamRef = {
   is_mine: boolean;
 };
 
+/** One coming week for your roster, and the pickup that fixes it where byes and injuries leave it short. */
+export type WeekAhead = {
+  week: number;
+  points: number;
+  usual: number;
+  /** Regular starters who will not play, and why: "Josh Allen (bye)". */
+  missing: string[];
+  short: boolean;
+  fix: string;
+  gain: number;
+};
+
 /** A trade worth offering, priced in what it does to the playoff race. Fractions, not percents. */
 export type TradeIdea = {
   team_id: string;
@@ -381,6 +393,8 @@ export const api = {
   summary: (competition: string, league: string) => request<Summary>(`/api/${competition}/leagues/${league}/summary`),
   schedule: (competition: string, league: string) =>
     request<LeagueSchedule>(`/api/${competition}/leagues/${league}/schedule`),
+  weeksAhead: (competition: string, league: string) =>
+    request<WeekAhead[]>(`/api/${competition}/leagues/${league}/weeks-ahead`),
   trades: (competition: string, league: string) =>
     request<TradeIdea[]>(`/api/${competition}/leagues/${league}/trades`),
   decide: (competition: string, league: string, decision: ItemDecision) =>

@@ -17,7 +17,16 @@ from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
-from thefrontoffice.adapters.outbound.competitions.nfl import actions, evidence, league, market, news, outcomes, prompt
+from thefrontoffice.adapters.outbound.competitions.nfl import (
+    actions,
+    evidence,
+    league,
+    market,
+    news,
+    outcomes,
+    outlook,
+    prompt,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupSlot,
     best_upgrade,
@@ -85,6 +94,7 @@ from thefrontoffice.domain.models import (
     Tone,
     TradeMarket,
     TradeProposal,
+    WeekAhead,
 )
 from thefrontoffice.domain.ports import LeagueRef
 
@@ -709,7 +719,7 @@ class SleeperNFLProvider:
                 points=self._side_total(state, live),
                 lineup=[self._lineup_spot(slot, scheduled, live) for slot in state.lineup],
                 bench=[
-                    self._spot(p, scheduled, live=live)
+                    self._reserved(self._spot(p, scheduled, live=live), state.roster)
                     for p in sorted(
                         (p for p in state.projected if p.player_id not in starters), key=lambda p: -p.points
                     )
@@ -1127,6 +1137,13 @@ class SleeperNFLProvider:
             self.client, state, league_id, seed=_seed(self.label, league_id, "season", state.week)
         )
 
+    def weeks_ahead(self, league_id: str) -> list[WeekAhead]:
+        """The next few weeks as your roster stands, with a pickup for any that byes and injuries leave short."""
+        state = self._week(league_id)
+        return outlook.build(
+            self.client, state, league_id, lambda pid: self._is_signing(state.players.get(pid) or PlayerMeta())
+        )
+
     def trade_market(self, league_id: str) -> TradeMarket | None:
         """The rest of the season, with the one-for-one trades that would help both lineups."""
         state = self._week(league_id)
@@ -1233,6 +1250,13 @@ class SleeperNFLProvider:
             value=f"{scored:.1f} pts" if scored is not None else f"{points:.1f}",
             tone=self._live_tone(scored) if scored is not None else self._spot_tone(projection, scheduled),
         )
+
+    @staticmethod
+    def _reserved(spot: Spot, roster: SleeperRoster) -> Spot:
+        """A bench row marked where he is in an injured-reserve or taxi slot, which costs no bench spot."""
+        if spot.player_id not in roster.reserve_ids:
+            return spot
+        return spot.model_copy(update={"detail": f"{spot.detail} · reserve slot"})
 
     @staticmethod
     def _live_tone(scored: float) -> Tone:

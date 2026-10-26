@@ -335,7 +335,7 @@ def _with_drops(state: Week, actions: list[Action], started: set[str]) -> list[A
 def _worth_a_spot(state: Week, player_id: str, drop: WeeklyProjection | None) -> bool:
     """Whether an optional pickup is worth more than the player it would cost."""
     pickup = state.projections.get(player_id)
-    return drop is not None and pickup is not None and pickup.points > _season_value(state, drop)
+    return drop is not None and pickup is not None and pickup.points > season_value(state, drop)
 
 
 def _least_valuable(state: Week, exclude: set[str], started: set[str]) -> WeeklyProjection | None:
@@ -349,10 +349,10 @@ def _least_valuable(state: Week, exclude: set[str], started: set[str]) -> Weekly
         and p.player_id not in state.evidence.trends
         and p.team not in started
     ]
-    return min(bench, key=lambda p: (_season_value(state, p), p.points), default=None)
+    return min(bench, key=lambda p: (season_value(state, p), p.points), default=None)
 
 
-def _season_value(state: Week, player: WeeklyProjection) -> float:
+def season_value(state: Week, player: WeeklyProjection) -> float:
     games = state.evidence.games.get(player.player_id, ())
     return sum(games) / len(games) if len(games) >= MIN_GAMES_FOR_AVERAGE else player.points
 

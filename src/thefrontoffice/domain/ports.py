@@ -28,6 +28,7 @@ from thefrontoffice.domain.models import (
     TeamRef,
     TradeMarket,
     TradeProposal,
+    WeekAhead,
 )
 
 TModel = TypeVar("TModel", bound=BaseModel)
@@ -319,6 +320,21 @@ class ForecastProvider(Protocol):
 
     def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
         """Every matchup of a week already played, as it stood before kickoff, with the result."""
+        ...
+
+
+@runtime_checkable
+class OutlookProvider(Protocol):
+    """A competition whose coming weeks can be projected, so a short one is seen in time.
+
+    Separate from CompetitionProvider for the reason TradeProvider is: the
+    capability arrives per competition.
+    """
+
+    label: str
+
+    def weeks_ahead(self, league_id: str) -> list[WeekAhead]:
+        """The next few weeks, soonest first; none once the season has no weeks left."""
         ...
 
 
