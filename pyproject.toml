@@ -92,7 +92,7 @@ ignore = [
 # over whatever called it.
 "src/thefrontoffice/adapters/inbound/**" = ["T20"]
 "scripts/**" = ["T20"]
-"tests/test_cli_console.py" = ["T20"]
+"tests/adapters/inbound/cli/test_console.py" = ["T20"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["thefrontoffice"]
@@ -129,8 +129,13 @@ precision = 1
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+# The suite mirrors the source tree, so several directories hold a `test_week.py`
+# or a `test_client.py`: importlib mode imports each by its path rather than as a
+# top-level module of that name, which would collide. `tests/` on the path keeps
+# `from conftest import ...` and `from reports import ...` resolving from any depth.
+pythonpath = ["tests"]
 markers = [
     "integration: hits a live external API (Yahoo, NBA.com or Gemini). Deselected by default; opt in with `-m integration`.",
 ]
 # Default run is hermetic and fast — no network, no credentials required.
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration' --import-mode=importlib"

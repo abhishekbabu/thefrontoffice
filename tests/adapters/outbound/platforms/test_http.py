@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 import pytest
 import requests
+from conftest import FakeResponse
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
@@ -17,24 +18,9 @@ from thefrontoffice.domain.errors import PlatformUnavailableError
 TTL = timedelta(hours=1)
 
 
-class FakeResponse:
-    def __init__(self, payload: Any, status: int = 200) -> None:
-        self._payload = payload
-        self.status_code = status
+class FixedSession:
+    """One payload, status or error for every request — the transport is the subject here, not routing."""
 
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            # A real Response carrying the status, which is all the retry and
-            # outage checks read off a failure.
-            failed = requests.Response()
-            failed.status_code = self.status_code
-            raise requests.exceptions.HTTPError(response=failed)
-
-    def json(self) -> Any:
-        return self._payload
-
-
-class FakeSession:
     def __init__(self, payload: Any = None, error: Exception | None = None, status: int = 200) -> None:
         self.payload = payload
         self.error = error
@@ -80,20 +66,20 @@ def _client(
 
 
 def test_a_successful_get_returns_the_payload(tmp_path: Path) -> None:
-    session = FakeSession({"ok": True})
+    session = FixedSession({"ok": True})
     assert _client(tmp_path, session).get("https://example.test/a") == {"ok": True}
     assert session.timeouts == [11]
 
 
 def test_a_call_can_override_the_default_timeout(tmp_path: Path) -> None:
     """The player catalog is far larger than anything else and needs longer."""
-    session = FakeSession({})
+    session = FixedSession({})
     _client(tmp_path, session).get("https://example.test/big", timeout=90)
     assert session.timeouts == [90]
 
 
 def test_a_failure_becomes_the_callers_domain_error(tmp_path: Path) -> None:
-    session = FakeSession(status=404)
+    session = FixedSession(status=404)
     with pytest.raises(FPLAPIError, match="Test request failed"):
         _client(tmp_path, session, error=FPLAPIError).get("https://example.test/a")
 
@@ -101,13 +87,13 @@ def test_a_failure_becomes_the_callers_domain_error(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "session",
     [
-        FakeSession(status=503),
-        FakeSession(error=requests.exceptions.Timeout()),
-        FakeSession(error=requests.exceptions.ConnectionError("refused")),
+        FixedSession(status=503),
+        FixedSession(error=requests.exceptions.Timeout()),
+        FixedSession(error=requests.exceptions.ConnectionError("refused")),
     ],
     ids=["server-error", "timeout", "no-connection"],
 )
-def test_a_platform_that_is_down_says_to_wait(tmp_path: Path, session: FakeSession) -> None:
+def test_a_platform_that_is_down_says_to_wait(tmp_path: Path, session: FixedSession) -> None:
     """Still the platform's own error, so whatever carries on without it still catches it."""
     with pytest.raises(FPLUnavailableError) as raised:
         _client(tmp_path, session, error=FPLAPIError).get("https://example.test/a")
@@ -118,27 +104,27 @@ def test_a_platform_that_is_down_says_to_wait(tmp_path: Path, session: FakeSessi
 
 def test_a_request_the_platform_turned_down_is_not_an_outage(tmp_path: Path) -> None:
     with pytest.raises(FPLAPIError) as raised:
-        _client(tmp_path, FakeSession(status=404), error=FPLAPIError).get("https://example.test/a")
+        _client(tmp_path, FixedSession(status=404), error=FPLAPIError).get("https://example.test/a")
 
     assert not isinstance(raised.value, PlatformUnavailableError)
 
 
 def test_each_caller_gets_its_own_error_type(tmp_path: Path) -> None:
     """One transport, two platforms — a failure must not surface as the wrong one."""
-    session = FakeSession(error=requests.exceptions.ConnectionError("down"))
+    session = FixedSession(error=requests.exceptions.ConnectionError("down"))
     with pytest.raises(SleeperAPIError):
         _client(tmp_path, session, error=SleeperAPIError).get("https://example.test/a")
 
 
 def test_a_transient_failure_is_retried(tmp_path: Path) -> None:
-    session = FakeSession(error=requests.exceptions.Timeout())
+    session = FixedSession(error=requests.exceptions.Timeout())
     with pytest.raises(SleeperAPIError):
         _client(tmp_path, session).get("https://example.test/a")
     assert len(session.requests) == 2
 
 
 def test_a_cached_value_is_served_without_a_second_request(tmp_path: Path) -> None:
-    session = FakeSession({"n": 1})
+    session = FixedSession({"n": 1})
     client = _client(tmp_path, session)
     assert client.cached("k", "https://example.test/a", TTL) == {"n": 1}
     assert client.cached("k", "https://example.test/a", TTL) == {"n": 1}
@@ -155,14 +141,14 @@ def test_an_expired_entry_is_refetched(tmp_path: Path) -> None:
     cache = JsonDiskCache(tmp_path / "cache")
     cache.set("k", {"n": 1}, now=datetime.now(UTC) - timedelta(hours=2))
 
-    session = FakeSession({"n": 2})
+    session = FixedSession({"n": 2})
     assert _client(tmp_path, session, cache=cache).cached("k", "https://example.test/a", TTL) == {"n": 2}
     assert len(session.requests) == 1
 
 
 def test_a_caller_can_transform_before_storing(tmp_path: Path) -> None:
     """The catalog is trimmed on the way in, so it bypasses `cached`."""
-    client = _client(tmp_path, FakeSession())
+    client = _client(tmp_path, FixedSession())
     assert client.cache_get("k", TTL) is None
     client.cache_set("k", {"trimmed": True})
     assert client.cache_get("k", TTL) == {"trimmed": True}
@@ -170,7 +156,7 @@ def test_a_caller_can_transform_before_storing(tmp_path: Path) -> None:
 
 def test_the_cache_is_keyed_not_url_addressed(tmp_path: Path) -> None:
     """Two URLs under one key is how a paginated endpoint is folded together."""
-    session = FakeSession({"n": 1})
+    session = FixedSession({"n": 1})
     client = _client(tmp_path, session)
     client.cached("same", "https://example.test/a", TTL)
     client.cached("same", "https://example.test/b", TTL)

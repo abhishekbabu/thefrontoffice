@@ -3,7 +3,7 @@
 from typing import Any
 
 import pytest
-from test_nfl_provider import DEFAULT_PROJECTIONS, MY_ID, FakeSleeper, _proj, _provider
+from conftest import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeSleeper, _proj, _provider
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NFLGameLine, SleeperRoster
 from thefrontoffice.domain.errors import PlayerNotFoundError
@@ -77,7 +77,7 @@ def test_the_matchup_is_carried_as_the_situation() -> None:
             {"roster_id": 2, "matchup_id": 7, "points": 71.8},
         ],
         rosters=[
-            SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1"]),
+            SleeperRoster(roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1"]),
             SleeperRoster(roster_id=2, owner_id="user-2", player_ids=[], starter_ids=[]),
         ],
     )

@@ -121,15 +121,6 @@ def test_dates_are_enrichment_not_a_reason_to_fail() -> None:
     assert schedule.matches == []
 
 
-def test_the_week_says_when_it_is_played() -> None:
-    """A week with no dates on it is a number, which is already known."""
-    assert _provider(_league_client()).summary("L1").window == "Week 3"
-
-
-def test_the_window_carries_the_dates_where_there_are_any() -> None:
-    assert _provider(_at_week(2)).summary("L1").window == "Week 2 · 17 Sep"
-
-
 def test_the_season_ends_with_the_playoffs_last_round() -> None:
     """Six teams take three rounds from week 14: the NFL's week 18 is no week of this league's."""
     season = _provider(_with_playoffs(7, spots=6, start=14)).schedule("L1").season

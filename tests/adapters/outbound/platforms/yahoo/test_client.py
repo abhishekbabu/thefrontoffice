@@ -374,11 +374,8 @@ def test_a_failed_handshake_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 class FakeWeek:
     """Stands in for yahoofantasy's Week."""
 
-    instances: list[FakeWeek] = []
-
     def __init__(self, ctx: Any, league: Any, week_num: Any) -> None:
         self.matchups = FakeWeek.matchups_to_return
-        FakeWeek.instances.append(self)
 
     matchups_to_return: list[Any] = []
 
@@ -416,17 +413,6 @@ def _matchup(my_key: str = "t1") -> Any:
         week_end="2026-02-15",
         teams=SimpleNamespace(team=[_team_data("50", [_stat("18", "12")]), _team_data("60", [_stat("18", "17")])]),
     )
-
-
-def _matchup_client(monkeypatch: pytest.MonkeyPatch, matchups: list[Any], current_week: Any = 5) -> Any:
-    import thefrontoffice.adapters.outbound.platforms.yahoo.client as mod
-
-    FakeWeek.matchups_to_return = matchups
-    FakeWeek.instances = []
-    monkeypatch.setattr(mod, "Week", FakeWeek)
-    client, _ = _client()
-    client.league.current_week = current_week
-    return client
 
 
 # ── translating transport failures ──────────────────────────────────────

@@ -12,6 +12,8 @@ from conftest import (
     SLEEPER_USER_ID,
     FakeESPN,
     FakeSleeper,
+    _at_week,
+    _league_client,
     _proj,
     _provider,
     mine,
@@ -395,3 +397,15 @@ def test_how_much_of_a_game_is_left_follows_its_clock() -> None:
     assert left_in(ScoreboardGame("A", "B", "in", period=2, clock=0.0)) == 0.5  # halftime
     assert left_in(ScoreboardGame("A", "B", "in", period=4, clock=450.0)) == 0.125
     assert left_in(ScoreboardGame("A", "B", "in", period=5, clock=360.0)) == 0.1  # six minutes of overtime
+
+
+# ── when the week is played ─────────────────────────────────────────────────
+
+
+def test_the_week_says_when_it_is_played() -> None:
+    """A week with no dates on it is a number, which is already known."""
+    assert _provider(_league_client()).summary("L1").window == "Week 3"
+
+
+def test_the_window_carries_the_dates_where_there_are_any() -> None:
+    assert _provider(_at_week(2)).summary("L1").window == "Week 2 · 17 Sep"

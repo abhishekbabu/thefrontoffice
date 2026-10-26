@@ -211,20 +211,6 @@ def test_the_bench_gap_matches_the_printed_figures() -> None:
     assert float(gap_match.group(1)) == round(best - current, 1)
 
 
-def test_roster_rows_mark_starters_and_bench() -> None:
-    client = FakeSleeper(
-        projections=dict(DEFAULT_PROJECTIONS),
-        rosters=[SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["qb1", "rb1"], starter_ids=["qb1"])],
-    )
-    rows = [c.columns for c in _provider(client).roster("L1")]
-    assert {r["Player"]: r["Slot"] for r in rows} == {"Star QB": "START", "Good RB": "BN"}
-
-
-def test_roster_rows_skip_players_missing_from_the_catalog() -> None:
-    client = FakeSleeper(rosters=[SleeperRoster(roster_id=1, owner_id=MY_ID, player_ids=["ghost"], starter_ids=[])])
-    assert _provider(client).roster("L1") == []
-
-
 # ── headline figures ────────────────────────────────────────────────────
 
 

@@ -4,6 +4,7 @@ Exercises the prompt-building logic, which is where league rules (add budget,
 IL slots, matchup context) actually get encoded.
 """
 
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -11,6 +12,7 @@ from conftest import FakeAI, FakeAnswers, FakeNBA, FakeSleeperProjections, FakeY
 from conftest import _team as _yahoo_team
 from reports import MOCK_NBA_REPORT
 
+from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.domain.errors import TeamNotFoundError
@@ -495,3 +497,22 @@ def test_a_key_in_an_unexpected_shape_yields_no_link_rather_than_a_broken_one() 
     teams = _provider(FakeYahoo(teams=[_yahoo_team("Odd", "something-else", rank=1, wins=1, losses=0)])).teams("")
 
     assert teams == [] or teams[0].url == ""
+
+
+# ── the basketball calendar ─────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("when", "expected"),
+    [
+        (datetime(2026, 10, 20, tzinfo=PACIFIC), 2026),  # opening night
+        (datetime(2026, 12, 31, tzinfo=PACIFIC), 2026),
+        (datetime(2027, 1, 2, tzinfo=PACIFIC), 2026),  # January still belongs to the prior season
+        (datetime(2027, 4, 15, tzinfo=PACIFIC), 2026),  # playoffs
+        (datetime(2026, 9, 1, tzinfo=PACIFIC), 2026),  # September boundary, inclusive
+        (datetime(2026, 8, 31, tzinfo=PACIFIC), 2025),  # the day before
+    ],
+)
+def test_nba_season_rolls_over_in_september(when: datetime, expected: int) -> None:
+    """Basketball's season starts in the autumn and runs into the next calendar year."""
+    assert YahooNBAProvider.season_year(when) == expected

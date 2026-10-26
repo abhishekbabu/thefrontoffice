@@ -20,7 +20,7 @@ pass on regressions, and make the suite slower to read.
 - The user invokes `/review-tests <path>`
 - Reviewing tests before a commit, since `just check` runs them anyway
 - Auditing an existing test module
-- Writing or modifying `tests/test_*.py`, `tests/conftest.py`, or `web/src/**/*.test.ts`
+- Writing or modifying `tests/**/test_*.py`, `tests/conftest.py`, or `web/src/**/*.test.ts`
 
 ## Input
 

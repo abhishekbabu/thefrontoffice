@@ -95,7 +95,7 @@ need — a backend-only plan does not run `just check-web`.)
 
 **In scope** (the only files to modify):
 - `src/thefrontoffice/adapters/outbound/platforms/sleeper/client.py`
-- `tests/test_sleeper_client.py`
+- `tests/adapters/outbound/platforms/sleeper/test_client.py`
 
 **Out of scope** (do NOT touch, even though they look related):
 - `platforms/cache.py` — shared by three platforms; a change here is a separate
@@ -131,7 +131,7 @@ between steps: add the new path, switch callers, then remove the old one.)
 
 - New tests, in which file, covering which cases — name them: the happy path,
   the specific regression this plan prevents, the named edge cases.
-- Which existing test to model structurally: "follow `tests/test_cache.py` —
+- Which existing test to model structurally: "follow `tests/adapters/outbound/platforms/test_cache.py` —
   fakes by keyword, one behavior per test, names that read as sentences".
 - New code needs tests in the same commit, and coverage is gated at 95%.
 - **Verification**: `just test "-k <expr>"` → all pass, including N new tests.
