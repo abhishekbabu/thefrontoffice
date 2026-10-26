@@ -19,7 +19,7 @@ half a game to what he has.
 from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import WeeklyProjection
+from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection
 from thefrontoffice.domain.models import Outcomes
 
 
@@ -133,7 +133,7 @@ def _ratios(evidence: Evidence, settings: RangeSettings) -> dict[str, tuple[tupl
 
 
 def outcomes(
-    player: WeeklyProjection,
+    player: Projection,
     spread: Spreads,
     *,
     status: str = "",

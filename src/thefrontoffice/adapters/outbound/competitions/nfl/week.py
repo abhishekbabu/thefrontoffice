@@ -11,8 +11,8 @@ which of the two it is showing.
 """
 
 import logging
-from collections.abc import Iterable
-from dataclasses import dataclass, field, replace
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -20,20 +20,22 @@ from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekd
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot, optimal_lineup
+from thefrontoffice.adapters.outbound.competitions.nfl.model import (
+    Game,
+    GameNow,
+    LeagueRules,
+    NFLSource,
+    PlayerInfo,
+    Projection,
+    Team,
+    Unprojected,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews
 from thefrontoffice.adapters.outbound.platforms.espn import types as espn
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
-from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
-    PlayerMeta,
-    ScheduledGame,
-    SleeperLeague,
-    SleeperRoster,
-    WeeklyProjection,
-)
+from thefrontoffice.domain.errors import PlatformError
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +82,13 @@ class Live:
 class Week:
     """One week's state, gathered once and read by every view of it."""
 
-    league: SleeperLeague
-    roster: SleeperRoster
+    league: LeagueRules
+    roster: Team
     week: int
     season: str
-    projections: dict[str, WeeklyProjection]
-    players: dict[str, PlayerMeta]
-    projected: list[WeeklyProjection]
+    projections: Mapping[str, Projection]
+    players: Mapping[str, PlayerInfo]
+    projected: Sequence[Projection]
     lineup: list[LineupSlot]
     best: list[LineupSlot]
     changes: list[LineupChange]
@@ -137,7 +139,7 @@ def day(iso: str) -> str:
     return weekday_day_month(parsed) if parsed else ""
 
 
-def week_dates(games: list[ScheduledGame]) -> str:
+def week_dates(games: Sequence[Game]) -> str:
     """The span a fantasy week actually covers.
 
     An NFL week runs Thursday to Monday, so one date would be wrong for most
@@ -164,17 +166,17 @@ def moment(epoch_ms: int) -> str:
     return day_month(datetime.fromtimestamp(epoch_ms / 1000, tz=UTC))
 
 
-def games_by_week(client: SleeperNFLSource, season: str) -> dict[int, list[ScheduledGame]]:
+def games_by_week(client: NFLSource, season: str) -> dict[int, list[Game]]:
     """The season schedule bucketed by week, or nothing if it will not load.
 
     Dates are enrichment: a week without them is still a week.
     """
     try:
         games = client.get_season_schedule(season)
-    except SleeperAPIError as e:
+    except PlatformError as e:
         logger.warning(f"Continuing without schedule dates: {e}")
         return {}
-    by_week: dict[int, list[ScheduledGame]] = {}
+    by_week: dict[int, list[Game]] = {}
     for game in games:
         by_week.setdefault(game.week, []).append(game)
     return by_week
@@ -183,22 +185,20 @@ def games_by_week(client: SleeperNFLSource, season: str) -> dict[int, list[Sched
 # ── projections ─────────────────────────────────────────────────────────
 
 
-def zero_projection(player_id: str, meta: PlayerMeta) -> WeeklyProjection:
+def zero_projection(player_id: str, meta: PlayerInfo) -> Projection:
     """A player with no projection this week: a bye, or inactive."""
-    return WeeklyProjection(
+    return Unprojected(
         player_id=player_id,
         name=str(meta.get("name") or player_id),
         position=str(meta.get("position") or ""),
         team=str(meta.get("team") or "FA"),
-        opponent="",
-        points=0.0,
         injury_status=str(meta.get("injury_status") or ""),
     )
 
 
 def projection_for(
-    player_id: str, projections: dict[str, WeeklyProjection], players: dict[str, PlayerMeta]
-) -> WeeklyProjection | None:
+    player_id: str, projections: Mapping[str, Projection], players: Mapping[str, PlayerInfo]
+) -> Projection | None:
     """A player's projection, falling back to a zero-point entry.
 
     A rostered player with no projection is usually on a bye or inactive —
@@ -233,7 +233,7 @@ def left_in(game: ScoreboardGame) -> float:
     return max(0.0, min(1.0, 1 - played / REGULATION))
 
 
-def lineup_for(state: Week, player_ids: Iterable[str], projections: dict[str, WeeklyProjection]) -> list[LineupSlot]:
+def lineup_for(state: Week, player_ids: Iterable[str], projections: Mapping[str, Projection]) -> list[LineupSlot]:
     """The best legal lineup these players make, on these projections: this week's, or one still to come.
 
     The one place a week's lineup is solved from a set of player ids: the
@@ -274,18 +274,18 @@ class Scoreboard:
     per week per request, and shared by everything that asks.
     """
 
-    def __init__(self, client: SleeperNFLSource, espn: ESPNSource):
+    def __init__(self, client: NFLSource, espn: ESPNSource):
         self.client = client
         self.espn = espn
         self._boards: dict[int, dict[str, ScoreboardGame]] = {}
 
-    def games(self, state: Week) -> dict[int, list[ScheduledGame]]:
+    def games(self, state: Week) -> dict[int, list[Game]]:
         """The season's games, with this week's status read off the live scoreboard where it answers."""
         games = games_by_week(self.client, state.season)
         board = self.board(state)
         if board and state.week in games:
             games[state.week] = [
-                replace(game, status=SCOREBOARD_STATUS.get(board[game.home].state, game.status))
+                GameNow.of(game, SCOREBOARD_STATUS.get(board[game.home].state, game.status))
                 if game.home in board
                 else game
                 for game in games[state.week]
@@ -321,7 +321,7 @@ class Scoreboard:
         clock = {club: game.label for club, game in self.board(state).items() if game.state == "in" and game.label}
         try:
             matchups = self.client.get_matchups(league_id, state.week)
-        except SleeperAPIError as e:
+        except PlatformError as e:
             logger.warning(f"Continuing without live scores: {e}")
             return Live(started=started, points={}, clock=clock)
 

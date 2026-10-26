@@ -31,3 +31,15 @@ and past that his projection, which Sleeper keeps publishing, is the better gues
 def ruled_out(status: str) -> bool:
     """Whether a designation means he will not play this week."""
     return status.upper() in RULED_OUT
+
+
+FANTASY_POSITIONS = frozenset({"QB", "RB", "WR", "TE", "K", "DEF"})
+"""What a fantasy league scores. A catalog carries every practice-squad body, and none is a waiver decision."""
+
+FLEX_ELIGIBILITY: dict[str, tuple[str, ...]] = {
+    "FLEX": ("RB", "WR", "TE"),
+    "WRRB_FLEX": ("RB", "WR"),
+    "REC_FLEX": ("WR", "TE"),
+    "SUPER_FLEX": ("QB", "RB", "WR", "TE"),
+}
+"""Which positions a shared lineup slot accepts; any other slot takes only its own position."""

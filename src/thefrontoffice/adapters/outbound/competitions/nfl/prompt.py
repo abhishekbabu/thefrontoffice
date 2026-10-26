@@ -10,19 +10,14 @@ twice for one report.
 """
 
 import logging
+from collections.abc import Mapping, Sequence
 
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
+from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueRules, NFLSource, PlayerInfo, Projection, Team
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews, dated
 from thefrontoffice.adapters.outbound.competitions.nfl.week import SCORING_LABELS, Week
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
-from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
-    PlayerMeta,
-    SleeperLeague,
-    SleeperRoster,
-    WeeklyProjection,
-)
 from thefrontoffice.config.constants import NFL_SCOUT_PROMPT
+from thefrontoffice.domain.errors import PlatformError
 from thefrontoffice.domain.models import Action, CompetitionContext, Stat, task_id
 
 logger = logging.getLogger(__name__)
@@ -31,7 +26,7 @@ AVAILABLE_PLAYER_LIMIT = 25
 TRENDING_LIMIT = 10
 
 
-def build(client: SleeperNFLSource, state: Week, league_id: str, tasks: list[Action]) -> CompetitionContext:
+def build(client: NFLSource, state: Week, league_id: str, tasks: list[Action]) -> CompetitionContext:
     """The scouting prompt, and the parts it was assembled from.
 
     `tasks` is the week's to-do list as the page shows it, numbered here so
@@ -107,7 +102,7 @@ def task_line(position: int, task: Action) -> str:
 
 
 def headline(
-    roster: SleeperRoster,
+    roster: Team,
     week: int,
     current_points: float,
     best_points: float,
@@ -128,7 +123,7 @@ NEWS_PER_PLAYER = 2
 """Enough to show a trend in the coverage, few enough that the pool stays readable."""
 
 
-def player_line(p: WeeklyProjection, evidence: Evidence | None = None, news: PlayerNews | None = None) -> str:
+def player_line(p: Projection, evidence: Evidence | None = None, news: PlayerNews | None = None) -> str:
     """One player as the model reads him: the projection, then what it rests on."""
     injury = f" [{p.injury_status}]" if p.is_questionable else ""
     opponent = f" vs {p.opponent}" if p.opponent else " (no game)"
@@ -149,11 +144,11 @@ def news_lines(news: PlayerNews, player_id: str) -> str:
 
 
 def _available_players(
-    client: SleeperNFLSource,
+    client: NFLSource,
     league_id: str,
-    projections: dict[str, WeeklyProjection],
-    players: dict[str, PlayerMeta],
-) -> list[WeeklyProjection]:
+    projections: Mapping[str, Projection],
+    players: Mapping[str, PlayerInfo],
+) -> Sequence[Projection]:
     """Highest-projecting players not rostered anywhere in the league."""
     rostered: set[str] = set()
     for roster in client.get_rosters(league_id):
@@ -163,12 +158,10 @@ def _available_players(
     return sorted(free, key=lambda p: p.points, reverse=True)[:AVAILABLE_PLAYER_LIMIT]
 
 
-def _trending(
-    client: SleeperNFLSource, projections: dict[str, WeeklyProjection], players: dict[str, PlayerMeta]
-) -> str:
+def _trending(client: NFLSource, projections: Mapping[str, Projection], players: Mapping[str, PlayerInfo]) -> str:
     try:
         trending = client.get_trending("add", limit=TRENDING_LIMIT)
-    except SleeperAPIError as e:
+    except PlatformError as e:
         # An independent signal, not load-bearing — losing it degrades the
         # prompt rather than the report.
         logger.warning(f"Skipping trending players: {e}")
@@ -187,9 +180,9 @@ def _trending(
 
 
 def matchup(
-    client: SleeperNFLSource,
-    league: SleeperLeague,
-    roster: SleeperRoster,
+    client: NFLSource,
+    league: LeagueRules,
+    roster: Team,
     league_id: str,
     week: int,
 ) -> tuple[str, list[Stat]]:
@@ -204,7 +197,7 @@ def matchup(
     )
     try:
         matchups = client.get_matchups(league_id, week)
-    except SleeperAPIError as e:
+    except PlatformError as e:
         logger.warning(f"No matchup data: {e}")
         return header, []
 

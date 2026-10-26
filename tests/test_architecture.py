@@ -79,3 +79,18 @@ def test_only_the_composition_root_builds_a_platform_client() -> None:
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in CLIENTS
     ]
     assert built == []
+
+
+def test_the_nfls_rules_read_its_own_model_and_only_its_provider_names_the_league_platform() -> None:
+    """The rules are the competition's, so a second platform for the NFL is a provider and nothing else.
+
+    Only `nfl/sleeper.py`, the adapter for the platform that owns the league,
+    imports Sleeper; everything beside it reads `nfl/model.py`.
+    """
+    named = [
+        violation
+        for violation in _violations("adapters/outbound/competitions/nfl", ("thefrontoffice",))
+        if ".platforms.sleeper" in violation
+        and not violation.startswith("adapters/outbound/competitions/nfl/sleeper.py")
+    ]
+    assert named == []

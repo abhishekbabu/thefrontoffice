@@ -10,15 +10,14 @@ and names the free agent who closes most of the gap.
 
 import logging
 import statistics
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from thefrontoffice.adapters.outbound.competitions.nfl.actions import join
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import season_average
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, lineup_points
+from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Projection
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import LONG_TERM, RULED_OUT, SEASON_WEEKS
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, games_by_week, lineup_for
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import WeeklyProjection
 from thefrontoffice.domain.models import Action, WeekAhead
 
 logger = logging.getLogger(__name__)
@@ -36,7 +35,7 @@ FIXES_TRIED = 40
 """Free agents tried for a short week, best projection first: past that the wire is nobody's start."""
 
 
-def build(client: SleeperNFLSource, state: Week, league_id: str, signable: Callable[[str], bool]) -> list[WeekAhead]:
+def build(client: NFLSource, state: Week, league_id: str, signable: Callable[[str], bool]) -> list[WeekAhead]:
     """Each of the next weeks, soonest first, with a fix for any that is short.
 
     `signable` says whether a player could be added at all — on an NFL roster,
@@ -121,7 +120,7 @@ def _fixed(
     row: WeekAhead,
     state: Week,
     held: list[str],
-    available: list[WeeklyProjection],
+    available: Sequence[Projection],
     best: Callable[[list[str], int], float],
     keep: set[str],
 ) -> WeekAhead:
@@ -138,7 +137,7 @@ def _fixed(
     return row.model_copy(update={"fix": fix, "gain": round(gain, 1)})
 
 
-def _cheapest(state: Week, held: list[str], keep: set[str]) -> WeeklyProjection | None:
+def _cheapest(state: Week, held: list[str], keep: set[str]) -> Projection | None:
     """The player it costs least to lose: never a regular, nor one who is only away for the week."""
     candidates = [
         p
