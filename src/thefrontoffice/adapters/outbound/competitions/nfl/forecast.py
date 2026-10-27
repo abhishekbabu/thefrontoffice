@@ -234,8 +234,12 @@ def starts(
     return tuple(moves)
 
 
+STARTS = ("hole:", "upgrade:")
+"""The to-do items whose pickup goes straight into the lineup."""
+
+
 def pickups(state: Week, to_do: list[Action], outcome: Callable[[Projection], Outcomes]) -> tuple[LineupMove, ...]:
-    """The pickups that fill a hole this week, priced as if already claimed.
+    """The pickups that start this week — filling a hole, or replacing a starter they outscore — priced as if claimed.
 
     Only those: a bye warning names your own starter, and a breakout is a
     stash for the bench — priced as a start, either would be a player
@@ -244,7 +248,7 @@ def pickups(state: Week, to_do: list[Action], outcome: Callable[[Projection], Ou
     moves = []
     for action in to_do:
         projection = state.projections.get(action.player_id)
-        if action.kind != "waiver" or not action.key.startswith("hole:") or projection is None:
+        if action.kind != "waiver" or not action.key.startswith(STARTS) or projection is None:
             continue
         moves.append(
             LineupMove(

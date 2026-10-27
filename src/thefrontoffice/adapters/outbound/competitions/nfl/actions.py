@@ -25,7 +25,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, Projection
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.domain.models import Action, Stat, Urgency
 
@@ -53,6 +53,7 @@ def build(
     kickoff = {club: game.date for game in week_games for club in (game.home, game.away)}
 
     actions = _lineup(state, started, kickoff, free_agents)
+    actions += _upgrades(state, free_agents, started, {a.player_id for a in actions})
     actions += _breakouts(state, free_agents, {a.player_id for a in actions})
     actions += _same_game(state, week_games, started, {(a.player_id, a.replaces) for a in actions})
     actions += _next_week_byes(state, games.get(state.week + 1, []))
@@ -226,6 +227,62 @@ def _swap(
     )
 
 
+UPGRADE_BY = 3.0
+"""Points a free agent must project over the starter he would replace: less is a coin flip, not a claim."""
+
+UPGRADES = 2
+"""Upgrades on the list at once. The free-agent page ranks the rest; the list is for the clear ones."""
+
+
+def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str], already: set[str]) -> list[Action]:
+    """Free agents who simply outscore one of your starters this week: a defense or a kicker to stream, most often.
+
+    Measured against the best lineup, so the bench has already made its moves
+    and nobody is credited with a hole a bench player fills. And against the
+    starter's season as well as his week, so a star's one bad matchup is not
+    a reason to drop him. At a streamed position the starter he replaces is
+    the drop — a lineup starts one defense, and nobody keeps a spare.
+    """
+    taken: set[str] = set()
+    actions = []
+    for player in free_agents:
+        if len(actions) == UPGRADES:
+            break
+        if player.player_id in already or player.team in started:
+            continue
+        upgrade = best_upgrade(state.best, player)
+        if upgrade is None:
+            continue
+        gain, slot = upgrade
+        starter = slot.player
+        if starter is None or starter.team in started or starter.player_id in taken or gain < UPGRADE_BY:
+            continue
+        if player.points <= season_average(state.evidence, starter):
+            continue
+        taken.add(starter.player_id)
+        streamed = player.position in STREAMED and starter.position == player.position
+        actions.append(
+            Action(
+                kind="waiver",
+                urgency="soon",
+                title=f"Pick up {player.name}, drop {starter.name}"
+                if streamed
+                else f"Pick up {player.name} to start over {starter.name}",
+                reason=(
+                    f"{player.name} projects {player.points:.1f}, {gain:.1f} more than {starter.name} "
+                    f"at {slot.slot} this week.{_caveat(player)}"
+                    + (f" Drop {starter.name}: a lineup starts one {player.position}." if streamed else "")
+                ),
+                player_id=player.player_id,
+                replaces=starter.player_id,
+                drop=starter.player_id if streamed else "",
+                evidence=_evidence(state, [player, starter]),
+                key=f"upgrade:{player.player_id}",
+            )
+        )
+    return actions
+
+
 BREAKOUTS = 2
 """Pickups suggested for a growing role: the strongest few, not every backup who had a big week."""
 
@@ -272,7 +329,7 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
     return actions
 
 
-PICKUPS = ("hole:", "rise:")
+PICKUPS = ("hole:", "rise:", "upgrade:")
 """The items that add a player to the roster, and so need room on it."""
 
 
@@ -298,6 +355,11 @@ def _with_drops(state: Week, actions: list[Action], started: set[str]) -> list[A
     out = []
     for action in actions:
         if action.kind != "waiver" or not action.key.startswith(PICKUPS):
+            out.append(action)
+            continue
+        if action.drop:
+            # The pickup names its own: the starter it replaces, at a position nobody holds two of.
+            chosen.add(action.drop)
             out.append(action)
             continue
         if open_spots > 0:

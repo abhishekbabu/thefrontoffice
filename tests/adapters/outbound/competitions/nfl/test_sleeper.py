@@ -622,3 +622,23 @@ def test_a_free_agent_is_priced_against_the_lineup_the_bench_would_already_make(
 
     assert matchup is not None
     assert {o.player_id for o in matchup.mine} == {"qb1", "rb1"}
+
+
+def test_a_free_agent_the_to_do_list_would_start_over_a_starter_is_priced_as_that_swap() -> None:
+    client = _paired()
+    client.league = replace(client.league, roster_positions=["QB", "RB", "BN", "BN"])
+    client.rosters = [replace(client.rosters[0], starter_ids=["qb1", "rb1"]), *client.rosters[1:]]
+    client.projections = {
+        **client.projections,
+        "rb1": proj("rb1", "Good RB", "RB", 10.0),
+        "rb9": proj("rb9", "Spare RB", "RB", 20.0, team="NYJ", opp="NE"),
+    }
+    client.players_catalog = {
+        **client.get_players(),
+        "rb9": PlayerMeta(player_id="rb9", name="Spare RB", position="RB", team="NYJ"),
+    }
+
+    matchup = nfl_provider(client).matchup_input("L1")
+
+    assert matchup is not None
+    assert any(m.into[0].player_id == "rb9" and m.out == ("rb1",) for m in matchup.moves)

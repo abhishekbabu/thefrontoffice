@@ -170,7 +170,7 @@ def test_with_no_bench_cover_the_best_free_agent_who_can_play_is_named() -> None
         [],
     )
 
-    [action] = _actions(client)
+    [action] = [a for a in _actions(client) if a.key.startswith("hole:")]
 
     assert (action.kind, action.urgency, action.player_id) == ("waiver", "now", "fa1")
     assert free.name in action.title and RB.name in action.title
@@ -453,6 +453,85 @@ def test_a_hole_keeps_its_key_when_a_better_answer_turns_up() -> None:
 
     assert before[0].key == after[0].key
     assert before[0].fingerprint != after[0].fingerprint
+
+
+# ── a free agent who outscores a starter ────────────────────────────────
+
+
+def _season(player: WeeklyProjection, points: float) -> list[NFLGameLine]:
+    """Two finished games for `player`, each worth `points`: enough to judge him on his season."""
+    return [
+        NFLGameLine(
+            player_id=player.player_id,
+            week=week,
+            team=player.team,
+            opponent="LV",
+            position=player.position,
+            stats={"off_snp": 40, "pts_ppr": points},
+        )
+        for week in (1, 2)
+    ]
+
+
+def _upgrades(actions: list[Action]) -> list[Action]:
+    return [a for a in actions if a.key.startswith("upgrade:")]
+
+
+def test_a_free_agent_who_clearly_outscores_a_starter_is_a_pickup_to_start_over_him() -> None:
+    better = proj("fa1", "Free Receiver", "WR", 20.0, team="KC", opp="LV")
+    client = _client([QB, RB, WR, FLEX, BENCH_RB, better], ["qb", "rb", "wr", "te"], ["rb2"])
+
+    [action] = _upgrades(_actions(client))
+
+    assert (action.kind, action.player_id, action.replaces) == ("waiver", "fa1", "te")
+
+
+def test_a_free_agent_barely_ahead_of_a_starter_is_not_worth_a_claim() -> None:
+    edge = proj("fa1", "Free Receiver", "WR", FLEX.points + 1.0, team="KC", opp="LV")
+    client = _client([QB, RB, WR, FLEX, BENCH_RB, edge], ["qb", "rb", "wr", "te"], ["rb2"])
+
+    assert _upgrades(_actions(client)) == []
+
+
+def test_a_starter_having_one_bad_week_is_not_replaced_by_a_free_agent() -> None:
+    """Measured on his season as well: a star's poor matchup is not a reason to let him go."""
+    better = proj("fa1", "Free Receiver", "WR", 20.0, team="KC", opp="LV")
+    client = _client(
+        [QB, RB, WR, FLEX, BENCH_RB, better], ["qb", "rb", "wr", "te"], ["rb2"], game_lines=_season(FLEX, 25.0)
+    )
+
+    assert _upgrades(_actions(client)) == []
+
+
+def test_a_free_agent_is_measured_against_the_lineup_after_the_bench_has_moved() -> None:
+    """With the starter ruled out, the bench back covers him; a free agent has to beat the cover."""
+    free = proj("fa1", "Free Back", "RB", BENCH_RB.points + 1.0, team="KC", opp="LV")
+    client = _client([QB, _ruled_out(RB), WR, FLEX, BENCH_RB, free], ["qb", "rb", "wr", "te"], ["rb2"])
+
+    assert _upgrades(_actions(client)) == []
+
+
+def test_a_free_defense_over_yours_names_yours_as_the_drop() -> None:
+    """A lineup starts one defense, and nobody keeps a spare."""
+    league = replace(LEAGUE, roster_positions=["QB", "RB", "WR", "FLEX", "DEF", "BN", "BN"])
+    mine = proj("MIA", "Miami Dolphins", "DEF", 5.0, team="MIA", opp="BUF")
+    theirs = proj("LV", "Las Vegas Raiders", "DEF", 10.0, team="LV", opp="KC")
+    client = _client([QB, RB, WR, FLEX, mine, BENCH_RB, theirs], ["qb", "rb", "wr", "te", "MIA"], ["rb2"], league)
+
+    [action] = _upgrades(_actions(client))
+
+    assert (action.player_id, action.replaces, action.drop) == ("LV", "MIA", "MIA")
+
+
+def test_a_starter_whose_game_has_kicked_off_is_not_replaced() -> None:
+    """Thursday's starter is locked in: no claim can take his place this week."""
+    better = proj("fa1", "Free Back", "RB", 20.0, team="KC", opp="LV")
+    thursday = replace(RB, team="MIA", opponent="BUF")
+    flex = replace(FLEX, points=18.0)
+    schedule = [replace(SCHEDULE[0], status="in_game"), *SCHEDULE[1:]]
+    client = _client([QB, thursday, WR, flex, better], ["qb", "rb", "wr", "te"], [], schedule=schedule)
+
+    assert _upgrades(_actions(client)) == []
 
 
 # ── a role that grew ────────────────────────────────────────────────────

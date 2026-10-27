@@ -114,6 +114,14 @@ a drop. Beside it sits each player's **latest news** from the last ten days, fro
 his own club's ESPN feed — matched on ESPN's tag or his full name, never a
 surname, and never across clubs — in the row, the drawer and the prompt.
 
+A free agent who **simply outscores one of your starters** — most often a
+defense or kicker to stream — is a pickup on the list too: at least three
+points over the starter in your best lineup once the bench has moved, and
+more than that starter's average a game, so a star's one bad matchup is not a
+reason to let him go. At a defense or a kicker the starter he replaces is the
+drop, since nobody keeps a spare; elsewhere the drop is chosen as for any
+pickup. Two at most; the free-agent page ranks the rest.
+
 **Injury designations** come from ESPN's injury report where it names a player,
 joined the same way, and from Sleeper where it does not. Sleeper keeps a
 designation until somebody changes it, so the Tuesday after a game a player
