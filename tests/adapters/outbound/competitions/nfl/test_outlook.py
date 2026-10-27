@@ -108,12 +108,11 @@ def test_the_last_regular_season_week_has_nothing_ahead() -> None:
     assert nfl_provider(client).weeks_ahead("L1") == []
 
 
-def test_a_plain_out_costs_next_week_and_no_further() -> None:
-    """A ruling is for one game; past next week, the projection Sleeper keeps publishing is the better guess."""
+def test_a_plain_out_costs_none_of_the_weeks_ahead() -> None:
+    """The report sets it for this week's game; after that, the projection Sleeper keeps publishing is the better guess."""
     weeks = _weeks(_client(injured={"rb1": "Out"}))
 
-    assert "Good RB (out)" in weeks[4].missing and weeks[4].points == 36.0  # Bad RB in his place
-    assert weeks[6].missing == [] and weeks[6].points == 50.0
+    assert weeks[4].missing == [] and weeks[4].points == 50.0
 
 
 def test_a_long_ruling_covers_every_week() -> None:
@@ -147,8 +146,8 @@ def test_a_pickup_that_barely_helps_is_not_offered() -> None:
 
 
 def test_a_player_the_lineup_leans_on_in_one_of_these_weeks_is_never_the_drop() -> None:
-    """Bad RB starts the week Good RB is out, so he is not the spare he looks like the rest of the month."""
-    week = _weeks(_client(injured={"rb1": "Out"}))[BYE_WEEK]
+    """Bad RB starts while Good RB is on injured reserve, so he is not the spare he looks like."""
+    week = _weeks(_client(injured={"rb1": "IR"}))[BYE_WEEK]
 
     assert "Bad RB" not in week.fix
 

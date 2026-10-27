@@ -10,8 +10,9 @@ a second platform's would, by the same members, with no rule rewritten.
 
 Structural on purpose: a Protocol states what is read, and anything with
 those members is one. The few things the rules make for themselves — a
-projection for a player with none, a game whose status the scoreboard
-corrected — are concrete here, as the NFL's own.
+projection for a player with none, or one whose designation a later report
+changed, a game whose status the scoreboard corrected — are concrete here,
+as the NFL's own.
 """
 
 from collections.abc import Mapping, Sequence
@@ -88,7 +89,43 @@ class Unprojected:
 
     @property
     def is_questionable(self) -> bool:
-        return bool(self.injury_status) and self.injury_status.upper() not in ("", "ACTIVE")
+        return listed(self.injury_status)
+
+
+@dataclass(frozen=True)
+class Reported:
+    """A projection under the designation the latest injury report gives him, rather than the one it was published with."""
+
+    player_id: str
+    name: str
+    position: str
+    team: str
+    opponent: str
+    points: float
+    injury_status: str
+    stats: Mapping[str, float] = field(default_factory=dict)
+
+    @classmethod
+    def of(cls, projection: Projection, injury_status: str) -> Reported:
+        return cls(
+            player_id=projection.player_id,
+            name=projection.name,
+            position=projection.position,
+            team=projection.team,
+            opponent=projection.opponent,
+            points=projection.points,
+            injury_status=injury_status,
+            stats=projection.stats,
+        )
+
+    @property
+    def is_questionable(self) -> bool:
+        return listed(self.injury_status)
+
+
+def listed(injury_status: str) -> bool:
+    """Whether a designation is anything at all: a player cleared to play carries none, or Active."""
+    return bool(injury_status) and injury_status.upper() != "ACTIVE"
 
 
 class Team(Protocol):

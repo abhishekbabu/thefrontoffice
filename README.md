@@ -114,6 +114,17 @@ a drop. Beside it sits each player's **latest news** from the last ten days, fro
 his own club's ESPN feed — matched on ESPN's tag or his full name, never a
 surname, and never across clubs — in the row, the drawer and the prompt.
 
+**Injury designations** come from ESPN's injury report where it names a player,
+joined the same way, and from Sleeper where it does not. Sleeper keeps a
+designation until somebody changes it, so the Tuesday after a game a player
+ruled out of it still reads Out; ESPN's report is dated and moves with the
+week's practices. A player ruled out counts nought toward the lineup, its
+total and the best lineup, whatever Sleeper still projects him. A plain Out is
+for that week's game alone, so the weeks ahead count only a long ruling — IR,
+PUP, a suspension. A free agent's win chance is priced against the lineup your
+bench would already make, so he is never credited with filling a slot a bench
+player fills anyway.
+
 With a model configured, the list has a **Judge** control: the model judges
 each to-do item by its id — *agree*, *overrule* or *wait for news* — and the
 verdict appears inside the row it is about, while moves the list missed join it
@@ -373,8 +384,8 @@ provider for both football and basketball (projections, box scores, schedules,
 transactions); Fantasy Premier League, public and auth-free, whose one
 `bootstrap-static` call carries the squad, prices, the game's own `ep_next`
 projection and Opta expected goals; ESPN, public and auth-free, for the news no
-fantasy platform publishes — each NFL club's own feed, joined to Sleeper's
-players by name within the club. Each caches responses in its own directory.
+fantasy platform publishes — each NFL club's own feed, and the league's injury
+report — joined to Sleeper's players by name within the club. Each caches responses in its own directory.
 
 **Model** — one `AnalysisModel` port, three providers: Gemini via
 `google-genai` (`gemini-2.5-pro` for analysis, `gemini-2.5-flash` for parsing),

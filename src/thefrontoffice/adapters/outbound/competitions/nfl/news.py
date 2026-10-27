@@ -22,9 +22,8 @@ from datetime import datetime, timedelta
 
 from thefrontoffice.adapters.outbound.competitions.dates import weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
-from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
+from thefrontoffice.adapters.outbound.competitions.nfl.clubs import players_by_club
 from thefrontoffice.adapters.outbound.competitions.nfl.model import PlayerInfo
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 from thefrontoffice.domain.models import Stat
 
@@ -32,10 +31,6 @@ logger = logging.getLogger(__name__)
 
 NEWS_WINDOW = timedelta(days=10)
 """Long enough to span a bye week, short enough that it is still this role."""
-
-# A team defense is filed under the club's own name, and every article about
-# the club would read as news about it.
-NOT_PLAYERS = frozenset({"DEF"})
 
 
 @dataclass(frozen=True)
@@ -59,18 +54,7 @@ def dated(article: NewsArticle) -> str:
 
 def attach(news: dict[str, list[NewsArticle]], players: Mapping[str, PlayerInfo], now: datetime) -> PlayerNews:
     """Each player's articles from the last `NEWS_WINDOW`, from his own club's feed."""
-    clubs: dict[str, dict[str, str | None]] = defaultdict(dict)
-    for player_id, meta in players.items():
-        team, position, name = str(meta.get("team") or ""), str(meta.get("position") or ""), meta.get("name")
-        if not team or team == "FA" or position not in FANTASY_POSITIONS or position in NOT_PLAYERS or not name:
-            continue
-        key = normalize_name(str(name))
-        if not key:
-            continue
-        roster = clubs[espn_club(team)]
-        # A name already taken on this club is nobody's: None marks it so a
-        # third player of the name cannot claim it either.
-        roster[key] = None if key in roster else player_id
+    clubs = players_by_club(players)
 
     by_player: dict[str, list[NewsArticle]] = defaultdict(list)
     for club, names in clubs.items():

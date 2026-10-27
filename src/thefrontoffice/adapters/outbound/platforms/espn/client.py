@@ -9,6 +9,10 @@ One request per club rather than the league-wide feed: that feed holds the
 latest fifty articles across every club, about a day of news, while a club's
 own holds its last fifty, which reaches back a couple of weeks.
 
+The injury report is read because a fantasy platform's designation is
+whatever was set last: on the Tuesday after a game, a player ruled out of it
+still reads Out. ESPN's is dated, and moves with the week's practices.
+
 The scoreboard is read for the one thing the fantasy platforms leave out: how
 far through a game is. Sleeper says a game is under way, and nothing about
 whether that is the first minute or the last.
@@ -23,7 +27,7 @@ from tenacity import Retrying
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError, ESPNUnavailableError
-from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle, ScoreboardGame
+from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, NewsArticle, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
 from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
@@ -36,6 +40,7 @@ BASE_URL = "https://site.api.espn.com/apis/site/v2/sports"
 # A club list changes when a franchise moves; news turns over within hours.
 TEAMS_TTL = timedelta(days=1)
 NEWS_TTL = timedelta(minutes=30)
+INJURIES_TTL = timedelta(minutes=30)
 SCOREBOARD_TTL = timedelta(minutes=1)
 """A clock that is a minute stale is a minute of a sixty-minute game."""
 NEWS_LIMIT = 50
@@ -60,6 +65,10 @@ class ESPNSource(Protocol):
 
     def get_team_news(self, league: str, clubs: list[str]) -> dict[str, list[NewsArticle]]:
         """Each club's recent articles, newest first, keyed by ESPN's abbreviation."""
+        ...
+
+    def get_injuries(self, league: str) -> list[InjuryReport]:
+        """Every player on every club's injury report, as it stands right now."""
         ...
 
     def get_scoreboard(self, league: str, season: str, week: int) -> list[ScoreboardGame]:
@@ -115,6 +124,18 @@ class ESPNClient:
                 news[club] = sorted(articles, key=lambda a: a.published, reverse=True)
         return news
 
+    def get_injuries(self, league: str) -> list[InjuryReport]:
+        """Every player on every club's injury report, as it stands right now.
+
+        One league-wide request: unlike the news, the report is short enough
+        that ESPN publishes it whole.
+        """
+        data = self._api.cached(f"injuries_{league.replace('/', '_')}", f"{BASE_URL}/{league}/injuries", INJURIES_TTL)
+        if not isinstance(data, dict):
+            raise ESPNAPIError("ESPN returned an unreadable injury report.")
+        clubs = [club for club in data.get("injuries") or [] if isinstance(club, dict)]
+        return [report for club in clubs for report in (_injury(row) for row in club.get("injuries") or []) if report]
+
     def get_scoreboard(self, league: str, season: str, week: int) -> list[ScoreboardGame]:
         """Every regular-season game of `week`, as it stands right now."""
         data = self._api.cached(
@@ -143,6 +164,21 @@ def _game(event: Any) -> ScoreboardGame | None:
         )
     except KeyError, IndexError, TypeError, ValueError:
         logger.debug(f"Skipping an unreadable ESPN scoreboard event: {str(event)[:200]}")
+        return None
+
+
+def _injury(row: Any) -> InjuryReport | None:
+    """One report row, or None for one missing who, which club, what or when."""
+    try:
+        athlete = row["athlete"]
+        return InjuryReport(
+            name=str(athlete["displayName"]),
+            club=str(athlete["team"]["abbreviation"]),
+            status=str(row["status"]),
+            updated=parse_utc(str(row["date"])),
+        )
+    except KeyError, TypeError, ValueError:
+        logger.debug(f"Skipping an unreadable ESPN injury row: {str(row)[:200]}")
         return None
 
 

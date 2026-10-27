@@ -23,6 +23,7 @@ from thefrontoffice.adapters.outbound.competitions.names import NameIndex
 from thefrontoffice.adapters.outbound.competitions.nfl import (
     actions,
     evidence,
+    injuries,
     league,
     market,
     news,
@@ -44,6 +45,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     SCORING_LABELS,
     Scoreboard,
     Week,
+    counted,
     opponent_entry,
     projection_for,
     week_dates,
@@ -352,8 +354,11 @@ class SleeperNFLProvider:
         state = self.client.get_state(NFL)
         week, season = self._current_week(), state.season
 
-        projections = self.client.get_projections(season, week, league.scoring_format)
-        players = self.client.get_players()
+        catalog = self.client.get_players()
+        designations = self._designations(catalog)
+        players = injuries.catalog(catalog, designations)
+        published = self.client.get_projections(season, week, league.scoring_format)
+        projections = {pid: counted(p) for pid, p in injuries.reported(published, designations).items()}
         projected = [p for p in (projection_for(pid, projections, players) for pid in roster.player_ids) if p]
 
         slots = league.starting_slots
@@ -364,7 +369,7 @@ class SleeperNFLProvider:
 
         return Week(
             evidence=self._evidence(season, week, league.scoring_format, state.is_regular_season),
-            news=self._news(players),
+            news=self._news(catalog),
             is_regular_season=state.is_regular_season,
             league=league,
             roster=roster,
@@ -398,6 +403,16 @@ class SleeperNFLProvider:
             logger.warning(f"Continuing without role and matchup evidence: {e}")
             return evidence.Evidence()
         return evidence.gather(lines, scoring)
+
+    def _designations(self, players: dict[str, PlayerMeta]) -> dict[str, str]:
+        """Each player's designation as ESPN's injury report has it now, where it names him."""
+        try:
+            reports = self.espn.get_injuries(espn.NFL)
+        except ESPNAPIError as e:
+            # Sleeper's own designations stand: older, but still a designation.
+            logger.warning(f"Continuing on Sleeper's injury designations alone: {e}")
+            return {}
+        return injuries.designations(reports, players)
 
     def _news(self, players: dict[str, PlayerMeta]) -> news.PlayerNews:
         """Recent articles about every player, from each club's own feed."""
