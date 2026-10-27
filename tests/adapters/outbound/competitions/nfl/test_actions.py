@@ -5,10 +5,12 @@ that every scenario can say exactly who is where.
 """
 
 from dataclasses import replace
-from datetime import UTC
+from datetime import UTC, datetime
 
 from support.nfl import SLEEPER_USER_ID, FakeESPN, FakeSleeper, nfl_provider, proj
 
+from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
+from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
@@ -107,6 +109,35 @@ def test_a_ruled_out_starter_is_benched_even_while_sleeper_still_projects_him() 
     [action] = _actions(client)
 
     assert action.player_id == "rb2"
+    _names_the_swap(action, start=BENCH_RB, out=RB)
+
+
+def _report(player: WeeklyProjection, status: str) -> FakeESPN:
+    """ESPN's injury report, naming one player."""
+    report = InjuryReport(name=player.name, club=player.team, status=status, updated=datetime(2026, 9, 22, tzinfo=UTC))
+    return FakeESPN(injuries=[report])
+
+
+def test_a_starter_the_injury_report_has_back_to_questionable_is_not_benched() -> None:
+    """Sleeper keeps last week's Out until somebody changes it; the dated report is this week's."""
+    client = _client([QB, _ruled_out(RB, points=15.0), WR, FLEX, BENCH_RB], ["qb", "rb", "wr", "te"], ["rb2"])
+
+    assert not [a for a in _actions(client, _report(RB, "Questionable")) if a.replaces == "rb"]
+
+
+def test_a_starter_the_injury_report_rules_out_is_benched_whatever_sleeper_says() -> None:
+    client = _client([QB, RB, WR, FLEX, BENCH_RB], ["qb", "rb", "wr", "te"], ["rb2"])
+
+    [action] = _actions(client, _report(RB, "Out"))
+
+    _names_the_swap(action, start=BENCH_RB, out=RB)
+
+
+def test_without_the_injury_report_sleepers_designation_stands() -> None:
+    client = _client([QB, _ruled_out(RB, points=15.0), WR, FLEX, BENCH_RB], ["qb", "rb", "wr", "te"], ["rb2"])
+
+    [action] = _actions(client, FakeESPN(injuries_error=ESPNAPIError("down")))
+
     _names_the_swap(action, start=BENCH_RB, out=RB)
 
 

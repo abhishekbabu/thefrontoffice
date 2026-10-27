@@ -41,3 +41,16 @@ class ScoreboardGame:
     """Seconds left in the period."""
     label: str = ""
     """How ESPN shows it: 'Q3 13:02', 'Halftime', 'Final'."""
+
+
+@dataclass(frozen=True)
+class InjuryReport:
+    """One player on a club's injury report, as ESPN last set it."""
+
+    name: str
+    club: str
+    """ESPN's abbreviation."""
+    status: str
+    """ESPN's own: 'Out', 'Doubtful', 'Questionable', 'Injured Reserve', or 'Active' once cleared."""
+    updated: datetime
+    """Aware UTC."""

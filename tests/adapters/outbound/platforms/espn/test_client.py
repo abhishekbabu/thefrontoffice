@@ -132,3 +132,41 @@ def test_an_unreadable_scoreboard_is_an_error(tmp_path: Path) -> None:
 
     with pytest.raises(ESPNAPIError):
         client.get_scoreboard(NFL, "2026", 7)
+
+
+def _injury(name: str, club: str, status: str, date: str = "2026-10-27T13:11Z") -> dict[str, Any]:
+    return {"status": status, "date": date, "athlete": {"displayName": name, "team": {"abbreviation": club}}}
+
+
+INJURIES = {
+    "injuries": [
+        {"displayName": "New York Jets", "injuries": [_injury("Breece Hall", "NYJ", "Questionable")]},
+        {
+            "displayName": "Indianapolis Colts",
+            "injuries": [
+                _injury("Tyler Warren", "IND", "Out"),
+                {"status": "Out", "athlete": {"displayName": "No Date", "team": {"abbreviation": "IND"}}},
+                _injury("Bad Date", "IND", "Out", date="soon"),
+            ],
+        },
+    ]
+}
+
+
+def test_the_injury_report_lists_every_clubs_players_with_when_each_was_set(tmp_path: Path) -> None:
+    client, _ = _client({"/injuries": INJURIES}, tmp_path)
+
+    reports = client.get_injuries(NFL)
+
+    assert [(r.name, r.club, r.status) for r in reports] == [
+        ("Breece Hall", "NYJ", "Questionable"),
+        ("Tyler Warren", "IND", "Out"),
+    ]
+    assert reports[0].updated == datetime(2026, 10, 27, 13, 11, tzinfo=UTC)
+
+
+def test_an_unreadable_injury_report_is_an_error_not_a_healthy_league(tmp_path: Path) -> None:
+    client, _ = _client({"/injuries": ["not", "a", "report"]}, tmp_path)
+
+    with pytest.raises(ESPNAPIError):
+        client.get_injuries(NFL)

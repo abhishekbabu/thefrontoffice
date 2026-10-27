@@ -24,8 +24,9 @@ Questionable is deliberately absent: most questionable players play, and
 flagging every one buries the starters who will not."""
 
 LONG_TERM = frozenset({"IR", "PUP", "SUS", "NA", "DNR"})
-"""Rulings that outlast a week. A plain Out is for one game: it covers next week at most,
-and past that his projection, which Sleeper keeps publishing, is the better guess."""
+"""Rulings that outlast a week. A plain Out is for the coming game alone — the injury
+report sets it for that week — and past it his projection, which Sleeper keeps publishing,
+is the better guess."""
 
 
 def ruled_out(status: str) -> bool:

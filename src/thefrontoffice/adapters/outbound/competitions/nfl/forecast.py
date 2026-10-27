@@ -86,7 +86,12 @@ class Forecasts:
                 left=left_in(board[player.team]) if player.team in board else outcomes.UNDER_WAY,
             )
 
-        mine = tuple(outcome(slot.player) for slot in state.lineup if slot.player)
+        started = {club for club, s in status.items() if s and s != "pre_game"}
+        # The wire is priced against the lineup your bench would already make:
+        # against the one as set, a free agent is credited with filling a slot
+        # a bench player fills anyway.
+        lineup = settled(state, started) if candidates else [slot.player for slot in state.lineup if slot.player]
+        mine = tuple(outcome(p) for p in lineup)
         theirs = tuple(
             outcome(p)
             for p in (
@@ -94,13 +99,12 @@ class Forecasts:
             )
             if p
         )
-        started = {club for club, s in status.items() if s and s != "pre_game"}
         if candidates:
             wire = [state.projections[pid] for pid in candidates if pid in state.projections and pid not in owned]
-            moves = starts(state, wire, outcome, started)
+            moves = starts(state, lineup, wire, outcome, started)
         else:
             bench = [p for p in state.projected if p.player_id not in state.starter_ids]
-            moves = starts(state, bench, outcome, started) + pickups(state, to_do, outcome)
+            moves = starts(state, lineup, bench, outcome, started) + pickups(state, to_do, outcome)
         return MatchupInput(mine=mine, theirs=theirs, moves=moves, seed=seeded)
 
     def played_week(
@@ -175,13 +179,25 @@ class Forecasts:
         return played
 
 
+def settled(state: Week, started: set[str]) -> list[Projection]:
+    """Your starters once the bench has made every swap it still can: the lineup a pickup has to beat."""
+    starters = [slot.player for slot in state.lineup if slot.player]
+    for change in state.changes:
+        if change.start.team in started or (change.bench is not None and change.bench.team in started):
+            continue
+        out = change.bench.player_id if change.bench else None
+        starters = [p for p in starters if p.player_id != out] + [change.start]
+    return starters
+
+
 def starts(
     state: Week,
+    starters: Sequence[Projection],
     players: Sequence[Projection],
     outcome: Callable[[Projection], Outcomes],
     started: set[str],
 ) -> tuple[LineupMove, ...]:
-    """Every single start of one of `players` that leaves a legal lineup, among players not yet locked.
+    """Every single start of one of `players` into `starters` that leaves a legal lineup, among players not yet locked.
 
     A lineup is a set of starters, so a swap is one in and one out — legal
     if the new set fills the slots any way at all. Hall for Bernard is one,
@@ -189,7 +205,6 @@ def starts(
     The same for a bench player and a free agent: who he is does not
     change which lineups he makes.
     """
-    starters = [slot.player for slot in state.lineup if slot.player]
     slots = state.league.starting_slots
     eligible = [p for p in players if p.team not in started and not ruled_out(p.injury_status) and p.opponent]
     moves = []

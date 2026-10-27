@@ -16,7 +16,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.actions import join
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import season_average
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, lineup_points
 from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Projection
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import LONG_TERM, RULED_OUT, SEASON_WEEKS
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import LONG_TERM, SEASON_WEEKS
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, games_by_week, lineup_for
 from thefrontoffice.domain.models import Action, WeekAhead
 
@@ -53,7 +53,7 @@ def build(client: NFLSource, state: Week, league_id: str, signable: Callable[[st
     projections = {week: client.get_projections(state.season, week, state.league.scoring_format) for week in weeks}
 
     def lineup(ids: list[str], week: int) -> list[LineupSlot]:
-        return lineup_for(state, [pid for pid in ids if not _ruled_out(pid, state, week)], projections[week])
+        return lineup_for(state, [pid for pid in ids if not _ruled_out(pid, state)], projections[week])
 
     lineups = {week: lineup(held, week) for week in weeks}
     usual = statistics.median(lineup_points(slots) for slots in lineups.values())
@@ -91,7 +91,7 @@ def build(client: NFLSource, state: Week, league_id: str, signable: Callable[[st
                 if pid not in owned
                 and p.position in needed
                 and p.opponent
-                and p.injury_status.upper() not in RULED_OUT
+                and p.injury_status.upper() not in LONG_TERM
                 and signable(pid)
             ]
             row = _fixed(
@@ -101,10 +101,9 @@ def build(client: NFLSource, state: Week, league_id: str, signable: Callable[[st
     return ahead
 
 
-def _ruled_out(player_id: str, state: Week, week: int) -> bool:
-    """Whether his current ruling keeps him out of `week`: next week for a plain Out, every week for a long one."""
-    status = str(state.players.get(player_id, {}).get("injury_status") or "").upper()
-    return status in LONG_TERM or (status == "OUT" and week == state.week + 1)
+def _ruled_out(player_id: str, state: Week) -> bool:
+    """Whether his current ruling reaches into the weeks ahead: a long one does; a plain Out is for this week's game."""
+    return str(state.players.get(player_id, {}).get("injury_status") or "").upper() in LONG_TERM
 
 
 def _why(player_id: str, state: Week, week: int, playing: set[str]) -> str:
@@ -113,7 +112,7 @@ def _why(player_id: str, state: Week, week: int, playing: set[str]) -> str:
     name = meta.get("name") or player_id
     if playing and meta.get("team") not in playing:
         return f"{name} (bye)"
-    return f"{name} ({str(meta.get('injury_status')).lower()})" if _ruled_out(player_id, state, week) else ""
+    return f"{name} ({str(meta.get('injury_status')).lower()})" if _ruled_out(player_id, state) else ""
 
 
 def _fixed(

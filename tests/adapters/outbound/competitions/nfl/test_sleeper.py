@@ -5,6 +5,7 @@ wire, and the links out. The week, the league and the prompt have their own
 modules beside this one.
 """
 
+from dataclasses import replace
 from datetime import UTC
 from typing import Any
 
@@ -590,3 +591,34 @@ def test_roster_rows_skip_players_missing_from_the_catalog() -> None:
         rosters=[SleeperRoster(roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["ghost"], starter_ids=[])]
     )
     assert nfl_provider(client).roster("L1") == []
+
+
+def _one_out() -> FakeSleeper:
+    """Two backs for one slot: the starter ruled out though Sleeper still projects him higher."""
+    client = _paired()
+    client.league = replace(client.league, roster_positions=["QB", "RB", "BN", "BN"])
+    client.rosters = [
+        replace(client.rosters[0], player_ids=["qb1", "rb1", "rb3"], starter_ids=["qb1", "rb3"]),
+        *client.rosters[1:],
+    ]
+    client.projections = {
+        **client.projections,
+        "rb1": proj("rb1", "Good RB", "RB", 15.0),
+        "rb3": replace(proj("rb3", "Hurt RB", "RB", 18.0), injury_status="Out"),
+        "rb9": proj("rb9", "Spare RB", "RB", 10.0, team="NYJ", opp="NE"),
+    }
+    return client
+
+
+def test_the_best_lineup_benches_a_starter_who_is_ruled_out_whatever_he_is_still_projected() -> None:
+    [swap] = nfl_provider(_one_out()).summary("L1").swaps
+
+    assert "Good RB" in swap.start and swap.out == "Hurt RB"
+
+
+def test_a_free_agent_is_priced_against_the_lineup_the_bench_would_already_make() -> None:
+    """Against the lineup as set, he would be credited with filling a slot the bench fills anyway."""
+    matchup = nfl_provider(_one_out()).matchup_input("L1", candidates=["rb9"])
+
+    assert matchup is not None
+    assert {o.player_id for o in matchup.mine} == {"qb1", "rb1"}

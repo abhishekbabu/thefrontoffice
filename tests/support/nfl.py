@@ -8,7 +8,7 @@ the same every time, so a test states only what its rule turns on.
 from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
-from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle, ScoreboardGame
+from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, NewsArticle, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
@@ -182,8 +182,12 @@ class FakeESPN:
         error: Exception | None = None,
         scoreboard: list[ScoreboardGame] | None = None,
         scoreboard_error: Exception | None = None,
+        injuries: list[InjuryReport] | None = None,
+        injuries_error: Exception | None = None,
     ) -> None:
         self.news = news or {}
+        self.injuries = injuries or []
+        self.injuries_error = injuries_error
         self.error = error
         self.scoreboard = scoreboard or []
         self.scoreboard_error = scoreboard_error
@@ -194,6 +198,11 @@ class FakeESPN:
         if self.error:
             raise self.error
         return {club: self.news[club] for club in clubs if club in self.news}
+
+    def get_injuries(self, league: str) -> list[InjuryReport]:
+        if self.injuries_error:
+            raise self.injuries_error
+        return self.injuries
 
     def get_scoreboard(self, league: str, season: str, week: int) -> list[ScoreboardGame]:
         if self.scoreboard_error:

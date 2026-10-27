@@ -31,6 +31,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Unprojected,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out
 from thefrontoffice.adapters.outbound.platforms.espn import types as espn
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
@@ -193,6 +194,25 @@ def zero_projection(player_id: str, meta: PlayerInfo) -> Projection:
         position=str(meta.get("position") or ""),
         team=str(meta.get("team") or "FA"),
         injury_status=str(meta.get("injury_status") or ""),
+    )
+
+
+def counted(projection: Projection) -> Projection:
+    """A projection as this week's lineup counts it: nought for a player ruled out, whatever is still published for him.
+
+    Sleeper keeps projecting a player it has ruled out, so a lineup solved on
+    its numbers starts him, and a header totalled on them counts points
+    nobody will score — beside a to-do list telling you to bench him.
+    """
+    if not ruled_out(projection.injury_status) or not projection.points:
+        return projection
+    return Unprojected(
+        player_id=projection.player_id,
+        name=projection.name,
+        position=projection.position,
+        team=projection.team,
+        injury_status=projection.injury_status,
+        opponent=projection.opponent,
     )
 
 
