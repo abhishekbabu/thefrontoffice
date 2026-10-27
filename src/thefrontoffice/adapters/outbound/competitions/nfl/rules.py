@@ -34,6 +34,9 @@ def ruled_out(status: str) -> bool:
     return status.upper() in RULED_OUT
 
 
+STREAMED = frozenset({"K", "DEF"})
+"""Positions managers fill from the wire week to week: a lineup starts one, and nobody holds a spare."""
+
 FANTASY_POSITIONS = frozenset({"QB", "RB", "WR", "TE", "K", "DEF"})
 """What a fantasy league scores. A catalog carries every practice-squad body, and none is a waiver decision."""
 

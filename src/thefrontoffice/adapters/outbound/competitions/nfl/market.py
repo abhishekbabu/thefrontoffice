@@ -16,6 +16,7 @@ from collections.abc import Iterable
 
 from thefrontoffice.adapters.outbound.competitions.nfl.league import SeasonModel, season_model
 from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Team
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import STREAMED
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.domain.models import TeamWeek, TradeMarket, TradeOption
 
@@ -29,9 +30,6 @@ TRADES_PER_TEAM = 3
 
 MIN_THEIR_GAIN = 0.5
 """Points a week their starters must gain: the least that reads as a reason for them to say yes."""
-
-STREAMED = {"K", "DEF"}
-"""Positions managers fill from the wire week to week, so nobody gives up a player for one."""
 
 
 def build(client: NFLSource, state: Week, league_id: str, seed: int) -> TradeMarket | None:
