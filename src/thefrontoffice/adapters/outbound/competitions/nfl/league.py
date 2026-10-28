@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions import places
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import SNAP_POSITIONS, misses
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import lineup_points
 from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueMove, NFLSource, Projection, Team
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import SEASON_WEEKS
@@ -264,6 +265,13 @@ About what a fantasy football team's scores scatter by."""
 MIN_WEEKS_FOR_SPREAD = 3
 """Played weeks the league needs before its own spread replaces the default."""
 
+DEFAULT_MISS_RATE = 0.12
+"""How often a regular starter misses a week, before the league has played enough to measure it:
+about what this league measured after seven weeks."""
+
+MIN_MISS_CHANCES = 200
+"""Games regulars were there to miss before the league's own rate replaces the default."""
+
 DEFAULT_STRENGTH_ERROR = 8.0
 """How far a team's real strength may sit from its projection, before the league has
 played enough weeks to measure it: about what this league measured after six weeks."""
@@ -284,10 +292,13 @@ class SeasonModel:
     """Each remaining week's projections, by week."""
     scale: float
     spread: float
+    miss_rate: float
+    """The chance a regular starter misses any one week."""
 
     def mean(self, state: Week, player_ids: Iterable[str], week: int) -> float:
-        """What a roster of these players is expected to score in `week`: its best lineup, rescaled."""
-        return _best_lineup(state, player_ids, self.projections[week]) * self.scale
+        """What a roster of these players is expected to score in `week`: its best lineup, less what
+        its starters' missed weeks cost it, rescaled."""
+        return _expected_lineup(state, player_ids, self.projections[week], self.miss_rate) * self.scale
 
 
 def season_input(client: NFLSource, state: Week, league_id: str, seed: int) -> SeasonInput | None:
@@ -303,7 +314,8 @@ def season_model(client: NFLSource, state: Week, league_id: str, seed: int) -> S
     """The regular season from this week to its last, with what it was built from.
 
     Each team's mean for a week is the best lineup its roster projects that
-    week — which sees byes and injuries coming — rescaled so the league's
+    week — which sees byes and injuries coming — less what the weeks its
+    starters will miss without warning cost it, rescaled so the league's
     projected average matches what it has actually been scoring, since
     projections run short of what managers score and the points already
     banked are real points. The spread is the league's own: how far teams
@@ -325,8 +337,9 @@ def season_model(client: NFLSource, state: Week, league_id: str, seed: int) -> S
         fixtures += [Fixture(week=week, home=pair[0], away=pair[1]) for pair in paired.values() if len(pair) == 2]
 
     projections = {week: client.get_projections(state.season, week, league.scoring_format) for week in remaining}
+    miss_rate = _miss_rate(client, state)
     projected = {
-        (str(roster.roster_id), week): _best_lineup(state, roster.player_ids, projections[week])
+        (str(roster.roster_id), week): _expected_lineup(state, roster.player_ids, projections[week], miss_rate)
         for week in remaining
         for roster in rosters
     }
@@ -356,11 +369,49 @@ def season_model(client: NFLSource, state: Week, league_id: str, seed: int) -> S
         strength_error=strength_error,
         seed=seed,
     )
-    return SeasonModel(season=season, rosters=rosters, projections=projections, scale=scale, spread=spread)
+    return SeasonModel(
+        season=season, rosters=rosters, projections=projections, scale=scale, spread=spread, miss_rate=miss_rate
+    )
 
 
-def _best_lineup(state: Week, player_ids: Iterable[str], projections: Mapping[str, Projection]) -> float:
-    return lineup_points(lineup_for(state, player_ids, projections))
+def _expected_lineup(
+    state: Week, player_ids: Iterable[str], projections: Mapping[str, Projection], miss_rate: float
+) -> float:
+    """What a roster's best lineup is expected to score once any regular starter may miss the week.
+
+    Each starter misses at the league's own rate, and the bench covers for him
+    as it would: the week costs what his lineup scores without him. That is
+    what prices a backup, whom a best lineup alone counts as nothing. Two out
+    at once is rare enough to leave out; a kicker or a defense does not miss.
+    """
+    held = list(player_ids)
+    lineup = lineup_for(state, held, projections)
+    full = lineup_points(lineup)
+    starters = [
+        slot.player.player_id
+        for slot in lineup
+        if slot.player and slot.player.points > 0 and slot.player.position in SNAP_POSITIONS
+    ]
+    if not starters:
+        return full
+    chance = min(miss_rate, 1 / len(starters))
+    cost = sum(
+        full - lineup_points(lineup_for(state, [pid for pid in held if pid != out], projections)) for out in starters
+    )
+    return full - chance * cost
+
+
+def _miss_rate(client: NFLSource, state: Week) -> float:
+    """How often the league's regular starters have missed a week this season, or the default before it can say."""
+    played = list(range(1, state.week)) if state.is_regular_season else []
+    if not played:
+        return DEFAULT_MISS_RATE
+    try:
+        missed, chances = misses(client.get_nfl_game_lines(state.season, played))
+    except PlatformError as e:
+        logger.warning(f"Using the default miss rate: {e}")
+        return DEFAULT_MISS_RATE
+    return missed / chances if chances >= MIN_MISS_CHANCES else DEFAULT_MISS_RATE
 
 
 def _scale(rosters: Sequence[Team], projected: dict[tuple[str, int], float], week: int) -> float:

@@ -311,6 +311,34 @@ def _trends(lines: Sequence[GameLine], out: Collection[str]) -> dict[str, Trend]
     return trends
 
 
+def misses(lines: Sequence[GameLine]) -> tuple[int, int]:
+    """How often a regular missed a game his team played: (games missed, games he was there to miss).
+
+    A regular plays at least half his team's snaps in the games he plays.
+    Every game his team played after his first one for it was his to miss —
+    to an injury, an illness or the coach, which a lineup feels alike.
+    """
+    floor = RISES["snaps"][1]
+    team_weeks: dict[str, set[int]] = defaultdict(set)
+    by_player: dict[str, list[GameLine]] = defaultdict(list)
+    for line in lines:
+        if line.position in SNAP_POSITIONS and line.stats.get("off_snp"):
+            team_weeks[line.team].add(line.week)
+            if line.stats.get("tm_off_snp"):
+                by_player[line.player_id].append(line)
+    missed = chances = 0
+    for played in by_player.values():
+        shares = [line.stats["off_snp"] / line.stats["tm_off_snp"] for line in played]
+        if sum(shares) / len(shares) < floor:
+            continue
+        team = max(played, key=lambda line: line.week).team
+        weeks = {line.week for line in played if line.team == team}
+        later = [week for week in team_weeks[team] if week > min(weeks)]
+        chances += len(later)
+        missed += sum(week not in weeks for week in later)
+    return missed, chances
+
+
 def _allowed(lines: Sequence[GameLine], scoring: str) -> dict[tuple[str, str], Matchup]:
     """Points each defense has given up per game to each position, ranked.
 

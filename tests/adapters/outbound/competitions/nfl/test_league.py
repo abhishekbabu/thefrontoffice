@@ -3,7 +3,10 @@
 Covers `nfl/league.py`: the season, the table, the real games, the activity.
 """
 
-from support.nfl import DEFAULT_PROJECTIONS, FakeSleeper, at_week, league_client, nfl_provider
+from dataclasses import replace
+
+import pytest
+from support.nfl import DEFAULT_PROJECTIONS, FakeSleeper, at_week, game_line, league_client, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -175,3 +178,54 @@ def test_a_league_in_its_playoffs_has_no_season_left_to_simulate() -> None:
 
 def test_a_league_that_names_no_playoffs_has_none_to_reach() -> None:
     assert nfl_provider(at_week(7)).season_input("L1") is None
+
+
+# ── a backup, priced by the weeks his starters will miss ────────────────
+
+
+def _mine_against_theirs(client: FakeSleeper) -> float:
+    """My mean over theirs in week 7: a ratio, so the league-wide rescaling cancels out."""
+    season = nfl_provider(client).season_input("L1")
+    assert season is not None
+    means = {(t.team_id, t.week): t.mean for t in season.scoring}
+    return means[("1", 7)] / means[("2", 7)]
+
+
+def _with_backup_qb(client: FakeSleeper, backup: bool) -> FakeSleeper:
+    """My roster with or without a second quarterback, whom no healthy lineup of mine starts."""
+    client.projections = {**DEFAULT_PROJECTIONS, "qb2": proj("qb2", "Spare QB", "QB", 15.0)}
+    if backup:
+        client.rosters[0] = replace(client.rosters[0], player_ids=[*client.rosters[0].player_ids, "qb2"])
+    return client
+
+
+def test_a_backup_raises_what_a_roster_is_expected_to_score() -> None:
+    """Before the league has played enough to measure it, starters miss weeks at the default rate."""
+    with_backup = _mine_against_theirs(_with_backup_qb(_with_playoffs(7), backup=True))
+    without = _mine_against_theirs(_with_backup_qb(_with_playoffs(7), backup=False))
+
+    assert with_backup > without
+
+
+def test_a_backup_is_still_priced_when_the_game_lines_are_down() -> None:
+    def down(backup: bool) -> float:
+        client = _with_backup_qb(_with_playoffs(7), backup=backup)
+        client.game_lines_error = SleeperAPIError("down")
+        return _mine_against_theirs(client)
+
+    assert down(backup=True) > down(backup=False)
+
+
+def _every_regular_plays_every_week(client: FakeSleeper) -> FakeSleeper:
+    """Forty regulars who never miss a game: chances enough for the league's own rate, and it is nought."""
+    client.game_lines = [
+        game_line(f"wr{n}", week, off_snp=50, tm_off_snp=60) for n in range(40) for week in range(1, 7)
+    ]
+    return client
+
+
+def test_in_a_league_whose_regulars_never_miss_a_backup_adds_nothing() -> None:
+    with_backup = _mine_against_theirs(_every_regular_plays_every_week(_with_backup_qb(_with_playoffs(7), True)))
+    without = _mine_against_theirs(_every_regular_plays_every_week(_with_backup_qb(_with_playoffs(7), False)))
+
+    assert with_backup == pytest.approx(without)
