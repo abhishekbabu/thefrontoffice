@@ -165,27 +165,74 @@ def _snaps(pid: str, *shares: float, position: str = "WR") -> list[NFLGameLine]:
     ]
 
 
-def test_a_jump_in_the_latest_week_is_a_growing_role() -> None:
-    trend = gather(_snaps("wr", 0.3, 0.35, 0.4, 0.8), SCORING).trends["wr"]
+def test_a_jump_held_for_his_last_two_games_is_a_growing_role() -> None:
+    trend = gather(_snaps("wr", 0.3, 0.35, 0.4, 0.8, 0.8), SCORING).trends["wr"]
 
-    assert (trend.measure, trend.week) == ("snaps", 4)
+    assert (trend.measure, trend.week) == ("snaps", 5)
     assert trend.before == pytest.approx(0.35) and trend.now == pytest.approx(0.8)
 
 
+def test_a_jump_is_measured_by_the_smaller_of_his_last_two_games() -> None:
+    trend = gather(_snaps("wr", 0.3, 0.35, 0.4, 0.6, 0.9), SCORING).trends["wr"]
+
+    assert trend.rise == pytest.approx((0.6 - 0.35) / 0.2)
+
+
+def test_one_big_game_with_no_cause_is_no_role() -> None:
+    assert "wr" not in gather(_snaps("wr", 0.3, 0.35, 0.4, 0.8), SCORING).trends
+
+
+def test_a_jump_that_fell_back_the_next_game_is_no_role() -> None:
+    assert "wr" not in gather(_snaps("wr", 0.3, 0.35, 0.4, 0.8, 0.4), SCORING).trends
+
+
+def _starter_missed_the_latest_week() -> list[NFLGameLine]:
+    """A regular at the backup's position plays weeks 1 to 3 and misses week 4, when the backup jumps."""
+    return _snaps("wr", 0.3, 0.35, 0.4, 0.8) + _snaps("starter", 0.8, 0.8, 0.8)
+
+
+def test_a_jump_in_the_game_a_regular_teammate_missed_counts_while_he_is_ruled_out() -> None:
+    trend = gather(_starter_missed_the_latest_week(), SCORING, out={"starter"}).trends["wr"]
+
+    assert (trend.measure, trend.week) == ("snaps", 4)
+
+
+def test_a_jump_in_the_game_a_teammate_missed_is_no_role_once_he_is_back() -> None:
+    assert "wr" not in gather(_starter_missed_the_latest_week(), SCORING).trends
+
+
+def test_a_regular_teammate_who_played_the_game_is_no_cause() -> None:
+    lines = _snaps("wr", 0.3, 0.35, 0.4, 0.8) + _snaps("starter", 0.8, 0.8, 0.8, 0.8)
+
+    assert "wr" not in gather(lines, SCORING, out={"starter"}).trends
+
+
+def test_a_teammate_at_another_position_missing_is_no_cause() -> None:
+    lines = _snaps("wr", 0.3, 0.35, 0.4, 0.8) + _snaps("te", 0.8, 0.8, 0.8, position="TE")
+
+    assert "wr" not in gather(lines, SCORING, out={"te"}).trends
+
+
+def test_a_part_timer_missing_is_no_cause() -> None:
+    lines = _snaps("wr", 0.3, 0.35, 0.4, 0.8) + _snaps("depth", 0.2, 0.2, 0.2)
+
+    assert "wr" not in gather(lines, SCORING, out={"depth"}).trends
+
+
 def test_a_jump_weeks_ago_is_a_role_by_now() -> None:
-    """Somebody else played week 5; his jump in week 4 is old news the projection has read."""
-    lines = _snaps("wr", 0.3, 0.35, 0.4, 0.8) + _snaps("other", 0.5, 0.5, 0.5, 0.5, 0.5)
+    """Somebody else played week 6; his jump in weeks 4 and 5 is old news the projection has read."""
+    lines = _snaps("wr", 0.3, 0.35, 0.4, 0.8, 0.8) + _snaps("other", 0.5, 0.5, 0.5, 0.5, 0.5, 0.5)
 
     assert "wr" not in gather(lines, SCORING).trends
 
 
 def test_one_game_before_is_too_little_to_call_a_change() -> None:
-    assert "wr" not in gather(_snaps("wr", 0.2, 0.9), SCORING).trends
+    assert "wr" not in gather(_snaps("wr", 0.2, 0.9, 0.9), SCORING).trends
 
 
 def test_a_jump_to_a_role_that_is_still_small_is_no_role() -> None:
     """From 5% to 30% of snaps is a big jump to a part nobody starts."""
-    assert "wr" not in gather(_snaps("wr", 0.05, 0.05, 0.3), SCORING).trends
+    assert "wr" not in gather(_snaps("wr", 0.05, 0.05, 0.05, 0.3, 0.3), SCORING).trends
 
 
 def test_a_steady_role_is_no_trend() -> None:
@@ -195,7 +242,7 @@ def test_a_steady_role_is_no_trend() -> None:
 def test_carries_count_for_a_back_whose_snaps_stayed_level() -> None:
     lines = [
         game_line("rb", week, position="RB", off_snp=30, tm_off_snp=60, rush_att=carries, pts_ppr=5)
-        for week, carries in ((1, 2), (2, 3), (3, 16))
+        for week, carries in ((1, 2), (2, 3), (3, 16), (4, 16))
     ]
 
     trend = gather(lines, SCORING).trends["rb"]
@@ -204,7 +251,7 @@ def test_carries_count_for_a_back_whose_snaps_stayed_level() -> None:
 
 
 def test_a_growing_role_is_part_of_the_line_a_player_is_read_by() -> None:
-    evidence = gather(_snaps("wr", 0.3, 0.35, 0.4, 0.8), SCORING)
+    evidence = gather(_snaps("wr", 0.3, 0.35, 0.4, 0.8, 0.8), SCORING)
 
     line = evidence.describe(proj("wr", "Wide", "WR", 9.0))
 

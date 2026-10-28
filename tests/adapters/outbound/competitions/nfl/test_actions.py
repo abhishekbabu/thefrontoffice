@@ -538,7 +538,7 @@ def test_a_starter_whose_game_has_kicked_off_is_not_replaced() -> None:
 
 
 def _rising(player: WeeklyProjection) -> list[NFLGameLine]:
-    """Weeks 1 and 2: a part-timer, then most of the snaps in the latest week played."""
+    """Weeks 1 and 2: a part-timer, then most of the snaps in the two weeks played since."""
     return [
         NFLGameLine(
             player_id=player.player_id,
@@ -548,14 +548,14 @@ def _rising(player: WeeklyProjection) -> list[NFLGameLine]:
             position=player.position,
             stats={"off_snp": snaps, "tm_off_snp": 60, "pts_ppr": 4},
         )
-        for week, snaps in ((1, 15), (2, 18), (3, 50))
+        for week, snaps in ((1, 15), (2, 18), (3, 50), (4, 50))
     ]
 
 
 def _with_free_agent(free: WeeklyProjection) -> FakeSleeper:
     client = _client([QB, RB, WR, FLEX, free], ["qb", "rb", "wr", "te"], [], game_lines=_rising(free))
-    client.week = 4
-    client.season_schedule = [*SCHEDULE, ScheduledGame(week=4, date="2026-10-04", home="NYJ", away="NE")]
+    client.week = 5
+    client.season_schedule = [*SCHEDULE, ScheduledGame(week=5, date="2026-10-11", home="KC", away="LV")]
     return client
 
 
@@ -644,7 +644,8 @@ def _with_breakout(projected: float) -> list[Action]:
         + _scored(BACKUP_QB, 8.0, 9.0)
         + _rising(rising),
     )
-    client.week = 4
+    client.week = 5
+    client.season_schedule = [*SCHEDULE, ScheduledGame(week=5, date="2026-10-11", home="KC", away="LV")]
     return _actions(client)
 
 

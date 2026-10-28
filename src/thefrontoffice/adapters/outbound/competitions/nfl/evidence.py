@@ -12,7 +12,7 @@ Monday-night starter as a player who did nothing.
 """
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 
 from thefrontoffice.adapters.outbound.competitions.nfl.model import GameLine, Projection
@@ -169,15 +169,19 @@ class Evidence:
         return Stat(label=player.name, value=text, tone=matchup.tone if matchup else "neutral")
 
 
-def gather(lines: Sequence[GameLine], scoring: str) -> Evidence:
-    """Roles and matchups from the season's played game lines."""
+def gather(lines: Sequence[GameLine], scoring: str, out: Collection[str] = frozenset()) -> Evidence:
+    """Roles and matchups from the season's played game lines.
+
+    `out` is who is ruled out of the coming game: a backup's jump in the week a
+    starter missed is his role only while that starter stays out.
+    """
     games, positions = _games(lines, scoring)
     return Evidence(
         roles=_roles(lines, scoring),
         allowed=_allowed(lines, scoring),
         games=games,
         positions=positions,
-        trends=_trends(lines),
+        trends=_trends(lines, out),
     )
 
 
@@ -229,11 +233,18 @@ def _roles(lines: Sequence[GameLine], scoring: str) -> dict[str, Role]:
     return roles
 
 
-def _trends(lines: Sequence[GameLine]) -> dict[str, Trend]:
+def _trends(lines: Sequence[GameLine], out: Collection[str]) -> dict[str, Trend]:
     """Whose role jumped in the latest week played, against his games before it.
 
     The latest week anybody played, not his own latest game: a jump three
     weeks ago is a role, by now, and the projection has long since read it.
+
+    One big game is not a role. The jump counts once it has held for his last
+    two games, or at once when it has a cause: a teammate at his position, a
+    regular in the games before, did not play in it and is ruled out of the
+    next. The first waits a week on a real breakout; the second is the backup
+    handed the starter's snaps, worth knowing the week it happens — and worth
+    nothing once the starter is back.
     """
     if not lines:
         return {}
@@ -255,26 +266,48 @@ def _trends(lines: Sequence[GameLine]) -> dict[str, Trend]:
             found["carries"] = line.stats.get("rush_att", 0.0)
         return found
 
+    def jump(recent: Sequence[GameLine], earlier: Sequence[GameLine]) -> Trend | None:
+        """The biggest jump every one of the recent games makes on the earlier ones, measured by the smallest."""
+        if len(earlier) < 2:
+            return None
+        now, before = [measures(line) for line in recent], [measures(line) for line in earlier]
+        best: Trend | None = None
+        for measure, (step, floor) in RISES.items():
+            if any(measure not in game or game[measure] < floor for game in now):
+                continue
+            baseline = [game[measure] for game in before if measure in game]
+            if not baseline:
+                continue
+            average = sum(baseline) / len(baseline)
+            rise = (min(game[measure] for game in now) - average) / step
+            if rise >= 1 and (best is None or rise > best.rise):
+                best = Trend(measure=measure, before=average, now=now[-1][measure], week=latest, rise=rise)
+        return best
+
+    def vacated(line: GameLine, earlier: Sequence[GameLine]) -> bool:
+        """Whether a teammate at his position, a regular in the earlier weeks, missed this game and the next."""
+        weeks = {game.week for game in earlier}
+        floor = RISES["snaps"][1]
+        for teammate, played in by_player.items():
+            if teammate == line.player_id or teammate not in out or played[-1].position != line.position:
+                continue
+            mine = [game for game in played if game.team == line.team and game.week in weeks]
+            shares = [game.stats["off_snp"] / game.stats["tm_off_snp"] for game in mine if game.stats.get("tm_off_snp")]
+            if shares and sum(shares) / len(shares) >= floor and all(game.week != line.week for game in played):
+                return True
+        return False
+
     trends = {}
     for player_id, played in by_player.items():
         ordered = sorted(played, key=lambda line: line.week)
-        last, earlier = ordered[-1], ordered[:-1][-ROLE_GAMES:]
-        if last.week != latest or len(earlier) < 2:
+        last = ordered[-1]
+        if last.week != latest:
             continue
-        now = measures(last)
-        best: Trend | None = None
-        for measure, (step, floor) in RISES.items():
-            if measure not in now or now[measure] < floor:
-                continue
-            before = [m[measure] for m in map(measures, earlier) if measure in m]
-            if not before:
-                continue
-            average = sum(before) / len(before)
-            rise = (now[measure] - average) / step
-            if rise >= 1 and (best is None or rise > best.rise):
-                best = Trend(measure=measure, before=average, now=now[measure], week=latest, rise=rise)
-        if best is not None:
-            trends[player_id] = best
+        earlier = ordered[:-1][-ROLE_GAMES:]
+        held = jump(ordered[-2:], ordered[:-2][-ROLE_GAMES:]) if len(ordered) >= 2 else None
+        trend = held or (jump([last], earlier) if vacated(last, earlier) else None)
+        if trend is not None:
+            trends[player_id] = trend
     return trends
 
 
