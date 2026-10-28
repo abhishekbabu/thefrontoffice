@@ -40,8 +40,8 @@ class AppSettings(BaseSettings):
     groq_analysis_model: str = "openai/gpt-oss-120b"
     groq_parsing_model: str = "openai/gpt-oss-20b"
     openrouter_api_key: str | None = None
-    openrouter_analysis_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
-    openrouter_parsing_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    openrouter_analysis_model: str = "nvidia/nemotron-3.5-super-vl:free"
+    openrouter_parsing_model: str = "nvidia/nemotron-3.5-super-vl:free"
     answer_cache_dir: str = ".answer_cache"
     """Where every model answer is kept — a week's judgment, each free agent's
     call — so a reload shows it and an unchanged question costs no call."""

@@ -318,7 +318,7 @@ fails at startup naming the field, not mid-report.
 | `GROQ_API_KEY` | no | — | Groq, tried after Gemini — and instead of it while Gemini is out of quota |
 | `OPENROUTER_API_KEY` | no | — | OpenRouter, tried after Groq |
 | `GROQ_ANALYSIS_MODEL` / `GROQ_PARSING_MODEL` | no | `openai/gpt-oss-120b` / `openai/gpt-oss-20b` | Free catalogs change; these are settings for that reason |
-| `OPENROUTER_ANALYSIS_MODEL` / `OPENROUTER_PARSING_MODEL` | no | `nvidia/nemotron-3-super-120b-a12b:free` | Pick any `:free` model; one supporting structured outputs is best |
+| `OPENROUTER_ANALYSIS_MODEL` / `OPENROUTER_PARSING_MODEL` | no | `nvidia/nemotron-3.5-super-vl:free` | Pick any `:free` model; one supporting structured outputs is best |
 | `LOGFIRE_TOKEN` | no | — | Write token from a [Logfire](https://logfire.pydantic.dev) project. Omit and nothing is exported |
 | `LOGFIRE_ENVIRONMENT` | no | `local` | Separates traces from a laptop and a deployed run |
 | `LOGFIRE_CAPTURE_PROMPTS` | no | `false` | Sends prompt and completion **text**. Off deliberately — a prompt carries your roster and leagues |
