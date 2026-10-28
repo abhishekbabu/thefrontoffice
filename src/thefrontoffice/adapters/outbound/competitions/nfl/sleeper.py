@@ -41,6 +41,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     optimal_lineup,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, Projection
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     SCORING_LABELS,
     Scoreboard,
@@ -231,7 +232,7 @@ class SleeperNFLProvider:
         giving, receiving = resolve_sides(proposal, index.lookup)
 
         rostered = [projection_for(pid, projections, players) for pid in roster.player_ids]
-        known = self._evidence(season, week, league.scoring_format, state.is_regular_season)
+        known = self._evidence(season, week, league.scoring_format, state.is_regular_season, players)
         heard = self._news(players)
         roster_lines = {
             p.name: prompt.player_line(p, known, heard)
@@ -368,7 +369,7 @@ class SleeperNFLProvider:
         best_points = round(lineup_points(best), 1)
 
         return Week(
-            evidence=self._evidence(season, week, league.scoring_format, state.is_regular_season),
+            evidence=self._evidence(season, week, league.scoring_format, state.is_regular_season, players),
             news=self._news(catalog),
             is_regular_season=state.is_regular_season,
             league=league,
@@ -386,7 +387,9 @@ class SleeperNFLProvider:
             on_bench=round(best_points - current_points, 1),
         )
 
-    def _evidence(self, season: str, week: int, scoring: str, started: bool) -> evidence.Evidence:
+    def _evidence(
+        self, season: str, week: int, scoring: str, started: bool, players: Mapping[str, PlayerMeta]
+    ) -> evidence.Evidence:
         """Roles and matchups from every week finished so far.
 
         The current week is left out even when it is part played: a player
@@ -402,7 +405,8 @@ class SleeperNFLProvider:
             # Enrichment: a week with no evidence is the week as it was before.
             logger.warning(f"Continuing without role and matchup evidence: {e}")
             return evidence.Evidence()
-        return evidence.gather(lines, scoring)
+        out = {pid for pid, meta in players.items() if ruled_out(meta.get("injury_status") or "")}
+        return evidence.gather(lines, scoring, out)
 
     def _designations(self, players: dict[str, PlayerMeta]) -> dict[str, str]:
         """Each player's designation as ESPN's injury report has it now, where it names him."""

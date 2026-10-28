@@ -87,10 +87,12 @@ league state, so it is complete before a model is asked anything.
 On NFL it opens with a **To do** list, most urgent first: a starter ruled out
 or on bye, an empty slot, a swap the bench allows, next week's byes with nobody
 behind them, the trade deadline, and up to two free agents whose **role just
-grew** — a jump in his share of snaps or targets, or in carries, in the latest
-week played against the three before it, while his projection is still at least
-five points (one that has fallen back to nothing has usually lost the role
-again). A pickup on a full roster names who to **drop**: the bench player
+grew** — a jump in his share of snaps or targets, or in carries, against the
+three games before it, while his projection is still at least five points (one
+that has fallen back to nothing has usually lost the role again). One big game
+is not a role: the jump must hold for his last two games, or come in the latest
+week played with a cause — a regular at his position on his team missed that
+game and is ruled out of the next. A pickup on a full roster names who to **drop**: the bench player
 worth least by his average a game this season — not this week's projection,
 which reads a starter on bye as nothing — never one another item moves, one
 whose game has kicked off, or one whose role is growing. A breakout only makes

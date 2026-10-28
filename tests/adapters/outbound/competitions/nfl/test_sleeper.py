@@ -555,7 +555,7 @@ def test_a_warning_about_next_weeks_bye_is_not_priced_as_a_move() -> None:
 
 def test_a_free_agent_whose_role_grew_says_so_in_the_usage_column() -> None:
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
-    client.week = 4
+    client.week = 5
     client.game_lines = [
         NFLGameLine(
             player_id="wr9",
@@ -565,13 +565,36 @@ def test_a_free_agent_whose_role_grew_says_so_in_the_usage_column() -> None:
             position="WR",
             stats={"off_snp": snaps, "tm_off_snp": 60, "pts_ppr": 5},
         )
-        for week, snaps in ((1, 12), (2, 14), (3, 50))
+        for week, snaps in ((1, 12), (2, 14), (3, 50), (4, 50))
     ]
 
     cards = _available(client, sort="Usage")
 
     assert next(iter(cards)) == "wr9"
     assert cards["wr9"]["Usage"].startswith("snaps")
+
+
+def test_a_backup_who_jumped_while_the_starter_missed_his_game_reads_as_growing_while_the_starter_is_out() -> None:
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    client.week = 4
+    client.players_catalog = {
+        **client.get_players(),
+        "wr8": PlayerMeta(player_id="wr8", name="Hurt Starter", position="WR", team="NYJ", injury_status="Out"),
+    }
+    client.game_lines = [
+        NFLGameLine(
+            player_id=pid,
+            week=week,
+            team="NYJ",
+            opponent="MIA",
+            position="WR",
+            stats={"off_snp": snaps, "tm_off_snp": 60, "pts_ppr": 5},
+        )
+        for pid, played in (("wr9", ((1, 12), (2, 14), (3, 50))), ("wr8", ((1, 50), (2, 50))))
+        for week, snaps in played
+    ]
+
+    assert _available(client)["wr9"]["Usage"].startswith("snaps")
 
 
 # ── the roster as rows ──────────────────────────────────────────────────────
