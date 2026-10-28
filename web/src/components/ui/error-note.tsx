@@ -2,48 +2,49 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink as ExternalLinkIcon } from "lucide-react";
 import { ApiError, api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /**
  * A failure, and the one thing this app can do about it.
  *
  * The server describes the condition and deliberately names no command — the
  * same text is read in a terminal — so the remedy is chosen here, off the code.
+ *
+ * Inset by its own margin, for the common case of standing in for a page or a
+ * card's contents; a caller placing it in a padded stack passes `m-0`.
  */
-export function ErrorNote({ error }: { error: unknown }) {
+export function ErrorNote({ error, className }: { error: unknown; className?: string }) {
   const code = error instanceof ApiError ? error.code : "error";
   const queryClient = useQueryClient();
   return (
-    <div className="m-5 flex flex-col items-start gap-3 rounded-md border border-destructive/30 bg-destructive/8 px-4 py-3">
+    <div
+      role="alert"
+      className={cn("m-5 flex flex-col items-start gap-3 rounded-md border border-destructive/30 bg-destructive/8 px-4 py-3", className)}
+    >
       <p className="max-w-[70ch] text-[13.5px] leading-relaxed text-destructive">
         {error instanceof Error ? error.message : "Something went wrong."}
       </p>
       {code === "yahoo_login_required" && <YahooLoginButton />}
       {(code === "ai_key_invalid" || code === "ai_unavailable") && (
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent("tfo:settings"))}
-          className="inline-flex h-9 items-center rounded-md border border-border bg-background px-4 text-sm font-medium hover:bg-muted"
-        >
+        <Button variant="outline" onClick={() => window.dispatchEvent(new CustomEvent("tfo:settings"))}>
           Open Settings
-        </button>
+        </Button>
       )}
       {/* A platform that is down: waiting is the remedy, and asking again is
           the one thing this page can do about it. Everything is asked again,
           because whatever failed on it failed on the same outage. */}
       {code === "platform_unavailable" && (
-        <button
-          onClick={() => queryClient.invalidateQueries()}
-          className="inline-flex h-9 items-center rounded-md border border-border bg-background px-4 text-sm font-medium hover:bg-muted"
-        >
+        <Button variant="outline" onClick={() => queryClient.invalidateQueries()}>
           Try again
-        </button>
+        </Button>
       )}
       {code === "yahoo_not_approved" && (
         <a
           href="https://sports.yahoo.com/developer/access/"
           target="_blank"
           rel="noreferrer"
-          className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-medium hover:bg-muted"
+          className={buttonVariants({ variant: "outline" })}
         >
           Apply for API access
           <ExternalLinkIcon className="size-3.5" aria-hidden />

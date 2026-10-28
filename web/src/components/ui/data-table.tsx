@@ -173,7 +173,9 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
             {columns.map((column) => {
               const value = row.columns[column] ?? "";
               return (
-                <Td key={column} className={cn("truncate", isNumeric(column) && "text-right")}>
+                // A row with a note under it ends at the note, not here: a rule
+                // between them reads as two rows rather than one and its note.
+                <Td key={column} className={cn("truncate", isNumeric(column) && "text-right", note && "border-b-0 pb-1.5")}>
                   {render?.(column, value, row) ?? value}
                 </Td>
               );
@@ -182,7 +184,7 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
             ...(note
               ? [
                   <tr key={`${row.player_id}-detail`}>
-                    <td colSpan={columns.length} className="border-b border-border px-4 pb-3 pt-0">
+                    <td colSpan={columns.length} className="border-b border-border/45 px-4 pb-3 pt-0">
                       {note}
                     </td>
                   </tr>,

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Setting } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { Input, Select } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
 import { IconButton } from "@/components/ui/icon-button";
 import { Loading } from "@/components/ui/state";
@@ -211,7 +212,7 @@ function Row({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="grid grid-cols-1 items-baseline gap-1.5 border-b border-border/45 py-2.5 last:border-b-0 sm:grid-cols-[16rem_minmax(0,1fr)] sm:gap-4">
+    <label className="grid grid-cols-1 items-baseline gap-1.5 border-b border-border/45 py-2.5 last:border-b-0 sm:grid-cols-[16rem_minmax(0,42rem)] sm:gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <code className="font-mono text-[12px] text-foreground">{setting.key}</code>
         {draft !== undefined && (
@@ -237,7 +238,8 @@ function Row({
   );
 }
 
-const FIELD = "h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 font-mono text-[12.5px] placeholder:font-sans placeholder:text-muted-foreground";
+/** A value as `.env` spells it, so in mono; what fills an empty one is a sentence, so not. */
+const FIELD = "h-8 px-2.5 font-mono text-[12.5px] placeholder:font-sans";
 
 function Control({
   setting,
@@ -264,18 +266,18 @@ function Control({
 
   if (setting.kind === "choice") {
     return (
-      <select value={current} onChange={(e) => onChange(e.target.value)} className={FIELD}>
+      <Select value={current} onChange={(e) => onChange(e.target.value)} className={FIELD}>
         {setting.choices.map((choice) => (
           <option key={choice} value={choice}>
             {choice}
           </option>
         ))}
-      </select>
+      </Select>
     );
   }
 
   return (
-    <input
+    <Input
       type={setting.secret ? "password" : setting.kind === "text" ? "text" : "number"}
       step={setting.kind === "number" ? "0.1" : undefined}
       inputMode={setting.kind === "integer" ? "numeric" : undefined}

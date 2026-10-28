@@ -2,7 +2,6 @@ import { useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Search, Sparkles, X } from "lucide-react";
 import { api, type League, type PlayerCall, type PlayerPage, type Competition } from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { IconButton } from "@/components/ui/icon-button";
 import { RosterTable } from "@/components/ui/roster-table";
@@ -10,7 +9,8 @@ import type { SortState } from "@/components/ui/data-table";
 import { Busy, Loading } from "@/components/ui/state";
 import { ToggleChip } from "@/components/ui/toggle";
 import { usePlayerDrawer } from "@/components/ui/player";
-import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Verdict } from "@/components/ui/verdict";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
 
@@ -24,25 +24,16 @@ const CALL: Record<PlayerCall["decision"], { label: string; variant: "ok" | "war
   PASS: { label: "Pass", variant: "muted" },
 };
 
-/**
- * The model's call on one player, under his row — said in words, not only
- * color. A stale one stays, faded and labelled: the reasoning may still hold,
- * but it was about a situation that has since changed.
- */
+/** The model's call on one player, under his row — said in words, not only color. */
 function CallLine({ call }: { call: PlayerCall }) {
   const { label, variant } = CALL[call.decision];
   return (
-    <div className={cn("flex items-baseline gap-2 whitespace-normal text-[12.5px]", call.stale && "opacity-60")}>
-      <Badge variant={call.stale ? "muted" : variant} appearance="status" className="shrink-0">
-        {call.drop ? `${label}, drop ${call.drop}` : label}
-      </Badge>
-      <span className="text-muted-foreground">{call.reason}</span>
-      {call.stale && (
-        <span className="ml-auto shrink-0 font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
-          stale — re-judge
-        </span>
-      )}
-    </div>
+    <Verdict
+      label={call.drop ? `${label}, drop ${call.drop}` : label}
+      variant={variant}
+      reason={call.reason}
+      stale={call.stale}
+    />
   );
 }
 
@@ -141,7 +132,7 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
                 </span>
               </span>
             </CardHeader>
-            {judge.isError && <ErrorNote error={judge.error} />}
+            {judge.isError && <ErrorNote error={judge.error} className="mx-4 my-3" />}
 
             <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
               <div className="relative min-w-0 flex-1">
@@ -149,12 +140,12 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
                   className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
                   aria-hidden
                 />
-                <input
+                <Input
                   value={search}
                   onChange={(e) => reset(setSearch)(e.target.value)}
                   placeholder="Search by name, club or status"
                   aria-label="Search available players"
-                  className="h-9 w-full rounded-md border border-border bg-background pl-8 pr-2 text-[13px] outline-none placeholder:text-muted-foreground focus-visible:border-ring"
+                  className="pl-8"
                 />
               </div>
               {/* Read off the pool rather than written down: the positions
