@@ -8,6 +8,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Loading } from "@/components/ui/state";
 import { Thread } from "@/components/ui/chat";
+import { ErrorNote } from "@/components/ui/error-note";
 import {
   NOT_APPLICABLE,
   api,
@@ -288,9 +289,7 @@ export function PlayerPanel({
           </div>
 
           {player.isLoading && <Loading lines={4} />}
-          {player.isError && (
-            <p className="m-5 text-[13.5px] leading-relaxed text-destructive">{player.error.message}</p>
-          )}
+          {player.isError && <ErrorNote error={player.error} />}
 
           {player.data && (
             <m.div variants={list} initial="hidden" animate="shown" className="flex flex-col gap-5 px-5 py-4">

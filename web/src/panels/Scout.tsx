@@ -84,8 +84,8 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
 
       {week.data && (
         <div className="flex flex-col gap-4 p-5">
-          {judge.isError && <ErrorNote error={judge.error} />}
-          {decide.isError && <ErrorNote error={decide.error} />}
+          {judge.isError && <ErrorNote error={judge.error} className="m-0" />}
+          {decide.isError && <ErrorNote error={decide.error} className="m-0" />}
           {week.data.actions && (
             <ActionList
               actions={week.data.actions}
@@ -219,7 +219,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
 /** "14:05" today, "Thu 14:05" before — when the verdicts were written, in the viewer's own zone. */
 function judgedAt(iso: string): string {
   const when = new Date(iso);
-  const time = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const time = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   return when.toDateString() === new Date().toDateString()
     ? time
     : `${when.toLocaleDateString([], { weekday: "short" })} ${time}`;

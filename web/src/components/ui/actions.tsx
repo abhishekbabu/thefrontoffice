@@ -4,10 +4,12 @@ import { AlarmClock, EyeOff, MessageCircleQuestion, Undo2 } from "lucide-react";
 import type { Action, ItemDecision, Move, MoveAction, TaskVerdict, Urgency } from "@/lib/api";
 import { SNOOZES, until } from "@/lib/snooze";
 import { Thread } from "@/components/ui/chat";
+import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CardNote } from "@/components/ui/state";
+import { Verdict } from "@/components/ui/verdict";
 import { signed } from "@/lib/format";
 import { decisionTone } from "@/lib/tone";
 import { cn } from "@/lib/utils";
@@ -114,8 +116,12 @@ export function ActionList({
               badge={{ label: "Suggested", variant: "info" }}
               title={moveTitle(move)}
               reason={move.rationale}
-              when={move.metric}
-            />
+              when=""
+            >
+              {/* The model's own figure, in its own words — a sentence, not a
+                  deadline, so it gets the row's width rather than the corner. */}
+              {move.metric && <div className="-mt-2 font-mono text-[11px] text-muted-foreground">{move.metric}</div>}
+            </Row>
           ))}
         </ol>
       )}
@@ -155,18 +161,20 @@ function Decide({
       />
       {choosing &&
         SNOOZES.map((snooze) => (
-          <button
+          <Button
             key={snooze.label}
             type="button"
+            variant="outline"
+            size="sm"
             disabled={busy}
             onClick={() => {
               setChoosing(false);
               onDecide({ key: action.key, decision: "snooze", until: snooze.until(new Date()).toISOString() });
             }}
-            className="h-7 rounded-md border border-border px-2 font-mono text-[11px] text-muted-foreground hover:bg-muted"
+            className="font-mono text-[11px] text-muted-foreground"
           >
             {snooze.label}
-          </button>
+          </Button>
         ))}
     </span>
   );
@@ -318,22 +326,16 @@ const DECISION_LABEL: Record<TaskVerdict["decision"], string> = {
  * The model's word on one item, under the item it is about.
  *
  * Inside the row rather than in a list of its own: an overrule only means
- * something next to the move it overrules. A stale one stays, faded and
- * labelled — the reasoning may still hold, but it was about something else.
+ * something next to the move it overrules.
  */
 function VerdictLine({ verdict, stale }: { verdict: TaskVerdict; stale: boolean }) {
   return (
-    <div className={cn("flex items-baseline gap-2 rounded-md bg-muted px-2.5 py-1.5 text-[12.5px]", stale && "opacity-60")}>
-      <Badge variant={stale ? "muted" : decisionTone(verdict.decision)} appearance="status" className="shrink-0">
-        {DECISION_LABEL[verdict.decision]}
-      </Badge>
-      <span className="text-foreground">{verdict.reason}</span>
-      {stale && (
-        <span className="ml-auto shrink-0 font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
-          stale — re-judge
-        </span>
-      )}
-    </div>
+    <Verdict
+      label={DECISION_LABEL[verdict.decision]}
+      variant={decisionTone(verdict.decision)}
+      reason={verdict.reason}
+      stale={stale}
+    />
   );
 }
 

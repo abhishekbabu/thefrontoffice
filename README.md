@@ -429,7 +429,9 @@ because that instrumentation records message text regardless.
 primitives, pnpm 12. Each page and Motion are loaded lazily, to hold everything
 the first paint loads — the entry and every chunk it preloads — under 150 kB
 gzip. Shared pieces live in
-`components/ui/`; `panels/` holds one page each. Color is themed in two
+`components/ui/`; `panels/` holds one page each. A model's answer is read as
+the Markdown subset the models write — paragraphs, headings, lists, bold —
+by `lib/prose.ts`, never as HTML. Color is themed in two
 orthogonal dimensions — a palette (`data-theme`) and light/dark
 (`color-scheme`) — so every token is a single `light-dark(light, dark)`
 declaration and no component branches on either.

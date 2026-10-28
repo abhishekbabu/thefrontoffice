@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { SendHorizontal } from "lucide-react";
 import { api, type Subject } from "@/lib/api";
 import { IconButton } from "@/components/ui/icon-button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Busy } from "@/components/ui/state";
+import { Input } from "@/components/ui/input";
+import { Prose } from "@/components/ui/prose";
 import { ErrorNote } from "@/components/ui/error-note";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +34,7 @@ export function Chat({
   bare?: boolean;
 }) {
   // The opener is shown from the first render, as the question it already is.
-  const [turns, setTurns] = useState<{ role: "you" | "model"; text: string }[]>(() =>
+  const [turns, setTurns] = useState<Turn[]>(() =>
     opener && !OPENED.has(chatId) ? [{ role: "you", text: opener }] : [],
   );
   const [draft, setDraft] = useState("");
@@ -40,7 +42,7 @@ export function Chat({
   const ask = useMutation({
     mutationFn: (message: string) => api.ask(chatId, message),
     onSuccess: (reply) => setTurns((t) => [...t, { role: "model", text: reply.answer }]),
-    onError: (e: Error) => setTurns((t) => [...t, { role: "model", text: e.message }]),
+    onError: (e: Error) => setTurns((t) => [...t, { role: "model", text: e.message, failed: true }]),
   });
 
   function say(message: string) {
@@ -59,6 +61,13 @@ export function Chat({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs per conversation, not per render.
   }, [chatId, opener]);
 
+  // The box is under the conversation, so keeping it in view keeps the newest
+  // turn in view too — in a drawer the answer otherwise lands below the fold.
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (turns.length) form.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [turns.length, ask.isPending]);
+
   function send(e: React.FormEvent) {
     e.preventDefault();
     const message = draft.trim();
@@ -70,22 +79,29 @@ export function Chat({
   const body = (
     <div className={cn("flex flex-col gap-3", !bare && "p-4")}>
       {turns.map((turn, i) => (
-        <div key={i} className={cn("max-w-[62ch] text-[13.5px] leading-relaxed", turn.role === "you" && "self-end")}>
-          <div className="mb-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-            {turn.role}
-          </div>
-          <div className={cn(turn.role === "you" ? "rounded-md bg-muted px-3 py-2" : "text-foreground")}>
-            {turn.text}
-          </div>
-        </div>
+        <Bubble key={i} role={turn.role}>
+          {turn.role === "model" && !turn.failed ? (
+            <Prose text={turn.text} />
+          ) : (
+            <p className={cn("whitespace-pre-line", turn.failed && "text-destructive")}>{turn.text}</p>
+          )}
+        </Bubble>
       ))}
-      {bare && ask.isPending && <div className="text-[12.5px] text-muted-foreground">Thinking…</div>}
-      <form onSubmit={send} className="flex gap-2">
-        <input
+      {/* Where the answer will be, so waiting reads as the turn it is. */}
+      {ask.isPending && (
+        <Bubble role="model">
+          <span className="text-muted-foreground">
+            <Busy>Thinking…</Busy>
+          </span>
+        </Bubble>
+      )}
+      <form ref={form} onSubmit={send} className="flex gap-2">
+        <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={placeholder}
-          className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-[13.5px] placeholder:text-muted-foreground"
+          aria-label={placeholder}
+          className="flex-1"
         />
         <IconButton
           label="Ask"
@@ -94,6 +110,7 @@ export function Chat({
           type="submit"
           icon={<SendHorizontal />}
           disabled={!draft.trim() || ask.isPending}
+          className="size-9"
         />
       </form>
     </div>
@@ -104,10 +121,21 @@ export function Chat({
     <Card>
       <CardHeader>
         <span>{title}</span>
-        {ask.isPending && <Busy>Thinking…</Busy>}
       </CardHeader>
       {body}
     </Card>
+  );
+}
+
+type Turn = { role: "you" | "model"; text: string; failed?: boolean };
+
+/** One turn: yours to the right in a tint, the model's at full width of the column. */
+function Bubble({ role, children }: { role: Turn["role"]; children: React.ReactNode }) {
+  return (
+    <div className={cn("flex max-w-[72ch] flex-col gap-0.5 text-[13.5px] leading-relaxed", role === "you" && "items-end self-end")}>
+      <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">{role}</div>
+      <div className={cn(role === "you" && "rounded-md bg-muted px-3 py-2")}>{children}</div>
+    </div>
   );
 }
 
@@ -137,7 +165,12 @@ export function Thread({
     queryFn: () => api.thread(competition, league, subject),
     staleTime: Infinity,
   });
-  if (thread.isError) return <ErrorNote error={thread.error} />;
-  if (!thread.data) return <div className="text-[12.5px] text-muted-foreground">Opening…</div>;
+  if (thread.isError) return <ErrorNote error={thread.error} className="m-0" />;
+  if (!thread.data)
+    return (
+      <span className="text-[12.5px] text-muted-foreground">
+        <Busy>Opening…</Busy>
+      </span>
+    );
   return <Chat chatId={thread.data.chat_id} {...chat} />;
 }
