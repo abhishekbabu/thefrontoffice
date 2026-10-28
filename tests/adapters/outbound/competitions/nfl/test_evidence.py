@@ -7,7 +7,7 @@ checked with a pencil.
 import pytest
 from support.nfl import game_line, proj
 
-from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Matchup, gather
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Matchup, gather, misses
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NFLGameLine
 
 SCORING = "pts_ppr"
@@ -256,3 +256,38 @@ def test_a_growing_role_is_part_of_the_line_a_player_is_read_by() -> None:
     line = evidence.describe(proj("wr", "Wide", "WR", 9.0))
 
     assert evidence.trends["wr"].describe() in line
+
+
+# ── how often a regular misses a game ───────────────────────────────────
+
+
+def _games(pid: str, weeks: range | list[int], share: float = 0.8, team: str = "KC") -> list[NFLGameLine]:
+    return [game_line(pid, week, team=team, off_snp=share * 60, tm_off_snp=60) for week in weeks]
+
+
+def test_a_regular_who_sat_out_a_game_his_team_played_missed_one() -> None:
+    lines = _games("wr", [1, 2, 4]) + _games("mate", range(1, 5))
+
+    missed, chances = misses(lines)
+
+    # The regular could miss weeks 2-4 and missed 3; his teammate could miss 2-4 and missed none.
+    assert (missed, chances) == (1, 6)
+
+
+def test_a_part_timer_is_not_counted() -> None:
+    lines = _games("wr", range(1, 5)) + _games("depth", [1, 3], share=0.2)
+
+    assert misses(lines) == (0, 3)
+
+
+def test_the_weeks_before_his_first_game_are_none_he_could_miss() -> None:
+    """A rookie signed in week 3 was never there to miss weeks 1 and 2."""
+    lines = _games("wr", range(1, 5)) + _games("rookie", [3, 4])
+
+    assert misses(lines) == (0, 4)
+
+
+def test_his_teams_bye_is_no_game_to_miss() -> None:
+    lines = _games("wr", [1, 2, 4])
+
+    assert misses(lines) == (0, 2)

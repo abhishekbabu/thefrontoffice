@@ -175,9 +175,14 @@ that week too.
 **Playoff odds.** The rest of the regular season is simulated 5,000 times too
 (`application/season.py`, fed through the `SeasonProvider` port): every
 remaining fixture is played with each team scoring around the best lineup its
-roster projects that week — so byes are seen coming — rescaled to what the
-league actually scores, with the league's own week-to-week spread, and a
-per-team offset for how far real strength may sit from projected strength. The
+roster projects that week — so byes are seen coming — less what the weeks its
+starters miss without warning cost it, rescaled to what the league actually
+scores, with the league's own week-to-week spread, and a
+per-team offset for how far real strength may sit from projected strength. A
+missed week is priced by the league's own rate — how often a regular (half his
+team's snaps or more) has sat out a game his team played, 12% by default until
+two hundred such games are on record — and costs what the lineup scores with
+the bench covering for him, which is what makes a backup worth anything. The
 table is seeded by record, then points for. The week's header carries your
 chance and what this week is worth to it — "90% · 96% with a win, 83% without"
 — weighing this week by the week's own forecast; the league view's header
@@ -199,7 +204,10 @@ marked as such on the week's bench.
 **Trades worth offering.** Until the deadline, My team tries every
 one-for-one swap with every team (`nfl/market.py`) and keeps those that raise
 both starting lineups' projected points for the weeks after this one — at least
-half a point a week for them, which is the case for their saying yes. Kickers
+half a point a week for them, which is the case for their saying yes — and
+whose player is worth at least four-fifths of the one they give, each priced by
+his projected points over the best free agent at his position, since a manager
+weighs what he gets as well as who starts. Kickers
 and defenses are left out, being streamed, as are injured-reserve and taxi
 players. The twelve best for you are played out against the season over the
 same simulated seasons as the league without them, and ranked by what they do

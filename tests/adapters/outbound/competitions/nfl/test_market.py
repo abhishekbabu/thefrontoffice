@@ -105,3 +105,15 @@ def test_past_the_deadline_there_is_no_market() -> None:
 
 def test_the_last_week_before_the_playoffs_has_nothing_left_for_a_trade_to_change() -> None:
     assert nfl_provider(_client(week=9)).trade_market("L1") is None
+
+
+def test_a_trade_worth_far_less_than_it_costs_them_is_not_offered() -> None:
+    """A quarterback nearly as good sits on the wire, so your spare is worth a point a week, not a top receiver."""
+    client = _client()
+    client.players_catalog = {
+        **(client.players_catalog or {}),
+        "qb8": PlayerMeta(player_id="qb8", name="Wire QB", position="QB"),
+    }
+    client.projections = {**PROJECTIONS, "qb8": proj("qb8", "Wire QB", "QB", 14.0)}
+
+    assert not any(option.giving == ("Spare QB (QB)",) for option in _market(client).options)
