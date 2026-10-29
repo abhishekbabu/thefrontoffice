@@ -553,7 +553,8 @@ def test_game_lines_keep_fantasy_players_with_the_usage_behind_their_points(tmp_
     assert set(lines) == {"wr1", "KC"}
     wr = lines["wr1"]
     assert (wr.week, wr.team, wr.opponent, wr.position) == (2, "KC", "LV", "WR")
-    assert wr.stats == {"off_snp": 50.0, "tm_off_snp": 60.0, "rec_tgt": 8.0, "pts_ppr": 14.5}
+    # A half-by-half split is no line anybody reads.
+    assert wr.stats == {"off_snp": 50.0, "tm_off_snp": 60.0, "rec_tgt": 8.0, "pts_ppr": 14.5, "rec_yd": 88.0}
 
 
 def test_a_week_that_will_not_load_leaves_a_gap_rather_than_failing(tmp_path: Path) -> None:

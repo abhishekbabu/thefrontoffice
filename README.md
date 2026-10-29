@@ -115,6 +115,10 @@ on every player line, told to weigh it over the projection and hardest before
 a drop. Beside it sits each player's **latest news** from the last ten days, from
 his own club's ESPN feed — matched on ESPN's tag or his full name, never a
 surname, and never across clubs — in the row, the drawer and the prompt.
+The drawer also carries his **game log**: a row per week so far, as Sleeper's
+own page reads it — opponent, points in the league's scoring, snap share and the
+box score his position is scored on — with byes and games he sat out shown as
+gaps, not skipped.
 
 A free agent who **simply outscores one of your starters** — most often a
 defense or kicker to stream — is a pickup on the list too: at least three

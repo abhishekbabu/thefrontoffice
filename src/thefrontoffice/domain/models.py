@@ -168,7 +168,7 @@ matching on this exact string.
 
 
 class StatRow(BaseModel):
-    """One measure, across every column of a table."""
+    """One line of a table across every column: a measure over the periods, or a game over the measures."""
 
     label: str
     values: list[str] = Field(
@@ -181,15 +181,21 @@ class StatRow(BaseModel):
 
 
 class StatTable(BaseModel):
-    """The same measures across several periods, so they can be read across.
+    """Figures on a grid, so they can be read across as well as down.
 
     A stack of per-season groups makes you hold last year's goals in your head
     while you scroll to this year's. A table puts them on one line, which is
-    the whole reason anybody looks at more than one season.
+    the whole reason anybody looks at more than one season — and a game log is
+    the same grid turned the other way, a game to a row and a measure to a column.
     """
 
     title: str
-    columns: list[str] = Field(description="Period labels, newest first: ['2026/27', '2025/26', '2024/25'].")
+    columns: list[str] = Field(
+        description=(
+            "Column headings, the subject first: periods newest first, ['2026/27', '2025/26'], "
+            "or measures, ['Pts', 'Snaps', 'Car']."
+        )
+    )
     rows: list[StatRow] = Field(default_factory=list)
 
 

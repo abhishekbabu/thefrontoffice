@@ -12,6 +12,8 @@ from typing import Any
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, best_upgrade
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
+    Game,
+    GameLine,
     NFLSource,
     PlayerInfo,
     Projection,
@@ -19,7 +21,13 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Team,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, ruled_out
-from thefrontoffice.adapters.outbound.competitions.nfl.week import Live, Week, projection_for, zero_projection
+from thefrontoffice.adapters.outbound.competitions.nfl.week import (
+    Live,
+    Week,
+    games_by_week,
+    projection_for,
+    zero_projection,
+)
 from thefrontoffice.domain.errors import PlatformError, PlayerNotFoundError
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
@@ -95,18 +103,47 @@ SPLIT_LABELS = (
     ("rec_td", "Receiving TDs"),
 )
 
-SPLIT_LABELS = (
-    ("pass_yd", "Passing yards"),
-    ("pass_td", "Passing TDs"),
-    ("pass_int", "Interceptions"),
-    ("cmp_pct", "Completion %"),
-    ("rush_yd", "Rushing yards"),
-    ("rush_td", "Rushing TDs"),
-    ("rec", "Receptions"),
-    ("rec_tgt", "Targets"),
-    ("rec_yd", "Receiving yards"),
-    ("rec_td", "Receiving TDs"),
+# A game log's columns past the points, by position, as Sleeper's own player
+# page reads them: what the position is scored on, and nothing it never records.
+# Two keys make one "made/tried" cell.
+_RECEIVING = (
+    ("Tgt", ("rec_tgt",)),
+    ("Rec", ("rec",)),
+    ("Rec yd", ("rec_yd",)),
+    ("Rec TD", ("rec_td",)),
+    ("Car", ("rush_att",)),
+    ("Rush yd", ("rush_yd",)),
 )
+GAME_LOG_COLUMNS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
+    "QB": (
+        ("Cmp/Att", ("pass_cmp", "pass_att")),
+        ("Pass yd", ("pass_yd",)),
+        ("Pass TD", ("pass_td",)),
+        ("INT", ("pass_int",)),
+        ("Car", ("rush_att",)),
+        ("Rush yd", ("rush_yd",)),
+        ("Rush TD", ("rush_td",)),
+    ),
+    "RB": (
+        ("Car", ("rush_att",)),
+        ("Rush yd", ("rush_yd",)),
+        ("Rush TD", ("rush_td",)),
+        ("Tgt", ("rec_tgt",)),
+        ("Rec", ("rec",)),
+        ("Rec yd", ("rec_yd",)),
+        ("Rec TD", ("rec_td",)),
+    ),
+    "WR": _RECEIVING,
+    "TE": _RECEIVING,
+    "K": (("FG", ("fgm", "fga")), ("XP", ("xpm", "xpa"))),
+    "DEF": (
+        ("Pts allowed", ("pts_allow",)),
+        ("Sacks", ("sack",)),
+        ("INT", ("int",)),
+        ("Fum rec", ("fum_rec",)),
+        ("TD", ("td",)),
+    ),
+}
 
 
 def _split_value(key: str, value: float | None) -> str:
@@ -346,10 +383,93 @@ def detail(client: NFLSource, state: Week, player_id: str) -> PlayerDetail:
         # and the crest beside the club name already says who it is.
         image_url="" if meta.get("position") == "DEF" else PORTRAIT_URL.format(player_id=player_id),
         url=PLAYER_URL.format(player_id=player_id),
-        tables=[table] if (table := _season_table(client, player_id, state)) else [],
+        tables=[
+            table
+            for table in (_game_log(client, player_id, meta, state), _season_table(client, player_id, state))
+            if table
+        ],
         tone="warning" if injury else "neutral",
         groups=groups,
     )
+
+
+def _game_log(client: NFLSource, player_id: str, meta: PlayerInfo, state: Week) -> StatTable | None:
+    """This season game by game, oldest first, the way Sleeper's own page reads it.
+
+    A season total hides the shape of one: three quiet weeks and a big one
+    average the same as four steady ones, and only the games show which. So
+    every week so far gets a row — a bye and a game he sat out included,
+    since a gap is part of the record — with the points first and the box
+    score behind them.
+
+    This week's game gets a row only once he has a line in it: until then
+    it has not been played, and a "did not play" would be a guess.
+
+    Degrades to nothing rather than failing the page, like the seasons.
+    """
+    if not state.is_regular_season:
+        return None
+    weeks = list(range(1, state.week + 1))
+    try:
+        lines = [line for line in client.get_nfl_game_lines(state.season, weeks) if line.player_id == player_id]
+    except PlatformError as e:
+        logger.warning(f"Skipping the game log: {e}")
+        return None
+    games = {line.week: line for line in lines if line.stats.get("gp") or line.stats.get("off_snp")}
+    if not games:
+        return None
+
+    position = str(meta.get("position") or "")
+    measures = GAME_LOG_COLUMNS.get(position, ())
+    snaps = position in evidence.SNAP_POSITIONS
+    columns = ["Pts", *(["Snaps"] if snaps else []), *(label for label, _ in measures)]
+    schedule = games_by_week(client, state.season)
+    team = str(meta.get("team") or "")
+
+    rows: list[StatRow] = []
+    for week in weeks:
+        line = games.get(week)
+        club = line.team if line else team
+        fixture = next((g for g in schedule.get(week, []) if club in (g.home, g.away)), None)
+        if line:
+            values = [
+                f"{line.stats.get(state.league.scoring_format, 0.0):.1f}",
+                *([_snap_share(line)] if snaps else []),
+                *(_box_score(line, keys) for _, keys in measures),
+            ]
+            rows.append(StatRow(label=f"W{week} {_fixture(club, line.opponent, fixture)}", values=values))
+        elif week == state.week or not schedule:
+            # Not played yet, or no schedule to tell a bye from a game missed.
+            continue
+        elif fixture is None:
+            rows.append(StatRow(label=f"W{week} bye", values=[NOT_APPLICABLE] * len(columns)))
+        else:
+            opponent = fixture.away if fixture.home == club else fixture.home
+            label = f"W{week} {_fixture(club, opponent, fixture)} · DNP"
+            rows.append(StatRow(label=label, values=[NOT_APPLICABLE] * len(columns)))
+    return StatTable(title="Game log", columns=columns, rows=rows)
+
+
+def _fixture(club: str, opponent: str, fixture: Game | None) -> str:
+    """'vs GB' at home, '@ GB' away, as a box score writes it; bare where the schedule would not load."""
+    if fixture is None:
+        return opponent
+    return f"vs {opponent}" if fixture.home == club else f"@ {opponent}"
+
+
+def _snap_share(line: GameLine) -> str:
+    team = line.stats.get("tm_off_snp", 0.0)
+    return f"{line.stats.get('off_snp', 0.0) / team:.0%}" if team else "0%"
+
+
+def _box_score(line: GameLine, keys: tuple[str, ...]) -> str:
+    """One cell: a count, or 'made/tried'. A game played with none of it is a nought, which is an answer."""
+    return "/".join(_count(line.stats.get(key, 0.0)) for key in keys)
+
+
+def _count(value: float) -> str:
+    """Whole where it is whole — a half sack is the one figure that is not."""
+    return f"{value:.0f}" if value == int(value) else f"{value:.1f}"
 
 
 def _season_table(client: NFLSource, player_id: str, state: Week) -> StatTable | None:
