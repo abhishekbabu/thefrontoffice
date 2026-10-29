@@ -22,7 +22,7 @@ reach the network.
 
 ```python
 def test_the_catalog_parses() -> None:
-    client = SleeperClient()                     # real cache path, real HTTP
+    client = SleeperClient()  # real cache path, real HTTP
     assert client.get_players("nfl")
 ```
 

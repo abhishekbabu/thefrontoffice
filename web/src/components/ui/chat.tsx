@@ -1,83 +1,93 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { SendHorizontal } from "lucide-react";
-import { api, type Subject } from "@/lib/api";
 import { IconButton } from "@/components/ui/icon-button";
-import { Card, CardHeader } from "@/components/ui/card";
 import { Busy } from "@/components/ui/state";
 import { Input } from "@/components/ui/input";
 import { Prose } from "@/components/ui/prose";
-import { ErrorNote } from "@/components/ui/error-note";
 import { cn } from "@/lib/utils";
 
-/** Conversations whose opener has been asked, for as long as the page lives. */
-const OPENED = new Set<string>();
+export type Turn = { role: "you" | "model"; text: string; failed?: boolean };
 
 /**
- * A conversation with the model about something already on screen.
+ * What has been said in each conversation, for as long as the page lives.
  *
- * `opener` is asked once, as soon as the conversation exists — a "Why?" is a
- * question the person already asked by pressing it. `bare` drops the card
- * for a conversation that lives inside something else, such as a to-do row.
+ * A conversation outlives the component showing it: switching league and
+ * back, or minimizing, should find the turns where they were, since the
+ * server still holds the conversation they belong to.
  */
-export function Chat({
-  chatId,
-  title = "Ask a follow-up",
-  placeholder = "Why that move?",
-  opener,
-  bare = false,
-}: {
-  chatId: string;
-  title?: string;
-  placeholder?: string;
-  opener?: string;
-  bare?: boolean;
-}) {
-  // The opener is shown from the first render, as the question it already is.
-  const [turns, setTurns] = useState<Turn[]>(() =>
-    opener && !OPENED.has(chatId) ? [{ role: "you", text: opener }] : [],
-  );
-  const [draft, setDraft] = useState("");
+const TRANSCRIPTS = new Map<string, Turn[]>();
 
-  const ask = useMutation({
-    mutationFn: (message: string) => api.ask(chatId, message),
+/**
+ * One conversation's turns, and the way to add one.
+ *
+ * `ask` sends a question and resolves to the answer; whatever it needs
+ * besides the words — what is on screen — it closes over at the moment it is
+ * called. A failure is a turn too, in the destructive colour, so the question
+ * it answers does not just sit there unanswered.
+ */
+export function useConversation<T>(id: string, ask: (message: string, extra: T) => Promise<{ answer: string }>) {
+  const [turns, setTurns] = useState<Turn[]>(() => TRANSCRIPTS.get(id) ?? []);
+  useEffect(() => {
+    TRANSCRIPTS.set(id, turns);
+  }, [id, turns]);
+
+  const send = useMutation({
+    mutationFn: ({ message, extra }: { message: string; extra: T }) => ask(message, extra),
     onSuccess: (reply) => setTurns((t) => [...t, { role: "model", text: reply.answer }]),
     onError: (e: Error) => setTurns((t) => [...t, { role: "model", text: e.message, failed: true }]),
   });
 
-  function say(message: string) {
+  function say(message: string, extra: T) {
     setTurns((t) => [...t, { role: "you", text: message }]);
-    ask.mutate(message);
+    send.mutate({ message, extra });
   }
 
-  // Once per conversation, however often the component mounts: a second
-  // copy of the opener would be a second question nobody asked, sent into
-  // the same conversation on the server.
-  useEffect(() => {
-    if (opener && !OPENED.has(chatId)) {
-      OPENED.add(chatId);
-      ask.mutate(opener);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs per conversation, not per render.
-  }, [chatId, opener]);
+  return { turns, pending: send.isPending, say };
+}
+
+/**
+ * A conversation with the model, and the box to continue it.
+ *
+ * Only what is said and the box: the frame around it, and what the
+ * conversation is about, belong to whoever holds it.
+ */
+export function Chat({
+  turns,
+  pending,
+  onSend,
+  placeholder,
+  empty,
+}: {
+  turns: Turn[];
+  pending: boolean;
+  onSend: (message: string) => void;
+  placeholder: string;
+  /** Shown before anything has been said. */
+  empty?: React.ReactNode;
+}) {
+  const [draft, setDraft] = useState("");
 
   // The box is under the conversation, so keeping it in view keeps the newest
-  // turn in view too — in a drawer the answer otherwise lands below the fold.
+  // turn in view too — the answer otherwise lands below the fold.
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => {
     if (turns.length) form.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [turns.length, ask.isPending]);
+  }, [turns.length, pending]);
 
   function send(e: React.FormEvent) {
     e.preventDefault();
     const message = draft.trim();
-    if (!message || ask.isPending) return;
+    if (!message || pending) return;
     setDraft("");
-    say(message);
+    onSend(message);
   }
 
-  const body = (
-    <div className={cn("flex flex-col gap-3", !bare && "p-4")}>
+  // At least as tall as whatever holds it, so the box sits at the foot of a
+  // panel rather than wherever the conversation so far happens to end.
+  return (
+    <div className="flex min-h-full flex-col gap-3">
+      {turns.length === 0 && !pending && empty}
       {turns.map((turn, i) => (
         <Bubble key={i} role={turn.role}>
           {turn.role === "model" && !turn.failed ? (
@@ -88,14 +98,14 @@ export function Chat({
         </Bubble>
       ))}
       {/* Where the answer will be, so waiting reads as the turn it is. */}
-      {ask.isPending && (
+      {pending && (
         <Bubble role="model">
           <span className="text-muted-foreground">
             <Busy>Thinking…</Busy>
           </span>
         </Bubble>
       )}
-      <form ref={form} onSubmit={send} className="flex gap-2">
+      <form ref={form} onSubmit={send} className="mt-auto flex gap-2">
         <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -109,25 +119,13 @@ export function Chat({
           variant="primary"
           type="submit"
           icon={<SendHorizontal />}
-          disabled={!draft.trim() || ask.isPending}
+          disabled={!draft.trim() || pending}
           className="size-9"
         />
       </form>
     </div>
   );
-
-  if (bare) return body;
-  return (
-    <Card>
-      <CardHeader>
-        <span>{title}</span>
-      </CardHeader>
-      {body}
-    </Card>
-  );
 }
-
-type Turn = { role: "you" | "model"; text: string; failed?: boolean };
 
 /** One turn: yours to the right in a tint, the model's at full width of the column. */
 function Bubble({ role, children }: { role: Turn["role"]; children: React.ReactNode }) {
@@ -137,40 +135,4 @@ function Bubble({ role, children }: { role: Turn["role"]; children: React.ReactN
       <div className={cn(role === "you" && "rounded-md bg-muted px-3 py-2")}>{children}</div>
     </div>
   );
-}
-
-/**
- * A conversation about one subject — a to-do item or a player — opened on
- * the server with that subject and nothing else, then asked like any chat.
- *
- * Kept for the session per subject, so closing and reopening a "Why?" finds
- * the same conversation rather than starting a new one on the server.
- */
-export function Thread({
-  competition,
-  league,
-  subject,
-  ...chat
-}: {
-  competition: string;
-  league: string;
-  subject: Subject;
-  title?: string;
-  placeholder?: string;
-  opener?: string;
-  bare?: boolean;
-}) {
-  const thread = useQuery({
-    queryKey: ["thread", competition, league, subject.kind, subject.key],
-    queryFn: () => api.thread(competition, league, subject),
-    staleTime: Infinity,
-  });
-  if (thread.isError) return <ErrorNote error={thread.error} className="m-0" />;
-  if (!thread.data)
-    return (
-      <span className="text-[12.5px] text-muted-foreground">
-        <Busy>Opening…</Busy>
-      </span>
-    );
-  return <Chat chatId={thread.data.chat_id} {...chat} />;
 }
