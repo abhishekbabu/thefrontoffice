@@ -255,7 +255,37 @@ FANTASY_POSITIONS = frozenset({"QB", "RB", "WR", "TE", "K", "DEF"})
 # What a football game line is kept for: the points in each scoring format,
 # and the usage behind them. Snaps against the team's snaps is a share no
 # single row states; targets and carries are what a projection is built from.
-NFL_LINE_KEYS = ("pts_ppr", "pts_half_ppr", "pts_std", "off_snp", "tm_off_snp", "rec_tgt", "rush_att")
+# The box score beside them is what a game log reads, and `gp` is what says a
+# kicker or a defense took the field, having no offensive snaps to count.
+NFL_LINE_KEYS = (
+    "pts_ppr",
+    "pts_half_ppr",
+    "pts_std",
+    "gp",
+    "off_snp",
+    "tm_off_snp",
+    "pass_cmp",
+    "pass_att",
+    "pass_yd",
+    "pass_td",
+    "pass_int",
+    "rush_att",
+    "rush_yd",
+    "rush_td",
+    "rec_tgt",
+    "rec",
+    "rec_yd",
+    "rec_td",
+    "fgm",
+    "fga",
+    "xpm",
+    "xpa",
+    "pts_allow",
+    "sack",
+    "int",
+    "fum_rec",
+    "td",
+)
 
 
 @dataclass(frozen=True)

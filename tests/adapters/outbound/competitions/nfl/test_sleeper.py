@@ -85,7 +85,7 @@ HISTORY = {
 
 def _table(client: FakeSleeper, player_id: str = "qb1") -> dict[str, Any]:
     """The by-season table as {row label: values}, columns newest first."""
-    table = nfl_provider(client).player("L1", player_id).tables[0]
+    [table] = [t for t in nfl_provider(client).player("L1", player_id).tables if t.title == "By season"]
     return {"__columns__": table.columns, **{row.label: row.values for row in table.rows}}
 
 
@@ -155,6 +155,105 @@ def test_a_failed_history_lookup_does_not_take_the_player_down() -> None:
 
     assert detail.name == "Star QB"
     assert detail.tables == []
+
+
+# ── the season game by game ─────────────────────────────────────────────
+
+# Buffalo away in week 1, idle in week 2, at home in week 3 — the week in progress.
+BUFFALO_SCHEDULE = [
+    ScheduledGame(week=1, date="2026-09-13", home="MIA", away="BUF"),
+    ScheduledGame(week=2, date="2026-09-20", home="KC", away="LV"),
+    ScheduledGame(week=3, date="2026-09-27", home="BUF", away="NYJ"),
+]
+
+
+def _rb_week(week: int, opponent: str, **stats: float) -> NFLGameLine:
+    return game_line("rb1", week, position="RB", team="BUF", opponent=opponent, **stats)
+
+
+def _log(client: FakeSleeper, player_id: str = "rb1") -> dict[str, Any]:
+    """The game log as {row label: values}, plus its columns."""
+    [table] = [t for t in nfl_provider(client).player("L1", player_id).tables if t.title == "Game log"]
+    return {"__columns__": table.columns, **{row.label: row.values for row in table.rows}}
+
+
+def test_each_game_is_a_row_leading_with_the_points_it_scored_in_the_leagues_currency() -> None:
+    line = _rb_week(1, "MIA", gp=1, off_snp=45, tm_off_snp=60, rush_att=18, pts_ppr=21.4, pts_std=17.4)
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=BUFFALO_SCHEDULE, game_lines=[line])
+
+    log = _log(client)
+
+    assert log["__columns__"][0] == "Pts"
+    assert log["W1 @ MIA"][0] == "21.4"
+
+
+def test_a_game_reads_its_snap_share_and_box_score() -> None:
+    line = _rb_week(1, "MIA", gp=1, off_snp=45, tm_off_snp=60, rush_att=18, rush_yd=96, rec=3, pts_ppr=21.4)
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=BUFFALO_SCHEDULE, game_lines=[line])
+
+    log = _log(client)
+    row = dict(zip(log["__columns__"], log["W1 @ MIA"], strict=True))
+
+    assert (row["Snaps"], row["Car"], row["Rush yd"], row["Rec"], row["Rec TD"]) == ("75%", "18", "96", "3", "0")
+
+
+def test_a_running_back_is_logged_without_passing_columns() -> None:
+    line = _rb_week(1, "MIA", gp=1, pts_ppr=8.0)
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=BUFFALO_SCHEDULE, game_lines=[line])
+
+    assert "Cmp/Att" not in _log(client)["__columns__"]
+
+
+def test_a_kicker_is_logged_as_kicks_made_of_tried() -> None:
+    line = game_line("k1", 1, position="K", team="BUF", opponent="MIA", gp=1, fgm=2, fga=3, pts_ppr=8.0)
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=BUFFALO_SCHEDULE, game_lines=[line])
+    client.players_catalog = {
+        **client.get_players(),
+        "k1": PlayerMeta(player_id="k1", name="Boot", position="K", team="BUF"),
+    }
+
+    log = _log(client, "k1")
+
+    assert dict(zip(log["__columns__"], log["W1 @ MIA"], strict=True))["FG"] == "2/3"
+
+
+def test_a_bye_reads_as_a_bye_rather_than_as_a_game_missed() -> None:
+    line = _rb_week(1, "MIA", gp=1, pts_ppr=8.0)
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=BUFFALO_SCHEDULE, game_lines=[line])
+
+    assert set(_log(client)["W2 bye"]) == {"N/A"}
+
+
+def test_a_finished_game_he_sat_out_reads_as_one_he_did_not_play() -> None:
+    """A gap is part of the record: an average over the games he played hides it."""
+    schedule = [*BUFFALO_SCHEDULE, ScheduledGame(week=2, date="2026-09-20", home="BUF", away="NE")]
+    line = _rb_week(1, "MIA", gp=1, pts_ppr=8.0)
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=schedule, game_lines=[line])
+
+    assert set(_log(client)["W2 vs NE · DNP"]) == {"N/A"}
+
+
+def test_this_weeks_game_has_no_row_until_he_has_played_in_it() -> None:
+    """Until then it has not been played, and a "did not play" would be a guess."""
+    line = _rb_week(1, "MIA", gp=1, pts_ppr=8.0)
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=BUFFALO_SCHEDULE, game_lines=[line])
+
+    assert not any(label.startswith("W3") for label in _log(client))
+
+
+def test_a_player_who_has_not_played_a_game_has_no_log() -> None:
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=BUFFALO_SCHEDULE)
+
+    assert all(t.title != "Game log" for t in nfl_provider(client).player("L1", "rb1").tables)
+
+
+def test_a_failed_game_log_lookup_does_not_take_the_player_down() -> None:
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, game_lines_error=SleeperAPIError("down"))
+
+    detail = nfl_provider(client).player("L1", "rb1")
+
+    assert detail.name == "Good RB"
+    assert all(t.title != "Game log" for t in detail.tables)
 
 
 def test_a_player_carries_a_portrait_from_sleepers_own_cdn() -> None:

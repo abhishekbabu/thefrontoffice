@@ -65,14 +65,15 @@ function Headline({ detail }: { detail: PlayerDetail }) {
 }
 
 /**
- * The same measures across several seasons, read across.
+ * Figures on a grid, read across: the same measures over several seasons, or
+ * a season's games over the box score.
  *
  * The figures are the point, so they are right-aligned and tabular and the
  * column headings sit above them; the label column is the only thing on the
- * left. Scrolls inside itself rather than widening the drawer — three seasons
- * fit, and a fourth would not.
+ * left. Scrolls inside itself rather than widening the drawer — a
+ * quarterback's game log is the widest, and a phone is narrower still.
  */
-function SeasonTable({ table }: { table: StatTable }) {
+function StatGrid({ table }: { table: StatTable }) {
   return (
     <div className="overflow-x-auto rounded-md border border-border">
       <table className="w-full border-collapse text-[13px]">
@@ -86,8 +87,9 @@ function SeasonTable({ table }: { table: StatTable }) {
                 key={column}
                 className={cn(
                   "px-3 py-2 text-right font-mono text-[11px] font-semibold tabular-nums",
-                  // The season in progress is the one being compared against,
-                  // so it reads as the subject rather than another column.
+                  // The first column is the subject — the season in progress,
+                  // or the points a game scored — so it reads as that rather
+                  // than as another column.
                   i === 0 ? "text-foreground" : "text-muted-foreground",
                 )}
               >
@@ -298,7 +300,7 @@ export function PlayerPanel({
                   <h3 className="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                     {table.title}
                   </h3>
-                  <SeasonTable table={table} />
+                  <StatGrid table={table} />
                 </m.section>
               ))}
 
