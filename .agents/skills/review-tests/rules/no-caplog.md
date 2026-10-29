@@ -6,7 +6,7 @@ Assert on logs through `capture_logs` from `tests/support/logs.py`, never pytest
 ```python
 from support.logs import capture_logs
 
-GEMINI_LOGGER = GeminiClient.__module__     # the module logs via getLogger(__name__)
+GEMINI_LOGGER = GeminiClient.__module__  # the module logs via getLogger(__name__)
 
 
 def test_token_usage_is_logged() -> None:

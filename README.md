@@ -227,14 +227,18 @@ state settles an item, and these are for the decisions it cannot see — not to
 act, or not yet. Decisions are kept per league on this machine
 (`ITEM_STATE_DIR`), keyed by the same item key verdicts use.
 
-Questions are asked of the thing they are about. **Why?** under any to-do item
-opens a conversation inline, seeded with that item alone — the move, its reason
-and evidence, any earlier verdict, the roster and the week's situation — and
-asks why, and what would change the call. The player drawer ends with **Ask
-about** that player, seeded with everything the drawer shows. Both are smaller
-than the report's whole-week context, so cheaper on every resent turn, and both
-go through the same failover as everything else. An item settled since the
-page loaded is said to be gone rather than answered about.
+Questions are asked of the thing they are about, through the **assistant**
+docked in the corner of every page — one conversation per league, minimized to a
+button and kept where it was when it opens again. Each question carries what is
+on screen as it is asked: the page, and any player drawer open over it. The
+model is briefed on each page or player the first time it is on screen — the
+week's situation and to-do list, the table and season, the roster, the top of
+the free-agent pool, or everything a drawer shows — and not again after, since
+the history is resent every turn. **Why?** under a to-do item asks it why, and
+what would change the call, with that item's evidence and any earlier verdict.
+Off the league pages it keeps the last league's conversation. Everything goes
+through the same failover as the rest, and an item settled since the page
+loaded is said to be gone rather than answered about.
 
 ![Free agents](docs/screenshots/free-agents.png)
 
@@ -277,8 +281,8 @@ header is the add budget left, and League is headed by your record and place.
 ![Player detail](docs/screenshots/player.png)
 
 The model has no page of its own. It annotates the pages that exist — verdicts
-in to-do rows, calls under free-agent rows, a conversation under a row or at
-the foot of a player — and none of it appears without a model key: controls
+in to-do rows, calls under free-agent rows, an assistant docked beside every
+page — and none of it appears without a model key: controls
 that cannot work are hidden rather than disabled. The old Report and Trade
 pages are gone; a trade is still evaluated from the CLI.
 

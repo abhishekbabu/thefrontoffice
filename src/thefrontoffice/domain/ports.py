@@ -146,11 +146,19 @@ class ContextProvider(Protocol):
 
 
 class SubjectProvider(ContextProvider, Protocol):
-    """A competition as a conversation about one thing sees it: the week, and its players.
+    """A competition as a conversation about what is on screen sees it: its pages, and its players.
 
-    What the ask engine reads to open a thread on a to-do item or a player,
-    and no more, for the same reason `ContextProvider` exists.
+    What the ask engine reads to brief a conversation on a to-do item, a
+    player or a page, and no more, for the same reason `ContextProvider` exists.
     """
+
+    def schedule(self, league_id: str) -> LeagueSchedule:
+        """The league beyond this week. See `CompetitionProvider.schedule`."""
+        ...
+
+    def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
+        """One page of the players nobody holds. See `CompetitionProvider.free_agents`."""
+        ...
 
     def roster(self, league_id: str) -> list[PlayerCard]:
         """The user's roster, one card per player, for a team view.

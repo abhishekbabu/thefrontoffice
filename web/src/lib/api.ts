@@ -166,8 +166,8 @@ export type PlayerCall = {
   stale: boolean;
 };
 
-/** What a conversation is about: one to-do item by its key, or one player by id. */
-export type Subject = { kind: "task" | "player"; key: string };
+/** What a conversation is about: one to-do item by its key, one player by id, or one page by its view. */
+export type Subject = { kind: "task" | "player" | "page"; key: string };
 
 /** Any model answer, kept with a digest of what it was given and when. */
 export type Remembered<T> = { answer: T; answered_at: string; inputs: string };
@@ -420,11 +420,12 @@ export const api = {
   teamRoster: (competition: string, league: string, team: string) =>
     request<PlayerCard[]>(`/api/${competition}/leagues/${league}/teams/${encodeURIComponent(team)}/roster`),
   scout: (competition: string, league: string) => post<ScoutReport>(`/api/${competition}/leagues/${league}/scout`, {}),
-  thread: (competition: string, league: string, subject: Subject) =>
-    post<{ chat_id: string }>(`/api/${competition}/leagues/${league}/threads`, subject),
+  openAssistant: (competition: string, league: string) =>
+    post<{ chat_id: string }>(`/api/${competition}/leagues/${league}/assistant`, {}),
+  assist: (chatId: string, message: string, onScreen: Subject[]) =>
+    post<{ answer: string }>(`/api/assistant/${chatId}`, { message, on_screen: onScreen }),
   judgment: (competition: string, league: string) =>
     request<Remembered<ScoutReport> | null>(`/api/${competition}/leagues/${league}/judgment`),
-  ask: (chatId: string, message: string) => post<{ answer: string }>(`/api/chat/${chatId}`, { message }),
   capabilities: () => request<Capabilities>("/api/capabilities"),
   settings: () => request<Setting[]>("/api/settings"),
   yahooLogin: () => post<LoginState>("/api/yahoo/login", {}),

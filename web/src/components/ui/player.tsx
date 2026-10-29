@@ -7,7 +7,7 @@ import { useLoadedImage } from "@/lib/useLoadedImage";
 import { IconButton } from "@/components/ui/icon-button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Loading } from "@/components/ui/state";
-import { Thread } from "@/components/ui/chat";
+import { useShown } from "@/lib/screen";
 import { ErrorNote } from "@/components/ui/error-note";
 import {
   NOT_APPLICABLE,
@@ -219,14 +219,16 @@ export function PlayerPanel({
   if (playerId) last.current = playerId;
   const shown = playerId ?? last.current;
 
-  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
-  const ai = capabilities.data?.ai ?? false;
-
   const player = useQuery<PlayerDetail, Error>({
     queryKey: ["player", competition, league, shown],
     queryFn: () => api.player(competition, league, shown),
     enabled: Boolean(shown),
   });
+  // On screen while open, so a question to the assistant is about him; the
+  // assistant docked over the drawer is where he is asked about.
+  useShown(
+    playerId && player.data ? { subject: { kind: "player", key: player.data.player_id }, label: player.data.name } : null,
+  );
 
   return (
     <AnimatePresence>
@@ -294,7 +296,7 @@ export function PlayerPanel({
           {player.isError && <ErrorNote error={player.error} />}
 
           {player.data && (
-            <m.div variants={list} initial="hidden" animate="shown" className="flex flex-col gap-5 px-5 py-4">
+            <m.div variants={list} initial="hidden" animate="shown" className="flex flex-col gap-5 px-5 pt-4 pb-20">
               {player.data.tables.map((table) => (
                 <m.section key={table.title} variants={listItem}>
                   <h3 className="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
@@ -338,20 +340,6 @@ export function PlayerPanel({
             </m.div>
           )}
 
-          {/* Last, under everything it can be asked about. Keyed by player, so
-              opening someone else starts their conversation, not his. */}
-          {ai && player.data && (
-            <div className="px-5 pb-6">
-              <Thread
-                key={player.data.player_id}
-                competition={competition}
-                league={league}
-                subject={{ kind: "player", key: player.data.player_id }}
-                title={`Ask about ${player.data.name}`}
-                placeholder="Is he the lead back now?"
-              />
-            </div>
-          )}
         </m.aside>
       </m.div>
       )}
