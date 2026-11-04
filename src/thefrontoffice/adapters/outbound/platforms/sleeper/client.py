@@ -290,16 +290,25 @@ class SleeperClient:
         return "pts_std"
 
     def get_rosters(self, league_id: str) -> list[SleeperRoster]:
+        """Every team in the league, each starting the lineup set for the current week.
+
+        A roster's own `starters` lags: Sleeper can keep serving the lineup as
+        it stood days after the manager changed it, while the week's matchup
+        entry already carries the new one. So the lineup is read from there,
+        and from the roster only for a team with no entry this week.
+        """
         data = self._cached(f"rosters_{league_id}", f"{BASE_URL}/league/{league_id}/rosters", ROSTERS_TTL)
+        lineups = self._lineups(league_id)
         rosters = []
         for item in data or []:
             record = item.get("settings") or {}
+            roster_id = int(item.get("roster_id", 0))
             rosters.append(
                 SleeperRoster(
-                    roster_id=int(item.get("roster_id", 0)),
+                    roster_id=roster_id,
                     owner_id=str(item.get("owner_id") or ""),
                     player_ids=[str(p) for p in item.get("players") or []],
-                    starter_ids=[str(p) for p in item.get("starters") or []],
+                    starter_ids=lineups.get(roster_id) or [str(p) for p in item.get("starters") or []],
                     reserve_ids=[str(p) for p in (item.get("reserve") or []) + (item.get("taxi") or [])],
                     wins=int(record.get("wins", 0)),
                     losses=int(record.get("losses", 0)),
@@ -308,6 +317,26 @@ class SleeperClient:
                 )
             )
         return rosters
+
+    def _lineups(self, league_id: str) -> dict[int, list[str]]:
+        """Each roster's starters for the current week, from its matchup entry.
+
+        Empty before the season has a week, and where the matchups will not
+        load — the roster's own lineup is then the best there is, merely late.
+        """
+        try:
+            week = self.get_nfl_state().week
+            if week <= 0:
+                return {}
+            entries = self.get_matchups(league_id, week)
+        except SleeperAPIError as e:
+            logger.warning(f"Reading lineups from rosters, the week's matchups would not load: {e}")
+            return {}
+        return {
+            int(entry["roster_id"]): [str(p) for p in entry["starters"]]
+            for entry in entries
+            if entry.get("roster_id") is not None and entry.get("starters")
+        }
 
     def get_league_users(self, league_id: str) -> dict[str, str]:
         """Map user_id -> display name, for labelling opponents."""
