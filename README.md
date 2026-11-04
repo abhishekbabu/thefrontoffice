@@ -82,7 +82,9 @@ path naming a competition you cannot play returns to `/`.
 
 **This week** — your matchup: both lineups side by side, the fixtures behind
 them, and the swaps the projections already imply. All read or computed from
-league state, so it is complete before a model is asked anything.
+league state, so it is complete before a model is asked anything. On Sleeper
+each lineup is the one set for the current week, read from the week's
+matchups: a roster's own copy can lag a lineup change by days.
 
 On NFL it opens with a **To do** list, most urgent first: a starter ruled out
 or on bye, an empty slot, a swap the bench allows, next week's byes with nobody

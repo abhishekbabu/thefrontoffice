@@ -178,6 +178,35 @@ def test_rosters_carry_record_and_bench(tmp_path: Path) -> None:
     assert roster.points_for == pytest.approx(412.5)
 
 
+ROSTERS_PAYLOAD = [
+    {"roster_id": 1, "owner_id": "42", "players": ["a", "b", "c"], "starters": ["a", "b"], "settings": {}},
+    {"roster_id": 2, "owner_id": "43", "players": ["x", "y"], "starters": ["x"], "settings": {}},
+]
+
+
+def test_a_lineup_is_the_one_set_for_this_week_not_the_rosters_stale_copy(tmp_path: Path) -> None:
+    # Sleeper's roster still starts "b" days after the manager benched him for "c".
+    matchups = [{"roster_id": 1, "matchup_id": 1, "starters": ["a", "c"]}]
+    client, session = _client({"state/nfl": STATE, "matchups": matchups, "rosters": ROSTERS_PAYLOAD}, tmp_path)
+    rosters = {r.roster_id: r for r in client.get_rosters("L1")}
+    assert rosters[1].starter_ids == ["a", "c"]
+    assert any("matchups/5" in url for url in session.requests)
+    # A team with no entry this week keeps the lineup its roster carries.
+    assert rosters[2].starter_ids == ["x"]
+
+
+def test_before_the_season_has_a_week_the_rosters_lineup_stands(tmp_path: Path) -> None:
+    client, session = _client({"state/nfl": {**STATE, "week": 0}, "rosters": ROSTERS_PAYLOAD}, tmp_path)
+    assert client.get_rosters("L1")[0].starter_ids == ["a", "b"]
+    assert not any("matchups" in url for url in session.requests)
+
+
+def test_a_week_whose_matchups_will_not_load_falls_back_to_the_rosters_lineup(tmp_path: Path) -> None:
+    # Unrouted, the matchups request is a 404.
+    client, _ = _client({"state/nfl": STATE, "rosters": ROSTERS_PAYLOAD}, tmp_path)
+    assert client.get_rosters("L1")[0].starter_ids == ["a", "b"]
+
+
 def test_a_tie_shows_in_the_record() -> None:
     from thefrontoffice.adapters.outbound.platforms.sleeper.types import SleeperRoster
 
