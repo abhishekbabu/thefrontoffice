@@ -4,6 +4,7 @@ import pytest
 
 from thefrontoffice.adapters.inbound.cli import output
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
+from thefrontoffice.domain.errors import AIKeyInvalidError
 
 
 def test_rows_are_printed_with_aligned_columns(capsys: pytest.CaptureFixture[str]) -> None:
@@ -23,3 +24,10 @@ def test_an_error_the_terminal_can_fix_names_the_fix(capsys: pytest.CaptureFixtu
 
     out = capsys.readouterr().out
     assert "NBA (Yahoo)" in out and "just yahoo-login" in out
+
+
+def test_an_error_whose_fix_is_on_the_page_prints_the_message_alone(capsys: pytest.CaptureFixture[str]) -> None:
+    """Settings is a page; a terminal has no button to point at, so it says nothing it cannot back."""
+    output.print_error(AIKeyInvalidError("Gemini", "GOOGLE_API_KEY"))
+
+    assert len(capsys.readouterr().out.strip().splitlines()) == 1

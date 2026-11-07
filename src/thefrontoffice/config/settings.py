@@ -29,7 +29,6 @@ class AppSettings(BaseSettings):
     # Optional. Absent means the app simply has no analysis to offer: nothing
     # that needs a model is shown, rather than shown and then refused.
     gemini_api_key: str | None = Field(default=None, validation_alias="GOOGLE_API_KEY")
-    default_model: str = "gemini-2.5-pro"
 
     # ── Groq and OpenRouter ─────────────────────────────────────────────
     # Optional, like Gemini, and both free to start. Either key alone is

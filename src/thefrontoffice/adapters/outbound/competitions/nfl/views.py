@@ -28,6 +28,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
 )
 from thefrontoffice.domain.errors import PlatformError, PlayerNotFoundError
 from thefrontoffice.domain.models import (
+    FIT_COLUMN,
     NOT_APPLICABLE,
     PlayerCard,
     PlayerDetail,
@@ -187,8 +188,9 @@ def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = F
             PlayerCard(
                 player_id=player_id,
                 tone="warning" if injury else "neutral",
+                ruled_out=ruled_out(injury),
                 values={
-                    **({"Fits": fitted[0]} if fitted else {}),
+                    **({FIT_COLUMN: fitted[0]} if fitted else {}),
                     **({"Usage": trend.rise} if trend else {}),
                     "Proj": projection.points if projection else 0.0,
                     "Depth": float(depth) if depth else 0.0,
@@ -200,7 +202,7 @@ def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = F
                     "Team": str(meta.get("team") or "FA"),
                     **({} if wire else {"Slot": "START" if player_id in starters else "BN"}),
                     "Proj": f"{projection.points:.1f}" if projection else "0.0",
-                    **({"Fits": fitted[1] if fitted else "—"} if wire else {}),
+                    **({FIT_COLUMN: fitted[1] if fitted else "—"} if wire else {}),
                     # Whose role just grew: the pickups a projection has
                     # not caught up with yet. Sorts by the size of the jump.
                     **({"Usage": trend.short() if trend else "—"} if wire else {}),

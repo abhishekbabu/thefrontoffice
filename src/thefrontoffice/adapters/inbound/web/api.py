@@ -17,7 +17,7 @@ import logging
 import threading
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -26,14 +26,16 @@ from pydantic import BaseModel, Field
 
 from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound import presenting
+from thefrontoffice.adapters.inbound.remedies import Remedy, remedy
 from thefrontoffice.adapters.inbound.web import data
+from thefrontoffice.application.season import MIN_TRADE_CHANGE
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import CompetitionEntry, Wiring
 from thefrontoffice.config import env_file
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.config.settings import PROJECT_ROOT, settings
 from thefrontoffice.config.telemetry import setup_telemetry
-from thefrontoffice.domain.errors import FrontOfficeError, PlatformUnavailableError, UnknownCompetitionError
+from thefrontoffice.domain.errors import ErrorCode, FrontOfficeError, PlatformUnavailableError, UnknownCompetitionError
 from thefrontoffice.domain.models import (
     ItemDecision,
     ItemState,
@@ -85,8 +87,8 @@ class Setting(BaseModel):
     field: str
     secret: bool
     present: bool
-    kind: str
-    """Which control to render: text, boolean, integer, number or choice."""
+    kind: env_file.SettingKind
+    """Which control to render."""
 
     choices: list[str] = []
     value: str = ""
@@ -106,20 +108,37 @@ class SettingsUpdate(BaseModel):
     values: dict[str, str]
 
 
+class Limits(BaseModel):
+    """The engines' own bounds, sent so the page can say them rather than restate them."""
+
+    judged: int = Field(description="How many free agents one judging asks about: a screen's worth of the best.")
+    trade_change: float = Field(
+        description="The least a trade must raise your playoff chance to be offered, as a fraction: 0.005."
+    )
+
+
 class Capabilities(BaseModel):
     """What the app can do here, as opposed to what it knows how to do."""
 
     ai: bool
     """Whether a model can be called. Everything that needs one hides without it."""
 
+    limits: Limits
+
 
 class LoginState(BaseModel):
     """Where the Yahoo handshake has got to."""
 
-    status: str
-    """idle, running, ok or failed."""
-
+    status: Literal["idle", "running", "ok", "failed"]
     detail: str = ""
+
+
+class ErrorBody(BaseModel):
+    """A failure the user can read, and what can be done about it."""
+
+    detail: str
+    code: ErrorCode
+    remedy: Remedy | None = None
 
 
 class JudgeRequest(BaseModel):
@@ -208,7 +227,12 @@ def _status(error: FrontOfficeError) -> int:
 
 def create_app(wiring: Wiring, *, dist: Path = DIST) -> FastAPI:
     """The application over `wiring`, serving the front end built into `dist`, ready to serve."""
-    app = FastAPI(title="The Front Office", docs_url="/api/docs", openapi_url="/api/openapi.json")
+    app = FastAPI(
+        title="The Front Office",
+        docs_url="/api/docs",
+        openapi_url="/api/openapi.json",
+        responses={status: {"model": ErrorBody} for status in (400, 404, 503)},
+    )
 
     @app.exception_handler(FrontOfficeError)
     async def _domain_error(_: Request, exc: FrontOfficeError) -> JSONResponse:
@@ -220,7 +244,8 @@ def create_app(wiring: Wiring, *, dist: Path = DIST) -> FastAPI:
         exception, and says so with 503: nothing in the request was wrong.
         """
         logger.info(f"Domain error: {exc}")
-        return JSONResponse(status_code=_status(exc), content={"detail": str(exc), "code": exc.code})
+        body = ErrorBody(detail=str(exc), code=exc.code, remedy=remedy(exc.code))
+        return JSONResponse(status_code=_status(exc), content=body.model_dump())
 
     _register_routes(app, wiring)
     _serve_frontend(app, dist)
@@ -263,7 +288,7 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         give, so nothing that needs one is shown — rather than shown and then
         refused, which is a click spent learning the app cannot do it.
         """
-        return Capabilities(ai=wiring.ai_available())
+        return Capabilities(ai=wiring.ai_available(), limits=Limits(judged=MAX_JUDGED, trade_change=MIN_TRADE_CHANGE))
 
     @app.get("/api/settings", response_model=list[Setting])
     def read_settings() -> list[Setting]:
@@ -360,36 +385,15 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         return wiring.decisions.decide(wiring.registry.find(competition).key, league_id, decision)
 
     @app.get("/api/{competition}/leagues/{league_id}/free-agents", response_model=PlayerPage)
-    def free_agents(
-        competition: str,
-        league_id: str,
-        offset: int = Query(default=0, ge=0),
-        limit: int = Query(default=50, ge=1, le=200),
-        sort: str = "",
-        descending: bool = True,
-        position: str = "",
-        search: str = "",
-    ) -> PlayerPage:
+    def free_agents(competition: str, league_id: str, query: Annotated[PlayerQuery, Query()]) -> PlayerPage:
         """One page of who is still out there, best first.
 
         Ordering happens here rather than in the client because a football pool
         is four thousand players: a client holding fifty of them can only
         reorder those fifty, which is a worse answer than none.
         """
-        # The chance of winning is priced for the page alone, so it cannot
-        # rank the pool: sorting by it takes the competition's own ranking,
-        # which puts the likeliest to help first, and orders that page.
-        by_chance = sort == presenting.WIN_COLUMN
-        query = PlayerQuery(
-            offset=offset,
-            limit=limit,
-            sort="" if by_chance else sort,
-            descending=descending,
-            position=position,
-            search=search,
-        )
-        view = wiring.week(*_open(competition)).wire(league_id, query)
-        return presenting.wire(view, order=descending if by_chance else None)
+        view = wiring.week(*_open(competition)).wire(league_id, presenting.ranking(query))
+        return presenting.wire(view, query)
 
     @app.get("/api/{competition}/leagues/{league_id}/teams", response_model=list[TeamRef])
     def teams(competition: str, league_id: str) -> list[TeamRef]:
@@ -482,7 +486,7 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         if chat is None:
             # The server restarted, or the report predates it. Saying so is
             # better than an empty answer the user cannot explain.
-            raise HTTPException(status_code=404, detail="That conversation has expired. Re-run the report.")
+            raise HTTPException(status_code=404, detail="That conversation has expired. Close it and ask again.")
         try:
             answer = chat.send_message(request.message).text or ""
         except FrontOfficeError:

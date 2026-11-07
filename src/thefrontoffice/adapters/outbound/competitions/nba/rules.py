@@ -79,6 +79,17 @@ BOX_SCORE = tuple(dict.fromkeys(key for c in CATEGORIES for key in (c.made, c.at
 INJURED_SLOTS = frozenset({"IL", "IL+"})
 """Roster slots that hold an injured player outside the active roster."""
 
+RULED_OUT = frozenset({"O", "INJ", "SUSP", "IL", "IL+", "NA"})
+"""Yahoo's statuses for a player who will not play: out, injured, suspended, on
+the injured list, not active. Game-time and day-to-day decisions are absent —
+those players mostly play, and flagging them as out buries the ones who will not."""
+
+
+def ruled_out(status: str) -> bool:
+    """Whether a Yahoo status means he will not play."""
+    return status.upper() in RULED_OUT
+
+
 Line = dict[str, float]
 """Figures keyed by category label. A category with no figure is absent."""
 

@@ -93,8 +93,15 @@ def _with_doubt_on_p3() -> dict[int, Player]:
 
 
 def test_roster_rows_report_a_doubt() -> None:
-    rows = {c.columns["Player"]: c.columns for c in provider(players=_with_doubt_on_p3()).roster(LEAGUE_ID)}
-    assert rows["P3"]["Status"] == "doubtful 50%"
+    cards = {c.columns["Player"]: c for c in provider(players=_with_doubt_on_p3()).roster(LEAGUE_ID)}
+    assert cards["P3"].columns["Status"] == "doubtful 50%"
+    assert not cards["P3"].ruled_out  # a doubt is flagged, not counted out
+
+
+def test_roster_rows_say_who_is_ruled_out() -> None:
+    players = {**SQUAD_PLAYERS, 3: player(3, "DEF", 6.0, status="i", chance_of_playing=0), **MARKET}
+    cards = {c.columns["Player"]: c for c in provider(players=players).roster(LEAGUE_ID)}
+    assert cards["P3"].ruled_out
 
 
 # ── the prompt ──────────────────────────────────────────────────────────
@@ -558,8 +565,8 @@ def test_a_played_gameweek_carries_its_tie_and_whether_it_was_won() -> None:
     season = {row.label: row for row in provider().schedule(H2H_LEAGUE).season}
 
     assert season["Gameweek 1"].result == "60-44"
-    assert season["Gameweek 1"].tone == "good"
-    assert season["Gameweek 2"].tone == "warning"
+    assert season["Gameweek 1"].outcome == "won"
+    assert season["Gameweek 2"].outcome == "lost"
 
 
 def test_the_row_marked_now_is_the_one_being_played() -> None:

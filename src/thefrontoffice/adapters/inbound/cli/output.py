@@ -1,5 +1,6 @@
 """Terminal output helpers."""
 
+from thefrontoffice.adapters.inbound.remedies import remedy
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.ports import ChatSession
 
@@ -47,18 +48,10 @@ def follow_up(chat: ChatSession, noun: str) -> None:
             break
 
 
-# What a terminal can do about a condition the domain only describes. The web
-# adapter offers a button for the same codes; neither belongs in the error.
-CLI_REMEDIES = {
-    "yahoo_login_required": "Run `just yahoo-login` to authorize.",
-    "yahoo_not_approved": "Apply at https://sports.yahoo.com/developer/access/, then `just yahoo-login --force`.",
-}
-
-
 def print_error(error: FrontOfficeError, prefix: str = "") -> None:
     """Render a failure, plus the terminal's way of fixing it if there is one."""
     label = f"{prefix}: " if prefix else ""
     print(f"  ❌ {label}{error}")
-    remedy = CLI_REMEDIES.get(error.code)
-    if remedy:
-        print(f"     {remedy}")
+    fix = remedy(error.code)
+    if fix and fix.command:
+        print(f"     {fix.command}")

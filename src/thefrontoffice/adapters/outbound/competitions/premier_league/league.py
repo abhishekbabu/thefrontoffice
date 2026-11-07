@@ -14,8 +14,8 @@ from thefrontoffice.adapters.outbound.competitions.dates import at_time
 from thefrontoffice.adapters.outbound.competitions.places import ordinal
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
-from thefrontoffice.adapters.outbound.platforms.fpl.types import Entry, H2HMatch, MiniLeague
-from thefrontoffice.domain.models import LeagueSchedule, Match, ScheduleRow, StandingRow, Tone
+from thefrontoffice.adapters.outbound.platforms.fpl.types import Entry, MiniLeague
+from thefrontoffice.domain.models import LeagueSchedule, Match, ScheduleRow, StandingRow, outcome
 
 logger = logging.getLogger(__name__)
 
@@ -88,19 +88,11 @@ def _season_rows(client: FPLSource, league: MiniLeague, entry_id: int, playing: 
                 opponent=tie.opponent_name if tie else "",
                 detail="" if tie else ("no tie" if league.is_h2h else ""),
                 result=f"{tie.my_points}-{tie.opponent_points}" if tie and played else "",
-                tone=_tie_tone(tie, played),
+                outcome=outcome(tie.my_points, tie.opponent_points) if tie and played else None,
                 is_current=gw.id == playing,
             )
         )
     return rows
-
-
-def _tie_tone(tie: H2HMatch | None, played: bool) -> Tone:
-    if not tie or not played:
-        return "neutral"
-    if tie.my_points == tie.opponent_points:
-        return "neutral"
-    return "good" if tie.my_points > tie.opponent_points else "warning"
 
 
 def _standings(client: FPLSource, league: MiniLeague, entry_id: int) -> list[StandingRow]:

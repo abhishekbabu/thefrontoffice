@@ -40,13 +40,14 @@ from thefrontoffice.domain.models import (
     Fixture,
     LeagueSchedule,
     Match,
+    Outcome,
     ScheduleRow,
     SeasonInput,
     StandingRow,
     Stat,
     TeamRecord,
     TeamWeek,
-    Tone,
+    outcome,
 )
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,7 @@ def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence
                 opponent=state.names.get(opponent.owner_id, "") if opponent else "",
                 detail=playoff or (opponent.record if opponent else "bye"),
                 result=_result(sides, week, state.week),
-                tone=_week_tone(sides, week, state.week),
+                outcome=_outcome(sides, week, state.week),
                 is_current=week == state.week,
                 playoffs=bool(playoff),
             )
@@ -145,11 +146,12 @@ def _result(sides: tuple[Matchup, Matchup] | None, week: int, current: int) -> s
     return f"{mine.points:.1f}-{theirs.points:.1f}"
 
 
-def _week_tone(sides: tuple[Matchup, Matchup] | None, week: int, current: int) -> Tone:
+def _outcome(sides: tuple[Matchup, Matchup] | None, week: int, current: int) -> Outcome | None:
+    """How a played week ended; None for one still to come, or a bye."""
     if week >= current or sides is None:
-        return "neutral"
+        return None
     mine, theirs = sides
-    return "good" if mine.points > theirs.points else "warning"
+    return outcome(mine.points, theirs.points)
 
 
 def _standings(state: Week) -> list[StandingRow]:
@@ -225,7 +227,7 @@ def _activity_rows(
                     who=state.names.get(roster.owner_id, "") if roster else "",
                     what=TRANSACTION_LABELS.get(t.kind, t.kind),
                     detail=", ".join(moved),
-                    tone="good" if roster and roster.roster_id == state.roster.roster_id else "neutral",
+                    is_mine=bool(roster) and roster.roster_id == state.roster.roster_id,
                 ),
             )
         )

@@ -18,14 +18,11 @@ def _wrap(text: str, width: int = 76, indent: str = _INDENT) -> str:
 
 def _render_move(move: Move, number: int) -> str:
     lines = [
-        f"{_INDENT}{number}. {move.action} {move.player} ({move.position}, {move.team}) — {move.metric}",
+        f"{_INDENT}{number}. {move.title} ({move.position}, {move.team}) — {move.metric}",
         _wrap(move.rationale, indent=_INDENT + "   "),
     ]
-    if move.replaces:
-        verb = {"ADD": "DROP", "START": "BENCH", "TRANSFER": "OUT"}.get(move.action, "REPLACES")
-        lines.append(f"{_INDENT}   {verb} {move.replaces}")
-        if move.replaces_rationale:
-            lines.append(_wrap(move.replaces_rationale, indent=_INDENT + "   "))
+    if move.replaces and move.replaces_rationale:
+        lines.append(_wrap(move.replaces_rationale, indent=_INDENT + "   "))
     return "\n".join(lines)
 
 
@@ -88,7 +85,7 @@ def render_week(summary: Summary) -> str:
     if not shown:
         parts.append(f"{_INDENT}   Nothing to do.")
     for action in shown:
-        change = f" ({action.win_change * 100:+.1f}% to win)" if action.win_change is not None else ""
+        change = f" ({action.chance.value})" if action.chance else ""
         parts.append(f"{_INDENT}   [{action.urgency}] {action.title}{change}")
         parts.append(_wrap(action.reason, indent=_INDENT + "     "))
     return "\n".join(parts)
