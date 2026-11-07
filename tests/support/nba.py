@@ -151,7 +151,7 @@ class FakeSleeperProjections:
         self.error = error
         self.season, self.week = season, week
 
-    def get_state(self, sport: str = "nfl") -> Any:
+    def get_nba_state(self) -> SeasonState:
         return SeasonState(week=self.week, season=self.season, season_type="regular")
 
     def get_nba_projections(self, season: str, week: int) -> Any:
@@ -185,12 +185,12 @@ class FakeSleeperNBA:
             raise self.error
         return self.schedule
 
-    def get_players(self, sport: str = "nfl") -> dict[str, PlayerMeta]:
+    def get_nba_players(self) -> dict[str, PlayerMeta]:
         if self.error:
             raise self.error
         return self.catalog
 
-    def get_state(self, sport: str = "nfl") -> SeasonState:
+    def get_nba_state(self) -> SeasonState:
         return SeasonState(week=10, season="2026", season_type="regular")
 
 

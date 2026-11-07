@@ -41,8 +41,15 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     lineup_points,
     optimal_lineup,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, Phase, Projection, Trending
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out, scoring_label
+from thefrontoffice.adapters.outbound.competitions.nfl.model import (
+    FREE_AGENT,
+    Game,
+    Phase,
+    PlayerInfo,
+    Projection,
+    Trending,
+)
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, ruled_out, scoring_label
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,
     Scoreboard,
@@ -133,7 +140,7 @@ class SleeperNFLProvider:
         return self._user_id
 
     def list_leagues(self) -> list[LeagueRef]:
-        leagues = self.client.get_leagues(self._resolve_user_id(), self.client.get_state().season)
+        leagues = self.client.get_leagues(self._resolve_user_id(), self.client.get_nfl_state().season)
         return [
             LeagueRef(
                 league_id=lg.league_id,
@@ -151,7 +158,7 @@ class SleeperNFLProvider:
         raise LeagueNotFoundError(f"league {league_id} is not one of yours this season")
 
     def _this_season(self, league_id: str) -> SleeperLeague:
-        return self._league(league_id, self.client.get_state().season)
+        return self._league(league_id, self.client.get_nfl_state().season)
 
     def _mine(self, rosters: Sequence[SleeperRoster], league_id: str) -> SleeperRoster:
         user_id = self._resolve_user_id()
@@ -163,7 +170,7 @@ class SleeperNFLProvider:
     @staticmethod
     def _signable(state: Week) -> Callable[[str], bool]:
         """Whether a player could be added at all, by id — the wire's own rule, for those who look ahead."""
-        return lambda pid: views.is_signing(state.players.get(pid) or PlayerMeta())
+        return lambda pid: (meta := state.players.get(pid)) is not None and views.is_signing(meta)
 
     # ── players ─────────────────────────────────────────────────────
 
@@ -213,9 +220,7 @@ class SleeperNFLProvider:
         ]
         # Ranked on the projection, and among the unprojected on depth chart —
         # a starter with no projection yet is worth more than a fourth-stringer.
-        available.sort(
-            key=lambda row: (-(row[0].points if row[0] else 0.0), int(row[2].get("depth_chart_order") or 99))
-        )
+        available.sort(key=lambda row: (-(row[0].points if row[0] else 0.0), row[2].depth_chart_order or 99))
         ranked = views.cards(state, [pid for _, pid, _ in available], starters=set(), wire=True)
         return paging.page(ranked, query)
 
@@ -226,7 +231,7 @@ class SleeperNFLProvider:
         return detail.model_copy(
             update={
                 "url": PLAYER_URL.format(player_id=player_id),
-                "team_logo_url": TEAM_LOGO_URL.format(team=detail.team.lower()) if detail.team != "FA" else "",
+                "team_logo_url": TEAM_LOGO_URL.format(team=detail.team.lower()) if detail.team != FREE_AGENT else "",
                 # A team defense has no headshot — the CDN 404s on its abbreviation —
                 # and the crest beside the club name already says who it is.
                 "image_url": "" if detail.position == "DEF" else PORTRAIT_URL.format(player_id=player_id),
@@ -265,16 +270,15 @@ class SleeperNFLProvider:
         return prompt.wire(state, candidates, fits)
 
     @staticmethod
-    def _name_index(projections: Mapping[str, Projection], players: Mapping[str, PlayerMeta]) -> NameIndex[Projection]:
+    def _name_index(projections: Mapping[str, Projection], players: Mapping[str, PlayerInfo]) -> NameIndex[Projection]:
         """Every projectable player, looked up by the name a user would type."""
         index: NameIndex[Projection] = NameIndex()
         for projection in projections.values():
             index.add(projection.name, projection)
         # Players with no projection are still tradeable — a bye, or a stash.
         for player_id, meta in players.items():
-            name = meta.get("name")
-            if name and player_id not in projections and meta.get("position"):
-                index.add(name, zero_projection(player_id, meta))
+            if player_id not in projections and meta.position:
+                index.add(meta.name, zero_projection(player_id, meta))
         return index
 
     # ── the week ────────────────────────────────────────────────────
@@ -314,17 +318,17 @@ class SleeperNFLProvider:
         projections and re-run the same lineup solve, and could then disagree
         about the totals by a rounding.
         """
-        phase = self.client.get_state()
+        phase = self.client.get_nfl_state()
         week, season = self._current_week(phase), phase.season
         league = self._league(league_id, season)
         matchups = self._matchups(league_id, week)
         rosters = self._rosters(league_id, matchups)
         roster = self._mine(rosters, league_id)
 
-        catalog = self.client.get_players()
+        catalog = self.client.get_nfl_players()
         designations = self._designations(catalog)
-        players = injuries.catalog(catalog, designations)
-        published = self.client.get_projections(season, week, league.scoring_format)
+        players = injuries.catalog(catalog, designations, lambda meta, status: replace(meta, injury_status=status))
+        published = self.client.get_projections(season, week, league.scoring_format, FANTASY_POSITIONS)
         projections = {pid: counted(p) for pid, p in injuries.reported(published, designations).items()}
         projected = projections_for(roster.player_ids, projections, players)
 
@@ -386,12 +390,12 @@ class SleeperNFLProvider:
         if not played:
             return evidence.Evidence()
         try:
-            lines = self.client.get_nfl_game_lines(season, played)
+            lines = self.client.get_nfl_game_lines(season, played, FANTASY_POSITIONS)
         except SleeperAPIError as e:
             # Enrichment: a week with no evidence is the week as it was before.
             logger.warning(f"Continuing without role and matchup evidence: {e}")
             return evidence.Evidence()
-        out = {pid for pid, meta in players.items() if ruled_out(meta.get("injury_status") or "")}
+        out = {pid for pid, meta in players.items() if ruled_out(meta.injury_status)}
         return evidence.gather(lines, scoring, out)
 
     def _designations(self, players: dict[str, PlayerMeta]) -> dict[str, str]:
@@ -406,9 +410,7 @@ class SleeperNFLProvider:
 
     def _news(self, players: dict[str, PlayerMeta]) -> news.PlayerNews:
         """Recent articles about every player, from each club's own feed."""
-        clubs = sorted(
-            {espn_club(str(m.get("team"))) for m in players.values() if m.get("team") not in (None, "", "FA")}
-        )
+        clubs = sorted({espn_club(m.team) for m in players.values() if m.team not in ("", FREE_AGENT)})
         try:
             feeds = self.espn.get_team_news(espn.NFL, clubs)
         except ESPNAPIError as e:
@@ -512,7 +514,7 @@ class SleeperNFLProvider:
 
     def played_weeks(self, league_id: str) -> list[int]:
         """Every finished week but the first, which has no games before it to shape a range."""
-        return list(range(2, self.client.get_state().week))
+        return list(range(2, self.client.get_nfl_state().week))
 
     def played_matchups(
         self, league_id: str, week: int, settings: outcomes.RangeSettings = outcomes.DEFAULT

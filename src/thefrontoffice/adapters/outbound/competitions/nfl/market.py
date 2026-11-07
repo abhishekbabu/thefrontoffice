@@ -145,11 +145,12 @@ def _tradeable(roster: Team, state: Week) -> list[str]:
     return [
         pid
         for pid in roster.player_ids
-        if pid not in roster.reserve_ids and state.players.get(pid, {}).get("position") not in STREAMED
+        if pid not in roster.reserve_ids and not ((meta := state.players.get(pid)) and meta.position in STREAMED)
     ]
 
 
 def _label(player_id: str, state: Week) -> str:
-    meta = state.players.get(player_id, {})
-    name = meta.get("name") or player_id
-    return f"{name} ({meta['position']})" if meta.get("position") else name
+    meta = state.players.get(player_id)
+    if meta is None:
+        return player_id
+    return f"{meta.name} ({meta.position})" if meta.position else meta.name

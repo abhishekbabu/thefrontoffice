@@ -217,7 +217,7 @@ def test_a_kicker_is_logged_as_kicks_made_of_tried() -> None:
     line = game_line("k1", 1, position="K", team="BUF", opponent="MIA", gp=1, fgm=2, fga=3, pts_ppr=8.0)
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=BUFFALO_SCHEDULE, game_lines=[line])
     client.players_catalog = {
-        **client.get_players(),
+        **client.get_nfl_players(),
         "k1": PlayerMeta(player_id="k1", name="Boot", position="K", team="BUF"),
     }
 
@@ -324,7 +324,7 @@ def test_every_club_is_asked_for_by_espns_abbreviation() -> None:
     """Sleeper's WAS is ESPN's WSH, and a free agent has no club to ask after."""
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
     client.players_catalog = {
-        **client.get_players(),
+        **client.get_nfl_players(),
         "was1": PlayerMeta(player_id="was1", name="Capital Back", position="RB", team="WAS"),
         "fa1": PlayerMeta(player_id="fa1", name="Loose End", position="TE", team="FA"),
     }
@@ -526,7 +526,7 @@ def test_a_free_agent_short_of_every_starter_says_by_how_much() -> None:
         rosters=[SleeperRoster(roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["wr1"], starter_ids=["wr1"])],
     )
     client.players_catalog = {
-        **client.get_players(),
+        **client.get_nfl_players(),
         "wr1": PlayerMeta(player_id="wr1", name="Star WR", position="WR", team="BUF"),
     }
 
@@ -682,7 +682,7 @@ def test_a_backup_who_jumped_while_the_starter_missed_his_game_reads_as_growing_
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
     client.week = 4
     client.players_catalog = {
-        **client.get_players(),
+        **client.get_nfl_players(),
         "wr8": PlayerMeta(player_id="wr8", name="Hurt Starter", position="WR", team="NYJ", injury_status="Out"),
     }
     client.game_lines = [
@@ -718,9 +718,8 @@ def test_roster_rows_say_who_is_ruled_out_rather_than_merely_listed() -> None:
         projections=dict(DEFAULT_PROJECTIONS),
         rosters=[SleeperRoster(roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1"], starter_ids=["qb1"])],
     )
-    catalog = client.get_players()
-    hurt, doubtful = catalog["qb1"].copy(), catalog["rb1"].copy()
-    hurt["injury_status"], doubtful["injury_status"] = "IR", "Questionable"
+    catalog = client.get_nfl_players()
+    hurt, doubtful = replace(catalog["qb1"], injury_status="IR"), replace(catalog["rb1"], injury_status="Questionable")
     client.players_catalog = {**catalog, "qb1": hurt, "rb1": doubtful}
 
     cards = {c.columns["Player"]: c for c in nfl_provider(client).roster("L1")}
@@ -778,7 +777,7 @@ def test_a_free_agent_the_to_do_list_would_start_over_a_starter_is_priced_as_tha
         "rb9": proj("rb9", "Spare RB", "RB", 20.0, team="NYJ", opp="NE"),
     }
     client.players_catalog = {
-        **client.get_players(),
+        **client.get_nfl_players(),
         "rb9": PlayerMeta(player_id="rb9", name="Spare RB", position="RB", team="NYJ"),
     }
 
@@ -812,7 +811,7 @@ def _stale() -> FakeSleeper:
     ]
     client.projections = {**client.projections, "rb3": proj("rb3", "Third RB", "RB", 2.0)}
     client.players_catalog = {
-        **client.get_players(),
+        **client.get_nfl_players(),
         "rb3": PlayerMeta(player_id="rb3", name="Third RB", position="RB", team="BUF"),
     }
     client.matchups = [SleeperMatchup(roster_id=1, matchup_id=None, starters=["qb1", "rb3"])]

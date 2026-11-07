@@ -253,10 +253,10 @@ def zero_projection(player_id: str, meta: PlayerInfo) -> Projection:
     """A player with no projection this week: a bye, or inactive."""
     return Unprojected(
         player_id=player_id,
-        name=str(meta.get("name") or player_id),
-        position=str(meta.get("position") or ""),
-        team=str(meta.get("team") or "FA"),
-        injury_status=str(meta.get("injury_status") or ""),
+        name=meta.name,
+        position=meta.position,
+        team=meta.team,
+        injury_status=meta.injury_status,
     )
 
 
@@ -362,7 +362,7 @@ class Scoreboard:
         """
         if season not in self._schedules:
             try:
-                games = self.client.get_season_schedule(season)
+                games = self.client.get_nfl_schedule(season)
             except PlatformError as e:
                 logger.warning(f"Continuing without schedule dates: {e}")
                 games = []

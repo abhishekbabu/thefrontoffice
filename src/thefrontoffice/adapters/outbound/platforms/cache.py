@@ -31,6 +31,7 @@ import os
 import re
 import tempfile
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar
@@ -57,6 +58,18 @@ def _filename(key: str) -> str:
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
     slug = _UNSAFE.sub("-", key)[:_SLUG_LIMIT].strip("-.")
     return f"{slug}-{digest}.json" if slug else f"{digest}.json"
+
+
+@dataclass(frozen=True)
+class Hit:
+    """A value the cache holds within its TTL.
+
+    Its own type because the value may be null, and a stored null is an answer
+    like any other: an endpoint that answered null is not asked again until the
+    entry expires.
+    """
+
+    value: Any
 
 
 class JsonDiskCache:
@@ -127,10 +140,19 @@ class JsonDiskCache:
             return None  # no zone, so it cannot be placed on a timeline
         return entry if (now or datetime.now(UTC)) - stored_at <= ttl else None
 
-    def get(self, key: str, ttl: timedelta, now: datetime | None = None) -> Any | None:
-        """The value stored for `key` within `ttl`, or None if absent or stale."""
+    def lookup(self, key: str, ttl: timedelta, now: datetime | None = None) -> Hit | None:
+        """What is stored for `key` within `ttl`, or None if absent or stale — never for a stored null."""
         entry = self._fresh(key, ttl, now)
-        return entry["value"] if entry is not None else None
+        return Hit(entry["value"]) if entry is not None else None
+
+    def get(self, key: str, ttl: timedelta, now: datetime | None = None) -> Any | None:
+        """The value stored for `key` within `ttl`, or None.
+
+        None also when the value stored is null; a caller that must tell the
+        two apart — anything deciding whether to fetch — uses `lookup`.
+        """
+        hit = self.lookup(key, ttl, now)
+        return hit.value if hit is not None else None
 
     def set(self, key: str, value: Any, now: datetime | None = None) -> None:
         """Store `value` under `key` and persist it."""
@@ -145,12 +167,11 @@ class JsonDiskCache:
         The read-through every platform wants, in one place: a hit never
         touches the network, and a miss stores what it fetched. A fetch that
         raises propagates rather than caching a failure as though it were an
-        answer. A stored null is a hit like any other value: an endpoint that
-        answers null is not asked again until the entry expires.
+        answer. A stored null is a hit, as `Hit` says.
         """
-        entry = self._fresh(key, ttl, now)
-        if entry is not None:
-            return entry["value"]
+        hit = self.lookup(key, ttl, now)
+        if hit is not None:
+            return hit.value
         value = fetch()
         self.set(key, value, now=now)
         return value
