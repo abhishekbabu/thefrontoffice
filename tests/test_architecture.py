@@ -25,10 +25,16 @@ def _modules(under: str) -> list[Path]:
 
 
 def _imports(path: Path) -> list[tuple[int, str]]:
-    """Every module a file imports from the package, with its line."""
+    """Every module a file imports from the package, with its line.
+
+    `from thefrontoffice import bootstrap` imports `thefrontoffice.bootstrap`,
+    so a name imported from the package root counts as the module it is.
+    """
     found = []
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("thefrontoffice"):
+        if isinstance(node, ast.ImportFrom) and node.module == "thefrontoffice":
+            found += [(node.lineno, f"thefrontoffice.{a.name}") for a in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("thefrontoffice."):
             found.append((node.lineno, node.module))
         elif isinstance(node, ast.Import):
             found += [(node.lineno, a.name) for a in node.names if a.name.startswith("thefrontoffice")]
@@ -36,6 +42,7 @@ def _imports(path: Path) -> list[tuple[int, str]]:
 
 
 def _violations(under: str, allowed: tuple[str, ...]) -> list[str]:
+    """Every import under `under` of a module outside `allowed`, as `path:line imports module`."""
     return [
         f"{path.relative_to(PACKAGE)}:{line} imports {module}"
         for path in _modules(under)
@@ -65,8 +72,20 @@ def test_the_core_names_no_vendor(layer: str) -> None:
 
 
 def test_inbound_adapters_reach_outbound_ones_only_through_bootstrap() -> None:
-    """A route that imports a client is a route that only works with that client."""
-    assert [v for v in _violations("adapters/inbound", ("thefrontoffice",)) if ".adapters.outbound" in v] == []
+    """A route that imports a client is a route that only works with that client.
+
+    Everything an entry point needs arrives in the wiring bootstrap builds;
+    besides it, an inbound adapter reads only the core, its own package, and
+    configuration.
+    """
+    allowed = (
+        "thefrontoffice.bootstrap",
+        "thefrontoffice.domain",
+        "thefrontoffice.application",
+        "thefrontoffice.config",
+        "thefrontoffice.adapters.inbound",
+    )
+    assert _violations("adapters/inbound", allowed) == []
 
 
 def test_only_the_composition_root_builds_a_platform_client() -> None:
@@ -88,10 +107,11 @@ def test_the_nfls_rules_read_its_own_model_and_only_its_provider_names_the_leagu
     imports Sleeper; everything beside it reads `nfl/model.py`.
     """
     named = [
-        violation
-        for violation in _violations("adapters/outbound/competitions/nfl", ("thefrontoffice",))
-        if ".platforms.sleeper" in violation
-        and not violation.startswith("adapters/outbound/competitions/nfl/sleeper.py")
+        f"{path.relative_to(PACKAGE)}:{line} imports {module}"
+        for path in _modules("adapters/outbound/competitions/nfl")
+        if path.name != "sleeper.py"
+        for line, module in _imports(path)
+        if module.startswith("thefrontoffice.adapters.outbound.platforms.sleeper")
     ]
     assert named == []
 
