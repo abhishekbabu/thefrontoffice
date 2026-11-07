@@ -131,11 +131,11 @@ def _playoff_round(state: Week, week: int) -> str:
 
 def _headline(state: Week, standings: list[StandingRow]) -> list[Stat]:
     """Your season in figures: the record, where it puts you, and the points behind it."""
-    place = next((row.rank for row in standings if row.is_mine), 0)
-    stats = [Stat(label="Record", value=state.roster.record)]
-    if place:
-        stats.append(Stat(label="Place", value=places.place(place, len(standings))))
-    return [*stats, Stat(label="Points for", value=f"{state.roster.points_for:.1f}")]
+    rank = next((row.rank for row in standings if row.is_mine), 0)
+    return [
+        *places.season(state.roster.record, rank, len(standings)),
+        Stat(label="Points for", value=f"{state.roster.points_for:.1f}"),
+    ]
 
 
 def _result(sides: tuple[Matchup, Matchup] | None, week: int, current: int) -> str:
