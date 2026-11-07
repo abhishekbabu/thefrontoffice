@@ -41,9 +41,8 @@ The highest-trust category — real bugs found by reading, not speculation.
   `competitions/nba/form.py`. An ambiguous surname must resolve to *nothing*,
   and an unmatched player must carry no line rather than borrowing someone
   else's. Any "first match wins" fallback is a correctness finding.
-- **Cache freshness.** A `Freshness` predicate that cannot express what the
-  endpoint actually does — a TTL where the rule is "until the next game tips
-  off"; a failed fetch stored as though it were an answer; a key that collides
+- **Cache freshness.** A TTL that does not match how fast the endpoint
+  actually moves; a failed fetch stored as though it were an answer; a key that collides
   across leagues or seasons.
 - **Boundary conditions.** Empty rosters, a competition with zero leagues, a
   week before the season starts, off-by-one on gameweek and matchup numbering.

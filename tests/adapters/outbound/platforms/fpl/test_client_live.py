@@ -14,6 +14,7 @@ import pytest
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
 from thefrontoffice.adapters.outbound.platforms.fpl.types import POSITIONS, SQUAD_SIZE
+from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 
 pytestmark = pytest.mark.integration
 
@@ -21,7 +22,7 @@ pytestmark = pytest.mark.integration
 @pytest.fixture
 def client(tmp_path: Path) -> FPLClient:
     """A client whose cache is thrown away, so each run really hits the API."""
-    return FPLClient(cache=JsonDiskCache(tmp_path / "cache"))
+    return FPLClient(cache=JsonDiskCache(tmp_path / "cache"), retry=RetryPolicy())
 
 
 def test_the_bootstrap_still_carries_a_full_league(client: FPLClient) -> None:

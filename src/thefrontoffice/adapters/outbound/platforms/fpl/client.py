@@ -16,10 +16,7 @@ and everything it holds can be derived from the public history instead — see
 
 import logging
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any, Protocol
-
-from tenacity import Retrying
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
@@ -42,16 +39,14 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     TableRow,
 )
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
-from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
+from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
-from thefrontoffice.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://fantasy.premierleague.com/api"
 
 REQUEST_TIMEOUT_SECONDS = 30
-RETRY_MAX_ATTEMPTS = 3
 
 # TTLs from how quickly each endpoint actually moves. Prices change once a day
 # just after 01:30 UTC; a squad changes only when its manager acts.
@@ -64,18 +59,6 @@ LIVE_TTL = timedelta(minutes=2)
 # A finished season cannot change, and the current one only moves when a match
 # is played, so this is the slowest-moving thing the client reads.
 PLAYER_HISTORY_TTL = timedelta(hours=12)
-
-# The game returns 429 when a client is hammering it, same as Sleeper.
-RETRYABLE_STATUS = frozenset({429})
-
-
-def _is_retryable(exc: BaseException) -> bool:
-    """Whether an FPL failure is transient. A 404 is a missing entry, forever."""
-    return is_transient(exc, RETRYABLE_STATUS)
-
-
-def _retry() -> Retrying:
-    return build_retry(attempts=RETRY_MAX_ATTEMPTS, multiplier=2, min_wait=2, max_wait=20, predicate=_is_retryable)
 
 
 def _order(value: Any) -> int | None:
@@ -200,11 +183,11 @@ class FPLSource(Protocol):
 class FPLClient:
     """Read-only access to the Fantasy Premier League game."""
 
-    def __init__(self, cache: JsonDiskCache | None = None, session: Any = None) -> None:
+    def __init__(self, *, cache: JsonDiskCache, retry: RetryPolicy, session: Any = None) -> None:
         self._api = JsonApiClient(
             name="FPL",
-            cache=cache or JsonDiskCache(Path(settings.fpl_cache_dir)),
-            retry=lambda: _retry(),
+            cache=cache,
+            retry=retry,
             error=FPLAPIError,
             unavailable=FPLUnavailableError,
             session=session,

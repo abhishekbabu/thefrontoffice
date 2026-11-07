@@ -57,9 +57,9 @@ fix the type, the fake or the port instead, and disable no check globally.
 `make_request` is the only fetch that parallelises safely and the vendor's
 `_load` takes no expiry. `_load_or_fetch` survives for the scoreboard alone,
 where `Week.sync` reads the SDK's store internally and a short `persist_ttl` is
-the only way to force a refresh. Cache writes stay on one thread. It raises requests' own exceptions, which escape as a 500 unless passed
-through `yahoo.translate`. Never trigger OAuth implicitly — non-interactive
-callers use `ensure_authorized`.
+the only way to force a refresh. Cache writes stay on one thread. The SDK raises requests' own
+exceptions, which escape as a 500 unless passed through `yahoo.client.call` (retry, then `translate`).
+`YahooAuth` logs in and finds leagues — never implicitly: non-interactive callers use `ensure_authorized`.
 
 **Chat history is resent every turn.** Seed follow-ups with a briefing, not the
 generation prompt, and say what was left out.
@@ -122,17 +122,17 @@ shared. When you find yourself writing something a second time, extract it then
 — not on the third. Existing seams:
 
 - `adapters/outbound/platforms/` — infrastructure every platform needs:
-  `http.py` (cached, retried JSON GETs), `retry.py` (transient-failure policy),
-  `cache.py` (the disk cache — a directory, one atomically-replaced file per
-  key; expiry is a `Freshness` — `within(ttl)`, or what a duration cannot say).
+  `http.py` (cached, retried JSON GETs; `fetch_many`, the parallel cached fetch),
+  `retry.py` (`RetryPolicy`, and what counts as transient or an outage), `cache.py`
+  (the disk cache — a directory, one atomically-replaced file per key, read with a TTL). Clients
+  take `cache=` and `retry=` from `bootstrap`; tests pass `NO_WAIT`.
 - `adapters/outbound/competitions/` — policy every competition needs: `names.py`
   (cross-platform player matching), `trades.py` (resolving a proposal).
 - `domain/` — rules that hold regardless of competition or platform.
 
-**Prefer composition to a base class.** The outbound clients share behaviors,
-not a shape: three go through different vendor SDKs and cache differently, while
-Sleeper and FPL are both plain public JSON and share `JsonApiClient` — held as a
-collaborator, given its own retry policy and domain error, not inherited.
+**Prefer composition to a base class.** The outbound clients share behaviors, not a shape: Yahoo
+goes through a vendor SDK, while Sleeper, ESPN and FPL are plain public JSON and share
+`JsonApiClient` — held as a collaborator with its own domain error, not inherited.
 
 **Telemetry.** All of it lives in `config/telemetry.py`, called once per process
 by each entry point. Never open a span by hand or import `logfire` elsewhere: the
