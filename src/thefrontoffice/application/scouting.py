@@ -43,7 +43,7 @@ class ScoutEngine:
 
     def latest(self, league_id: str) -> Remembered[ScoutReport] | None:
         """The last judgment of this league, without asking anything new."""
-        return self.answers.latest(scout_scope(self.key, league_id), ScoutReport)
+        return last_judgment(self.answers, self.key, league_id)
 
     def report(self, league_id: str) -> ScoutReport:
         """The judged report alone, with no conversation opened beside it.
@@ -124,7 +124,12 @@ def scout_scope(key: str, league_id: str) -> str:
     return scope("scout", key, league_id)
 
 
-def with_verdicts(actions: list[Action], judged: ScoutReport | None) -> list[Action]:
+def last_judgment(answers: Answers, key: str, league_id: str) -> Remembered[ScoutReport] | None:
+    """The league's last judgment of its week, current or not; None where it was never judged."""
+    return answers.latest(scout_scope(key, league_id), ScoutReport)
+
+
+def with_verdicts(actions: list[Action], judged: Remembered[ScoutReport] | None) -> list[Action]:
     """Each item with the verdict last given on the item with its key, marked stale where it reads differently now.
 
     A verdict on last night's news is not a verdict on this morning's, so it
@@ -132,7 +137,7 @@ def with_verdicts(actions: list[Action], judged: ScoutReport | None) -> list[Act
     """
     if judged is None:
         return actions
-    then = {task.key: task for task in judged.tasks if task.key and task.verdict is not None}
+    then = {task.key: task for task in judged.answer.tasks if task.key and task.verdict is not None}
     return [
         action.model_copy(update={"verdict": earlier.verdict, "stale": earlier.fingerprint != action.fingerprint})
         if (earlier := then.get(action.key)) is not None

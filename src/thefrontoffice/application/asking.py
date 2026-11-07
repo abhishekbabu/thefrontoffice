@@ -11,9 +11,9 @@ import logging
 
 from thefrontoffice.application import briefing
 from thefrontoffice.application.answers import Answers
-from thefrontoffice.application.scouting import scout_scope, with_verdicts
+from thefrontoffice.application.scouting import last_judgment, with_verdicts
 from thefrontoffice.domain.errors import SubjectGoneError
-from thefrontoffice.domain.models import Action, PlayerDetail, ScoutReport, Subject
+from thefrontoffice.domain.models import Action, PlayerDetail, Subject
 from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatReply, ChatSession, SubjectProvider
 
 logger = logging.getLogger(__name__)
@@ -78,8 +78,7 @@ class AskEngine:
             logger.info(f"{self.key}: asked about {key!r}, which the week no longer holds")
             raise SubjectGoneError()
 
-        judged = self.answers.latest(scout_scope(self.key, league_id), ScoutReport)
-        [task] = with_verdicts([task], judged.answer if judged else None)
+        [task] = with_verdicts([task], last_judgment(self.answers, self.key, league_id))
         verdict = ""
         if task.verdict is not None:
             changed = " The item has changed since, so weigh it against the item as it now reads." if task.stale else ""
@@ -91,7 +90,7 @@ class AskEngine:
             context.constraints,
             "THE ITEM:\n" + _task_text(task),
             verdict,
-            "THE ROSTER:\n" + briefing.roster(context),
+            briefing.titled("THE ROSTER", briefing.roster(context)),
         )
 
     def _player_briefing(self, league_id: str, player_id: str) -> str:
@@ -99,7 +98,7 @@ class AskEngine:
         roster = self.provider.roster(league_id)
         roster_text = "\n".join("- " + ", ".join(f"{k}: {v}" for k, v in card.columns.items() if v) for card in roster)
         return briefing.sections(
-            PLAYER_ROLE, "THE PLAYER:\n" + _player_text(detail), "THE MANAGER'S ROSTER:\n" + roster_text
+            PLAYER_ROLE, "THE PLAYER:\n" + _player_text(detail), briefing.titled("THE MANAGER'S ROSTER", roster_text)
         )
 
 
