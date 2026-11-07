@@ -11,13 +11,12 @@ from datetime import date
 
 from yahoofantasy import Player
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import (
-    FormSource,
-    NineCatStats,
-    PlayerStats,
-    Window,
-)
+from thefrontoffice.adapters.outbound.competitions.nba import prompt
+from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource, PlayerStats, Window
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
+from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS
+
+WINDOW_TAGS: tuple[tuple[Window, str], ...] = (("last_5", "L5"), ("last_10", "L10"), ("last_15", "L15"))
 
 
 class PlayerContextBuilder:
@@ -30,31 +29,11 @@ class PlayerContextBuilder:
     def __init__(self, nba_client: FormSource):
         self.nba = nba_client
 
-    def _format_stats(self, stats_dict: PlayerStats) -> str:
-        """Format recent trend stats into a readable string.
-
-        Three-pointers are suffixed `tpm` rather than `3pm`: the latter renders
-        "5" and "3pm" as "53pm", which the model reads as badly as a person does.
-        """
-        if not stats_dict:
-            return "No stats available"
-
-        parts: list[str] = []
-        labels: tuple[tuple[Window, str], ...] = (("last_5", "L5"), ("last_10", "L10"), ("last_15", "L15"))
-        for key, label in labels:
-            if key in stats_dict:
-                s: NineCatStats = stats_dict[key]
-                parts.append(
-                    f"{label}: {s['PTS']}p {s['REB']}r {s['AST']}a {s['STL']}s {s['BLK']}b {s['TOV']}to {s['FG3M']}tpm FG{s['FG_PCT']:.1%} FT{s['FT_PCT']:.1%}"
-                )
-
+    @staticmethod
+    def _format_stats(stats: PlayerStats) -> str:
+        """Each recent window that can be filled, as one nine-category line."""
+        parts = [f"{tag}: {prompt.categories(stats[window])}" for window, tag in WINDOW_TAGS if window in stats]
         return " | ".join(parts) if parts else "No recent stats"
-
-    def get_remaining_games(self, team_abbr: str, matchup_start: date | None, matchup_end: date | None) -> int | None:
-        """Get remaining games for a player's team in the matchup period."""
-        if not matchup_start or not matchup_end:
-            return None
-        return self.nba.get_remaining_games(team_abbr, matchup_start, matchup_end)
 
     def build_context_for_players(
         self,
@@ -72,7 +51,9 @@ class PlayerContextBuilder:
             remaining_games: precomputed counts; looked up if omitted.
         """
         return "".join(
-            self.build_player_lines(players, matchup_start, matchup_end, annotations, remaining_games).values()
+            self.build_player_lines(
+                players, matchup_start, matchup_end, annotations, remaining_games, projections
+            ).values()
         )
 
     def build_player_lines(
@@ -112,9 +93,8 @@ class PlayerContextBuilder:
                 if injury_note:
                     status_str += f" ({injury_note})"
 
-            il_str = ""
-            if hasattr(p, "selected_position") and getattr(p.selected_position, "position", "") in ("IL", "IL+"):
-                il_str = " [IN IL SPOT]"
+            slot = getattr(getattr(p, "selected_position", None), "position", "")
+            il_str = " [IN IL SPOT]" if slot in INJURED_SLOTS else ""
 
             note = ""
             if annotations and p.player_key in annotations:
@@ -123,10 +103,8 @@ class PlayerContextBuilder:
             line = f"- {p.name.full} ({p.display_position}){il_str}{status_str}{games_str}{note}"
             if stats_dict:
                 line += f": {self._format_stats(stats_dict)}"
-            # Recent form says what a player has been; PROJ says what the
-            # matchup period is expected to yield.
             if projections is not None and (projected := projections.lookup(p.name.full)):
-                line += f" | PROJ {projected.summary()}"
+                line += f" | PROJ {projected.games}G {prompt.categories(projected.line)}"
             lines[p.name.full] = line + "\n"
 
         return lines

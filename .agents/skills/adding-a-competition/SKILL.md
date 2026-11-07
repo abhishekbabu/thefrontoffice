@@ -29,7 +29,9 @@ several platforms, and one platform hosts several competitions of a sport.
    - `build_context(league_id) -> CompetitionContext`
    - `roster_rows(league_id) -> list[dict[str, str]]` — cheap; no projections or
      candidate pool
-2. **Prompt template** in `config/constants.py`, rendered by `build_context`.
+2. **Prompt template** in the competition's own `prompt.py`, beside its
+   provider, rendered by `build_context` (`nba/prompt.py`; the others still
+   keep theirs in `config/constants.py`).
    Name it `<SPORT>_<REPORT>_PROMPT`.
 3. **Registration** — one `CompetitionEntry` in `bootstrap.py`, whose `build`
    constructs the platform clients and hands them in: a provider never builds

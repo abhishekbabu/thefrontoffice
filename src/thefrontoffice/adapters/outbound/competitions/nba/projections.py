@@ -15,14 +15,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
+from thefrontoffice.adapters.outbound.competitions.dates import parse_day
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex, normalize_name
+from thefrontoffice.adapters.outbound.competitions.nba.rules import BOX_SCORE, Line, line
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import GameProjection
 
 logger = logging.getLogger(__name__)
-
-# The nine scoring categories, plus the makes/attempts the percentages need.
-COUNTING_STATS = ("pts", "reb", "ast", "stl", "blk", "to", "tpm")
-SHOOTING_STATS = ("fgm", "fga", "ftm", "fta")
 
 
 @dataclass(frozen=True)
@@ -31,47 +29,19 @@ class ProjectedTotals:
 
     games: int
     totals: dict[str, float]
+    """Summed Sleeper box-score keys."""
 
     @property
-    def fg_pct(self) -> float | None:
-        return _ratio(self.totals.get("fgm"), self.totals.get("fga"))
-
-    @property
-    def ft_pct(self) -> float | None:
-        return _ratio(self.totals.get("ftm"), self.totals.get("fta"))
-
-    def summary(self) -> str:
-        """A one-line nine-category summary, in the prompt's usual shape."""
-        t = self.totals
-        parts = [
-            f"{self.games}G",
-            f"{t.get('pts', 0):.0f}p",
-            f"{t.get('reb', 0):.0f}r",
-            f"{t.get('ast', 0):.0f}a",
-            f"{t.get('stl', 0):.1f}s",
-            f"{t.get('blk', 0):.1f}b",
-            f"{t.get('to', 0):.1f}to",
-            f"{t.get('tpm', 0):.0f}tpm",  # not "3pm": "5" + "3pm" reads as "53pm"
-        ]
-        if (fg := self.fg_pct) is not None:
-            parts.append(f"FG{fg:.1%}")
-        if (ft := self.ft_pct) is not None:
-            parts.append(f"FT{ft:.1%}")
-        return " ".join(parts)
-
-
-def _ratio(made: float | None, attempted: float | None) -> float | None:
-    """Percentage from totals, not an average of per-game percentages."""
-    if not attempted:
-        return None
-    return (made or 0.0) / attempted
+    def line(self) -> Line:
+        """The nine categories as totals over the period, percentages from summed attempts."""
+        return line(self.totals)
 
 
 def aggregate(rows: Iterable[GameProjection]) -> ProjectedTotals:
     """Sum per-game projections into category totals."""
     rows = list(rows)
     totals: dict[str, float] = {}
-    for stat in (*COUNTING_STATS, *SHOOTING_STATS):
+    for stat in BOX_SCORE:
         value = sum(r.stats.get(stat, 0.0) for r in rows)
         if value:
             totals[stat] = round(value, 2)
@@ -81,7 +51,7 @@ def aggregate(rows: Iterable[GameProjection]) -> ProjectedTotals:
 class ProjectionIndex:
     """Projections for a matchup period, looked up by player name."""
 
-    def __init__(self, rows: Iterable[GameProjection], start: date | None, end: date | None) -> None:
+    def __init__(self, rows: Iterable[GameProjection], start: date, end: date) -> None:
         grouped: dict[str, list[GameProjection]] = {}
         for row in rows:
             if _within(row.date, start, end):
@@ -105,12 +75,7 @@ class ProjectionIndex:
         return aggregate(rows) if rows else None
 
 
-def _within(value: str, start: date | None, end: date | None) -> bool:
-    """Whether an ISO date falls inside the matchup period."""
-    if start is None or end is None:
-        return True
-    try:
-        day = date.fromisoformat(value)
-    except ValueError:
-        return False
-    return start <= day <= end
+def _within(label: str, start: date, end: date) -> bool:
+    """Whether a date label falls inside the matchup period."""
+    day = parse_day(label)
+    return day is not None and start <= day <= end
