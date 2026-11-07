@@ -15,7 +15,8 @@ ScoringFormat = Literal["pts_ppr", "pts_half_ppr", "pts_std"]
 SCORING_FORMATS: tuple[ScoringFormat, ...] = get_args(ScoringFormat)
 
 # Sleeper's lineup slots. FLEX and SUPER_FLEX accept several positions; BN and
-# IR do not count toward a weekly score.
+# IR do not count toward a weekly score. Must equal the NFL rules' scored
+# positions plus their flex slots; `competitions/nfl/test_rules.py` pins it.
 STARTING_SLOTS = ("QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "K", "DEF", "WRRB_FLEX", "REC_FLEX")
 
 
