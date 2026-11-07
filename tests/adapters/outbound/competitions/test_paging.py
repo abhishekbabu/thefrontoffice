@@ -7,13 +7,13 @@ sort on never displaces one that has something.
 """
 
 from thefrontoffice.adapters.outbound.competitions.paging import page
-from thefrontoffice.domain.models import PlayerCard, PlayerQuery
+from thefrontoffice.domain.models import PLAYER_COLUMN, POSITION_COLUMN, PlayerCard, PlayerQuery
 
 
 def _card(name: str, pos: str, price: float | None = None, club: str = "ARS") -> PlayerCard:
     return PlayerCard(
         player_id=name.lower(),
-        columns={"Player": name, "Pos": pos, "Club": club, "Price": f"£{price:.1f}m" if price else ""},
+        columns={PLAYER_COLUMN: name, POSITION_COLUMN: pos, "Club": club, "Price": f"£{price:.1f}m" if price else ""},
         values={"Price": price} if price is not None else {},
     )
 

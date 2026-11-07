@@ -190,6 +190,9 @@ class PlayerPage(BaseModel):
 PLAYER_COLUMN = "Player"
 """The column holding a player's name, in every competition's table."""
 
+POSITION_COLUMN = "Pos"
+"""The column holding a player's position, in every competition's table: what one position filter reads."""
+
 STATUS_COLUMN = "Status"
 """The column holding a player's availability, in the platform's own words."""
 

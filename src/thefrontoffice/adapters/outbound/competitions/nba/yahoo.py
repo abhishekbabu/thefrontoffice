@@ -37,6 +37,7 @@ from thefrontoffice.domain.errors import (
 )
 from thefrontoffice.domain.models import (
     PLAYER_COLUMN,
+    POSITION_COLUMN,
     SLOT_COLUMN,
     STATUS_COLUMN,
     CompetitionContext,
@@ -317,7 +318,7 @@ class YahooNBAProvider:
                     values={c.label: value for c in CARD_CATEGORIES if (value := _figure(stats, c)) is not None},
                     columns={
                         PLAYER_COLUMN: player.name,
-                        "Pos": player.position,
+                        POSITION_COLUMN: player.position,
                         "Team": player.team,
                         **({SLOT_COLUMN: player.slot} if slotted else {}),
                         **{c.label: _recent(stats, c) for c in CARD_CATEGORIES},

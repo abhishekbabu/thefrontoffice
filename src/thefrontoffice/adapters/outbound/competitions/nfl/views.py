@@ -34,6 +34,7 @@ from thefrontoffice.domain.models import (
     FIT_COLUMN,
     NOT_APPLICABLE,
     PLAYER_COLUMN,
+    POSITION_COLUMN,
     SLOT_COLUMN,
     STATUS_COLUMN,
     PlayerCard,
@@ -203,7 +204,7 @@ def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = F
                 },
                 columns={
                     PLAYER_COLUMN: meta.name,
-                    "Pos": meta.position,
+                    POSITION_COLUMN: meta.position,
                     "Team": meta.team,
                     **({} if wire else {SLOT_COLUMN: "START" if player_id in starters else "BN"}),
                     "Proj": f"{projection.points:.1f}" if projection else "0.0",

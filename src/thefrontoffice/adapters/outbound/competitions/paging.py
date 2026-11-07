@@ -12,11 +12,7 @@ does on the card: sorting "£15.5m" as text puts it below "£9.0m", and parsing
 it back would mean teaching this module every sport's units.
 """
 
-from thefrontoffice.domain.models import PlayerCard, PlayerPage, PlayerQuery
-
-POSITION_COLUMN = "Pos"
-"""Every sport names its position column this, which is what makes one
-position filter work for all of them."""
+from thefrontoffice.domain.models import POSITION_COLUMN, PlayerCard, PlayerPage, PlayerQuery
 
 
 def page(ranked: list[PlayerCard], query: PlayerQuery) -> PlayerPage:
