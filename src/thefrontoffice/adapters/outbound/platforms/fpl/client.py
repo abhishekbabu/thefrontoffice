@@ -18,7 +18,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     POSITIONS,

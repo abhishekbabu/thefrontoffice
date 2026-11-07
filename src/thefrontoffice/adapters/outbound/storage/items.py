@@ -7,10 +7,9 @@ handful. Kept for a season — a decision about week 3 means nothing by week
 back a dismissal someone still meant.
 """
 
-from collections.abc import Mapping
 from datetime import timedelta
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.storage import scopes
 from thefrontoffice.domain.models import ItemState
 from thefrontoffice.domain.ports import ItemStateStore
@@ -19,13 +18,11 @@ KEEP_FOR = timedelta(days=180)
 
 
 class DiskItemStateStore(ItemStateStore):
-    def __init__(self, cache: JsonDiskCache, *, renamed: Mapping[str, str]) -> None:
-        """`renamed` maps a competition's registry key to the name its decisions were once kept under."""
+    def __init__(self, cache: JsonDiskCache) -> None:
         self._cache = cache
-        self._renamed = renamed
 
     def states(self, scope: str) -> dict[str, ItemState]:
-        stored = scopes.read(self._cache, scope, KEEP_FOR, self._renamed) or {}
+        stored = scopes.read(self._cache, scope, KEEP_FOR) or {}
         return {key: ItemState.model_validate(value) for key, value in stored.items()}
 
     def save(self, scope: str, states: dict[str, ItemState]) -> None:

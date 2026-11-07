@@ -10,7 +10,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Protocol
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import (
     YahooContext,

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from support.http import NO_WAIT, FakeSession
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import Opponent
