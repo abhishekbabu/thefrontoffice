@@ -1,6 +1,6 @@
 """Tests for the domain's own models."""
 
-from thefrontoffice.domain.models import Move, TradeProposal, Urgency, outcome, urgency_rank
+from thefrontoffice.domain.models import Move, TradeProposal, Urgency, outcome, record, urgency_rank
 
 # ── TradeProposal ───────────────────────────────────────────────────────
 
@@ -37,3 +37,7 @@ def test_a_move_reads_as_an_instruction_naming_only_a_counterpart_it_takes_out()
     watch = move.model_copy(update={"action": "MONITOR"})
 
     assert (move.title, watch.title) == ("Start A over B", "Watch A")
+
+
+def test_a_record_names_ties_only_where_there_were_any() -> None:
+    assert (record(4, 2), record(4, 2, 1)) == ("4-2", "4-2-1")

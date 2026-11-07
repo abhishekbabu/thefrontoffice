@@ -1,28 +1,30 @@
 """Tests for YahooClient, the reader of one Yahoo league.
 
 The client builds Yahoo's query strings by hand and walks the XML it gets back,
-so both are ours to get right. A fake context stands in for the SDK's HTTP and
-answers in Yahoo's own XML, which the real parser reads.
+and reads what it gets back into its own types, so both are ours to get right.
+A fake context stands in for the SDK's HTTP and answers in Yahoo's own XML,
+which the real parser reads.
 """
 
 import threading
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
 
 import pytest
 import requests
 from support.http import NO_WAIT, http_error
+from support.yahoo import SDK_STORE_TTL, FakeContext
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
-from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient, translate
+from thefrontoffice.adapters.outbound.platforms.yahoo.client import SCOREBOARD_TTL_SECONDS, YahooClient, translate
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooAPIError,
     YahooAuthError,
     YahooLoginRequiredError,
     YahooUnavailableError,
 )
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import TeamStanding, YahooLeague, YahooPlayer
 from thefrontoffice.domain.errors import TeamNotFoundError
 
 STATS = {"PTS": "12", "REB": "15", "BLK": "18"}
@@ -32,9 +34,9 @@ STATS = {"PTS": "12", "REB": "15", "BLK": "18"}
 def players_xml(*names: str) -> str:
     """A league's players response, as Yahoo serves it."""
     rows = "".join(
-        f"<player><name><full>{name}</full></name><display_position>PF</display_position>"
+        f"<player><player_key>466.p.{i}</player_key><name><full>{name}</full></name><display_position>PF</display_position>"
         f"<editorial_team_abbr>LAL</editorial_team_abbr></player>"
-        for name in names
+        for i, name in enumerate(names)
     )
     return (
         '<fantasy_content xmlns="http://fantasysports.yahooapis.com/fantasy/v2/base.rng">'
@@ -42,52 +44,50 @@ def players_xml(*names: str) -> str:
     )
 
 
-class FakeContext:
-    """Stands in for yahoofantasy's Context.
+def teams_xml(*teams: str) -> str:
+    return f"<fantasy_content><league><teams>{''.join(teams)}</teams></league></fantasy_content>"
 
-    `make_request` is the only fetch the client makes through the SDK for
-    itself. `_load_or_fetch` survives for the scoreboard alone, where `Week.sync`
-    reads the SDK's own store and pre-warming that key is the only way to force
-    a refresh.
-    """
 
-    def __init__(self, response: Any = None, error: Exception | None = None) -> None:
-        self.response = response
-        self.error = error
-        self.fail_first: list[Exception] = []
-        """Raised one per request, before any answer."""
-        self.requests: list[tuple[str, Any]] = []
-        self.barrier: threading.Barrier | None = None
-        """Held by each request until all its parties arrive, so serial requests never finish."""
-        self.refresh_ttls: list[int] = []
+def team_xml(key: str, name: str, *, mine: bool = False, adds: int = 0, standings: str = "") -> str:
+    owned = "<is_owned_by_current_login>1</is_owned_by_current_login>" if mine else ""
+    return (
+        f"<team><team_key>{key}</team_key><name>{name}</name>{owned}"
+        f"<roster_adds><value>{adds}</value></roster_adds>{standings}</team>"
+    )
 
-    def _load_or_fetch(self, cache_key: str, query: str, **kwargs: Any) -> Any:
-        self.refresh_ttls.append(kwargs.get("persist_ttl", 3600))
-        if self.error:
-            raise self.error
-        return self.response
 
-    def make_request(self, query: str, league: Any = False) -> Any:
-        self.requests.append((query, league))
-        if self.fail_first:
-            raise self.fail_first.pop(0)
-        if self.error:
-            raise self.error
-        if self.barrier:
-            self.barrier.wait()
-        return self.response
+def standings_xml(rank: int, wins: int, losses: int, ties: int, points: str) -> str:
+    return (
+        f"<team_standings><rank>{rank}</rank><points_for>{points}</points_for><outcome_totals>"
+        f"<wins>{wins}</wins><losses>{losses}</losses><ties>{ties}</ties></outcome_totals></team_standings>"
+    )
 
-    @property
-    def queries(self) -> list[str]:
-        return [query for query, _ in self.requests]
+
+def roster_xml(*players: str) -> str:
+    return f"<fantasy_content><team><roster><players>{''.join(players)}</players></roster></team></fantasy_content>"
+
+
+def rostered_xml(name: str, slot: str, status: str = "", note: str = "") -> str:
+    return (
+        f"<player><player_key>466.p.{len(name)}</player_key><name><full>{name}</full></name>"
+        f"<display_position>PG,SG</display_position><editorial_team_abbr>BOS</editorial_team_abbr>"
+        f"<status>{status}</status><injury_note>{note}</injury_note>"
+        f"<selected_position><position>{slot}</position></selected_position></player>"
+    )
+
+
+LEAGUE = YahooLeague(league_key="466.l.123", name="My League", current_week=5)
 
 
 def _client(
-    tmp_path: Path, response: Any = None, error: Exception | None = None, teams: list[Any] | None = None
+    tmp_path: Path,
+    response: str = "<fantasy_content/>",
+    error: Exception | None = None,
+    answers: dict[str, str] | None = None,
+    league: YahooLeague = LEAGUE,
 ) -> tuple[YahooClient, FakeContext]:
-    ctx = FakeContext(response, error)
-    league = SimpleNamespace(id="466.l.123", name="My League", ctx=ctx, teams=lambda: teams or [])
-    return YahooClient(league, cache=JsonDiskCache(tmp_path / "cache"), retry=NO_WAIT), ctx
+    ctx = FakeContext(response, error, answers)
+    return YahooClient(league, context=ctx, cache=JsonDiskCache(tmp_path / "cache"), retry=NO_WAIT), ctx
 
 
 # ── fetch_top_by_stat ───────────────────────────────────────────────────
@@ -98,9 +98,7 @@ def test_one_request_per_stat_asked_for_keyed_as_asked(tmp_path: Path) -> None:
 
     results = client.fetch_top_by_stat(STATS, per_stat=4)
 
-    assert {name: [p.name.full for p in players] for name, players in results.items()} == {
-        name: ["A B"] for name in STATS
-    }
+    assert {name: [p.name for p in players] for name, players in results.items()} == {name: ["A B"] for name in STATS}
     assert all("count=4" in q and "status=A" in q for q in ctx.queries)
     assert {q.split("sort=")[1].split(";")[0] for q in ctx.queries} == set(STATS.values())
     assert {league for _, league in ctx.requests} == {"466.l.123"}
@@ -137,7 +135,7 @@ def test_an_unparseable_response_raises_and_is_not_kept(tmp_path: Path) -> None:
         client.fetch_top_by_stat(STATS, per_stat=4)
 
     ctx.response = players_xml("A B")
-    assert client.fetch_top_by_stat(STATS, per_stat=4)["PTS"][0].name.full == "A B"
+    assert client.fetch_top_by_stat(STATS, per_stat=4)["PTS"][0].name == "A B"
 
 
 def test_a_failing_category_fails_them_all(tmp_path: Path) -> None:
@@ -161,7 +159,7 @@ def test_available_players_include_those_on_waivers_by_season_rank(tmp_path: Pat
 
     available = client.fetch_available(count=2)
 
-    assert [p.name.full for p in available] == ["A B", "C D"]
+    assert [p.name for p in available] == ["A B", "C D"]
     assert ctx.queries == ["players;count=2;status=A;sort=AR;sort_type=season"]
 
 
@@ -179,7 +177,7 @@ def test_a_transient_failure_is_retried(tmp_path: Path) -> None:
     client, ctx = _client(tmp_path, players_xml("A B"))
     ctx.fail_first = [requests.exceptions.Timeout()]
 
-    assert [p.name.full for p in client.fetch_available()] == ["A B"]
+    assert [p.name for p in client.fetch_available()] == ["A B"]
     assert len(ctx.requests) == 2
 
 
@@ -202,7 +200,7 @@ def test_a_search_is_scoped_to_the_league_once(tmp_path: Path) -> None:
     results = client.search_players("LeBron James")
 
     assert ctx.requests == [("players;search=LeBron James", "466.l.123")]
-    assert [p.name.full for p in results] == ["LeBron James"]
+    assert [p.name for p in results] == ["LeBron James"]
 
 
 def test_a_search_is_served_from_cache_once_made(tmp_path: Path) -> None:
@@ -239,160 +237,191 @@ def test_a_search_on_an_unexpected_shape_raises(tmp_path: Path) -> None:
 # ── teams ───────────────────────────────────────────────────────────────
 
 
+def test_each_team_is_read_with_its_standing(tmp_path: Path) -> None:
+    client, ctx = _client(
+        tmp_path,
+        teams_xml(
+            team_xml("t.1", "Mine", mine=True, adds=2, standings=standings_xml(2, 4, 2, 1, "790")),
+            team_xml("t.2", "Theirs"),
+        ),
+    )
+
+    mine, theirs = client.teams()
+
+    assert (mine.team_key, mine.name, mine.is_mine, mine.adds_used) == ("t.1", "Mine", True, 2)
+    assert mine.standing == TeamStanding(rank=2, wins=4, losses=2, ties=1, points_for="790")
+    assert (theirs.is_mine, theirs.standing) == (False, None)
+    assert ctx.requests == [("teams", "466.l.123")]
+
+
 def test_the_owned_team_is_returned(tmp_path: Path) -> None:
-    mine = SimpleNamespace(name="Mine", is_owned_by_current_login=1)
-    theirs = SimpleNamespace(name="Theirs")
-    client, _ = _client(tmp_path, teams=[theirs, mine])
-    assert client.get_user_team() is mine
+    client, _ = _client(tmp_path, teams_xml(team_xml("t.2", "Theirs"), team_xml("t.1", "Mine", mine=True)))
+    assert client.get_user_team().name == "Mine"
 
 
 def test_owning_no_team_raises_with_the_league_name(tmp_path: Path) -> None:
-    client, _ = _client(tmp_path, teams=[SimpleNamespace(name="Theirs", is_owned_by_current_login=0)])
+    client, _ = _client(tmp_path, teams_xml(team_xml("t.2", "Theirs")))
     with pytest.raises(TeamNotFoundError) as caught:
         client.get_user_team()
     assert caught.value.league_name == "My League"
 
 
+def test_the_team_list_is_served_from_cache_once_fetched(tmp_path: Path) -> None:
+    client, ctx = _client(tmp_path, teams_xml(team_xml("t.1", "Mine", mine=True)))
+    client.teams()
+    client.get_user_team()
+    assert len(ctx.requests) == 1
+
+
 def test_a_refused_team_list_names_the_missing_permission(tmp_path: Path) -> None:
-    """The SDK fetches teams itself, and fails in requests' terms."""
-    client, ctx = _client(tmp_path)
-
-    def _refused() -> list[Any]:
-        raise http_error(403)
-
-    client.league = SimpleNamespace(id="466.l.123", name="My League", ctx=ctx, teams=_refused)
+    client, _ = _client(tmp_path, error=http_error(403))
     with pytest.raises(YahooAuthError):
         client.teams()
+
+
+def test_an_unrecognized_team_list_raises(tmp_path: Path) -> None:
+    client, _ = _client(tmp_path, "<fantasy_content><error>?</error></fantasy_content>")
+    with pytest.raises(YahooAPIError):
+        client.teams()
+
+
+# ── rosters ─────────────────────────────────────────────────────────────
+
+
+def test_a_roster_says_where_each_player_sits_and_what_ails_them(tmp_path: Path) -> None:
+    client, ctx = _client(
+        tmp_path, roster_xml(rostered_xml("A B", "IL", status="O", note="knee"), rostered_xml("C D", "BN"))
+    )
+
+    hurt, benched = client.roster("nba.l.123.t.1")
+
+    assert hurt == YahooPlayer(
+        player_key="466.p.3",
+        name="A B",
+        position="PG,SG",
+        team="BOS",
+        status="O",
+        injury_note="knee",
+        slot="IL",
+    )
+    assert (benched.slot, benched.status) == ("BN", "")
+    assert ctx.requests == [("team/nba.l.123.t.1/roster", False)]
+
+
+def test_a_roster_failure_is_ours_to_render_not_requests(tmp_path: Path) -> None:
+    """The SDK's own roster fetch failed in requests' terms, and escaped as a 500."""
+    client, _ = _client(tmp_path, error=requests.ConnectionError("down"))
+    with pytest.raises(YahooUnavailableError):
+        client.roster("t.1")
 
 
 # ── the matchup ─────────────────────────────────────────────────────────
 
 
-class FakeWeek:
-    """Stands in for yahoofantasy's Week, which the client builds itself."""
-
-    def __init__(self, matchups: list[Any], error: Exception | None = None) -> None:
-        self.matchups = matchups
-        self.error = error
-
-    def sync(self) -> None:
-        if self.error:
-            raise self.error
-
-
-def _fake_team(team_key: str) -> Any:
-    """A duck-typed Team; the client only reads .team_key off it."""
-    return SimpleNamespace(team_key=team_key)
-
-
-def _stat(stat_id: str, value: str) -> Any:
-    return SimpleNamespace(stat_id=stat_id, value=value)
-
-
-def _team_data(points: str, stats: list[Any]) -> Any:
-    return SimpleNamespace(
-        team_stats=SimpleNamespace(stats=SimpleNamespace(stat=stats)),
-        team_points=SimpleNamespace(total=points),
+def _side_xml(key: str, name: str, points: str, blocks: str) -> str:
+    return (
+        f"<team><team_key>{key}</team_key><name>{name}</name><team_points><total>{points}</total></team_points>"
+        f"<team_stats><stats><stat><stat_id>18</stat_id><value>{blocks}</value></stat></stats></team_stats></team>"
     )
 
 
-def _matchup(my_key: str = "t1") -> Any:
-    mine = SimpleNamespace(team_key=my_key, name="Mine", players=lambda: [])
-    theirs = SimpleNamespace(
-        team_key="t2",
-        name="Theirs",
-        players=lambda: [SimpleNamespace(name=SimpleNamespace(full="Star Player"), display_position="PG")],
+def scoreboard_xml(start: str = "2026-02-09", end: str = "2026-02-15") -> str:
+    matchup = (
+        f"<matchup><week_start>{start}</week_start><week_end>{end}</week_end>"
+        f"<teams>{_side_xml('t1', 'Mine', '50', '12')}{_side_xml('t2', 'Theirs', '60', '17')}</teams></matchup>"
     )
-    return SimpleNamespace(
-        team1=mine,
-        team2=theirs,
-        week_start="2026-02-09",
-        week_end="2026-02-15",
-        teams=SimpleNamespace(team=[_team_data("50", [_stat("18", "12")]), _team_data("60", [_stat("18", "17")])]),
+    return (
+        f"<fantasy_content><league><scoreboard><matchups>{matchup}</matchups></scoreboard></league></fantasy_content>"
     )
 
 
-def _matchup_client(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    *matchups: Any,
-    week: int | None = 5,
-    sync_error: Exception | None = None,
-) -> tuple[YahooClient, FakeContext]:
-    import thefrontoffice.adapters.outbound.platforms.yahoo.client as mod
-
-    monkeypatch.setattr(mod, "Week", lambda ctx, league, week_num: FakeWeek(list(matchups), sync_error))
-    client, ctx = _client(tmp_path, "")
-    client.league.current_week = week
+def _matchup_client(tmp_path: Path, scoreboard: str | None = None, **kwargs: object) -> tuple[YahooClient, FakeContext]:
+    answers = {
+        "scoreboard;week=5": scoreboard or scoreboard_xml(),
+        "team/t2/roster": roster_xml(rostered_xml("Star Player", "PG")),
+        "team/t1/roster": roster_xml(rostered_xml("My Player", "C")),
+    }
+    client, ctx = _client(tmp_path, answers=answers)
+    for name, value in kwargs.items():
+        setattr(ctx, name, value)
     return client, ctx
 
 
-def test_the_matchup_is_read_into_both_sides_by_stat_id(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    client, _ = _matchup_client(monkeypatch, tmp_path, _matchup())
-    info = client.get_matchup(_fake_team("t1"))
+def test_the_matchup_is_read_into_both_sides_by_stat_id(tmp_path: Path) -> None:
+    client, _ = _matchup_client(tmp_path)
+    info = client.get_matchup("t1")
 
     assert info is not None
     assert (info.start, info.end) == (date(2026, 2, 9), date(2026, 2, 15))
     assert (info.mine.name, info.mine.points, info.mine.stats) == ("Mine", "50", {"18": "12"})
     assert (info.opponent.name, info.opponent.points, info.opponent.stats) == ("Theirs", "60", {"18": "17"})
-    assert [(p.name, p.position) for p in info.opponent_roster] == [("Star Player", "PG")]
+    assert [(p.name, p.position) for p in info.opponent_roster] == [("Star Player", "PG,SG")]
 
 
-def test_the_second_team_listed_still_reads_as_mine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    client, _ = _matchup_client(monkeypatch, tmp_path, _matchup())
-    info = client.get_matchup(_fake_team("t2"))
+def test_the_second_team_listed_still_reads_as_mine(tmp_path: Path) -> None:
+    client, _ = _matchup_client(tmp_path)
+    info = client.get_matchup("t2")
 
     assert info is not None
     assert (info.mine.name, info.mine.stats) == ("Theirs", {"18": "17"})
     assert info.opponent.name == "Mine"
+    assert [p.name for p in info.opponent_roster] == ["My Player"]
 
 
-def test_no_matchup_this_week_is_an_answer_not_a_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    client, _ = _matchup_client(monkeypatch, tmp_path, _matchup())
-    assert client.get_matchup(_fake_team("t9")) is None
-    client, _ = _matchup_client(monkeypatch, tmp_path, _matchup(), week=None)
-    assert client.get_matchup(_fake_team("t1")) is None
+def test_no_matchup_this_week_is_an_answer_not_a_failure(tmp_path: Path) -> None:
+    client, _ = _matchup_client(tmp_path)
+    assert client.get_matchup("t9") is None
+
+    empty = "<fantasy_content><league><scoreboard><matchups count='0'/></scoreboard></league></fantasy_content>"
+    client, _ = _matchup_client(tmp_path / "empty", empty)
+    assert client.get_matchup("t1") is None
 
 
-def test_the_scoreboard_is_refreshed_on_a_short_ttl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_between_seasons_there_is_no_week_to_ask_about(tmp_path: Path) -> None:
+    client, ctx = _client(tmp_path, league=replace(LEAGUE, current_week=None))
+
+    assert client.get_matchup("t1") is None
+    assert ctx.store_ttls == []
+
+
+def test_the_scoreboard_is_refreshed_on_a_short_ttl(tmp_path: Path) -> None:
     """An hour-old scoreboard would misstate every category margin."""
-    import thefrontoffice.adapters.outbound.platforms.yahoo.client as mod
+    client, ctx = _matchup_client(tmp_path)
+    client.get_matchup("t1")
 
-    client, ctx = _matchup_client(monkeypatch, tmp_path, _matchup())
-    client.get_matchup(_fake_team("t1"))
-
-    assert ctx.refresh_ttls == [mod.SCOREBOARD_TTL_SECONDS]
-    assert mod.SCOREBOARD_TTL_SECONDS < 3600
+    assert ctx.store_ttls == [SCOREBOARD_TTL_SECONDS]
+    assert SCOREBOARD_TTL_SECONDS < SDK_STORE_TTL
 
 
-def test_a_failed_scoreboard_refresh_falls_back_to_the_persisted_copy(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    client, ctx = _matchup_client(monkeypatch, tmp_path, _matchup())
-    ctx.error = RuntimeError("yahoo down")
+def test_a_failed_scoreboard_refresh_falls_back_to_the_persisted_copy(tmp_path: Path) -> None:
+    client, ctx = _matchup_client(tmp_path, fail_first=[RuntimeError("yahoo down")])
 
-    info = client.get_matchup(_fake_team("t1"))
+    info = client.get_matchup("t1")
 
     assert info is not None
-    assert info.start == date(2026, 2, 9)  # still served from Week.sync
+    assert info.start == date(2026, 2, 9)
+    assert ctx.store_ttls == [SCOREBOARD_TTL_SECONDS, SDK_STORE_TTL]
 
 
-def test_a_failed_scoreboard_raises_rather_than_reading_as_no_matchup(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    client, _ = _matchup_client(monkeypatch, tmp_path, _matchup(), sync_error=requests.ConnectionError("yahoo down"))
+def test_a_failed_scoreboard_raises_rather_than_reading_as_no_matchup(tmp_path: Path) -> None:
+    client, _ = _matchup_client(tmp_path, error=requests.ConnectionError("yahoo down"))
 
     with pytest.raises(YahooUnavailableError):
-        client.get_matchup(_fake_team("t1"))
+        client.get_matchup("t1")
 
 
-def test_an_unreadable_matchup_date_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    odd = _matchup()
-    odd.week_start = "someday"
-    client, _ = _matchup_client(monkeypatch, tmp_path, odd)
+def test_an_unreadable_matchup_date_raises(tmp_path: Path) -> None:
+    client, _ = _matchup_client(tmp_path, scoreboard_xml(start="someday"))
 
     with pytest.raises(YahooAPIError):
-        client.get_matchup(_fake_team("t1"))
+        client.get_matchup("t1")
+
+
+def test_an_unrecognized_scoreboard_raises(tmp_path: Path) -> None:
+    client, _ = _matchup_client(tmp_path, "<fantasy_content><error>?</error></fantasy_content>")
+
+    with pytest.raises(YahooAPIError):
+        client.get_matchup("t1")
 
 
 # ── translating transport failures ──────────────────────────────────────

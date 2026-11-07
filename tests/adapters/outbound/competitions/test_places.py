@@ -1,6 +1,6 @@
 """Tests for table places: `competitions/places.py`."""
 
-from thefrontoffice.adapters.outbound.competitions.places import ordinal, place
+from thefrontoffice.adapters.outbound.competitions.places import ordinal, place, season
 
 
 def test_the_teens_are_all_th_whatever_their_last_digit() -> None:
@@ -20,3 +20,12 @@ def test_the_teens_are_all_th_whatever_their_last_digit() -> None:
 
 def test_a_place_says_how_many_it_is_out_of() -> None:
     assert place(5, 14) == "5th of 14"
+
+
+def test_a_season_is_headed_by_the_record_and_the_place_it_earns() -> None:
+    assert {s.label: s.value for s in season("4-2-1", 2, 14)} == {"Record": "4-2-1", "Place": "2nd of 14"}
+
+
+def test_a_season_leaves_out_what_the_league_has_not_given() -> None:
+    """No record yet, or a table not yet ranked: a blank figure would read as a real one."""
+    assert season("", 0, 14) == []

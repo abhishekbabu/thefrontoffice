@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 import requests
 from support.http import NO_WAIT, http_error
+from support.yahoo import FakeContext
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
@@ -17,21 +18,6 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
 )
 
 REDIRECT = "https://localhost:8080"
-
-
-class FakeContext:
-    """Stands in for yahoofantasy's Context, answering every request alike."""
-
-    def __init__(self, response: str = "<fantasy_content/>", error: Exception | None = None) -> None:
-        self.response = response
-        self.error = error
-        self.queries: list[str] = []
-
-    def make_request(self, query: str) -> str:
-        self.queries.append(query)
-        if self.error:
-            raise self.error
-        return self.response
 
 
 class Authorizations:
@@ -174,8 +160,8 @@ def _games(games: str) -> str:
     return f"<fantasy_content><users><user>{games}</user></users></fantasy_content>"
 
 
-def _league(key: str, name: str) -> str:
-    return f"<league><league_key>{key}</league_key><name>{name}</name></league>"
+def _league(key: str, name: str, extra: str = "") -> str:
+    return f"<league><league_key>{key}</league_key><name>{name}</name>{extra}</league>"
 
 
 def test_leagues_are_looked_up_by_game_code_and_season(tmp_path: Path) -> None:
@@ -188,8 +174,24 @@ def test_leagues_are_looked_up_by_game_code_and_season(tmp_path: Path) -> None:
     leagues = _auth(tmp_path, context=context).find_leagues("nba", 2031)
 
     assert context.queries == ["users;use_login=1/games;game_codes=nba;seasons=2031/leagues"]
-    assert [(league.id, league.name) for league in leagues] == [("466.l.1", "One"), ("466.l.2", "Two")]
-    assert all(league.ctx is context for league in leagues)
+    assert [(league.league_key, league.name) for league in leagues] == [("466.l.1", "One"), ("466.l.2", "Two")]
+
+
+def test_a_league_carries_its_kind_and_the_week_it_is_in(tmp_path: Path) -> None:
+    extra = "<league_type>private</league_type><current_week>7</current_week>"
+    context = FakeContext(_games(f"<games><game><leagues>{_league('466.l.1', 'One', extra)}</leagues></game></games>"))
+
+    [league] = _auth(tmp_path, context=context).find_leagues("nba", 2026)
+
+    assert (league.league_type, league.current_week) == ("private", 7)
+
+
+def test_a_league_between_seasons_has_no_current_week(tmp_path: Path) -> None:
+    context = FakeContext(_games(f"<games><game><leagues>{_league('466.l.1', 'One')}</leagues></game></games>"))
+
+    [league] = _auth(tmp_path, context=context).find_leagues("nba", 2026)
+
+    assert league.current_week is None
 
 
 def test_a_single_league_is_not_mistaken_for_a_list(tmp_path: Path) -> None:

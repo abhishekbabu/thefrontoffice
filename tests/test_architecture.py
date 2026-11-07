@@ -100,6 +100,23 @@ def test_only_the_composition_root_builds_a_platform_client() -> None:
     assert built == []
 
 
+def test_only_the_yahoo_platform_reads_the_yahoo_sdk() -> None:
+    """yahoofantasy sets its attributes at runtime and is typed as Any, so it stays behind the client.
+
+    Everything beyond `platforms/yahoo/` reads the client's own types; the
+    composition root alone may hand the SDK's context to it.
+    """
+    reached = [
+        f"{path.relative_to(PACKAGE)}:{node.lineno}"
+        for path in _modules(".")
+        if path.name != "bootstrap.py" and not path.is_relative_to(PACKAGE / "adapters/outbound/platforms/yahoo")
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if (isinstance(node, ast.ImportFrom) and (node.module or "").startswith("yahoofantasy"))
+        or (isinstance(node, ast.Import) and any(a.name.startswith("yahoofantasy") for a in node.names))
+    ]
+    assert reached == []
+
+
 def test_the_nfls_rules_read_its_own_model_and_only_its_provider_names_the_league_platform() -> None:
     """The rules are the competition's, so a second platform for the NFL is a provider and nothing else.
 

@@ -2,13 +2,20 @@
 
 from collections.abc import Mapping
 from datetime import date, datetime
-from types import SimpleNamespace
 from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame, SeasonState
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup, MatchupSide, RosteredPlayer, Timeframe
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
+    Matchup,
+    MatchupSide,
+    TeamStanding,
+    Timeframe,
+    YahooLeague,
+    YahooPlayer,
+    YahooTeam,
+)
 
 
 def make_player(
@@ -16,21 +23,19 @@ def make_player(
     position: str = "PF",
     team: str = "LAL",
     key: str | None = None,
-    status: str | None = None,
-    selected_position: str | None = None,
-) -> Any:
-    """A duck-typed stand-in for a yahoofantasy Player."""
-    player = SimpleNamespace(
-        name=SimpleNamespace(full=name),
-        display_position=position,
-        editorial_team_abbr=team,
+    status: str = "",
+    selected_position: str = "",
+    injury_note: str = "",
+) -> YahooPlayer:
+    return YahooPlayer(
         player_key=key or name.lower().replace(" ", "-"),
+        name=name,
+        position=position,
+        team=team,
+        status=status,
+        injury_note=injury_note,
+        slot=selected_position,
     )
-    if status:
-        player.status = status
-    if selected_position:
-        player.selected_position = SimpleNamespace(position=selected_position)
-    return player
 
 
 def yahoo_team(
@@ -41,42 +46,37 @@ def yahoo_team(
     losses: int,
     ties: int = 0,
     points: str = "",
-    roster: list[Any] | None = None,
-) -> Any:
-    """A yahoofantasy Team, which sets its attributes by setattr at runtime."""
-    return SimpleNamespace(
-        name=name,
+    mine: bool = False,
+) -> YahooTeam:
+    return YahooTeam(
         team_key=key,
-        players=lambda: roster if roster is not None else [make_player(f"{name} One")],
-        team_standings=SimpleNamespace(
-            rank=rank,
-            points_for=points,
-            outcome_totals=SimpleNamespace(wins=wins, losses=losses, ties=ties),
-        ),
+        name=name,
+        is_mine=mine,
+        standing=TeamStanding(rank=rank, wins=wins, losses=losses, ties=ties, points_for=points),
     )
 
 
 DEFAULT_TEAMS = [
     yahoo_team("Their Team", "t.2", rank=1, wins=5, losses=1, points="812"),
-    yahoo_team("My Team", "t.1", rank=2, wins=4, losses=2, ties=1, points="790"),
+    yahoo_team("My Team", "t.1", rank=2, wins=4, losses=2, ties=1, points="790", mine=True),
 ]
 
 
 class FakeYahoo:
-    """Stands in for YahooClient."""
+    """Stands in for YahooClient: the user's team is t.1, holding `roster`; every other team holds one player."""
 
     def __init__(
         self,
-        roster: list[Any] | None = None,
-        stat_leaders: dict[str, list[Any]] | None = None,
+        roster: list[YahooPlayer] | None = None,
+        stat_leaders: dict[str, list[YahooPlayer]] | None = None,
         matchup_dates: tuple[date, date] | None = (date(2026, 2, 9), date(2026, 2, 15)),
-        search_results: dict[str, list[Any]] | None = None,
+        search_results: dict[str, list[YahooPlayer]] | None = None,
         adds_used: int = 0,
-        teams: list[Any] | None = None,
-        available: list[Any] | None = None,
+        teams: list[YahooTeam] | None = None,
+        available: list[YahooPlayer] | None = None,
         roster_error: Exception | None = None,
     ) -> None:
-        self.roster = roster if roster is not None else [make_player("Roster One")]
+        self.roster_players = roster if roster is not None else [make_player("Roster One", selected_position="PF")]
         self.roster_error = roster_error
         self.stat_leaders = stat_leaders or {}
         self.matchup_dates = matchup_dates
@@ -85,31 +85,25 @@ class FakeYahoo:
         self.matchup_fetches = 0
         self.league_teams = teams if teams is not None else DEFAULT_TEAMS
         self.available = available if available is not None else [make_player("Waiver One")]
-        self.available_error: Exception | None = None
 
-    def get_user_team(self) -> Any:
-        return SimpleNamespace(
-            name="My Team",
-            team_key="t.1",
-            roster_adds=SimpleNamespace(value=self.adds_used),
-            players=self._players,
-            roster=lambda: SimpleNamespace(players=self._players()),
-        )
+    def get_user_team(self) -> YahooTeam:
+        return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
 
-    def _players(self) -> list[Any]:
+    def roster(self, team_key: str) -> list[YahooPlayer]:
+        if team_key != "t.1":
+            name = next((t.name for t in self.league_teams if t.team_key == team_key), team_key)
+            return [make_player(f"{name} One", selected_position="PF")]
         if self.roster_error:
             raise self.roster_error
-        return self.roster
+        return self.roster_players
 
-    def teams(self) -> list[Any]:
+    def teams(self) -> list[YahooTeam]:
         return self.league_teams
 
-    def fetch_available(self, count: int = 100) -> list[Any]:
-        if self.available_error:
-            raise self.available_error
+    def fetch_available(self, count: int = 100) -> list[YahooPlayer]:
         return self.available[:count]
 
-    def get_matchup(self, my_team: Any) -> Matchup | None:
+    def get_matchup(self, team_key: str) -> Matchup | None:
         """This week against Their Team, 12 blocks to 17; no matchup when built without dates."""
         self.matchup_fetches += 1
         if self.matchup_dates is None:
@@ -120,17 +114,33 @@ class FakeYahoo:
             end=end,
             mine=MatchupSide(team_key="t.1", name="My Team", points="4", stats={BLOCKS.yahoo_stat: "12"}),
             opponent=MatchupSide(team_key="t.2", name="Their Team", points="5", stats={BLOCKS.yahoo_stat: "17"}),
-            opponent_roster=[RosteredPlayer(name="Their Star", position="C")],
+            opponent_roster=[make_player("Their Star", position="C")],
         )
 
     def fetch_top_by_stat(
         self, stats: Mapping[str, str], per_stat: int = 10, sort_type: Timeframe = Timeframe.LAST_WEEK
-    ) -> dict[str, list[Any]]:
+    ) -> dict[str, list[YahooPlayer]]:
         """The leaders this was built with, for the categories asked about."""
         return {name: self.stat_leaders[name] for name in stats if name in self.stat_leaders}
 
-    def search_players(self, query: str) -> list[Any]:
+    def search_players(self, query: str) -> list[YahooPlayer]:
         return self.search_results.get(query, [])
+
+
+def yahoo_league(key: str = "466.l.1", name: str = "One") -> YahooLeague:
+    return YahooLeague(league_key=key, name=name, league_type="head", current_week=5)
+
+
+class FakeYahooAuth:
+    """Stands in for YahooAuth, finding the leagues it was built with."""
+
+    def __init__(self, leagues: list[YahooLeague] | None = None) -> None:
+        self.leagues = leagues if leagues is not None else [yahoo_league()]
+        self.searches: list[tuple[str, int]] = []
+
+    def find_leagues(self, game_code: str, season: int) -> list[YahooLeague]:
+        self.searches.append((game_code, season))
+        return self.leagues
 
 
 class FakeSleeperProjections:
@@ -206,17 +216,14 @@ class FakeNBA:
 def nba_provider(
     yahoo: FakeYahoo | None = None,
     *,
-    league: Any = None,
-    all_leagues: list[Any] | None = None,
     nba: FakeNBA | None = None,
     sleeper: FakeSleeperProjections | None = None,
 ) -> YahooNBAProvider:
     """The NBA provider over these stand-ins, as bootstrap would wire it over the real clients."""
     return YahooNBAProvider(
-        league,
-        all_leagues=all_leagues,
-        nba=nba or FakeNBA(),
+        auth=FakeYahooAuth(),
         yahoo_for=lambda _: yahoo or FakeYahoo(),
+        nba=nba or FakeNBA(),
         sleeper=sleeper or FakeSleeperProjections(),
         max_weekly_adds=3,
     )

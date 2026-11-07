@@ -99,30 +99,21 @@ def test_the_premier_league_entry_builds_its_provider(monkeypatch: pytest.Monkey
     assert isinstance(fpl.open(), fpl.provider())
 
 
-def test_the_nba_entry_discovers_leagues_and_wraps_them(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The NBA build performs the Yahoo handshake, then hands the provider every league it found."""
-    from types import SimpleNamespace
+def test_the_nba_entry_builds_its_provider_without_contacting_yahoo() -> None:
+    """Building runs on every request; the leagues are found when a call first needs them.
 
-    from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
+    The autouse fixture leaves no token cached, so the first call that reads
+    Yahoo reports the missing login rather than starting one.
+    """
+    from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
 
-    leagues = [SimpleNamespace(id="1", name="One", league_type="head"), SimpleNamespace(id="2", name="Two")]
-    monkeypatch.setattr(YahooAuth, "find_leagues", lambda self, game, season: leagues)
     nba = REGISTRY.find("nba")
 
     provider = nba.build()
 
     assert isinstance(provider, nba.provider())
-    assert [r.name for r in provider.list_leagues()] == ["One", "Two"]
-
-
-def test_no_nba_leagues_is_a_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
-    from thefrontoffice.domain.errors import LeagueNotFoundError
-
-    monkeypatch.setattr(YahooAuth, "find_leagues", lambda self, game, season: [])
-
-    with pytest.raises(LeagueNotFoundError):
-        REGISTRY.find("nba").build()
+    with pytest.raises(YahooLoginRequiredError):
+        provider.list_leagues()
 
 
 # ── what a competition can do ───────────────────────────────────────────

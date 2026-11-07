@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import requests
+import yahoofantasy
 from yahoofantasy.util import persistence
 
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
@@ -90,11 +91,7 @@ def _certificate() -> tuple[Path, Path] | None:
     self-signed pair for exactly this; reusing it avoids asking anyone to
     generate one, at the cost of a browser warning to click through.
     """
-    try:
-        import yahoofantasy.cli as vendor_cli
-    except ImportError:  # pragma: no cover - the package is a hard dependency
-        return None
-    directory = Path(vendor_cli.__file__).parent
+    directory = Path(yahoofantasy.__file__).parent / "cli"
     certificate, key = directory / "localhost.pem", directory / "localhost-key.pem"
     return (certificate, key) if certificate.exists() and key.exists() else None
 
