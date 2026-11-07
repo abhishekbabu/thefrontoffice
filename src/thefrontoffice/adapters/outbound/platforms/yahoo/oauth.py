@@ -21,11 +21,13 @@ import ssl
 import time
 import urllib.parse
 import webbrowser
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import requests
+from yahoofantasy.util import persistence
 
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
 
@@ -38,6 +40,44 @@ FANTASY_READ_SCOPE = "fspt-r"
 """Yahoo's identifier for reading Fantasy Sports teams and leagues."""
 
 CALLBACK_TIMEOUT_SECONDS = 300
+
+
+class CallbackServer(Protocol):
+    """What waiting for the redirect needs of a server: `HTTPServer`, or a test's stand-in."""
+
+    socket: Any
+    timeout: float | None
+
+    def handle_request(self) -> None: ...
+
+    def server_close(self) -> None: ...
+
+
+ServerFactory = Callable[[tuple[str, int], type[BaseHTTPRequestHandler]], CallbackServer]
+
+
+class TokenResponse(Protocol):
+    """What the token exchange reads of a response."""
+
+    status_code: int
+
+    @property
+    def text(self) -> str: ...
+
+    def json(self) -> Any: ...
+
+
+class Post(Protocol):
+    """`requests.post`, as far as the token exchange calls it."""
+
+    def __call__(self, url: str, *, data: dict[str, str], timeout: int) -> TokenResponse: ...
+
+
+Save = Callable[[str, dict[str, Any]], None]
+"""Persists the token under a key, in the vendor's own format."""
+
+Capture = Callable[[str, str, str], str]
+"""Opens the browser and waits for the code: redirect URI, client id and scope in."""
 
 _DONE = "<html><body style='font:16px system-ui;padding:3rem'>Authorized. Close this tab.</body></html>"
 
@@ -92,15 +132,28 @@ class _Callback(BaseHTTPRequestHandler):
             self.close_connection = True
 
 
-def _capture_code(redirect_uri: str, client_id: str, scope: str) -> str:
-    """Open the browser and wait for Yahoo to redirect back with a code."""
+def capture_code(
+    redirect_uri: str,
+    client_id: str,
+    scope: str,
+    *,
+    serve: ServerFactory = HTTPServer,
+    open_browser: Callable[[str], object] = webbrowser.open_new_tab,
+    certificate: Callable[[], tuple[Path, Path] | None] = _certificate,
+    wait_seconds: float = CALLBACK_TIMEOUT_SECONDS,
+) -> str:
+    """Open the browser and wait for Yahoo to redirect back with a code.
+
+    The server, the browser and the certificate arrive as arguments so a test
+    can stand in for each without binding a port or opening a window.
+    """
     parsed = urllib.parse.urlparse(redirect_uri)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
 
     _Callback.code = _Callback.error = None
-    server = HTTPServer(("", port), _Callback)
+    server = serve(("", port), _Callback)
     if parsed.scheme == "https":
-        pair = _certificate()
+        pair = certificate()
         if pair is None:
             raise YahooLoginRequiredError()
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -122,7 +175,7 @@ def _capture_code(redirect_uri: str, client_id: str, scope: str) -> str:
     )
     url = f"{AUTH_URL}?{query}"
     logger.info(f"Opening browser for Yahoo authorization: {url}")
-    webbrowser.open_new_tab(url)
+    open_browser(url)
 
     # Serve until the redirect actually arrives rather than handling a single
     # connection: the first one through is usually a browser preconnect or the
@@ -130,7 +183,7 @@ def _capture_code(redirect_uri: str, client_id: str, scope: str) -> str:
     # handshake a second after it began. Bounded, so a closed tab does not hang
     # the terminal the way `serve_forever` would.
     server.timeout = 1
-    deadline = time.monotonic() + CALLBACK_TIMEOUT_SECONDS
+    deadline = time.monotonic() + wait_seconds
     while _Callback.code is None and _Callback.error is None and time.monotonic() < deadline:
         server.handle_request()
     server.server_close()
@@ -150,15 +203,15 @@ def _capture_code(redirect_uri: str, client_id: str, scope: str) -> str:
         raise YahooLoginRequiredError(f"Yahoo refused the authorization: {_Callback.error}")
     if not _Callback.code:
         raise YahooLoginRequiredError(
-            f"No redirect arrived within {CALLBACK_TIMEOUT_SECONDS}s. The browser must reach "
+            f"No redirect arrived within {wait_seconds:g}s. The browser must reach "
             f"{redirect_uri} — accept the certificate warning if one appears."
         )
     return _Callback.code
 
 
-def _exchange(code: str, client_id: str, client_secret: str, redirect_uri: str) -> dict[str, Any]:
+def _exchange(code: str, client_id: str, client_secret: str, redirect_uri: str, post: Post) -> dict[str, Any]:
     """Trade the code for tokens, against the same redirect URI as the request."""
-    response = requests.post(
+    response = post(
         TOKEN_URL,
         data={
             "client_id": client_id,
@@ -177,18 +230,27 @@ def _exchange(code: str, client_id: str, client_secret: str, redirect_uri: str) 
     return response.json()
 
 
-def authorize(client_id: str, client_secret: str, redirect_uri: str, scope: str = FANTASY_READ_SCOPE) -> None:
+def authorize(
+    client_id: str,
+    client_secret: str,
+    redirect_uri: str,
+    *,
+    scope: str = FANTASY_READ_SCOPE,
+    capture: Capture = capture_code,
+    post: Post = requests.post,
+    save: Save = persistence.save,
+) -> None:
     """Run the full handshake and persist the result.
 
-    Interactive: opens a browser and blocks until the redirect arrives.
+    Interactive: opens a browser and blocks until the redirect arrives. The
+    transport arrives as arguments, so a test runs the whole handshake against
+    stand-ins.
 
     Raises:
         YahooLoginRequiredError: the flow did not complete.
     """
-    from yahoofantasy.util.persistence import save
-
-    code = _capture_code(redirect_uri, client_id, scope)
-    body = _exchange(code, client_id, client_secret, redirect_uri)
+    code = capture(redirect_uri, client_id, scope)
+    body = _exchange(code, client_id, client_secret, redirect_uri, post)
 
     granted = body.get("scope")
     logger.info(f"Yahoo granted scope: {granted or '(none reported)'}")

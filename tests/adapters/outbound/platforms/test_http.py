@@ -10,8 +10,8 @@ from support.http import FakeResponse
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
-from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
-from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
+from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient, fetch_many
+from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
 from thefrontoffice.domain.errors import PlatformUnavailableError
 
@@ -54,10 +54,7 @@ def _client(
     return JsonApiClient(
         name="Test",
         cache=cache or JsonDiskCache(tmp_path / "cache"),
-        # No real backoff; the hermetic suite must not spend seconds sleeping.
-        retry=lambda: build_retry(attempts=2, multiplier=1, min_wait=0, max_wait=0, predicate=is_transient).copy(
-            wait=lambda _: 0
-        ),
+        retry=RetryPolicy(attempts=2, min_wait=0, max_wait=0),
         error=error,
         unavailable=UNAVAILABLE[error],
         session=session,
@@ -234,8 +231,8 @@ def test_a_fully_cached_batch_never_touches_the_network(tmp_path: Path) -> None:
 
 
 def test_batch_writes_stay_on_the_calling_thread(tmp_path: Path) -> None:
-    """The cache file is read-modify-written whole, so concurrent writes would
-    clobber each other. Only the requests are allowed to fan out."""
+    """The cache holds what it has read in memory, which is not safe to write
+    from several threads. Only the requests are allowed to fan out."""
     writes: set[str] = set()
 
     class Recording(JsonDiskCache):
@@ -268,3 +265,16 @@ def test_a_failed_request_is_not_stored_as_though_it_were_an_answer(tmp_path: Pa
     _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)
 
     assert cache.get("k3", TTL) is None
+
+
+def test_a_batch_names_each_failure_for_a_caller_that_cannot_tolerate_a_hole(tmp_path: Path) -> None:
+    """A category with no leaders would read as nobody worth adding in it, so Yahoo's caller raises instead."""
+    cache = JsonDiskCache(tmp_path / "cache")
+
+    def _refused() -> Any:
+        raise SleeperAPIError("refused")
+
+    batch = fetch_many(cache, {"good": lambda: {"n": 1}, "bad": _refused}, TTL)
+
+    assert batch.values == {"good": {"n": 1}}
+    assert isinstance(batch.failures["bad"], SleeperAPIError)

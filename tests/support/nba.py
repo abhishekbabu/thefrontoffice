@@ -84,7 +84,7 @@ class FakeYahoo:
         self.adds_used = adds_used
         self.searches: list[str] = []
         self.matchup_fetches = 0
-        self.teams = teams if teams is not None else DEFAULT_TEAMS
+        self.league_teams = teams if teams is not None else DEFAULT_TEAMS
         self.available = available if available is not None else [make_player("Waiver One")]
         self.available_error: Exception | None = None
 
@@ -102,10 +102,8 @@ class FakeYahoo:
             raise self.roster_error
         return self.roster
 
-    @property
-    def league(self) -> Any:
-        """yahoofantasy's League, of which only `teams()` is read here."""
-        return SimpleNamespace(teams=lambda: self.teams)
+    def teams(self) -> list[Any]:
+        return self.league_teams
 
     def fetch_available(self, count: int = 100) -> list[Any]:
         if self.available_error:

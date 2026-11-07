@@ -494,8 +494,9 @@ console errors, which a screenshot of a blank panel otherwise hides. It needs
 Playwright's browser once per machine (about 95 MB):
 `cd web && pnpm exec playwright install --only-shell chromium`.
 
-When Sleeper, ESPN or FPL itself is down — a 5xx, a timeout, no connection —
-the API answers 503 with code `platform_unavailable` and a message saying it is
+Every platform request is retried a few times when it fails transiently — a
+5xx, a 429, a timeout, a dropped connection. When Sleeper, ESPN, FPL or Yahoo
+is still failing that way afterwards, the API answers 503 with code `platform_unavailable` and a message saying it is
 on that platform's side, and the page offers **Try again**; any other failed
 request stays a 400 naming what went wrong.
 

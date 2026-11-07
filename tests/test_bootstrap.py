@@ -45,13 +45,13 @@ def test_yahoo_needs_both_halves_of_the_credential(monkeypatch: pytest.MonkeyPat
 def test_building_a_provider_is_deferred(monkeypatch: pytest.MonkeyPatch) -> None:
     """Constructing the registry must never contact a platform — the NBA build
     opens an OAuth flow, and a football-only user must not sit through it."""
-    import thefrontoffice.adapters.outbound.platforms.yahoo.client as yahoo_mod
+    from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
 
     def _must_not_run(*a: object, **k: object) -> None:
         raise AssertionError("Yahoo was contacted while listing sports")
 
     # What building the NBA provider calls first: listing and finding must not reach it.
-    monkeypatch.setattr(yahoo_mod.YahooClient, "ensure_authorized", classmethod(_must_not_run))
+    monkeypatch.setattr(YahooAuth, "find_leagues", _must_not_run)
     registry.all_competitions()
     registry.configured_competitions()
     registry.find("nba")
@@ -107,12 +107,10 @@ def test_the_nba_entry_discovers_leagues_and_wraps_them(monkeypatch: pytest.Monk
     league it found."""
     from types import SimpleNamespace
 
-    import thefrontoffice.adapters.outbound.platforms.yahoo.client as yahoo_mod
+    from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
 
     leagues = [SimpleNamespace(id="1", name="One", league_type="head"), SimpleNamespace(id="2", name="Two")]
-    monkeypatch.setattr(yahoo_mod.YahooClient, "ensure_authorized", classmethod(lambda cls: None))
-    monkeypatch.setattr(yahoo_mod.YahooClient, "get_context", classmethod(lambda cls: SimpleNamespace()))
-    monkeypatch.setattr(yahoo_mod.YahooClient, "find_leagues", staticmethod(lambda ctx, game, season: leagues))
+    monkeypatch.setattr(YahooAuth, "find_leagues", lambda self, game, season: leagues)
 
     entry = registry.find("nba")
     assert entry is not None
@@ -121,14 +119,11 @@ def test_the_nba_entry_discovers_leagues_and_wraps_them(monkeypatch: pytest.Monk
 
 
 def test_no_nba_leagues_is_a_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from types import SimpleNamespace
 
-    import thefrontoffice.adapters.outbound.platforms.yahoo.client as yahoo_mod
+    from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
     from thefrontoffice.domain.errors import LeagueNotFoundError
 
-    monkeypatch.setattr(yahoo_mod.YahooClient, "ensure_authorized", classmethod(lambda cls: None))
-    monkeypatch.setattr(yahoo_mod.YahooClient, "get_context", classmethod(lambda cls: SimpleNamespace()))
-    monkeypatch.setattr(yahoo_mod.YahooClient, "find_leagues", staticmethod(lambda ctx, game, season: []))
+    monkeypatch.setattr(YahooAuth, "find_leagues", lambda self, game, season: [])
     entry = registry.find("nba")
     assert entry is not None
     with pytest.raises(LeagueNotFoundError, match="no Yahoo NBA leagues"):
@@ -211,3 +206,20 @@ def test_with_no_key_at_all_nothing_is_offered(keys: Callable[..., None]) -> Non
     keys()
 
     assert (ai_providers(), ai_available()) == ([], False)
+
+
+def test_the_premier_league_entry_builds_a_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "fpl_entry_id", 77)
+    entry = registry.find("premier-league")
+    assert entry is not None
+    assert entry.build().competition == "premier-league"
+
+
+def test_yahoo_is_not_ready_until_a_token_is_cached() -> None:
+    """The autouse fixture points the token at a file that does not exist."""
+    from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
+
+    entry = registry.find("nba")
+    assert entry is not None
+    with pytest.raises(YahooLoginRequiredError):
+        entry.check_ready()

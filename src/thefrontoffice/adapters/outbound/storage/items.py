@@ -8,10 +8,8 @@ back a dismissal someone still meant.
 """
 
 from datetime import timedelta
-from pathlib import Path
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
-from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.models import ItemState
 from thefrontoffice.domain.ports import ItemStateStore
 
@@ -19,8 +17,8 @@ KEEP_FOR = timedelta(days=180)
 
 
 class DiskItemStateStore(ItemStateStore):
-    def __init__(self, cache: JsonDiskCache | None = None) -> None:
-        self._cache = cache or JsonDiskCache(Path(settings.item_state_dir))
+    def __init__(self, cache: JsonDiskCache) -> None:
+        self._cache = cache
 
     def states(self, scope: str) -> dict[str, ItemState]:
         stored = self._cache.get(scope, KEEP_FOR) or {}

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from support.http import FakeSession
+from support.http import NO_WAIT, FakeSession
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
@@ -48,7 +48,7 @@ NYJ_NEWS = {
 
 def _client(routes: dict[str, Any], tmp_path: Path) -> tuple[ESPNClient, FakeSession]:
     session = FakeSession(routes)
-    return ESPNClient(cache=JsonDiskCache(tmp_path / "cache"), session=session), session
+    return ESPNClient(cache=JsonDiskCache(tmp_path / "cache"), retry=NO_WAIT, session=session), session
 
 
 def test_a_clubs_news_comes_back_newest_first_with_its_tagged_players(tmp_path: Path) -> None:

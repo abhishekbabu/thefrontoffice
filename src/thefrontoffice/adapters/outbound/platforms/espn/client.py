@@ -20,18 +20,14 @@ whether that is the first minute or the last.
 
 import logging
 from datetime import timedelta
-from pathlib import Path
 from typing import Any, Protocol
-
-from tenacity import Retrying
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError, ESPNUnavailableError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, NewsArticle, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
-from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
+from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
-from thefrontoffice.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -45,19 +41,6 @@ SCOREBOARD_TTL = timedelta(minutes=1)
 """A clock that is a minute stale is a minute of a sixty-minute game."""
 NEWS_LIMIT = 50
 """ESPN's own ceiling for one feed; asking for more returns the same fifty."""
-
-RETRY_MAX_ATTEMPTS = 3
-RETRYABLE_STATUS = frozenset({429})
-
-
-def _retry() -> Retrying:
-    return build_retry(
-        attempts=RETRY_MAX_ATTEMPTS,
-        multiplier=2,
-        min_wait=2,
-        max_wait=20,
-        predicate=lambda e: is_transient(e, RETRYABLE_STATUS),
-    )
 
 
 class ESPNSource(Protocol):
@@ -79,11 +62,11 @@ class ESPNSource(Protocol):
 class ESPNClient:
     """Read-only access to ESPN's per-club news, live scoreboard and injury report."""
 
-    def __init__(self, cache: JsonDiskCache | None = None, session: Any = None) -> None:
+    def __init__(self, *, cache: JsonDiskCache, retry: RetryPolicy, session: Any = None) -> None:
         self._api = JsonApiClient(
             name="ESPN",
-            cache=cache or JsonDiskCache(Path(settings.espn_cache_dir)),
-            retry=_retry,
+            cache=cache,
+            retry=retry,
             error=ESPNAPIError,
             unavailable=ESPNUnavailableError,
             session=session,

@@ -12,6 +12,7 @@ import functools
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from thefrontoffice.application.asking import AskEngine
@@ -35,7 +36,14 @@ from thefrontoffice.domain.ports import (
 
 if TYPE_CHECKING:
     from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
+    from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
     from thefrontoffice.adapters.outbound.llm.routing import Cooldowns
+    from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+    from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
+    from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
+    from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
+    from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
+    from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
 
 logger = logging.getLogger(__name__)
 
@@ -101,13 +109,79 @@ class CompetitionEntry:
         return f"{self.competition}-{self.platform}"
 
 
+# ── platform transport ──────────────────────────────────────────────
+# Every client gets its cache and its retry policy here, read from the settings
+# as they stand when it is built, so a credential saved from the UI is seen by
+# the next one.
+
+
+def _disk_cache(directory: str) -> JsonDiskCache:
+    from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+
+    return JsonDiskCache(Path(directory))
+
+
+def _retry() -> RetryPolicy:
+    from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
+
+    return RetryPolicy()
+
+
+def sleeper_client() -> SleeperClient:
+    from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
+
+    return SleeperClient(cache=_disk_cache(settings.sleeper_cache_dir), retry=_retry())
+
+
+def _espn_client() -> ESPNClient:
+    from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
+
+    return ESPNClient(cache=_disk_cache(settings.espn_cache_dir), retry=_retry())
+
+
+def _fpl_client() -> FPLClient:
+    from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
+
+    return FPLClient(cache=_disk_cache(settings.fpl_cache_dir), retry=_retry())
+
+
+def _yahoo_auth(cache: JsonDiskCache) -> YahooAuth:
+    from yahoofantasy import Context
+
+    from thefrontoffice.adapters.outbound.platforms.yahoo import oauth
+    from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
+
+    return YahooAuth(
+        token_file=Path(settings.yahoo_token_file),
+        client_id=settings.yahoo_client_id,
+        client_secret=settings.yahoo_client_secret,
+        redirect_uri=settings.yahoo_redirect_uri,
+        authorize=oauth.authorize,
+        connect=Context,
+        cache=cache,
+        retry=_retry(),
+    )
+
+
+def yahoo_auth() -> YahooAuth:
+    """This machine's Yahoo login: for the entry points that log in and check the grant."""
+    return _yahoo_auth(_disk_cache(settings.yahoo_cache_dir))
+
+
+def _answer_store() -> DiskAnswerStore:
+    from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
+
+    return DiskAnswerStore(_disk_cache(settings.answer_cache_dir))
+
+
+# ── competitions ────────────────────────────────────────────────────
+
+
 def nfl_provider() -> SleeperNFLProvider:
     """The NFL provider, wired to the real clients: for the scripts that need its own methods, not just the port."""
     from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
-    from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
-    from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
 
-    return SleeperNFLProvider(settings.sleeper_username, client=SleeperClient(), espn=ESPNClient())
+    return SleeperNFLProvider(settings.sleeper_username, client=sleeper_client(), espn=_espn_client())
 
 
 def _build_nfl() -> CompetitionProvider:
@@ -116,16 +190,13 @@ def _build_nfl() -> CompetitionProvider:
 
 def _check_yahoo_ready() -> None:
     """Yahoo also needs a cached token, which is a file this can just look for."""
-    from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
-
-    YahooClient.ensure_authorized()
+    yahoo_auth().ensure_authorized()
 
 
 def _build_fpl() -> CompetitionProvider:
     from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
-    from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
 
-    return FPLProvider(settings.fpl_entry_id, client=FPLClient())
+    return FPLProvider(settings.fpl_entry_id, client=_fpl_client())
 
 
 def _build_nba() -> CompetitionProvider:
@@ -138,21 +209,19 @@ def _build_nba() -> CompetitionProvider:
     """
     from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm
     from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
-    from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
-    from thefrontoffice.adapters.outbound.platforms.yahoo import client as yahoo
+    from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
     from thefrontoffice.domain.errors import LeagueNotFoundError
 
-    yahoo.YahooClient.ensure_authorized()
-    ctx = yahoo.YahooClient.get_context()
-    leagues = yahoo.YahooClient.find_leagues(ctx, "nba", YahooNBAProvider.season_year())
+    cache, retry = _disk_cache(settings.yahoo_cache_dir), _retry()
+    leagues = _yahoo_auth(cache).find_leagues("nba", YahooNBAProvider.season_year())
     if not leagues:
         raise LeagueNotFoundError("no Yahoo NBA leagues for this season")
-    sleeper = SleeperClient()
+    sleeper = sleeper_client()
     return YahooNBAProvider(
         leagues[0],
         all_leagues=leagues,
         nba=SleeperNBAForm(sleeper),
-        yahoo_for=yahoo.YahooClient,
+        yahoo_for=lambda league: YahooClient(league, cache=cache, retry=retry),
         sleeper=sleeper,
         max_weekly_adds=settings.yahoo_max_weekly_adds,
     )
@@ -281,9 +350,7 @@ def ai_available() -> bool:
 
 def scout_engine(provider: CompetitionProvider) -> ScoutEngine:
     """A scouting engine wired to the configured model and the judgments kept on disk."""
-    from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
-
-    return ScoutEngine(provider, ai=default_model(), answers=DiskAnswerStore())
+    return ScoutEngine(provider, ai=default_model(), answers=_answer_store())
 
 
 def forecast_engine(provider: ForecastProvider) -> ForecastEngine:
@@ -315,21 +382,17 @@ def item_decisions() -> ItemDecisions:
     """The manager's decisions about to-do items, kept on this machine."""
     from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
 
-    return ItemDecisions(DiskItemStateStore())
+    return ItemDecisions(DiskItemStateStore(_disk_cache(settings.item_state_dir)))
 
 
 def ask_engine(provider: CompetitionProvider) -> AskEngine:
     """Questions about one thing on screen, wired like the scouting engine."""
-    from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
-
-    return AskEngine(provider, ai=default_model(), answers=DiskAnswerStore())
+    return AskEngine(provider, ai=default_model(), answers=_answer_store())
 
 
 def wire_engine(provider: WireProvider) -> WireEngine:
     """Calls on available players, wired to the configured model."""
-    from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
-
-    return WireEngine(provider, ai=default_model(), answers=DiskAnswerStore())
+    return WireEngine(provider, ai=default_model(), answers=_answer_store())
 
 
 def trade_engine(provider: TradeProvider) -> TradeEngine:
