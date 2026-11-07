@@ -11,6 +11,8 @@ from datetime import timedelta
 from typing import Any
 
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.application.answers import parts
+from thefrontoffice.application.answers import scope as make_scope
 
 FORMER_NAMES = {
     "nba-yahoo": "NBA (Yahoo)",
@@ -25,14 +27,13 @@ to change: a competition added since was never filed under a label at all.
 
 
 def former(scope: str) -> str | None:
-    """`scope` as it was spelled before its competition was renamed; None where it never was.
-
-    A scope is `kind:competition:...`, so the competition is its second part.
-    """
-    kind, sep, rest = scope.partition(":")
-    competition, colon, about = rest.partition(":")
-    old = FORMER_NAMES.get(competition) if sep else None
-    return f"{kind}:{old}{colon}{about}" if old is not None else None
+    """`scope` as it was spelled before its competition was renamed; None where it never was."""
+    taken = parts(scope)
+    if taken is None:
+        return None
+    kind, competition, about = taken
+    old = FORMER_NAMES.get(competition)
+    return make_scope(kind, old, *about) if old is not None else None
 
 
 def read(cache: JsonDiskCache, scope: str, keep_for: timedelta) -> Any | None:

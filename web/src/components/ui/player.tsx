@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatList } from "@/components/ui/stat";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { LABEL, Label } from "@/components/ui/label";
 
 /**
  * The one figure this player is judged on, beside their name.
@@ -63,7 +64,7 @@ function TableOfStats({ table }: { table: StatTable }) {
       <table className="w-full border-collapse text-[13px]">
         <thead>
           <tr className="border-b border-border">
-            <th className="px-3 py-2 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            <th className={cn(LABEL, "px-3 py-2 text-left")}>
               {/* The row labels need no heading; the seasons do. */}
             </th>
             {table.columns.map((column, i) => (
@@ -289,9 +290,9 @@ function PlayerPanel({
             <m.div variants={list} initial="hidden" animate="shown" className="flex flex-col gap-5 px-5 py-4">
               {player.data.tables.map((table) => (
                 <m.section key={table.title} variants={listItem}>
-                  <h3 className="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  <Label as="h3" className="mb-1.5 block">
                     {table.title}
-                  </h3>
+                  </Label>
                   <TableOfStats table={table} />
                 </m.section>
               ))}
@@ -303,9 +304,9 @@ function PlayerPanel({
                 .filter((group) => group.stats.length > 0)
                 .map((group) => (
                 <m.section key={group.title} variants={listItem}>
-                  <h3 className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  <Label as="h3" className="mb-1 block">
                     {group.title}
-                  </h3>
+                  </Label>
                   <StatList stats={group.stats} />
                 </m.section>
               ))}

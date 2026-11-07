@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { LABEL } from "@/components/ui/label";
 
 /** Wide tables scroll inside themselves; the page never scrolls sideways. */
 function Table({ className, ...props }: React.ComponentProps<"table">) {
@@ -15,7 +16,7 @@ function Th({ className, ...props }: React.ComponentProps<"th">) {
     <th
       className={cn(
         "whitespace-nowrap border-b border-border px-4 py-2 text-left",
-        "font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground",
+        LABEL,
         className,
       )}
       {...props}

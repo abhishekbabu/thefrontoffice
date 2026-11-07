@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Prose } from "@/components/ui/prose";
 import { ErrorNote } from "@/components/ui/error-note";
 import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
 
 /** Conversations whose opener has been asked, for as long as the page lives. */
 const OPENED = new Set<string>();
@@ -132,7 +133,7 @@ type ChatProps = {
 function Bubble({ role, children }: { role: Turn["role"]; children: React.ReactNode }) {
   return (
     <div className={cn("flex max-w-[72ch] flex-col gap-0.5 text-[13.5px] leading-relaxed", role === "you" && "items-end self-end")}>
-      <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">{role}</div>
+      <Label as="div">{role}</Label>
       <div className={cn(role === "you" && "rounded-md bg-muted px-3 py-2")}>{children}</div>
     </div>
   );

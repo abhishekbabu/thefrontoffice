@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PALETTE, PALETTES, applyPalette, isPaletteId } from "@/themes/registry";
+import themes from "@/themes/themes.css?raw";
 
 describe("palette registry", () => {
   it("registers the default", () => {
@@ -10,12 +11,11 @@ describe("palette registry", () => {
     expect(new Set(PALETTES.map((p) => p.id)).size).toBe(PALETTES.length);
   });
 
-  it("gives every palette a label, a hint and a swatch for the picker", () => {
-    for (const palette of PALETTES) {
-      expect(palette.label).toBeTruthy();
-      expect(palette.hint).toBeTruthy();
-      expect(palette.swatch).toMatch(/^#[0-9a-f]{6}$/i);
-    }
+  it("gives every palette but the default a block in themes.css to select", () => {
+    // A registered palette with no block is a picker entry that changes nothing.
+    // The default needs none: it lives in @theme.
+    const selectors = [...themes.matchAll(/^html\[data-theme="([^"]+)"\] {/gm)].map((match) => match[1]);
+    expect(new Set(selectors)).toEqual(new Set(PALETTES.map((p) => p.id).filter((id) => id !== DEFAULT_PALETTE)));
   });
 
   it("rejects an unknown id, so a stale stored value falls back", () => {
