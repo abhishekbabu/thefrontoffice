@@ -55,13 +55,13 @@ def test_no_connection_is_sleeper_being_down(tmp_path: Path, no_retry_wait: None
     # catch it, and the outage kind of it.
     client, _ = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
     with pytest.raises(SleeperUnavailableError):
-        client.get_nfl_state()
+        client.get_state()
 
 
 def test_a_failing_request_is_retried_until_the_attempts_run_out(tmp_path: Path, no_retry_wait: None) -> None:
     client, session = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
     with pytest.raises(SleeperUnavailableError):
-        client.get_nfl_state()
+        client.get_state()
     assert len(session.requests) == RETRY_MAX_ATTEMPTS
 
 
@@ -74,7 +74,7 @@ def test_a_transient_failure_then_success_is_retried(tmp_path: Path, no_retry_wa
             return FakeResponse(STATE)
 
     client = SleeperClient(cache=JsonDiskCache(tmp_path / "cache"), session=Flaky({}))
-    assert client.get_nfl_state().week == 5
+    assert client.get_state().week == 5
 
 
 # ── state and user ──────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ def test_a_transient_failure_then_success_is_retried(tmp_path: Path, no_retry_wa
 
 def test_nfl_state_is_parsed(tmp_path: Path) -> None:
     client, _ = _client({"state/nfl": STATE}, tmp_path)
-    state = client.get_nfl_state()
+    state = client.get_state()
     assert state.week == 5
     assert state.season == "2026"
     assert state.is_regular_season
@@ -90,14 +90,14 @@ def test_nfl_state_is_parsed(tmp_path: Path) -> None:
 
 def test_preseason_is_not_the_regular_season(tmp_path: Path) -> None:
     client, _ = _client({"state/nfl": {**STATE, "season_type": "pre"}}, tmp_path)
-    assert not client.get_nfl_state().is_regular_season
+    assert not client.get_state().is_regular_season
 
 
 def test_state_is_cached_between_calls(tmp_path: Path) -> None:
     """Sleeper asks callers to stay under 1000 requests a minute."""
     client, session = _client({"state/nfl": STATE}, tmp_path)
-    client.get_nfl_state()
-    client.get_nfl_state()
+    client.get_state()
+    client.get_state()
     assert len(session.requests) == 1
 
 
@@ -178,33 +178,13 @@ def test_rosters_carry_record_and_bench(tmp_path: Path) -> None:
     assert roster.points_for == pytest.approx(412.5)
 
 
-ROSTERS_PAYLOAD = [
-    {"roster_id": 1, "owner_id": "42", "players": ["a", "b", "c"], "starters": ["a", "b"], "settings": {}},
-    {"roster_id": 2, "owner_id": "43", "players": ["x", "y"], "starters": ["x"], "settings": {}},
-]
+def test_rosters_are_read_without_asking_for_the_weeks_matchups(tmp_path: Path) -> None:
+    """Which lineup a team starts this week is the provider's to settle, from the week it has already read."""
+    payload = [{"roster_id": 1, "owner_id": "42", "players": ["a", "b"], "starters": ["a"], "settings": {}}]
+    client, session = _client({"rosters": payload}, tmp_path)
 
-
-def test_a_lineup_is_the_one_set_for_this_week_not_the_rosters_stale_copy(tmp_path: Path) -> None:
-    # Sleeper's roster still starts "b" days after the manager benched him for "c".
-    matchups = [{"roster_id": 1, "matchup_id": 1, "starters": ["a", "c"]}]
-    client, session = _client({"state/nfl": STATE, "matchups": matchups, "rosters": ROSTERS_PAYLOAD}, tmp_path)
-    rosters = {r.roster_id: r for r in client.get_rosters("L1")}
-    assert rosters[1].starter_ids == ["a", "c"]
-    assert any("matchups/5" in url for url in session.requests)
-    # A team with no entry this week keeps the lineup its roster carries.
-    assert rosters[2].starter_ids == ["x"]
-
-
-def test_before_the_season_has_a_week_the_rosters_lineup_stands(tmp_path: Path) -> None:
-    client, session = _client({"state/nfl": {**STATE, "week": 0}, "rosters": ROSTERS_PAYLOAD}, tmp_path)
-    assert client.get_rosters("L1")[0].starter_ids == ["a", "b"]
-    assert not any("matchups" in url for url in session.requests)
-
-
-def test_a_week_whose_matchups_will_not_load_falls_back_to_the_rosters_lineup(tmp_path: Path) -> None:
-    # Unrouted, the matchups request is a 404.
-    client, _ = _client({"state/nfl": STATE, "rosters": ROSTERS_PAYLOAD}, tmp_path)
-    assert client.get_rosters("L1")[0].starter_ids == ["a", "b"]
+    assert client.get_rosters("L1")[0].starter_ids == ["a"]
+    assert not any("matchups" in url or "state" in url for url in session.requests)
 
 
 def test_a_tie_shows_in_the_record() -> None:
@@ -299,7 +279,7 @@ def test_projections_are_asked_for_by_sport(tmp_path: Path) -> None:
     assert "/projections/nfl/2026/1" in session.requests[0]
 
 
-def test_injury_status_marks_a_player_questionable(tmp_path: Path) -> None:
+def test_a_projection_carries_the_players_designation(tmp_path: Path) -> None:
     payload = [
         {
             "player_id": "1",
@@ -308,12 +288,12 @@ def test_injury_status_marks_a_player_questionable(tmp_path: Path) -> None:
         }
     ]
     client, _ = _client({"projections/nfl": payload}, tmp_path)
-    assert client.get_projections("2026", 1, "pts_ppr")["1"].is_questionable
+    assert client.get_projections("2026", 1, "pts_ppr")["1"].injury_status == "Questionable"
 
 
-def test_a_healthy_player_is_not_questionable(tmp_path: Path) -> None:
+def test_a_healthy_player_carries_no_designation(tmp_path: Path) -> None:
     client, _ = _client({"projections/nfl": PROJECTION_PAYLOAD}, tmp_path)
-    assert not client.get_projections("2026", 1, "pts_ppr")["1"].is_questionable
+    assert client.get_projections("2026", 1, "pts_ppr")["1"].injury_status == ""
 
 
 # ── trending, stats, matchups ───────────────────────────────────────────
@@ -331,9 +311,36 @@ def test_trending_entries_without_an_id_are_skipped(tmp_path: Path) -> None:
     assert client.get_trending() == []
 
 
-def test_matchups_pass_through_as_raw_entries(tmp_path: Path) -> None:
-    client, _ = _client({"matchups": [{"roster_id": 1, "matchup_id": 3}]}, tmp_path)
-    assert client.get_matchups("L1", 3)[0]["matchup_id"] == 3
+def test_a_matchup_is_each_teams_side_of_its_pairing(tmp_path: Path) -> None:
+    entry = {
+        "roster_id": 1,
+        "matchup_id": 3,
+        "points": 101.5,
+        "starters": ["a", "b"],
+        "players_points": {"a": 60, "b": 41.5},
+    }
+    client, _ = _client({"matchups": [entry]}, tmp_path)
+
+    [side] = client.get_matchups("L1", 3)
+
+    assert (side.roster_id, side.matchup_id, side.points) == (1, 3, 101.5)
+    assert side.starters == ["a", "b"]
+    assert side.players_points == {"a": 60.0, "b": 41.5}
+
+
+def test_an_empty_starting_slot_is_nobody_rather_than_a_player_called_0(tmp_path: Path) -> None:
+    """Sleeper fills an empty slot with the id "0", which no rule beyond the client should have to know."""
+    client, _ = _client({"matchups": [{"roster_id": 1, "matchup_id": 3, "starters": ["a", "0"]}]}, tmp_path)
+
+    assert client.get_matchups("L1", 3)[0].starters == ["a", ""]
+
+
+def test_a_team_with_nobody_to_play_has_no_pairing(tmp_path: Path) -> None:
+    client, _ = _client({"matchups": [{"roster_id": 1, "matchup_id": None, "points": None}]}, tmp_path)
+
+    [side] = client.get_matchups("L1", 3)
+
+    assert (side.matchup_id, side.points) == (None, 0.0)
 
 
 def test_an_empty_matchup_week_is_an_empty_list(tmp_path: Path) -> None:
@@ -390,7 +397,7 @@ def test_state_is_fetched_per_sport(tmp_path: Path) -> None:
     """NBA and NFL are at different points in their seasons."""
     client, session = _client({"state/nba": {**STATE, "season_type": "off"}, "state/nfl": STATE}, tmp_path)
     assert client.get_state("nba").season_type == "off"
-    assert client.get_nfl_state().season_type == "regular"
+    assert client.get_state().season_type == "regular"
     assert any("state/nba" in r for r in session.requests)
     assert any("state/nfl" in r for r in session.requests)
 
@@ -483,7 +490,7 @@ def test_a_season_of_matchups_comes_back_in_one_call(tmp_path: Path) -> None:
     weeks = client.get_matchups_bulk("L1", [1, 2, 3])
 
     assert sorted(weeks) == [1, 2, 3]
-    assert weeks[2][0]["matchup_id"] == 2
+    assert weeks[2][0].matchup_id == 2
     assert len(session.requests) == 3
 
 

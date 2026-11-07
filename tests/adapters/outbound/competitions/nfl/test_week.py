@@ -20,7 +20,7 @@ from support.nfl import (
 from support.summary import mine
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
-from thefrontoffice.adapters.outbound.competitions.nfl.week import left_in
+from thefrontoffice.adapters.outbound.competitions.nfl.week import left_in, opponent_of, pairings
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
@@ -28,6 +28,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     PlayerMeta,
     ScheduledGame,
     SleeperLeague,
+    SleeperMatchup,
     SleeperRoster,
     WeeklyProjection,
 )
@@ -92,8 +93,8 @@ def test_the_week_shows_the_team_you_are_playing() -> None:
             SleeperRoster(roster_id=2, owner_id="them", player_ids=["rb2", "wr9"], starter_ids=["wr9"], wins=3),
         ],
         matchups=[
-            {"roster_id": 1, "matchup_id": 7, "points": 88.5},
-            {"roster_id": 2, "matchup_id": 7, "points": 96.1},
+            SleeperMatchup(roster_id=1, matchup_id=7, points=88.5),
+            SleeperMatchup(roster_id=2, matchup_id=7, points=96.1),
         ],
     )
     summary = nfl_provider(client).summary("L1")
@@ -190,7 +191,7 @@ def _both_sides() -> FakeSleeper:
             SleeperRoster(roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=FULL_STARTERS, starter_ids=FULL_STARTERS),
             SleeperRoster(roster_id=2, owner_id="them", player_ids=FULL_STARTERS, starter_ids=FULL_STARTERS),
         ],
-        matchups=[{"roster_id": 1, "matchup_id": 7}, {"roster_id": 2, "matchup_id": 7, "points": 96.1}],
+        matchups=[SleeperMatchup(roster_id=1, matchup_id=7), SleeperMatchup(roster_id=2, matchup_id=7, points=96.1)],
     )
 
 
@@ -253,7 +254,7 @@ def _live_client(points: dict[str, float]) -> FakeSleeper:
                 roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"]
             )
         ],
-        matchups=[{"roster_id": 1, "matchup_id": 4, "players_points": points}],
+        matchups=[SleeperMatchup(roster_id=1, matchup_id=4, players_points=points)],
     )
 
 
@@ -334,8 +335,8 @@ def test_the_forecast_leaves_as_much_of_a_game_as_its_clock_does() -> None:
     client = _live_client({"qb1": 6.5})
     client.season_schedule = STALE
     client.matchups = [
-        {"roster_id": 1, "matchup_id": 4, "players_points": {"qb1": 6.5}, "starters": ["qb1", "rb2"]},
-        {"roster_id": 2, "matchup_id": 4, "players_points": {}, "starters": []},
+        SleeperMatchup(roster_id=1, matchup_id=4, players_points={"qb1": 6.5}, starters=["qb1", "rb2"]),
+        SleeperMatchup(roster_id=2, matchup_id=4, players_points={}, starters=[]),
     ]
     client.rosters = [*client.rosters, SleeperRoster(roster_id=2, owner_id="user-2", player_ids=[], starter_ids=[])]
     matchup = SleeperNFLProvider(username="me", client=client, espn=FakeESPN(scoreboard=UNDERWAY)).matchup_input("L1")
@@ -422,3 +423,31 @@ def test_the_week_says_when_it_is_played() -> None:
 
 def test_the_window_carries_the_dates_where_there_are_any() -> None:
     assert nfl_provider(at_week(2)).summary("L1").window == "Week 2 · 17 Sep"
+
+
+# ── who plays whom ──────────────────────────────────────────────────────
+
+
+def _side(roster_id: int, matchup_id: int | None, points: float = 0.0) -> SleeperMatchup:
+    return SleeperMatchup(roster_id=roster_id, matchup_id=matchup_id, points=points)
+
+
+def test_a_week_pairs_the_teams_sharing_a_matchup_lower_roster_first() -> None:
+    week = [_side(4, 2), _side(1, 1), _side(3, 2), _side(2, 1)]
+
+    assert sorted((a.roster_id, b.roster_id) for a, b in pairings(week)) == [(1, 2), (3, 4)]
+
+
+def test_a_team_with_nobody_to_play_is_in_no_pairing() -> None:
+    """A bye has no matchup id; a pairing missing its other side is no head-to-head either."""
+    assert pairings([_side(1, None), _side(2, 5)]) == []
+
+
+def test_each_team_is_paired_against_the_other_side() -> None:
+    week = [_side(1, 1, 80.0), _side(2, 1, 95.5)]
+
+    found = opponent_of(week, 2)
+
+    assert found is not None
+    assert (found[0].points, found[1].points) == (95.5, 80.0)
+    assert opponent_of(week, 9) is None
