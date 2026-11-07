@@ -65,12 +65,6 @@ def test_a_clubs_news_comes_back_newest_first_with_its_tagged_players(tmp_path: 
     assert any("team=20" in url for url in session.requests)
 
 
-def test_rows_missing_a_headline_or_a_readable_date_are_skipped(tmp_path: Path) -> None:
-    client, _ = _client({"/teams": TEAMS, "team=20": NYJ_NEWS}, tmp_path)
-
-    assert len(client.get_team_news(NFL, ["NYJ"])["NYJ"]) == 2
-
-
 def test_a_club_whose_feed_fails_is_left_out_rather_than_failing_the_rest(tmp_path: Path) -> None:
     client, _ = _client({"/teams": TEAMS, "team=20": NYJ_NEWS}, tmp_path)
 

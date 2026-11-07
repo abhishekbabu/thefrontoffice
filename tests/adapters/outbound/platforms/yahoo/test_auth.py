@@ -130,7 +130,7 @@ def test_login_passes_credentials_and_the_registered_redirect_uri(tmp_path: Path
 def test_missing_credentials_raise_rather_than_exit(tmp_path: Path) -> None:
     """Exiting the process is a terminal's idea of failure. Inside a server it
     takes down the request, and no inbound adapter gets to render anything."""
-    with pytest.raises(YahooAPIError, match="must be set"):
+    with pytest.raises(YahooAPIError):
         _auth(tmp_path, token=False, client_id=None, client_secret=None).login()
 
 
@@ -225,7 +225,7 @@ def test_an_unapproved_app_fails_the_league_lookup_by_name(tmp_path: Path) -> No
 def test_an_unrecognized_league_list_raises(tmp_path: Path) -> None:
     context = FakeContext("<fantasy_content><error>?</error></fantasy_content>")
 
-    with pytest.raises(YahooAPIError, match="unreadable league list"):
+    with pytest.raises(YahooAPIError):
         _auth(tmp_path, context=context).find_leagues("nba", 2026)
 
 

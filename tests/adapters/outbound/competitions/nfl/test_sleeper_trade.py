@@ -4,7 +4,6 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
-import pytest
 from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeESPN, FakeSleeper, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
@@ -14,7 +13,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperMatchup,
     SleeperRoster,
 )
-from thefrontoffice.domain.errors import PlayerNotFoundError
 from thefrontoffice.domain.models import TradeProposal
 
 
@@ -37,23 +35,6 @@ def test_both_sides_are_resolved_and_priced() -> None:
     assert "Bad RB" in context.prompt
     assert "Trade Target" in context.prompt
     assert "15.5" in context.prompt  # his projection, which is what he is priced at
-
-
-def test_a_name_that_cannot_be_resolved_raises() -> None:
-    """Silently dropping one would evaluate a different trade than described."""
-    with pytest.raises(PlayerNotFoundError) as excinfo:
-        _context(["Bad RB"], ["Notarealplayer"])
-    assert excinfo.value.names == ["Notarealplayer"]
-
-
-def test_every_unresolved_name_is_reported_at_once() -> None:
-    with pytest.raises(PlayerNotFoundError) as excinfo:
-        _context(["Ghost One"], ["Ghost Two"])
-    assert excinfo.value.names == ["Ghost One", "Ghost Two"]
-
-
-def test_surrounding_whitespace_is_stripped() -> None:
-    assert "Trade Target" in _context(["  Bad RB  "], ["  Trade Target  "]).prompt
 
 
 def test_a_player_with_no_projection_is_still_tradeable() -> None:

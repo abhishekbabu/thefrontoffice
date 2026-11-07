@@ -23,11 +23,10 @@ def _entry_files(directory: Path) -> list[Path]:
 
 
 def _write_entry(directory: Path, key: str, entry: object) -> Path:
-    """Store `entry` where the cache will look for `key`."""
-    from thefrontoffice.adapters.outbound.platforms.cache import _filename
-
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / _filename(key)
+    """Replace what the cache keeps for `key` with `entry`, as a damaged or foreign file would read."""
+    before = set(_entry_files(directory))
+    JsonDiskCache(directory).set(key, None, now=T0)
+    (path,) = set(_entry_files(directory)) - before
     path.write_text(json.dumps(entry), encoding="utf-8")
     return path
 
@@ -155,10 +154,7 @@ def test_an_unserialisable_value_raises_and_leaves_nothing_behind(tmp_path: Path
 
 def test_a_corrupt_entry_is_discarded_not_fatal(tmp_path: Path) -> None:
     directory = tmp_path / "cache"
-    directory.mkdir()
-    _write_entry(directory, "k", {"stored_at": T0.isoformat(), "value": "v"})
-    (path,) = _entry_files(directory)
-    path.write_text("{not json", encoding="utf-8")
+    _write_entry(directory, "k", "ignored").write_text("{not json", encoding="utf-8")
 
     c = JsonDiskCache(directory)
     assert c.get("k", HOUR, now=T0) is None
@@ -178,34 +174,20 @@ def test_one_corrupt_entry_does_not_lose_the_others(tmp_path: Path) -> None:
     assert fresh.get("good", HOUR, now=T0) == "kept"
 
 
-def test_an_entry_that_is_not_an_envelope_is_discarded(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "entry",
+    [
+        [1, 2, 3],
+        {"value": "v"},
+        {"stored_at": "2026-09-01T12:00:00", "value": "v"},  # without a zone it cannot be placed on a timeline
+        {"stored_at": "whenever", "value": "v"},
+        {"stored_at": 1234, "value": "v"},
+    ],
+    ids=["not-an-envelope", "no-timestamp", "naive-timestamp", "unparseable-timestamp", "non-string-timestamp"],
+)
+def test_an_entry_the_cache_cannot_date_is_discarded(tmp_path: Path, entry: object) -> None:
     directory = tmp_path / "cache"
-    _write_entry(directory, "k", [1, 2, 3])
-    assert JsonDiskCache(directory).get("k", HOUR) is None
-
-
-def test_an_envelope_without_a_timestamp_is_discarded(tmp_path: Path) -> None:
-    directory = tmp_path / "cache"
-    _write_entry(directory, "k", {"value": "v"})
-    assert JsonDiskCache(directory).get("k", HOUR, now=T0) is None
-
-
-def test_naive_timestamp_is_treated_as_unusable(tmp_path: Path) -> None:
-    """Without a zone the entry cannot be placed on a timeline."""
-    directory = tmp_path / "cache"
-    _write_entry(directory, "k", {"stored_at": "2026-09-01T12:00:00", "value": "v"})
-    assert JsonDiskCache(directory).get("k", HOUR, now=T0) is None
-
-
-def test_unparseable_timestamp_is_treated_as_unusable(tmp_path: Path) -> None:
-    directory = tmp_path / "cache"
-    _write_entry(directory, "k", {"stored_at": "whenever", "value": "v"})
-    assert JsonDiskCache(directory).get("k", HOUR, now=T0) is None
-
-
-def test_non_string_timestamp_is_treated_as_unusable(tmp_path: Path) -> None:
-    directory = tmp_path / "cache"
-    _write_entry(directory, "k", {"stored_at": 1234, "value": "v"})
+    _write_entry(directory, "k", entry)
     assert JsonDiskCache(directory).get("k", HOUR, now=T0) is None
 
 

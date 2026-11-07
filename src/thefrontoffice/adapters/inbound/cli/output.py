@@ -1,8 +1,33 @@
 """Terminal output helpers."""
 
+import contextlib
+import sys
+
 from thefrontoffice.adapters.inbound.remedies import remedy
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.ports import ChatSession
+
+
+def configure_console() -> None:
+    """Make stdout/stderr able to carry the UI's emoji and box-drawing glyphs.
+
+    Python writes to a Windows *console* as UTF-16 and handles them fine, but as
+    soon as output is redirected to a file or pipe it falls back to the locale
+    encoding — cp1252 on most Windows installs — where every one of those
+    characters raises UnicodeEncodeError and takes the process down.
+
+    Reconfiguring to UTF-8 fixes redirection; errors="replace" means a terminal
+    that genuinely cannot represent a glyph degrades to a placeholder instead of
+    crashing. No-op where the streams are already UTF-8, or replaced entirely
+    (pytest's capture, for instance, offers no reconfigure()).
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        # Already detached, or not reconfigurable — the UI is still usable.
+        with contextlib.suppress(ValueError, OSError):
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def header(text: str) -> None:
