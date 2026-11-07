@@ -383,7 +383,7 @@ src/thefrontoffice/
 │                      per-competition CompetitionProvider implementations.
 ├── bootstrap.py       composition root: the only module naming a concrete
 │                      implementation. Registers competitions, wires engines.
-└── config/            validated settings, prompt templates, telemetry.
+└── config/            validated settings, the .env writer, telemetry.
 ```
 
 No adapter is named in `domain/` or `application/`; the engines take an
