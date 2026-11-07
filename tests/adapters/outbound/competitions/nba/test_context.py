@@ -71,8 +71,7 @@ def test_no_schedule_annotation_without_a_matchup_window() -> None:
 
 
 def test_injury_status_and_note_are_surfaced() -> None:
-    player = make_player("Hurt Guy", status="O")
-    player.injury_note = "knee"
+    player = make_player("Hurt Guy", status="O", injury_note="knee")
     out = _builder().build_context_for_players([player])
     assert "[O]" in out
     assert "(knee)" in out

@@ -8,14 +8,20 @@ import logging
 from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
-
-from yahoofantasy import Context, League
-from yahoofantasy.api.parse import as_list, from_response_object, get_value
+from typing import Protocol
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
-from thefrontoffice.adapters.outbound.platforms.yahoo.client import call, parse, request
+from thefrontoffice.adapters.outbound.platforms.yahoo.client import (
+    YahooContext,
+    call,
+    league_list,
+    parse,
+    readable,
+    request,
+)
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooLoginRequiredError
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +29,14 @@ LEAGUES_TTL = timedelta(hours=1)
 
 Authorize = Callable[[str, str, str], None]
 """The interactive handshake: client id, client secret and redirect URI in, a token persisted."""
+
+
+class YahooLeagueSource(Protocol):
+    """How a provider finds the leagues it reads. See `SleeperNFLSource` in platforms/sleeper/client.py for why it exists."""
+
+    def find_leagues(self, game_code: str, season: int) -> list[YahooLeague]:
+        """Every league the login plays in for one game and season."""
+        ...
 
 
 class YahooAuth:
@@ -36,7 +50,7 @@ class YahooAuth:
         client_secret: str | None,
         redirect_uri: str,
         authorize: Authorize,
-        connect: Callable[[], Context],
+        connect: Callable[[], YahooContext],
         cache: JsonDiskCache,
         retry: RetryPolicy,
     ) -> None:
@@ -83,7 +97,7 @@ class YahooAuth:
         self._authorize(self._client_id, self._client_secret, self._redirect_uri)
         logger.info("Yahoo login complete; token cached.")
 
-    def context(self) -> Context:
+    def context(self) -> YahooContext:
         """An authorized SDK context.
 
         Reports a missing token rather than starting the browser handshake: this
@@ -112,8 +126,8 @@ class YahooAuth:
         context = self.context()
         call(self._retry, lambda: context.make_request("users;use_login=1/games"))
 
-    def find_leagues(self, game_code: str, season: int) -> list[League]:
-        """Every league the login plays in for one game and season.
+    def find_leagues(self, game_code: str, season: int) -> list[YahooLeague]:
+        """Every league the login plays in for one game and season; none is an answer.
 
         Filters by game code and season rather than through the SDK's
         `get_leagues`, which resolves the season against a hardcoded table of
@@ -132,22 +146,6 @@ class YahooAuth:
             LEAGUES_TTL,
             lambda: request(self._retry, lambda: context.make_request(query)),
         )
-        data = parse(raw)
-        try:
-            games = data["fantasy_content"]["users"]["user"]["games"]
-        except (KeyError, TypeError) as e:
-            raise YahooAPIError(f"Yahoo returned an unreadable league list: {e}") from e
-
         # No game for the season (`<games count="0"/>`) and a game with no
-        # leagues in it both mean the login plays nowhere — an answer, not a failure.
-        game = games.get("game") if isinstance(games, dict) else None
-        container = game.get("leagues") if isinstance(game, dict) else None
-        if not isinstance(container, dict) or "league" not in container:
-            return []
-
-        leagues: list[League] = []
-        for league_data in as_list(container["league"]):
-            league = League(context, get_value(league_data["league_key"]))
-            from_response_object(league, league_data)
-            leagues.append(league)
-        return leagues
+        # leagues in it both mean the login plays nowhere.
+        return readable("league list", lambda: league_list(parse(raw)["fantasy_content"]["users"]["user"]["games"]))

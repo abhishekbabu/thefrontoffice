@@ -426,8 +426,9 @@ which the page renders as a button and the terminal prints as a command. It
 also serves the built UI from `web/dist`, so one process on one port covers
 both.
 
-**Platforms** — Yahoo via `yahoofantasy` (OAuth2, rosters, matchups, free agents
-sorted by stat category); Sleeper, public and auth-free, which is also the stats
+**Platforms** — Yahoo, through `yahoofantasy` for its OAuth2 token and XML
+parsing only (rosters, matchups, free agents sorted by stat category, each read
+into the client's own types); Sleeper, public and auth-free, which is also the stats
 provider for both football and basketball (projections, box scores, schedules,
 transactions); Fantasy Premier League, public and auth-free, whose one
 `bootstrap-static` call carries the squad, prices, the game's own `ep_next`

@@ -9,12 +9,11 @@ quantity behind it, which is why they are built together.
 
 from datetime import date
 
-from yahoofantasy import Player
-
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource, PlayerStats, Window
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 
 WINDOW_TAGS: tuple[tuple[Window, str], ...] = (("last_5", "L5"), ("last_10", "L10"), ("last_15", "L15"))
 
@@ -37,7 +36,7 @@ class PlayerContextBuilder:
 
     def build_context_for_players(
         self,
-        players: list[Player],
+        players: list[YahooPlayer],
         matchup_start: date | None = None,
         matchup_end: date | None = None,
         annotations: dict[str, str] | None = None,
@@ -58,7 +57,7 @@ class PlayerContextBuilder:
 
     def build_player_lines(
         self,
-        players: list[Player],
+        players: list[YahooPlayer],
         matchup_start: date | None = None,
         matchup_end: date | None = None,
         annotations: dict[str, str] | None = None,
@@ -75,36 +74,33 @@ class PlayerContextBuilder:
 
         remaining_games = remaining_games or {}
         if not remaining_games and matchup_start and matchup_end:
-            teams = [p.editorial_team_abbr for p in players]
+            teams = [p.team for p in players]
             remaining_games = self.nba.get_remaining_games_bulk(teams, matchup_start, matchup_end)
 
         lines: dict[str, str] = {}
         for p in players:
-            stats_dict = self.nba.get_player_stats(p.name.full)
+            stats_dict = self.nba.get_player_stats(p.name)
 
-            games_left = remaining_games.get(p.editorial_team_abbr.upper(), None)
+            games_left = remaining_games.get(p.team.upper(), None)
             games_str = f" [{games_left}G left]" if games_left is not None else ""
 
-            status = getattr(p, "status", None)
-            injury_note = getattr(p, "injury_note", None)
             status_str = ""
-            if status:
-                status_str = f" [{status}]"
-                if injury_note:
-                    status_str += f" ({injury_note})"
+            if p.status:
+                status_str = f" [{p.status}]"
+                if p.injury_note:
+                    status_str += f" ({p.injury_note})"
 
-            slot = getattr(getattr(p, "selected_position", None), "position", "")
-            il_str = " [IN IL SPOT]" if slot in INJURED_SLOTS else ""
+            il_str = " [IN IL SPOT]" if p.slot in INJURED_SLOTS else ""
 
             note = ""
             if annotations and p.player_key in annotations:
                 note = f" {annotations[p.player_key]}"
 
-            line = f"- {p.name.full} ({p.display_position}){il_str}{status_str}{games_str}{note}"
+            line = f"- {p.name} ({p.position}){il_str}{status_str}{games_str}{note}"
             if stats_dict:
                 line += f": {self._format_stats(stats_dict)}"
-            if projections is not None and (projected := projections.lookup(p.name.full)):
+            if projections is not None and (projected := projections.lookup(p.name)):
                 line += f" | PROJ {projected.games}G {prompt.categories(projected.line)}"
-            lines[p.name.full] = line + "\n"
+            lines[p.name] = line + "\n"
 
         return lines
