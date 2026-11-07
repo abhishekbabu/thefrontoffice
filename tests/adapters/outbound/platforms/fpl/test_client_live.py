@@ -25,7 +25,7 @@ def client(tmp_path: Path) -> FPLClient:
 
 
 def test_the_bootstrap_still_carries_a_full_league(client: FPLClient) -> None:
-    assert len(client.get_teams()) == 20
+    assert len(client.get_clubs()) == 20
     assert len(client.get_gameweeks()) == 38
 
 
@@ -45,7 +45,7 @@ def test_players_still_carry_expected_goals(client: FPLClient) -> None:
 def test_every_player_resolves_to_a_position_and_a_club(client: FPLClient) -> None:
     for player in client.get_players().values():
         assert player.position in POSITIONS.values()
-        assert player.team != "???"
+        assert player.team
 
 
 def test_the_upcoming_gameweek_has_a_future_deadline(client: FPLClient) -> None:
@@ -68,6 +68,6 @@ def test_a_real_squad_reads_back_as_fifteen(client: FPLClient) -> None:
 
 
 def test_fixtures_resolve_to_known_clubs(client: FPLClient) -> None:
-    clubs = set(client.get_teams().values())
+    clubs = set(client.get_clubs())
     for fixture in client.get_fixtures(client.upcoming_gameweek().id):
         assert {fixture.home, fixture.away} <= clubs
