@@ -5,15 +5,14 @@ is what makes a kept call current or stale; the model returns whatever calls
 the test scripts, and records each prompt it was asked.
 """
 
-from typing import Any
-
 from support.ai import FakeAI
 from support.stores import FakeAnswers
 
 from thefrontoffice.application.formats import CallAnswer, WireAnswer
 from thefrontoffice.application.wire import MAX_JUDGED, WireEngine
 from thefrontoffice.domain.errors import PlayerNotFoundError
-from thefrontoffice.domain.models import CompetitionContext
+from thefrontoffice.domain.models import CompetitionContext, WireDecision
+from thefrontoffice.domain.ports import TModel
 
 
 class Wire:
@@ -38,15 +37,13 @@ class Scripted(FakeAI):
         super().__init__()
         self.calls = list(calls)
 
-    def generate_structured(self, prompt: str, schema: type, mock: Any = None) -> Any:
+    def generate_structured(self, prompt: str, schema: type[TModel]) -> TModel:
         self.prompts.append(prompt)
-        if self.calls:
-            return WireAnswer(calls=self.calls)
-        ids = [line.split(":")[0] for line in prompt.splitlines()]
-        return WireAnswer(calls=[_call(pid) for pid in ids])
+        calls = self.calls or [_call(line.split(":")[0]) for line in prompt.splitlines()]
+        return schema.model_validate(WireAnswer(calls=calls).model_dump())
 
 
-def _call(pid: str, decision: Any = "ADD") -> CallAnswer:
+def _call(pid: str, decision: WireDecision = "ADD") -> CallAnswer:
     return CallAnswer(player_id=pid, decision=decision, reason=f"because of {pid}")
 
 
@@ -90,6 +87,14 @@ def test_no_more_than_a_screen_of_players_is_put_to_the_model() -> None:
     engine.judge("L1", ids)
 
     assert wire.asked[-1] == ids[:MAX_JUDGED]
+
+
+def test_judging_a_page_with_no_kept_calls_reads_the_wire_once() -> None:
+    engine, wire, _ = _engine()
+
+    engine.judge("L1", ["a", "b"])
+
+    assert wire.asked == [["a", "b"]]
 
 
 def test_a_player_listed_twice_is_asked_about_once() -> None:

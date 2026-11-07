@@ -15,7 +15,7 @@ import logging
 from thefrontoffice.application.answers import Answers, is_current, scope
 from thefrontoffice.application.formats import WireAnswer
 from thefrontoffice.domain.errors import PlayerNotFoundError
-from thefrontoffice.domain.models import PlayerCall
+from thefrontoffice.domain.models import CompetitionContext, PlayerCall
 from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, WireProvider
 
 logger = logging.getLogger(__name__)
@@ -79,17 +79,19 @@ class WireEngine:
                 due.append(player_id)
 
         if due:
-            calls.update(self._ask(league_id, due))
+            # The prompt holds only the players being asked about: the model
+            # should not be shown players whose calls stand. Where none stand,
+            # the context already built is that prompt.
+            asking = context if due == asked else self.provider.build_wire_context(league_id, due)
+            calls.update(self._ask(league_id, due, asking))
         return [calls[pid] for pid in asked if pid in calls]
 
-    def _ask(self, league_id: str, due: list[str]) -> dict[str, PlayerCall]:
-        """Calls on `due` from the model, each kept against the lines it was given.
+    def _ask(self, league_id: str, due: list[str], context: CompetitionContext) -> dict[str, PlayerCall]:
+        """Calls on `due` from the model, each kept against the lines it was given in `context`.
 
-        Its own prompt, holding only the players being asked about: the model
-        should not be shown players whose calls stand, and a call kept against
-        a prompt that held them would not match the next look at its subject.
+        Checked later against the lines a context for a different set of
+        players holds — which `WireProvider` promises are the same.
         """
-        context = self.provider.build_wire_context(league_id, due)
         answer = self.ai.generate_structured(context.prompt, WireAnswer)
 
         # Only the players asked about, and each once: a call on someone not

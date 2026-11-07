@@ -8,8 +8,10 @@ field, to leave them alone: the prompt contract leaking into the domain, and
 the domain changing whenever a prompt did. So the model fills these, every
 field of them, and the engine builds the domain's answer from what it wrote.
 
-Every description here is read by the model, as the schema it is held to,
-and these are the only model instructions outside a competition's prompt.
+Every description here is read by the model, as the schema it is held to.
+The rest of what it is told is a competition's prompt, or an engine framing
+a question that prompt does not ask: how `trading` has prose structured, the
+role `asking` opens a conversation in, what `briefing` says was left out.
 """
 
 from pydantic import BaseModel, Field
