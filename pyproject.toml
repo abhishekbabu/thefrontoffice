@@ -92,7 +92,6 @@ ignore = [
 # over whatever called it.
 "src/thefrontoffice/adapters/inbound/**" = ["T20"]
 "scripts/**" = ["T20"]
-"tests/adapters/inbound/cli/test_console.py" = ["T20"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["thefrontoffice"]
