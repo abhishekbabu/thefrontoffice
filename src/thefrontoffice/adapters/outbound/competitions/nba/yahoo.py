@@ -85,10 +85,6 @@ def _recent(stats: PlayerStats | None, category: Category) -> str:
 class YahooNBAProvider:
     """CompetitionProvider for Yahoo category-league basketball."""
 
-    sport = "basketball"
-    competition = "nba"
-    label = "NBA (Yahoo)"
-
     @staticmethod
     def season_year(now: datetime | None = None) -> int:
         """The NBA season a date belongs to, which rolls over on 1 September,
@@ -131,7 +127,6 @@ class YahooNBAProvider:
             LeagueRef(
                 league_id=str(lg.id),
                 name=str(lg.name),
-                competition=self.competition,
                 detail=str(getattr(lg, "league_type", "")),
                 url=LEAGUE_URL.format(league_id=lg.id),
             )

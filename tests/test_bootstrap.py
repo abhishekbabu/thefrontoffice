@@ -1,168 +1,185 @@
-"""Tests for the sport registry.
+"""Tests for the composition root: the registry, and the wiring every entry point is handed.
 
-The registry is what makes adding a sport a one-file change: without it every
-entry point named the providers itself, so a new sport meant editing the CLI,
-the UI and the help text and remembering all three.
+The registry is what makes adding a competition a one-file change: without it
+every entry point named the providers itself, so a new one meant editing the
+CLI, the UI and the help text and remembering all three.
 """
 
-import typing
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
+from support.wiring import FakeCompetition, entry
 
-from thefrontoffice import bootstrap as registry
+from thefrontoffice import bootstrap
+from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
+from thefrontoffice.bootstrap import REGISTRY
 from thefrontoffice.config.settings import settings
-from thefrontoffice.domain import ports
+from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionError, UnsupportedError
+from thefrontoffice.domain.models import Action, ItemState, Summary
+from thefrontoffice.domain.ports import CompetitionProvider, TradeProvider, WireProvider
+
+# ── finding an entry ────────────────────────────────────────────────────
 
 
 def test_lookup_is_case_insensitive_and_tolerates_a_slash() -> None:
-    assert registry.find("NFL") is registry.find("nfl")
-    assert registry.find("/nfl") is registry.find("nfl")
+    assert REGISTRY.find("NFL") is REGISTRY.find("nfl")
+    assert REGISTRY.find("/nfl") is REGISTRY.find("nfl")
 
 
-def test_unknown_sport_is_none() -> None:
-    assert registry.find("cricket") is None
+def test_an_unknown_competition_is_an_error_naming_it() -> None:
+    with pytest.raises(UnknownCompetitionError, match="cricket"):
+        REGISTRY.find("cricket")
+
+
+def test_every_key_is_unique() -> None:
+    keys = [e.key for e in REGISTRY.entries]
+    assert len(set(keys)) == len(keys)
+
+
+def test_a_key_resolves_exactly() -> None:
+    assert REGISTRY.find("nfl-sleeper").platform == "sleeper"
+
+
+def test_a_bare_competition_still_resolves_while_one_platform_carries_it() -> None:
+    """Typing "nba" stays meaningful until a second platform makes it ambiguous."""
+    assert REGISTRY.find("nba").key == "nba-yahoo"
+
+
+# ── configuration ───────────────────────────────────────────────────────
 
 
 def test_nothing_is_configured_without_credentials() -> None:
     """The autouse fixture blanks every credential, so this is the bare state."""
-    assert registry.configured_competitions() == []
+    assert REGISTRY.configured() == []
 
 
 def test_sleeper_needs_only_a_username(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sleeper is public — no key, no OAuth."""
     monkeypatch.setattr(settings, "sleeper_username", "someone")
-    assert [e.competition for e in registry.configured_competitions()] == ["nfl"]
+    assert [e.key for e in REGISTRY.configured()] == ["nfl-sleeper"]
 
 
 def test_yahoo_needs_both_halves_of_the_credential(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "yahoo_client_id", "id")
-    assert registry.configured_competitions() == []
+    assert REGISTRY.configured() == []
     monkeypatch.setattr(settings, "yahoo_client_secret", "secret")
-    assert [e.competition for e in registry.configured_competitions()] == ["nba"]
+    assert [e.key for e in REGISTRY.configured()] == ["nba-yahoo"]
 
 
-def test_building_a_provider_is_deferred(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Constructing the registry must never contact a platform — the NBA build
-    opens an OAuth flow, and a football-only user must not sit through it."""
-    from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
-
-    def _must_not_run(*a: object, **k: object) -> None:
-        raise AssertionError("Yahoo was contacted while listing sports")
-
-    # What building the NBA provider calls first: listing and finding must not reach it.
-    monkeypatch.setattr(YahooAuth, "find_leagues", _must_not_run)
-    registry.all_competitions()
-    registry.configured_competitions()
-    registry.find("nba")
+def test_an_unconfigured_competition_names_what_to_set_rather_than_building() -> None:
+    """A football-only user picking NBA must be told what is missing, not dropped into an OAuth flow."""
+    with pytest.raises(NotConfiguredError, match="YAHOO_CLIENT_ID"):
+        REGISTRY.find("nba").open()
 
 
-def test_the_nfl_entry_builds_a_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_yahoo_is_not_ready_until_a_token_is_cached() -> None:
+    """The autouse fixture points the token at a file that does not exist."""
+    from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
+
+    with pytest.raises(YahooLoginRequiredError):
+        REGISTRY.find("nba").check_ready()
+
+
+# ── building a provider ─────────────────────────────────────────────────
+
+
+def test_the_nfl_entry_builds_its_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "sleeper_username", "someone")
-    entry = registry.find("nfl")
-    assert entry is not None
-    assert entry.build().competition == "nfl"
+    nfl = REGISTRY.find("nfl")
+
+    assert isinstance(nfl.open(), nfl.provider())
 
 
-def _provider_classes() -> dict[str, type]:
-    from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
-    from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
-    from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
+def test_the_premier_league_entry_builds_its_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "fpl_entry_id", 77)
+    fpl = REGISTRY.find("premier-league")
 
-    return {"nba-yahoo": YahooNBAProvider, "nfl-sleeper": SleeperNFLProvider, "premier-league-fpl": FPLProvider}
-
-
-def _implements(cls: type, port: type) -> bool:
-    """Whether a class has every member a port names: checked on the class, so nothing is built."""
-    return all(hasattr(cls, member) for member in typing.get_protocol_members(port))
-
-
-def test_every_registered_provider_implements_the_competition_port() -> None:
-    """A competition that forgets a method fails here rather than at the point of use."""
-    classes = _provider_classes()
-
-    assert set(classes) == {entry.key for entry in registry.all_competitions()}
-    for key, cls in classes.items():
-        assert _implements(cls, ports.CompetitionProvider), key
-
-
-def test_every_capability_a_registry_entry_declares_is_one_its_provider_implements() -> None:
-    """The flags are what a client is told before any provider is built; the ports are what the routes check.
-
-    Declared in one place and detected in another, the two could disagree
-    silently — a page offering what the server then refuses, or hiding what
-    it would do. This holds them together, both ways.
-    """
-    classes = _provider_classes()
-    for entry in registry.all_competitions():
-        cls = classes[entry.key]
-        assert entry.supports_trades == _implements(cls, ports.TradeProvider), entry.key
-        assert entry.judges_wire == _implements(cls, ports.WireProvider), entry.key
-        plans = _implements(cls, ports.OutlookProvider) and _implements(cls, ports.TradeMarketProvider)
-        assert entry.plans_ahead == plans, entry.key
+    assert isinstance(fpl.open(), fpl.provider())
 
 
 def test_the_nba_entry_discovers_leagues_and_wraps_them(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The NBA build performs the Yahoo handshake, then hands the provider every
-    league it found."""
+    """The NBA build performs the Yahoo handshake, then hands the provider every league it found."""
     from types import SimpleNamespace
 
     from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
 
     leagues = [SimpleNamespace(id="1", name="One", league_type="head"), SimpleNamespace(id="2", name="Two")]
     monkeypatch.setattr(YahooAuth, "find_leagues", lambda self, game, season: leagues)
+    nba = REGISTRY.find("nba")
 
-    entry = registry.find("nba")
-    assert entry is not None
-    provider = entry.build()
+    provider = nba.build()
+
+    assert isinstance(provider, nba.provider())
     assert [r.name for r in provider.list_leagues()] == ["One", "Two"]
 
 
 def test_no_nba_leagues_is_a_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
-
     from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
     from thefrontoffice.domain.errors import LeagueNotFoundError
 
     monkeypatch.setattr(YahooAuth, "find_leagues", lambda self, game, season: [])
-    entry = registry.find("nba")
-    assert entry is not None
+
     with pytest.raises(LeagueNotFoundError, match="no Yahoo NBA leagues"):
-        entry.build()
+        REGISTRY.find("nba").build()
 
 
-def test_requirements_summary_names_every_sport() -> None:
-    summary = registry.requirements_summary()
-    for entry in registry.all_competitions():
-        assert entry.label in summary
-        assert entry.requires in summary
+# ── what a competition can do ───────────────────────────────────────────
 
 
-# ── one sport, more than one platform ───────────────────────────────────
+def test_every_registered_provider_implements_the_competition_port() -> None:
+    """A competition that forgets a method fails here rather than at the point of use."""
+    for e in REGISTRY.entries:
+        assert e.can(CompetitionProvider), e.key
 
 
-def test_every_key_is_unique() -> None:
-    keys = [entry.key for entry in registry.all_competitions()]
-    assert len(set(keys)) == len(keys)
+def test_what_each_competition_can_do_is_read_off_its_provider() -> None:
+    """FPL managers transfer against the market rather than trade; only the NFL simulates its season."""
+    can = {e.key: (e.supports_trades, e.judges_wire, e.plans_ahead) for e in REGISTRY.entries}
+
+    assert can == {
+        "nba-yahoo": (True, False, False),
+        "nfl-sleeper": (True, True, True),
+        "premier-league-fpl": (False, False, False),
+    }
 
 
-def test_a_pair_resolves_exactly() -> None:
-    entry = registry.find("nfl-sleeper")
-    assert entry is not None and entry.platform == "sleeper"
+class _Trades(FakeCompetition):
+    def build_trade_context(self, league_id: str, proposal: object) -> object:
+        raise AssertionError("not asked")
 
 
-def test_a_bare_sport_still_resolves_while_one_platform_carries_it() -> None:
-    """Typing "nba" stays meaningful until a second platform makes it ambiguous."""
-    entry = registry.find("nba")
-    assert entry is not None and entry.competition == "nba"
+def test_asking_what_a_competition_can_do_builds_nothing() -> None:
+    """Building can open an OAuth flow; a client asks before anything is chosen."""
+    built: list[int] = []
+    trades = entry(_Trades(), built=built)
+
+    assert (trades.supports_trades, trades.judges_wire, trades.plans_ahead) == (True, False, False)
+    assert built == []
 
 
-# ── which model ─────────────────────────────────────────────────────────
+def test_a_capability_it_lacks_is_refused_by_name_without_building() -> None:
+    built: list[int] = []
+    plain = entry(FakeCompetition(), label="Plain", built=built)
+
+    with pytest.raises(UnsupportedError, match="Plain does not support judging free agents"):
+        plain.open_as(WireProvider, "judging free agents")
+    assert built == []
+
+
+def test_a_capability_it_has_comes_back_as_that_port() -> None:
+    provider = _Trades()
+
+    assert entry(provider).open_as(TradeProvider, "trade evaluation") is provider
+
+
+# ── the wiring ──────────────────────────────────────────────────────────
 
 
 @pytest.fixture
 def keys(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     """Set exactly the model keys named, and no others."""
-    from thefrontoffice.config.settings import settings
 
     def _set(**present: str) -> None:
         for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key"):
@@ -172,19 +189,29 @@ def keys(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
 
 
 def test_providers_are_tried_gemini_then_groq_then_openrouter(keys: Callable[..., None]) -> None:
-    from thefrontoffice.bootstrap import ai_providers
-
     keys(gemini_api_key="g", groq_api_key="q", openrouter_api_key="o")
 
-    assert ai_providers() == ["Gemini", "Groq", "OpenRouter"]
+    assert bootstrap.ai_providers() == ["Gemini", "Groq", "OpenRouter"]
 
 
 def test_a_provider_with_no_key_is_skipped(keys: Callable[..., None]) -> None:
-    from thefrontoffice.bootstrap import ai_providers
-
     keys(openrouter_api_key="o")
 
-    assert ai_providers() == ["OpenRouter"]
+    assert bootstrap.ai_providers() == ["OpenRouter"]
+
+
+def test_with_no_key_at_all_nothing_is_offered(keys: Callable[..., None]) -> None:
+    keys()
+
+    assert (bootstrap.ai_providers(), bootstrap.wiring().ai_available()) == ([], False)
+
+
+def test_a_key_saved_after_startup_counts_at_once(keys: Callable[..., None]) -> None:
+    """The model is built per call, so Settings needs no restart."""
+    wiring = bootstrap.wiring()
+    keys(groq_api_key="q")
+
+    assert wiring.ai_available()
 
 
 def test_a_rested_provider_stays_rested_across_requests() -> None:
@@ -200,26 +227,19 @@ def test_a_rested_provider_stays_rested_across_requests() -> None:
         _cooldowns.cache_clear()
 
 
-def test_with_no_key_at_all_nothing_is_offered(keys: Callable[..., None]) -> None:
-    from thefrontoffice.bootstrap import ai_available, ai_providers
-
-    keys()
-
-    assert (ai_providers(), ai_available()) == ([], False)
+SWAP = Action(kind="lineup", urgency="now", title="Start A over B", reason="B is out.", key="swap:a:b")
 
 
-def test_the_premier_league_entry_builds_a_provider(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "fpl_entry_id", 77)
-    entry = registry.find("premier-league")
-    assert entry is not None
-    assert entry.build().competition == "premier-league"
+class _OneItem(FakeCompetition):
+    def summary(self, league_id: str) -> Summary:
+        return Summary(actions=[SWAP])
 
 
-def test_yahoo_is_not_ready_until_a_token_is_cached() -> None:
-    """The autouse fixture points the token at a file that does not exist."""
-    from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
+def test_a_dismissal_kept_under_the_competitions_old_label_still_hides_its_item() -> None:
+    """Decisions are keyed by entry now; one made before that is not lost."""
+    old = DiskItemStateStore(JsonDiskCache(Path(settings.item_state_dir)), renamed={})
+    old.save("items:NFL (Sleeper):L1", {SWAP.key: ItemState(key=SWAP.key, dismissed_as=SWAP.fingerprint)})
 
-    entry = registry.find("nba")
-    assert entry is not None
-    with pytest.raises(YahooLoginRequiredError):
-        entry.check_ready()
+    week = bootstrap.wiring().week(REGISTRY.find("nfl"), _OneItem()).week("L1")
+
+    assert [a.hidden for a in week.summary.actions or []] == ["dismissed"]

@@ -15,13 +15,10 @@ Run with `just yahoo-login`, or `just yahoo-login --force` to replace a token.
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
-
-from thefrontoffice.bootstrap import yahoo_auth  # noqa: E402
-from thefrontoffice.config.logging import setup_logging  # noqa: E402
-from thefrontoffice.config.settings import settings  # noqa: E402
-from thefrontoffice.domain.errors import FrontOfficeError  # noqa: E402
+from thefrontoffice.bootstrap import yahoo_auth
+from thefrontoffice.config.logging import setup_logging
+from thefrontoffice.config.settings import settings
+from thefrontoffice.domain.errors import FrontOfficeError
 
 
 def main() -> int:

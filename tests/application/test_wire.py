@@ -17,9 +17,6 @@ from thefrontoffice.domain.models import CompetitionContext
 
 
 class Wire:
-    label = "NFL (Sleeper)"
-    sport = "football"
-
     def __init__(self) -> None:
         self.lines: dict[str, str] = {}
         self.asked: list[list[str]] = []
@@ -55,7 +52,7 @@ def _call(pid: str, decision: Any = "ADD") -> CallAnswer:
 
 def _engine(ai: FakeAI | None = None, answers: FakeAnswers | None = None) -> tuple[WireEngine, Wire, FakeAI]:
     wire, model = Wire(), ai or Scripted()
-    return WireEngine(wire, ai=model, answers=answers or FakeAnswers()), wire, model
+    return WireEngine(wire, key="nfl-sleeper", ai=model, answers=answers or FakeAnswers()), wire, model
 
 
 # ── what comes back ─────────────────────────────────────────────────────

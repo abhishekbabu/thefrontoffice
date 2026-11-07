@@ -1,35 +1,36 @@
-"""One function per slash command."""
+"""One function per slash command, each over the session's configured competitions."""
 
 from thefrontoffice.adapters.inbound import presenting
-from thefrontoffice.adapters.inbound.cli.output import _interactive_followup, _print_header, _print_rows, print_error
+from thefrontoffice.adapters.inbound.cli import output
+from thefrontoffice.adapters.inbound.cli.output import print_error
 from thefrontoffice.adapters.inbound.cli.render import render_scout_report, render_trade_verdict, render_week
 from thefrontoffice.adapters.inbound.cli.session import Session
-from thefrontoffice.bootstrap import CompetitionEntry, find, item_decisions, scout_engine, trade_engine, week_engine
-from thefrontoffice.domain.errors import FrontOfficeError
+from thefrontoffice.bootstrap import CompetitionEntry
+from thefrontoffice.domain.errors import FrontOfficeError, NotConfiguredError, UnsupportedError
 from thefrontoffice.domain.ports import TradeProvider
 
+TRADES = "trade evaluation"
 
-def _print_help(entries: list[CompetitionEntry]) -> None:
+
+def print_help(session: Session) -> None:
     """Print the commands that will actually work here.
 
     Anything needing a model is omitted without one, the same way the web UI
     omits it — listing a command that can only refuse is worse than a shorter
     list, and the absence needs no explaining because nothing is missing.
     """
-    from thefrontoffice.bootstrap import ai_available
-
-    keys = " | ".join(e.competition for e in entries) or "none configured"
-    tradeable = " | ".join(e.competition for e in entries if e.supports_trades) or "none"
-    rows = [
+    keys = " | ".join(e.key for e in session.entries) or "none configured"
+    tradeable = " | ".join(e.key for e in session.entries if e.supports_trades)
+    commands = [
         ("/leagues", "Every league you are in, per competition"),
         ("/week [competition]", "This week: the figures, the chance of winning, and what to do"),
         ("/roster [competition]", "Your squad"),
     ]
-    if ai_available():
-        rows.append((f"/scout [{keys}]", "Analyze a week. No competition runs every configured one"))
-        if tradeable != "none":
-            rows.append((f"/trade [{tradeable}] <txt>", "Evaluate a trade in plain language"))
-    rows += [
+    if session.wiring.ai_available():
+        commands.append((f"/scout [{keys}]", "Analyze a week. No competition runs every configured one"))
+        if tradeable:
+            commands.append((f"/trade [{tradeable}] <txt>", "Evaluate a trade in plain language"))
+    commands += [
         ("/help", "Show this message"),
         ("/quit", "Exit"),
     ]
@@ -37,46 +38,60 @@ def _print_help(entries: list[CompetitionEntry]) -> None:
     print()
     print("  Available commands:")
     print("  ─────────────────────────────────────")
-    width = max(len(c) for c, _ in rows)
-    for command, description in rows:
+    width = max(len(c) for c, _ in commands)
+    for command, description in commands:
         print(f"  {command.ljust(width)}   {description}")
     print()
 
 
-def _match_competition(entries: list[CompetitionEntry], token: str) -> CompetitionEntry | None:
-    """The entry in `entries` a user's competition token names, if any.
+def match(entries: list[CompetitionEntry], token: str) -> CompetitionEntry | None:
+    """The entry in `entries` a token names — by key, or by competition alone — if any.
 
     Matched within the list passed in rather than through the registry: the
     caller's list is the authority on what is available, and consulting the
     registry first lets the two disagree.
     """
-    key = token.lower().lstrip("/")
-    return next((entry for entry in entries if entry.competition == key), None)
+    name = token.lower().lstrip("/")
+    return next(
+        (e for e in entries if e.key == name),
+        next((e for e in entries if e.competition == name), None),
+    )
 
 
-def _resolve_competitions(args: list[str], entries: list[CompetitionEntry]) -> list[CompetitionEntry]:
+def _not_available(session: Session, token: str, unsupported: str = "") -> bool:
+    """Say why `token` names nothing in the session, where it names a competition at all.
+
+    Whether it did: a word that is no competition can be the start of a trade.
+    """
+    try:
+        known = session.wiring.registry.find(token)
+    except FrontOfficeError:
+        return False
+    if unsupported and not known.supports_trades:
+        print(f"  ⚠️  {UnsupportedError(known.label, unsupported)}")
+    else:
+        print(f"  ⚠️  {NotConfiguredError(known.label, known.requires)}")
+    return True
+
+
+def resolve(session: Session, args: list[str]) -> list[CompetitionEntry]:
     """Which competitions a command should run for.
 
-    No argument means every configured competition; a named one means just that,
-    provided it is configured.
+    No argument means every configured competition; a named one means just
+    that, provided it is configured.
     """
     if not args:
-        return entries
-
-    if (chosen := _match_competition(entries, args[0])) is not None:
+        return session.entries
+    if (chosen := match(session.entries, args[0])) is not None:
         return [chosen]
-
-    known = find(args[0])
-    if known is None:
+    if not _not_available(session, args[0]):
         print(f"  ❓ Unknown competition: {args[0]}")
-    else:
-        print(f"  ⚠️  {known.label} is not configured. Set {known.requires} in .env.")
     return []
 
 
-def _cmd_scout(session: Session, entries: list[CompetitionEntry], args: list[str]) -> None:
+def scout(session: Session, args: list[str]) -> None:
     """Run a scouting report for each requested competition and league."""
-    for entry in _resolve_competitions(args, entries):
+    for entry in resolve(session, args):
         try:
             provider = session.provider(entry)
             refs = provider.list_leagues()
@@ -88,9 +103,9 @@ def _cmd_scout(session: Session, entries: list[CompetitionEntry], args: list[str
             print(f"  ⚠️  No {entry.label} leagues found for this season.")
             continue
 
-        engine = scout_engine(provider)
+        engine = session.wiring.scout(entry, provider)
         for ref in refs:
-            _print_header(f"{entry.label} — {ref.name}")
+            output.header(f"{entry.label} — {ref.name}")
             if ref.detail:
                 print(f"  {ref.detail}")
             print("  ⏳ Gathering league state and building the report...")
@@ -100,38 +115,38 @@ def _cmd_scout(session: Session, entries: list[CompetitionEntry], args: list[str
                 print_error(e)
                 continue
             print("\n" + render_scout_report(report))
-            _interactive_followup(chat, "report")
+            output.follow_up(chat, "report")
 
 
-def _cmd_week(session: Session, entries: list[CompetitionEntry], args: list[str]) -> None:
+def week(session: Session, args: list[str]) -> None:
     """Show this week for each requested competition and league, as the web page has it."""
-    for entry in _resolve_competitions(args, entries):
+    for entry in resolve(session, args):
         try:
             provider = session.provider(entry)
-            engine = week_engine(provider, item_decisions())
+            engine = session.wiring.week(entry, provider)
             for ref in provider.list_leagues():
-                _print_header(f"{entry.label} — {ref.name}")
+                output.header(f"{entry.label} — {ref.name}")
                 print(render_week(presenting.week(engine.week(ref.league_id))))
         except FrontOfficeError as e:
             print_error(e, entry.label)
 
 
-def _cmd_roster(session: Session, entries: list[CompetitionEntry], args: list[str]) -> None:
+def roster(session: Session, args: list[str]) -> None:
     """Show the user's roster for each requested competition."""
-    for entry in _resolve_competitions(args, entries):
+    for entry in resolve(session, args):
         try:
             provider = session.provider(entry)
             for ref in provider.list_leagues():
-                _print_header(f"{entry.label} — {ref.name}")
-                _print_rows([card.columns for card in provider.roster(ref.league_id)])
+                output.header(f"{entry.label} — {ref.name}")
+                output.rows([card.columns for card in provider.roster(ref.league_id)])
         except FrontOfficeError as e:
             print_error(e, entry.label)
 
 
-def _cmd_leagues(session: Session, entries: list[CompetitionEntry]) -> None:
+def leagues(session: Session) -> None:
     """List every league across configured competitions."""
-    for entry in entries:
-        _print_header(entry.label)
+    for entry in session.entries:
+        output.header(entry.label)
         try:
             refs = session.provider(entry).list_leagues()
         except FrontOfficeError as e:
@@ -143,43 +158,40 @@ def _cmd_leagues(session: Session, entries: list[CompetitionEntry]) -> None:
             print(f"  • {ref.name}" + (f"  —  {ref.detail}" if ref.detail else ""))
 
 
-def _trade_competition(tradeable: list[CompetitionEntry], args: list[str]) -> tuple[CompetitionEntry | None, list[str]]:
+def trade_competition(session: Session, args: list[str]) -> tuple[CompetitionEntry | None, list[str]]:
     """Split an optional leading competition off the trade description.
 
     A trade names players on one platform, so running the same text against
-    every competition is meaningless. With one trade-capable competition there is nothing to
-    disambiguate; with several the competition must be given rather than guessed.
+    every competition is meaningless. With one trade-capable competition there
+    is nothing to disambiguate; with several the competition must be given
+    rather than guessed.
     """
-    if args and (chosen := _match_competition(tradeable, args[0])) is not None:
+    tradeable = [e for e in session.entries if e.supports_trades]
+    if args and (chosen := match(tradeable, args[0])) is not None:
         return chosen, args[1:]
 
     # A competition that exists but is not in `tradeable` has to be named as such.
-    # Falling through would fold the competition token into the trade description and
-    # price the trade against whichever competition happened to be the only tradeable
+    # Falling through would fold its name into the trade description and price
+    # the trade against whichever competition happened to be the only tradeable
     # one — silently, because a description is free text.
-    if args and (known := find(args[0])) is not None:
-        if known.supports_trades:
-            print(f"  ⚠️  {known.label} is not configured. Set {known.requires} in .env.")
-        else:
-            print(f"  ⚠️  {known.label} does not support trade evaluation.")
+    if args and _not_available(session, args[0], unsupported=TRADES):
         return None, args
 
     if len(tradeable) == 1:
         return tradeable[0], args
 
-    keys = " | ".join(e.competition for e in tradeable)
+    keys = " | ".join(e.key for e in tradeable)
     print(f"  ⚠️  Several competitions support trades. Name one: /trade [{keys}] <description>")
     return None, args
 
 
-def _cmd_trade(session: Session, entries: list[CompetitionEntry], args: list[str]) -> None:
+def trade(session: Session, args: list[str]) -> None:
     """Evaluate a trade: `/trade [competition] <description>`."""
-    tradeable = [e for e in entries if e.supports_trades]
-    if not tradeable:
+    if not any(e.supports_trades for e in session.entries):
         print("  ⚠️  No configured competition supports trade evaluation yet.")
         return
 
-    entry, args = _trade_competition(tradeable, args)
+    entry, args = trade_competition(session, args)
     if entry is None:
         return
 
@@ -189,15 +201,15 @@ def _cmd_trade(session: Session, entries: list[CompetitionEntry], args: list[str
         return
 
     trade_text = " ".join(args)
-    provider = session.provider(entry)
-    if not isinstance(provider, TradeProvider):
-        # The entry says it trades but its provider cannot: a registry slip,
-        # said plainly rather than an AttributeError mid-evaluation.
-        print(f"  ⚠️  {entry.label} does not support trade evaluation.")
+    try:
+        provider = session.provider(entry)
+        engine = session.wiring.trade(entry.as_port(provider, TradeProvider, TRADES))
+        refs = provider.list_leagues()
+    except FrontOfficeError as e:
+        print_error(e, entry.label)
         return
-    engine = trade_engine(provider)
-    for ref in provider.list_leagues():
-        _print_header(f"{entry.label} — Trade Evaluation — {ref.name}")
+    for ref in refs:
+        output.header(f"{entry.label} — Trade Evaluation — {ref.name}")
         print("  ⏳ Parsing, enriching and evaluating...")
         try:
             verdict, chat = engine.evaluate(ref.league_id, trade_text)
@@ -205,4 +217,4 @@ def _cmd_trade(session: Session, entries: list[CompetitionEntry], args: list[str
             print_error(e)
             continue
         print("\n" + render_trade_verdict(verdict))
-        _interactive_followup(chat, "trade")
+        output.follow_up(chat, "trade")

@@ -10,34 +10,27 @@ needs that competition configured.
 """
 
 import sys
-from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
-
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL  # noqa: E402
-from thefrontoffice.bootstrap import find, forecast_engine, sleeper_client  # noqa: E402
-from thefrontoffice.config.logging import setup_logging  # noqa: E402
-from thefrontoffice.domain.errors import FrontOfficeError  # noqa: E402
-from thefrontoffice.domain.ports import ForecastProvider  # noqa: E402
+from thefrontoffice.application.forecasting import ForecastEngine
+from thefrontoffice.bootstrap import REGISTRY
+from thefrontoffice.config.logging import setup_logging
+from thefrontoffice.domain.errors import FrontOfficeError
+from thefrontoffice.domain.ports import ForecastProvider
 
 
 def main() -> int:
     setup_logging()
     key = sys.argv[1] if len(sys.argv) > 1 else "nfl-sleeper"
-    entry = find(key)
-    if entry is None or not entry.is_configured():
-        print(f"  ❌ {key} is not a configured competition.")
-        return 1
     try:
-        provider = entry.build()
-        if not isinstance(provider, ForecastProvider):
-            print(f"  ❌ {entry.label} cannot be simulated yet.")
+        entry = REGISTRY.find(key)
+        competition = entry.open()
+        provider = entry.as_port(competition, ForecastProvider, "simulating a matchup")
+        league = competition.list_leagues()[0]
+        weeks = provider.played_weeks(league.league_id)
+        if not weeks:
+            print("  No finished week to backtest yet.")
             return 1
-        league = provider.list_leagues()[0]
-        week = sleeper_client().get_state(NFL).week
-        weeks = list(range(2, week))  # week 1 has no games before it to shape a range
-        calibration = forecast_engine(provider).backtest(league.league_id, weeks)
+        calibration = ForecastEngine(provider).backtest(league.league_id, weeks)
     except FrontOfficeError as e:
         print(f"  ❌ {e}")
         return 1

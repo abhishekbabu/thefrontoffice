@@ -129,8 +129,6 @@ def test_without_a_forecast_the_season_simulation_stands() -> None:
 
 
 class _Over:
-    label = "Test"
-
     def season_input(self, league_id: str) -> SeasonInput | None:
         return None
 
@@ -167,8 +165,6 @@ def _trade(team: str, mine: float, theirs: float, name: str = "X") -> TradeOptio
 
 
 class _Market:
-    label = "Test"
-
     def __init__(self, *options: TradeOption) -> None:
         self.options = options
 
