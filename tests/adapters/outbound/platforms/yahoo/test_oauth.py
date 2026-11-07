@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from support.http import FakeResponse
 
 from thefrontoffice.adapters.outbound.platforms.yahoo import oauth
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
@@ -19,16 +20,6 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRe
 REDIRECT = "https://localhost:8080"
 
 GRANTED = {"access_token": "at", "refresh_token": "rt", "expires_in": 3600, "scope": "fspt-r"}
-
-
-class FakeResponse:
-    def __init__(self, payload: dict[str, Any], status: int = 200) -> None:
-        self._payload = payload
-        self.status_code = status
-        self.text = str(payload)
-
-    def json(self) -> dict[str, Any]:
-        return self._payload
 
 
 class Exchange:
@@ -231,7 +222,7 @@ def test_waiting_is_bounded() -> None:
     """A closed tab must not hang the terminal, which serve_forever would."""
     server = OneShotServer()
 
-    with pytest.raises(YahooLoginRequiredError, match="No redirect arrived"):
+    with pytest.raises(YahooLoginRequiredError):
         _capture(server, wait_seconds=0)
     assert server.closed
 

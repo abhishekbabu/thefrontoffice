@@ -1,9 +1,9 @@
 """Canned reports, as test data.
 
 Stand-ins for what the model returns, so engine and rendering tests can assert
-on a report without one being generated. One per sport, because a basketball
-report returned for a football assertion exercises the shape and says nothing
-about the sport.
+on a report without one being generated. Each is its sport's own, because a
+basketball report returned for a football assertion exercises the shape and
+says nothing about the sport.
 
 Deliberately not in the package: the application has no use for a fabricated
 report, and shipping one invites a code path that returns it.
@@ -65,37 +65,6 @@ MOCK_NBA_VERDICT = TradeVerdict(
 )
 
 
-MOCK_NFL_REPORT = ScoutReport(
-    situation=(
-        "[MOCK] Projected to win by 6. The margin rests on the flex slot, where the "
-        "bench currently holds the higher projection."
-    ),
-    focus=["FLEX", "TE bye", "RB2 injury risk"],
-    moves=[
-        Move(
-            action="START",
-            player="Mock Running Back",
-            position="RB",
-            team="BUF",
-            metric="16.7 proj pts, +4.2 over the current starter",
-            rationale="[MOCK] Clear volume lead and a bottom-five run defense opposite him.",
-            replaces="Mock Bench Back",
-            replaces_rationale="[MOCK] Splitting carries and facing the league's best front.",
-        ),
-        Move(
-            action="ADD",
-            player="Mock Waiver Receiver",
-            position="WR",
-            team="NYJ",
-            metric="12.4 proj pts",
-            rationale="[MOCK] Promoted to the slot with the starter out; target share should spike.",
-            replaces="Mock Backup Kicker",
-            replaces_rationale="[MOCK] Streaming a kicker is cheaper than rostering two.",
-        ),
-    ],
-    strategy="[MOCK] Fix the flex, then stream the open roster spot for upside.",
-)
-
 MOCK_FPL_REPORT = ScoutReport(
     situation=(
         "[MOCK] 412 points, ranked 340,112 overall and 3rd of 12 in the mini-league. "
@@ -134,14 +103,3 @@ MOCK_FPL_REPORT = ScoutReport(
     ],
     strategy="[MOCK] Take the free transfer in defense, captain the premium, no hit.",
 )
-
-MOCK_REPORTS: dict[str, ScoutReport] = {
-    "nba": MOCK_NBA_REPORT,
-    "nfl": MOCK_NFL_REPORT,
-    "fpl": MOCK_FPL_REPORT,
-}
-
-
-def report_for(sport: str) -> ScoutReport:
-    """The canned report for a sport, falling back to the basketball one."""
-    return MOCK_REPORTS.get(sport, MOCK_NBA_REPORT)

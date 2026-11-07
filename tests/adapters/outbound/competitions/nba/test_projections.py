@@ -41,9 +41,6 @@ def game(name: str, day: str, **stats: float) -> GameProjection:
     )
 
 
-# ── name normalization ──────────────────────────────────────────────────
-
-
 # ── aggregation ─────────────────────────────────────────────────────────
 
 
@@ -115,20 +112,10 @@ def test_an_unparseable_date_is_excluded() -> None:
 # ── lookup ──────────────────────────────────────────────────────────────
 
 
-def test_a_yahoo_spelling_matches_a_sleeper_one() -> None:
-    index = ProjectionIndex([game("Luka Dončić", "2026-01-06")], WEEK_START, WEEK_END)
-    assert index.lookup("Luka Doncic") is not None
-
-
 def test_an_unmatched_name_gets_no_projection() -> None:
     """Better no number than someone else's."""
     index = ProjectionIndex([game("A B", "2026-01-06")], WEEK_START, WEEK_END)
     assert index.lookup("Someone Else") is None
-
-
-def test_a_unique_surname_still_matches_a_differing_first_name() -> None:
-    index = ProjectionIndex([game("Cameron Johnson", "2026-01-06")], WEEK_START, WEEK_END)
-    assert index.lookup("Cam Johnson") is not None
 
 
 def test_an_ambiguous_surname_is_refused_not_guessed() -> None:

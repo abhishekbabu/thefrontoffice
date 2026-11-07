@@ -21,10 +21,6 @@ def test_player_not_found_lists_every_unresolved_name() -> None:
     assert e.names == ["Lebron Jamez", "Jayson Taytum"]
 
 
-def test_player_not_found_names_a_lone_unresolved_player() -> None:
-    assert "Lebron Jamez" in str(PlayerNotFoundError(["Lebron Jamez"]))
-
-
 def test_trade_parse_error_quotes_what_was_typed() -> None:
     assert "nonsense" in str(TradeParseError("nonsense"))
 

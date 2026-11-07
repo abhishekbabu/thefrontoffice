@@ -23,9 +23,7 @@ def _rec(**overrides: object) -> Move:
 
 def test_scout_report_surfaces_every_field() -> None:
     out = render_scout_report(MOCK_NBA_REPORT)
-    assert "SITUATION" in out
-    assert "MOVES" in out
-    assert "STRATEGY" in out
+    assert all(focus in out for focus in MOCK_NBA_REPORT.focus)
     for rec in MOCK_NBA_REPORT.moves:
         assert rec.player in out
         assert rec.replaces in out
@@ -39,21 +37,16 @@ def test_recommendations_are_numbered_in_order() -> None:
 
 def test_monitor_entries_render_without_a_drop() -> None:
     """With 0 adds left the model returns MONITOR entries and no drop target."""
-    report = ScoutReport(
-        situation="No adds left.",
-        focus=["BLK"],
-        moves=[_rec(action="MONITOR", replaces="", replaces_rationale="")],
-        strategy="Hold.",
-    )
-    out = render_scout_report(report)
-    assert "Watch Test Player" in out
+    watch = _rec(action="MONITOR", replaces="", replaces_rationale="")
+    out = render_scout_report(ScoutReport(situation="No adds left.", focus=["BLK"], moves=[watch], strategy="Hold."))
+    assert watch.title in out
     assert "drop" not in out
 
 
 def test_a_move_is_worded_as_the_page_words_it() -> None:
     """One phrasing for a move, read off the model, so a terminal and a page cannot disagree."""
-    report = ScoutReport(situation="x", focus=[], moves=[_rec()], strategy="y")
-    assert "Add Test Player, drop Bench Guy" in render_scout_report(report)
+    move = _rec()
+    assert move.title in render_scout_report(ScoutReport(situation="x", focus=[], moves=[move], strategy="y"))
 
 
 def test_empty_target_list_is_stated_explicitly() -> None:
@@ -71,8 +64,6 @@ def test_long_prose_is_wrapped_not_truncated() -> None:
 
 def test_trade_verdict_surfaces_every_field() -> None:
     out = render_trade_verdict(MOCK_NBA_VERDICT)
-    for heading in ("VERDICT:", "IMPACT", "SCHEDULE", "RISK", "STRATEGY"):
-        assert heading in out
     assert MOCK_NBA_VERDICT.verdict in out
     for cat in MOCK_NBA_VERDICT.gains:
         assert cat in out

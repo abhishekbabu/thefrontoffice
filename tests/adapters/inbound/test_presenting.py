@@ -3,7 +3,6 @@
 from support.simulation import odds_split
 
 from thefrontoffice.adapters.inbound import presenting
-from thefrontoffice.application.season import chance_now
 from thefrontoffice.application.week import SeasonView, WeekView, WirePage
 from thefrontoffice.domain.models import (
     Action,
@@ -79,7 +78,8 @@ def test_the_seasons_header_weighs_this_week_as_the_weeks_header_does() -> None:
 
     headline = presenting.season(SeasonView(schedule=LeagueSchedule(), odds=odds, win=0.01)).headline
 
-    assert {s.label: s.value for s in headline}["Playoffs"] == f"{chance_now(odds, 0.01):.0%}"
+    # A one-in-a-hundred win weighs the 79% after a loss, not the season's 88%.
+    assert {s.label: s.value for s in headline}["Playoffs"] == "79%"
 
 
 # ── the wire ────────────────────────────────────────────────────────────

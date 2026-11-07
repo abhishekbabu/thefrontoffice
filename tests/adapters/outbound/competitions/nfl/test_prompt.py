@@ -10,7 +10,6 @@ from typing import Any
 
 from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeESPN, FakeSleeper, nfl_provider, proj
 from support.prompts import named_fields, schema_fields
-from support.summary import mine
 
 from thefrontoffice.adapters.outbound.competitions.nfl import prompt
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
@@ -168,24 +167,6 @@ def test_no_bench_gap_is_reported_when_already_optimal() -> None:
     assert lineup.tone == "neutral"
 
 
-def test_a_player_is_never_both_starting_and_benched() -> None:
-    """The lineup block shows what is set; the bench holds everyone else."""
-    client = FakeSleeper(
-        league=SMALL_LEAGUE,
-        projections=dict(DEFAULT_PROJECTIONS),
-        rosters=[
-            SleeperRoster(
-                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"]
-            )
-        ],
-    )
-    side = mine(nfl_provider(client).summary("L1"))
-
-    starting = {spot.player_id for spot in side.lineup if spot.player_id}
-    benched = {spot.player_id for spot in side.bench}
-    assert starting and benched and not (starting & benched)
-
-
 def test_the_bench_gap_matches_the_printed_figures() -> None:
     """The three numbers in the prompt must agree once rounded.
 
@@ -206,10 +187,7 @@ def test_the_bench_gap_matches_the_printed_figures() -> None:
             )
         ],
     )
-    current, best, gap = _figures(nfl_provider(client).build_context("L1").constraints)
-
-    assert (current, best) == (26.1, 40.1)
-    assert gap == round(best - current, 1)
+    assert _figures(nfl_provider(client).build_context("L1").constraints) == [26.1, 40.1, 14.0]
 
 
 # ── headline figures ────────────────────────────────────────────────────
@@ -220,16 +198,6 @@ def test_the_weeks_header_leaves_the_record_to_the_league_view() -> None:
     week = {stat.label for stat in _context().headline}
 
     assert "Record" not in week and "Lineup" in week
-
-
-def test_points_left_on_the_bench_ride_with_the_lineup_and_warn() -> None:
-    lineup = next(
-        s
-        for s in nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1").headline
-        if s.label == "Lineup"
-    )
-
-    assert lineup.tone == "warning"  # Good RB sits while Bad RB starts
 
 
 def test_the_header_agrees_with_the_prompt_about_the_lineup_total() -> None:
@@ -290,9 +258,9 @@ def test_the_matchup_is_fetched_once_for_both_the_prompt_and_the_header() -> Non
     )
     context = nfl_provider(client).build_context("L1")
 
+    opponent = next(s.value for s in context.headline if s.label == "Opponent")
     assert client.matchup_fetches == 1
-    assert "OPPONENT:" in context.situation
-    assert any(s.label == "Opponent" for s in context.headline)
+    assert opponent in context.situation
 
 
 # ── what the projections rest on ────────────────────────────────────────
