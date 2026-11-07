@@ -492,7 +492,10 @@ the Markdown subset the models write — paragraphs, headings, lists, bold —
 by `lib/prose.ts`, never as HTML. Color is themed in two
 orthogonal dimensions — a palette (`data-theme`) and light/dark
 (`color-scheme`) — so every token is a single `light-dark(light, dark)`
-declaration and no component branches on either.
+declaration and no component branches on either. The stored choice is applied
+before first paint by an inline script the Vite config writes into the page
+from the palette registry (`themes/prepaint.ts`), so its keys and palettes are
+never a second copy.
 
 **Tracing** — OpenTelemetry via `logfire`, configured in
 [`config/telemetry.py`](src/thefrontoffice/config/telemetry.py) and nowhere
