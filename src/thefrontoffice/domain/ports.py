@@ -6,7 +6,7 @@ what it needs, and the adapters satisfy it. Nothing in this package imports an
 adapter.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, TypedDict, TypeVar, runtime_checkable
 
@@ -17,11 +17,13 @@ from thefrontoffice.domain.models import (
     ItemState,
     LeagueSchedule,
     MatchupInput,
+    Outcomes,
     PlayedMatchup,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    RangeSearch,
     Remembered,
     SeasonInput,
     Summary,
@@ -327,6 +329,30 @@ class ForecastProvider(Protocol):
 
 
 @runtime_checkable
+class RangeTuningProvider(ForecastProvider, Protocol):
+    """A competition whose players' ranges are drawn with settings that can be tuned on weeks already played."""
+
+    def range_search(self) -> RangeSearch:
+        """The settings worth searching, as the app runs with them and the values to try."""
+        ...
+
+    def ranged_games(
+        self, league_id: str, weeks: Sequence[int], candidates: Sequence[Mapping[str, float]]
+    ) -> list[list[tuple[Outcomes, float]]]:
+        """Every player-game of `weeks`, ranged under each candidate's settings, with what he scored.
+
+        One list per candidate, in order: each overrides the searched settings it names.
+        """
+        ...
+
+    def played_matchups(
+        self, league_id: str, week: int, settings: Mapping[str, float] | None = None
+    ) -> list[PlayedMatchup]:
+        """Every matchup of a week already played, its players ranged under `settings` where given."""
+        ...
+
+
+@runtime_checkable
 class OutlookProvider(Protocol):
     """A competition whose coming weeks can be projected, so a short one is seen in time.
 
@@ -368,6 +394,10 @@ class TradeMarketProvider(Protocol):
 
 class AccountLogin(Protocol):
     """A platform account this machine authorizes interactively, in a browser."""
+
+    def has_token(self) -> bool:
+        """Whether a token is kept from an earlier login — not whether it still permits anything."""
+        ...
 
     def login(self, force: bool = False) -> None:
         """Run the handshake; with `force`, even where a token is already kept."""

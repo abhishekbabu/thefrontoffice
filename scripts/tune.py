@@ -8,41 +8,26 @@ the weeks before it, and only recommended if they also beat the current
 ones on the week they never saw. The matchup backtest is then re-run under
 both, as the check that better ranges make better win chances.
 
-Run with `just tune`; it reads the live league.
+Run with `just tune [competition]`; it reads the live league, so it needs
+that competition configured and able to range its players.
 """
 
 import itertools
-from dataclasses import replace
+import sys
+
+from leagues import first_league
 
 from thefrontoffice.adapters.inbound.cli.output import print_error
-from thefrontoffice.adapters.outbound.competitions.nfl import outcomes
 from thefrontoffice.application.forecasting import calibrate, score_ranges
-from thefrontoffice.bootstrap import nfl_provider
+from thefrontoffice.bootstrap import REGISTRY, Registry
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import RangeScore
+from thefrontoffice.domain.ports import RangeTuningProvider
 
 MEANINGFUL = 0.01
 """A held-out loss at least this much lower, as a share, before a change is worth making:
 below it the difference is the sample, not the setting."""
-
-GRID = {
-    "own_half": (2.0, 4.0, 8.0, 16.0),
-    "max_ratio": (3.0, 4.0, 6.0),
-    "projection_error": (0.0, 0.15, 0.3, 0.45),
-}
-
-
-def score(weeks: list, settings: outcomes.RangeSettings) -> RangeScore:
-    """Every player-game in `weeks`, ranged from what was known before its week."""
-    played = []
-    for before, last, players in weeks:
-        spread = outcomes.spreads(before, settings, pool_from=last)
-        for projection, actual in players:
-            # Conditional on playing: whether he plays is a different question,
-            # and these are games he did.
-            played.append((replace(outcomes.outcomes(projection, spread, settings=settings), plays=1.0), actual))
-    return score_ranges(played)
 
 
 def line(name: str, result: RangeScore) -> str:
@@ -51,47 +36,56 @@ def line(name: str, result: RangeScore) -> str:
 
 def main() -> int:
     setup_logging()
+    return run(REGISTRY, sys.argv[1] if len(sys.argv) > 1 else "nfl-sleeper")
+
+
+def run(registry: Registry, key: str) -> int:
+    """Tune the competition `key` names; 1 where there is too little played to hold a week out."""
     try:
-        provider = nfl_provider()
-        league = provider.list_leagues()[0]
+        entry = registry.find(key)
+        competition = entry.open()
+        provider = entry.as_port(competition, RangeTuningProvider, "tuning player ranges")
+        league = first_league(competition, entry.label)
         weeks = provider.played_weeks(league.league_id)
         if len(weeks) < 2:
             print("  Not enough finished weeks to tune and hold one out.")
             return 1
-        data = {week: provider.played_week(league.league_id, week) for week in weeks}
+        search = provider.range_search()
+        names = list(search.grid)
+        candidates = [dict(zip(names, values, strict=True)) for values in itertools.product(*search.grid.values())]
+        default = search.current
+        trained = provider.ranged_games(league.league_id, weeks[:-1], [default, *candidates])
+        trained_default, *scores = (score_ranges(games) for games in trained)
+        best = min(range(len(candidates)), key=lambda i: scores[i].loss)
+        chosen = candidates[best]
+        held_default, held_best = (
+            score_ranges(games) for games in provider.ranged_games(league.league_id, weeks[-1:], [default, chosen])
+        )
+        matchups = {
+            name: [g for w in weeks for g in provider.played_matchups(league.league_id, w, settings)]
+            for name, settings in (("current", default), ("best", chosen))
+        }
     except FrontOfficeError as e:
         print_error(e)
         return 1
-
-    train, holdout = [data[w] for w in weeks[:-1]], [data[weeks[-1]]]
-    candidates = [
-        replace(outcomes.DEFAULT, own_half=own_half, max_ratio=max_ratio, projection_error=error)
-        for own_half, max_ratio, error in itertools.product(
-            GRID["own_half"], GRID["max_ratio"], GRID["projection_error"]
-        )
-    ]
-    ranked = sorted(candidates, key=lambda s: score(train, s).loss)
-    best, default = ranked[0], outcomes.DEFAULT
 
     print(f"\n  Tuned on weeks {weeks[0]}-{weeks[-2]}, held out week {weeks[-1]} ({league.name})\n")
     header = f"  {'':<26}{'loss':>7}{'10-90%':>9}{'<10%':>8}{'>90%':>8}{'players':>9}"
     print(header + "\n  (right: loss low, 80% inside, 10% each side)")
     print("  training weeks")
-    print(line("current", score(train, default)))
-    print(line("best", score(train, best)))
+    print(line("current", trained_default))
+    print(line("best", scores[best]))
     print("  held-out week")
-    held_default, held_best = score(holdout, default), score(holdout, best)
     print(line("current", held_default))
     print(line("best", held_best))
 
     print("\n  matchups, all weeks (Brier: lower is better, 0.250 a coin flip)")
-    for name, settings in (("current", default), ("best", best)):
-        played = [g for w in weeks for g in provider.played_matchups(league.league_id, w, settings)]
+    for name, played in matchups.items():
         print(f"  {name:<26}{calibrate(played).brier:>7.3f}  over {len(played)} matchups")
 
-    changed = {k: getattr(best, k) for k in GRID if getattr(best, k) != getattr(default, k)}
+    changed = {k: v for k, v in chosen.items() if v != default[k]}
     print()
-    if best == default:
+    if not changed:
         print("  The current settings are already the best of the grid.")
     elif held_best.loss < held_default.loss * (1 - MEANINGFUL):
         print(f"  Recommend: {changed} — better on the week it never saw.")

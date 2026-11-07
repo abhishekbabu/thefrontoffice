@@ -616,6 +616,16 @@ def test_a_played_week_for_tuning_is_known_only_from_the_games_before_it() -> No
     assert ("rb1", 30.0) in [(p.player_id, actual) for p, actual in played]
 
 
+def test_each_candidate_ranges_the_same_played_games_under_its_own_settings() -> None:
+    client = _paired()
+    client.game_lines = [_line("rb1", 1, 9.0), _line("rb1", 2, 11.0), _line("rb1", 3, 30.0)]
+
+    narrow, wide = nfl_provider(client).ranged_games("L1", [3], [{"projection_error": 0.0}, {"projection_error": 0.45}])
+
+    assert [(o.player_id, actual) for o, actual in narrow] == [(o.player_id, actual) for o, actual in wide]
+    assert narrow != wide
+
+
 def test_last_season_is_read_for_the_shape_of_each_position() -> None:
     client = _paired()
     client.last_season_lines = [_line("old", w, 10.0 + w) for w in (1, 2, 3)]

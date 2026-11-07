@@ -28,9 +28,9 @@ from thefrontoffice.adapters.outbound.competitions.nfl import (
     league,
     market,
     news,
-    outcomes,
     outlook,
     prompt,
+    tuning,
     views,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
@@ -83,11 +83,13 @@ from thefrontoffice.domain.models import (
     CompetitionContext,
     LeagueSchedule,
     MatchupInput,
+    Outcomes,
     PlayedMatchup,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    RangeSearch,
     SeasonInput,
     Side,
     Summary,
@@ -502,24 +504,36 @@ class SleeperNFLProvider:
             return self.forecasts.wire(state, self.scoreboard, state.opponent, candidates, seeded)
         return self.forecasts.matchup(state, self.scoreboard, state.opponent, self._tasks(state), seeded)
 
-    def played_week(
-        self, league_id: str, week: int
-    ) -> tuple[evidence.Evidence, evidence.Evidence, list[tuple[Projection, float]]]:
+    def played_week(self, league_id: str, week: int) -> tuning.PlayedWeek:
         """A finished week's players, for scoring ranges: what was known before it, and what each scored."""
         return self.forecasts.played_week(self._this_season(league_id), week)
+
+    def range_search(self) -> RangeSearch:
+        return tuning.SEARCH
+
+    def ranged_games(
+        self, league_id: str, weeks: Sequence[int], candidates: Sequence[Mapping[str, float]]
+    ) -> list[list[tuple[Outcomes, float]]]:
+        """Every player-game of `weeks` under each of `candidates`, each week read once."""
+        played = [self.played_week(league_id, week) for week in weeks]
+        return [tuning.ranged(played, candidate) for candidate in candidates]
 
     def played_weeks(self, league_id: str) -> list[int]:
         """Every finished week but the first, which has no games before it to shape a range."""
         return list(range(2, self.client.get_nfl_state().week))
 
     def played_matchups(
-        self, league_id: str, week: int, settings: outcomes.RangeSettings = outcomes.DEFAULT
+        self, league_id: str, week: int, settings: Mapping[str, float] | None = None
     ) -> list[PlayedMatchup]:
-        """Every matchup of `week`, rebuilt as it stood before kickoff, with how it ended."""
+        """Every matchup of `week`, rebuilt as it stood before kickoff, with how it ended.
+
+        Args:
+            settings: searched settings to range players with in place of the app's own.
+        """
         return self.forecasts.played_matchups(
             self._this_season(league_id),
             week,
-            settings,
+            tuning.settings(settings or {}),
             lambda matchup_id: seed(league_id, week, matchup_id),
         )
 

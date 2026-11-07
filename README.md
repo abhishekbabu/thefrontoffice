@@ -61,7 +61,9 @@ just run    # interactive CLI instead
 ```
 
 `just doctor` reports what this machine is configured for, without echoing a
-secret, and flags `.env` keys nothing will read. It describes each setting as the
+secret, and flags `.env` keys nothing will read. A competition is "ready" by the
+same test the web picker greys one out with (`CompetitionEntry.blocker`), so
+Yahoo with credentials and no login says so, with the command that fixes it. It describes each setting as the
 Settings page does: what a setting unlocks and whether it is a secret are marked
 on its field in `config/settings.py`, and both read them from there.
 
@@ -178,7 +180,8 @@ engine (`application/forecasting.py`) is generic: a competition supplies its
 players' ranges through the `ForecastProvider` port. `just backtest` rebuilds
 every finished week's matchups as they stood before kickoff and scores the
 chances against who won. `just tune` searches the few settings that shape a
-range (`RangeSettings` in `nfl/outcomes.py`) on individual player-games — a
+range (`RangeSettings` in `nfl/outcomes.py`, offered for searching by `nfl/tuning.py`
+through the `RangeTuningProvider` port) on individual player-games — a
 season holds thousands, where matchups are too few to tune on — holding the
 last week out, and recommends a change only if it is meaningfully better on
 that week too.
