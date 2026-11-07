@@ -18,7 +18,7 @@ export interface paths {
          *     Unconfigured ones are returned rather than hidden so the UI can say
          *     what to set instead of silently offering less than it could.
          */
-        get: operations["list_sports_api_competitions_get"];
+        get: operations["list_sports"];
         put?: never;
         post?: never;
         delete?: never;
@@ -42,7 +42,7 @@ export interface paths {
          *     give, so nothing that needs one is shown — rather than shown and then
          *     refused, which is a click spent learning the app cannot do it.
          */
-        get: operations["capabilities_api_capabilities_get"];
+        get: operations["capabilities"];
         put?: never;
         post?: never;
         delete?: never;
@@ -60,13 +60,13 @@ export interface paths {
         };
         /**
          * Read Settings
-         * @description Every configurable value, with secrets reported as present or absent.
+         * @description Every configurable value, grouped by what it unlocks, with secrets reported as present or absent.
          *
          *     A secret's contents never leave the process. There is nothing the UI can
          *     do with the characters of an API key that it cannot do with the fact
          *     that one is set, and a page that renders them puts them in screenshots.
          */
-        get: operations["read_settings_api_settings_get"];
+        get: operations["read_settings"];
         /**
          * Save Settings
          * @description Write values to .env and re-read configuration into the running app.
@@ -75,7 +75,7 @@ export interface paths {
          *     picks up looks saved and changes nothing, which is the exact failure
          *     this endpoint exists to prevent.
          */
-        put: operations["save_settings_api_settings_put"];
+        put: operations["save_settings"];
         post?: never;
         delete?: never;
         options?: never;
@@ -83,25 +83,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/yahoo/login": {
+    "/api/{platform}/login": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Yahoo Login State */
-        get: operations["yahoo_login_state_api_yahoo_login_get"];
+        /** Login State */
+        get: operations["login_state"];
         put?: never;
         /**
-         * Start Yahoo Login
-         * @description Begin the handshake and return at once.
+         * Start Login
+         * @description Begin the platform's handshake and return at once.
          *
          *     The browser tab it opens is on this machine — the server and the person
          *     are the same place — but the click cannot be waited on inside a request,
          *     so progress is reported through the companion GET.
          */
-        post: operations["start_yahoo_login_api_yahoo_login_post"];
+        post: operations["start_login"];
         delete?: never;
         options?: never;
         head?: never;
@@ -116,7 +116,7 @@ export interface paths {
             cookie?: never;
         };
         /** List Leagues */
-        get: operations["list_leagues_api__competition__leagues_get"];
+        get: operations["list_leagues"];
         put?: never;
         post?: never;
         delete?: never;
@@ -140,7 +140,7 @@ export interface paths {
          *     football sends Depth — so the client reads whatever keys arrive rather
          *     than being taught each competition.
          */
-        get: operations["roster_api__competition__leagues__league_id__roster_get"];
+        get: operations["roster"];
         put?: never;
         post?: never;
         delete?: never;
@@ -160,7 +160,7 @@ export interface paths {
          * Player
          * @description Everything worth knowing about one player, when someone asks.
          */
-        get: operations["player_api__competition__leagues__league_id__players__player_id__get"];
+        get: operations["player"];
         put?: never;
         post?: never;
         delete?: never;
@@ -184,7 +184,7 @@ export interface paths {
          *     showing nothing the app already knows. To-do items carry what the
          *     manager decided about them — dismissed, snoozed, or back since.
          */
-        get: operations["summary_api__competition__leagues__league_id__summary_get"];
+        get: operations["summary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -206,7 +206,7 @@ export interface paths {
          * Decide
          * @description Dismiss, snooze or restore one to-do item; the decision kept, or null once restored.
          */
-        post: operations["decide_api__competition__leagues__league_id__items_post"];
+        post: operations["decide"];
         delete?: never;
         options?: never;
         head?: never;
@@ -228,7 +228,7 @@ export interface paths {
          *     is four thousand players: a client holding fifty of them can only
          *     reorder those fifty, which is a worse answer than none.
          */
-        get: operations["free_agents_api__competition__leagues__league_id__free_agents_get"];
+        get: operations["free_agents"];
         put?: never;
         post?: never;
         delete?: never;
@@ -248,7 +248,7 @@ export interface paths {
          * Teams
          * @description Everyone in the league, so their rosters can be opened.
          */
-        get: operations["teams_api__competition__leagues__league_id__teams_get"];
+        get: operations["teams"];
         put?: never;
         post?: never;
         delete?: never;
@@ -268,7 +268,7 @@ export interface paths {
          * Team Roster
          * @description Somebody else's squad, in the same columns as your own.
          */
-        get: operations["team_roster_api__competition__leagues__league_id__teams__team_id__roster_get"];
+        get: operations["team_roster"];
         put?: never;
         post?: never;
         delete?: never;
@@ -292,7 +292,7 @@ export interface paths {
          *     costs requests the week does not need — nobody checking their lineup
          *     should wait on the whole season's fixtures.
          */
-        get: operations["schedule_api__competition__leagues__league_id__schedule_get"];
+        get: operations["schedule"];
         put?: never;
         post?: never;
         delete?: never;
@@ -312,10 +312,10 @@ export interface paths {
          * Weeks Ahead
          * @description The next few weeks as your roster stands, and a pickup for any that comes up short.
          *
-         *     Empty where a competition cannot project its weeks ahead: there is
-         *     nothing to plan, which is an answer rather than a failure.
+         *     Offered only where a competition can project them, as trades are, so
+         *     one that cannot refuses rather than answering with no weeks.
          */
-        get: operations["weeks_ahead_api__competition__leagues__league_id__weeks_ahead_get"];
+        get: operations["weeks_ahead"];
         put?: never;
         post?: never;
         delete?: never;
@@ -338,7 +338,7 @@ export interface paths {
          *     Its own route because it plays the season out once per trade tried —
          *     seconds, not the instant a table should take to appear.
          */
-        get: operations["trades_api__competition__leagues__league_id__trades_get"];
+        get: operations["trades"];
         put?: never;
         post?: never;
         delete?: never;
@@ -360,7 +360,7 @@ export interface paths {
          * Scout
          * @description Judge the week's to-do list — or return the kept judgment where nothing has changed.
          */
-        post: operations["scout_api__competition__leagues__league_id__scout_post"];
+        post: operations["scout"];
         delete?: never;
         options?: never;
         head?: never;
@@ -381,7 +381,7 @@ export interface paths {
          *     What lets the week show its verdicts on load: judging is a click,
          *     and a reload should not throw the answer away.
          */
-        get: operations["judgment_api__competition__leagues__league_id__judgment_get"];
+        get: operations["judgment"];
         put?: never;
         post?: never;
         delete?: never;
@@ -407,7 +407,7 @@ export interface paths {
          *     answered about Hall's row; the turns then go through the chat endpoint
          *     like any other conversation.
          */
-        post: operations["thread_api__competition__leagues__league_id__threads_post"];
+        post: operations["thread"];
         delete?: never;
         options?: never;
         head?: never;
@@ -427,7 +427,7 @@ export interface paths {
          * Judge Free Agents
          * @description A call on each of the free agents on screen, to show on their rows.
          */
-        post: operations["judge_free_agents_api__competition__leagues__league_id__free_agents_judge_post"];
+        post: operations["judge_free_agents"];
         delete?: never;
         options?: never;
         head?: never;
@@ -450,7 +450,7 @@ export interface paths {
          *     What lets the wire show its calls on load. A player whose situation
          *     has moved since his call comes back marked stale.
          */
-        post: operations["free_agent_calls_api__competition__leagues__league_id__free_agents_calls_post"];
+        post: operations["free_agent_calls"];
         delete?: never;
         options?: never;
         head?: never;
@@ -470,7 +470,7 @@ export interface paths {
          * Ask
          * @description Ask the next question in a conversation a thread opened.
          */
-        post: operations["ask_api_chat__chat_id__post"];
+        post: operations["ask"];
         delete?: never;
         options?: never;
         head?: never;
@@ -654,8 +654,10 @@ export interface components {
             name: string;
             /** Judges Wire */
             judges_wire: boolean;
-            /** Plans Ahead */
-            plans_ahead: boolean;
+            /** Plans Weeks */
+            plans_weeks: boolean;
+            /** Finds Trades */
+            finds_trades: boolean;
             /** Configured */
             configured: boolean;
             /** Requires */
@@ -826,15 +828,10 @@ export interface components {
              * @description How many free agents one judging asks about: a screen's worth of the best.
              */
             judged: number;
-            /**
-             * Trade Change
-             * @description The least a trade must raise your playoff chance to be offered, as a fraction: 0.005.
-             */
-            trade_change: number;
         };
         /**
          * LoginState
-         * @description Where the Yahoo handshake has got to.
+         * @description Where a platform's login handshake has got to.
          */
         LoginState: {
             /**
@@ -1132,6 +1129,12 @@ export interface components {
              */
             url: string;
             /**
+             * Platform
+             * @description Whose login an authorize starts: 'yahoo'; empty otherwise.
+             * @default
+             */
+            platform: string;
+            /**
              * Command
              * @description What a terminal does instead, or empty where it has nothing to run.
              * @default
@@ -1273,6 +1276,18 @@ export interface components {
              * @default
              */
             effective: string;
+        };
+        /**
+         * SettingsGroup
+         * @description The settings that unlock one thing, and what to know before setting them.
+         */
+        SettingsGroup: {
+            /** Title */
+            title: string;
+            /** Note */
+            note: string;
+            /** Settings */
+            settings: components["schemas"]["Setting"][];
         };
         /** SettingsUpdate */
         SettingsUpdate: {
@@ -1698,7 +1713,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    list_sports_api_competitions_get: {
+    list_sports: {
         parameters: {
             query?: never;
             header?: never;
@@ -1745,7 +1760,7 @@ export interface operations {
             };
         };
     };
-    capabilities_api_capabilities_get: {
+    capabilities: {
         parameters: {
             query?: never;
             header?: never;
@@ -1792,7 +1807,7 @@ export interface operations {
             };
         };
     };
-    read_settings_api_settings_get: {
+    read_settings: {
         parameters: {
             query?: never;
             header?: never;
@@ -1807,7 +1822,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Setting"][];
+                    "application/json": components["schemas"]["SettingsGroup"][];
                 };
             };
             /** @description Bad Request */
@@ -1839,7 +1854,7 @@ export interface operations {
             };
         };
     };
-    save_settings_api_settings_put: {
+    save_settings: {
         parameters: {
             query?: never;
             header?: never;
@@ -1858,7 +1873,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Setting"][];
+                    "application/json": components["schemas"]["SettingsGroup"][];
                 };
             };
             /** @description Bad Request */
@@ -1899,11 +1914,13 @@ export interface operations {
             };
         };
     };
-    yahoo_login_state_api_yahoo_login_get: {
+    login_state: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                platform: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -1935,6 +1952,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
             /** @description Service Unavailable */
             503: {
                 headers: {
@@ -1946,11 +1972,13 @@ export interface operations {
             };
         };
     };
-    start_yahoo_login_api_yahoo_login_post: {
+    start_login: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                platform: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -1982,6 +2010,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
             /** @description Service Unavailable */
             503: {
                 headers: {
@@ -1993,7 +2030,7 @@ export interface operations {
             };
         };
     };
-    list_leagues_api__competition__leagues_get: {
+    list_leagues: {
         parameters: {
             query?: never;
             header?: never;
@@ -2051,7 +2088,7 @@ export interface operations {
             };
         };
     };
-    roster_api__competition__leagues__league_id__roster_get: {
+    roster: {
         parameters: {
             query?: never;
             header?: never;
@@ -2110,7 +2147,7 @@ export interface operations {
             };
         };
     };
-    player_api__competition__leagues__league_id__players__player_id__get: {
+    player: {
         parameters: {
             query?: never;
             header?: never;
@@ -2170,7 +2207,7 @@ export interface operations {
             };
         };
     };
-    summary_api__competition__leagues__league_id__summary_get: {
+    summary: {
         parameters: {
             query?: never;
             header?: never;
@@ -2229,7 +2266,7 @@ export interface operations {
             };
         };
     };
-    decide_api__competition__leagues__league_id__items_post: {
+    decide: {
         parameters: {
             query?: never;
             header?: never;
@@ -2292,7 +2329,7 @@ export interface operations {
             };
         };
     };
-    free_agents_api__competition__leagues__league_id__free_agents_get: {
+    free_agents: {
         parameters: {
             query?: {
                 offset?: number;
@@ -2361,7 +2398,7 @@ export interface operations {
             };
         };
     };
-    teams_api__competition__leagues__league_id__teams_get: {
+    teams: {
         parameters: {
             query?: never;
             header?: never;
@@ -2420,7 +2457,7 @@ export interface operations {
             };
         };
     };
-    team_roster_api__competition__leagues__league_id__teams__team_id__roster_get: {
+    team_roster: {
         parameters: {
             query?: never;
             header?: never;
@@ -2480,7 +2517,7 @@ export interface operations {
             };
         };
     };
-    schedule_api__competition__leagues__league_id__schedule_get: {
+    schedule: {
         parameters: {
             query?: never;
             header?: never;
@@ -2539,7 +2576,7 @@ export interface operations {
             };
         };
     };
-    weeks_ahead_api__competition__leagues__league_id__weeks_ahead_get: {
+    weeks_ahead: {
         parameters: {
             query?: never;
             header?: never;
@@ -2598,7 +2635,7 @@ export interface operations {
             };
         };
     };
-    trades_api__competition__leagues__league_id__trades_get: {
+    trades: {
         parameters: {
             query?: never;
             header?: never;
@@ -2657,7 +2694,7 @@ export interface operations {
             };
         };
     };
-    scout_api__competition__leagues__league_id__scout_post: {
+    scout: {
         parameters: {
             query?: never;
             header?: never;
@@ -2716,7 +2753,7 @@ export interface operations {
             };
         };
     };
-    judgment_api__competition__leagues__league_id__judgment_get: {
+    judgment: {
         parameters: {
             query?: never;
             header?: never;
@@ -2775,7 +2812,7 @@ export interface operations {
             };
         };
     };
-    thread_api__competition__leagues__league_id__threads_post: {
+    thread: {
         parameters: {
             query?: never;
             header?: never;
@@ -2838,7 +2875,7 @@ export interface operations {
             };
         };
     };
-    judge_free_agents_api__competition__leagues__league_id__free_agents_judge_post: {
+    judge_free_agents: {
         parameters: {
             query?: never;
             header?: never;
@@ -2901,7 +2938,7 @@ export interface operations {
             };
         };
     };
-    free_agent_calls_api__competition__leagues__league_id__free_agents_calls_post: {
+    free_agent_calls: {
         parameters: {
             query?: never;
             header?: never;
@@ -2964,7 +3001,7 @@ export interface operations {
             };
         };
     };
-    ask_api_chat__chat_id__post: {
+    ask: {
         parameters: {
             query?: never;
             header?: never;

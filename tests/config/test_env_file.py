@@ -10,7 +10,8 @@ from pathlib import Path
 import pytest
 
 from thefrontoffice.config import env_file
-from thefrontoffice.config.settings import settings
+from thefrontoffice.config.env_file import EnvFile
+from thefrontoffice.config.settings import AppSettings
 
 TEMPLATE = """# Yahoo credentials
 YAHOO_CLIENT_ID=abc
@@ -22,32 +23,23 @@ LOG_LEVEL=INFO
 """
 
 
+def _env(path: Path) -> EnvFile:
+    """The file at `path`, configuring settings of the test's own rather than the process's."""
+    return EnvFile(path, settings=AppSettings(_env_file=None))
+
+
 @pytest.fixture
-def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def env(tmp_path: Path) -> EnvFile:
     path = tmp_path / ".env"
     path.write_text(TEMPLATE, encoding="utf-8")
-    monkeypatch.setattr(env_file, "ENV_PATH", path)
-    # Reloading would re-read the developer's real file, not this one.
-    monkeypatch.setattr(env_file, "reload_settings", lambda: None)
-    return path
-
-
-# ── what the app declares ───────────────────────────────────────────────
-
-
-def test_an_aliased_field_reports_the_variable_a_user_types() -> None:
-    assert env_file.env_var("gemini_api_key") == "GOOGLE_API_KEY"
-
-
-def test_a_plain_field_maps_to_its_uppercase_name() -> None:
-    assert env_file.env_var("sleeper_username") == "SLEEPER_USERNAME"
+    return _env(path)
 
 
 # ── reading ─────────────────────────────────────────────────────────────
 
 
-def test_values_are_read_in_file_order(env: Path) -> None:
-    assert list(env_file.read_values()) == [
+def test_values_are_read_in_file_order(env: EnvFile) -> None:
+    assert list(env.read_values()) == [
         "YAHOO_CLIENT_ID",
         "YAHOO_CLIENT_SECRET",
         "SLEEPER_USERNAME",
@@ -55,76 +47,73 @@ def test_values_are_read_in_file_order(env: Path) -> None:
     ]
 
 
-def test_comments_are_not_keys(env: Path) -> None:
-    assert "# Yahoo credentials" not in env_file.read_values()
+def test_comments_are_not_keys(env: EnvFile) -> None:
+    assert "# Yahoo credentials" not in env.read_values()
 
 
-def test_a_missing_file_reads_as_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(env_file, "ENV_PATH", tmp_path / "absent")
-    assert env_file.read_values() == {}
+def test_a_missing_file_reads_as_empty(tmp_path: Path) -> None:
+    assert _env(tmp_path / "absent").read_values() == {}
 
 
-def test_a_quoted_value_reads_back_unquoted(env: Path) -> None:
-    env.write_text('SLEEPER_USERNAME="two words"\n', encoding="utf-8")
-    assert env_file.read_values()["SLEEPER_USERNAME"] == "two words"
+def test_a_quoted_value_reads_back_unquoted(env: EnvFile) -> None:
+    env.path.write_text('SLEEPER_USERNAME="two words"\n', encoding="utf-8")
+    assert env.read_values()["SLEEPER_USERNAME"] == "two words"
 
 
 # ── writing ─────────────────────────────────────────────────────────────
 
 
-def test_an_existing_key_is_replaced_in_place(env: Path) -> None:
-    env_file.write_values({"SLEEPER_USERNAME": "someone-else"})
-    assert env_file.read_values()["SLEEPER_USERNAME"] == "someone-else"
+def test_an_existing_key_is_replaced_in_place(env: EnvFile) -> None:
+    env.write_values({"SLEEPER_USERNAME": "someone-else"})
+    assert env.read_values()["SLEEPER_USERNAME"] == "someone-else"
 
 
-def test_comments_and_ordering_survive_a_write(env: Path) -> None:
+def test_comments_and_ordering_survive_a_write(env: EnvFile) -> None:
     """The file is a person's, not this app's — regenerating it would lose that."""
-    env_file.write_values({"SLEEPER_USERNAME": "someone-else"})
-    text = env.read_text(encoding="utf-8")
+    env.write_values({"SLEEPER_USERNAME": "someone-else"})
+    text = env.path.read_text(encoding="utf-8")
 
     assert "# Yahoo credentials" in text
     assert "# Sleeper — no key needed" in text
     assert text.index("YAHOO_CLIENT_ID") < text.index("SLEEPER_USERNAME")
 
 
-def test_a_new_key_is_appended(env: Path) -> None:
-    env_file.write_values({"FPL_ENTRY_ID": "12345"})
-    assert env_file.read_values()["FPL_ENTRY_ID"] == "12345"
+def test_a_new_key_is_appended(env: EnvFile) -> None:
+    env.write_values({"FPL_ENTRY_ID": "12345"})
+    assert env.read_values()["FPL_ENTRY_ID"] == "12345"
 
 
-def test_an_untouched_key_keeps_its_value(env: Path) -> None:
-    env_file.write_values({"FPL_ENTRY_ID": "12345"})
-    assert env_file.read_values()["YAHOO_CLIENT_ID"] == "abc"
+def test_an_untouched_key_keeps_its_value(env: EnvFile) -> None:
+    env.write_values({"FPL_ENTRY_ID": "12345"})
+    assert env.read_values()["YAHOO_CLIENT_ID"] == "abc"
 
 
-def test_a_key_no_setting_reads_is_refused(env: Path) -> None:
+def test_a_key_no_setting_reads_is_refused(env: EnvFile) -> None:
     """A line nothing picks up looks saved and changes nothing."""
     with pytest.raises(env_file.UnknownSettingError, match="GOOGLE_APIKEY"):
-        env_file.write_values({"GOOGLE_APIKEY": "oops"})
+        env.write_values({"GOOGLE_APIKEY": "oops"})
 
 
-def test_a_refused_write_leaves_the_file_alone(env: Path) -> None:
-    before = env.read_text(encoding="utf-8")
+def test_a_refused_write_leaves_the_file_alone(env: EnvFile) -> None:
+    before = env.path.read_text(encoding="utf-8")
     with pytest.raises(env_file.UnknownSettingError):
-        env_file.write_values({"SLEEPER_USERNAME": "valid", "NOT_A_SETTING": "x"})
-    assert env.read_text(encoding="utf-8") == before
+        env.write_values({"SLEEPER_USERNAME": "valid", "NOT_A_SETTING": "x"})
+    assert env.path.read_text(encoding="utf-8") == before
 
 
-def test_an_empty_value_clears_the_key(env: Path) -> None:
+def test_an_empty_value_clears_the_key(env: EnvFile) -> None:
     """`KEY=` is how people write "I do not use this", and AppSettings agrees."""
-    env_file.write_values({"SLEEPER_USERNAME": ""})
-    assert env_file.read_values()["SLEEPER_USERNAME"] == ""
+    env.write_values({"SLEEPER_USERNAME": ""})
+    assert env.read_values()["SLEEPER_USERNAME"] == ""
 
 
-def test_a_file_that_does_not_exist_yet_is_created(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    path = tmp_path / ".env"
-    monkeypatch.setattr(env_file, "ENV_PATH", path)
-    monkeypatch.setattr(env_file, "reload_settings", lambda: None)
+def test_a_file_that_does_not_exist_yet_is_created(tmp_path: Path) -> None:
+    env = _env(tmp_path / ".env")
 
-    env_file.write_values({"FPL_ENTRY_ID": "99"})
+    env.write_values({"FPL_ENTRY_ID": "99"})
 
-    assert path.exists()
-    assert env_file.read_values() == {"FPL_ENTRY_ID": "99"}
+    assert env.path.exists()
+    assert env.read_values() == {"FPL_ENTRY_ID": "99"}
 
 
 # ── values a bare dotenv line cannot carry ──────────────────────────────
@@ -134,15 +123,15 @@ def test_a_file_that_does_not_exist_yet_is_created(tmp_path: Path, monkeypatch: 
     "value",
     ["two words", "has#hash", 'has"quote', "back\\slash", "$dollar", "  padded  "],
 )
-def test_an_awkward_value_survives_a_round_trip(env: Path, value: str) -> None:
-    env_file.write_values({"SLEEPER_USERNAME": value})
-    assert env_file.read_values()["SLEEPER_USERNAME"] == value
+def test_an_awkward_value_survives_a_round_trip(env: EnvFile, value: str) -> None:
+    env.write_values({"SLEEPER_USERNAME": value})
+    assert env.read_values()["SLEEPER_USERNAME"] == value
 
 
-def test_an_ordinary_value_is_not_needlessly_quoted(env: Path) -> None:
+def test_an_ordinary_value_is_not_needlessly_quoted(env: EnvFile) -> None:
     """So a file edited here still reads like one edited by hand."""
-    env_file.write_values({"SLEEPER_USERNAME": "abhibeast"})
-    assert "SLEEPER_USERNAME=abhibeast" in env.read_text(encoding="utf-8")
+    env.write_values({"SLEEPER_USERNAME": "abhibeast"})
+    assert "SLEEPER_USERNAME=abhibeast" in env.path.read_text(encoding="utf-8")
 
 
 # ── the shell wins ──────────────────────────────────────────────────────
@@ -158,32 +147,20 @@ def test_a_shell_variable_is_reported_as_shadowing(monkeypatch: pytest.MonkeyPat
 # ── reloading ───────────────────────────────────────────────────────────
 
 
-def test_reload_mutates_the_singleton_every_module_already_holds(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_a_write_refreshes_the_settings_every_module_already_holds(
+    env: EnvFile, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Rebinding would leave every `from ... import settings` on the old object.
-
-    Read from a file of the test's own, and with every field recorded first so
-    the reload cannot carry the developer's real `.env` into the rest of the suite.
-    """
-    from thefrontoffice.config.settings import AppSettings
-
-    path = tmp_path / ".env"
-    path.write_text("SLEEPER_USERNAME=fresh-name\n", encoding="utf-8")
-    monkeypatch.setitem(AppSettings.model_config, "env_file", path)
+    """Rebinding would leave every `from ... import settings` on the old object."""
     monkeypatch.delenv("SLEEPER_USERNAME", raising=False)
-    for field in AppSettings.model_fields:
-        monkeypatch.setattr(settings, field, getattr(settings, field))
-    before = settings
-    monkeypatch.setattr(settings, "sleeper_username", "stale")
+    held = env.settings
 
-    env_file.reload_settings()
+    env.write_values({"SLEEPER_USERNAME": "fresh-name"})
 
-    assert settings is before
-    assert settings.sleeper_username == "fresh-name"
+    assert env.settings is held
+    assert held.sleeper_username == "fresh-name"
 
 
-def test_pydantic_reads_back_exactly_what_was_written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pydantic_reads_back_exactly_what_was_written(tmp_path: Path) -> None:
     """The contract that actually matters.
 
     This module's own reader agreeing with its own writer proves nothing —
@@ -192,14 +169,12 @@ def test_pydantic_reads_back_exactly_what_was_written(tmp_path: Path, monkeypatc
     """
     from pydantic_settings import BaseSettings, SettingsConfigDict
 
-    path = tmp_path / ".env"
-    monkeypatch.setattr(env_file, "ENV_PATH", path)
-    monkeypatch.setattr(env_file, "reload_settings", lambda: None)
+    env = _env(tmp_path / ".env")
     awkward = 'two words #hash "quoted" back\\slash'
-    env_file.write_values({"SLEEPER_USERNAME": awkward})
+    env.write_values({"SLEEPER_USERNAME": awkward})
 
     class Probe(BaseSettings):
-        model_config = SettingsConfigDict(env_file=path, extra="ignore")
+        model_config = SettingsConfigDict(env_file=env.path, extra="ignore")
         sleeper_username: str = ""
 
     assert Probe().sleeper_username == awkward
@@ -232,6 +207,49 @@ def test_a_choice_carries_its_allowed_values() -> None:
     assert env_file.field_kind("log_level")[1] == ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
-def test_a_boolean_writes_the_spelling_dotenv_reads_back(env: Path) -> None:
-    env_file.write_values({"LOGFIRE_CAPTURE_PROMPTS": "true"})
-    assert "LOGFIRE_CAPTURE_PROMPTS=true" in env.read_text(encoding="utf-8")
+def test_a_boolean_writes_the_spelling_dotenv_reads_back(env: EnvFile) -> None:
+    env.write_values({"LOGFIRE_CAPTURE_PROMPTS": "true"})
+    assert "LOGFIRE_CAPTURE_PROMPTS=true" in env.path.read_text(encoding="utf-8")
+
+
+# ── describing a setting ────────────────────────────────────────────────
+
+
+def test_a_secret_is_described_by_its_presence_alone(tmp_path: Path) -> None:
+    """There is nothing a reader can do with the characters of an API key that it cannot do with the fact one is set."""
+    env = EnvFile(tmp_path / ".env", settings=AppSettings(_env_file=None, groq_api_key="super-secret-value"))
+
+    described = env.describe("groq_api_key", "super-secret-value")
+
+    assert (described.secret, described.present) == (True, True)
+    assert "super-secret-value" not in described.model_dump_json()
+
+
+def test_a_non_secret_carries_what_the_file_holds(env: EnvFile) -> None:
+    assert env.describe("sleeper_username", "abhibeast").value == "abhibeast"
+
+
+def test_a_boolean_is_described_by_its_effective_value_not_the_file_text(tmp_path: Path) -> None:
+    """An absent key and a false one look identical in the file, so the file text cannot say a setting is on."""
+    env = EnvFile(tmp_path / ".env", settings=AppSettings(_env_file=None, logfire_capture_prompts=True))
+
+    assert env.describe("logfire_capture_prompts").value == "true"
+
+
+def test_a_default_in_force_is_not_described_as_unset(env: EnvFile) -> None:
+    described = env.describe("log_level")
+
+    assert (described.value, described.effective) == ("", "INFO")
+
+
+def test_every_setting_is_described_under_a_group(env: EnvFile) -> None:
+    """A setting the page has no group for would be unreachable there, with nothing to say so."""
+    grouped = [setting.field for group in env.groups() for setting in group.settings]
+
+    assert sorted(grouped) == sorted(AppSettings.model_fields)
+
+
+def test_a_key_in_the_file_nothing_reads_is_unknown(env: EnvFile) -> None:
+    env.path.write_text("GOOGLE_APIKEY=abc\nSLEEPER_USERNAME=someone\n", encoding="utf-8")
+
+    assert env.unknown() == ["GOOGLE_APIKEY"]

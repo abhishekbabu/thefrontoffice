@@ -14,6 +14,7 @@ Run with `just tune`; it reads the live league.
 import itertools
 from dataclasses import replace
 
+from thefrontoffice.adapters.inbound.cli.output import print_error
 from thefrontoffice.adapters.outbound.competitions.nfl import outcomes
 from thefrontoffice.application.forecasting import calibrate, score_ranges
 from thefrontoffice.bootstrap import nfl_provider
@@ -59,7 +60,7 @@ def main() -> int:
             return 1
         data = {week: provider.played_week(league.league_id, week) for week in weeks}
     except FrontOfficeError as e:
-        print(f"  ❌ {e}")
+        print_error(e)
         return 1
 
     train, holdout = [data[w] for w in weeks[:-1]], [data[weeks[-1]]]

@@ -40,7 +40,7 @@ export function RemedyAction({ remedy }: { remedy: Remedy }) {
   const navigate = useNavigate();
   switch (remedy.action) {
     case "authorize":
-      return <YahooLoginButton label={remedy.label} />;
+      return <LoginButton label={remedy.label} platform={remedy.platform} />;
     case "settings":
       return (
         <Button variant="outline" onClick={() => navigate(SETTINGS)}>
@@ -66,20 +66,20 @@ export function RemedyAction({ remedy }: { remedy: Remedy }) {
 }
 
 /**
- * Starts the Yahoo handshake and watches it.
+ * Starts the handshake of the platform the remedy names, and watches it.
  *
  * The click cannot be answered by one request: authorizing means a browser tab
  * and a person, so the server starts the flow and reports progress separately.
  */
-function YahooLoginButton({ label }: { label: string }) {
+function LoginButton({ label, platform }: { label: string; platform: string }) {
   const queryClient = useQueryClient();
   const [watching, setWatching] = useState(false);
 
-  const start = useMutation({ mutationFn: api.yahooLogin, onSuccess: () => setWatching(true) });
+  const start = useMutation({ mutationFn: () => api.login(platform), onSuccess: () => setWatching(true) });
 
   const state = useQuery({
-    queryKey: keys.yahooLogin,
-    queryFn: api.yahooLoginState,
+    queryKey: keys.login(platform),
+    queryFn: () => api.loginState(platform),
     enabled: watching,
     refetchInterval: (query) => (query.state.data?.status === "running" ? 1500 : false),
   });

@@ -85,6 +85,11 @@ class YahooAuth:
     def login(self, force: bool = False) -> None:
         """Run the OAuth2 handshake. Interactive: opens a browser and waits.
 
+        With `force`, the kept token is discarded first rather than left to be
+        overwritten: a re-authorization exists to obtain a *new* grant, and an
+        old one left in place invites reusing it — the inert grant of an app
+        Yahoo had not yet approved, say.
+
         Raises:
             YahooAPIError: credentials are missing.
             YahooLoginRequiredError: the handshake did not complete.
@@ -93,6 +98,9 @@ class YahooAuth:
             return
         if not self._client_id or not self._client_secret:
             raise YahooAPIError("YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET must be set before logging in.")
+        if self._token_file.exists():
+            self._token_file.unlink()
+            logger.info(f"Discarded the Yahoo token in {self._token_file} to authorize afresh.")
 
         self._authorize(self._client_id, self._client_secret, self._redirect_uri)
         logger.info("Yahoo login complete; token cached.")

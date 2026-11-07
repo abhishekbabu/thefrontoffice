@@ -10,7 +10,7 @@ must never be made to sit through one.
 
 import functools
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,7 +23,8 @@ from thefrontoffice.application.season import MarketEngine, SeasonEngine
 from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.application.week import WeekEngine
 from thefrontoffice.application.wire import WireEngine
-from thefrontoffice.config.settings import settings
+from thefrontoffice.config.env_file import EnvFile
+from thefrontoffice.config.settings import PROJECT_ROOT, settings
 from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionError, UnsupportedError
 from thefrontoffice.domain.ports import (
     AccountLogin,
@@ -32,7 +33,6 @@ from thefrontoffice.domain.ports import (
     CompetitionProvider,
     ContextProvider,
     ForecastProvider,
-    OutlookProvider,
     SeasonProvider,
     SubjectProvider,
     TradeMarketProvider,
@@ -117,21 +117,6 @@ class CompetitionEntry:
     def can(self, port: type[object]) -> bool:
         """Whether its provider implements `port`: read off the class, so nothing is built to ask."""
         return issubclass(self.provider(), port)
-
-    @property
-    def supports_trades(self) -> bool:
-        """Whether a proposed trade can be evaluated."""
-        return self.can(TradeProvider)
-
-    @property
-    def judges_wire(self) -> bool:
-        """Whether its available players can be judged."""
-        return self.can(WireProvider)
-
-    @property
-    def plans_ahead(self) -> bool:
-        """Whether its coming weeks and the trades worth offering can be shown."""
-        return self.can(OutlookProvider) and self.can(TradeMarketProvider)
 
     def open(self) -> CompetitionProvider:
         """Its provider, built — or why it cannot be, before anything is contacted.
@@ -252,6 +237,11 @@ def _yahoo_auth(cache: JsonDiskCache) -> YahooAuth:
 def yahoo_auth() -> YahooAuth:
     """This machine's Yahoo login: for the entry points that log in and check the grant."""
     return _yahoo_auth(_disk_cache(settings.yahoo_cache_dir))
+
+
+def env_file() -> EnvFile:
+    """The `.env` this process was configured from, which a save reloads it from."""
+    return EnvFile(PROJECT_ROOT / ".env", settings=settings)
 
 
 def _answer_store() -> DiskAnswerStore:
@@ -386,8 +376,8 @@ def default_model() -> RoutedModel:
 
     vendors = [
         gemini.GeminiClient(client=gemini.connect(settings.gemini_api_key)),
-        OpenAICompatibleClient(providers.groq()),
-        OpenAICompatibleClient(providers.openrouter()),
+        OpenAICompatibleClient(providers.groq(settings)),
+        OpenAICompatibleClient(providers.openrouter(settings)),
     ]
     return RoutedModel(vendors, _cooldowns())
 
@@ -410,14 +400,18 @@ class Wiring:
 
     Built once per process by `wiring()`; a test builds one from fakes. The
     model is built per call, so a key saved in Settings counts at once, and
-    so is the Yahoo login, so a client id saved there does too.
+    so is each login, so a client id saved there does too.
     """
 
     registry: Registry
     model: Callable[[], AnalysisModel]
     answers: AnswerStore
     decisions: ItemDecisions
-    yahoo_login: Callable[[], AccountLogin]
+    logins: Mapping[str, Callable[[], AccountLogin]]
+    """Each platform that logs in through a browser, by its registry name."""
+
+    env: EnvFile
+    """The configuration, as the Settings page reads and edits it."""
 
     def ai_available(self) -> bool:
         """Whether any model can be called at all.
@@ -466,5 +460,6 @@ def wiring() -> Wiring:
         model=default_model,
         answers=_answer_store(),
         decisions=_item_decisions(),
-        yahoo_login=yahoo_auth,
+        logins={"yahoo": yahoo_auth},
+        env=env_file(),
     )

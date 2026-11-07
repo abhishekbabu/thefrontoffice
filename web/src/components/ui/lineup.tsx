@@ -3,6 +3,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { CardNote } from "@/components/ui/state";
 import type { Side, Spot, Swap } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
 
 /**
  * The team as it currently stands, and what the numbers say to change.
@@ -35,9 +36,9 @@ export function LineupCard({
       <div className="grid grid-cols-1 md:grid-cols-2">
         <SpotList spots={lineup} onOpen={onOpen} />
         <div className="border-t border-border md:border-l md:border-t-0">
-          <div className="border-b border-border px-4 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          <Label as="div" className="border-b border-border px-4 py-2">
             Bench
-          </div>
+          </Label>
           <SpotList spots={bench} empty="Nobody on the bench." onOpen={onOpen} />
         </div>
       </div>
@@ -54,9 +55,9 @@ export function LineupCard({
 export function Swaps({ swaps, className }: { swaps: Swap[]; className?: string }) {
   return (
     <div className={className}>
-      <div className="px-4 pb-1 pt-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+      <Label as="div" className="px-4 pb-1 pt-3">
         Changes the projections imply
-      </div>
+      </Label>
       {swaps.map((swap) => (
         <div key={swap.start} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-4 py-2 text-[13px]">
           <span className="font-medium">{swap.start}</span>
@@ -90,9 +91,7 @@ function SpotList({ spots, empty, onOpen }: { spots: Spot[]; empty?: string; onO
           )}
         >
           {spot.slot && (
-            <span className="w-16 shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-              {spot.slot}
-            </span>
+            <Label className="w-16 shrink-0">{spot.slot}</Label>
           )}
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13.5px] font-medium">{spot.player}</div>
@@ -136,9 +135,9 @@ export function SideCard({ side, label, onOpen }: { side: Side | null; label: st
       <SpotList spots={side.lineup} onOpen={onOpen} />
       {side.bench.length > 0 && (
         <>
-          <div className="border-y border-border px-4 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          <Label as="div" className="border-y border-border px-4 py-2">
             Bench
-          </div>
+          </Label>
           <SpotList spots={side.bench} onOpen={onOpen} />
         </>
       )}

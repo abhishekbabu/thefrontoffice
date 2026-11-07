@@ -7,8 +7,9 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { RosterTable } from "@/components/ui/roster-table";
 import { CardNote, QueryState } from "@/components/ui/state";
 import { usePlayerDrawer } from "@/components/ui/player";
-import { keys, useCapabilities } from "@/lib/queries";
+import { keys } from "@/lib/queries";
 import { LeagueHeader } from "@/components/ui/page-header";
+import { Label } from "@/components/ui/label";
 
 /**
  * Your roster beyond this week: the weeks coming, the trades worth offering, and the squad itself.
@@ -33,8 +34,8 @@ export function TeamPanel({ competition, league }: { competition: Competition; l
 
       {roster.data && (
         <div className="flex flex-col gap-4 p-5">
-          {competition.plans_ahead && <WeeksAhead competition={competition} league={league} />}
-          {competition.plans_ahead && <Trades competition={competition} league={league} />}
+          {competition.plans_weeks && <WeeksAhead competition={competition} league={league} />}
+          {competition.finds_trades && <Trades competition={competition} league={league} />}
           <Card>
             <CardHeader>
               <span>Squad</span>
@@ -81,9 +82,7 @@ function WeeksAhead({ competition, league }: { competition: Competition; league:
       {weeks.data?.map((week) => (
         <ListRow key={week.week} className="flex-col items-stretch gap-1">
           <div className="flex items-baseline gap-3">
-            <span className="w-20 shrink-0 font-mono text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-              Week {week.week}
-            </span>
+            <Label className="w-20 shrink-0">Week {week.week}</Label>
             <span className="min-w-0 flex-1 truncate text-muted-foreground">
               {week.missing.length ? `Without ${week.missing.join(", ")}` : "Everyone available"}
             </span>
@@ -119,7 +118,6 @@ function Trades({ competition, league }: { competition: Competition; league: Lea
     queryKey: keys.trades(competition.key, league.league_id),
     queryFn: api.league(competition.key, league.league_id).trades,
   });
-  const least = useCapabilities().data?.limits.trade_change;
 
   return (
     <ListCard
@@ -129,11 +127,7 @@ function Trades({ competition, league }: { competition: Competition; league: Lea
       error={trades.error}
     >
       {trades.data?.length === 0 && (
-        <CardNote>
-          No one-for-one swap improves both starting lineups and raises your playoff chance
-          {least !== undefined && ` by ${(least * 100).toFixed(1)} points or more`}. Trading is closed after the
-          deadline.
-        </CardNote>
+        <CardNote>No trade worth offering right now.</CardNote>
       )}
       {trades.data?.map((idea) => (
         <ListRow key={`${idea.team_id}-${idea.giving.join()}-${idea.receiving.join()}`}>
