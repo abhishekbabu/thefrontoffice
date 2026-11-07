@@ -19,9 +19,3 @@ export function morningAfter(now: Date, days: number): Date {
   when.setHours(8, 0, 0, 0);
   return when;
 }
-
-/** "Thu 08:00" — when a snoozed item comes back. */
-export function until(iso: string): string {
-  const when = new Date(iso);
-  return `${when.toLocaleDateString([], { weekday: "short" })} ${when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-}

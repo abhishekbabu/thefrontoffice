@@ -71,7 +71,15 @@ def _client(provider: FakeCompetition | None = None, **wiring: Any) -> TestClien
     """An app whose every registered competition is served by `provider`."""
     served = provider or FakeProvider()
     entries = [
-        entry(served, competition=e.competition, platform=e.platform, label=e.label, sport=e.sport, requires=e.requires)
+        entry(
+            served,
+            competition=e.competition,
+            platform=e.platform,
+            label=e.label,
+            name=e.name,
+            sport=e.sport,
+            requires=e.requires,
+        )
         for e in REGISTRY.entries
     ]
     return TestClient(web.create_app(fake_wiring(*entries, **wiring)))
@@ -149,7 +157,7 @@ def test_a_platform_failure_reaches_the_client_in_words() -> None:
     response = _client(FakeProvider(error)).get("/api/nfl/leagues")
 
     assert response.status_code == 400
-    assert response.json() == {"detail": str(error), "code": error.code}
+    assert response.json() == {"detail": str(error), "code": error.code, "remedy": None}
 
 
 def test_a_domain_error_carries_a_code_the_client_can_act_on() -> None:
@@ -159,6 +167,16 @@ def test_a_domain_error_carries_a_code_the_client_can_act_on() -> None:
     body = _client(FakeProvider(YahooLoginRequiredError())).get("/api/nba/leagues").json()
 
     assert body["code"] == YahooLoginRequiredError.code
+    assert body["remedy"]["action"] == "authorize"
+
+
+def test_the_app_says_its_limits_rather_than_leaving_the_page_to_restate_them(client: TestClient) -> None:
+    from thefrontoffice.application.season import MIN_TRADE_CHANGE
+    from thefrontoffice.application.wire import MAX_JUDGED
+
+    limits = client.get("/api/capabilities").json()["limits"]
+
+    assert limits == {"judged": MAX_JUDGED, "trade_change": MIN_TRADE_CHANGE}
 
 
 # ── reports ─────────────────────────────────────────────────────────────
@@ -770,6 +788,12 @@ def test_sorting_by_the_chance_orders_the_page_from_the_default_ranking() -> Non
 
     assert provider.query.sort == ""
     assert [p["player_id"] for p in body["players"]] == ["starter", "bench"]
+
+
+def test_a_free_agent_page_is_bounded_as_the_query_is() -> None:
+    response = _client(_WireProvider(None)).get("/api/nfl-sleeper/leagues/L1/free-agents?limit=500")
+
+    assert response.status_code == 422
 
 
 def test_free_agents_that_cannot_be_priced_are_still_the_wire() -> None:

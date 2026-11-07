@@ -87,7 +87,7 @@ def test_a_missing_token_is_reported_not_obtained(tmp_path: Path) -> None:
 
     with pytest.raises(YahooLoginRequiredError) as caught:
         _auth(tmp_path, token=False, authorize=authorize).ensure_authorized()
-    assert caught.value.code == "yahoo_login_required"
+    assert caught.value.code == "login_required"
     assert authorize.calls == []
 
 
@@ -159,7 +159,7 @@ def test_a_token_that_authenticates_but_grants_nothing_is_caught(tmp_path: Path)
     """
     with pytest.raises(YahooAuthError) as caught:
         _auth(tmp_path, context=FakeContext(error=http_error(403))).verify()
-    assert caught.value.code == "yahoo_not_approved"
+    assert caught.value.code == "access_not_approved"
 
 
 def test_an_unreachable_yahoo_is_not_reported_as_a_permission_problem(tmp_path: Path) -> None:

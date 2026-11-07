@@ -42,14 +42,14 @@ def test_a_future_week_has_no_score() -> None:
     """A week that has not happened is not nil-nil."""
     season = nfl_provider(league_client()).schedule("L1").season
     assert season[5].result == ""
-    assert season[5].tone == "neutral"
+    assert season[5].outcome is None
 
 
 def test_a_played_week_carries_its_score_and_whether_it_was_won() -> None:
     season = nfl_provider(at_week(5)).schedule("L1").season
 
     assert season[0].result == "88.5-96.1"
-    assert season[0].tone == "warning"  # 88.5 lost
+    assert season[0].outcome == "lost"  # 88.5 against more
 
 
 def test_the_current_week_is_marked() -> None:
@@ -106,7 +106,7 @@ def test_activity_names_players_rather_than_identifiers() -> None:
     activity = nfl_provider(client).schedule("L1").activity
 
     assert activity[0].detail == "+Star QB, -Good RB"
-    assert activity[0].tone == "good"  # it was mine
+    assert activity[0].is_mine
 
 
 def test_a_failed_activity_fetch_leaves_the_rest_of_the_page() -> None:

@@ -27,7 +27,7 @@ class YahooAuthError(FrontOfficeError):
     which is what distinguishes it from a consent that went wrong.
     """
 
-    code = "yahoo_not_approved"
+    code = "access_not_approved"
 
     def __init__(self) -> None:
         super().__init__(
@@ -49,7 +49,7 @@ class YahooLoginRequiredError(FrontOfficeError):
     cannot see.
     """
 
-    code = "yahoo_login_required"
+    code = "login_required"
 
     def __init__(self, detail: str = "") -> None:
         super().__init__(

@@ -33,7 +33,8 @@ def test_scout_report_surfaces_every_field() -> None:
 
 def test_recommendations_are_numbered_in_order() -> None:
     out = render_scout_report(MOCK_NBA_REPORT)
-    assert out.index("1. ADD") < out.index("2. ADD") < out.index("3. ADD")
+    titles = [move.title for move in MOCK_NBA_REPORT.moves]
+    assert out.index(f"1. {titles[0]}") < out.index(f"2. {titles[1]}") < out.index(f"3. {titles[2]}")
 
 
 def test_monitor_entries_render_without_a_drop() -> None:
@@ -45,8 +46,14 @@ def test_monitor_entries_render_without_a_drop() -> None:
         strategy="Hold.",
     )
     out = render_scout_report(report)
-    assert "MONITOR Test Player" in out
-    assert "DROP" not in out
+    assert "Watch Test Player" in out
+    assert "drop" not in out
+
+
+def test_a_move_is_worded_as_the_page_words_it() -> None:
+    """One phrasing for a move, read off the model, so a terminal and a page cannot disagree."""
+    report = ScoutReport(situation="x", focus=[], moves=[_rec()], strategy="y")
+    assert "Add Test Player, drop Bench Guy" in render_scout_report(report)
 
 
 def test_empty_target_list_is_stated_explicitly() -> None:

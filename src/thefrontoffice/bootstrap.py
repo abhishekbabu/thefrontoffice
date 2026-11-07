@@ -84,6 +84,9 @@ class CompetitionEntry:
     label: str
     """Human name for pickers and headers: 'NBA (Yahoo)'. Never a key."""
 
+    name: str
+    """The competition alone, for where the platform goes without saying: 'NBA', 'Premier League'."""
+
     provider: Callable[[], type[CompetitionProvider]]
     """The provider's class, imported only when asked, so listing competitions loads no SDK."""
 
@@ -346,6 +349,7 @@ REGISTRY = Registry(
             competition="nba",
             platform="yahoo",
             label="NBA (Yahoo)",
+            name="NBA",
             provider=_nba,
             build=_build_nba,
             is_configured=lambda: bool(settings.yahoo_client_id and settings.yahoo_client_secret),
@@ -357,6 +361,7 @@ REGISTRY = Registry(
             competition="nfl",
             platform="sleeper",
             label="NFL (Sleeper)",
+            name="NFL",
             provider=_nfl,
             build=nfl_provider,
             is_configured=lambda: bool(settings.sleeper_username),
@@ -367,6 +372,7 @@ REGISTRY = Registry(
             competition="premier-league",
             platform="fpl",
             label="FPL (Fantasy Premier League)",
+            name="Premier League",
             provider=_fpl,
             build=_build_fpl,
             is_configured=lambda: bool(settings.fpl_entry_id),

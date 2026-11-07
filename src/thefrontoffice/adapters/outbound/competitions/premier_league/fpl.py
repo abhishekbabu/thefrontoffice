@@ -414,6 +414,7 @@ class FPLProvider:
             PlayerCard(
                 player_id=str(player.id),
                 tone=_tone(player),
+                ruled_out=not plays(player),
                 columns={
                     **self._market_columns(player),
                     "Slot": ("C" if pick.is_captain else "XI") if pick.is_starting else "BN",
@@ -427,6 +428,7 @@ class FPLProvider:
         return PlayerCard(
             player_id=str(player.id),
             tone=_tone(player),
+            ruled_out=not plays(player),
             columns=self._market_columns(player),
             values=self._market_values(player),
         )

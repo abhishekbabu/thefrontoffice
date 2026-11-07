@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import type { Variant } from "@/lib/tone";
 
 /**
  * The model's word on one thing on screen — a to-do item, a free agent — under the thing it is about.
@@ -16,7 +17,7 @@ export function Verdict({
   stale = false,
 }: {
   label: string;
-  variant: "ok" | "info" | "warn" | "fail" | "muted";
+  variant: Variant;
   reason: string;
   stale?: boolean;
 }) {

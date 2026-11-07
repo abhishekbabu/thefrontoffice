@@ -52,7 +52,11 @@ def spelled(value: object) -> str:
     return str(value).lower() if isinstance(value, bool) else str(value or "")
 
 
-def field_kind(field: str) -> tuple[str, list[str]]:
+SettingKind = Literal["text", "boolean", "integer", "number", "choice"]
+"""Which control edits a setting."""
+
+
+def field_kind(field: str) -> tuple[SettingKind, list[str]]:
     """How a setting should be edited, derived from its own annotation.
 
     A settings page that renders every value as a text box invites a typo the

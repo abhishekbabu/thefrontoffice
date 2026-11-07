@@ -27,8 +27,4 @@ function Td({ className, ...props }: React.ComponentProps<"td">) {
   return <td className={cn("border-b border-border/45 px-4 py-2 tabular-nums", className)} {...props} />;
 }
 
-function Tr({ className, ...props }: React.ComponentProps<"tr">) {
-  return <tr className={cn("hover:bg-muted", className)} {...props} />;
-}
-
-export { Table, Th, Td, Tr };
+export { Table, Th, Td };

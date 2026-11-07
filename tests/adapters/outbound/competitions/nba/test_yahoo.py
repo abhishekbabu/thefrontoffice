@@ -292,6 +292,15 @@ def test_a_roster_card_carries_the_row_and_what_a_row_cannot() -> None:
     assert card.columns["Slot"] == "IL"
     assert card.player_id
     assert card.tone == "warning"
+    assert card.ruled_out
+
+
+def test_a_game_time_decision_is_flagged_without_being_ruled_out() -> None:
+    yahoo = FakeYahoo(roster=[make_player("A B", status="GTD")])
+
+    card = nba_provider(yahoo).roster()[0]
+
+    assert (card.tone, card.ruled_out) == ("warning", False)
 
 
 def _form(**stats: float) -> PlayerStats:
@@ -331,6 +340,14 @@ def test_a_table_row_carries_recent_form() -> None:
     assert (card.columns["PTS"], card.columns["REB"], card.columns["AST"]) == ("20.0", "8.0", "5.0")
 
 
+def test_recent_form_sorts_as_a_number() -> None:
+    """Sorted as text, 9.0 points sits above 20.0."""
+    yahoo = FakeYahoo(roster=[make_player("A B")])
+    card = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(pts=20, reb=8, ast=5)})).roster()[0]
+
+    assert card.values == {"PTS": 20.0, "REB": 8.0, "AST": 5.0}
+
+
 def test_a_percentage_with_nothing_attempted_is_a_dash_not_zero() -> None:
     yahoo = FakeYahoo(roster=[make_player("A B", key="ab")])
     detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(pts=10)})).player("", "ab")
@@ -346,6 +363,7 @@ def test_recent_form_is_a_dash_when_there_is_none() -> None:
     card = nba_provider(yahoo).roster()[0]
 
     assert card.columns["PTS"] == "—"
+    assert "PTS" not in card.values
 
 
 # ── projections ─────────────────────────────────────────────────────────

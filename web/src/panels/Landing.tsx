@@ -8,7 +8,8 @@ import { CardNote } from "@/components/ui/state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { m } from "motion/react";
 import { list, listItem } from "@/lib/motion";
-import { YahooLoginButton } from "@/components/ui/error-note";
+import { keys } from "@/lib/queries";
+import { ErrorNote, RemedyAction } from "@/components/ui/error-note";
 
 /**
  * What the app opens on: every league you are in, across every competition.
@@ -33,7 +34,7 @@ export function Landing({
   // is already known.
   const results = useQueries({
     queries: configured.map((competition) => ({
-      queryKey: ["leagues", competition.key],
+      queryKey: keys.leagues(competition.key),
       queryFn: () => api.leagues(competition.key),
       enabled: competition.ready,
     })),
@@ -78,29 +79,15 @@ export function Landing({
                   <p className="max-w-[70ch] text-[13px] leading-relaxed text-muted-foreground">
                     {competition.blocked_reason}
                   </p>
-                  {competition.blocked_code === "yahoo_login_required" && <YahooLoginButton />}
-                  {competition.blocked_code === "yahoo_not_approved" && (
-                    <a
-                      href="https://competitions.yahoo.com/developer/access/"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex h-9 items-center rounded-md border border-border bg-background px-4 text-sm font-medium hover:bg-muted"
-                    >
-                      Apply for API access
-                    </a>
-                  )}
+                  {competition.blocked_remedy && <RemedyAction remedy={competition.blocked_remedy} />}
                 </div>
               )}
 
               {competition.ready && result?.isLoading && <Skeleton className="m-4 h-14" />}
 
-              {result?.isError && (
-                // Shown in place rather than as a page-level failure: the other
-                // competitions are still usable, and this one names its own fix.
-                <p className="px-4 py-3 text-[13px] leading-relaxed text-destructive">
-                  {(result.error as Error).message}
-                </p>
-              )}
+              {/* Shown in place rather than as a page-level failure: the other
+                  competitions are still usable, and this one names its own fix. */}
+              {result?.isError && <ErrorNote error={result.error} className="m-4" />}
 
               {result?.isSuccess && result.data.length === 0 && (
                 <CardNote>No leagues this season.</CardNote>

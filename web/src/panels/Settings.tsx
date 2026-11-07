@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input, Select } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
 import { IconButton } from "@/components/ui/icon-button";
-import { Loading } from "@/components/ui/state";
+import { QueryState } from "@/components/ui/state";
+import { keys } from "@/lib/queries";
 import { ToggleChip } from "@/components/ui/toggle";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ArrowLeft, Check, Save } from "lucide-react";
@@ -38,10 +39,9 @@ const GROUPS: { title: string; note: string; keys: string[] }[] = [
   },
   {
     title: "AI",
-    note: "Optional, and each provider is free to start. Any one key turns on the report, trade evaluation and follow-up questions; without one, everything read from the platforms works exactly as it does now. With several, each backs up the one before when its free quota runs out — Gemini, then Groq, then OpenRouter. Models are settings because free catalogs change.",
+    note: "Optional, and each provider is free to start. Any one key turns on judging the week's to-do list and the free agents, and the questions you can ask about an item or a player; without one, everything read from the platforms works exactly as it does now. With several, each backs up the one before when its free quota runs out — Gemini, then Groq, then OpenRouter. Models are settings because free catalogs change.",
     keys: [
       "GOOGLE_API_KEY",
-      "DEFAULT_MODEL",
       "GROQ_API_KEY",
       "GROQ_ANALYSIS_MODEL",
       "GROQ_PARSING_MODEL",
@@ -73,7 +73,7 @@ const GROUPS: { title: string; note: string; keys: string[] }[] = [
 
 export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const queryClient = useQueryClient();
-  const settings = useQuery<Setting[], Error>({ queryKey: ["settings"], queryFn: api.settings });
+  const settings = useQuery<Setting[], Error>({ queryKey: keys.settings, queryFn: api.settings });
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   const save = useMutation<Setting[], Error, Record<string, string>>({
@@ -124,9 +124,8 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </PageHeader>
 
-      {settings.isError && <ErrorNote error={settings.error} />}
+      <QueryState query={settings} lines={6} />
       {save.isError && <ErrorNote error={save.error} />}
-      {settings.isLoading && <Loading lines={6} />}
 
       {settings.data && (
         <div className="flex flex-col gap-4 p-5">

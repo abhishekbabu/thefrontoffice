@@ -1,4 +1,5 @@
 import { m } from "motion/react";
+import { ErrorNote } from "@/components/ui/error-note";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fade, rise } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,25 @@ export function Loading({ lines = 3, className }: { lines?: number; className?: 
       ))}
     </m.div>
   );
+}
+
+/**
+ * What a query shows before it has an answer: a placeholder while it is
+ * asked, the failure if it fails, and nothing once the data is in — the caller
+ * renders that.
+ */
+export function QueryState({
+  query,
+  lines,
+  className,
+}: {
+  query: { isLoading: boolean; isError: boolean; error: unknown };
+  lines?: number;
+  className?: string;
+}) {
+  if (query.isLoading) return <Loading lines={lines} />;
+  if (query.isError) return <ErrorNote error={query.error} className={className} />;
+  return null;
 }
 
 /** Nothing to show, said once and in the same shape every time. */

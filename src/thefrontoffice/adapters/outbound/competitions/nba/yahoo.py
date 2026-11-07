@@ -26,6 +26,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     REBOUNDS,
     SCOUTED,
     Category,
+    ruled_out,
 )
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import NBA, SleeperProjectionSource
@@ -72,13 +73,18 @@ NO_FIGURE = "—"
 bad line rather than an absent one."""
 
 
-def _recent(stats: PlayerStats | None, category: Category) -> str:
-    """One category over the last fifteen games, or a dash where there is no figure.
+def _figure(stats: PlayerStats | None, category: Category) -> float | None:
+    """One category over the last fifteen games, or None where there is no figure.
 
     Out of season, and for a player who has not featured, there is no line to
     show; nor is there a percentage for a player who has attempted nothing.
     """
-    value = ((stats or PlayerStats()).get("last_15") or {}).get(category.label)
+    return ((stats or PlayerStats()).get("last_15") or {}).get(category.label)
+
+
+def _recent(stats: PlayerStats | None, category: Category) -> str:
+    """That figure as a cell reads it, or a dash where there is none."""
+    value = _figure(stats, category)
     return category.show(value) if value is not None else NO_FIGURE
 
 
@@ -298,6 +304,8 @@ class YahooNBAProvider:
                 PlayerCard(
                     player_id=str(player.player_key),
                     tone="warning" if status else "neutral",
+                    ruled_out=ruled_out(status),
+                    values={c.label: value for c in CARD_CATEGORIES if (value := _figure(stats, c)) is not None},
                     columns={
                         "Player": name,
                         "Pos": str(player.display_position),
