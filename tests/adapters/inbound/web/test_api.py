@@ -515,11 +515,11 @@ def test_a_previous_outcome_does_not_leak_into_a_new_attempt(
 
 
 def test_a_failed_handshake_is_reported_in_the_domains_words(monkeypatch: pytest.MonkeyPatch) -> None:
-    from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
+    from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
     from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAuthError
 
-    monkeypatch.setattr(YahooClient, "login", classmethod(lambda cls, force=False: None))
-    monkeypatch.setattr(YahooClient, "verify", classmethod(_raising(YahooAuthError())))
+    monkeypatch.setattr(YahooAuth, "login", lambda self, force=False: None)
+    monkeypatch.setattr(YahooAuth, "verify", _raising(YahooAuthError()))
 
     web._run_yahoo_login()
 
@@ -528,10 +528,10 @@ def test_a_failed_handshake_is_reported_in_the_domains_words(monkeypatch: pytest
 
 def test_success_is_only_reported_once_the_grant_is_verified(monkeypatch: pytest.MonkeyPatch) -> None:
     """A login that completes and hands back an inert token is not a success."""
-    from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
+    from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
 
-    monkeypatch.setattr(YahooClient, "login", classmethod(lambda cls, force=False: None))
-    monkeypatch.setattr(YahooClient, "verify", classmethod(lambda cls: None))
+    monkeypatch.setattr(YahooAuth, "login", lambda self, force=False: None)
+    monkeypatch.setattr(YahooAuth, "verify", lambda self: None)
 
     web._run_yahoo_login()
 

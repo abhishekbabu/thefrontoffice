@@ -18,7 +18,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient  # noqa: E402
+from thefrontoffice.bootstrap import yahoo_auth  # noqa: E402
 from thefrontoffice.config.logging import setup_logging  # noqa: E402
 from thefrontoffice.config.settings import settings  # noqa: E402
 from thefrontoffice.domain.errors import FrontOfficeError  # noqa: E402
@@ -41,7 +41,7 @@ def main() -> int:
 
     print("  A browser window will open — authorize the app there.")
     try:
-        YahooClient.login(force=True)
+        yahoo_auth().login(force=True)
     except FrontOfficeError as e:
         print(f"  ❌ {e}")
         return 1
@@ -50,7 +50,7 @@ def main() -> int:
 
 def _verify() -> int:
     try:
-        YahooClient.verify()
+        yahoo_auth().verify()
     except FrontOfficeError as e:
         print(f"  ❌ {e}")
         return 1

@@ -15,8 +15,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL, SleeperClient  # noqa: E402
-from thefrontoffice.bootstrap import find, forecast_engine  # noqa: E402
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL  # noqa: E402
+from thefrontoffice.bootstrap import find, forecast_engine, sleeper_client  # noqa: E402
 from thefrontoffice.config.logging import setup_logging  # noqa: E402
 from thefrontoffice.domain.errors import FrontOfficeError  # noqa: E402
 from thefrontoffice.domain.ports import ForecastProvider  # noqa: E402
@@ -35,7 +35,7 @@ def main() -> int:
             print(f"  ❌ {entry.label} cannot be simulated yet.")
             return 1
         league = provider.list_leagues()[0]
-        week = SleeperClient().get_state(NFL).week
+        week = sleeper_client().get_state(NFL).week
         weeks = list(range(2, week))  # week 1 has no games before it to shape a range
         calibration = forecast_engine(provider).backtest(league.league_id, weeks)
     except FrontOfficeError as e:

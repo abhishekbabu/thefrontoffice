@@ -151,7 +151,8 @@ Check these before implementing anything a competition "needs":
 |------|-----|
 | Match a player name across platforms | `competitions/names.py` — `NameIndex`, `normalize_name` |
 | Resolve the players in a trade | `competitions/trades.py` — `resolve_sides` |
-| Retry a flaky platform call | `platforms/retry.py` — `build_retry`, `is_transient` |
+| Retry a flaky platform call | `platforms/retry.py` — `RetryPolicy`, handed in by `bootstrap` |
+| Fetch many cached responses at once | `platforms/http.py` — `fetch_many` |
 | Cache a platform response | `platforms/cache.py` — `JsonDiskCache` |
 | Talk to a public JSON API | `platforms/http.py` — `JsonApiClient` |
 

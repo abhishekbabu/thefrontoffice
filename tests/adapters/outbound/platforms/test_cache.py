@@ -1,7 +1,7 @@
 """Tests for the shared JSON disk cache.
 
 The store every platform reads through, so three things matter: what it keeps,
-the freshness rules that decide when what it kept stopped being true, and the
+the age past which what it kept stops being returned, and the
 one-file-per-key layout that keeps a write proportional to the entry rather
 than to everything else already stored.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache, within
+from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 
 HOUR = timedelta(hours=1)
 T0 = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
@@ -245,35 +245,6 @@ def test_clear_on_a_cache_never_written_is_harmless(tmp_path: Path) -> None:
     JsonDiskCache(tmp_path / "never-created").clear()
 
 
-# ── freshness rules ─────────────────────────────────────────────────────
-
-
-def test_a_rule_a_duration_cannot_express(tmp_path: Path) -> None:
-    """The reason freshness is a predicate: basketball's gamelog is good until
-    the next boundary passes, which is a moment rather than an interval."""
-    cache = JsonDiskCache(tmp_path / "cache")
-    stored = datetime(2026, 2, 9, 12, tzinfo=UTC)
-    cache.set("k", "v", now=stored)
-
-    # Good only while stored and now fall on the same calendar day.
-    def same_day(at: datetime, now: datetime) -> bool:
-        return at.date() == now.date()
-
-    assert cache.get("k", same_day, now=stored + timedelta(hours=6)) == "v"
-    assert cache.get("k", same_day, now=stored + timedelta(hours=13)) is None
-
-
-def test_within_is_a_ttl_as_a_rule(tmp_path: Path) -> None:
-    """So a caller can hold one and a caller can hold the other."""
-    cache = JsonDiskCache(tmp_path / "cache")
-    stored = datetime(2026, 2, 9, 12, tzinfo=UTC)
-    cache.set("k", "v", now=stored)
-
-    rule = within(timedelta(minutes=30))
-    assert cache.get("k", rule, now=stored + timedelta(minutes=10)) == "v"
-    assert cache.get("k", rule, now=stored + timedelta(minutes=40)) is None
-
-
 # ── read-through ────────────────────────────────────────────────────────
 
 
@@ -302,6 +273,20 @@ def test_a_hit_from_disk_is_read_once(tmp_path: Path) -> None:
     for entry in _entry_files(directory):
         entry.unlink()
     assert cache.get("k", HOUR, now=T0) == "stored"
+
+
+def test_a_stored_null_is_a_hit_not_a_reason_to_fetch_again(tmp_path: Path) -> None:
+    """An endpoint answering null is asked again when the entry expires, not on every read."""
+    cache = JsonDiskCache(tmp_path / "cache")
+    calls: list[int] = []
+
+    def _fetch() -> None:
+        calls.append(1)
+
+    cache.cached("k", HOUR, _fetch)
+    cache.cached("k", HOUR, _fetch)
+
+    assert calls == [1]
 
 
 def test_a_miss_fetches_and_stores(tmp_path: Path) -> None:

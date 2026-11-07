@@ -36,6 +36,7 @@ from thefrontoffice.bootstrap import (
     scout_engine,
     week_engine,
     wire_engine,
+    yahoo_auth,
 )
 from thefrontoffice.config import env_file
 from thefrontoffice.config.logging import setup_logging
@@ -202,12 +203,11 @@ _login_lock = threading.Lock()
 
 def _run_yahoo_login() -> None:
     """Authorize, then confirm the grant is real before reporting success."""
-    from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
-
     global _login
     try:
-        YahooClient.login(force=True)
-        YahooClient.verify()
+        auth = yahoo_auth()
+        auth.login(force=True)
+        auth.verify()
     except FrontOfficeError as e:
         logger.error(f"Yahoo authorization failed: {e}")
         _login = LoginState(status="failed", detail=str(e))
