@@ -77,7 +77,7 @@ class ESPNSource(Protocol):
 
 
 class ESPNClient:
-    """Read-only access to ESPN's per-club news."""
+    """Read-only access to ESPN's per-club news, live scoreboard and injury report."""
 
     def __init__(self, cache: JsonDiskCache | None = None, session: Any = None) -> None:
         self._api = JsonApiClient(

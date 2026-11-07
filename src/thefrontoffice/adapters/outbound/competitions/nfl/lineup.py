@@ -16,7 +16,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import FLEX_ELIGIBI
 
 @dataclass(frozen=True)
 class LineupSlot:
-    """One filled starting slot."""
+    """One starting slot, and who is in it; None where nobody is."""
 
     slot: str
     player: Projection | None
@@ -27,7 +27,6 @@ class LineupSlot:
 
 
 def eligible_positions(slot: str) -> tuple[str, ...]:
-    """Which positions may fill `slot`."""
     return FLEX_ELIGIBILITY.get(slot, (slot,))
 
 
@@ -119,8 +118,8 @@ def lineup_changes(
 def current_lineup(slots: list[str], starter_ids: list[str], players: Sequence[Projection]) -> list[LineupSlot]:
     """The lineup as it stands.
 
-    Sleeper's `starters` array is positional: entry i is whoever occupies slot i
-    of `roster_positions`. An empty slot is the literal id "0".
+    `starter_ids` is positional: entry i is whoever occupies slot i of the
+    league's starting slots. An empty slot is an id no player has.
     """
     by_id = {p.player_id: p for p in players}
     filled = []

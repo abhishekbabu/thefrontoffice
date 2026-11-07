@@ -134,7 +134,8 @@ pickup. Two at most; the free-agent page ranks the rest.
 joined the same way, and from Sleeper where it does not. Sleeper keeps a
 designation until somebody changes it, so the Tuesday after a game a player
 ruled out of it still reads Out; ESPN's report is dated and moves with the
-week's practices. A player ruled out counts nought toward the lineup, its
+week's practices. Every view of the week reads them, the trade evaluator's
+included. A player ruled out counts nought toward the lineup, its
 total and the best lineup, whatever Sleeper still projects him. A plain Out is
 for that week's game alone, so the weeks ahead count only a long ruling — IR,
 PUP, a suspension. A free agent's win chance is priced against the lineup your
