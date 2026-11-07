@@ -52,9 +52,8 @@ def test_a_boom_game_is_trimmed_to_the_cap_before_the_range_is_recentred() -> No
     spread = spreads(_evidence(rb1=((6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 100.0), "RB")))
 
     ratios = spread.own["rb1"]
-    uncapped = 100.0 / (sum((6.0,) * 7 + (100.0,)) / 8)
     assert sum(ratios) / len(ratios) == pytest.approx(1.0)
-    assert max(ratios) < uncapped
+    assert max(ratios) < 5.6  # untrimmed, 100 is 5.6 times his 17.75 average
 
 
 def test_a_player_averaging_almost_nothing_shapes_no_range() -> None:

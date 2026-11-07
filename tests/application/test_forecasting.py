@@ -5,9 +5,7 @@ simulation should conclude — a sure thing, a coin flip, a move that cannot
 hurt — without depending on any sport's data.
 """
 
-import random
 from collections.abc import Sequence
-from statistics import pstdev
 
 import pytest
 from support.simulation import FEW, outcome
@@ -15,7 +13,6 @@ from support.simulation import FEW, outcome
 from thefrontoffice.application.forecasting import (
     WORTH_A_ROW,
     ForecastEngine,
-    _draw,
     calibrate,
     pickup_chances,
     ranked,
@@ -66,12 +63,6 @@ def test_a_game_already_over_counts_what_it_scored_and_nothing_more() -> None:
     forecast = simulate(_match([finished], [outcome("b", 11)]), FEW)
 
     assert forecast.win == 1.0 and forecast.margin.median == 1.0
-
-
-def test_the_margin_range_runs_low_to_high() -> None:
-    margin = simulate(_match([outcome("a", 0, 10, 20, 40)], [outcome("b", 5, 15)]), FEW).margin
-
-    assert margin.low <= margin.median <= margin.high
 
 
 def test_the_same_matchup_gives_the_same_answer_every_time() -> None:
@@ -203,21 +194,15 @@ def test_nothing_to_score_scores_nothing() -> None:
 # ── the projection's own uncertainty ────────────────────────────────────
 
 
-def test_projection_error_widens_a_range_without_moving_its_centre() -> None:
-    import random as rng_module
-    from statistics import mean, pstdev
-
-    from thefrontoffice.application.forecasting import _draw
-
+def test_projection_error_widens_a_range_and_never_scores_below_nothing() -> None:
     plain = outcome("a", 10, 20)
     unsure = Outcomes("a", "A", 15.0, (10.0, 20.0), projection_error=0.3)
+    nobody = [outcome("b", 0)]
 
-    certain_draws = _draw(plain, rng_module.Random(1), 20_000)
-    unsure_draws = _draw(unsure, rng_module.Random(1), 20_000)
+    widened = simulate(_match([unsure], nobody), FEW).margin
 
-    assert pstdev(unsure_draws) > pstdev(certain_draws)
-    assert mean(unsure_draws) == pytest.approx(mean(certain_draws), rel=0.03)
-    assert min(unsure_draws) >= 0
+    assert _width(_match([unsure], nobody)) > _width(_match([plain], nobody))
+    assert widened.low >= 0
 
 
 # ── scoring ranges against what happened ────────────────────────────────
@@ -330,8 +315,8 @@ def _grouped(pid: str, group: str) -> Outcomes:
     return Outcomes(pid, pid.upper(), 10.0, (10.0,), projection_error=0.3, group=group, shared_error=0.3)
 
 
-def _width(matchup: MatchupInput) -> float:
-    margin = simulate(matchup, FEW).margin
+def _width(matchup: MatchupInput, simulations: int = FEW) -> float:
+    margin = simulate(matchup, simulations).margin
     return margin.high - margin.low
 
 
@@ -346,9 +331,9 @@ def test_teammates_who_rise_together_make_a_wider_week_than_strangers() -> None:
 def test_a_player_ranged_alone_is_as_wide_with_teammates_as_without() -> None:
     """Sharing moves part of his error into the group; it adds none."""
     alone = Outcomes("wr", "WR", 10.0, (10.0,), projection_error=0.3)
-    grouped = _grouped("wr", "KC")
+    nobody = [outcome("them", 0)]
 
-    widths = [pstdev(_draw(o, random.Random(1), 20_000, shared=None)) for o in (alone, grouped)]
+    widths = [_width(_match([o], nobody), simulations=20_000) for o in (alone, _grouped("wr", "KC"))]
 
     assert widths[0] == pytest.approx(widths[1], rel=0.05)
 

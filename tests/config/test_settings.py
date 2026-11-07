@@ -23,7 +23,7 @@ def test_log_level_is_case_insensitive() -> None:
 
 
 def test_missing_credentials_are_none_not_crashes() -> None:
-    """--mock must work with no credentials at all."""
+    """The app starts with nothing set; each feature names the credential it lacks."""
     s = _settings()
     assert s.gemini_api_key is None
     assert s.yahoo_client_id is None

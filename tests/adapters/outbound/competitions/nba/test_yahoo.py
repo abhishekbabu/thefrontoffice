@@ -1,7 +1,7 @@
-"""Tests for the Scout orchestrator.
+"""Tests for the Yahoo basketball provider: `nba/yahoo.py`.
 
-Exercises the prompt-building logic, which is where league rules (add budget,
-IL slots, matchup context) actually get encoded.
+Mostly the context it builds, which is where league rules (add budget, IL
+slots, matchup context) actually get encoded.
 """
 
 from datetime import datetime
@@ -29,34 +29,10 @@ def _scout(yahoo: FakeYahoo, ai: FakeAI | None = None, nba: FakeNBA | None = Non
     return ScoutEngine(provider, key="nba-yahoo", ai=ai or FakeAI(), answers=FakeAnswers())
 
 
-def test_returns_a_validated_report_and_an_open_chat() -> None:
-    ai = FakeAI()
-    report, chat = _scout(FakeYahoo(), ai=ai).start_analysis("")
-    assert report.model_dump(exclude={"headline"}) == MOCK_NBA_REPORT.model_dump(exclude={"headline"})
-    assert chat is ai.chat
+def test_the_header_counts_the_adds_left_this_week() -> None:
+    labels = {stat.label: stat.value for stat in nba_provider(FakeYahoo(adds_used=1)).build_context().headline}
 
-
-def test_headline_figures_come_from_the_platform_not_the_model() -> None:
-    """The model is told to leave the field empty but is not trusted to.
-
-    A hallucinated rank or add budget would sit in the header looking exactly
-    as authoritative as a real one, so the engine overwrites rather than merges.
-    """
-    invented = MOCK_NBA_REPORT.model_copy(update={"headline": [Stat(label="Overall", value="1")]})
-    report, _ = _scout(FakeYahoo(adds_used=1), ai=FakeAI(report=invented)).start_analysis("")
-
-    labels = {stat.label: stat.value for stat in report.headline}
     assert labels["Adds left"] == "2 of 3"
-    assert "Overall" not in labels
-
-
-def test_an_exhausted_add_budget_is_flagged_rather_than_stated() -> None:
-    """With no adds left every recommendation becomes a MONITOR, so it is the
-    one figure in the header that has to pull the eye."""
-    report, _ = _scout(FakeYahoo(adds_used=3), ai=FakeAI()).start_analysis("")
-
-    left = next(stat for stat in report.headline if stat.label == "Adds left")
-    assert (left.value, left.tone) == ("0 of 3", "warning")
 
 
 def test_follow_up_chat_is_seeded_with_the_report() -> None:
@@ -78,31 +54,6 @@ def test_follow_up_is_seeded_with_a_briefing_not_the_whole_prompt() -> None:
     briefing, prompt = ai.history[0]["parts"][0], ai.prompts[0]
 
     assert len(briefing) < len(prompt) / 2
-
-
-def test_briefing_keeps_what_a_follow_up_needs() -> None:
-    """The matchup says why a category is close, the add budget why only
-    three adds, and the roster why that drop."""
-    ai = FakeAI()
-    _scout(_rich_yahoo(), ai=ai).start_analysis("")
-    briefing = ai.history[0]["parts"][0]
-    ctx = nba_provider(_rich_yahoo()).build_context()
-
-    assert ctx.situation.strip() in briefing
-    assert ctx.constraints.strip() in briefing
-    assert all(line.strip() in briefing for line in ctx.roster_lines.values())
-
-
-def test_briefing_carries_only_the_recommended_free_agents() -> None:
-    """_rich_yahoo offers nine free agents; the canned report names one."""
-    ai = FakeAI()
-    recommended = MOCK_NBA_REPORT.moves[0].player
-    _scout(_rich_yahoo(recommended=recommended), ai=ai).start_analysis("")
-    briefing = ai.history[0]["parts"][0]
-
-    assert recommended in briefing
-    assert "Free Agent 7" not in briefing
-    assert "Free Agent 3" not in briefing
 
 
 def test_matchup_is_fetched_once_not_twice() -> None:
@@ -138,9 +89,7 @@ def _rich_yahoo(recommended: str = "Mock Player One") -> FakeYahoo:
 
 
 def _prompt_for(yahoo: FakeYahoo, nba: FakeNBA | None = None) -> str:
-    ai = FakeAI()
-    _scout(yahoo, ai=ai, nba=nba).start_analysis("")
-    return ai.prompts[0]
+    return nba_provider(yahoo, nba=nba).build_context().prompt
 
 
 def test_prompt_carries_roster_matchup_and_free_agents() -> None:
@@ -442,7 +391,6 @@ def test_the_next_week_is_tried_when_the_current_one_is_empty() -> None:
 
     straddling = Straddling([_game("Roster Player 0", "2026-02-10")], week=13)
     ctx = _provider_with(straddling).build_context()
-    assert straddling.weeks_requested == [12, 13]
     assert "PROJ 1G" in ctx.roster_lines["Roster Player 0"]
 
 

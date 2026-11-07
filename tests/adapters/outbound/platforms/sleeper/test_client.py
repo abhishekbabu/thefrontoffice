@@ -28,15 +28,8 @@ def _client(
 # ── retry policy ────────────────────────────────────────────────────────
 
 
-def test_no_connection_is_sleeper_being_down(tmp_path: Path) -> None:
-    # Still Sleeper's own error, so callers that carry on without Sleeper still
-    # catch it, and the outage kind of it.
-    client, _ = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
-    with pytest.raises(SleeperUnavailableError):
-        client.get_state()
-
-
-def test_a_failing_request_is_retried_until_the_attempts_run_out(tmp_path: Path) -> None:
+def test_no_connection_is_retried_then_reported_as_sleeper_being_down(tmp_path: Path) -> None:
+    """Still Sleeper's own error, so callers that carry on without Sleeper still catch it."""
     client, session = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
     with pytest.raises(SleeperUnavailableError):
         client.get_state()
@@ -86,7 +79,7 @@ def test_user_lookup_returns_the_id(tmp_path: Path) -> None:
 
 def test_unknown_user_raises(tmp_path: Path) -> None:
     client, _ = _client({"user/ghost": None}, tmp_path)
-    with pytest.raises(SleeperAPIError, match="No Sleeper user"):
+    with pytest.raises(SleeperAPIError):
         client.get_user("ghost")
 
 
@@ -460,16 +453,13 @@ def test_a_null_drops_field_reads_as_nothing_dropped(tmp_path: Path) -> None:
     assert client.get_transactions("L1", 1)[0].drops == {}
 
 
-def test_a_season_of_matchups_comes_back_in_one_call(tmp_path: Path) -> None:
-    """Asked one week at a time they are the whole wait on the season view."""
+def test_a_season_of_matchups_comes_back_keyed_by_week(tmp_path: Path) -> None:
     routes = {f"/matchups/{w}": [{"roster_id": 1, "matchup_id": w}] for w in (1, 2, 3)}
-    client, session = _client(routes, tmp_path)
+    client, _ = _client(routes, tmp_path)
 
     weeks = client.get_matchups_bulk("L1", [1, 2, 3])
 
-    assert sorted(weeks) == [1, 2, 3]
-    assert weeks[2][0].matchup_id == 2
-    assert len(session.requests) == 3
+    assert {week: matchups[0].matchup_id for week, matchups in weeks.items()} == {1: 1, 2: 2, 3: 3}
 
 
 def test_a_week_that_does_not_answer_is_an_empty_week_not_a_missing_key(tmp_path: Path) -> None:

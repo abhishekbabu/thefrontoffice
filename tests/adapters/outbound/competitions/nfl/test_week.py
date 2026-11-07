@@ -47,6 +47,15 @@ def test_the_summary_carries_the_lineup_and_the_changes() -> None:
     assert "Good RB" in swap.start and swap.out == ""
 
 
+def test_a_player_is_never_both_starting_and_benched() -> None:
+    """The lineup block shows what is set; the bench holds everyone else."""
+    side = mine(nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).summary("L1"))
+
+    starting = {spot.player_id for spot in side.lineup if spot.player_id}
+    benched = {spot.player_id for spot in side.bench}
+    assert starting and benched and not (starting & benched)
+
+
 def test_a_player_with_no_game_is_flagged_while_others_have_one() -> None:
     client = FakeSleeper(
         projections={**DEFAULT_PROJECTIONS, "bye1": proj("bye1", "Bye Guy", "TE", 0.0, team="LAR", opp="")},
@@ -74,12 +83,9 @@ def test_a_week_nobody_is_scheduled_for_does_not_flag_the_whole_roster() -> None
 
 def test_the_summary_does_not_ask_for_the_waiver_pool() -> None:
     """It is the expensive half of a report and nothing in the header uses it."""
-    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
-    client.get_trending = lambda *a, **k: pytest.fail("summary must not fetch trending")
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, trending_error=AssertionError("summary fetched trending"))
 
-    client_summary = nfl_provider(client).summary("L1")
-
-    assert client_summary.headline
+    assert nfl_provider(client).summary("L1").headline
 
 
 def test_the_week_shows_the_team_you_are_playing() -> None:

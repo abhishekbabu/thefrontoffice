@@ -7,7 +7,7 @@ from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import SeasonState
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame, SeasonState
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup, MatchupSide, RosteredPlayer, Timeframe
 
 
@@ -82,7 +82,6 @@ class FakeYahoo:
         self.matchup_dates = matchup_dates
         self.search_results = search_results or {}
         self.adds_used = adds_used
-        self.searches: list[str] = []
         self.matchup_fetches = 0
         self.league_teams = teams if teams is not None else DEFAULT_TEAMS
         self.available = available if available is not None else [make_player("Waiver One")]
@@ -131,7 +130,6 @@ class FakeYahoo:
         return {name: self.stat_leaders[name] for name in stats if name in self.stat_leaders}
 
     def search_players(self, query: str) -> list[Any]:
-        self.searches.append(query)
         return self.search_results.get(query, [])
 
 
@@ -142,16 +140,48 @@ class FakeSleeperProjections:
         self.rows = rows if rows is not None else []
         self.error = error
         self.season, self.week = season, week
-        self.weeks_requested: list[int] = []
 
     def get_state(self, sport: str = "nfl") -> Any:
         return SeasonState(week=self.week, season=self.season, season_type="regular")
 
     def get_nba_projections(self, season: str, week: int) -> Any:
-        self.weeks_requested.append(week)
         if self.error:
             raise self.error
         return self.rows if week == self.week else []
+
+
+class FakeSleeperNBA:
+    """Stands in for SleeperClient's basketball box scores, schedule and catalog, read by SleeperNBAForm."""
+
+    def __init__(
+        self,
+        logs: dict[str, list[NBAGameLog]] | None = None,
+        schedule: list[ScheduledGame] | None = None,
+        catalog: dict[str, PlayerMeta] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.logs = logs or {}
+        self.schedule = schedule or []
+        self.catalog = catalog or {"p1": PlayerMeta(player_id="p1", name="Nikola Jokic", position="C", team="DEN")}
+        self.error = error
+
+    def get_nba_game_logs(self, season: str, weeks: list[int]) -> dict[str, list[NBAGameLog]]:
+        if self.error:
+            raise self.error
+        return self.logs
+
+    def get_nba_schedule(self, season: str) -> list[ScheduledGame]:
+        if self.error:
+            raise self.error
+        return self.schedule
+
+    def get_players(self, sport: str = "nfl") -> dict[str, PlayerMeta]:
+        if self.error:
+            raise self.error
+        return self.catalog
+
+    def get_state(self, sport: str = "nfl") -> SeasonState:
+        return SeasonState(week=10, season="2026", season_type="regular")
 
 
 class FakeNBA:

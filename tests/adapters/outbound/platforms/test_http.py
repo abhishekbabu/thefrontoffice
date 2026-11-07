@@ -1,5 +1,6 @@
 """Tests for the JSON transport the public-API clients share."""
 
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -78,12 +79,6 @@ def test_a_call_can_override_the_default_timeout(tmp_path: Path) -> None:
     session = FixedSession({})
     _client(tmp_path, session).get("https://example.test/big", timeout=90)
     assert session.timeouts == [90]
-
-
-def test_a_failure_becomes_the_callers_domain_error(tmp_path: Path) -> None:
-    session = FixedSession(status=404)
-    with pytest.raises(FPLAPIError):
-        _client(tmp_path, session, error=FPLAPIError).get("https://example.test/a")
 
 
 @pytest.mark.parametrize(
@@ -168,21 +163,21 @@ def test_the_cache_is_keyed_not_url_addressed(tmp_path: Path) -> None:
 class RoutedSession:
     """Answers by URL, and records which thread each request ran on."""
 
-    def __init__(self, routes: dict[str, Any], failing: set[str] | None = None) -> None:
+    def __init__(
+        self, routes: dict[str, Any], failing: set[str] | None = None, barrier: threading.Barrier | None = None
+    ) -> None:
         self.routes = routes
         self.failing = failing or set()
+        self.barrier = barrier
+        """Held by each request until all its parties arrive, so serial requests never finish."""
         self.requests: list[str] = []
-        self.threads: set[str] = set()
 
     def get(self, url: str, timeout: int = 0) -> FakeResponse:
-        import threading
-        import time
-
-        self.threads.add(threading.current_thread().name)
         self.requests.append(url)
         if url in self.failing:
             raise requests.exceptions.ConnectionError("down")
-        time.sleep(0.02)  # long enough that serial execution is distinguishable
+        if self.barrier:
+            self.barrier.wait()
         return FakeResponse(self.routes.get(url))
 
 
@@ -200,11 +195,11 @@ def test_a_batch_returns_every_key(tmp_path: Path) -> None:
 
 def test_a_batch_fetches_concurrently(tmp_path: Path) -> None:
     """Eighteen weeks run one after another are the whole wait on the page."""
-    session = RoutedSession(ROUTES)
+    barrier = threading.Barrier(len(URLS), timeout=5)
 
-    _client(tmp_path, session).cached_many(URLS, TTL)
+    _client(tmp_path, RoutedSession(ROUTES, barrier=barrier)).cached_many(URLS, TTL)
 
-    assert len(session.threads) > 1, "requests ran on a single thread"
+    assert not barrier.broken
 
 
 def test_a_batch_only_fetches_what_it_does_not_have(tmp_path: Path) -> None:

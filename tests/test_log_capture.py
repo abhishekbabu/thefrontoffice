@@ -1,4 +1,4 @@
-"""Tests for the `capture_logs` helper in conftest.
+"""Tests for the `capture_logs` helper in `support/logs.py`.
 
 The reason it exists rather than `caplog` is that it captures one named logger
 instead of everything the process emitted, so that is the property worth
@@ -7,11 +7,20 @@ module.
 """
 
 import logging
+from collections.abc import Iterator
 
+import pytest
 from support.logs import capture_logs
 
 MINE = "thefrontoffice.tests.mine"
 SOMEONE_ELSE = "thefrontoffice.tests.theirs"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_logger() -> Iterator[None]:
+    """A level one test sets must not decide what the next one captures."""
+    yield
+    logging.getLogger(MINE).setLevel(logging.NOTSET)
 
 
 def test_records_from_the_named_logger_are_captured() -> None:

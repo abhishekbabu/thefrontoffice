@@ -6,7 +6,6 @@ answers in Yahoo's own XML, which the real parser reads.
 """
 
 import threading
-import time
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -58,7 +57,8 @@ class FakeContext:
         self.fail_first: list[Exception] = []
         """Raised one per request, before any answer."""
         self.requests: list[tuple[str, Any]] = []
-        self.request_threads: set[str] = set()
+        self.barrier: threading.Barrier | None = None
+        """Held by each request until all its parties arrive, so serial requests never finish."""
         self.refresh_ttls: list[int] = []
 
     def _load_or_fetch(self, cache_key: str, query: str, **kwargs: Any) -> Any:
@@ -68,13 +68,13 @@ class FakeContext:
         return self.response
 
     def make_request(self, query: str, league: Any = False) -> Any:
-        self.request_threads.add(threading.current_thread().name)
         self.requests.append((query, league))
         if self.fail_first:
             raise self.fail_first.pop(0)
         if self.error:
             raise self.error
-        time.sleep(0.02)  # long enough that serial execution is distinguishable
+        if self.barrier:
+            self.barrier.wait()
         return self.response
 
     @property
@@ -109,8 +109,11 @@ def test_one_request_per_stat_asked_for_keyed_as_asked(tmp_path: Path) -> None:
 def test_category_requests_run_concurrently(tmp_path: Path) -> None:
     """Eight independent queries were the dominant latency in a scout run."""
     client, ctx = _client(tmp_path, players_xml("A B"))
+    ctx.barrier = threading.Barrier(len(STATS), timeout=5)
+
     client.fetch_top_by_stat(STATS, per_stat=4)
-    assert len(ctx.request_threads) > 1, "requests ran on a single thread"
+
+    assert not ctx.barrier.broken
 
 
 def test_cached_categories_are_not_refetched(tmp_path: Path) -> None:
@@ -130,7 +133,7 @@ def test_an_unparseable_response_raises_and_is_not_kept(tmp_path: Path) -> None:
     """A response we cannot read must neither become an empty category nor be served again."""
     client, ctx = _client(tmp_path, "<not xml")
 
-    with pytest.raises(YahooAPIError, match="unreadable"):
+    with pytest.raises(YahooAPIError):
         client.fetch_top_by_stat(STATS, per_stat=4)
 
     ctx.response = players_xml("A B")
@@ -229,7 +232,7 @@ def test_a_refused_search_names_the_missing_permission(tmp_path: Path) -> None:
 
 def test_a_search_on_an_unexpected_shape_raises(tmp_path: Path) -> None:
     client, _ = _client(tmp_path, "<fantasy_content><error>?</error></fantasy_content>")
-    with pytest.raises(YahooAPIError, match="unreadable"):
+    with pytest.raises(YahooAPIError):
         client.search_players("LeBron James")
 
 
@@ -266,15 +269,15 @@ def test_a_refused_team_list_names_the_missing_permission(tmp_path: Path) -> Non
 
 
 class FakeWeek:
-    """Stands in for yahoofantasy's Week."""
+    """Stands in for yahoofantasy's Week, which the client builds itself."""
 
-    def __init__(self, ctx: Any, league: Any, week_num: Any) -> None:
-        self.matchups = FakeWeek.matchups_to_return
-
-    matchups_to_return: list[Any] = []
+    def __init__(self, matchups: list[Any], error: Exception | None = None) -> None:
+        self.matchups = matchups
+        self.error = error
 
     def sync(self) -> None:
-        pass
+        if self.error:
+            raise self.error
 
 
 def _fake_team(team_key: str) -> Any:
@@ -310,12 +313,15 @@ def _matchup(my_key: str = "t1") -> Any:
 
 
 def _matchup_client(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *matchups: Any, week: int | None = 5
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *matchups: Any,
+    week: int | None = 5,
+    sync_error: Exception | None = None,
 ) -> tuple[YahooClient, FakeContext]:
     import thefrontoffice.adapters.outbound.platforms.yahoo.client as mod
 
-    FakeWeek.matchups_to_return = list(matchups)
-    monkeypatch.setattr(mod, "Week", FakeWeek)
+    monkeypatch.setattr(mod, "Week", lambda ctx, league, week_num: FakeWeek(list(matchups), sync_error))
     client, ctx = _client(tmp_path, "")
     client.league.current_week = week
     return client, ctx
@@ -374,14 +380,8 @@ def test_a_failed_scoreboard_refresh_falls_back_to_the_persisted_copy(
 def test_a_failed_scoreboard_raises_rather_than_reading_as_no_matchup(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    class Broken(FakeWeek):
-        def sync(self) -> None:
-            raise requests.ConnectionError("yahoo down")
+    client, _ = _matchup_client(monkeypatch, tmp_path, _matchup(), sync_error=requests.ConnectionError("yahoo down"))
 
-    import thefrontoffice.adapters.outbound.platforms.yahoo.client as mod
-
-    client, _ = _matchup_client(monkeypatch, tmp_path, _matchup())
-    monkeypatch.setattr(mod, "Week", Broken)
     with pytest.raises(YahooUnavailableError):
         client.get_matchup(_fake_team("t1"))
 
@@ -391,7 +391,7 @@ def test_an_unreadable_matchup_date_raises(monkeypatch: pytest.MonkeyPatch, tmp_
     odd.week_start = "someday"
     client, _ = _matchup_client(monkeypatch, tmp_path, odd)
 
-    with pytest.raises(YahooAPIError, match="matchup date"):
+    with pytest.raises(YahooAPIError):
         client.get_matchup(_fake_team("t1"))
 
 

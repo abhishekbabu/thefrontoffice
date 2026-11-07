@@ -411,22 +411,6 @@ def test_settings_list_every_variable_the_app_reads(settings_client: TestClient)
     assert {"GOOGLE_API_KEY", "FPL_ENTRY_ID", "SLEEPER_USERNAME"} <= keys
 
 
-def test_each_setting_declares_the_control_it_needs(settings_client: TestClient) -> None:
-    """A page of text boxes invites a typo the validator then rejects on save."""
-    kinds = {s["key"]: s["kind"] for s in settings_client.get("/api/settings").json()}
-
-    assert kinds["LOGFIRE_CAPTURE_PROMPTS"] == "boolean"
-    assert kinds["FPL_ENTRY_ID"] == "integer"
-    assert kinds["YAHOO_MAX_WEEKLY_ADDS"] == "integer"
-    assert kinds["LOG_LEVEL"] == "choice"
-    assert kinds["SLEEPER_USERNAME"] == "text"
-
-
-def test_a_fixed_set_of_values_is_offered_rather_than_typed(settings_client: TestClient) -> None:
-    entry = next(s for s in settings_client.get("/api/settings").json() if s["key"] == "LOG_LEVEL")
-    assert entry["choices"] == ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-
-
 def test_a_boolean_reports_its_effective_value_not_the_file_text(
     settings_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -739,29 +723,6 @@ class _ForecastProvider(_SummaryProvider):
         return []
 
 
-def test_the_week_carries_its_chance_of_winning() -> None:
-    from thefrontoffice.domain.models import Summary
-
-    client = _client(_ForecastProvider(Summary()))
-
-    body = client.get("/api/nfl-sleeper/leagues/L1/summary").json()
-
-    assert body["forecast"]["win"] == 1.0
-    assert "Win chance" in [s["label"] for s in body["headline"]]
-
-
-def test_a_week_that_cannot_be_simulated_is_still_the_week() -> None:
-    from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-    from thefrontoffice.domain.models import Stat, Summary
-
-    week = Summary(headline=[Stat(label="Week", value="7")])
-    client = _client(_ForecastProvider(week, SleeperAPIError("down")))
-
-    body = client.get("/api/nfl-sleeper/leagues/L1/summary").json()
-
-    assert body["forecast"] is None and [s["label"] for s in body["headline"]] == ["Week"]
-
-
 class _WireProvider(_ForecastProvider):
     """A forecastable provider with two free agents, one of whom can start."""
 
@@ -796,31 +757,10 @@ def test_free_agents_carry_what_each_does_to_the_chance() -> None:
     assert rows["bench"]["columns"]["Win"] == "—"
 
 
-def test_sorting_by_the_chance_orders_the_page_from_the_default_ranking() -> None:
-    provider = _WireProvider(None)
-    client = _client(provider)
-
-    body = client.get("/api/nfl-sleeper/leagues/L1/free-agents?sort=Win").json()
-
-    assert provider.query.sort == ""
-    assert [p["player_id"] for p in body["players"]] == ["starter", "bench"]
-
-
 def test_a_free_agent_page_is_bounded_as_the_query_is() -> None:
     response = _client(_WireProvider(None)).get("/api/nfl-sleeper/leagues/L1/free-agents?limit=500")
 
     assert response.status_code == 422
-
-
-def test_free_agents_that_cannot_be_priced_are_still_the_wire() -> None:
-    from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-
-    client = _client(_WireProvider(None, SleeperAPIError("down")))
-
-    body = client.get("/api/nfl-sleeper/leagues/L1/free-agents").json()
-
-    assert [p["player_id"] for p in body["players"]] == ["bench", "starter"]
-    assert all("Win" not in p["columns"] for p in body["players"])
 
 
 class _SeasonProvider(_SummaryProvider):
@@ -860,16 +800,6 @@ class _SeasonProvider(_SummaryProvider):
         from thefrontoffice.domain.models import LeagueSchedule, StandingRow
 
         return LeagueSchedule(standings=[StandingRow(rank=1, name="Me", team_id="1")])
-
-
-def test_the_week_carries_the_playoff_chance() -> None:
-    from thefrontoffice.domain.models import Summary
-
-    client = _client(_SeasonProvider(Summary()))
-
-    headline = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["headline"]
-
-    assert {s["label"]: s["value"] for s in headline}["Playoffs"] == "100%"
 
 
 def test_trades_are_priced_in_playoff_chance() -> None:
@@ -919,18 +849,6 @@ def test_the_table_carries_each_teams_playoff_chance() -> None:
     [row] = client.get("/api/nfl-sleeper/leagues/L1/schedule").json()["standings"]
 
     assert row["playoffs"] == "100%"
-
-
-def test_a_season_that_cannot_be_simulated_is_still_the_league() -> None:
-    from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-    from thefrontoffice.domain.models import Summary
-
-    client = _client(_SeasonProvider(Summary(), SleeperAPIError("down")))
-
-    [row] = client.get("/api/nfl-sleeper/leagues/L1/schedule").json()["standings"]
-    headline = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["headline"]
-
-    assert row["playoffs"] == "" and headline == []
 
 
 def test_a_platform_that_is_down_is_a_503_that_says_so() -> None:

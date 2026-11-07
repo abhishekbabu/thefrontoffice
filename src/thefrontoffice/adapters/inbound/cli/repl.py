@@ -11,7 +11,7 @@ from datetime import datetime
 
 from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound.cli import commands
-from thefrontoffice.adapters.inbound.cli.output import header, print_error
+from thefrontoffice.adapters.inbound.cli.output import configure_console, header, print_error
 from thefrontoffice.adapters.inbound.cli.session import Session
 from thefrontoffice.bootstrap import Wiring
 from thefrontoffice.config.logging import setup_logging
@@ -37,28 +37,6 @@ def parse_command(raw: str) -> tuple[str, list[str]]:
     cmd = parts[0].lower()
     args = [a for a in parts[1:] if not a.startswith("--")]
     return (cmd, args)
-
-
-def _configure_console() -> None:
-    """Make stdout/stderr able to carry the UI's emoji and box-drawing glyphs.
-
-    Python writes to a Windows *console* as UTF-16 and handles them fine, but as
-    soon as output is redirected to a file or pipe it falls back to the locale
-    encoding — cp1252 on most Windows installs — where every one of those
-    characters raises UnicodeEncodeError and takes the process down.
-
-    Reconfiguring to UTF-8 fixes redirection; errors="replace" means a terminal
-    that genuinely cannot represent a glyph degrades to a placeholder instead of
-    crashing. No-op where the streams are already UTF-8, or replaced entirely
-    (pytest's capture, for instance, offers no reconfigure()).
-    """
-    for stream in (sys.stdout, sys.stderr):
-        reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is None:
-            continue
-        # Already detached, or not reconfigurable — the UI is still usable.
-        with contextlib.suppress(ValueError, OSError):
-            reconfigure(encoding="utf-8", errors="replace")
 
 
 class QuitRequested(Exception):
@@ -91,7 +69,7 @@ def dispatch(session: Session, cmd: str, args: list[str]) -> None:
 
 def main() -> None:
     """Start a REPL over whichever competitions are configured: `just run`."""
-    _configure_console()
+    configure_console()
     setup_logging()
     # After setup_logging, so the bridge attaches to a root logger that already
     # has its level and its console handler.

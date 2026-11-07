@@ -23,6 +23,7 @@ class FakeResponse:
     def __init__(self, payload: Any, status: int = 200) -> None:
         self._payload = payload
         self.status_code = status
+        self.text = str(payload)
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
