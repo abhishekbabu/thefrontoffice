@@ -35,14 +35,21 @@ what these platforms ask for — Sleeper documents 1000 a minute."""
 
 
 @dataclass
-class Batch:
+class Batch[K, V]:
     """What a parallel fetch found: every value it has, and why each missing one is missing."""
 
-    values: dict[str, Any] = field(default_factory=dict)
-    failures: dict[str, FrontOfficeError] = field(default_factory=dict)
+    values: dict[K, V] = field(default_factory=dict)
+    failures: dict[K, FrontOfficeError] = field(default_factory=dict)
+
+    def rekeyed[N](self, keys: Mapping[N, K]) -> Batch[N, V]:
+        """The same batch under the caller's own keys — a week number rather than a cache key."""
+        return Batch(
+            values={new: self.values[old] for new, old in keys.items() if old in self.values},
+            failures={new: self.failures[old] for new, old in keys.items() if old in self.failures},
+        )
 
 
-def fetch_many(cache: JsonDiskCache, fetches: Mapping[str, Callable[[], Any]], ttl: timedelta) -> Batch:
+def fetch_many(cache: JsonDiskCache, fetches: Mapping[str, Callable[[], Any]], ttl: timedelta) -> Batch[str, Any]:
     """Each key's cached value, fetching only the misses and those in parallel.
 
     A season of weekly matchups is eighteen independent requests, and run one
@@ -55,7 +62,7 @@ def fetch_many(cache: JsonDiskCache, fetches: Mapping[str, Callable[[], Any]], t
     than failing the batch, so the caller decides whether a hole is tolerable.
     Anything else is a bug and propagates.
     """
-    batch = Batch()
+    batch: Batch[str, Any] = Batch()
     misses: dict[str, Callable[[], Any]] = {}
     for key, fetch in fetches.items():
         hit = cache.lookup(key, ttl)
@@ -143,14 +150,15 @@ class JsonApiClient:
         trim = keep or (lambda raw: raw)
         return self._cache.cached(key, ttl, lambda: trim(self.get(url, timeout=timeout)))
 
-    def cached_many(self, urls: dict[str, str], ttl: timedelta) -> dict[str, Any]:
+    def cached_many(self, urls: dict[str, str], ttl: timedelta) -> Batch[str, Any]:
         """Several cached GETs at once, fetching only the misses and in parallel.
 
-        A request that fails leaves its key out rather than failing the batch.
-        Seventeen weeks of a season is a season with a hole in it, which is
-        worth more than no season at all.
+        A request that fails is reported in the batch's `failures` rather than
+        failing the rest, and logged here. Whether a hole is tolerable is the
+        caller's to say: a week that would not load is not a week with nothing
+        in it, so the caller has to be told which one it was.
         """
         batch = fetch_many(self._cache, {key: (lambda url=url: self.get(url)) for key, url in urls.items()}, ttl)
         for key, error in batch.failures.items():
             logger.warning(f"{self._name} batch missing {key}: {error}")
-        return batch.values
+        return batch

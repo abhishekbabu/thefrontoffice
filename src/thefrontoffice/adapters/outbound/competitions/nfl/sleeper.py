@@ -385,16 +385,11 @@ class SleeperNFLProvider:
     def _evidence(
         self, season: str, week: int, scoring: str, is_regular_season: bool, players: Mapping[str, PlayerMeta]
     ) -> evidence.Evidence:
-        """Roles and matchups from every week finished so far."""
+        """Roles and matchups from every week finished so far that loads."""
         played = weeks_played(week, is_regular_season)
         if not played:
             return evidence.Evidence()
-        try:
-            lines = self.client.get_nfl_game_lines(season, played, FANTASY_POSITIONS)
-        except SleeperAPIError as e:
-            # Enrichment: a week with no evidence is the week as it was before.
-            logger.warning(f"Continuing without role and matchup evidence: {e}")
-            return evidence.Evidence()
+        lines = evidence.season_lines(self.client.get_nfl_game_lines(season, played, FANTASY_POSITIONS))
         out = {pid for pid, meta in players.items() if ruled_out(meta.injury_status)}
         return evidence.gather(lines, scoring, out)
 

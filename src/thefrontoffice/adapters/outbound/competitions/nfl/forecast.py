@@ -22,7 +22,6 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     pairings,
     projections_for,
 )
-from thefrontoffice.domain.errors import PlatformError
 from thefrontoffice.domain.models import LineupMove, MatchupInput, Outcomes, PlayedMatchup
 
 logger = logging.getLogger(__name__)
@@ -48,16 +47,18 @@ class Forecasts:
         self._previous: dict[str, evidence.Evidence] = {}
 
     def last_season(self, season: str, scoring: str) -> evidence.Evidence:
-        """Last season's games, for the shape of each position's spread. Empty where they will not load."""
+        """Last season's games, for the shape of each position's spread. Without the weeks that will not load."""
         key = f"{season}:{scoring}"
         if key not in self._previous:
             try:
-                lines = self.client.get_nfl_game_lines(
-                    str(int(season) - 1), list(range(1, SEASON_WEEKS + 1)), FANTASY_POSITIONS
-                )
-            except (PlatformError, ValueError) as e:
+                previous = str(int(season) - 1)
+            except ValueError as e:
                 logger.warning(f"Shaping ranges without last season: {e}")
                 lines = []
+            else:
+                lines = evidence.season_lines(
+                    self.client.get_nfl_game_lines(previous, list(range(1, SEASON_WEEKS + 1)), FANTASY_POSITIONS)
+                )
             self._previous[key] = evidence.gather(lines, scoring)
         return self._previous[key]
 
@@ -128,10 +129,12 @@ class Forecasts:
         """
         season = league.season
         lines = self.client.get_nfl_game_lines(season, list(range(1, week + 1)), FANTASY_POSITIONS)
-        before = evidence.gather([line for line in lines if line.week < week], league.scoring_format)
+        before = evidence.gather(
+            [line for w, played in lines.items() if w < week for line in played], league.scoring_format
+        )
         last = self.last_season(season, league.scoring_format)
         projections = self.client.get_projections(season, week, league.scoring_format, FANTASY_POSITIONS)
-        that_week = evidence.gather([line for line in lines if line.week == week], league.scoring_format)
+        that_week = evidence.gather(lines.get(week, []), league.scoring_format)
         played = [
             (projections[pid], games[0])
             for pid, games in that_week.games.items()
@@ -152,7 +155,7 @@ class Forecasts:
         projections = self.client.get_projections(season, week, league.scoring_format, FANTASY_POSITIONS)
         players = self.client.get_nfl_players()
         earlier = list(range(1, week))
-        lines = self.client.get_nfl_game_lines(season, earlier, FANTASY_POSITIONS) if earlier else []
+        lines = evidence.season_lines(self.client.get_nfl_game_lines(season, earlier, FANTASY_POSITIONS))
         spread = outcomes.spreads(
             evidence.gather(lines, league.scoring_format),
             settings,

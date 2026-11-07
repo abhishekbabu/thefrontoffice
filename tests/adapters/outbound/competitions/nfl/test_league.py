@@ -9,9 +9,7 @@ import pytest
 from support.nfl import DEFAULT_PROJECTIONS, FakeSleeper, at_week, game_line, league_client, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
-    Transaction,
-)
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import SleeperMatchup, Transaction
 
 # ── the league beyond this week ─────────────────────────────────────────
 
@@ -50,6 +48,23 @@ def test_a_played_week_carries_its_score_and_whether_it_was_won() -> None:
 
     assert season[0].result == "88.5-96.1"
     assert season[0].outcome == "lost"  # 88.5 against more
+
+
+def test_a_week_whose_matchups_would_not_load_is_not_read_as_a_bye() -> None:
+    client = at_week(5)
+    client.unloaded_weeks = {2}
+
+    season = nfl_provider(client).schedule("L1").season
+
+    assert (season[1].detail, season[1].opponent, season[1].result) == ("unavailable", "", "")
+    assert season[0].result == "88.5-96.1"
+
+
+def test_a_week_with_nobody_to_play_is_a_bye() -> None:
+    client = at_week(5)
+    client.matchups = [SleeperMatchup(roster_id=1, matchup_id=None, points=0.0)]
+
+    assert nfl_provider(client).schedule("L1").season[0].detail == "bye"
 
 
 def test_the_current_week_is_marked() -> None:
@@ -172,6 +187,26 @@ def test_each_team_starts_from_its_record_and_is_scored_by_its_best_lineup() -> 
     assert all(means[("1", w)] > means[("2", w)] for w in (7, 8))
 
 
+def test_a_week_the_bulk_read_lost_is_read_again_alone() -> None:
+    client = _with_playoffs(7)
+    client.unloaded_weeks = {8}
+
+    season = nfl_provider(client).season_input("L1")
+
+    assert season is not None
+    assert [f.week for f in season.fixtures] == [7, 8]
+
+
+def test_a_week_of_the_season_left_that_will_not_load_fails_the_simulation() -> None:
+    """A season simulated without one week's games is a table nobody will finish in."""
+    client = _with_playoffs(7)
+    client.unloaded_weeks = {8}
+    client.matchups_error = SleeperAPIError("down")
+
+    with pytest.raises(SleeperAPIError):
+        nfl_provider(client).season_input("L1")
+
+
 def test_a_league_in_its_playoffs_has_no_season_left_to_simulate() -> None:
     assert nfl_provider(_with_playoffs(9)).season_input("L1") is None
 
@@ -210,7 +245,7 @@ def test_a_backup_raises_what_a_roster_is_expected_to_score() -> None:
 def test_a_backup_is_still_priced_when_the_game_lines_are_down() -> None:
     def down(backup: bool) -> float:
         client = _with_backup_qb(_with_playoffs(7), backup=backup)
-        client.game_lines_error = SleeperAPIError("down")
+        client.unloaded_weeks = set(range(1, 7))
         return _mine_against_theirs(client)
 
     assert down(backup=True) > down(backup=False)

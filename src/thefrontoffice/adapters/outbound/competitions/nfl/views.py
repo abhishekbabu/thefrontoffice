@@ -389,24 +389,20 @@ def _game_log(
     score behind them.
 
     This week's game gets a row only once he has a line in it: until then
-    it has not been played, and a "did not play" would be a guess.
-
-    Degrades to nothing rather than failing the page, like the seasons.
+    it has not been played, and a "did not play" would be a guess. So does a
+    week whose lines would not load, for the same reason.
     """
     if not state.is_regular_season:
         return None
     weeks = list(range(1, state.week + 1))
-    try:
-        lines = [
-            line
-            for line in client.get_nfl_game_lines(state.season, weeks, FANTASY_POSITIONS)
-            if line.player_id == player_id
-        ]
-    except PlatformError as e:
-        logger.warning(f"Skipping the game log: {e}")
-        return None
+    by_week = client.get_nfl_game_lines(state.season, weeks, FANTASY_POSITIONS)
     # The same rule the averages are read by, so the log shows the games they count.
-    games = {line.week: line for line in lines if evidence.took_the_field(line)}
+    games = {
+        week: line
+        for week, lines in by_week.items()
+        for line in lines
+        if line.player_id == player_id and evidence.took_the_field(line)
+    }
     if not games:
         return None
 
@@ -428,8 +424,8 @@ def _game_log(
                 *(_box_score(line, keys) for _, keys in measures),
             ]
             rows.append(StatRow(label=f"W{week} {_fixture(club, line.opponent, fixture)}", values=values))
-        elif week == state.week or not schedule:
-            # Not played yet, or no schedule to tell a bye from a game missed.
+        elif week == state.week or week not in by_week or not schedule:
+            # Not played yet, not loaded, or no schedule to tell a bye from a game missed.
             continue
         elif fixture is None:
             rows.append(StatRow(label=f"W{week} bye", values=[NOT_APPLICABLE] * len(columns)))

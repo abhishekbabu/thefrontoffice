@@ -204,7 +204,7 @@ URLS = {f"k{i}": f"https://example.test/{i}" for i in range(1, 6)}
 def test_a_batch_returns_every_key(tmp_path: Path) -> None:
     session = RoutedSession(ROUTES)
 
-    result = _client(tmp_path, session).cached_many(URLS, TTL)
+    result = _client(tmp_path, session).cached_many(URLS, TTL).values
 
     assert result == {f"k{i}": {"week": i} for i in range(1, 6)}
 
@@ -224,7 +224,7 @@ def test_a_batch_only_fetches_what_it_does_not_have(tmp_path: Path) -> None:
     cache.set("k2", {"week": 2})
     session = RoutedSession(ROUTES)
 
-    result = _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)
+    result = _client(tmp_path, session, cache=cache).cached_many(URLS, TTL).values
 
     assert sorted(session.requests) == [f"https://example.test/{i}" for i in (3, 4, 5)]
     assert result["k1"] == {"week": 1}
@@ -236,7 +236,7 @@ def test_a_batch_takes_a_stored_null_as_a_hit(tmp_path: Path) -> None:
     cache.set("k1", None)
     session = RoutedSession(ROUTES)
 
-    result = _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)
+    result = _client(tmp_path, session, cache=cache).cached_many(URLS, TTL).values
 
     assert "https://example.test/1" not in session.requests
     assert "k1" in result and result["k1"] is None
@@ -271,14 +271,14 @@ def test_batch_writes_stay_on_the_calling_thread(tmp_path: Path) -> None:
     assert len(writes) == 1
 
 
-def test_one_failed_request_leaves_a_hole_rather_than_failing_the_batch(tmp_path: Path) -> None:
-    """Seventeen weeks of a season is worth more than no season at all."""
+def test_one_failed_request_is_named_rather_than_failing_the_batch(tmp_path: Path) -> None:
+    """A week that would not load is not a week with nothing in it, so the caller is told which it was."""
     session = RoutedSession(ROUTES, failing={"https://example.test/3"})
 
-    result = _client(tmp_path, session).cached_many(URLS, TTL)
+    batch = _client(tmp_path, session).cached_many(URLS, TTL)
 
-    assert "k3" not in result
-    assert sorted(result) == ["k1", "k2", "k4", "k5"]
+    assert sorted(batch.values) == ["k1", "k2", "k4", "k5"]
+    assert list(batch.failures) == ["k3"]
 
 
 def test_a_failed_request_is_not_stored_as_though_it_were_an_answer(tmp_path: Path) -> None:

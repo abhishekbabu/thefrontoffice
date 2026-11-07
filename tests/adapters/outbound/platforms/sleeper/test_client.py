@@ -476,13 +476,13 @@ def test_a_season_of_matchups_comes_back_keyed_by_week(tmp_path: Path) -> None:
     assert {week: matchups[0].matchup_id for week, matchups in weeks.items()} == {1: 1, 2: 2, 3: 3}
 
 
-def test_a_week_that_does_not_answer_is_an_empty_week_not_a_missing_key(tmp_path: Path) -> None:
-    """The caller reads it by week number and must not have to guard each one."""
+def test_a_week_that_does_not_answer_is_absent_not_an_empty_week(tmp_path: Path) -> None:
+    """An empty week is a bye; a failed request is not one."""
     client, _ = _client({"/matchups/1": [{"roster_id": 1}]}, tmp_path)
 
     weeks = client.get_matchups_bulk("L1", [1, 2])
 
-    assert weeks[2] == []
+    assert list(weeks) == [1]
 
 
 # ── basketball ──────────────────────────────────────────────────────────
@@ -513,6 +513,14 @@ def test_team_totals_are_not_mistaken_for_a_player(tmp_path: Path) -> None:
     client, _ = _client({"/stats/nba/2026/1": NBA_LOGS}, tmp_path)
 
     assert set(client.get_nba_game_logs("2026", [1])) == {"p1"}
+
+
+def test_a_week_of_game_logs_that_will_not_load_fails_the_window(tmp_path: Path) -> None:
+    """The games either side of a missing week are not consecutive, and "last fifteen" would say they were."""
+    client, _ = _client({"/stats/nba/2026/1": NBA_LOGS}, tmp_path)
+
+    with pytest.raises(SleeperAPIError):
+        client.get_nba_game_logs("2026", [1, 2])
 
 
 def test_game_logs_come_back_newest_first(tmp_path: Path) -> None:
@@ -565,7 +573,7 @@ NFL_LINES = [
 def test_game_lines_keep_fantasy_players_with_the_usage_behind_their_points(tmp_path: Path) -> None:
     client, _ = _client({"/stats/nfl/2026/2": NFL_LINES}, tmp_path)
 
-    lines = {line.player_id: line for line in client.get_nfl_game_lines("2026", [2], POSITIONS)}
+    lines = {line.player_id: line for line in client.get_nfl_game_lines("2026", [2], POSITIONS)[2]}
 
     # A team total, a linebacker and a row with no game are nobody's starter.
     assert set(lines) == {"wr1", "KC"}
@@ -575,9 +583,11 @@ def test_game_lines_keep_fantasy_players_with_the_usage_behind_their_points(tmp_
     assert wr.stats == {"off_snp": 50.0, "tm_off_snp": 60.0, "rec_tgt": 8.0, "pts_ppr": 14.5, "rec_yd": 88.0}
 
 
-def test_a_week_that_will_not_load_leaves_a_gap_rather_than_failing(tmp_path: Path) -> None:
+def test_a_week_that_will_not_load_is_absent_rather_than_a_week_nobody_played(tmp_path: Path) -> None:
+    """No line in a week that loaded is a game missed; a week that did not load says nothing about anybody."""
     client, _ = _client({"/stats/nfl/2026/2": NFL_LINES}, tmp_path)
 
     lines = client.get_nfl_game_lines("2026", [1, 2], POSITIONS)
 
-    assert {line.week for line in lines} == {2}
+    assert list(lines) == [2]
+    assert {line.week for line in lines[2]} == {2}

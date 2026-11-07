@@ -352,10 +352,18 @@ class NFLSource(Protocol):
 
     def get_matchups(self, league_id: str, week: int) -> Sequence[Matchup]: ...
 
-    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Mapping[int, Sequence[Matchup]]: ...
+    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Mapping[int, Sequence[Matchup]]:
+        """Each of `weeks` that loaded; one that would not is absent, where an empty one is a bye."""
+        ...
 
-    def get_nfl_game_lines(self, season: str, weeks: list[int], positions: Collection[str]) -> Sequence[GameLine]:
-        """Every line from each game in `weeks` by a player at one of `positions`."""
+    def get_nfl_game_lines(
+        self, season: str, weeks: list[int], positions: Collection[str]
+    ) -> Mapping[int, Sequence[GameLine]]:
+        """Every line from each game in `weeks` by a player at one of `positions`, by week.
+
+        A week that would not load is absent, not empty: no line in a week that
+        did is a game missed.
+        """
         ...
 
     def get_nfl_players(self) -> Mapping[str, PlayerInfo]: ...

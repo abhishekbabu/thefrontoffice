@@ -13,7 +13,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.competitions import places
-from thefrontoffice.adapters.outbound.competitions.nfl.evidence import SNAP_POSITIONS, misses
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import SNAP_POSITIONS, misses, season_lines
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import lineup_points
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Game,
@@ -54,6 +54,9 @@ logger = logging.getLogger(__name__)
 
 
 # "What did I miss", not the season's whole transaction log.
+UNLOADED = "unavailable"
+"""A week whose matchups would not load, in place of an opponent: not "bye", which it may not be."""
+
 ACTIVITY_WEEKS = 3
 
 TRANSACTION_LABELS = {
@@ -83,15 +86,12 @@ def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence
     time they are the whole wait on the page.
     """
     weeks = list(range(1, _last_week(state) + 1))
-    try:
-        by_week = client.get_matchups_bulk(state.league.league_id, weeks)
-    except PlatformError as e:
-        logger.warning(f"Continuing without the season's matchups: {e}")
-        by_week = {}
+    by_week = client.get_matchups_bulk(state.league.league_id, weeks)
     by_roster = {r.roster_id: r for r in state.rosters}
 
     rows: list[ScheduleRow] = []
     for week in weeks:
+        loaded = week in by_week
         sides = opponent_of(by_week.get(week, []), state.roster.roster_id)
         opponent = by_roster.get(sides[1].roster_id) if sides else None
 
@@ -105,7 +105,7 @@ def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence
                 label=f"Week {week}",
                 date=week_dates(schedule.get(week, [])),
                 opponent=state.names.get(opponent.owner_id, "") if opponent else "",
-                detail=playoff or (opponent.record if opponent else "bye"),
+                detail=playoff or (opponent.record if opponent else "bye" if loaded else UNLOADED),
                 result=_result(sides, week, state.week),
                 outcome=_outcome(sides, week, state.week),
                 is_current=week == state.week,
@@ -310,10 +310,13 @@ def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | Non
     remaining = list(range(state.week, league.playoff_week_start))
     rosters = state.rosters
 
+    by_week = client.get_matchups_bulk(league.league_id, remaining)
+    # A week the bulk read lost is asked for alone, which raises why: a season
+    # simulated without one week's games is a table nobody will finish in.
     fixtures = [
         Fixture(week=week, home=str(home.roster_id), away=str(away.roster_id))
-        for week, entries in client.get_matchups_bulk(league.league_id, remaining).items()
-        for home, away in pairings(entries)
+        for week in remaining
+        for home, away in pairings(by_week[week] if week in by_week else client.get_matchups(league.league_id, week))
     ]
 
     projections = {
@@ -388,11 +391,7 @@ def _miss_rate(client: NFLSource, state: Week) -> float:
     played = weeks_played(state.week, state.is_regular_season)
     if not played:
         return DEFAULT_MISS_RATE
-    try:
-        missed, chances = misses(client.get_nfl_game_lines(state.season, played, FANTASY_POSITIONS))
-    except PlatformError as e:
-        logger.warning(f"Using the default miss rate: {e}")
-        return DEFAULT_MISS_RATE
+    missed, chances = misses(season_lines(client.get_nfl_game_lines(state.season, played, FANTASY_POSITIONS)))
     return missed / chances if chances >= MIN_MISS_CHANCES else DEFAULT_MISS_RATE
 
 
@@ -408,12 +407,16 @@ def _scale(rosters: Sequence[Team], projected: dict[tuple[str, int], float], wee
 
 
 def _spread(client: NFLSource, league_id: str, week: int) -> float:
-    """How far a team's week has fallen from its own average, pooled across the league."""
+    """How far a team's week has fallen from its own average, pooled across the league, over the weeks that load."""
     played = list(range(1, week))
     if len(played) < MIN_WEEKS_FOR_SPREAD:
         return DEFAULT_SPREAD
+    by_week = client.get_matchups_bulk(league_id, played)
+    weeks = len(by_week)
+    if weeks < MIN_WEEKS_FOR_SPREAD:
+        return DEFAULT_SPREAD
     scores: dict[str, list[float]] = {}
-    for entries in client.get_matchups_bulk(league_id, played).values():
+    for entries in by_week.values():
         for entry in entries:
             scores.setdefault(str(entry.roster_id), []).append(entry.points)
     deviations = [s - statistics.fmean(v) for v in scores.values() if len(v) > 1 for s in v]
@@ -421,7 +424,6 @@ def _spread(client: NFLSource, league_id: str, week: int) -> float:
         return DEFAULT_SPREAD
     # Corrected for each team's average being measured from the same few weeks,
     # which pulls every deviation toward nought.
-    weeks = len(played)
     return statistics.pstdev(deviations) * (weeks / (weeks - 1)) ** 0.5
 
 
