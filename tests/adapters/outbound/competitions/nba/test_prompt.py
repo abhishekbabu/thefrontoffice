@@ -2,11 +2,12 @@
 
 from datetime import date
 
+from support.nba import make_player
 from support.prompts import named_fields, schema_fields
 
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, STEALS
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup, MatchupSide, RosteredPlayer
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup, MatchupSide
 from thefrontoffice.application.formats import ScoutAnswer, TradeAnswer
 
 
@@ -18,7 +19,7 @@ def _week(roster_size: int = 1) -> Matchup:
         opponent=MatchupSide(
             team_key="t.2", name="Theirs", points="5", stats={BLOCKS.yahoo_stat: "17", STEALS.yahoo_stat: "9"}
         ),
-        opponent_roster=[RosteredPlayer(name=f"Threat {i}", position="C") for i in range(roster_size)],
+        opponent_roster=[make_player(f"Threat {i}", position="C") for i in range(roster_size)],
     )
 
 
