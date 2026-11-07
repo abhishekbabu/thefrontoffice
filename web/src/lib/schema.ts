@@ -134,11 +134,12 @@ export interface paths {
         };
         /**
          * Roster
-         * @description One card per player, with per-competition columns rendered generically.
+         * @description One card per player, with per-competition columns rendered generically, in the order asked.
          *
          *     The columns are the competition's own vocabulary — FPL sends Price and xGI,
          *     football sends Depth — so the client reads whatever keys arrive rather
-         *     than being taught each competition.
+         *     than being taught each competition. Ordered here, by the rule a page of
+         *     the wire is, so a column sorts alike on every table.
          */
         get: operations["roster"];
         put?: never;
@@ -204,7 +205,7 @@ export interface paths {
         put?: never;
         /**
          * Decide
-         * @description Dismiss, snooze or restore one to-do item; the decision kept, or null once restored.
+         * @description Dismiss, snooze or restore one to-do item; what the decision makes of it, for its row to show.
          */
         post: operations["decide"];
         delete?: never;
@@ -266,7 +267,7 @@ export interface paths {
         };
         /**
          * Team Roster
-         * @description Somebody else's squad, in the same columns as your own.
+         * @description Somebody else's squad, in the same columns as your own, ordered as yours is.
          */
         get: operations["team_roster"];
         put?: never;
@@ -559,21 +560,13 @@ export interface components {
             /** @description The model's judgement, once a report has been run. None before, and for an item it skipped. */
             verdict: components["schemas"]["TaskVerdict"] | null;
             /**
-             * Hidden
-             * @description Hidden by the manager's own decision: dismissed, or snoozed for now.
-             */
-            hidden: ("dismissed" | "snoozed") | null;
-            /**
-             * Snoozed Until
-             * @description When a snooze runs out.
-             */
-            snoozed_until: string | null;
-            /**
-             * Resurfaced
-             * @description Whether a dismissed item has changed since, and so is back.
+             * Stale
+             * @description Whether the item has changed since `verdict` was given: a verdict on last night's news.
              * @default false
              */
-            resurfaced: boolean;
+            stale: boolean;
+            /** @description What the manager's own decisions make of the item. */
+            mark: components["schemas"]["ItemMark"];
             /** @description `win_change` as it reads — '+2.8% to win', toned by its sign. Written where the week is presented, so a page and a terminal say it alike; None where unpriced. */
             chance: components["schemas"]["Stat"] | null;
             /**
@@ -738,27 +731,26 @@ export interface components {
             until?: string | null;
         };
         /**
-         * ItemState
-         * @description What the manager has decided about one to-do item.
-         *
-         *     Dismissed against a fingerprint rather than for good: "not this" is a
-         *     judgment about the item as it read, and an item that changes — new news,
-         *     a different gain — is new information, which brings it back.
+         * ItemMark
+         * @description What the manager's decisions make of one to-do item as it reads now.
          */
-        ItemState: {
-            /** Key */
-            key: string;
+        ItemMark: {
             /**
-             * Dismissed As
-             * @description The fingerprint the item had when dismissed; empty if not.
-             * @default
+             * Hidden
+             * @description Hidden by the manager's own decision: dismissed, or snoozed for now.
              */
-            dismissed_as: string;
+            hidden: ("dismissed" | "snoozed") | null;
             /**
              * Snoozed Until
-             * @description Hidden until then, aware UTC; None if not.
+             * @description When a snooze runs out.
              */
             snoozed_until: string | null;
+            /**
+             * Resurfaced
+             * @description Whether a dismissed item has changed since, and so is back.
+             * @default false
+             */
+            resurfaced: boolean;
         };
         /**
          * JudgeRequest
@@ -971,7 +963,7 @@ export interface components {
          *     Price and xPts, the NFL sends Slot — so a client renders whatever keys
          *     arrive rather than being taught each one. What sits beside it is what a
          *     table needs and a column should not be: an identifier to open, and whether
-         *     the row wants attention.
+         *     he will play.
          */
         PlayerCard: {
             /** Player Id */
@@ -988,17 +980,18 @@ export interface components {
                 [key: string]: number;
             };
             /**
-             * Tone
-             * @default neutral
-             * @enum {string}
-             */
-            tone: "neutral" | "good" | "warning";
-            /**
              * Ruled Out
              * @description Whether his status means he will not play, rather than that he might not — decided by the provider, which knows its platform's words for it.
              * @default false
              */
             ruled_out: boolean;
+            /**
+             * Roles
+             * @description The columns a table renders as more than text, by what they hold — so no client matches names.
+             */
+            readonly roles: {
+                [key: string]: "player" | "status" | "slot";
+            };
         };
         /**
          * PlayerDetail
@@ -1094,6 +1087,12 @@ export interface components {
              * @default 0
              */
             offset: number;
+            /**
+             * Limit
+             * @description The window's size, which the next page steps by.
+             * @default 50
+             */
+            limit: number;
             /**
              * Positions
              * @description Every position in the unfiltered pool, so a filter can be offered without guessing.
@@ -1437,6 +1436,12 @@ export interface components {
             title: string;
             /** Stats */
             stats: components["schemas"]["Stat"][];
+            /**
+             * Note
+             * @description What the heading says about the group as a whole: '2 available'.
+             * @default
+             */
+            note: string;
         };
         /**
          * StatRow
@@ -1697,6 +1702,11 @@ export interface components {
              * @default 0
              */
             gain: number;
+            /**
+             * Short By
+             * @description How far the week falls below the usual one; negative where it is above.
+             */
+            readonly short_by: number;
         };
     };
     responses: never;
@@ -2237,7 +2247,11 @@ export interface operations {
     };
     roster: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Column to order by. Empty means the competition's own ranking. */
+                sort?: string;
+                descending?: boolean;
+            };
             header?: never;
             path: {
                 competition: string;
@@ -2489,7 +2503,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ItemState"] | null;
+                    "application/json": components["schemas"]["ItemMark"];
                 };
             };
             /** @description Bad Request */
@@ -2551,11 +2565,11 @@ export interface operations {
     free_agents: {
         parameters: {
             query?: {
-                offset?: number;
-                limit?: number;
                 /** @description Column to order by. Empty means the competition's own ranking. */
                 sort?: string;
                 descending?: boolean;
+                offset?: number;
+                limit?: number;
                 /** @description Keep only this position. Empty keeps all. */
                 position?: string;
                 /** @description Substring match across a row's own values. */
@@ -2714,7 +2728,11 @@ export interface operations {
     };
     team_roster: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Column to order by. Empty means the competition's own ranking. */
+                sort?: string;
+                descending?: boolean;
+            };
             header?: never;
             path: {
                 competition: string;

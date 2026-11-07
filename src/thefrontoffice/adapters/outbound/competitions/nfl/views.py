@@ -33,6 +33,9 @@ from thefrontoffice.domain.errors import PlatformError, PlayerNotFoundError
 from thefrontoffice.domain.models import (
     FIT_COLUMN,
     NOT_APPLICABLE,
+    PLAYER_COLUMN,
+    SLOT_COLUMN,
+    STATUS_COLUMN,
     PlayerCard,
     PlayerDetail,
     Side,
@@ -190,7 +193,6 @@ def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = F
         rows.append(
             PlayerCard(
                 player_id=player_id,
-                tone="warning" if injury else "neutral",
                 ruled_out=ruled_out(injury),
                 values={
                     **({FIT_COLUMN: fitted[0]} if fitted else {}),
@@ -200,10 +202,10 @@ def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = F
                     "Exp": float(meta.years_exp),
                 },
                 columns={
-                    "Player": meta.name,
+                    PLAYER_COLUMN: meta.name,
                     "Pos": meta.position,
                     "Team": meta.team,
-                    **({} if wire else {"Slot": "START" if player_id in starters else "BN"}),
+                    **({} if wire else {SLOT_COLUMN: "START" if player_id in starters else "BN"}),
                     "Proj": f"{projection.points:.1f}" if projection else "0.0",
                     **({FIT_COLUMN: fitted[1] if fitted else "—"} if wire else {}),
                     # Whose role just grew: the pickups a projection has
@@ -214,7 +216,7 @@ def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = F
                     "Opponent": _versus(projection or zero_projection(player_id, meta), state.scheduled, "—"),
                     "Depth": str(depth) if depth else "—",
                     "Exp": f"{meta.years_exp}y",
-                    "Status": injury,
+                    STATUS_COLUMN: injury,
                 },
             )
         )

@@ -486,6 +486,7 @@ class Wiring:
             provider,
             key=entry.key,
             decisions=self.decisions,
+            answers=self.answers,
             forecast=ForecastEngine(provider) if isinstance(provider, ForecastProvider) else None,
             season=SeasonEngine(provider) if isinstance(provider, SeasonProvider) else None,
         )

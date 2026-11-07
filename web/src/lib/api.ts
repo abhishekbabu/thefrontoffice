@@ -21,6 +21,7 @@ export type Competition = Schemas["Competition"];
 export type ErrorBody = Schemas["ErrorBody"];
 export type ErrorCode = ErrorBody["code"];
 export type ItemDecision = Schemas["ItemDecision"];
+export type ItemMark = Schemas["ItemMark"];
 export type League = Schemas["LeagueRef"];
 export type LeagueSchedule = Schemas["LeagueSchedule"];
 export type LoginState = Schemas["LoginState"];
@@ -28,6 +29,7 @@ export type Move = Schemas["Move"];
 export type PlayerCall = Schemas["PlayerCall"];
 export type PlayerCard = Schemas["PlayerCard"];
 export type PlayerDetail = Schemas["PlayerDetail"];
+export type PlayerOrder = NonNullable<operations["roster"]["parameters"]["query"]>;
 export type PlayerPage = Schemas["PlayerPage"];
 export type Remedy = Schemas["Remedy"];
 export type RememberedReport = Schemas["Remembered_ScoutReport_"];
@@ -108,6 +110,15 @@ const put = <T,>(path: string, body: unknown) => request<T>(path, { method: "PUT
 
 const segment = encodeURIComponent;
 
+/** A query string of the values given, leaving out the ones left empty for the server's own default. */
+function queryString(query: Record<string, string | number | boolean | undefined>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== "" && value !== undefined) params.set(key, String(value));
+  }
+  return params.toString();
+}
+
 /**
  * Everything asked of one league, under one base path.
  *
@@ -117,22 +128,17 @@ const segment = encodeURIComponent;
 export function leagueApi(competition: string, league: string) {
   const base = `/api/${segment(competition)}/leagues/${segment(league)}`;
   return {
-    roster: () => request<Ok<"roster">>(`${base}/roster`),
+    roster: (order: PlayerOrder = {}) => request<Ok<"roster">>(`${base}/roster?${queryString(order)}`),
     player: (id: string) => request<Ok<"player">>(`${base}/players/${segment(id)}`),
     summary: () => request<Ok<"summary">>(`${base}/summary`),
     schedule: () => request<Ok<"schedule">>(`${base}/schedule`),
     weeksAhead: () => request<Ok<"weeks_ahead">>(`${base}/weeks-ahead`),
     trades: () => request<Ok<"trades">>(`${base}/trades`),
     teams: () => request<Ok<"teams">>(`${base}/teams`),
-    teamRoster: (team: string) => request<Ok<"team_roster">>(`${base}/teams/${segment(team)}/roster`),
+    teamRoster: (team: string, order: PlayerOrder = {}) =>
+      request<Ok<"team_roster">>(`${base}/teams/${segment(team)}/roster?${queryString(order)}`),
     decide: (decision: ItemDecision) => post<Ok<"decide">>(`${base}/items`, decision),
-    freeAgents: (query: FreeAgentQuery = {}) => {
-      const params = new URLSearchParams();
-      for (const [key, value] of Object.entries(query)) {
-        if (value !== "" && value !== undefined) params.set(key, String(value));
-      }
-      return request<Ok<"free_agents">>(`${base}/free-agents?${params}`);
-    },
+    freeAgents: (query: FreeAgentQuery = {}) => request<Ok<"free_agents">>(`${base}/free-agents?${queryString(query)}`),
     freeAgentCalls: (playerIds: string[]) =>
       post<Ok<"free_agent_calls">>(`${base}/free-agents/calls`, { player_ids: playerIds }),
     judgeFreeAgents: (playerIds: string[]) =>

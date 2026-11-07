@@ -11,7 +11,7 @@ import logging
 
 from thefrontoffice.application import briefing
 from thefrontoffice.application.answers import Answers
-from thefrontoffice.application.scouting import scout_scope
+from thefrontoffice.application.scouting import scout_scope, with_verdicts
 from thefrontoffice.domain.errors import SubjectGoneError
 from thefrontoffice.domain.models import Action, PlayerDetail, ScoutReport, Subject
 from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatReply, ChatSession, SubjectProvider
@@ -79,15 +79,11 @@ class AskEngine:
             raise SubjectGoneError()
 
         judged = self.answers.latest(scout_scope(self.key, league_id), ScoutReport)
-        then = next((t for t in judged.answer.tasks if t.key == key), None) if judged else None
+        [task] = with_verdicts([task], judged.answer if judged else None)
         verdict = ""
-        if then is not None and then.verdict is not None:
-            changed = (
-                " The item has changed since, so weigh it against the item as it now reads."
-                if then.fingerprint != task.fingerprint
-                else ""
-            )
-            verdict = f"YOUR EARLIER VERDICT: {then.verdict.decision} — {then.verdict.reason}{changed}"
+        if task.verdict is not None:
+            changed = " The item has changed since, so weigh it against the item as it now reads." if task.stale else ""
+            verdict = f"YOUR EARLIER VERDICT: {task.verdict.decision} — {task.verdict.reason}{changed}"
 
         return briefing.sections(
             TASK_ROLE,

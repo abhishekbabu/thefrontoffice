@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Search, Sparkles, X } from "lucide-react";
 import { api, type League, type PlayerCall, type PlayerPage, type Competition } from "@/lib/api";
 import { Card, CardHeader } from "@/components/ui/card";
 import { IconButton } from "@/components/ui/icon-button";
-import { RosterTable } from "@/components/ui/roster-table";
+import { RosterTable, toOrder } from "@/components/ui/roster-table";
 import type { SortState } from "@/components/ui/data-table";
 import { Busy, QueryState } from "@/components/ui/state";
 import { ToggleChip } from "@/components/ui/toggle";
@@ -15,9 +15,6 @@ import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
 import { keys, useCapabilities } from "@/lib/queries";
 import type { Variant } from "@/lib/tone";
-
-/** Rows a page shows: the client's choice, within what the server allows. */
-const PAGE = 50;
 
 const CALL: Record<PlayerCall["decision"], { label: string; variant: Variant }> = {
   ADD: { label: "Add", variant: "ok" },
@@ -58,15 +55,8 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
   const leagueApi = api.league(competition.key, league.league_id);
   const page = useQuery<PlayerPage, Error>({
     queryKey: [...keys.freeAgents(competition.key, league.league_id), search, position, sort, offset],
-    queryFn: () =>
-      leagueApi.freeAgents({
-        offset,
-        limit: PAGE,
-        search,
-        position,
-        sort: sort?.column ?? "",
-        descending: sort?.descending ?? true,
-      }),
+    // No limit asked for: a page is the server's size, which it says on the page.
+    queryFn: () => leagueApi.freeAgents({ offset, search, position, ...toOrder(sort) }),
     // Keeps the table on screen while the next page loads, so paging does not
     // blink the page out and back.
     placeholderData: keepPreviousData,
@@ -102,6 +92,7 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
   });
 
   const total = page.data?.total ?? 0;
+  const size = page.data?.limit ?? 0;
   const shown = page.data?.players.length ?? 0;
   const filtered = Boolean(search || position);
 
@@ -195,23 +186,23 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
               }}
             />
 
-            {total > PAGE && (
+            {total > size && (
               <div className="flex items-center justify-between border-t border-border px-4 py-3">
                 <span className="font-mono text-[11px] text-muted-foreground">
-                  Page {Math.floor(offset / PAGE) + 1} of {Math.ceil(total / PAGE)}
+                  Page {Math.floor(offset / size) + 1} of {Math.ceil(total / size)}
                 </span>
                 <div className="flex items-center gap-1">
                   <IconButton
                     label="Previous page"
                     icon={<ChevronLeft />}
                     disabled={offset === 0}
-                    onClick={() => setOffset(Math.max(0, offset - PAGE))}
+                    onClick={() => setOffset(Math.max(0, offset - size))}
                   />
                   <IconButton
                     label="Next page"
                     icon={<ChevronRight />}
-                    disabled={offset + PAGE >= total}
-                    onClick={() => setOffset(offset + PAGE)}
+                    disabled={offset + size >= total}
+                    onClick={() => setOffset(offset + size)}
                   />
                 </div>
               </div>

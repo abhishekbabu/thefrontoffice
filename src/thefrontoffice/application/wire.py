@@ -15,7 +15,7 @@ import logging
 from thefrontoffice.application.answers import Answers, is_current, scope
 from thefrontoffice.application.formats import WireAnswer
 from thefrontoffice.domain.errors import PlayerNotFoundError
-from thefrontoffice.domain.models import CompetitionContext, PlayerCall
+from thefrontoffice.domain.models import MAX_PAGE, CompetitionContext, PlayerCall
 from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, WireProvider
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ MAX_JUDGED = 10
 """Enough to cover a screen's worth of the best candidates; few enough that
 every one gets a considered line rather than a sentence fragment."""
 
-MAX_SHOWN = 200
+MAX_SHOWN = MAX_PAGE
 """As many kept calls as a page of the wire can show at once."""
 
 

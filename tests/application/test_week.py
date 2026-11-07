@@ -8,10 +8,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from support.simulation import outcome
-from support.stores import FakeItemStates
+from support.stores import FakeAnswers, FakeItemStates
 
 from thefrontoffice.application.forecasting import ForecastEngine
 from thefrontoffice.application.items import ItemDecisions, item_scope
+from thefrontoffice.application.scouting import scout_scope
 from thefrontoffice.application.season import SeasonEngine
 from thefrontoffice.application.week import WeekEngine
 from thefrontoffice.domain.errors import FrontOfficeError
@@ -24,8 +25,11 @@ from thefrontoffice.domain.models import (
     PlayerCard,
     PlayerPage,
     PlayerQuery,
+    Remembered,
+    ScoutReport,
     SeasonInput,
     Summary,
+    TaskVerdict,
     TeamRecord,
 )
 
@@ -72,11 +76,18 @@ class _Provider:
         return SeasonInput(teams=teams, fixtures=(), scoring=(), spots=1, mine="1", week=7)
 
 
-def _engine(provider: _Provider, *, simulated: bool = True, store: FakeItemStates | None = None) -> WeekEngine:
+def _engine(
+    provider: _Provider,
+    *,
+    simulated: bool = True,
+    store: FakeItemStates | None = None,
+    answers: FakeAnswers | None = None,
+) -> WeekEngine:
     return WeekEngine(
         provider,
         key="nfl-sleeper",
         decisions=ItemDecisions(store or FakeItemStates(), clock=lambda: datetime(2026, 10, 25, tzinfo=UTC)),
+        answers=answers or FakeAnswers(),
         forecast=ForecastEngine(provider) if simulated else None,
         season=SeasonEngine(provider) if simulated else None,
     )
@@ -95,7 +106,37 @@ def test_the_managers_decisions_are_applied_after_the_ranking() -> None:
 
     actions = _engine(_Provider(), store=store).week("L1").summary.actions or []
 
-    assert {a.key: a.hidden for a in actions}[SWAP.key] == "dismissed"
+    assert {a.key: a.mark.hidden for a in actions}[SWAP.key] == "dismissed"
+
+
+def _judged(*tasks: Action) -> FakeAnswers:
+    answers = FakeAnswers()
+    report = ScoutReport(situation="", focus=[], moves=[], strategy="", tasks=list(tasks))
+    answers.save(
+        scout_scope("nfl-sleeper", "L1"),
+        Remembered(answer=report, inputs="", answered_at=datetime(2026, 10, 24, tzinfo=UTC)),
+    )
+    return answers
+
+
+AGREE = TaskVerdict(task="T1", decision="AGREE", reason="Clear upgrade.")
+
+
+def test_each_item_carries_the_last_verdict_on_it() -> None:
+    answers = _judged(SWAP.model_copy(update={"verdict": AGREE}))
+
+    actions = {a.key: a for a in _engine(_Provider(), answers=answers).week("L1").summary.actions or []}
+
+    assert (actions[SWAP.key].verdict, actions[SWAP.key].stale) == (AGREE, False)
+    assert actions[DEADLINE.key].verdict is None
+
+
+def test_a_verdict_on_an_item_that_has_changed_since_is_marked_stale() -> None:
+    answers = _judged(SWAP.model_copy(update={"verdict": AGREE, "reason": "As it read last night."}))
+
+    actions = {a.key: a for a in _engine(_Provider(), answers=answers).week("L1").summary.actions or []}
+
+    assert (actions[SWAP.key].verdict, actions[SWAP.key].stale) == (AGREE, True)
 
 
 def test_a_forecast_that_fails_still_leaves_the_week() -> None:

@@ -739,7 +739,7 @@ def test_roster_rows_say_who_is_ruled_out_rather_than_merely_listed() -> None:
     cards = {c.columns["Player"]: c for c in nfl_provider(client).roster("L1")}
 
     assert (cards["Star QB"].ruled_out, cards["Good RB"].ruled_out) == (True, False)
-    assert cards["Good RB"].tone == "warning"
+    assert cards["Good RB"].columns["Status"] == "Questionable"
 
 
 def test_roster_rows_skip_players_missing_from_the_catalog() -> None:

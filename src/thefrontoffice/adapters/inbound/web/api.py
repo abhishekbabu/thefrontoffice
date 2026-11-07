@@ -48,11 +48,12 @@ from thefrontoffice.domain.errors import (
 )
 from thefrontoffice.domain.models import (
     ItemDecision,
-    ItemState,
+    ItemMark,
     LeagueSchedule,
     PlayerCall,
     PlayerCard,
     PlayerDetail,
+    PlayerOrder,
     PlayerPage,
     PlayerQuery,
     Remembered,
@@ -343,14 +344,15 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         return _provider(competition).list_leagues()
 
     @app.get("/api/{competition}/leagues/{league_id}/roster", response_model=list[PlayerCard])
-    def roster(competition: str, league_id: str) -> list[PlayerCard]:
-        """One card per player, with per-competition columns rendered generically.
+    def roster(competition: str, league_id: str, order: Annotated[PlayerOrder, Query()]) -> list[PlayerCard]:
+        """One card per player, with per-competition columns rendered generically, in the order asked.
 
         The columns are the competition's own vocabulary — FPL sends Price and xGI,
         football sends Depth — so the client reads whatever keys arrive rather
-        than being taught each competition.
+        than being taught each competition. Ordered here, by the rule a page of
+        the wire is, so a column sorts alike on every table.
         """
-        return _provider(competition).roster(league_id)
+        return order.ordered(_provider(competition).roster(league_id))
 
     @app.get("/api/{competition}/leagues/{league_id}/players/{player_id}", response_model=PlayerDetail)
     def player(competition: str, league_id: str, player_id: str) -> PlayerDetail:
@@ -367,9 +369,9 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         """
         return presenting.week(wiring.week(*_open(competition)).week(league_id))
 
-    @app.post("/api/{competition}/leagues/{league_id}/items", response_model=ItemState | None)
-    def decide(competition: str, league_id: str, decision: ItemDecision) -> ItemState | None:
-        """Dismiss, snooze or restore one to-do item; the decision kept, or null once restored."""
+    @app.post("/api/{competition}/leagues/{league_id}/items", response_model=ItemMark)
+    def decide(competition: str, league_id: str, decision: ItemDecision) -> ItemMark:
+        """Dismiss, snooze or restore one to-do item; what the decision makes of it, for its row to show."""
         return wiring.decisions.decide(wiring.registry.find(competition).key, league_id, decision)
 
     @app.get("/api/{competition}/leagues/{league_id}/free-agents", response_model=PlayerPage)
@@ -389,9 +391,11 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         return _provider(competition).teams(league_id)
 
     @app.get("/api/{competition}/leagues/{league_id}/teams/{team_id}/roster", response_model=list[PlayerCard])
-    def team_roster(competition: str, league_id: str, team_id: str) -> list[PlayerCard]:
-        """Somebody else's squad, in the same columns as your own."""
-        return _provider(competition).roster_of(league_id, team_id)
+    def team_roster(
+        competition: str, league_id: str, team_id: str, order: Annotated[PlayerOrder, Query()]
+    ) -> list[PlayerCard]:
+        """Somebody else's squad, in the same columns as your own, ordered as yours is."""
+        return order.ordered(_provider(competition).roster_of(league_id, team_id))
 
     @app.get("/api/{competition}/leagues/{league_id}/schedule", response_model=LeagueSchedule)
     def schedule(competition: str, league_id: str) -> LeagueSchedule:

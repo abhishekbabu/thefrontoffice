@@ -41,11 +41,10 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
   sort?: SortState | null;
   /**
    * Called when a header is clicked, with null where the click cleared the
-   * sort. Its presence is what makes the table sortable: a caller holding the
-   * whole list passes one that sorts locally, and a caller holding one page of
-   * four thousand passes one that asks the server — which is the only correct
-   * answer there, since sorting fifty rows of a ranking answers a different
-   * question than sorting the ranking.
+   * sort. Its presence is what makes the table sortable. Callers ask the
+   * server, which holds the one ordering rule — and on a page of four
+   * thousand is the only correct answer, since sorting fifty rows of a
+   * ranking answers a different question than sorting the ranking.
    */
   onSort?: (next: SortState | null) => void;
 }) {

@@ -6,7 +6,6 @@ import {
   type Competition,
   type League,
   type LeagueSchedule,
-  type PlayerCard,
   type ScheduleRow,
   type TeamRef,
 } from "@/lib/api";
@@ -18,7 +17,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ListCard, ListRow } from "@/components/ui/list";
 import { ToggleChip } from "@/components/ui/toggle";
 import { Empty, QueryState } from "@/components/ui/state";
-import { RosterTable } from "@/components/ui/roster-table";
+import { RosterTable, useSortedRoster } from "@/components/ui/roster-table";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { ExternalLink } from "@/components/ui/external-link";
 import { rise } from "@/lib/motion";
@@ -141,11 +140,11 @@ function Rosters({
   const { openPlayer, drawer } = usePlayerDrawer(competition, league);
   const selected = teams.find((t) => t.team_id === team) ?? teams[0];
 
-  const roster = useQuery<PlayerCard[], Error>({
-    queryKey: keys.teamRoster(competition.key, league.league_id, selected?.team_id),
-    queryFn: () => api.league(competition.key, league.league_id).teamRoster(selected!.team_id),
-    enabled: Boolean(selected),
-  });
+  const { roster, sort, onSort } = useSortedRoster(
+    keys.teamRoster(competition.key, league.league_id, selected?.team_id),
+    (order) => api.league(competition.key, league.league_id).teamRoster(selected!.team_id, order),
+    Boolean(selected),
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -175,6 +174,8 @@ function Rosters({
               players={roster.data}
               empty={{ title: "Nothing on this roster" }}
               onOpen={openPlayer}
+              sort={sort}
+              onSort={onSort}
             />
           )}
         </Card>

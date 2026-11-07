@@ -3,7 +3,8 @@
 Every sport builds its own ranking — a projection in football, expected points
 in FPL, Yahoo's season rank in basketball — and then wants the same three
 things done to it: keep the rows somebody asked for, order them by the column
-they clicked, and hand back one page.
+they clicked (`PlayerOrder`, the rule every player table sorts by), and hand
+back one page.
 
 None of that is sport-specific, so none of it is written per sport. The one
 thing a sport must supply is the number behind a formatted column, which it
@@ -28,9 +29,8 @@ def page(ranked: list[PlayerCard], query: PlayerQuery) -> PlayerPage:
     positions = sorted({p.columns.get(POSITION_COLUMN, "") for p in ranked} - {""})
 
     matched = [card for card in ranked if _matches(card, query)]
-    ordered = _ordered(matched, query)
-    window = ordered[query.offset : query.offset + query.limit]
-    return PlayerPage(players=window, total=len(matched), offset=query.offset, positions=positions)
+    window = query.ordered(matched)[query.offset : query.offset + query.limit]
+    return PlayerPage(players=window, total=len(matched), offset=query.offset, limit=query.limit, positions=positions)
 
 
 def _matches(card: PlayerCard, query: PlayerQuery) -> bool:
@@ -41,28 +41,3 @@ def _matches(card: PlayerCard, query: PlayerQuery) -> bool:
     # Across every column rather than the name alone: a search is as often for
     # a club or a status as for a person.
     return query.search.casefold() in " ".join(card.columns.values()).casefold()
-
-
-def _ordered(cards: list[PlayerCard], query: PlayerQuery) -> list[PlayerCard]:
-    """Ordered by one column, with rows that have no value for it kept last.
-
-    Last in both directions, which a sort key cannot express on its own: fold
-    "is it missing" into the key and reversing the sort brings the blanks to
-    the top, where they push every real answer off the first page.
-    """
-    if not query.sort:
-        return cards
-
-    numeric = any(query.sort in card.values for card in cards)
-    has_value = (
-        (lambda card: query.sort in card.values) if numeric else (lambda card: bool(card.columns.get(query.sort)))
-    )
-    key = (
-        (lambda card: card.values[query.sort])
-        if numeric
-        else (lambda card: card.columns.get(query.sort, "").casefold())
-    )
-
-    present = [card for card in cards if has_value(card)]
-    missing = [card for card in cards if not has_value(card)]
-    return sorted(present, key=key, reverse=query.descending) + missing

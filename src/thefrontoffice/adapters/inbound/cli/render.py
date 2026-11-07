@@ -78,7 +78,7 @@ def render_week(summary: Summary) -> str:
     parts = [f"{_INDENT}{stat.label}: {stat.value}" for stat in summary.headline]
     if summary.actions is None:
         return "\n".join(parts)
-    shown = [action for action in summary.actions if not action.hidden]
+    shown = [action for action in summary.actions if not action.mark.hidden]
     parts.extend(["", f"{_INDENT}TO DO"])
     if not shown:
         parts.append(f"{_INDENT}   Nothing to do.")

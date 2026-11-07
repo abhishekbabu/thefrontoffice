@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import {
   api,
-  type Action,
   type Competition,
   type ItemDecision,
+  type ItemMark,
   type League,
   type RememberedReport,
   type ScoutReport,
@@ -51,31 +51,30 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
     enabled: ai && Boolean(week.data?.actions),
   });
   const queryClient = useQueryClient();
+  // The week carries each item's verdict, so a new judgment is read back
+  // through it as well as through the judgment's own time and moves.
   const judge = useMutation<ScoutReport, Error>({
     mutationFn: leagueApi.scout,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: judgmentKey }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: judgmentKey }),
+        queryClient.invalidateQueries({ queryKey: summaryKey }),
+      ]),
   });
   const report = judgment.data?.answer;
-  // Shown at once, then confirmed: re-reading the week takes a second or two,
-  // which is too long for a row to sit there after it was dismissed. The
-  // re-read still happens, and a failed save puts the row back.
-  const decide = useMutation<unknown, Error, ItemDecision, { before?: Summary }>({
+  // The decision answers with the item's new mark, which goes straight onto
+  // its row: re-reading the week would take a second or two for one field.
+  const decide = useMutation<ItemMark, Error, ItemDecision>({
     mutationFn: leagueApi.decide,
-    onMutate: async (decision) => {
-      await queryClient.cancelQueries({ queryKey: summaryKey });
-      const before = queryClient.getQueryData<Summary>(summaryKey);
-      if (before?.actions) {
-        queryClient.setQueryData<Summary>(summaryKey, {
-          ...before,
-          actions: before.actions.map((action) => (action.key === decision.key ? decided(action, decision) : action)),
-        });
-      }
-      return { before };
-    },
-    onError: (_error, _decision, context) => {
-      if (context?.before) queryClient.setQueryData(summaryKey, context.before);
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: summaryKey }),
+    onSuccess: (mark, decision) =>
+      queryClient.setQueryData<Summary>(summaryKey, (week) =>
+        week?.actions
+          ? {
+              ...week,
+              actions: week.actions.map((action) => (action.key === decision.key ? { ...action, mark } : action)),
+            }
+          : week,
+      ),
   });
 
   return (
@@ -94,7 +93,6 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
           {week.data.actions && (
             <ActionList
               actions={week.data.actions}
-              judged={report?.tasks}
               suggested={report?.moves}
               onOpen={openPlayer}
               onDecide={(decision) => decide.mutate(decision)}
@@ -160,9 +158,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
             <Card>
               <CardHeader>
                 <span>{week.data.boosts.title}</span>
-                <span>
-                  {week.data.boosts.stats.filter((s) => s.tone === "good").length} available
-                </span>
+                {week.data.boosts.note && <span>{week.data.boosts.note}</span>}
               </CardHeader>
               <StatGrid stats={week.data.boosts.stats} />
             </Card>
@@ -189,11 +185,4 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       {drawer}
     </>
   );
-}
-
-/** An item as it will read once `decision` is kept — what the server will say, said early. */
-function decided(action: Action, decision: ItemDecision): Action {
-  if (decision.decision === "dismiss") return { ...action, hidden: "dismissed", resurfaced: false };
-  if (decision.decision === "snooze") return { ...action, hidden: "snoozed", snoozed_until: decision.until ?? null };
-  return { ...action, hidden: null, snoozed_until: null, resurfaced: false };
 }

@@ -434,13 +434,17 @@ The UI's TypeScript types are generated from that schema (`just api-types`,
 via `openapi-typescript`) into `web/src/lib/schema.ts`, and `just check-web`
 fails when they no longer match the server. The API carries meaning rather than
 leaving the UI to decode it: which columns are figures (the numbers a card
-sends in `values`), whether a status rules a player out, how a week ended, whose
-move an activity row was, the engines' limits, and what to do about a failure —
+sends in `values`) and which hold the name, status and slot (`roles`), whether a
+status rules a player out, how a week ended, whose move an activity row was, the
+engines' limits, each to-do item's last verdict and whether it is stale, what a
+dismissal or snooze makes of an item (the decision answers with it), how short a
+week ahead falls, and what to do about a failure —
 each error code's remedy lives in one table, `adapters/inbound/remedies.py`,
 which the page renders as a button and the terminal prints as a command. Every
 failure — a domain error, a refused request, an unknown route — arrives as one
 `ErrorBody` (`detail`, `code`, `remedy`), and so does what blocks a competition
-in the picker (`Competition.blocked`). It
+in the picker (`Competition.blocked`). Every player table sorts on the server by
+one rule (`PlayerOrder`), a whole roster as much as a page of the wire. It
 also serves the built UI from `web/dist`, so one process on one port covers
 both.
 

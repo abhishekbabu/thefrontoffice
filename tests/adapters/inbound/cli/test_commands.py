@@ -11,7 +11,7 @@ from thefrontoffice.adapters.inbound.cli import commands
 from thefrontoffice.adapters.inbound.cli.session import Session
 from thefrontoffice.bootstrap import CompetitionEntry
 from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
-from thefrontoffice.domain.models import Action, CompetitionContext, PlayerCard, Stat, Summary, TradeProposal
+from thefrontoffice.domain.models import Action, CompetitionContext, ItemMark, PlayerCard, Stat, Summary, TradeProposal
 from thefrontoffice.domain.ports import LeagueRef
 
 
@@ -163,7 +163,9 @@ class _Week(FakeCompetition):
             headline=[Stat(label="Lineup", value="123.5")],
             actions=[
                 Action(kind="lineup", urgency="soon", title="Start A over B", reason="A projects more.", key="a"),
-                Action(kind="trade", urgency="later", title="Gone", reason="", key="b", hidden="dismissed"),
+                Action(
+                    kind="trade", urgency="later", title="Gone", reason="", key="b", mark=ItemMark(hidden="dismissed")
+                ),
             ],
         )
 

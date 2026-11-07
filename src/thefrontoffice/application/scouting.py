@@ -122,3 +122,20 @@ class ScoutEngine:
 def scout_scope(key: str, league_id: str) -> str:
     """Where a league's judgment of its week is kept."""
     return scope("scout", key, league_id)
+
+
+def with_verdicts(actions: list[Action], judged: ScoutReport | None) -> list[Action]:
+    """Each item with the verdict last given on the item with its key, marked stale where it reads differently now.
+
+    A verdict on last night's news is not a verdict on this morning's, so it
+    stays beside its row but says so rather than passing for a current one.
+    """
+    if judged is None:
+        return actions
+    then = {task.key: task for task in judged.tasks if task.key and task.verdict is not None}
+    return [
+        action.model_copy(update={"verdict": earlier.verdict, "stale": earlier.fingerprint != action.fingerprint})
+        if (earlier := then.get(action.key)) is not None
+        else action
+        for action in actions
+    ]
