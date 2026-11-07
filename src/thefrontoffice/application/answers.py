@@ -19,6 +19,8 @@ from datetime import UTC, datetime
 from thefrontoffice.domain.models import Remembered
 from thefrontoffice.domain.ports import AnswerStore, TModel
 
+SEPARATOR = ":"
+
 
 def scope(kind: str, competition: str, *about: str) -> str:
     """What a kept answer is about: the kind of call, then whose and of what.
@@ -28,7 +30,16 @@ def scope(kind: str, competition: str, *about: str) -> str:
     `competition` is the registry key, never a display name: a label is free
     to change and a key is what a kept answer is found by.
     """
-    return ":".join((kind, competition, *about))
+    return SEPARATOR.join((kind, competition, *about))
+
+
+def parts(scope: str) -> tuple[str, str, tuple[str, ...]] | None:
+    """`scope` taken apart as `scope()` put it together; None for a string it could not have made."""
+    kind, *rest = scope.split(SEPARATOR)
+    if not rest:
+        return None
+    competition, *about = rest
+    return kind, competition, tuple(about)
 
 
 def digest(inputs: str) -> str:

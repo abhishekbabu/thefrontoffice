@@ -61,7 +61,9 @@ just run    # interactive CLI instead
 ```
 
 `just doctor` reports what this machine is configured for, without echoing a
-secret, and flags `.env` keys nothing will read.
+secret, and flags `.env` keys nothing will read. It describes each setting as the
+Settings page does: what a setting unlocks and whether it is a secret are marked
+on its field in `config/settings.py`, and both read them from there.
 
 ![League picker](docs/screenshots/landing.png)
 
@@ -368,8 +370,9 @@ which is how this is told apart from an invalid token (401):
   personal single-league use is an accepted category.
 - **API Permissions → Fantasy Sports → Read must be saved** *before* you
   authorize. Yahoo fixes a token's grant at that moment, and a refresh cannot
-  widen it, so the fix is `just yahoo-login --force`. The login verifies itself
-  rather than reporting success on an inert token.
+  widen it, so the fix is `just yahoo-login --force` (or **Authorize** in the
+  app), which discards the old token before asking for a new one. The login
+  verifies itself rather than reporting success on an inert token.
 
 ## Architecture
 

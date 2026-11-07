@@ -24,6 +24,7 @@ import { ExternalLink } from "@/components/ui/external-link";
 import { rise } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { LeagueHeader } from "@/components/ui/page-header";
+import { Label } from "@/components/ui/label";
 
 /**
  * The league beyond this week.
@@ -196,14 +197,12 @@ function Season({ rows }: { rows: LeagueSchedule["season"] }) {
         <Fragment key={row.label}>
           {/* The bracket is a different competition from the weeks before it, so it reads as one. */}
           {row.playoffs && !rows[i - 1]?.playoffs && (
-            <div className="border-t border-border bg-muted px-4 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            <Label as="div" className="border-t border-border bg-muted px-4 py-1.5">
               Playoffs
-            </div>
+            </Label>
           )}
         <ListRow current={row.is_current}>
-          <span className="w-24 shrink-0 font-mono text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-            {row.label}
-          </span>
+          <Label className="w-24 shrink-0">{row.label}</Label>
           <span className="w-32 shrink-0 font-mono text-[11px] text-muted-foreground">{row.date}</span>
           <span className="min-w-0 flex-1 truncate">
             {row.opponent || <span className="text-muted-foreground">{row.detail || "—"}</span>}

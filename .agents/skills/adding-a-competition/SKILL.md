@@ -37,8 +37,8 @@ several platforms, and one platform hosts several competitions of a sport.
 3. **Registration** — one `CompetitionEntry` in `bootstrap.py`: its identity,
    a `provider` returning the provider's class (imported lazily), and a
    `build` that constructs the platform clients and hands them in — a provider
-   never builds its own. What it can do (`supports_trades`, `judges_wire`,
-   `plans_ahead`) is read off the ports that class implements; there is
+   never builds its own. What it can do (`entry.can(TradeProvider)`, and so
+   on for each port) is read off the ports that class implements; there is
    nothing to declare.
 4. **Tests** — a fake platform client, and assertions on the *prompt content*:
    this is where the league rules actually live.

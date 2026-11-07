@@ -15,41 +15,30 @@ Run with `just yahoo-login`, or `just yahoo-login --force` to replace a token.
 import sys
 from pathlib import Path
 
+from thefrontoffice.adapters.inbound.cli.output import print_error
 from thefrontoffice.bootstrap import yahoo_auth
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.errors import FrontOfficeError
+from thefrontoffice.domain.ports import AccountLogin
 
 
 def main() -> int:
     setup_logging()
-    force = "--force" in sys.argv
-    token = Path(settings.yahoo_token_file)
+    return run(yahoo_auth(), token=Path(settings.yahoo_token_file), force="--force" in sys.argv)
 
-    if token.exists() and not force:
-        print("  Already authorized. Checking the token still works…")
-        return _verify()
 
-    if token.exists():
-        # Discarded rather than overwritten: a re-authorization exists to obtain
-        # a *new* grant, and leaving the old one in place invites reusing it.
-        token.unlink()
-        print(f"  Removed {token}.")
-
-    print("  A browser window will open — authorize the app there.")
+def run(account: AccountLogin, *, token: Path, force: bool) -> int:
+    """Log in where there is no token or `force` asks for a new one, then check the grant."""
     try:
-        yahoo_auth().login(force=True)
+        if token.exists() and not force:
+            print("  Already authorized. Checking the token still works…")
+        else:
+            print("  A browser window will open — authorize the app there.")
+            account.login(force=True)
+        account.verify()
     except FrontOfficeError as e:
-        print(f"  ❌ {e}")
-        return 1
-    return _verify()
-
-
-def _verify() -> int:
-    try:
-        yahoo_auth().verify()
-    except FrontOfficeError as e:
-        print(f"  ❌ {e}")
+        print_error(e)
         return 1
     print("  ✅ Authorized, and Yahoo accepted a Fantasy Sports read.")
     return 0

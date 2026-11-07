@@ -2,12 +2,14 @@
 
 import io
 import sys
+from collections.abc import Callable
 
 import pytest
+from support.ai import FakeChat
 
 from thefrontoffice.adapters.inbound.cli import output
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
-from thefrontoffice.domain.errors import AIKeyInvalidError
+from thefrontoffice.domain.errors import AIKeyInvalidError, AIQuotaError
 
 
 def test_rows_are_printed_with_aligned_columns(capsys: pytest.CaptureFixture[str]) -> None:
@@ -29,11 +31,50 @@ def test_an_error_the_terminal_can_fix_names_the_fix(capsys: pytest.CaptureFixtu
     assert "NBA (Yahoo)" in out and "just yahoo-login" in out
 
 
-def test_an_error_whose_fix_is_on_the_page_prints_the_message_alone(capsys: pytest.CaptureFixture[str]) -> None:
-    """Settings is a page; a terminal has no button to point at, so it says nothing it cannot back."""
+def test_a_setting_to_fix_is_pointed_at_in_env_not_at_a_page(capsys: pytest.CaptureFixture[str]) -> None:
+    """Settings is a page; a terminal has no button to point at, so it names the file instead."""
     output.print_error(AIKeyInvalidError("Gemini", "GOOGLE_API_KEY"))
 
+    out = capsys.readouterr().out
+    assert "GOOGLE_API_KEY" in out and ".env" in out and "Settings" not in out
+
+
+def test_an_error_with_nothing_to_offer_prints_the_message_alone(capsys: pytest.CaptureFixture[str]) -> None:
+    output.print_error(AIQuotaError("Gemini"))
+
     assert len(capsys.readouterr().out.strip().splitlines()) == 1
+
+
+# ── follow-up questions ─────────────────────────────────────────────────
+
+
+def _lines(*typed: str) -> Callable[[str], str]:
+    """What a person types at each prompt, then an empty line to finish."""
+    pending = iter([*typed, ""])
+    return lambda _prompt: next(pending)
+
+
+def test_a_follow_up_is_answered_until_an_empty_line(capsys: pytest.CaptureFixture[str]) -> None:
+    chat = FakeChat(reply="Start him.")
+
+    output.follow_up(chat, "report", read=_lines("Who?", "And?"))
+
+    assert chat.sent == ["Who?", "And?"]
+    assert "Start him." in capsys.readouterr().out
+
+
+def test_a_failed_follow_up_keeps_the_errors_remedy(capsys: pytest.CaptureFixture[str]) -> None:
+    """As the web chat does: a domain error is already a sentence, and its fix is worth printing."""
+    output.follow_up(FakeChat(error=AIKeyInvalidError("Gemini", "GOOGLE_API_KEY")), "report", read=_lines("Who?"))
+
+    assert ".env" in capsys.readouterr().out
+
+
+def test_an_untranslated_failure_is_not_shown_as_the_vendors_payload(capsys: pytest.CaptureFixture[str]) -> None:
+    output.follow_up(FakeChat(error=RuntimeError("{'error': {'code': 500}}")), "report", read=_lines("Who?"))
+
+    out = capsys.readouterr().out
+    assert "did not answer" in out and "'code'" not in out
 
 
 # ── console encoding ────────────────────────────────────────────────────

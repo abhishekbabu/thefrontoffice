@@ -7,11 +7,14 @@ commands exactly what they read, and patches nothing.
 
 import threading
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 from support.ai import FakeAI
 from support.stores import FakeAnswers, FakeItemStates
 from thefrontoffice.application.items import ItemDecisions
 from thefrontoffice.bootstrap import CompetitionEntry, Registry, Wiring
+from thefrontoffice.config.env_file import EnvFile
+from thefrontoffice.config.settings import AppSettings
 from thefrontoffice.domain.errors import PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     CompetitionContext,
@@ -24,6 +27,9 @@ from thefrontoffice.domain.models import (
     TeamRef,
 )
 from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, CompetitionProvider, LeagueRef
+
+ABSENT = Path(__file__).with_name("absent.env")
+"""A `.env` no test writes: configuration read from it is all defaults."""
 
 LEAGUE = LeagueRef(league_id="L1", name="My League", detail="12-team")
 
@@ -131,6 +137,7 @@ def wiring(
     states: FakeItemStates | None = None,
     login: FakeLogin | None = None,
     registry: Sequence[CompetitionEntry] = (),
+    env: EnvFile | None = None,
 ) -> Wiring:
     """A wiring over `entries` (or a whole `registry`'s), with fakes for everything else."""
     model = ai or FakeAI()
@@ -140,5 +147,6 @@ def wiring(
         model=lambda: model,
         answers=answers or FakeAnswers(),
         decisions=ItemDecisions(states or FakeItemStates()),
-        yahoo_login=lambda: account,
+        logins={"yahoo": lambda: account},
+        env=env or EnvFile(ABSENT, settings=AppSettings(_env_file=None)),
     )

@@ -5,6 +5,10 @@
  * the domain models themselves — generated into `schema.ts` from the API's
  * OpenAPI schema. A field added to `ScoutReport` arrives with the next
  * `just api-types`, and `just check-web` fails until it has.
+ *
+ * Each call is typed by the route it calls, through `Ok`, rather than by a
+ * model picked beside it: a route changed to return something else fails to
+ * compile here instead of handing a component the wrong shape.
  */
 import type { components, operations } from "@/lib/schema";
 
@@ -29,6 +33,7 @@ export type RememberedReport = Schemas["Remembered_ScoutReport_"];
 export type ScheduleRow = Schemas["ScheduleRow"];
 export type ScoutReport = Schemas["ScoutReport"];
 export type Setting = Schemas["Setting"];
+export type SettingsGroup = Schemas["SettingsGroup"];
 export type Side = Schemas["Side"];
 export type Spot = Schemas["Spot"];
 export type Stat = Schemas["Stat"];
@@ -42,10 +47,11 @@ export type TradeIdea = Schemas["TradeIdea"];
 export type Urgency = Action["urgency"];
 export type WeekAhead = Schemas["WeekAhead"];
 
+/** What a route answers with, named by the route's own function on the server. */
+type Ok<Route extends keyof operations> = operations[Route]["responses"][200]["content"]["application/json"];
+
 /** What to ask for: the competition's own ranking unless a column is named. */
-export type FreeAgentQuery = NonNullable<
-  operations["free_agents_api__competition__leagues__league_id__free_agents_get"]["parameters"]["query"]
->;
+export type FreeAgentQuery = NonNullable<operations["free_agents"]["parameters"]["query"]>;
 
 /**
  * A failure the server described in its own words, ready to show as-is.
@@ -107,40 +113,41 @@ const segment = encodeURIComponent;
 export function leagueApi(competition: string, league: string) {
   const base = `/api/${segment(competition)}/leagues/${segment(league)}`;
   return {
-    roster: () => request<PlayerCard[]>(`${base}/roster`),
-    player: (id: string) => request<PlayerDetail>(`${base}/players/${segment(id)}`),
-    summary: () => request<Summary>(`${base}/summary`),
-    schedule: () => request<LeagueSchedule>(`${base}/schedule`),
-    weeksAhead: () => request<WeekAhead[]>(`${base}/weeks-ahead`),
-    trades: () => request<TradeIdea[]>(`${base}/trades`),
-    teams: () => request<TeamRef[]>(`${base}/teams`),
-    teamRoster: (team: string) => request<PlayerCard[]>(`${base}/teams/${segment(team)}/roster`),
-    decide: (decision: ItemDecision) => post<unknown>(`${base}/items`, decision),
+    roster: () => request<Ok<"roster">>(`${base}/roster`),
+    player: (id: string) => request<Ok<"player">>(`${base}/players/${segment(id)}`),
+    summary: () => request<Ok<"summary">>(`${base}/summary`),
+    schedule: () => request<Ok<"schedule">>(`${base}/schedule`),
+    weeksAhead: () => request<Ok<"weeks_ahead">>(`${base}/weeks-ahead`),
+    trades: () => request<Ok<"trades">>(`${base}/trades`),
+    teams: () => request<Ok<"teams">>(`${base}/teams`),
+    teamRoster: (team: string) => request<Ok<"team_roster">>(`${base}/teams/${segment(team)}/roster`),
+    decide: (decision: ItemDecision) => post<Ok<"decide">>(`${base}/items`, decision),
     freeAgents: (query: FreeAgentQuery = {}) => {
       const params = new URLSearchParams();
       for (const [key, value] of Object.entries(query)) {
         if (value !== "" && value !== undefined) params.set(key, String(value));
       }
-      return request<PlayerPage>(`${base}/free-agents?${params}`);
+      return request<Ok<"free_agents">>(`${base}/free-agents?${params}`);
     },
     freeAgentCalls: (playerIds: string[]) =>
-      post<PlayerCall[]>(`${base}/free-agents/calls`, { player_ids: playerIds }),
+      post<Ok<"free_agent_calls">>(`${base}/free-agents/calls`, { player_ids: playerIds }),
     judgeFreeAgents: (playerIds: string[]) =>
-      post<PlayerCall[]>(`${base}/free-agents/judge`, { player_ids: playerIds }),
-    scout: () => post<ScoutReport>(`${base}/scout`, {}),
-    judgment: () => request<RememberedReport | null>(`${base}/judgment`),
-    thread: (subject: Subject) => post<Schemas["Thread"]>(`${base}/threads`, subject),
+      post<Ok<"judge_free_agents">>(`${base}/free-agents/judge`, { player_ids: playerIds }),
+    scout: () => post<Ok<"scout">>(`${base}/scout`, {}),
+    judgment: () => request<Ok<"judgment">>(`${base}/judgment`),
+    thread: (subject: Subject) => post<Ok<"thread">>(`${base}/threads`, subject),
   };
 }
 
 export const api = {
-  competitions: () => request<Competition[]>("/api/competitions"),
-  capabilities: () => request<Capabilities>("/api/capabilities"),
-  leagues: (competition: string) => request<League[]>(`/api/${segment(competition)}/leagues`),
+  competitions: () => request<Ok<"list_sports">>("/api/competitions"),
+  capabilities: () => request<Ok<"capabilities">>("/api/capabilities"),
+  leagues: (competition: string) => request<Ok<"list_leagues">>(`/api/${segment(competition)}/leagues`),
   league: leagueApi,
-  ask: (chatId: string, message: string) => post<Schemas["Reply"]>(`/api/chat/${segment(chatId)}`, { message }),
-  settings: () => request<Setting[]>("/api/settings"),
-  saveSettings: (values: Record<string, string>) => put<Setting[]>("/api/settings", { values }),
-  yahooLogin: () => post<LoginState>("/api/yahoo/login", {}),
-  yahooLoginState: () => request<LoginState>("/api/yahoo/login"),
+  ask: (chatId: string, message: string) => post<Ok<"ask">>(`/api/chat/${segment(chatId)}`, { message }),
+  settings: () => request<Ok<"read_settings">>("/api/settings"),
+  saveSettings: (values: Record<string, string>) => put<Ok<"save_settings">>("/api/settings", { values }),
+  /** Start a platform's login, named as a remedy names it: `yahoo`. */
+  login: (platform: string) => post<Ok<"start_login">>(`/api/${segment(platform)}/login`, {}),
+  loginState: (platform: string) => request<Ok<"login_state">>(`/api/${segment(platform)}/login`),
 };

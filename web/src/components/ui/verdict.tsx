@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { Variant } from "@/lib/tone";
+import { Label } from "@/components/ui/label";
 
 /**
  * The model's word on one thing on screen — a to-do item, a free agent — under the thing it is about.
@@ -33,9 +34,7 @@ export function Verdict({
           {label}
         </Badge>
         {stale && (
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
-            stale — re-judge
-          </span>
+          <Label>stale — re-judge</Label>
         )}
       </span>
       <span className="min-w-0 flex-1 text-foreground">{reason}</span>

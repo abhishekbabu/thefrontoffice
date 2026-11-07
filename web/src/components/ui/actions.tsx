@@ -13,6 +13,7 @@ import { Verdict } from "@/components/ui/verdict";
 import { moment } from "@/lib/format";
 import { decisionTone, toneText, type Variant } from "@/lib/tone";
 import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
 
 /** Said in words as well as color, so the order survives without the hue. */
 const URGENCY: Record<Urgency, { label: string; variant: Variant }> = {
@@ -101,9 +102,9 @@ export function ActionList({
                 open={action.player_id && onOpen ? () => onOpen(action.player_id) : undefined}
               >
                 {action.resurfaced && (
-                  <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
+                  <Label as="div" className="mb-1.5">
                     back — changed since you dismissed it
-                  </div>
+                  </Label>
                 )}
                 {verdict && <VerdictLine verdict={verdict} stale={Boolean(then) && then?.fingerprint !== action.fingerprint} />}
                 {footer ? footer(action, controls) : controls}
@@ -192,9 +193,9 @@ function Hidden({
 }) {
   return (
     <details className="border-t border-border">
-      <summary className="cursor-pointer px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground">
+      <Label as="summary" className="cursor-pointer px-4 py-2.5 hover:text-foreground">
         Hidden ({actions.length})
-      </summary>
+      </Label>
       <ul className="flex flex-col pb-1">
         {actions.map((action) => (
           <li key={action.key} className="flex items-center gap-3 px-4 py-1.5 text-[12.5px]">

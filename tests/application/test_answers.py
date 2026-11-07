@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel
 from support.stores import FakeAnswers
 
-from thefrontoffice.application.answers import Answers, is_current
+from thefrontoffice.application.answers import Answers, is_current, parts, scope
 
 
 class Note(BaseModel):
@@ -61,3 +61,11 @@ def test_scopes_keep_their_answers_apart() -> None:
     answers.keep("one", "input", Note(text="one's"))
 
     assert answers.latest("two", Note) is None
+
+
+def test_a_scope_comes_apart_as_it_was_put_together() -> None:
+    assert parts(scope("wire", "nfl-sleeper", "L1", "8155")) == ("wire", "nfl-sleeper", ("L1", "8155"))
+
+
+def test_a_string_no_scope_could_be_has_no_parts() -> None:
+    assert parts("nfl-sleeper") is None
