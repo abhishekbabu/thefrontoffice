@@ -11,20 +11,28 @@ import math
 import statistics
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions import places
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import SNAP_POSITIONS, misses
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import lineup_points
-from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueMove, NFLSource, Projection, Team
+from thefrontoffice.adapters.outbound.competitions.nfl.model import (
+    Game,
+    LeagueMove,
+    Matchup,
+    NFLSource,
+    Projection,
+    Team,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import SEASON_WEEKS
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Week,
     day,
-    games_by_week,
     lineup_for,
     moment,
+    opponent_of,
+    pairings,
     week_dates,
+    weeks_played,
 )
 from thefrontoffice.domain.errors import PlatformError
 from thefrontoffice.domain.models import (
@@ -55,48 +63,36 @@ TRANSACTION_LABELS = {
 }
 
 
-def build(client: NFLSource, state: Week, league_id: str) -> LeagueSchedule:
+def build(client: NFLSource, state: Week, schedule: Mapping[int, Sequence[Game]]) -> LeagueSchedule:
     """The season, the table, this week's real games, and what the league did."""
-    rosters = client.get_rosters(league_id)
-    names = client.get_league_users(league_id)
-    by_roster = {r.roster_id: r for r in rosters}
-
-    standings = _standings(state, rosters, names)
+    standings = _standings(state)
     return LeagueSchedule(
         headline=_headline(state, standings),
-        season=_season_rows(client, state, league_id, by_roster, names),
+        season=_season_rows(client, state, schedule),
         standings=standings,
-        matches=_matches(client, state),
-        activity=_activity(client, state, league_id, by_roster, names),
+        matches=_matches(state, schedule),
+        activity=_activity(client, state),
     )
 
 
-def _season_rows(
-    client: NFLSource,
-    state: Week,
-    league_id: str,
-    by_roster: dict[int, Team],
-    names: dict[str, str],
-) -> list[ScheduleRow]:
+def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence[Game]]) -> list[ScheduleRow]:
     """Your own season, week by week, with who you play and how it went.
 
     Eighteen matchup fetches, run concurrently and cached — asked one at a
     time they are the whole wait on the page.
     """
-    games = games_by_week(client, state.season)
     weeks = list(range(1, _last_week(state) + 1))
     try:
-        by_week = client.get_matchups_bulk(league_id, weeks)
+        by_week = client.get_matchups_bulk(state.league.league_id, weeks)
     except PlatformError as e:
         logger.warning(f"Continuing without the season's matchups: {e}")
         by_week = {}
+    by_roster = {r.roster_id: r for r in state.rosters}
 
     rows: list[ScheduleRow] = []
     for week in weeks:
-        matchups = by_week.get(week, [])
-        mine = next((m for m in matchups if m.get("roster_id") == state.roster.roster_id), None)
-        theirs = _other_side(matchups, mine, state.roster.roster_id)
-        opponent = by_roster.get(int(theirs.get("roster_id", 0))) if theirs else None
+        sides = opponent_of(by_week.get(week, []), state.roster.roster_id)
+        opponent = by_roster.get(sides[1].roster_id) if sides else None
 
         playoff = _playoff_round(state, week)
         if playoff and week > state.week:
@@ -106,11 +102,11 @@ def _season_rows(
         rows.append(
             ScheduleRow(
                 label=f"Week {week}",
-                date=week_dates(games.get(week, [])),
-                opponent=names.get(opponent.owner_id, "") if opponent else "",
+                date=week_dates(schedule.get(week, [])),
+                opponent=state.names.get(opponent.owner_id, "") if opponent else "",
                 detail=playoff or (opponent.record if opponent else "bye"),
-                result=_result(mine, theirs, week, state.week),
-                tone=_week_tone(mine, theirs, week, state.week),
+                result=_result(sides, week, state.week),
+                tone=_week_tone(sides, week, state.week),
                 is_current=week == state.week,
                 playoffs=bool(playoff),
             )
@@ -141,35 +137,28 @@ def _headline(state: Week, standings: list[StandingRow]) -> list[Stat]:
     return [*stats, Stat(label="Points for", value=f"{state.roster.points_for:.1f}")]
 
 
-def _other_side(matchups: list[dict[str, Any]], mine: dict[str, Any] | None, roster_id: int) -> Any:
-    if not mine or mine.get("matchup_id") is None:
-        return None
-    return next(
-        (m for m in matchups if m.get("matchup_id") == mine.get("matchup_id") and m.get("roster_id") != roster_id),
-        None,
-    )
-
-
-def _result(mine: Any, theirs: Any, week: int, current: int) -> str:
+def _result(sides: tuple[Matchup, Matchup] | None, week: int, current: int) -> str:
     """The score, and only once there is one. A future week is not 0-0."""
-    if week >= current or not mine or not theirs:
+    if week >= current or sides is None:
         return ""
-    return f"{float(mine.get('points') or 0):.1f}-{float(theirs.get('points') or 0):.1f}"
+    mine, theirs = sides
+    return f"{mine.points:.1f}-{theirs.points:.1f}"
 
 
-def _week_tone(mine: Any, theirs: Any, week: int, current: int) -> Tone:
-    if week >= current or not mine or not theirs:
+def _week_tone(sides: tuple[Matchup, Matchup] | None, week: int, current: int) -> Tone:
+    if week >= current or sides is None:
         return "neutral"
-    return "good" if float(mine.get("points") or 0) > float(theirs.get("points") or 0) else "warning"
+    mine, theirs = sides
+    return "good" if mine.points > theirs.points else "warning"
 
 
-def _standings(state: Week, rosters: Sequence[Team], names: dict[str, str]) -> list[StandingRow]:
+def _standings(state: Week) -> list[StandingRow]:
     """The table, sorted the way the league is: record first, then points."""
-    ordered = sorted(rosters, key=lambda r: (-(r.wins), -(r.points_for)))
+    ordered = sorted(state.rosters, key=lambda r: (-(r.wins), -(r.points_for)))
     return [
         StandingRow(
             rank=i,
-            name=names.get(r.owner_id, f"Roster {r.roster_id}"),
+            name=state.team_name(r),
             record=r.record,
             points=f"{r.points_for:.1f}",
             team_id=str(r.roster_id),
@@ -179,13 +168,13 @@ def _standings(state: Week, rosters: Sequence[Team], names: dict[str, str]) -> l
     ]
 
 
-def _matches(client: NFLSource, state: Week) -> list[Match]:
+def _matches(state: Week, schedule: Mapping[int, Sequence[Game]]) -> list[Match]:
     """The real games this fantasy week is made of.
 
     The whole slate rather than only the clubs you hold: which of them matters
     changes with every waiver, and it is one cached request either way.
     """
-    games = games_by_week(client, state.season).get(state.week, [])
+    games = schedule.get(state.week, [])
     mine = {p.team for p in state.projected}
     return [
         Match(
@@ -201,36 +190,28 @@ def _matches(client: NFLSource, state: Week) -> list[Match]:
     ]
 
 
-def _activity(
-    client: NFLSource,
-    state: Week,
-    league_id: str,
-    by_roster: dict[int, Team],
-    names: dict[str, str],
-) -> list[ActivityRow]:
+def _activity(client: NFLSource, state: Week) -> list[ActivityRow]:
     """What the league has done lately, newest first.
 
     Bounded to the last few weeks rather than the season: this is "what did I
     miss", and a hundred rows of September waivers is not that.
     """
+    by_roster = {r.roster_id: r for r in state.rosters}
     dated: list[tuple[int, ActivityRow]] = []
     for week in range(max(1, state.week - ACTIVITY_WEEKS + 1), state.week + 1):
         try:
-            transactions = client.get_transactions(league_id, week)
+            transactions = client.get_transactions(state.league.league_id, week)
         except PlatformError as e:
             logger.warning(f"Skipping week {week} activity: {e}")
             continue
-        dated.extend(_activity_rows(transactions, state, by_roster, names))
+        dated.extend(_activity_rows(transactions, state, by_roster))
     # Sorted on the instant, not on the string that renders it: "Sep 3" sorts
     # before "Sep 21" alphabetically and after it in time.
     return [row for _, row in sorted(dated, key=lambda pair: pair[0], reverse=True)]
 
 
 def _activity_rows(
-    transactions: Sequence[LeagueMove],
-    state: Week,
-    by_roster: dict[int, Team],
-    names: dict[str, str],
+    transactions: Sequence[LeagueMove], state: Week, by_roster: Mapping[int, Team]
 ) -> list[tuple[int, ActivityRow]]:
     rows: list[tuple[int, ActivityRow]] = []
     for t in transactions:
@@ -241,7 +222,7 @@ def _activity_rows(
                 t.when,
                 ActivityRow(
                     when=moment(t.when),
-                    who=names.get(roster.owner_id, "") if roster else "",
+                    who=state.names.get(roster.owner_id, "") if roster else "",
                     what=TRANSACTION_LABELS.get(t.kind, t.kind),
                     detail=", ".join(moved),
                     tone="good" if roster and roster.roster_id == state.roster.roster_id else "neutral",
@@ -301,16 +282,16 @@ class SeasonModel:
         return _expected_lineup(state, player_ids, self.projections[week], self.miss_rate) * self.scale
 
 
-def season_input(client: NFLSource, state: Week, league_id: str, seed: int) -> SeasonInput | None:
+def season_input(client: NFLSource, state: Week, seed: int) -> SeasonInput | None:
     """The regular season from this week to its last, ready to simulate.
 
     None in the playoffs, or where the league says nothing about them.
     """
-    model = season_model(client, state, league_id, seed)
+    model = season_model(client, state, seed)
     return model.season if model else None
 
 
-def season_model(client: NFLSource, state: Week, league_id: str, seed: int) -> SeasonModel | None:
+def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | None:
     """The regular season from this week to its last, with what it was built from.
 
     Each team's mean for a week is the best lineup its roster projects that
@@ -325,16 +306,13 @@ def season_model(client: NFLSource, state: Week, league_id: str, seed: int) -> S
     if not league.playoff_teams or not league.playoff_week_start or state.week >= league.playoff_week_start:
         return None
     remaining = list(range(state.week, league.playoff_week_start))
-    rosters = client.get_rosters(league_id)
-    names = client.get_league_users(league_id)
+    rosters = state.rosters
 
-    fixtures = []
-    for week, entries in client.get_matchups_bulk(league_id, remaining).items():
-        paired: dict[Any, list[str]] = {}
-        for entry in entries:
-            if entry.get("matchup_id") is not None:
-                paired.setdefault(entry["matchup_id"], []).append(str(entry.get("roster_id")))
-        fixtures += [Fixture(week=week, home=pair[0], away=pair[1]) for pair in paired.values() if len(pair) == 2]
+    fixtures = [
+        Fixture(week=week, home=str(home.roster_id), away=str(away.roster_id))
+        for week, entries in client.get_matchups_bulk(league.league_id, remaining).items()
+        for home, away in pairings(entries)
+    ]
 
     projections = {week: client.get_projections(state.season, week, league.scoring_format) for week in remaining}
     miss_rate = _miss_rate(client, state)
@@ -344,13 +322,13 @@ def season_model(client: NFLSource, state: Week, league_id: str, seed: int) -> S
         for roster in rosters
     }
     scale = _scale(rosters, projected, state.week)
-    spread = _spread(client, league_id, state.week)
+    spread = _spread(client, league.league_id, state.week)
     strength_error = _strength_error(rosters, projected, scale, spread, state.week)
     season = SeasonInput(
         teams=tuple(
             TeamRecord(
                 team_id=str(r.roster_id),
-                name=names.get(r.owner_id, f"Roster {r.roster_id}"),
+                name=state.team_name(r),
                 wins=r.wins,
                 losses=r.losses,
                 ties=r.ties,
@@ -403,7 +381,7 @@ def _expected_lineup(
 
 def _miss_rate(client: NFLSource, state: Week) -> float:
     """How often the league's regular starters have missed a week this season, or the default before it can say."""
-    played = list(range(1, state.week)) if state.is_regular_season else []
+    played = weeks_played(state.week, state.is_regular_season)
     if not played:
         return DEFAULT_MISS_RATE
     try:
@@ -433,7 +411,7 @@ def _spread(client: NFLSource, league_id: str, week: int) -> float:
     scores: dict[str, list[float]] = {}
     for entries in client.get_matchups_bulk(league_id, played).values():
         for entry in entries:
-            scores.setdefault(str(entry.get("roster_id")), []).append(float(entry.get("points") or 0))
+            scores.setdefault(str(entry.roster_id), []).append(entry.points)
     deviations = [s - statistics.fmean(v) for v in scores.values() if len(v) > 1 for s in v]
     if len(deviations) < 2:
         return DEFAULT_SPREAD

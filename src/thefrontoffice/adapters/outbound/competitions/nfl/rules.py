@@ -1,11 +1,14 @@
 """Facts about the NFL that the rest of the competition leans on, stated once.
 
 Not decisions — the to-do list, the planner and the trade search make those —
-but the vocabulary they share: how long a season is, and what a player's
-designation means for whether he plays. Each had been defined beside its first
-user and imported from there, so a planner read its injury rules out of the
-to-do list's module.
+but the vocabulary they share: how long a season is, what a player's
+designation means for whether he plays, which positions and slots a lineup is
+made of, and what a scoring format is called. Each had been defined beside its
+first user and imported from there, so a planner read its injury rules out of
+the to-do list's module.
 """
+
+from thefrontoffice.adapters.outbound.competitions.nfl.model import Scoring
 
 SEASON_WEEKS = 18
 """The NFL's regular season, in weeks: the furthest any fantasy season or projection runs."""
@@ -34,6 +37,16 @@ def ruled_out(status: str) -> bool:
     return status.upper() in RULED_OUT
 
 
+def long_term(status: str) -> bool:
+    """Whether a designation reaches past this week's game into the weeks ahead."""
+    return status.upper() in LONG_TERM
+
+
+def listed(status: str) -> bool:
+    """Whether a designation is anything at all: a player cleared to play carries none, or Active."""
+    return bool(status) and status.upper() != "ACTIVE"
+
+
 STREAMED = frozenset({"K", "DEF"})
 """Positions managers fill from the wire week to week: a lineup starts one, and nobody holds a spare."""
 
@@ -47,3 +60,14 @@ FLEX_ELIGIBILITY: dict[str, tuple[str, ...]] = {
     "SUPER_FLEX": ("QB", "RB", "WR", "TE"),
 }
 """Which positions a shared lineup slot accepts; any other slot takes only its own position."""
+
+SCORING_LABELS: dict[Scoring, str] = {
+    "pts_ppr": "Full PPR (1 point per reception)",
+    "pts_half_ppr": "Half PPR (0.5 per reception)",
+    "pts_std": "Standard (no point per reception)",
+}
+
+
+def scoring_label(scoring: Scoring) -> str:
+    """How a league scores, as a person would say it."""
+    return SCORING_LABELS[scoring]

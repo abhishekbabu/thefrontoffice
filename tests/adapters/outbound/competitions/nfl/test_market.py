@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
 
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, SleeperRoster
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, SleeperMatchup, SleeperRoster
 from thefrontoffice.domain.models import TradeMarket
 
 # You hold two quarterbacks and no receiver; they hold receivers and no quarterback.
@@ -36,7 +36,7 @@ def _client(week: int = 7, deadline: int = 11, **mine: list[str]) -> FakeSleeper
                 roster_id=2, owner_id="user-2", player_ids=["wr1", "wr2", "wr3", "k1"], starter_ids=[], wins=3
             ),
         ],
-        matchups=[{"roster_id": 1, "matchup_id": 1}, {"roster_id": 2, "matchup_id": 1}],
+        matchups=[SleeperMatchup(roster_id=1, matchup_id=1), SleeperMatchup(roster_id=2, matchup_id=1)],
     )
     client.players_catalog = {
         pid: PlayerMeta(player_id=pid, name=p.name, position=p.position) for pid, p in PROJECTIONS.items()

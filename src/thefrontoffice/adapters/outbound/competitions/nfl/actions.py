@@ -14,9 +14,11 @@ move says nothing about when.
 """
 
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, replace
+from typing import Literal
 
-from thefrontoffice.adapters.outbound.competitions.nfl.evidence import MIN_GAMES_FOR_AVERAGE, season_average
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import average, season_average
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupChange,
     best_upgrade,
@@ -25,7 +27,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, Projection
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, listed, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.domain.models import Action, Stat, Urgency
 
@@ -34,31 +36,59 @@ URGENCY_ORDER: dict[Urgency, int] = {"now": 0, "soon": 1, "later": 2}
 STACKED = 3
 """Starters riding on one real game at which a bad afternoon there is most of a bad week."""
 
+Move = Literal["hole", "swap", "upgrade", "rise", "stack", "bye", "deadline", "short"]
+"""What an item on the list is about: a starter who cannot play or an empty slot, a swap the bench
+allows, a free agent who outscores a starter, a role that grew, a stacked game, next week's byes,
+the trade deadline, a week ahead left short."""
+
+STARTS_NOW: frozenset[Move] = frozenset({"hole", "upgrade"})
+"""Pickups that go straight into this week's lineup."""
+
+ADDS: frozenset[Move] = frozenset({"hole", "upgrade", "rise"})
+"""Pickups that add a player to the roster, and so need room on it."""
+
+
+@dataclass(frozen=True)
+class Item:
+    """One thing to do, and what it is about — which the rest of the week reads, rather than its key."""
+
+    move: Move
+    action: Action
+
+    @property
+    def is_pickup(self) -> bool:
+        """Whether it adds a player to the roster."""
+        return self.action.kind == "waiver" and self.move in ADDS
+
+    @property
+    def starts_now(self) -> bool:
+        """Whether the player it adds starts this week."""
+        return self.action.kind == "waiver" and self.move in STARTS_NOW
+
 
 def build(
     state: Week,
     games: Mapping[int, Sequence[Game]],
+    started: set[str],
     free_agents: Sequence[Projection],
-) -> list[Action]:
+) -> list[Item]:
     """Every decision the week asks for, most urgent first.
 
-    `free_agents` is the wire best projection first, already cut to players
-    with a game this week; a hole the bench cannot fill is pointed at the top
-    of it.
+    `started` is every club whose game has kicked off, so whose players are
+    locked in or out. `free_agents` is the wire best projection first, already
+    cut to players with a game this week; a hole the bench cannot fill is
+    pointed at the top of it.
     """
     week_games = games.get(state.week, [])
-    started = {
-        club for game in week_games if game.status and game.status != "pre_game" for club in (game.home, game.away)
-    }
     kickoff = {club: game.date for game in week_games for club in (game.home, game.away)}
 
-    actions = _lineup(state, started, kickoff, free_agents)
-    actions += _upgrades(state, free_agents, started, {a.player_id for a in actions})
-    actions += _breakouts(state, free_agents, {a.player_id for a in actions})
-    actions += _same_game(state, week_games, started, {(a.player_id, a.replaces) for a in actions})
-    actions += _next_week_byes(state, games.get(state.week + 1, []))
-    actions += _trade_deadline(state)
-    return sorted(_with_drops(state, actions, started), key=lambda a: URGENCY_ORDER[a.urgency])
+    items = _lineup(state, started, kickoff, free_agents)
+    items += _upgrades(state, free_agents, started, {i.action.player_id for i in items})
+    items += _breakouts(state, free_agents, {i.action.player_id for i in items})
+    items += _same_game(state, week_games, started, {(i.action.player_id, i.action.replaces) for i in items})
+    items += _next_week_byes(state, games.get(state.week + 1, []))
+    items += _trade_deadline(state)
+    return sorted(_with_drops(state, items, started), key=lambda i: URGENCY_ORDER[i.action.urgency])
 
 
 def _lineup(
@@ -66,7 +96,7 @@ def _lineup(
     started: set[str],
     kickoff: dict[str, str],
     free_agents: Sequence[Projection],
-) -> list[Action]:
+) -> list[Item]:
     """Starters who cannot score, empty slots, and swaps the bench allows."""
     # A player whose game has kicked off is locked in or out, so a move
     # involving him is no longer one anybody can make.
@@ -77,7 +107,7 @@ def _lineup(
     filling = [c for c in open_changes if c.bench is None]
     moved: set[str] = set()
     taken: set[str] = set()
-    actions: list[Action] = []
+    items: list[Item] = []
 
     for slot in state.lineup:
         player = slot.player
@@ -105,7 +135,9 @@ def _lineup(
             # Only the player coming in: the one going out is not playing, and
             # his matchup is beside the point.
             hole = _hole(slot.slot, player)
-            actions.append(_swap(change, "now", reason, kickoff, _evidence(state, [change.start]), key=hole))
+            items.append(
+                Item("hole", _swap(change, "now", reason, kickoff, _evidence(state, [change.start]), key=hole))
+            )
             continue
 
         pick = next(
@@ -116,19 +148,22 @@ def _lineup(
             continue
         taken.add(pick.player_id)
         replaces = f" for {player.name}" if player else ""
-        actions.append(
-            Action(
-                kind="waiver",
-                urgency="now",
-                title=f"Pick up {pick.name}{replaces}",
-                reason=(
-                    f"{why}, and nobody on your bench can play {slot.slot}. {pick.name} is the best "
-                    f"projected {pick.position} available, at {pick.points:.1f}."
+        items.append(
+            Item(
+                "hole",
+                Action(
+                    kind="waiver",
+                    urgency="now",
+                    title=f"Pick up {pick.name}{replaces}",
+                    reason=(
+                        f"{why}, and nobody on your bench can play {slot.slot}. {pick.name} is the best "
+                        f"projected {pick.position} available, at {pick.points:.1f}."
+                    ),
+                    player_id=pick.player_id,
+                    replaces=player.player_id if player else "",
+                    evidence=_evidence(state, [pick]),
+                    key=_hole(slot.slot, player),
                 ),
-                player_id=pick.player_id,
-                replaces=player.player_id if player else "",
-                evidence=_evidence(state, [pick]),
-                key=_hole(slot.slot, player),
             )
         )
 
@@ -136,19 +171,19 @@ def _lineup(
         if change.start.player_id not in moved and not (change.bench and change.bench.player_id in moved):
             reason = f"+{change.gain:.1f} proj pts.{_caveat(change.start)}"
             both = [change.start, *([change.bench] if change.bench else [])]
-            actions.append(_swap(change, "soon", reason, kickoff, _evidence(state, both), key=_swap_key(change)))
-    return actions
+            items.append(
+                Item("swap", _swap(change, "soon", reason, kickoff, _evidence(state, both), key=_swap_key(change)))
+            )
+    return items
 
 
 def _bench_cover(state: Week, slot: str, started: set[str], moved: set[str]) -> Projection | None:
     """The best bench player who can play `slot` this week and is still free to move."""
-    starters = state.starter_ids
     return max(
         (
             p
-            for p in state.projected
-            if p.player_id not in starters
-            and p.player_id not in moved
+            for p in state.bench
+            if p.player_id not in moved
             and p.team not in started
             and p.position in eligible_positions(slot)
             and not _cannot_play(p, state.scheduled)
@@ -160,9 +195,8 @@ def _bench_cover(state: Week, slot: str, started: set[str], moved: set[str]) -> 
 
 def _cannot_play(player: Projection, scheduled: bool) -> str:
     """Why a starter will score nothing this week, or empty if he can."""
-    status = RULED_OUT.get(player.injury_status.upper())
-    if status:
-        return f"{player.name} {status}"
+    if ruled_out(player.injury_status):
+        return f"{player.name} {RULED_OUT[player.injury_status.upper()]}"
     if scheduled and not player.opponent:
         return f"{player.name} has no game this week"
     return ""
@@ -170,7 +204,7 @@ def _cannot_play(player: Projection, scheduled: bool) -> str:
 
 def _caveat(player: Projection) -> str:
     """The doubt hanging over the player a move starts, so it is weighed, not missed."""
-    if not player.is_questionable:
+    if not listed(player.injury_status):
         return ""
     return f" {player.name} is listed {player.injury_status.lower()} — check his status before his game."
 
@@ -234,7 +268,7 @@ UPGRADES = 2
 """Upgrades on the list at once. The free-agent page ranks the rest; the list is for the clear ones."""
 
 
-def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str], already: set[str]) -> list[Action]:
+def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str], already: set[str]) -> list[Item]:
     """Free agents who simply outscore one of your starters this week: a defense or a kicker to stream, most often.
 
     Measured against the best lineup, so the bench has already made its moves
@@ -244,9 +278,9 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
     the drop — a lineup starts one defense, and nobody keeps a spare.
     """
     taken: set[str] = set()
-    actions = []
+    items = []
     for player in free_agents:
-        if len(actions) == UPGRADES:
+        if len(items) == UPGRADES:
             break
         if player.player_id in already or player.team in started:
             continue
@@ -261,26 +295,29 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
             continue
         taken.add(starter.player_id)
         streamed = player.position in STREAMED and starter.position == player.position
-        actions.append(
-            Action(
-                kind="waiver",
-                urgency="soon",
-                title=f"Pick up {player.name}, drop {starter.name}"
-                if streamed
-                else f"Pick up {player.name} to start over {starter.name}",
-                reason=(
-                    f"{player.name} projects {player.points:.1f}, {gain:.1f} more than {starter.name} "
-                    f"at {slot.slot} this week.{_caveat(player)}"
-                    + (f" Drop {starter.name}: a lineup starts one {player.position}." if streamed else "")
+        items.append(
+            Item(
+                "upgrade",
+                Action(
+                    kind="waiver",
+                    urgency="soon",
+                    title=f"Pick up {player.name}, drop {starter.name}"
+                    if streamed
+                    else f"Pick up {player.name} to start over {starter.name}",
+                    reason=(
+                        f"{player.name} projects {player.points:.1f}, {gain:.1f} more than {starter.name} "
+                        f"at {slot.slot} this week.{_caveat(player)}"
+                        + (f" Drop {starter.name}: a lineup starts one {player.position}." if streamed else "")
+                    ),
+                    player_id=player.player_id,
+                    replaces=starter.player_id,
+                    drop=starter.player_id if streamed else "",
+                    evidence=_evidence(state, [player, starter]),
+                    key=f"upgrade:{player.player_id}",
                 ),
-                player_id=player.player_id,
-                replaces=starter.player_id,
-                drop=starter.player_id if streamed else "",
-                evidence=_evidence(state, [player, starter]),
-                key=f"upgrade:{player.player_id}",
             )
         )
-    return actions
+    return items
 
 
 BREAKOUTS = 2
@@ -291,7 +328,7 @@ BREAKOUT_FROM = 5.0
 nothing has usually lost the role again — the starter is back."""
 
 
-def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]) -> list[Action]:
+def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]) -> list[Item]:
     """Free agents whose role jumped last week, while the projections and the league catch up.
 
     A stash rather than a start: whether he beats a starter this week is the
@@ -309,31 +346,30 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
         ),
         key=lambda p: -state.evidence.trends[p.player_id].rise,
     )
-    actions = []
+    items = []
     for player in rising[:BREAKOUTS]:
         trend = state.evidence.trends[player.player_id]
-        actions.append(
-            Action(
-                kind="waiver",
-                urgency="soon",
-                title=f"Pick up {player.name} while his role grows",
-                reason=(
-                    f"{player.name}'s {trend.describe()}. He projects {player.points:.1f} at {player.position}, "
-                    "and a projection is slow to read a role that has just changed."
+        items.append(
+            Item(
+                "rise",
+                Action(
+                    kind="waiver",
+                    urgency="soon",
+                    title=f"Pick up {player.name} while his role grows",
+                    reason=(
+                        f"{player.name}'s {trend.describe()}. He projects {player.points:.1f} at {player.position}, "
+                        "and a projection is slow to read a role that has just changed."
+                    ),
+                    player_id=player.player_id,
+                    evidence=_evidence(state, [player]),
+                    key=f"rise:{player.player_id}",
                 ),
-                player_id=player.player_id,
-                evidence=_evidence(state, [player]),
-                key=f"rise:{player.player_id}",
             )
         )
-    return actions
+    return items
 
 
-PICKUPS = ("hole:", "rise:", "upgrade:")
-"""The items that add a player to the roster, and so need room on it."""
-
-
-def _with_drops(state: Week, actions: list[Action], started: set[str]) -> list[Action]:
+def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]:
     """Every pickup with who to drop for it, or the open spot it can go into.
 
     The drop is the bench player worth least for the rest of the season, by
@@ -350,45 +386,47 @@ def _with_drops(state: Week, actions: list[Action], started: set[str]) -> list[A
     """
     active = [pid for pid in state.roster.player_ids if pid not in state.roster.reserve_ids]
     open_spots = state.league.roster_spots - len(active)
-    named = {pid for action in actions for pid in (action.player_id, action.replaces) if pid}
+    named = {pid for item in items for pid in (item.action.player_id, item.action.replaces) if pid}
     chosen: set[str] = set()
     out = []
-    for action in actions:
-        if action.kind != "waiver" or not action.key.startswith(PICKUPS):
-            out.append(action)
+    for item in items:
+        action = item.action
+        if not item.is_pickup:
+            out.append(item)
             continue
         if action.drop:
             # The pickup names its own: the starter it replaces, at a position nobody holds two of.
             chosen.add(action.drop)
-            out.append(action)
+            out.append(item)
             continue
         if open_spots > 0:
             open_spots -= 1
-            out.append(action.model_copy(update={"reason": f"{action.reason} You have a roster spot open for him."}))
+            out.append(_reworded(item, reason=f"{action.reason} You have a roster spot open for him."))
             continue
-        drop = _least_valuable(state, named | chosen, started)
-        if action.key.startswith("rise:") and not _worth_a_spot(state, action.player_id, drop):
+        drop = drop_candidate(state, (p for p in state.bench if p.team not in started), named | chosen)
+        if item.move == "rise" and not _worth_a_spot(state, action.player_id, drop):
             continue
         if drop is None:
             out.append(
-                action.model_copy(
-                    update={
-                        "reason": f"{action.reason} Your roster is full and nobody on the bench can be released yet."
-                    }
+                _reworded(
+                    item, reason=f"{action.reason} Your roster is full and nobody on the bench can be released yet."
                 )
             )
             continue
         chosen.add(drop.player_id)
         out.append(
-            action.model_copy(
-                update={
-                    "drop": drop.player_id,
-                    "title": f"{action.title}, drop {drop.name}",
-                    "reason": f"{action.reason} {_drop_reason(state, drop)}",
-                }
+            _reworded(
+                item,
+                drop=drop.player_id,
+                title=f"{action.title}, drop {drop.name}",
+                reason=f"{action.reason} {_drop_reason(state, drop)}",
             )
         )
     return out
+
+
+def _reworded(item: Item, **update: str) -> Item:
+    return replace(item, action=item.action.model_copy(update=update))
 
 
 def _worth_a_spot(state: Week, player_id: str, drop: Projection | None) -> bool:
@@ -397,32 +435,28 @@ def _worth_a_spot(state: Week, player_id: str, drop: Projection | None) -> bool:
     return drop is not None and pickup is not None and pickup.points > season_average(state.evidence, drop)
 
 
-def _least_valuable(state: Week, exclude: set[str], started: set[str]) -> Projection | None:
-    """The bench player it costs least to lose, among those who can be released now."""
-    bench = [
-        p
-        for p in state.projected
-        if p.player_id not in state.starter_ids
-        and p.player_id not in state.roster.reserve_ids
-        and p.player_id not in exclude
-        and p.player_id not in state.evidence.trends
-        and p.team not in started
-    ]
-    return min(bench, key=lambda p: (season_average(state.evidence, p), p.points), default=None)
+def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> Projection | None:
+    """The player it costs least to lose, by his season rather than his week: never one kept, nor one whose role is growing.
+
+    A player whose role is growing is the one a to-do list would tell you to
+    pick up, so he is never the one to let go.
+    """
+    candidates = [p for p in among if p.player_id not in keep and p.player_id not in state.evidence.trends]
+    return min(candidates, key=lambda p: (season_average(state.evidence, p), p.points), default=None)
 
 
 def _drop_reason(state: Week, player: Projection) -> str:
-    games = state.evidence.games.get(player.player_id, ())
-    if len(games) >= MIN_GAMES_FOR_AVERAGE:
-        worth = f"{sum(games) / len(games):.1f} a game this season, {player.points:.1f} projected this week"
+    played = average(state.evidence, player.player_id)
+    if played is not None:
+        worth = f"{played:.1f} a game this season, {player.points:.1f} projected this week"
     else:
         worth = f"{player.points:.1f} projected this week, with too few games to judge him on more"
     return f"Drop {player.name}, the least on your bench: {worth}."
 
 
 def _same_game(
-    state: Week, week_games: Sequence[Game], started: set[str], listed: set[tuple[str, str]]
-) -> list[Action]:
+    state: Week, week_games: Sequence[Game], started: set[str], listed_moves: set[tuple[str, str]]
+) -> list[Item]:
     """Games carrying three or more of your starters, with the bench start that spreads them.
 
     Players in one game rise and fall together — the same pace, the same
@@ -439,45 +473,46 @@ def _same_game(
         if game is not None and player.team not in started:
             stacks[(game.away, game.home)].append(player)
 
-    actions = []
+    items = []
     for (away, home), stacked in stacks.items():
         if len(stacked) < STACKED:
             continue
         out = min(stacked, key=lambda p: p.points)
         apart = [
             p
-            for p in state.projected
-            if p.player_id not in state.starter_ids
-            and p.player_id not in state.roster.reserve_ids
-            and p.opponent
+            for p in state.bench
+            if p.opponent
             and p.team not in started
             and p.team not in (away, home)
-            and p.injury_status.upper() not in RULED_OUT
+            and not ruled_out(p.injury_status)
             and fits(state.league.starting_slots, [s for s in starters if s.player_id != out.player_id] + [p])
         ]
         swap = max(apart, key=lambda p: p.points, default=None)
-        if swap is None or (swap.player_id, out.player_id) in listed:
+        if swap is None or (swap.player_id, out.player_id) in listed_moves:
             continue
-        actions.append(
-            Action(
-                kind="lineup",
-                urgency="later",
-                title=f"{len(stacked)} starters ride on {away} at {home}",
-                reason=(
-                    f"{join([p.name for p in stacked])} all play in it, so one bad game there takes "
-                    f"them all down together. Starting {swap.name} ({swap.points:.1f}) for {out.name} "
-                    f"({out.points:.1f}) spreads the risk: worth it when you are ahead, and often not when "
-                    "you are behind, where you need that game to go well."
+        items.append(
+            Item(
+                "stack",
+                Action(
+                    kind="lineup",
+                    urgency="later",
+                    title=f"{len(stacked)} starters ride on {away} at {home}",
+                    reason=(
+                        f"{join([p.name for p in stacked])} all play in it, so one bad game there takes "
+                        f"them all down together. Starting {swap.name} ({swap.points:.1f}) for {out.name} "
+                        f"({out.points:.1f}) spreads the risk: worth it when you are ahead, and often not when "
+                        "you are behind, where you need that game to go well."
+                    ),
+                    player_id=swap.player_id,
+                    replaces=out.player_id,
+                    key=f"stack:{away}:{home}",
                 ),
-                player_id=swap.player_id,
-                replaces=out.player_id,
-                key=f"stack:{away}:{home}",
             )
         )
-    return actions
+    return items
 
 
-def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Action]:
+def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Item]:
     """Positions next week's byes would leave short, while there is time to fix it.
 
     Asked of the starters only: a bench player on bye costs nothing. A
@@ -487,7 +522,6 @@ def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Action]:
     if not next_games:
         return []
     playing = {club for game in next_games for club in (game.home, game.away)}
-    starters = state.starter_ids
     week = state.week + 1
 
     missing: dict[str, list[Projection]] = defaultdict(list)
@@ -495,15 +529,15 @@ def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Action]:
         if slot.player and slot.player.team not in playing:
             missing[slot.player.position].append(slot.player)
 
-    actions = []
+    items = []
     for position, out in missing.items():
         cover = [
             p
             for p in state.projected
             if p.position == position
             and p.team in playing
-            and p.player_id not in starters
-            and p.injury_status.upper() not in RULED_OUT
+            and p.player_id not in state.starter_ids
+            and not ruled_out(p.injury_status)
         ]
         if len(cover) >= len(out):
             continue
@@ -512,42 +546,48 @@ def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Action]:
         behind = (
             f"only {join([p.name for p in cover])} can step in" if cover else f"nobody on your bench plays {position}"
         )
-        actions.append(
-            Action(
-                kind="waiver",
-                urgency="later",
-                title=f"Find a {position} for week {week}",
-                reason=f"{names} {verb} on bye, and {behind}.",
-                when=f"week {week}",
-                player_id=out[0].player_id,
-                key=f"bye:{week}:{position}",
+        items.append(
+            Item(
+                "bye",
+                Action(
+                    kind="waiver",
+                    urgency="later",
+                    title=f"Find a {position} for week {week}",
+                    reason=f"{names} {verb} on bye, and {behind}.",
+                    when=f"week {week}",
+                    player_id=out[0].player_id,
+                    key=f"bye:{week}:{position}",
+                ),
             )
         )
-    return actions
+    return items
 
 
-def _trade_deadline(state: Week) -> list[Action]:
+def _trade_deadline(state: Week) -> list[Item]:
     """The deadline, once it is close enough that waiting means missing it."""
     deadline = state.league.trade_deadline
     if not deadline or not state.week <= deadline <= state.week + 1:
         return []
     final = deadline == state.week
     return [
-        Action(
-            kind="trade",
-            urgency="soon" if final else "later",
-            title="Make any trades this week" if final else "Line up any trades now",
-            reason=(
-                f"The league's trade deadline is week {deadline}"
-                + (", so this is the last week to deal." if final else ", next week.")
+        Item(
+            "deadline",
+            Action(
+                kind="trade",
+                urgency="soon" if final else "later",
+                title="Make any trades this week" if final else "Line up any trades now",
+                reason=(
+                    f"The league's trade deadline is week {deadline}"
+                    + (", so this is the last week to deal." if final else ", next week.")
+                ),
+                when=f"week {deadline}",
+                key=f"deadline:{deadline}",
             ),
-            when=f"week {deadline}",
-            key=f"deadline:{deadline}",
         )
     ]
 
 
-def wire(state: Week, owned: set[str], signable: Callable[[str], bool]) -> Sequence[Projection]:
+def wire(state: Week, signable: Callable[[str], bool]) -> Sequence[Projection]:
     """Who could be picked up and play this week, best projection first.
 
     Cut to players with a game and no ruling against them: the wire is asked
@@ -557,7 +597,7 @@ def wire(state: Week, owned: set[str], signable: Callable[[str], bool]) -> Seque
         (
             p
             for pid, p in state.projections.items()
-            if pid not in owned and p.opponent and p.injury_status.upper() not in RULED_OUT and signable(pid)
+            if pid not in state.owned and p.opponent and not ruled_out(p.injury_status) and signable(pid)
         ),
         key=lambda p: -p.points,
     )

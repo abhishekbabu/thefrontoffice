@@ -6,20 +6,15 @@ plain GET.
 """
 
 from dataclasses import dataclass, field
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, get_args
 
 ScoringFormat = Literal["pts_ppr", "pts_half_ppr", "pts_std"]
+
+SCORING_FORMATS: tuple[ScoringFormat, ...] = get_args(ScoringFormat)
 
 # Sleeper's lineup slots. FLEX and SUPER_FLEX accept several positions; BN and
 # IR do not count toward a weekly score.
 STARTING_SLOTS = ("QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "K", "DEF", "WRRB_FLEX", "REC_FLEX")
-
-FLEX_ELIGIBILITY: dict[str, tuple[str, ...]] = {
-    "FLEX": ("RB", "WR", "TE"),
-    "WRRB_FLEX": ("RB", "WR"),
-    "REC_FLEX": ("WR", "TE"),
-    "SUPER_FLEX": ("QB", "RB", "WR", "TE"),
-}
 
 
 class PlayerMeta(TypedDict, total=False):
@@ -42,8 +37,6 @@ class PlayerMeta(TypedDict, total=False):
 
 @dataclass(frozen=True)
 class SeasonState:
-    """Where a sport's season currently is."""
-
     week: int
     season: str
     season_type: str
@@ -120,9 +113,26 @@ class WeeklyProjection:
     """The projection broken out — passing yards, receptions, targets. The total
     is what a lineup is chosen on; this is what makes the total believable."""
 
-    @property
-    def is_questionable(self) -> bool:
-        return bool(self.injury_status) and self.injury_status.upper() not in ("", "ACTIVE")
+
+EMPTY_SLOT = "0"
+"""How Sleeper fills a starting slot nobody is in."""
+
+
+@dataclass(frozen=True)
+class SleeperMatchup:
+    """One team's side of a week's matchup: who it plays, what it has scored, and the lineup it set.
+
+    The lineup is the week's own, which the roster's copy can lag by days.
+    """
+
+    roster_id: int
+    matchup_id: int | None
+    """Shared by the two teams playing each other; None where the team has nobody this week."""
+    points: float = 0.0
+    starters: list[str] = field(default_factory=list)
+    """Positionally aligned with the league's starting slots; an empty slot is an empty string."""
+    players_points: dict[str, float] = field(default_factory=dict)
+    """What each of the team's players has scored this week."""
 
 
 @dataclass(frozen=True)
@@ -250,7 +260,7 @@ TEAM_ROW_PREFIX = "TEAM_"
 
 # What a fantasy league actually scores. The catalog carries every practice
 # squad body in the league, and none of them are a waiver decision.
-FANTASY_POSITIONS = frozenset({"QB", "RB", "WR", "TE", "K", "DEF"})
+FANTASY_POSITIONS = ("QB", "RB", "WR", "TE", "K", "DEF")
 
 # What a football game line is kept for: the points in each scoring format,
 # and the usage behind them. Snaps against the team's snaps is a share no

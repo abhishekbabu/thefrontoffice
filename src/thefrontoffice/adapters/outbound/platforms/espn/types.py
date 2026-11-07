@@ -1,4 +1,4 @@
-"""What we keep from ESPN's news feeds."""
+"""What we keep from ESPN: its news feeds, its live scoreboard, and its injury report."""
 
 from dataclasses import dataclass, field
 from datetime import datetime

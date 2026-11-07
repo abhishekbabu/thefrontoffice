@@ -17,7 +17,7 @@ as the NFL's own.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, TypedDict
+from typing import Literal, Protocol, TypedDict
 
 Scoring = Literal["pts_ppr", "pts_half_ppr", "pts_std"]
 """How a league scores a reception: full, half, or not at all."""
@@ -66,9 +66,6 @@ class Projection(Protocol):
         """The projection broken out — passing yards, receptions, targets."""
         ...
 
-    @property
-    def is_questionable(self) -> bool: ...
-
 
 @dataclass(frozen=True)
 class Unprojected:
@@ -86,10 +83,6 @@ class Unprojected:
     opponent: str = ""
     points: float = 0.0
     stats: Mapping[str, float] = field(default_factory=dict)
-
-    @property
-    def is_questionable(self) -> bool:
-        return listed(self.injury_status)
 
 
 @dataclass(frozen=True)
@@ -117,15 +110,6 @@ class Reported:
             injury_status=injury_status,
             stats=projection.stats,
         )
-
-    @property
-    def is_questionable(self) -> bool:
-        return listed(self.injury_status)
-
-
-def listed(injury_status: str) -> bool:
-    """Whether a designation is anything at all: a player cleared to play carries none, or Active."""
-    return bool(injury_status) and injury_status.upper() != "ACTIVE"
 
 
 class Team(Protocol):
@@ -166,6 +150,8 @@ class LeagueRules(Protocol):
     def league_id(self) -> str: ...
     @property
     def name(self) -> str: ...
+    @property
+    def season(self) -> str: ...
     @property
     def total_rosters(self) -> int: ...
     @property
@@ -208,6 +194,15 @@ class Game(Protocol):
     def status(self) -> str:
         """`pre_game`, `in_game` or `complete`; empty where the platform says nothing."""
         ...
+
+
+COMPLETE = "complete"
+"""A game's status once it is over."""
+
+
+def kicked_off(status: str) -> bool:
+    """Whether a game in this status has started: under way, or over. An unknown status is not started."""
+    return bool(status) and status != "pre_game"
 
 
 @dataclass(frozen=True)
@@ -272,6 +267,31 @@ class LeagueMove(Protocol):
         ...
 
 
+class Matchup(Protocol):
+    """One team's side of a week's head-to-head: who it plays, what it has scored, and the lineup it set."""
+
+    @property
+    def roster_id(self) -> int: ...
+    @property
+    def matchup_id(self) -> int | None:
+        """Shared by the two teams playing each other; None where the team plays nobody this week."""
+        ...
+
+    @property
+    def points(self) -> float: ...
+    @property
+    def starters(self) -> Sequence[str]:
+        """Positionally aligned with the league's starting slots; an empty slot is an empty string.
+
+        The week's own lineup, which can be newer than the one its `Team` carries."""
+        ...
+
+    @property
+    def players_points(self) -> Mapping[str, float]:
+        """What each of the team's players has scored this week."""
+        ...
+
+
 class Phase(Protocol):
     """Where the NFL season is."""
 
@@ -293,23 +313,17 @@ class Trending(Protocol):
 
 
 class NFLSource(Protocol):
-    """Every read the NFL's rules make of the league's platform, and nothing else.
-
-    Matchup entries stay the platform's own rows — a team's id, its pairing,
-    its points, its starters — read by key where they are read.
-    """
+    """Every read the NFL's rules make of the league's platform, and nothing else."""
 
     def get_league_users(self, league_id: str) -> dict[str, str]:
         """Each owner's display name, by owner id."""
         ...
 
-    def get_matchups(self, league_id: str, week: int) -> list[dict[str, Any]]: ...
+    def get_matchups(self, league_id: str, week: int) -> Sequence[Matchup]: ...
 
-    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[dict[str, Any]]]: ...
+    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Mapping[int, Sequence[Matchup]]: ...
 
     def get_nfl_game_lines(self, season: str, weeks: list[int]) -> Sequence[GameLine]: ...
-
-    def get_nfl_state(self) -> Phase: ...
 
     def get_players(self, sport: str = "nfl") -> Mapping[str, PlayerInfo]: ...
 
@@ -317,9 +331,9 @@ class NFLSource(Protocol):
 
     def get_rosters(self, league_id: str) -> Sequence[Team]: ...
 
-    def get_season_schedule(self, season: str, sport: str = "nfl") -> Sequence[Game]: ...
+    def get_season_schedule(self, season: str) -> Sequence[Game]: ...
 
-    def get_season_stats(self, season: str, sport: str = "nfl") -> Mapping[str, SeasonTotals]: ...
+    def get_season_stats(self, season: str) -> Mapping[str, SeasonTotals]: ...
 
     def get_state(self, sport: str = "nfl") -> Phase: ...
 
