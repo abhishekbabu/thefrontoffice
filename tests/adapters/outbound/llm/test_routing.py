@@ -12,7 +12,6 @@ from pydantic import BaseModel
 
 from thefrontoffice.adapters.outbound.llm.routing import DEFAULT_COOLDOWN_SECONDS, Cooldowns, RoutedModel
 from thefrontoffice.domain.errors import AIKeyInvalidError, AIQuotaError, AIResponseError, AIUnavailableError
-from thefrontoffice.domain.models import TradeProposal
 
 
 class Answer(BaseModel):
@@ -32,6 +31,7 @@ class Scripted:
 
     def __init__(self, name: str, *outcomes: Exception, available: bool = True) -> None:
         self.name = name
+        self.key_setting = f"{name.upper()}_API_KEY"
         self.outcomes = list(outcomes)
         self.is_available = available
         self.calls = 0
@@ -49,9 +49,6 @@ class Scripted:
     def structure_text(self, text: str, schema: type, instruction: str) -> Any:
         return Answer(by=self._next())
 
-    def parse_trade_string(self, text: str) -> TradeProposal:
-        return TradeProposal(giving=[self._next()], receiving=["x"])
-
     def start_chat(self, initial_history: Any = None, enable_search: bool = False) -> Any:
         self.histories.append(list(initial_history or []))
         return SimpleNamespace(send_message=lambda message: SimpleNamespace(text=self._next()))
@@ -59,7 +56,7 @@ class Scripted:
 
 def _router(*providers: Scripted, clock: Clock | None = None) -> tuple[RoutedModel, Cooldowns]:
     cooldowns = Cooldowns(clock=clock or Clock())
-    return RoutedModel([(p.name, p) for p in providers], cooldowns), cooldowns
+    return RoutedModel(providers, cooldowns), cooldowns
 
 
 def _text(reply: object) -> str:
@@ -103,10 +100,9 @@ def test_a_provider_that_cannot_answer_hands_over_to_the_next(failure: Exception
 
 
 def test_every_port_method_fails_over() -> None:
-    router, _ = _router(Scripted("Gemini", *[AIQuotaError("Gemini")] * 3), Scripted("Groq"))
+    router, _ = _router(Scripted("Gemini", *[AIQuotaError("Gemini")] * 2), Scripted("Groq"))
 
     assert router.structure_text("prose", Answer, "convert").by == "Groq"
-    assert router.parse_trade_string("give a get b").giving == ["Groq"]
     assert router.generate_structured("prompt", Answer).by == "Groq"
 
 
@@ -166,6 +162,16 @@ def test_with_no_provider_configured_the_model_is_unavailable() -> None:
         _ask(router)
     with pytest.raises(AIUnavailableError):
         router.start_chat()
+
+
+def test_an_unavailable_model_names_the_key_each_provider_reads() -> None:
+    """The providers name their own settings; the domain error names none of its own."""
+    router, _ = _router(Scripted("Gemini", available=False), Scripted("Groq", available=False))
+
+    with pytest.raises(AIUnavailableError) as raised:
+        _ask(router)
+    assert raised.value.keys == ["GEMINI_API_KEY", "GROQ_API_KEY"]
+    assert all(key in str(raised.value) for key in raised.value.keys)
 
 
 def test_every_provider_out_of_quota_says_so_with_the_soonest_wait() -> None:

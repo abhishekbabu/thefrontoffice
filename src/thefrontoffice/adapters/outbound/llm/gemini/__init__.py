@@ -1,1 +1,1 @@
-"""Gemini AI client package."""
+"""Gemini, as the AnalysisModel port."""

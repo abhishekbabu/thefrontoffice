@@ -383,7 +383,7 @@ src/thefrontoffice/
 │                      per-competition CompetitionProvider implementations.
 ├── bootstrap.py       composition root: the only module naming a concrete
 │                      implementation. Registers competitions, wires engines.
-└── config/            validated settings, prompt templates, telemetry.
+└── config/            validated settings, the .env writer, telemetry.
 ```
 
 No adapter is named in `domain/` or `application/`; the engines take an
@@ -419,10 +419,15 @@ report — joined to Sleeper's players by name within the club. Each caches resp
 `google-genai` (`gemini-2.5-pro` for analysis, `gemini-2.5-flash` for parsing),
 and Groq and OpenRouter through one OpenAI-compatible adapter on the `openai`
 SDK, each with a configured analysis and parsing model. Answers come back as
-Pydantic models, never prose to be parsed out: Gemini enforces the schema
+Pydantic models, never prose to be parsed out — a typed trade is split into its
+two sides the same way, by the parsing model: Gemini enforces the schema
 itself; for the others the adapter asks in the strongest form the model accepts
 (JSON schema, then JSON mode with the schema in the prompt), validates, and
-repairs once with the validation errors before failing.
+repairs once with the validation errors before failing. What the model is asked
+to write is an answer format in `application/formats.py`, whose field
+descriptions are its instructions; the engine builds the domain's answer from
+it, so no domain model carries prompt text. A competition's prompts live in its
+own `prompt.py`.
 
 The configured providers sit behind one `RoutedModel` that fails over between
 them. A spent quota — a 429, or the 413 Groq returns for a request too large for

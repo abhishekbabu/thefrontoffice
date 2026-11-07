@@ -10,7 +10,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field, computed_field, model_validator
 
@@ -26,23 +26,22 @@ MoveAction = Literal[
 
 
 class Move(BaseModel):
-    """One recommended action on one player."""
+    """One recommended action on one player, as the model judged it.
 
-    action: MoveAction = Field(description="What to do with this player.")
-    player: str = Field(description="Full player name as the platform spells it.")
-    position: str = Field(description="Position or eligible slots, e.g. 'RB' or 'PG,SG'.")
-    team: str = Field(description="Real-world team abbreviation, e.g. 'BUF' or 'LAL'.")
-    metric: str = Field(
-        description=(
-            "The number that justifies this move, with its unit — '22.3 proj pts', '4 games left', '£8.5m, 6.2 xPts'."
-        )
-    )
-    rationale: str = Field(description="Why this move helps. Tactical and specific, no filler.")
-    replaces: str = Field(
-        default="",
-        description="Counterpart player being dropped, benched or transferred out. Empty when there is none.",
-    )
-    replaces_rationale: str = Field(default="", description="Why that counterpart is the right one to move.")
+    How the model is asked to fill each field is `MoveAnswer`'s, in
+    `application/formats.py`; this is what a report keeps and a page shows.
+    """
+
+    action: MoveAction
+    player: str
+    position: str
+    team: str
+    metric: str
+    """The number that justifies the move, with its unit."""
+    rationale: str
+    replaces: str = ""
+    """The counterpart dropped, benched or transferred out; empty where there is none."""
+    replaces_rationale: str = ""
 
 
 Tone = Literal["neutral", "good", "warning"]
@@ -282,19 +281,20 @@ def task_id(position: int) -> str:
 class TaskVerdict(BaseModel):
     """The model's judgement on one computed to-do item."""
 
-    task: str = Field(description="The item's id exactly as listed, e.g. 'T1'.")
-    decision: Decision = Field(
-        description=(
-            "AGREE to make the move. OVERRULE when the role, matchup or news says otherwise. "
-            "WAIT when it turns on news due before the deadline."
-        )
-    )
-    reason: str = Field(description="One sentence, grounded in role, matchup or news — never the projection alone.")
+    task: str
+    """The item's id, as `task_id` numbered it."""
+    decision: Decision
+    reason: str
 
 
 Urgency = Literal["now", "soon", "later"]
 """now: costs points this week if left alone. soon: worth doing before this
 week's next deadline. later: planning for a week still to come."""
+
+
+def urgency_rank(urgency: Urgency) -> int:
+    """Where `urgency` sorts, most pressing first: its place in the literal, so the two cannot disagree."""
+    return get_args(Urgency).index(urgency)
 
 
 class Action(BaseModel):
@@ -821,30 +821,18 @@ class LeagueSchedule(BaseModel):
 class ScoutReport(BaseModel):
     """A scouting report for any competition: the model's judgement, with the week's own figures and items.
 
-    What the model writes is `ScoutAnswer`, in `application/formats.py`; the
-    engine adds what it does not get to write, so nothing here asks it to
-    leave a field alone.
+    The first four fields are what the model wrote, as `ScoutAnswer` in
+    `application/formats.py` describes them to it; the engine adds what it
+    does not get to write, so nothing here asks it to leave a field alone.
     """
 
-    situation: str = Field(description="Where the team stands: the matchup, the run of fixtures, the league position.")
-    focus: list[str] = Field(
-        description=(
-            "What this week turns on — close categories, thin positions, players on a bye. "
-            "Short labels, e.g. ['BLK', 'FG%'] or ['RB depth', 'QB bye']."
-        )
-    )
-    moves: list[Move] = Field(
-        description="Recommended moves, most valuable first — only those the to-do list does not already hold."
-    )
-    strategy: str = Field(description="One-sentence summary of the plan.")
-    verdicts: list[TaskVerdict] = Field(
-        default_factory=list,
-        description="Exactly one per to-do item, by its id. Empty when the prompt lists no to-do items.",
-    )
+    situation: str
+    focus: list[str]
+    moves: list[Move]
+    strategy: str
     tasks: list[Action] = Field(
         default_factory=list, description="The to-do items as computed, each carrying its verdict."
     )
-
     headline: list[Stat] = Field(
         default_factory=list, description="Figures read straight from the platform, never written by the model."
     )
@@ -867,14 +855,17 @@ PASS: not for this roster."""
 
 
 class PlayerCall(BaseModel):
-    """The model's call on one available player, shown on his row."""
+    """The model's call on one available player, shown on his row.
 
-    player_id: str = Field(description="The player's id exactly as listed, e.g. '8155'.")
-    decision: WireDecision = Field(
-        description="ADD to claim now; WATCH if a change in his situation would make him worth it; PASS otherwise."
-    )
-    drop: str = Field(default="", description="For ADD, who on the roster makes way. Empty otherwise.")
-    reason: str = Field(description="One sentence, grounded in role, matchup or news — never the projection alone.")
+    What the model writes is `CallAnswer`, in `application/formats.py`; the
+    engine adds when it was made and whether it still stands.
+    """
+
+    player_id: str
+    decision: WireDecision
+    drop: str = ""
+    """For ADD, who on the roster makes way."""
+    reason: str
     judged_at: datetime | None = Field(default=None, description="When the call was made.")
     stale: bool = Field(
         default=False,
@@ -905,32 +896,25 @@ class Remembered[AnswerT: BaseModel](BaseModel):
     answered_at: datetime
 
 
+TradeCall = Literal["ACCEPT", "REJECT", "COUNTER"]
+
+
 class TradeVerdict(BaseModel):
     """Evaluation of a proposed trade, in any competition.
 
-    Field names are in whatever currency the league scores in: `gains` holds
+    Written by the model, as `TradeAnswer` in `application/formats.py`
+    describes it. In whatever currency the league scores in: `gains` holds
     categories in a 9-cat league and position depth in a points league.
     """
 
-    verdict: Literal["ACCEPT", "REJECT", "COUNTER"] = Field(description="The recommendation.")
-    verdict_detail: str = Field(description="One or two sentences justifying the verdict.")
-    gains: list[str] = Field(
-        description=(
-            "What this trade improves. Short labels in the league's own currency — "
-            "['REB', 'BLK'] for categories, ['RB depth'] for points leagues."
-        )
-    )
-    losses: list[str] = Field(description="What this trade weakens, in the same terms.")
-    impact: str = Field(description="Net change in the league's scoring terms, referencing recent form.")
-    schedule: str = Field(
-        description="How the fixtures or remaining games compare, especially through the playoff weeks."
-    )
-    risk: str = Field(
-        description=(
-            "Availability risk on the incoming side: shutdown on a tanking team, injury designation, or rotation risk."
-        )
-    )
-    strategy: str = Field(description="What to do next, including any counter-offer worth making.")
+    verdict: TradeCall
+    verdict_detail: str
+    gains: list[str]
+    losses: list[str]
+    impact: str
+    schedule: str
+    risk: str
+    strategy: str
 
 
 @dataclass
@@ -958,7 +942,8 @@ class CompetitionContext:
 
     Keeping the parts lets a follow-up chat be seeded with a briefing rather
     than the whole prompt, which is resent on every turn and is dominated by the
-    candidate pool — the players that were considered and passed over.
+    candidate pool — the players that were considered and passed over. The
+    briefing itself is `application/briefing.py`'s.
     """
 
     prompt: str
@@ -974,31 +959,6 @@ class CompetitionContext:
     targets: dict[str, str] = field(default_factory=dict)
     """Each subject's own lines in the prompt, keyed by its id — what an answer
     kept per subject was given, and so what tells whether it is still current."""
-
-    def briefing(self, report: ScoutReport) -> str:
-        """A compact context for follow-up questions about `report`.
-
-        Carries the situation, constraints and full roster — what a "why that
-        drop?" needs — plus only the candidates actually named. Says so, so the
-        model declines rather than inventing numbers for a player it cannot see.
-        """
-        named = {m.player for m in report.moves} | {m.replaces for m in report.moves if m.replaces}
-        kept = [line for name, line in self.candidate_lines.items() if name in named]
-
-        sections = [
-            "This is a condensed briefing on a report you just produced.",
-            self.situation.strip(),
-            self.constraints.strip(),
-            self.extra.strip(),
-            "CURRENT ROSTER:\n" + "".join(self.roster_lines.values()).strip(),
-            "PLAYERS NAMED IN THE REPORT:\n" + ("".join(kept).strip() or "(none)"),
-            (
-                "NOTE: the full candidate pool is not included here. If asked about a player "
-                "not shown above, say you would need to re-run the report rather than "
-                "estimating their numbers."
-            ),
-        ]
-        return "\n\n".join(s for s in sections if s)
 
 
 # `Summary.forecast` names a model defined after it.

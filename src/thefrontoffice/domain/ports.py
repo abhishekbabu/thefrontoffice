@@ -97,29 +97,30 @@ class ChatSession(Protocol):
     def send_message(self, message: str) -> ChatReply: ...
 
 
-@runtime_checkable
 class AnalysisModel(Protocol):
     """The language model the engines talk to.
 
     Named as a capability rather than a vendor so the core never imports
-    `clients.gemini`. Swapping models, or standing one up in a test, means
-    satisfying this and nothing else.
+    one. Swapping models, or standing one up in a test, means satisfying this
+    and nothing else. A strong model analyses and a fast one parses: which is
+    which is the adapter's, and the method says which job it is.
     """
 
+    @property
+    def is_available(self) -> bool:
+        """Whether a call can be made at all — read before offering anything that needs one."""
+        ...
+
     def generate_structured(self, prompt: str, schema: type[TModel]) -> TModel:
-        """Return a response validated against `schema`."""
+        """An analysis of `prompt`, by the strong model, validated against `schema`."""
         ...
 
     def structure_text(self, text: str, schema: type[TModel], instruction: str) -> TModel:
-        """Convert prose the model already produced into `schema`."""
+        """`text` put into `schema` by the fast model, as `instruction` says."""
         ...
 
     def start_chat(self, initial_history: list[HistoryTurn] | None = None, enable_search: bool = False) -> ChatSession:
         """Open a conversation, optionally seeded with prior turns."""
-        ...
-
-    def parse_trade_string(self, text: str) -> TradeProposal:
-        """Parse a natural-language trade into the two sides."""
         ...
 
 

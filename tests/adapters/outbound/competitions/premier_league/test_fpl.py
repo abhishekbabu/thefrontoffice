@@ -250,10 +250,12 @@ def test_a_transfer_beyond_the_bank_is_not_offered() -> None:
 def test_the_briefing_keeps_the_squad_and_only_the_players_named() -> None:
     from support.reports import MOCK_FPL_REPORT
 
+    from thefrontoffice.application import briefing
+
     context = provider().build_context(LEAGUE_ID)
-    briefing = context.briefing(MOCK_FPL_REPORT)
-    assert "P8" in briefing
-    assert len(briefing) < len(context.prompt)
+    brief = briefing.of_report(context, MOCK_FPL_REPORT)
+    assert "P8" in brief
+    assert len(brief) < len(context.prompt)
 
 
 # ── nothing to say ──────────────────────────────────────────────────────

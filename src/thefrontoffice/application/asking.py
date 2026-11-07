@@ -9,6 +9,7 @@ resent; and focused, so the answer is about the thing that was asked about.
 
 import logging
 
+from thefrontoffice.application import briefing
 from thefrontoffice.application.answers import Answers
 from thefrontoffice.application.scouting import scout_scope
 from thefrontoffice.domain.errors import SubjectGoneError
@@ -36,9 +37,9 @@ class AnchoredChat:
     opening exchange, so the history holds only what was actually said.
     """
 
-    def __init__(self, chat: ChatSession, briefing: str) -> None:
+    def __init__(self, chat: ChatSession, brief: str) -> None:
         self._chat = chat
-        self._briefing: str | None = briefing
+        self._briefing: str | None = brief
 
     def send_message(self, message: str) -> ChatReply:
         if self._briefing is not None:
@@ -64,10 +65,10 @@ class AskEngine:
             AIUnavailableError: no model is configured.
         """
         if subject.kind == "task":
-            briefing = self._task_briefing(league_id, subject.key)
+            brief = self._task_briefing(league_id, subject.key)
         else:
-            briefing = self._player_briefing(league_id, subject.key)
-        return AnchoredChat(self.ai.start_chat(), briefing)
+            brief = self._player_briefing(league_id, subject.key)
+        return AnchoredChat(self.ai.start_chat(), brief)
 
     def _task_briefing(self, league_id: str, key: str) -> str:
         context = self.provider.build_context(league_id)
@@ -87,22 +88,22 @@ class AskEngine:
             )
             verdict = f"YOUR EARLIER VERDICT: {then.verdict.decision} — {then.verdict.reason}{changed}"
 
-        sections = [
+        return briefing.sections(
             TASK_ROLE,
-            context.situation.strip(),
-            context.constraints.strip(),
+            context.situation,
+            context.constraints,
             "THE ITEM:\n" + _task_text(task),
             verdict,
-            "THE ROSTER:\n" + "".join(context.roster_lines.values()).strip(),
-        ]
-        return "\n\n".join(s for s in sections if s)
+            "THE ROSTER:\n" + briefing.roster(context),
+        )
 
     def _player_briefing(self, league_id: str, player_id: str) -> str:
         detail = self.provider.player(league_id, player_id)
         roster = self.provider.roster(league_id)
         roster_text = "\n".join("- " + ", ".join(f"{k}: {v}" for k, v in card.columns.items() if v) for card in roster)
-        sections = [PLAYER_ROLE, "THE PLAYER:\n" + _player_text(detail), "THE MANAGER'S ROSTER:\n" + roster_text]
-        return "\n\n".join(s for s in sections if s)
+        return briefing.sections(
+            PLAYER_ROLE, "THE PLAYER:\n" + _player_text(detail), "THE MANAGER'S ROSTER:\n" + roster_text
+        )
 
 
 def _task_text(task: Action) -> str:
