@@ -16,11 +16,13 @@ back here across the proxy configured in `web/vite.config.ts`.
 import logging
 import threading
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -28,12 +30,11 @@ from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound import presenting
 from thefrontoffice.adapters.inbound.remedies import Remedy, remedy
 from thefrontoffice.adapters.inbound.web import data
-from thefrontoffice.application.season import MIN_TRADE_CHANGE
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import CompetitionEntry, Wiring
-from thefrontoffice.config import env_file
+from thefrontoffice.config.env_file import SettingsGroup, UnknownSettingError
 from thefrontoffice.config.logging import setup_logging
-from thefrontoffice.config.settings import PROJECT_ROOT, settings
+from thefrontoffice.config.settings import PROJECT_ROOT
 from thefrontoffice.config.telemetry import setup_telemetry
 from thefrontoffice.domain.errors import ErrorCode, FrontOfficeError, PlatformUnavailableError, UnknownCompetitionError
 from thefrontoffice.domain.models import (
@@ -54,6 +55,7 @@ from thefrontoffice.domain.models import (
     WeekAhead,
 )
 from thefrontoffice.domain.ports import (
+    AccountLogin,
     ChatSession,
     CompetitionProvider,
     LeagueRef,
@@ -80,30 +82,6 @@ class Reply(BaseModel):
     answer: str
 
 
-class Setting(BaseModel):
-    """One configurable value, described without ever carrying a secret."""
-
-    key: str
-    field: str
-    secret: bool
-    present: bool
-    kind: env_file.SettingKind
-    """Which control to render."""
-
-    choices: list[str] = []
-    value: str = ""
-    """Empty for a secret. Presence is all the UI needs, and all it should hold."""
-
-    shadowed: bool = False
-    """A shell variable is overriding .env, so an edit here will not take effect."""
-
-    effective: str = ""
-    """What is actually in force, including a default nothing has overridden.
-
-    An empty field with a default behind it is not unset, and showing it as
-    such invites someone to type the value it already has."""
-
-
 class SettingsUpdate(BaseModel):
     values: dict[str, str]
 
@@ -112,9 +90,6 @@ class Limits(BaseModel):
     """The engines' own bounds, sent so the page can say them rather than restate them."""
 
     judged: int = Field(description="How many free agents one judging asks about: a screen's worth of the best.")
-    trade_change: float = Field(
-        description="The least a trade must raise your playoff chance to be offered, as a fraction: 0.005."
-    )
 
 
 class Capabilities(BaseModel):
@@ -127,7 +102,7 @@ class Capabilities(BaseModel):
 
 
 class LoginState(BaseModel):
-    """Where the Yahoo handshake has got to."""
+    """Where a platform's login handshake has got to."""
 
     status: Literal["idle", "running", "ok", "failed"]
     detail: str = ""
@@ -180,14 +155,15 @@ class _Chats:
         return self._open.get(chat_id)
 
 
-class _YahooLogin:
-    """The Yahoo handshake, which opens a browser and waits for a click no request can hold open.
+class _Login:
+    """One platform's handshake, which opens a browser and waits for a click no request can hold open.
 
     It runs on a thread, and the client watches `state` instead.
     """
 
-    def __init__(self, wiring: Wiring) -> None:
-        self._wiring = wiring
+    def __init__(self, platform: str, account: Callable[[], AccountLogin]) -> None:
+        self._platform = platform
+        self._account = account
         self._lock = threading.Lock()
         self.state = LoginState(status="idle")
 
@@ -203,17 +179,17 @@ class _YahooLogin:
     def _run(self) -> None:
         """Authorize, then confirm the grant is real before reporting success."""
         try:
-            account = self._wiring.yahoo_login()
+            account = self._account()
             account.login(force=True)
             account.verify()
         except FrontOfficeError as e:
-            logger.error(f"Yahoo authorization failed: {e}")
+            logger.error(f"{self._platform} authorization failed: {e}")
             self.state = LoginState(status="failed", detail=str(e))
         except Exception as e:  # a browser or socket failure, not a domain condition
-            logger.error(f"Yahoo authorization failed unexpectedly: {e}")
+            logger.error(f"{self._platform} authorization failed unexpectedly: {e}")
             self.state = LoginState(status="failed", detail=f"Authorization failed: {e}")
         else:
-            self.state = LoginState(status="ok", detail="Yahoo accepted a Fantasy Sports read.")
+            self.state = LoginState(status="ok", detail="The platform accepted a read with the new grant.")
 
 
 def _status(error: FrontOfficeError) -> int:
@@ -232,6 +208,9 @@ def create_app(wiring: Wiring, *, dist: Path = DIST) -> FastAPI:
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         responses={status: {"model": ErrorBody} for status in (400, 404, 503)},
+        # Named for the route's function, so the client names a response type
+        # `operations["roster"]` rather than restating its path.
+        generate_unique_id_function=_operation_id,
     )
 
     @app.exception_handler(FrontOfficeError)
@@ -244,12 +223,16 @@ def create_app(wiring: Wiring, *, dist: Path = DIST) -> FastAPI:
         exception, and says so with 503: nothing in the request was wrong.
         """
         logger.info(f"Domain error: {exc}")
-        body = ErrorBody(detail=str(exc), code=exc.code, remedy=remedy(exc.code))
+        body = ErrorBody(detail=str(exc), code=exc.code, remedy=remedy(exc))
         return JSONResponse(status_code=_status(exc), content=body.model_dump())
 
     _register_routes(app, wiring)
     _serve_frontend(app, dist)
     return app
+
+
+def _operation_id(route: APIRoute) -> str:
+    return route.name
 
 
 def serve() -> FastAPI:
@@ -261,7 +244,12 @@ def serve() -> FastAPI:
 
 def _register_routes(app: FastAPI, wiring: Wiring) -> None:
     chats = _Chats()
-    yahoo = _YahooLogin(wiring)
+    logins = {platform: _Login(platform, account) for platform, account in wiring.logins.items()}
+
+    def _login(platform: str) -> _Login:
+        if platform not in logins:
+            raise HTTPException(status_code=404, detail=f"Nothing logs in to {platform!r}.")
+        return logins[platform]
 
     def _open(key: str) -> tuple[CompetitionEntry, CompetitionProvider]:
         """The entry a route names, and its provider."""
@@ -288,39 +276,20 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         give, so nothing that needs one is shown — rather than shown and then
         refused, which is a click spent learning the app cannot do it.
         """
-        return Capabilities(ai=wiring.ai_available(), limits=Limits(judged=MAX_JUDGED, trade_change=MIN_TRADE_CHANGE))
+        return Capabilities(ai=wiring.ai_available(), limits=Limits(judged=MAX_JUDGED))
 
-    @app.get("/api/settings", response_model=list[Setting])
-    def read_settings() -> list[Setting]:
-        """Every configurable value, with secrets reported as present or absent.
+    @app.get("/api/settings", response_model=list[SettingsGroup])
+    def read_settings() -> list[SettingsGroup]:
+        """Every configurable value, grouped by what it unlocks, with secrets reported as present or absent.
 
         A secret's contents never leave the process. There is nothing the UI can
         do with the characters of an API key that it cannot do with the fact
         that one is set, and a page that renders them puts them in screenshots.
         """
-        stored = env_file.read_values()
-        return [_describe(key, field, stored.get(key, "")) for key, field in env_file.declared().items()]
+        return wiring.env.groups()
 
-    def _describe(key: str, field: str, stored: str) -> Setting:
-        kind, choices = env_file.field_kind(field)
-        secret = key in env_file.SECRET_KEYS
-        current = getattr(settings, field, None)
-        return Setting(
-            key=key,
-            field=field,
-            secret=secret,
-            present=bool(current),
-            # A boolean's stored form can be absent while its value is False, so
-            # the effective value is shown rather than the raw file text.
-            value="" if secret else (env_file.spelled(current) if kind == "boolean" else str(stored)),
-            effective="" if secret else env_file.spelled(current),
-            kind=kind,
-            choices=choices,
-            shadowed=env_file.is_shadowed(key),
-        )
-
-    @app.put("/api/settings", response_model=list[Setting])
-    def save_settings(update: SettingsUpdate) -> list[Setting]:
+    @app.put("/api/settings", response_model=list[SettingsGroup])
+    def save_settings(update: SettingsUpdate) -> list[SettingsGroup]:
         """Write values to .env and re-read configuration into the running app.
 
         Rejects any key no setting reads rather than writing it: a line nothing
@@ -328,27 +297,27 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         this endpoint exists to prevent.
         """
         try:
-            env_file.write_values(update.values)
-        except env_file.UnknownSettingError as e:
+            wiring.env.write_values(update.values)
+        except UnknownSettingError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except OSError as e:
             logger.error(f"Could not write .env: {e}")
             raise HTTPException(status_code=500, detail=f"Could not write .env: {e}") from e
         return read_settings()
 
-    @app.get("/api/yahoo/login", response_model=LoginState)
-    def yahoo_login_state() -> LoginState:
-        return yahoo.state
+    @app.get("/api/{platform}/login", response_model=LoginState)
+    def login_state(platform: str) -> LoginState:
+        return _login(platform).state
 
-    @app.post("/api/yahoo/login", response_model=LoginState)
-    def start_yahoo_login() -> LoginState:
-        """Begin the handshake and return at once.
+    @app.post("/api/{platform}/login", response_model=LoginState)
+    def start_login(platform: str) -> LoginState:
+        """Begin the platform's handshake and return at once.
 
         The browser tab it opens is on this machine — the server and the person
         are the same place — but the click cannot be waited on inside a request,
         so progress is reported through the companion GET.
         """
-        return yahoo.start()
+        return _login(platform).start()
 
     @app.get("/api/{competition}/leagues", response_model=list[LeagueRef])
     def list_leagues(competition: str) -> list[LeagueRef]:
@@ -419,13 +388,11 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
     def weeks_ahead(competition: str, league_id: str) -> list[WeekAhead]:
         """The next few weeks as your roster stands, and a pickup for any that comes up short.
 
-        Empty where a competition cannot project its weeks ahead: there is
-        nothing to plan, which is an answer rather than a failure.
+        Offered only where a competition can project them, as trades are, so
+        one that cannot refuses rather than answering with no weeks.
         """
-        entry = wiring.registry.find(competition)
-        if not entry.can(OutlookProvider):
-            return []
-        return entry.open_as(OutlookProvider, "planning the weeks ahead").weeks_ahead(league_id)
+        provider = wiring.registry.find(competition).open_as(OutlookProvider, "planning the weeks ahead")
+        return provider.weeks_ahead(league_id)
 
     @app.get("/api/{competition}/leagues/{league_id}/trades", response_model=list[TradeIdea])
     def trades(competition: str, league_id: str) -> list[TradeIdea]:

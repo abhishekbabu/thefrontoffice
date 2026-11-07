@@ -10,6 +10,7 @@ from google.genai import errors, types
 from google.genai.chats import Chat
 from pydantic import ValidationError
 
+from thefrontoffice.config.settings import env_var
 from thefrontoffice.domain.errors import (
     AIKeyInvalidError,
     AIQuotaError,
@@ -24,7 +25,7 @@ from .constants import MODEL_FLASH, MODEL_PRO
 logger = logging.getLogger(__name__)
 
 NAME = "Gemini"
-KEY_SETTING = "GOOGLE_API_KEY"
+KEY_SETTING = env_var("gemini_api_key")
 
 
 def translate(error: Exception) -> FrontOfficeError:

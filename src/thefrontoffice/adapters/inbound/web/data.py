@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from thefrontoffice.adapters.inbound.remedies import Remedy, remedy
 from thefrontoffice.bootstrap import CompetitionEntry
 from thefrontoffice.domain.errors import ErrorCode, FrontOfficeError, NotConfiguredError
+from thefrontoffice.domain.ports import OutlookProvider, TradeMarketProvider, WireProvider
 
 
 class Competition(BaseModel):
@@ -33,8 +34,11 @@ class Competition(BaseModel):
     judges_wire: bool
     """Whether its free agents can be judged — offered only where it is."""
 
-    plans_ahead: bool
-    """Whether its weeks ahead and trades worth offering can be shown."""
+    plans_weeks: bool
+    """Whether its coming weeks can be projected."""
+
+    finds_trades: bool
+    """Whether the trades worth offering can be found."""
 
     configured: bool
     """Whether the credentials this competition needs are set."""
@@ -71,12 +75,13 @@ def competition(entry: CompetitionEntry) -> Competition:
         platform=entry.platform,
         label=entry.label,
         name=entry.name,
-        judges_wire=entry.judges_wire,
-        plans_ahead=entry.plans_ahead,
+        judges_wire=entry.can(WireProvider),
+        plans_weeks=entry.can(OutlookProvider),
+        finds_trades=entry.can(TradeMarketProvider),
         configured=configured,
         requires=entry.requires,
         ready=blocked is None,
         blocked_reason=str(blocked or ""),
         blocked_code=blocked.code if blocked else None,
-        blocked_remedy=remedy(blocked.code) if blocked else None,
+        blocked_remedy=remedy(blocked) if blocked else None,
     )

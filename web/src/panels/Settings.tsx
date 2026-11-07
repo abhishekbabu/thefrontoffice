@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type Setting } from "@/lib/api";
+import { api, type Setting, type SettingsGroup } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Input, Select } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -15,68 +15,15 @@ import { PALETTES } from "@/themes/registry";
 import { ErrorNote } from "@/components/ui/error-note";
 import { PageHeader } from "@/components/ui/page-header";
 
-/**
- * Grouped by what each key unlocks, in the order someone sets them up, rather
- * than by the order they happen to sit in `.env`. A key on its own means
- * nothing; "this is the one that turns on football" is what a person is
- * actually looking for.
- */
-const GROUPS: { title: string; note: string; keys: string[] }[] = [
-  {
-    title: "Fantasy Premier League",
-    note: "FPL has no username lookup. The entry id is the number in the URL of your own points page: fantasy.premierleague.com/entry/<THIS>/event/1",
-    keys: ["FPL_ENTRY_ID"],
-  },
-  {
-    title: "NFL on Sleeper",
-    note: "Sleeper needs no key or OAuth — just the username your leagues are under.",
-    keys: ["SLEEPER_USERNAME"],
-  },
-  {
-    title: "NBA on Yahoo",
-    note: "From a Yahoo developer app with Fantasy Sports read permission and redirect URI https://localhost:8080. Yahoo also reviews each application before granting API access. Authorizing is a button on the competition itself, once.",
-    keys: ["YAHOO_CLIENT_ID", "YAHOO_CLIENT_SECRET", "YAHOO_REDIRECT_URI", "YAHOO_MAX_WEEKLY_ADDS"],
-  },
-  {
-    title: "AI",
-    note: "Optional, and each provider is free to start. Any one key turns on judging the week's to-do list and the free agents, and the questions you can ask about an item or a player; without one, everything read from the platforms works exactly as it does now. With several, each backs up the one before when its free quota runs out — Gemini, then Groq, then OpenRouter. Models are settings because free catalogs change.",
-    keys: [
-      "GOOGLE_API_KEY",
-      "GROQ_API_KEY",
-      "GROQ_ANALYSIS_MODEL",
-      "GROQ_PARSING_MODEL",
-      "OPENROUTER_API_KEY",
-      "OPENROUTER_ANALYSIS_MODEL",
-      "OPENROUTER_PARSING_MODEL",
-    ],
-  },
-  {
-    title: "Tracing",
-    note: "Optional. Without a token nothing is exported and no network call is made. Prompt text is never sent unless you turn it on, and a prompt carries your roster and your leagues.",
-    keys: ["LOGFIRE_TOKEN", "LOGFIRE_ENVIRONMENT", "LOGFIRE_CAPTURE_PROMPTS"],
-  },
-  {
-    title: "Advanced",
-    note: "Rarely worth changing. Each field shows the value already in force; typing replaces it.",
-    keys: [
-      "LOG_LEVEL",
-      "SLEEPER_CACHE_DIR",
-      "FPL_CACHE_DIR",
-      "YAHOO_CACHE_DIR",
-      "ESPN_CACHE_DIR",
-      "ANSWER_CACHE_DIR",
-      "ITEM_STATE_DIR",
-      "YAHOO_TOKEN_FILE",
-    ],
-  },
-];
-
 export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const queryClient = useQueryClient();
-  const settings = useQuery<Setting[], Error>({ queryKey: keys.settings, queryFn: api.settings });
+  // Grouped by the server, by what each key unlocks and in the order someone
+  // sets them up: a key on its own means nothing, and "this is the one that
+  // turns on football" is what a person is actually looking for.
+  const settings = useQuery<SettingsGroup[], Error>({ queryKey: keys.settings, queryFn: api.settings });
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
-  const save = useMutation<Setting[], Error, Record<string, string>>({
+  const save = useMutation<SettingsGroup[], Error, Record<string, string>>({
     mutationFn: api.saveSettings,
     onSuccess: () => {
       setDrafts({});
@@ -85,15 +32,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       queryClient.invalidateQueries();
     },
   });
-
-  const byKey = useMemo(() => new Map((settings.data ?? []).map((s) => [s.key, s])), [settings.data]);
-
-  // Anything the groups above forgot still has to be reachable, or a setting
-  // added later becomes invisible here with nothing to say so.
-  const ungrouped = (settings.data ?? []).filter((s) => !GROUPS.some((g) => g.keys.includes(s.key)));
-  const groups = ungrouped.length
-    ? [...GROUPS, { title: "Other", note: "Declared in settings.py but not grouped here.", keys: ungrouped.map((s) => s.key) }]
-    : GROUPS;
 
   const pending = Object.keys(drafts).length;
 
@@ -130,33 +68,29 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       {settings.data && (
         <div className="flex flex-col gap-4 p-5">
           <Appearance />
-          {groups.map((group) => (
+          {settings.data.map((group) => (
             <Card key={group.title}>
               <CardHeader>
                 <span>{group.title}</span>
               </CardHeader>
               <p className="max-w-[70ch] px-4 pt-3 text-[13px] leading-relaxed text-muted-foreground">{group.note}</p>
               <div className="flex flex-col p-4 pt-3">
-                {group.keys.map((key) => {
-                  const setting = byKey.get(key);
-                  if (!setting) return null;
-                  return (
-                    <Row
-                      key={key}
-                      setting={setting}
-                      draft={drafts[key]}
-                      onChange={(value) =>
-                        setDrafts((current) => {
-                          const next = { ...current };
-                          // Typing back to the stored value is not a change.
-                          if (value === (setting.secret ? "" : setting.value)) delete next[key];
-                          else next[key] = value;
-                          return next;
-                        })
-                      }
-                    />
-                  );
-                })}
+                {group.settings.map((setting) => (
+                  <Row
+                    key={setting.key}
+                    setting={setting}
+                    draft={drafts[setting.key]}
+                    onChange={(value) =>
+                      setDrafts((current) => {
+                        const next = { ...current };
+                        // Typing back to the stored value is not a change.
+                        if (value === (setting.secret ? "" : setting.value)) delete next[setting.key];
+                        else next[setting.key] = value;
+                        return next;
+                      })
+                    }
+                  />
+                ))}
               </div>
             </Card>
           ))}

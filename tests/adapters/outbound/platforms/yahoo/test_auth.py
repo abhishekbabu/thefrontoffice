@@ -105,6 +105,15 @@ def test_force_logs_in_again_even_with_a_token(tmp_path: Path) -> None:
     assert len(authorize.calls) == 1
 
 
+def test_a_forced_login_discards_the_old_grant_before_asking_for_a_new_one(tmp_path: Path) -> None:
+    """A handshake that fails part-way must not leave the old, perhaps inert, token to be reused."""
+    authorize = Authorizations(error=YahooLoginRequiredError())
+
+    with pytest.raises(YahooLoginRequiredError):
+        _auth(tmp_path, authorize=authorize).login(force=True)
+    assert not (tmp_path / ".yahoofantasy").exists()
+
+
 def test_login_passes_credentials_and_the_registered_redirect_uri(tmp_path: Path) -> None:
     """The redirect URI has to be the one registered on the Yahoo app, and the
     same one the token exchange later quotes back."""

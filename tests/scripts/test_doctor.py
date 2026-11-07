@@ -6,45 +6,51 @@ default and the feature reports itself unavailable much later.
 """
 
 from pathlib import Path
+from typing import Any
 
 import doctor
 import pytest
 
-from thefrontoffice.config import env_file
-from thefrontoffice.config.settings import settings
+from thefrontoffice.bootstrap import REGISTRY
+from thefrontoffice.config.env_file import EnvFile
+from thefrontoffice.config.settings import AppSettings
 
 
 @pytest.fixture
-def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def path(tmp_path: Path) -> Path:
     """Where `.env` is read from: a file of the test's own, absent until written."""
-    path = tmp_path / ".env"
-    monkeypatch.setattr(env_file, "ENV_PATH", path)
-    return path
+    return tmp_path / ".env"
+
+
+def _report(path: Path, **config: Any) -> int:
+    """The doctor's verdict on `path`, with settings of the test's own."""
+    env = EnvFile(path, settings=AppSettings(_env_file=None, **config))
+    return doctor.main(env=env, registry=REGISTRY, providers=[])
 
 
 # ── typo detection ──────────────────────────────────────────────────────
 
 
-def test_a_mistyped_key_is_reported_and_fails(env: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    env.write_text("GOOGLE_APIKEY=abc\n", encoding="utf-8")
+def test_a_mistyped_key_is_reported_and_fails(path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path.write_text("GOOGLE_APIKEY=abc\n", encoding="utf-8")
 
-    assert doctor.main() == 1
+    assert _report(path) == 1
     assert "GOOGLE_APIKEY" in capsys.readouterr().out
 
 
-def test_a_correct_file_passes(env: Path) -> None:
-    env.write_text("# GOOGLE_APIKEY=abc\n\nGOOGLE_API_KEY=abc\nSLEEPER_USERNAME=someone\n", encoding="utf-8")
+def test_a_correct_file_passes(path: Path) -> None:
+    path.write_text("# GOOGLE_APIKEY=abc\n\nGOOGLE_API_KEY=abc\nSLEEPER_USERNAME=someone\n", encoding="utf-8")
 
-    assert doctor.main() == 0
+    assert _report(path) == 0
 
 
-def test_a_missing_env_file_is_reported_rather_than_crashing(env: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert doctor.main() == 0
+def test_a_missing_env_file_is_reported_rather_than_crashing(path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert _report(path) == 0
     assert ".env.template" in capsys.readouterr().out  # names the file to start from
 
 
-def test_every_competition_is_listed_with_what_it_needs(env: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    doctor.main()
+def test_every_competition_is_listed_with_what_it_needs(path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _report(path)
 
     assert "SLEEPER_USERNAME" in capsys.readouterr().out
 
@@ -52,39 +58,43 @@ def test_every_competition_is_listed_with_what_it_needs(env: Path, capsys: pytes
 # ── never echoing a secret ──────────────────────────────────────────────
 
 
-def test_a_secret_is_reported_by_length_not_by_value(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "gemini_api_key", "super-secret-value")
-
-    assert doctor.describe("gemini_api_key") == "set (18 chars)"
+def _line(out: str, key: str) -> str:
+    return next(line for line in out.splitlines() if line.strip().startswith(key))
 
 
-def test_an_identifier_is_shown_because_it_is_not_a_secret(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Reporting `set (9 chars)` for a username helps nobody verify anything."""
-    monkeypatch.setattr(settings, "sleeper_username", "abhibeast")
+def test_a_secret_is_reported_as_set_never_by_value(path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _report(path, groq_api_key="super-secret-value")
 
-    assert doctor.describe("sleeper_username") == "abhibeast"
-
-
-def test_an_unset_value_says_so() -> None:
-    assert doctor.describe("gemini_api_key") == "not set"
+    out = capsys.readouterr().out
+    assert "super-secret-value" not in out
+    assert _line(out, "GROQ_API_KEY").endswith("set")
 
 
-def test_a_boolean_is_not_rendered_as_python(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "logfire_capture_prompts", True)
+def test_an_identifier_is_shown_because_it_is_not_a_secret(path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Reporting `set` for a username helps nobody verify anything."""
+    _report(path, sleeper_username="abhibeast")
 
-    assert doctor.describe("logfire_capture_prompts") == "true"
+    assert _line(capsys.readouterr().out, "SLEEPER_USERNAME").endswith("abhibeast")
 
 
-def test_prompt_capture_being_on_is_called_out(
-    env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_an_unset_value_says_so(path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _report(path)
+
+    assert _line(capsys.readouterr().out, "GROQ_API_KEY").endswith("not set")
+
+
+def test_a_boolean_is_not_rendered_as_python(path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _report(path, logfire_capture_prompts=True)
+
+    assert _line(capsys.readouterr().out, "LOGFIRE_CAPTURE_PROMPTS").endswith("true")
+
+
+def test_prompt_capture_being_on_is_called_out(path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """It sends the roster and the leagues, so it should never be a quiet default."""
-    monkeypatch.setattr(settings, "logfire_capture_prompts", False)
-    doctor.main()
+    _report(path, logfire_capture_prompts=False)
     quiet = capsys.readouterr().out.splitlines()
 
-    monkeypatch.setattr(settings, "logfire_capture_prompts", True)
-    doctor.main()
+    _report(path, logfire_capture_prompts=True)
     loud = capsys.readouterr().out.splitlines()
 
     assert len(loud) == len(quiet) + 1  # a line of its own, beyond what is shown when it is off
