@@ -11,6 +11,8 @@ effectively forever, trending for an hour.
 """
 
 import logging
+from collections.abc import Callable, Collection, Iterator
+from dataclasses import asdict
 from datetime import timedelta
 from typing import Any, Protocol
 
@@ -20,7 +22,7 @@ from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     EMPTY_SLOT,
-    FANTASY_POSITIONS,
+    FREE_AGENT,
     NBA_STAT_KEYS,
     NFL_LINE_KEYS,
     SCORING_FORMATS,
@@ -53,8 +55,8 @@ SCHEDULE_URL = "https://api.sleeper.app/schedule"
 # Per-game logs live off the same un-versioned root as projections.
 STATS_URL = "https://api.sleeper.app/stats"
 
-# Sleeper serves several sports off the same shape. The football path uses "nfl";
-# the basketball projections the NBA scout reads use "nba".
+# Sleeper serves several sports off the same shape. Each public reader names its
+# sport, so no caller reaches one sport's data by forgetting to name the other.
 NFL = "nfl"
 NBA = "nba"
 
@@ -76,8 +78,7 @@ SEASON_STATS_TTL = timedelta(hours=12)
 # not the rule — and a transaction feed only grows.
 SEASON_SCHEDULE_TTL = timedelta(hours=12)
 # A finished game's line never changes; only the newest week is still moving.
-NBA_LOGS_TTL = timedelta(hours=3)
-NFL_LINES_TTL = timedelta(hours=3)
+GAME_ROWS_TTL = timedelta(hours=3)
 TRANSACTIONS_TTL = timedelta(minutes=15)
 
 
@@ -98,19 +99,21 @@ class SleeperNFLSource(Protocol):
 
     def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[SleeperMatchup]]: ...
 
-    def get_nfl_game_lines(self, season: str, weeks: list[int]) -> list[NFLGameLine]: ...
+    def get_nfl_game_lines(self, season: str, weeks: list[int], positions: Collection[str]) -> list[NFLGameLine]: ...
 
-    def get_players(self, sport: str = "nfl") -> dict[str, PlayerMeta]: ...
+    def get_nfl_players(self) -> dict[str, PlayerMeta]: ...
 
-    def get_projections(self, season: str, week: int, scoring: ScoringFormat) -> dict[str, WeeklyProjection]: ...
+    def get_nfl_schedule(self, season: str) -> list[ScheduledGame]: ...
+
+    def get_nfl_state(self) -> SeasonState: ...
+
+    def get_projections(
+        self, season: str, week: int, scoring: ScoringFormat, positions: Collection[str]
+    ) -> dict[str, WeeklyProjection]: ...
 
     def get_rosters(self, league_id: str) -> list[SleeperRoster]: ...
 
-    def get_season_schedule(self, season: str) -> list[ScheduledGame]: ...
-
     def get_season_stats(self, season: str) -> dict[str, SeasonStats]: ...
-
-    def get_state(self, sport: str = "nfl") -> SeasonState: ...
 
     def get_transactions(self, league_id: str, week: int) -> list[Transaction]: ...
 
@@ -124,11 +127,11 @@ class SleeperNBASource(Protocol):
 
     def get_nba_game_logs(self, season: str, weeks: list[int]) -> dict[str, list[NBAGameLog]]: ...
 
+    def get_nba_players(self) -> dict[str, PlayerMeta]: ...
+
     def get_nba_schedule(self, season: str) -> list[ScheduledGame]: ...
 
-    def get_players(self, sport: str = "nfl") -> dict[str, PlayerMeta]: ...
-
-    def get_state(self, sport: str = "nfl") -> SeasonState: ...
+    def get_nba_state(self) -> SeasonState: ...
 
 
 class SleeperProjectionSource(Protocol):
@@ -136,7 +139,7 @@ class SleeperProjectionSource(Protocol):
 
     def get_nba_projections(self, season: str, week: int) -> list[GameProjection]: ...
 
-    def get_state(self, sport: str = "nfl") -> SeasonState: ...
+    def get_nba_state(self) -> SeasonState: ...
 
 
 class SleeperClient:
@@ -155,8 +158,15 @@ class SleeperClient:
 
     # ── league state ────────────────────────────────────────────────
 
-    def get_state(self, sport: str = NFL) -> SeasonState:
-        """Current week and season type for a sport."""
+    def get_nfl_state(self) -> SeasonState:
+        """The football season's current week and type."""
+        return self._state(NFL)
+
+    def get_nba_state(self) -> SeasonState:
+        """The basketball season's current week and type."""
+        return self._state(NBA)
+
+    def _state(self, sport: str) -> SeasonState:
         data = self._api.cached(f"state_{sport}", f"{BASE_URL}/state/{sport}", STATE_TTL)
         return SeasonState(
             week=int(data.get("week", 0)),
@@ -261,40 +271,29 @@ class SleeperClient:
 
     # ── player data ─────────────────────────────────────────────────
 
-    def get_players(self, sport: str = NFL) -> dict[str, PlayerMeta]:
-        """The player catalog, trimmed to the fields we use.
+    def get_nfl_players(self) -> dict[str, PlayerMeta]:
+        """The football player catalog, trimmed to the fields we use."""
+        return self._players(NFL)
 
-        The raw response is ~14MB across 12k players. Only a handful of fields
-        matter here, so the cache stores the trimmed form — keeping the rest
+    def get_nba_players(self) -> dict[str, PlayerMeta]:
+        """The basketball player catalog, trimmed to the fields we use."""
+        return self._players(NBA)
+
+    def _players(self, sport: str) -> dict[str, PlayerMeta]:
+        """A sport's catalog, stored trimmed.
+
+        The raw response is ~14MB across 12k players and only a handful of
+        fields matter, so the cache keeps the trimmed form — keeping the rest
         would cost a re-parse on every read for fields nothing asks for.
         """
-        cached = self._api.cache_get(f"players_{sport}", PLAYERS_TTL)
-        if cached is not None:
-            return cached
-
-        raw = self._api.get(f"{BASE_URL}/players/{sport}", timeout=CATALOG_TIMEOUT_SECONDS)
-        trimmed: dict[str, PlayerMeta] = {}
-        for player_id, p in (raw or {}).items():
-            if not isinstance(p, dict):
-                continue
-            trimmed[str(player_id)] = PlayerMeta(
-                player_id=str(player_id),
-                name=str(p.get("full_name") or _full_name(p) or player_id),
-                position=str(p.get("position") or ""),
-                team=str(p.get("team") or "FA"),
-                status=str(p.get("status") or ""),
-                injury_status=str(p.get("injury_status") or ""),
-                depth_chart_order=int(p.get("depth_chart_order") or 0),
-                years_exp=int(p.get("years_exp") or 0),
-                age=int(p.get("age") or 0),
-                college=str(p.get("college") or ""),
-                number=int(p.get("number") or 0),
-                injury_body_part=str(p.get("injury_body_part") or ""),
-                injury_notes=str(p.get("injury_notes") or ""),
-            )
-        self._api.cache_set(f"players_{sport}", trimmed)
-        logger.debug(f"Cached {len(trimmed)} {sport} players from Sleeper")
-        return trimmed
+        stored = self._api.cached(
+            f"players_{sport}",
+            f"{BASE_URL}/players/{sport}",
+            PLAYERS_TTL,
+            timeout=CATALOG_TIMEOUT_SECONDS,
+            keep=_trim_catalog,
+        )
+        return {pid: PlayerMeta(**row) for pid, row in (stored or {}).items()}
 
     def get_season_stats(self, season: str) -> dict[str, SeasonStats]:
         """A whole NFL season's production, keyed by player_id.
@@ -303,18 +302,13 @@ class SleeperClient:
         response is ~1.9MB of mostly kicking and defensive splits, and none of
         it is read back.
         """
-        key = f"season_stats_{NFL}_{season}"
-        cached = self._api.cache_get(key, SEASON_STATS_TTL)
-        if cached is None:
-            raw = self._api.get(f"{BASE_URL}/stats/{NFL}/regular/{season}", timeout=CATALOG_TIMEOUT_SECONDS)
-            cached = {
-                str(pid): {k: v for k, v in row.items() if k in SEASON_STAT_KEYS}
-                for pid, row in (raw or {}).items()
-                if isinstance(row, dict)
-            }
-            self._api.cache_set(key, cached)
-            logger.debug(f"Cached {len(cached)} {NFL} season totals for {season}")
-
+        stored = self._api.cached(
+            f"season_stats_{NFL}_{season}",
+            f"{BASE_URL}/stats/{NFL}/regular/{season}",
+            SEASON_STATS_TTL,
+            timeout=CATALOG_TIMEOUT_SECONDS,
+            keep=_trim_season_stats,
+        )
         return {
             pid: SeasonStats(
                 player_id=pid,
@@ -324,26 +318,34 @@ class SleeperClient:
                 position_rank=int(row.get("pos_rank_ppr") or 0),
                 splits={k: float(v) for k, v in row.items() if k in SPLIT_KEYS},
             )
-            for pid, row in cached.items()
+            for pid, row in (stored or {}).items()
         }
 
-    def get_season_schedule(self, season: str) -> list[ScheduledGame]:
+    def get_nfl_schedule(self, season: str) -> list[ScheduledGame]:
         """Every real-world NFL game of the season, with the day it is played.
 
         The dates behind a fantasy week, which the fantasy endpoints do not
         carry: a matchup knows it is week 3 and not that week 3 is a Sunday.
         """
+        return self._schedule(NFL, season, lambda side: str(side or ""))
+
+    def get_nba_schedule(self, season: str) -> list[ScheduledGame]:
+        """The basketball season's games, in the same shape football uses.
+
+        Sleeper nests each club one level deeper here than it does for football.
+        """
+        return self._schedule(NBA, season, lambda side: str((side or {}).get("team") or ""))
+
+    def _schedule(self, sport: str, season: str, club: Callable[[Any], str]) -> list[ScheduledGame]:
         data = self._api.cached(
-            f"schedule_{NFL}_{season}",
-            f"{SCHEDULE_URL}/{NFL}/regular/{season}",
-            SEASON_SCHEDULE_TTL,
+            f"schedule_{sport}_{season}", f"{SCHEDULE_URL}/{sport}/regular/{season}", SEASON_SCHEDULE_TTL
         )
         return [
             ScheduledGame(
                 week=int(g.get("week") or 0),
                 date=str(g.get("date") or ""),
-                home=str(g.get("home") or ""),
-                away=str(g.get("away") or ""),
+                home=club(g.get("home")),
+                away=club(g.get("away")),
                 status=str(g.get("status") or ""),
             )
             for g in (data or [])
@@ -361,96 +363,72 @@ class SleeperClient:
         raw rows is ~9MB of quarter splits and plus-minus, and the cache is one
         file shared with everything else the client reads.
         """
-        urls = {f"nba_logs_{season}_{w}": f"{STATS_URL}/{NBA}/{season}/{w}?season_type=regular" for w in weeks}
-        raw = self._api.cached_many(urls, NBA_LOGS_TTL)
-
         logs: dict[str, list[NBAGameLog]] = {}
-        for week in weeks:
-            for row in raw.get(f"nba_logs_{season}_{week}") or []:
-                if not isinstance(row, dict):
-                    continue
-                player_id = str(row.get("player_id") or "")
-                # Team totals ride in the same feed under a prefixed id, and a
-                # team's 146 points is not a player's line.
-                if not player_id or player_id.startswith(TEAM_ROW_PREFIX):
-                    continue
-                stats = row.get("stats") or {}
-                # Sleeper files a row for every game a player was scheduled
-                # for, carrying no stats at all where they did not appear. A
-                # game somebody sat out is not a game they played, and
-                # averaging it in as a line of noughts is how a run of five
-                # DNPs becomes "recent form".
-                if not stats:
-                    continue
-                logs.setdefault(player_id, []).append(
-                    NBAGameLog(
-                        player_id=player_id,
-                        date=str(row.get("date") or ""),
-                        opponent=str(row.get("opponent") or ""),
-                        stats={k: float(v) for k in NBA_STAT_KEYS if (v := stats.get(k)) is not None},
-                    )
+        for _, player_id, row in self._game_rows(NBA, season, weeks):
+            stats = row.get("stats") or {}
+            # Sleeper files a row for every game a player was scheduled for,
+            # carrying no stats at all where they did not appear. A game
+            # somebody sat out is not a game they played, and averaging it in
+            # as a line of noughts is how a run of five DNPs becomes "recent form".
+            if not stats:
+                continue
+            logs.setdefault(player_id, []).append(
+                NBAGameLog(
+                    player_id=player_id,
+                    date=str(row.get("date") or ""),
+                    opponent=str(row.get("opponent") or ""),
+                    stats={k: float(v) for k in NBA_STAT_KEYS if (v := stats.get(k)) is not None},
                 )
+            )
         # Newest first, so a caller takes the first N rather than sorting again.
         for runs in logs.values():
             runs.sort(key=lambda g: g.date, reverse=True)
         return logs
 
-    def get_nfl_game_lines(self, season: str, weeks: list[int]) -> list[NFLGameLine]:
-        """Every fantasy-relevant player's line from each game in `weeks`.
+    def get_nfl_game_lines(self, season: str, weeks: list[int], positions: Collection[str]) -> list[NFLGameLine]:
+        """Every line from each game in `weeks` by a player at one of `positions`.
 
         The raw material for both a player's role — snaps, targets, carries —
         and what each defense gives up to each position, which no endpoint
-        publishes directly. Linemen, defensive players and team totals ride in
-        the same feed and are dropped: none of them is anybody's starter.
+        publishes directly. Linemen and defensive players ride in the same
+        feed, which is why a caller names the positions it scores.
         """
-        urls = {f"nfl_lines_{season}_{w}": f"{STATS_URL}/{NFL}/{season}/{w}?season_type=regular" for w in weeks}
-        raw = self._api.cached_many(urls, NFL_LINES_TTL)
-
         lines: list[NFLGameLine] = []
+        for week, player_id, row in self._game_rows(NFL, season, weeks):
+            position = str((row.get("player") or {}).get("position") or "")
+            opponent = str(row.get("opponent") or "")
+            if position not in positions or not opponent:
+                continue
+            stats = row.get("stats") or {}
+            lines.append(
+                NFLGameLine(
+                    player_id=player_id,
+                    week=week,
+                    team=str(row.get("team") or ""),
+                    opponent=opponent,
+                    position=position,
+                    stats={k: float(v) for k in NFL_LINE_KEYS if (v := stats.get(k)) is not None},
+                )
+            )
+        return lines
+
+    def _game_rows(self, sport: str, season: str, weeks: list[int]) -> Iterator[tuple[int, str, dict[str, Any]]]:
+        """Each player's row from each game in `weeks`, with its week and player id; the weeks fetched in parallel.
+
+        Team totals ride in the same feed under a prefixed id, and a team's
+        points are not a player's line.
+        """
+        urls = {
+            f"game_rows_{sport}_{season}_{w}": f"{STATS_URL}/{sport}/{season}/{w}?season_type=regular" for w in weeks
+        }
+        raw = self._api.cached_many(urls, GAME_ROWS_TTL)
         for week in weeks:
-            for row in raw.get(f"nfl_lines_{season}_{week}") or []:
+            for row in raw.get(f"game_rows_{sport}_{season}_{week}") or []:
                 if not isinstance(row, dict):
                     continue
                 player_id = str(row.get("player_id") or "")
-                position = str((row.get("player") or {}).get("position") or "")
-                opponent = str(row.get("opponent") or "")
-                if not player_id or player_id.startswith(TEAM_ROW_PREFIX) or position not in FANTASY_POSITIONS:
-                    continue
-                if not opponent:
-                    continue
-                stats = row.get("stats") or {}
-                lines.append(
-                    NFLGameLine(
-                        player_id=player_id,
-                        week=week,
-                        team=str(row.get("team") or ""),
-                        opponent=opponent,
-                        position=position,
-                        stats={k: float(v) for k in NFL_LINE_KEYS if (v := stats.get(k)) is not None},
-                    )
-                )
-        return lines
-
-    def get_nba_schedule(self, season: str) -> list[ScheduledGame]:
-        """The basketball season's games, in the same shape football uses.
-
-        Sleeper nests the clubs one level deeper here than it does for
-        football, which is the only difference worth a separate reader.
-        """
-        data = self._api.cached(
-            f"schedule_{NBA}_{season}", f"{SCHEDULE_URL}/{NBA}/regular/{season}", SEASON_SCHEDULE_TTL
-        )
-        return [
-            ScheduledGame(
-                week=int(g.get("week") or 0),
-                date=str(g.get("date") or ""),
-                home=str((g.get("home") or {}).get("team") or ""),
-                away=str((g.get("away") or {}).get("team") or ""),
-                status=str(g.get("status") or ""),
-            )
-            for g in (data or [])
-            if isinstance(g, dict)
-        ]
+                if player_id and not player_id.startswith(TEAM_ROW_PREFIX):
+                    yield week, player_id, row
 
     def get_transactions(self, league_id: str, week: int) -> list[Transaction]:
         """What the league did in one week: waivers, free agents and trades.
@@ -476,8 +454,10 @@ class SleeperClient:
             if isinstance(t, dict) and t.get("status") == "complete"
         ]
 
-    def get_projections(self, season: str, week: int, scoring: ScoringFormat) -> dict[str, WeeklyProjection]:
-        """Weekly projections keyed by player_id.
+    def get_projections(
+        self, season: str, week: int, scoring: ScoringFormat, positions: Collection[str]
+    ) -> dict[str, WeeklyProjection]:
+        """Weekly projections for the players at `positions`, keyed by player_id.
 
         This is the forward-looking number the whole football report rests on:
         start/sit and waiver value are both "who will score most this week".
@@ -485,10 +465,11 @@ class SleeperClient:
         # The sport segment is required, and its absence is not an error: the
         # path without it answers 200 with an empty list, so every projection
         # silently became a zero and every player read as having no game.
+        asked = sorted(positions)
         url = f"{PROJECTIONS_URL}/{NFL}/{season}/{week}?season_type=regular&order_by={scoring}" + "".join(
-            f"&position[]={p}" for p in FANTASY_POSITIONS
+            f"&position[]={p}" for p in asked
         )
-        data = self._api.cached(f"proj_{NFL}_{season}_{week}_{scoring}", url, PROJECTIONS_TTL)
+        data = self._api.cached(f"proj_{NFL}_{season}_{week}_{scoring}_{'-'.join(asked)}", url, PROJECTIONS_TTL)
 
         projections: dict[str, WeeklyProjection] = {}
         for row in data or []:
@@ -502,7 +483,7 @@ class SleeperClient:
                 player_id=player_id,
                 name=_full_name(player) or player_id,
                 position=str(player.get("position") or ""),
-                team=str(player.get("team") or row.get("team") or "FA"),
+                team=str(player.get("team") or row.get("team") or FREE_AGENT),
                 opponent=str(row.get("opponent") or ""),
                 points=float(points),
                 injury_status=str(player.get("injury_status") or ""),
@@ -557,6 +538,40 @@ class SleeperClient:
             for item in data or []
             if item.get("player_id")
         ]
+
+
+def _trim_catalog(raw: Any) -> dict[str, dict[str, Any]]:
+    """Sleeper's catalog cut to the fields a `PlayerMeta` holds, in the form it is stored in."""
+    return {
+        str(player_id): asdict(
+            PlayerMeta(
+                player_id=str(player_id),
+                name=str(p.get("full_name") or _full_name(p) or player_id),
+                position=str(p.get("position") or ""),
+                team=str(p.get("team") or FREE_AGENT),
+                status=str(p.get("status") or ""),
+                injury_status=str(p.get("injury_status") or ""),
+                depth_chart_order=int(p.get("depth_chart_order") or 0),
+                years_exp=int(p.get("years_exp") or 0),
+                age=int(p.get("age") or 0),
+                college=str(p.get("college") or ""),
+                number=int(p.get("number") or 0),
+                injury_body_part=str(p.get("injury_body_part") or ""),
+                injury_notes=str(p.get("injury_notes") or ""),
+            )
+        )
+        for player_id, p in (raw or {}).items()
+        if isinstance(p, dict)
+    }
+
+
+def _trim_season_stats(raw: Any) -> dict[str, dict[str, Any]]:
+    """A season's rows cut to `SEASON_STAT_KEYS`."""
+    return {
+        str(pid): {k: v for k, v in row.items() if k in SEASON_STAT_KEYS}
+        for pid, row in (raw or {}).items()
+        if isinstance(row, dict)
+    }
 
 
 def _full_name(player: dict[str, Any]) -> str:

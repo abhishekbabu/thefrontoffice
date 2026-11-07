@@ -101,7 +101,7 @@ def test_a_player_traded_for_carries_the_designation_the_latest_injury_report_gi
     """Sleeper still lists him healthy; ESPN's report, which every other view reads, has ruled him out."""
     client = _client()
     client.players_catalog = {
-        **client.get_players(),
+        **client.get_nfl_players(),
         "wr7": PlayerMeta(player_id="wr7", name="Trade Target", position="WR", team="KC"),
     }
     proposal = TradeProposal(giving=["Bad RB"], receiving=["Trade Target"])

@@ -11,6 +11,7 @@ from collections.abc import Callable, Mapping, Sequence
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, best_upgrade
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
+    FREE_AGENT,
     Game,
     GameLine,
     NFLSource,
@@ -164,7 +165,7 @@ def is_signing(meta: PlayerInfo) -> bool:
     projection — and sorting by experience put him on the first page.
     A player on no NFL roster cannot score for yours.
     """
-    return str(meta.get("position") or "") in FANTASY_POSITIONS and str(meta.get("team") or "FA") != "FA"
+    return meta.position in FANTASY_POSITIONS and meta.team != FREE_AGENT
 
 
 def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = False) -> list[PlayerCard]:
@@ -180,8 +181,8 @@ def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = F
         if not meta:
             continue
         projection = state.projections.get(player_id)
-        injury = str(meta.get("injury_status") or "")
-        depth = int(meta.get("depth_chart_order") or 0)
+        injury = meta.injury_status
+        depth = meta.depth_chart_order
         fitted = fit(state, projection) if wire and projection else None
         trend = state.evidence.trends.get(player_id) if wire else None
         rows.append(
@@ -194,12 +195,12 @@ def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = F
                     **({"Usage": trend.rise} if trend else {}),
                     "Proj": projection.points if projection else 0.0,
                     "Depth": float(depth) if depth else 0.0,
-                    "Exp": float(meta.get("years_exp") or 0),
+                    "Exp": float(meta.years_exp),
                 },
                 columns={
-                    "Player": str(meta.get("name") or player_id),
-                    "Pos": str(meta.get("position") or ""),
-                    "Team": str(meta.get("team") or "FA"),
+                    "Player": meta.name,
+                    "Pos": meta.position,
+                    "Team": meta.team,
                     **({} if wire else {"Slot": "START" if player_id in starters else "BN"}),
                     "Proj": f"{projection.points:.1f}" if projection else "0.0",
                     **({FIT_COLUMN: fitted[1] if fitted else "—"} if wire else {}),
@@ -210,7 +211,7 @@ def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = F
                     # where Sleeper has published no projection for him.
                     "Opponent": _versus(projection or zero_projection(player_id, meta), state.scheduled, "—"),
                     "Depth": str(depth) if depth else "—",
-                    "Exp": f"{int(meta.get('years_exp') or 0)}y",
+                    "Exp": f"{meta.years_exp}y",
                     "Status": injury,
                 },
             )
@@ -277,7 +278,7 @@ def _team_name(team: str, players: Mapping[str, PlayerInfo]) -> str:
     would have shown anyway.
     """
     meta = players.get(team)
-    return str(meta.get("name") or team) if meta else team
+    return meta.name if meta else team
 
 
 def _versus(projection: Projection | None, scheduled: bool, unscheduled: str, opponent: str = "") -> str:
@@ -308,9 +309,9 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
 
     projection = state.projections.get(player_id)
     scheduled = state.scheduled
-    depth = int(meta.get("depth_chart_order") or 0)
-    injury = str(meta.get("injury_status") or "")
-    body = str(meta.get("injury_body_part") or "")
+    depth = meta.depth_chart_order
+    injury = meta.injury_status
+    body = meta.injury_body_part
 
     groups = [
         StatGroup(
@@ -346,23 +347,23 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
             title="Player",
             stats=[
                 Stat(label="Depth chart", value=f"{depth}" if depth else "unlisted"),
-                Stat(label="Experience", value=f"{int(meta.get('years_exp') or 0)} seasons"),
-                *([Stat(label="Age", value=str(meta["age"]))] if meta.get("age") else []),
-                *([Stat(label="Number", value=f"#{meta['number']}")] if meta.get("number") else []),
-                *([Stat(label="College", value=str(meta["college"]))] if meta.get("college") else []),
+                Stat(label="Experience", value=f"{meta.years_exp} seasons"),
+                *([Stat(label="Age", value=str(meta.age))] if meta.age else []),
+                *([Stat(label="Number", value=f"#{meta.number}")] if meta.number else []),
+                *([Stat(label="College", value=meta.college)] if meta.college else []),
             ],
         )
     )
 
     return PlayerDetail(
         player_id=player_id,
-        name=str(meta.get("name") or player_id),
-        position=str(meta.get("position") or ""),
-        team=(team := str(meta.get("team") or "FA")),
+        name=meta.name,
+        position=meta.position,
+        team=(team := meta.team),
         team_name=_team_name(team, state.players),
         headline=f"{projection.points:.1f}" if projection else "",
         headline_label=_headline_label(projection, scheduled, state.week),
-        note=str(meta.get("injury_notes") or injury),
+        note=meta.injury_notes or injury,
         tables=[
             table
             for table in (
@@ -396,7 +397,11 @@ def _game_log(
         return None
     weeks = list(range(1, state.week + 1))
     try:
-        lines = [line for line in client.get_nfl_game_lines(state.season, weeks) if line.player_id == player_id]
+        lines = [
+            line
+            for line in client.get_nfl_game_lines(state.season, weeks, FANTASY_POSITIONS)
+            if line.player_id == player_id
+        ]
     except PlatformError as e:
         logger.warning(f"Skipping the game log: {e}")
         return None
@@ -405,11 +410,11 @@ def _game_log(
     if not games:
         return None
 
-    position = str(meta.get("position") or "")
+    position = meta.position
     measures = GAME_LOG_COLUMNS.get(position, ())
     snaps = position in evidence.SNAP_POSITIONS
     columns = ["Pts", *(["Snaps"] if snaps else []), *(label for label, _ in measures)]
-    team = str(meta.get("team") or "")
+    team = meta.team
 
     rows: list[StatRow] = []
     for week in weeks:

@@ -6,7 +6,7 @@ plain GET.
 """
 
 from dataclasses import dataclass, field
-from typing import Literal, TypedDict, get_args
+from typing import Literal, get_args
 
 from thefrontoffice.domain.models import record
 
@@ -19,22 +19,27 @@ SCORING_FORMATS: tuple[ScoringFormat, ...] = get_args(ScoringFormat)
 STARTING_SLOTS = ("QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "K", "DEF", "WRRB_FLEX", "REC_FLEX")
 
 
-class PlayerMeta(TypedDict, total=False):
-    """The fields we keep from Sleeper's ~14MB player catalog."""
+FREE_AGENT = "FA"
+"""The club a player on no NFL roster is filed under. Sleeper sends none; the client fills in this."""
+
+
+@dataclass(frozen=True)
+class PlayerMeta:
+    """The fields we keep from Sleeper's ~14MB player catalog, every one present and typed."""
 
     player_id: str
     name: str
-    position: str
-    team: str
-    status: str
-    injury_status: str
-    depth_chart_order: int
-    years_exp: int
-    age: int
-    college: str
-    number: int
-    injury_body_part: str
-    injury_notes: str
+    position: str = ""
+    team: str = FREE_AGENT
+    status: str = ""
+    injury_status: str = ""
+    depth_chart_order: int = 0
+    years_exp: int = 0
+    age: int = 0
+    college: str = ""
+    number: int = 0
+    injury_body_part: str = ""
+    injury_notes: str = ""
 
 
 @dataclass(frozen=True)
@@ -258,10 +263,6 @@ NBA_STAT_KEYS = ("pts", "reb", "ast", "stl", "blk", "to", "tpm", "fgm", "fga", "
 
 # Sleeper files team totals in the same feed as players, under a prefixed id.
 TEAM_ROW_PREFIX = "TEAM_"
-
-# What a fantasy league actually scores. The catalog carries every practice
-# squad body in the league, and none of them are a waiver decision.
-FANTASY_POSITIONS = ("QB", "RB", "WR", "TE", "K", "DEF")
 
 # What a football game line is kept for: the points in each scoring format,
 # and the usage behind them. Snaps against the team's snaps is a share no

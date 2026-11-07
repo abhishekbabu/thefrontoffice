@@ -23,7 +23,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Projection,
     Team,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import SEASON_WEEKS
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Week,
     day,
@@ -236,7 +236,7 @@ def _activity_rows(
 
 def _name_of(player_id: str, state: Week) -> str:
     meta = state.players.get(player_id)
-    return str(meta.get("name") or player_id) if meta else player_id
+    return meta.name if meta else player_id
 
 
 # ── the rest of the season, for the simulation ──────────────────────────
@@ -316,7 +316,9 @@ def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | Non
         for home, away in pairings(entries)
     ]
 
-    projections = {week: client.get_projections(state.season, week, league.scoring_format) for week in remaining}
+    projections = {
+        week: client.get_projections(state.season, week, league.scoring_format, FANTASY_POSITIONS) for week in remaining
+    }
     miss_rate = _miss_rate(client, state)
     projected = {
         (str(roster.roster_id), week): _expected_lineup(state, roster.player_ids, projections[week], miss_rate)
@@ -387,7 +389,7 @@ def _miss_rate(client: NFLSource, state: Week) -> float:
     if not played:
         return DEFAULT_MISS_RATE
     try:
-        missed, chances = misses(client.get_nfl_game_lines(state.season, played))
+        missed, chances = misses(client.get_nfl_game_lines(state.season, played, FANTASY_POSITIONS))
     except PlatformError as e:
         logger.warning(f"Using the default miss rate: {e}")
         return DEFAULT_MISS_RATE

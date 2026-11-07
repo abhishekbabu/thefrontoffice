@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BOX_SCORE, Line, line
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import NBA, SleeperNBASource
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNBASource
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 
@@ -174,7 +174,7 @@ class SleeperNBAForm:
         if self._season is not None:
             return self._season, list(range(1, SEASON_WEEKS + 1))
 
-        state = self.client.get_state(NBA)
+        state = self.client.get_nba_state()
         if state.week >= 1:
             return state.season, list(range(max(1, state.week - FORM_WEEKS + 1), state.week + 1))
         previous = str(int(state.season) - 1)
@@ -184,8 +184,8 @@ class SleeperNBAForm:
         if self._by_name is None:
             index: NameIndex[str] = NameIndex()
             try:
-                for player_id, meta in self.client.get_players(NBA).items():
-                    if name := str(meta.get("name") or ""):
+                for player_id, meta in self.client.get_nba_players().items():
+                    if name := meta.name:
                         index.add(name, player_id)
             except SleeperAPIError as e:
                 logger.warning(f"Continuing without the basketball catalog: {e}")
@@ -208,7 +208,7 @@ class SleeperNBAForm:
     def _schedule_season(self) -> str:
         """The season whose fixtures are still to be played, which is the one
         the game itself is pointing at even while it has not started."""
-        return self._season or self.client.get_state(NBA).season
+        return self._season or self.client.get_nba_state().season
 
     @staticmethod
     def _today(now: datetime | None) -> date:

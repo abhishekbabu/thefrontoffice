@@ -399,7 +399,7 @@ def test_the_next_week_is_tried_when_the_current_one_is_empty() -> None:
     sleeper_state_week = 12
 
     class Straddling(FakeSleeperProjections):
-        def get_state(self, sport: str = "nfl") -> Any:
+        def get_nba_state(self) -> Any:
             from thefrontoffice.adapters.outbound.platforms.sleeper.types import SeasonState
 
             return SeasonState(week=sleeper_state_week, season="2026", season_type="regular")

@@ -5,6 +5,7 @@ it a schedule, both rosters and a matchup. Everything a test does not set is
 the same every time, so a test states only what its rule turns on.
 """
 
+from collections.abc import Collection
 from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
@@ -96,7 +97,7 @@ class FakeSleeper:
     def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[SleeperMatchup]]:
         return {w: self.get_matchups(league_id, w) for w in weeks}
 
-    def get_season_schedule(self, season: str) -> list[ScheduledGame]:
+    def get_nfl_schedule(self, season: str) -> list[ScheduledGame]:
         if self.schedule_error:
             raise self.schedule_error
         return self.season_schedule
@@ -106,10 +107,10 @@ class FakeSleeper:
             raise self.transactions_error
         return self.transactions.get(week, [])
 
-    def get_nfl_game_lines(self, season: str, weeks: list[int]) -> list[NFLGameLine]:
+    def get_nfl_game_lines(self, season: str, weeks: list[int], positions: Collection[str]) -> list[NFLGameLine]:
         if self.game_lines_error:
             raise self.game_lines_error
-        source = self.game_lines if season == self.get_state().season else self.last_season_lines
+        source = self.game_lines if season == self.get_nfl_state().season else self.last_season_lines
         return [line for line in source if line.week in weeks]
 
     def get_season_stats(self, season: str) -> dict[str, SeasonStats]:
@@ -118,9 +119,9 @@ class FakeSleeper:
         return self.season_stats.get(season, {})
 
     week = 3
-    """The NFL week in progress. Set it rather than replacing `get_state`."""
+    """The NFL week in progress. Set it rather than replacing `get_nfl_state`."""
 
-    def get_state(self, sport: str = "nfl") -> SeasonState:
+    def get_nfl_state(self) -> SeasonState:
         return SeasonState(week=self.week, season="2026", season_type="regular")
 
     def get_user(self, username: str) -> SleeperUser:
@@ -141,7 +142,7 @@ class FakeSleeper:
             raise self.matchups_error
         return self.matchups
 
-    def get_players(self, sport: str = "nfl") -> dict[str, PlayerMeta]:
+    def get_nfl_players(self) -> dict[str, PlayerMeta]:
         if self.players_catalog is not None:
             return self.players_catalog
         return {
@@ -158,7 +159,9 @@ class FakeSleeper:
             "NYJ": PlayerMeta(player_id="NYJ", name="New York Jets", position="DEF", team="NYJ"),
         }
 
-    def get_projections(self, season: str, week: int, scoring: str) -> dict[str, WeeklyProjection]:
+    def get_projections(
+        self, season: str, week: int, scoring: str, positions: Collection[str]
+    ) -> dict[str, WeeklyProjection]:
         return self.weekly_projections.get(week, self.projections)
 
     # Signature mirrors the real client exactly, defaults included: a fake that
