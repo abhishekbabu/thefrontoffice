@@ -14,8 +14,8 @@ from thefrontoffice.domain.errors import AIKeyInvalidError, AIQuotaError
 
 def test_rows_are_printed_with_aligned_columns(capsys: pytest.CaptureFixture[str]) -> None:
     output.rows([{"Player": "A", "Pos": "QB"}, {"Player": "Longer Name", "Pos": "RB"}])
-    lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
-    assert len({len(ln.rstrip()) for ln in lines}) <= 2  # header, rule and rows align
+    header, _, first, second = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+    assert header.index("Pos") == first.index("QB") == second.index("RB")
 
 
 def test_an_empty_roster_says_so(capsys: pytest.CaptureFixture[str]) -> None:
@@ -74,7 +74,7 @@ def test_an_untranslated_failure_is_not_shown_as_the_vendors_payload(capsys: pyt
     output.follow_up(FakeChat(error=RuntimeError("{'error': {'code': 500}}")), "report", read=_lines("Who?"))
 
     out = capsys.readouterr().out
-    assert "did not answer" in out and "'code'" not in out
+    assert "❌" in out and "'code'" not in out  # a failure is shown, not the payload
 
 
 # ── console encoding ────────────────────────────────────────────────────

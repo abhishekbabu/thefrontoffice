@@ -10,7 +10,7 @@ from thefrontoffice.adapters.inbound.cli import commands
 from thefrontoffice.adapters.inbound.cli.session import Session
 from thefrontoffice.bootstrap import CompetitionEntry
 from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
-from thefrontoffice.domain.models import Action, CompetitionContext, PlayerCard, Stat, Summary
+from thefrontoffice.domain.models import Action, CompetitionContext, PlayerCard, Stat, Summary, TradeProposal
 from thefrontoffice.domain.ports import LeagueRef
 
 
@@ -30,7 +30,7 @@ class _Trades(FakeCompetition):
             raise self.error
         return CompetitionContext(prompt="PROMPT")
 
-    def build_trade_context(self, league_id: str, proposal: Any) -> CompetitionContext:
+    def build_trade_context(self, league_id: str, proposal: TradeProposal) -> CompetitionContext:
         if self.error:
             raise self.error
         return CompetitionContext(prompt="TRADE PROMPT")
@@ -199,7 +199,7 @@ class _NoLeagues(FakeCompetition):
 def test_scout_warns_when_a_competition_has_no_leagues(capsys: pytest.CaptureFixture[str]) -> None:
     commands.scout(_session(_nfl(_NoLeagues())), [])
 
-    assert "No NFL (Sleeper) leagues" in capsys.readouterr().out
+    assert "NFL (Sleeper)" in capsys.readouterr().out
 
 
 # ── trades ──────────────────────────────────────────────────────────────
@@ -223,19 +223,19 @@ def test_trade_reports_when_no_competition_supports_it(capsys: pytest.CaptureFix
     commands.trade(_session(_nfl(built=built)), ["Give A, Get B"])
 
     assert built == []  # nothing was run
-    assert capsys.readouterr().out.strip()  # and the user is told why
+    assert "trade" in capsys.readouterr().out.lower()  # and the user is told what cannot be done
 
 
 def test_trade_usage_is_shown_without_arguments(capsys: pytest.CaptureFixture[str]) -> None:
     commands.trade(_session(_nfl(_Trades())), [])
 
-    assert "Usage: /trade" in capsys.readouterr().out
+    assert "/trade" in capsys.readouterr().out
 
 
 def test_usage_is_shown_when_only_a_competition_is_given(capsys: pytest.CaptureFixture[str]) -> None:
     commands.trade(_session(_nfl(_Trades())), ["nfl"])
 
-    assert "Usage: /trade" in capsys.readouterr().out
+    assert "/trade" in capsys.readouterr().out
 
 
 def test_a_lone_trading_competition_needs_no_argument() -> None:

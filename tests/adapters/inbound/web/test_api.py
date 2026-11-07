@@ -10,6 +10,7 @@ patched, and nothing leaves the process.
 
 import threading
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 from support.ai import FakeAI, FakeChat
 from support.reports import MOCK_FPL_REPORT
+from support.settings import isolated_settings
 from support.stores import FakeAnswers
 from support.wiring import FakeCompetition, FakeLogin, entry
 from support.wiring import wiring as fake_wiring
@@ -29,7 +31,23 @@ from thefrontoffice.application.scouting import scout_scope
 from thefrontoffice.bootstrap import REGISTRY
 from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import AppSettings, env_var
-from thefrontoffice.domain.models import Action, CompetitionContext, PlayerCall, PlayerCard, Remembered
+from thefrontoffice.domain.models import (
+    Action,
+    CompetitionContext,
+    LeagueSchedule,
+    MatchupInput,
+    PlayedMatchup,
+    PlayerCall,
+    PlayerCard,
+    PlayerPage,
+    PlayerQuery,
+    Remembered,
+    SeasonInput,
+    Summary,
+    TradeMarket,
+    TradeProposal,
+    WeekAhead,
+)
 from thefrontoffice.domain.ports import LeagueRef
 
 ITEM = Action(kind="lineup", urgency="soon", title="Start A over B", reason="+2.5", key="swap:a:b")
@@ -58,7 +76,7 @@ class FakeProvider(FakeCompetition):
     def build_context(self, league_id: str) -> CompetitionContext:
         return CompetitionContext(prompt="prompt", tasks=[ITEM])
 
-    def build_trade_context(self, league_id: str, proposal: Any) -> CompetitionContext:
+    def build_trade_context(self, league_id: str, proposal: TradeProposal) -> CompetitionContext:
         return CompetitionContext(prompt="prompt")
 
 
@@ -471,21 +489,15 @@ def _model_key_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[
     """The app as bootstrap wires it, over a throwaway .env, and a value for every model key.
 
     The loop the Settings page exists for: typed in, written to .env, never read
-    back, and in effect on the next request with no restart. Every field of the
-    process's settings is recorded first, so the reload cannot leak past the test.
+    back, and in effect on the next request with no restart. The settings are
+    the test's own; a save reloads them from the file and the environment, so
+    no model key in this shell may leak in.
     """
-    from dataclasses import replace
-
-    from thefrontoffice.config.settings import settings
-
-    for field in AppSettings.model_fields:
-        monkeypatch.setattr(settings, field, getattr(settings, field))
     for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key"):
-        monkeypatch.setattr(settings, field, None)
         monkeypatch.delenv(env_var(field), raising=False)
     path = tmp_path / ".env"
     path.write_text("SLEEPER_USERNAME=abhibeast\n", encoding="utf-8")
-    wiring = replace(bootstrap.wiring(), env=EnvFile(path, settings=settings))
+    wiring = bootstrap.wiring(isolated_settings(tmp_path, sleeper_username="abhibeast"), env=path)
     keys = {env_var(field): f"{field}-value" for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key")}
     return TestClient(web.create_app(wiring)), path, keys
 
@@ -605,11 +617,11 @@ def test_success_is_only_reported_once_the_grant_is_verified() -> None:
 
 
 class _SummaryProvider(FakeProvider):
-    def __init__(self, summary: Any) -> None:
+    def __init__(self, summary: Summary | None) -> None:
         super().__init__()
-        self._summary = summary
+        self._summary = summary or Summary()
 
-    def summary(self, league_id: str) -> Any:
+    def summary(self, league_id: str) -> Summary:
         return self._summary
 
 
@@ -682,11 +694,11 @@ def test_a_snooze_into_the_past_is_refused_by_name(client: TestClient) -> None:
 class _ForecastProvider(_SummaryProvider):
     """A provider whose matchup can be simulated, or whose forecast fails."""
 
-    def __init__(self, summary: Any, error: Exception | None = None) -> None:
+    def __init__(self, summary: Summary | None, error: Exception | None = None) -> None:
         super().__init__(summary)
         self.error = error
 
-    def matchup_input(self, league_id: str, candidates: Any = ()) -> Any:
+    def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput:
         from thefrontoffice.domain.models import MatchupInput, Outcomes
 
         if self.error:
@@ -696,14 +708,14 @@ class _ForecastProvider(_SummaryProvider):
     def played_weeks(self, league_id: str) -> list[int]:
         return []
 
-    def played_matchups(self, league_id: str, week: int) -> Any:
+    def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
         return []
 
 
 class _WireProvider(_ForecastProvider):
     """A forecastable provider with two free agents, one of whom can start."""
 
-    def free_agents(self, league_id: str, query: Any) -> Any:
+    def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
         from thefrontoffice.domain.models import PlayerPage
 
         self.query = query
@@ -711,7 +723,7 @@ class _WireProvider(_ForecastProvider):
             players=[PlayerCard(player_id=pid, columns={"Player": pid}) for pid in ("bench", "starter")], total=2
         )
 
-    def matchup_input(self, league_id: str, candidates: Any = ()) -> Any:
+    def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput:
         from thefrontoffice.domain.models import LineupMove, MatchupInput, Outcomes
 
         if self.error:
@@ -743,11 +755,11 @@ def test_a_free_agent_page_is_bounded_as_the_query_is() -> None:
 class _SeasonProvider(_SummaryProvider):
     """A provider whose season can be simulated, or whose simulation fails."""
 
-    def __init__(self, summary: Any, error: Exception | None = None) -> None:
+    def __init__(self, summary: Summary | None, error: Exception | None = None) -> None:
         super().__init__(summary)
         self.error = error
 
-    def season_input(self, league_id: str) -> Any:
+    def season_input(self, league_id: str) -> SeasonInput:
         from thefrontoffice.domain.models import SeasonInput, TeamRecord
 
         if self.error:
@@ -755,7 +767,7 @@ class _SeasonProvider(_SummaryProvider):
         teams = (TeamRecord("1", "Me", 6, 0, 0, 900.0), TeamRecord("2", "Them", 0, 6, 0, 500.0))
         return SeasonInput(teams=teams, fixtures=(), scoring=(), spots=1, mine="1", week=7)
 
-    def trade_market(self, league_id: str) -> Any:
+    def trade_market(self, league_id: str) -> TradeMarket:
         from thefrontoffice.domain.models import (
             Fixture,
             SeasonInput,
@@ -773,7 +785,7 @@ class _SeasonProvider(_SummaryProvider):
         option = TradeOption("2", ("A (QB)",), ("B (WR)",), points=20.0, their_points=1.0, scoring=rows)
         return TradeMarket(season=season, options=(option,))
 
-    def schedule(self, league_id: str) -> Any:
+    def schedule(self, league_id: str) -> LeagueSchedule:
         from thefrontoffice.domain.models import LeagueSchedule, StandingRow
 
         return LeagueSchedule(standings=[StandingRow(rank=1, name="Me", team_id="1")])
@@ -791,7 +803,7 @@ def test_trades_are_priced_in_playoff_chance() -> None:
 
 
 class _OutlookProvider(_SummaryProvider):
-    def weeks_ahead(self, league_id: str) -> Any:
+    def weeks_ahead(self, league_id: str) -> list[WeekAhead]:
         from thefrontoffice.domain.models import WeekAhead
 
         return [
