@@ -3,7 +3,7 @@
 from support.reports import MOCK_NBA_REPORT
 
 from thefrontoffice.application import briefing
-from thefrontoffice.domain.models import CompetitionContext
+from thefrontoffice.domain.models import CompetitionContext, TradeProposal
 
 NAMED = MOCK_NBA_REPORT.moves[0]
 
@@ -40,3 +40,26 @@ def test_a_report_briefing_says_the_pool_was_left_out() -> None:
 
 def test_blank_sections_leave_no_gap() -> None:
     assert briefing.sections("a", "", "  ", "b\n") == "a\n\nb"
+
+
+TRADE = TradeProposal(giving=["Given Away"], receiving=["Taken In"])
+
+
+def test_a_trade_briefing_carries_the_situation_roster_and_both_sides_but_not_the_prompt() -> None:
+    text = briefing.of_trade(_context(), TRADE)
+
+    assert all(
+        part in text for part in ("SITUATION: up 5-4", "ADDS: 2 left", "- Mine (C, LAL)", "Given Away", "Taken In")
+    )
+    assert "the whole prompt" not in text
+    assert "Passed Over" not in text
+
+
+def test_a_trade_briefing_says_what_was_left_out() -> None:
+    assert briefing.TRADE_LEFT_OUT in briefing.of_trade(_context(), TRADE)
+
+
+def test_a_trade_briefing_without_roster_lines_heads_no_empty_roster() -> None:
+    text = briefing.of_trade(CompetitionContext(prompt="p", situation="SITUATION"), TRADE)
+
+    assert "ROSTER" not in text

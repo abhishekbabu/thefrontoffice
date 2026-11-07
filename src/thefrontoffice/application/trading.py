@@ -1,12 +1,13 @@
 """The generic trade pipeline.
 
 Identical for every competition: parse the proposal, ask the provider to price both
-sides, and return a validated verdict. Which competitions can do this is declared by
+sides, and return a validated verdict with a conversation about it. Which competitions can do this is declared by
 the registry, not tested here.
 """
 
 import logging
 
+from thefrontoffice.application import briefing
 from thefrontoffice.application.formats import TradeAnswer, TradeSides
 from thefrontoffice.domain.errors import TradeParseError
 from thefrontoffice.domain.models import TradeProposal, TradeVerdict
@@ -51,7 +52,15 @@ class TradeEngine:
         # standings news is most of the value in a trade call. A model may not
         # accept a response schema alongside a tool, so the search-grounded
         # prose is structured in a cheap second pass.
-        chat = self.ai.start_chat(enable_search=True)
-        text = chat.send_message(context.prompt).text
-        answer = self.ai.structure_text(text, TradeAnswer, instruction=EVALUATION_INSTRUCTION)
+        analysis = self.ai.start_chat(enable_search=True).send_message(context.prompt).text
+        answer = self.ai.structure_text(analysis, TradeAnswer, instruction=EVALUATION_INSTRUCTION)
+
+        # The follow-up conversation is resent on every turn, so it opens on a
+        # briefing and the evaluation rather than on the prompt that produced it.
+        brief = briefing.of_trade(context, proposal)
+        logger.debug(f"Trade briefing is {len(brief):,} chars vs {len(context.prompt):,} for the prompt")
+        chat = self.ai.start_chat(
+            initial_history=[{"role": "user", "parts": [brief]}, {"role": "model", "parts": [analysis]}],
+            enable_search=True,
+        )
         return TradeVerdict.model_validate(answer.model_dump()), chat

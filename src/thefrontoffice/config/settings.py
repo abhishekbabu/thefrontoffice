@@ -6,8 +6,9 @@ Values are validated at import time, so a malformed .env fails immediately with
 a readable error instead of raising somewhere deep in a report run.
 
 Everything said about a setting is said on its field: which group it belongs
-to, and whether it is a secret. The Settings page, `just doctor` and the error
-that names a missing key all read it from there, so none keeps its own list.
+to, whether it is a secret, whether it names a path on this machine. The
+Settings page, `just doctor`, the error that names a missing key and the test
+suite's isolation all read it from there, so none keeps its own list.
 """
 
 import types
@@ -36,6 +37,14 @@ class Secret:
 
 
 SECRET = Secret()
+
+
+@dataclass(frozen=True)
+class Local:
+    """Marks a setting naming a path on this machine: a cache, a token, what the app keeps."""
+
+
+LOCAL = Local()
 
 FPL = Group(
     "Fantasy Premier League",
@@ -92,35 +101,35 @@ class AppSettings(BaseSettings):
     openrouter_api_key: Annotated[str | None, AI, SECRET] = None
     openrouter_analysis_model: Annotated[str, AI] = "nvidia/nemotron-3.5-super-vl:free"
     openrouter_parsing_model: Annotated[str, AI] = "nvidia/nemotron-3.5-super-vl:free"
-    answer_cache_dir: Annotated[str, ADVANCED] = ".answer_cache"
+    answer_cache_dir: Annotated[str, ADVANCED, LOCAL] = ".answer_cache"
     """Where every model answer is kept — a week's judgment, each free agent's
     call — so a reload shows it and an unchanged question costs no call."""
-    item_state_dir: Annotated[str, ADVANCED] = ".item_state"
+    item_state_dir: Annotated[str, ADVANCED, LOCAL] = ".item_state"
     """Where the to-do items you dismissed or snoozed are remembered, per league."""
 
     # ── Yahoo ───────────────────────────────────────────────────────────
     yahoo_client_id: Annotated[str | None, YAHOO, SECRET] = None
     yahoo_client_secret: Annotated[str | None, YAHOO, SECRET] = None
     yahoo_redirect_uri: Annotated[str, YAHOO] = "https://localhost:8080"
-    yahoo_token_file: Annotated[str, ADVANCED] = ".yahoofantasy"
-    yahoo_cache_dir: Annotated[str, ADVANCED] = ".yahoo_cache"
+    yahoo_token_file: Annotated[str, ADVANCED, LOCAL] = ".yahoofantasy"
+    yahoo_cache_dir: Annotated[str, ADVANCED, LOCAL] = ".yahoo_cache"
     yahoo_max_weekly_adds: Annotated[int, YAHOO] = Field(default=3, ge=0)
 
     # ── Sleeper (fantasy football) ──────────────────────────────────────
     # Sleeper needs no credentials; the username is only used to find leagues.
     sleeper_username: Annotated[str | None, SLEEPER] = None
-    sleeper_cache_dir: Annotated[str, ADVANCED] = ".sleeper_cache"
+    sleeper_cache_dir: Annotated[str, ADVANCED, LOCAL] = ".sleeper_cache"
 
     # ── Fantasy Premier League ──────────────────────────────────────────
     # FPL needs no credentials, and has no public username lookup — the entry
     # id is the number in the URL of your own points page.
     fpl_entry_id: Annotated[int | None, FPL] = Field(default=None, gt=0)
-    fpl_cache_dir: Annotated[str, ADVANCED] = ".fpl_cache"
+    fpl_cache_dir: Annotated[str, ADVANCED, LOCAL] = ".fpl_cache"
 
     # ── ESPN ────────────────────────────────────────────────────────────
     # Public news feeds, no credentials. Read for the headlines behind a
     # player, which no fantasy platform here publishes.
-    espn_cache_dir: Annotated[str, ADVANCED] = ".espn_cache"
+    espn_cache_dir: Annotated[str, ADVANCED, LOCAL] = ".espn_cache"
 
     # ── Telemetry ───────────────────────────────────────────────────────
     # Optional. Without a token nothing is exported and no network call is
@@ -180,6 +189,11 @@ def env_var(field: str) -> str:
 def is_secret(field: str) -> bool:
     """Whether a setting's value must never be read back out — only its presence."""
     return any(isinstance(mark, Secret) for mark in AppSettings.model_fields[field].metadata)
+
+
+def is_local(field: str) -> bool:
+    """Whether a setting names a path on this machine."""
+    return any(isinstance(mark, Local) for mark in AppSettings.model_fields[field].metadata)
 
 
 def group(field: str) -> Group:

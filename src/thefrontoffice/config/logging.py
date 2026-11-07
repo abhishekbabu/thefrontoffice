@@ -11,14 +11,14 @@ import sys
 from thefrontoffice.config.settings import settings
 
 
-def setup_logging():
-    """Send this app's logs to stdout, and quieten the libraries.
+def setup_logging(level: str | None = None) -> None:
+    """Send this app's logs to stdout at `level` (the configured one where not given), and quieten the libraries.
 
     Handlers are added only when there are none, so a second call from another
     entry point in the same process does not double every line.
     """
     root_logger = logging.getLogger()
-    root_logger.setLevel(settings.log_level)
+    root_logger.setLevel(level or settings.log_level)
 
     if not root_logger.handlers:
         # Bound at call time, after stdout has been reconfigured to UTF-8.

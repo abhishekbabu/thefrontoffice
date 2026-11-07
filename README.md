@@ -412,7 +412,9 @@ planning ahead) is read off which ports its provider's class implements, so
 the two cannot disagree; the API sends both to the picker. The CLI and the API
 take every collaborator — the registry, the engines, the kept state, the Yahoo
 login — from one `Wiring` that `bootstrap.wiring()` builds, which a test builds
-from fakes instead. Adding a competition is a
+from fakes instead. Every builder there takes the settings it reads, so a test
+hands `bootstrap.registry` or `bootstrap.wiring` its own rather than patching the
+process's. Adding a competition is a
 provider, a prompt template and one `CompetitionEntry` — see the
 [`adding-a-competition`](.agents/skills/adding-a-competition/SKILL.md) skill.
 
@@ -533,7 +535,9 @@ request stays a 400 naming what went wrong.
 Tests are hermetic: no network, no credentials, no cache on disk. Engines take
 their collaborators by keyword, so the fakes in `tests/support/` stand in for
 the platforms and the model; fixtures live in `conftest.py` files, the root's
-for every test and a directory's own for its tests alone. Anything hitting a live API is marked
+for every test and a directory's own for its tests alone. The root's resets
+every setting for each test — every local path, marked `LOCAL` on its field,
+under the test's own directory — so a new setting needs no entry there. Anything hitting a live API is marked
 `@pytest.mark.integration` and deselected by default. New code needs tests in
 the same commit; coverage is gated at 95%.
 

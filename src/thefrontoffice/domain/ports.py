@@ -289,6 +289,11 @@ class WireProvider(Protocol):
     def build_wire_context(self, league_id: str, player_ids: list[str]) -> CompetitionContext:
         """Render the prompt asking for one call per listed available player.
 
+        Each player's `targets` line depends on him and the league alone, never
+        on which other players are listed beside him: a call is kept against
+        the line it was asked with, and checked against the line a later
+        request — for a different page of players — renders.
+
         Raises:
             PlayerNotFoundError: an id is not an available player here.
         """
