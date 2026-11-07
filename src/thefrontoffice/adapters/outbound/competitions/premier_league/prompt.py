@@ -5,33 +5,31 @@ here turns state already gathered into prose, and none of it decides anything.
 The provider fetches and the prompt describes.
 """
 
-import logging
-
-from thefrontoffice.adapters.outbound.competitions.premier_league.league import standing
+from thefrontoffice.adapters.outbound.competitions.dates import at_time
+from thefrontoffice.adapters.outbound.competitions.premier_league.league import league_of, standing
 from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
+    TRANSFER_HIT,
     Lineup,
     LineupChange,
+    Roster,
     Transfer,
     affordable_transfers,
     best_lineup,
     effective_points,
     lineup_changes,
+    plays,
     points_with_captain,
 )
-from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource, free_transfers
-from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
-    TRANSFER_HIT,
     Entry,
     Gameweek,
+    Opponent,
     Player,
     Squad,
     as_millions,
 )
 from thefrontoffice.config.constants import FPL_SCOUT_PROMPT
 from thefrontoffice.domain.models import CompetitionContext, Stat
-
-logger = logging.getLogger(__name__)
 
 # The shortlist a prompt carries, which is far shorter than a list somebody
 # scrolls: every line here is resent on every turn of the follow-up chat.
@@ -40,28 +38,23 @@ TRANSFER_LIMIT = 10
 
 
 def build(
-    client: FPLSource,
+    *,
     league_id: str,
-    entry_id: int,
+    entry: Entry,
     upcoming: Gameweek,
-    squad: Squad,
-    players: list[Player],
-    current_starters: list[Player],
-    current_bench: list[Player],
+    roster: Roster,
+    catalog: dict[int, Player],
+    allowance: int,
+    fixtures: dict[str, list[Opponent]],
 ) -> CompetitionContext:
     """The scouting prompt, and the parts it was assembled from."""
-    entry = client.get_entry(entry_id)
-    catalog = client.get_players()
-
-    captain_id = next((pick.element for pick in squad.picks if pick.is_captain), None)
-    captain = next((p for p in current_starters if p.id == captain_id), None)
+    squad, players, current_starters = roster.squad, roster.players, roster.starters
     best = best_lineup(players)
-    current_points = points_with_captain(current_starters, captain)
+    current_points = points_with_captain(current_starters, roster.captain)
     changes = lineup_changes(current_starters, best)
-    allowance = free_transfers(client.get_history(entry_id), upcoming.id)
 
     market = sorted(
-        (p for p in catalog.values() if p.is_available and p.minutes > 0),
+        (p for p in catalog.values() if plays(p) and p.minutes > 0),
         key=effective_points,
         reverse=True,
     )
@@ -79,11 +72,11 @@ def build(
         prompt=FPL_SCOUT_PROMPT.format(
             situation=situation,
             constraints=constraints,
-            lineup_str="".join(_squad_line(p, captain=p.id == captain_id) for p in current_starters)
+            lineup_str="".join(_squad_line(p, captain=p is roster.captain) for p in current_starters)
             or "- (no eleven set)\n",
-            bench_str="".join(_squad_line(p) for p in current_bench) or "- (none)\n",
+            bench_str="".join(_squad_line(p) for p in roster.bench) or "- (none)\n",
             changes_str=_changes_lines(changes),
-            fixtures_str=_fixture_lines(client, players, upcoming.id),
+            fixtures_str=_fixture_lines(fixtures),
             transfers_str=_transfer_lines(transfers),
             market_str="".join(market_lines.values()) or "- (none)\n",
             free_transfers=allowance,
@@ -114,7 +107,7 @@ def headline(squad: Squad, allowance: int, best: Lineup, current_points: float, 
     return [
         # Shown in UTC, which is what the API states. A local rendering would
         # be friendlier and would also be a guess about where this is read.
-        Stat(label="Deadline", value=f"{upcoming.deadline:%a %d %b %H:%M} UTC"),
+        Stat(label="Deadline", value=f"{at_time(upcoming.deadline)} UTC"),
         lineup,
         Stat(label="Bank", value=as_millions(squad.bank)),
         Stat(label="Free transfers", value=str(allowance), tone="good" if allowance else "neutral"),
@@ -123,7 +116,7 @@ def headline(squad: Squad, allowance: int, best: Lineup, current_points: float, 
 
 def season_headline(entry: Entry, league_id: str) -> list[Stat]:
     """How the season is going, in FPL's own currency: points, overall rank, and this mini-league."""
-    league = next((lg for lg in entry.leagues if str(lg.id) == league_id), None)
+    league = league_of(entry, league_id)
     stats = [
         Stat(label="Points", value=f"{entry.overall_points:,}"),
         Stat(label="Overall rank", value=f"{entry.overall_rank:,}"),
@@ -140,7 +133,7 @@ def _situation(entry: Entry, league_id: str, squad: Squad, gameweek_name: str, a
         f"GAMEWEEK: {gameweek_name}" + (f", average score last time {average}" if average else ""),
         f"OVERALL: {entry.overall_points} points, rank {entry.overall_rank:,}",
     ]
-    league = next((lg for lg in entry.leagues if str(lg.id) == league_id), None)
+    league = league_of(entry, league_id)
     if league:
         lines.append(f"MINI-LEAGUE: {league.name} — {standing(league)}")
     lines.append(f"MONEY: {as_millions(squad.bank)} in the bank, squad worth {as_millions(squad.value)}")
@@ -207,31 +200,19 @@ def _transfer_lines(transfers: list[Transfer]) -> str:
     )
 
 
-def _fixture_lines(client: FPLSource, players: list[Player], gameweek: int) -> str:
+def _fixture_lines(fixtures: dict[str, list[Opponent]]) -> str:
     """Each owned club's next match and how hard the game rates it.
 
     A club with no fixture is a blank gameweek — every player of theirs
     scores nothing — which is the single most important thing the report can
     be told, so it is stated rather than omitted.
     """
-    try:
-        fixtures = client.get_fixtures(gameweek)
-    except FPLAPIError as e:
-        # Difficulty is context, not the basis of the report; losing it
-        # should shrink the prompt rather than fail the run.
-        logger.warning(f"Skipping FPL fixtures: {e}")
-        return "- (unavailable)\n"
-
-    clubs = sorted({p.team for p in players})
     lines = []
-    for club in clubs:
-        matches = [m for f in fixtures if (m := f.opponent_of(club))]
+    for club, matches in fixtures.items():
         if not matches:
             lines.append(f"- {club}: no fixture — blank gameweek, every {club} player scores 0.\n")
             continue
-        rendered = ", ".join(
-            f"{'vs' if home else 'at'} {opponent} (difficulty {difficulty})" for opponent, difficulty, home in matches
-        )
+        rendered = ", ".join(f"{'vs' if m.home else 'at'} {m.club} (difficulty {m.difficulty})" for m in matches)
         note = " — double gameweek" if len(matches) > 1 else ""
         lines.append(f"- {club}: {rendered}{note}\n")
     return "".join(lines) or "- (none)\n"

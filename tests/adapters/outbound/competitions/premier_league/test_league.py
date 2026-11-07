@@ -26,3 +26,18 @@ def test_a_missing_field_size_does_not_render_as_zero() -> None:
 
     league = MiniLeague(id=1, name="x", rank=4200, is_private=True, rank_count=None)
     assert standing(league) == "4,200"
+
+
+# ── which league an id names ────────────────────────────────────────────
+
+
+def test_an_id_names_one_of_the_entrys_leagues_or_none() -> None:
+    """The overall-standing fallback's id is the entry's own, which is no league of theirs."""
+    from thefrontoffice.adapters.outbound.competitions.premier_league.league import league_of
+    from thefrontoffice.adapters.outbound.platforms.fpl.types import Entry, MiniLeague
+
+    work = MiniLeague(id=900, name="Work", rank=3, is_private=True)
+    entry = Entry(entry_id=77, name="FC", manager="", overall_points=0, overall_rank=0, current_event=4, leagues=[work])
+
+    assert league_of(entry, "900") is work
+    assert league_of(entry, "77") is None

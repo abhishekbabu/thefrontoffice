@@ -29,7 +29,8 @@ FORMATION_LIMITS: dict[str, tuple[int, int]] = {
 STARTING_SIZE = 11
 SQUAD_SIZE = 15
 
-# `status` on an element. Anything but "a" means the player may not play.
+# `status` on an element, as a manager reads it. Which of these rule a player
+# out is a rule of the game, and lives in `premier_league/squad.py`.
 STATUS_LABELS: dict[str, str] = {
     "a": "",
     "d": "doubtful",
@@ -38,12 +39,6 @@ STATUS_LABELS: dict[str, str] = {
     "u": "unavailable",
     "n": "not in squad",
 }
-
-MAX_FREE_TRANSFERS = 5
-"""Free transfers roll over, capped at five. Not exposed by the public API."""
-
-TRANSFER_HIT = 4
-"""Points deducted per transfer beyond the free allowance."""
 
 
 def as_millions(tenths: int) -> str:
@@ -76,7 +71,6 @@ class Gameweek:
     """Aware UTC. Transfers made after this do not count for the gameweek."""
 
     is_current: bool = False
-    is_next: bool = False
     finished: bool = False
     average_score: int = 0
 
@@ -149,10 +143,6 @@ class Player:
     code: int = 0
     """Opta's own id, which the photo CDN is keyed by. Distinct from `id`, the
     element number, which is reassigned between seasons."""
-
-    @property
-    def is_available(self) -> bool:
-        return self.status == "a"
 
     @property
     def availability(self) -> str:
@@ -283,6 +273,17 @@ class TableRow:
 
 
 @dataclass(frozen=True)
+class Opponent:
+    """Who a club faces in one match, seen from that club's side."""
+
+    club: str
+    difficulty: int
+    """The game's 1-5 rating of the match for the club facing this opponent."""
+
+    home: bool
+
+
+@dataclass(frozen=True)
 class Fixture:
     """One match, with the difficulty rating the game assigns each side."""
 
@@ -295,12 +296,12 @@ class Fixture:
     away_difficulty: int
     kickoff: datetime | None = None
 
-    def opponent_of(self, team: str) -> tuple[str, int, bool] | None:
+    def opponent_of(self, team: str) -> Opponent | None:
         """Who `team` faces, at what difficulty, and whether they are at home."""
         if team == self.home:
-            return self.away, self.home_difficulty, True
+            return Opponent(club=self.away, difficulty=self.home_difficulty, home=True)
         if team == self.away:
-            return self.home, self.away_difficulty, False
+            return Opponent(club=self.home, difficulty=self.away_difficulty, home=False)
         return None
 
 

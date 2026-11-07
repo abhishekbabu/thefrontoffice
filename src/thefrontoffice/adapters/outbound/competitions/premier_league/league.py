@@ -14,7 +14,7 @@ from thefrontoffice.adapters.outbound.competitions.dates import at_time
 from thefrontoffice.adapters.outbound.competitions.places import ordinal
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
-from thefrontoffice.adapters.outbound.platforms.fpl.types import H2HMatch, MiniLeague
+from thefrontoffice.adapters.outbound.platforms.fpl.types import Entry, H2HMatch, MiniLeague
 from thefrontoffice.domain.models import LeagueSchedule, Match, ScheduleRow, StandingRow, Tone
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,16 @@ def build(client: FPLSource, league: MiniLeague | None, entry_id: int, playing: 
         standings=_standings(client, league, entry_id),
         matches=_matches(client, playing),
     )
+
+
+def league_of(entry: Entry, league_id: str) -> MiniLeague | None:
+    """The mini-league behind an id, or None when the id names none of this entry's.
+
+    `list_leagues` falls back to the manager's overall standing when they have
+    joined no private league, and that id is the entry's own — a place in a
+    table of eleven million, not a league with a table or fixtures to read.
+    """
+    return next((lg for lg in entry.leagues if str(lg.id) == league_id), None)
 
 
 def standing(league: MiniLeague) -> str:
@@ -74,7 +84,7 @@ def _season_rows(client: FPLSource, league: MiniLeague, entry_id: int, playing: 
         rows.append(
             ScheduleRow(
                 label=gw.name,
-                date=at_time(gw.deadline) if gw.deadline else "",
+                date=at_time(gw.deadline),
                 opponent=tie.opponent_name if tie else "",
                 detail="" if tie else ("no tie" if league.is_h2h else ""),
                 result=f"{tie.my_points}-{tie.opponent_points}" if tie and played else "",
@@ -94,11 +104,7 @@ def _tie_tone(tie: H2HMatch | None, played: bool) -> Tone:
 
 
 def _standings(client: FPLSource, league: MiniLeague, entry_id: int) -> list[StandingRow]:
-    try:
-        table = client.get_standings(league.id, league.is_h2h)
-    except FPLAPIError as e:
-        logger.warning(f"Continuing without the table: {e}")
-        return []
+    table = client.get_standings(league.id, league.is_h2h)
     return [
         StandingRow(
             rank=row.rank,
@@ -122,11 +128,7 @@ def _matches(client: FPLSource, gameweek: int) -> list[Match]:
     for one of these clubs and hard for the other, and one number for the
     match would be true of neither.
     """
-    try:
-        fixtures = client.get_fixtures(gameweek)
-    except FPLAPIError as e:
-        logger.warning(f"Continuing without fixtures: {e}")
-        return []
+    fixtures = client.get_fixtures(gameweek)
     return [
         Match(
             label=at_time(f.kickoff) if f.kickoff else "TBC",

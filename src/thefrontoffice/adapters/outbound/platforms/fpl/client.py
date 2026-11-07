@@ -11,7 +11,7 @@ holds pending state: the bank before this week's transfers, and the free
 transfers remaining. It is deliberately not used. Reaching it means scraping a
 session cookie out of a browser, which breaks whenever the login flow changes,
 and everything it holds can be derived from the public history instead — see
-`free_transfers`.
+`free_transfers` in `premier_league/squad.py`.
 """
 
 import logging
@@ -24,7 +24,6 @@ from tenacity import Retrying
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
-    MAX_FREE_TRANSFERS,
     POSITIONS,
     Chip,
     ChipPlay,
@@ -103,24 +102,33 @@ def _number(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def free_transfers(history: list[GameweekResult], upcoming: int) -> int:
-    """How many free transfers are available going into gameweek `upcoming`.
+def _club(short_names: dict[int, str], club_id: Any) -> str:
+    """The abbreviation for a club id, refusing one the bootstrap does not list.
 
-    The public API does not expose this — only `my-team`, which needs a login —
-    but it is fully determined by the rules and by transfers already made. One
-    is earned per gameweek, unused ones roll over, and the total is capped.
-
-    Falls back to a single transfer when the history is missing, which is the
-    floor: it is never wrong in the manager's favor.
+    Every player and fixture names a club the same payload lists, so a miss is
+    a payload this client does not understand rather than a club to guess at.
     """
-    played = {row.event: row for row in history}
-    available = 1
-    for event in range(1, upcoming):
-        row = played.get(event)
-        if row is None:
-            continue
-        available = min(MAX_FREE_TRANSFERS, max(1, available - row.transfers_made + 1))
-    return available
+    try:
+        return short_names[int(club_id)]
+    except (KeyError, TypeError, ValueError) as e:
+        logger.error(f"FPL named a club it does not list: {club_id!r}")
+        raise FPLAPIError(f"FPL named a club it does not list: {club_id!r}.") from e
+
+
+def _tie(match: dict[str, Any], entry_id: int) -> H2HMatch | None:
+    """One head-to-head result read from this entry's side, or None when it is not in it.
+
+    FPL puts an entry in slot 1 or slot 2 with no regard for who is asking.
+    """
+    for mine, theirs in (("1", "2"), ("2", "1")):
+        if match.get(f"entry_{mine}_entry") == entry_id and match.get(f"entry_{theirs}_entry"):
+            return H2HMatch(
+                opponent_entry=int(match[f"entry_{theirs}_entry"]),
+                opponent_name=str(match.get(f"entry_{theirs}_name") or "Opponent"),
+                my_points=int(match.get(f"entry_{mine}_points") or 0),
+                opponent_points=int(match.get(f"entry_{theirs}_points") or 0),
+            )
+    return None
 
 
 class FPLSource(Protocol):
@@ -219,8 +227,8 @@ class FPLClient:
             self._bootstrap = data
         return self._bootstrap
 
-    def get_teams(self) -> dict[int, str]:
-        """Club id -> three-letter abbreviation."""
+    def _short_names(self) -> dict[int, str]:
+        """Club id -> the three letters a player and a fixture are named by."""
         return {int(t["id"]): str(t["short_name"]) for t in self._get_bootstrap()["teams"]}
 
     def get_clubs(self) -> dict[str, Club]:
@@ -246,7 +254,6 @@ class FPLClient:
                 name=str(e.get("name") or f"Gameweek {e['id']}"),
                 deadline=parse_utc(str(e["deadline_time"])),
                 is_current=bool(e.get("is_current")),
-                is_next=bool(e.get("is_next")),
                 finished=bool(e.get("finished")),
                 average_score=int(e.get("average_entry_score") or 0),
             )
@@ -302,7 +309,7 @@ class FPLClient:
 
     def get_players(self) -> dict[int, Player]:
         """Every player in the game, keyed by element id."""
-        teams = self.get_teams()
+        short_names = self._short_names()
         players: dict[int, Player] = {}
         for e in self._get_bootstrap()["elements"]:
             element_id = int(e["id"])
@@ -313,7 +320,7 @@ class FPLClient:
                 name=str(e.get("web_name") or full_name or element_id),
                 full_name=full_name or str(e.get("web_name") or ""),
                 position=POSITIONS.get(int(e.get("element_type") or 0), ""),
-                team=teams.get(int(e.get("team") or 0), "???"),
+                team=_club(short_names, e.get("team")),
                 cost=int(e.get("now_cost") or 0),
                 expected_points=_number(e.get("ep_next")),
                 form=_number(e.get("form")),
@@ -455,10 +462,13 @@ class FPLClient:
             for row in data.get("history_past") or []
         ]
 
+    def _history(self, entry_id: int) -> dict[str, Any]:
+        """The one payload behind a manager's gameweeks and the chips they spent."""
+        return self._api.cached(f"history_{entry_id}", f"{BASE_URL}/entry/{entry_id}/history/", HISTORY_TTL) or {}
+
     def get_history(self, entry_id: int) -> list[GameweekResult]:
         """Every gameweek this manager has played, in order."""
-        data = self._api.cached(f"history_{entry_id}", f"{BASE_URL}/entry/{entry_id}/history/", HISTORY_TTL)
-        rows = (data or {}).get("current") or []
+        rows = self._history(entry_id).get("current") or []
         return [
             GameweekResult(
                 event=int(row["event"]),
@@ -488,10 +498,9 @@ class FPLClient:
 
     def get_chips_played(self, entry_id: int) -> list[ChipPlay]:
         """The chips this manager has already spent, and when."""
-        data = self._api.cached(f"history_{entry_id}", f"{BASE_URL}/entry/{entry_id}/history/", HISTORY_TTL)
         return [
             ChipPlay(name=str(c.get("name") or ""), event=int(c.get("event") or 0))
-            for c in (data or {}).get("chips") or []
+            for c in self._history(entry_id).get("chips") or []
             if c.get("name")
         ]
 
@@ -507,16 +516,8 @@ class FPLClient:
             f"{BASE_URL}/leagues-h2h-matches/league/{league_id}/?event={gameweek}",
             ENTRY_TTL,
         )
-        for match in (data or {}).get("results") or []:
-            for mine, theirs in (("1", "2"), ("2", "1")):
-                if match.get(f"entry_{mine}_entry") == entry_id and match.get(f"entry_{theirs}_entry"):
-                    return H2HMatch(
-                        opponent_entry=int(match[f"entry_{theirs}_entry"]),
-                        opponent_name=str(match.get(f"entry_{theirs}_name") or "Opponent"),
-                        my_points=int(match.get(f"entry_{mine}_points") or 0),
-                        opponent_points=int(match.get(f"entry_{theirs}_points") or 0),
-                    )
-        return None
+        ties = (_tie(match, entry_id) for match in (data or {}).get("results") or [])
+        return next((tie for tie in ties if tie), None)
 
     def get_h2h_season(self, league_id: int, entry_id: int) -> dict[int, H2HMatch]:
         """Every tie this entry has in the league, keyed by gameweek.
@@ -532,17 +533,8 @@ class FPLClient:
         )
         season: dict[int, H2HMatch] = {}
         for match in (data or {}).get("results") or []:
-            event = match.get("event")
-            if event is None:
-                continue
-            for mine, theirs in (("1", "2"), ("2", "1")):
-                if match.get(f"entry_{mine}_entry") == entry_id and match.get(f"entry_{theirs}_entry"):
-                    season[int(event)] = H2HMatch(
-                        opponent_entry=int(match[f"entry_{theirs}_entry"]),
-                        opponent_name=str(match.get(f"entry_{theirs}_name") or "Opponent"),
-                        my_points=int(match.get(f"entry_{mine}_points") or 0),
-                        opponent_points=int(match.get(f"entry_{theirs}_points") or 0),
-                    )
+            if match.get("event") is not None and (tie := _tie(match, entry_id)):
+                season[int(match["event"])] = tie
         return season
 
     def get_standings(self, league_id: int, is_h2h: bool) -> list[TableRow]:
@@ -573,13 +565,13 @@ class FPLClient:
 
     def get_fixtures(self, gameweek: int) -> list[Fixture]:
         """Every match in one gameweek, with both difficulty ratings."""
-        teams = self.get_teams()
+        short_names = self._short_names()
         data = self._api.cached(f"fixtures_{gameweek}", f"{BASE_URL}/fixtures/?event={gameweek}", FIXTURES_TTL)
         return [
             Fixture(
                 event=None if f.get("event") is None else int(f["event"]),
-                home=teams.get(int(f.get("team_h") or 0), "???"),
-                away=teams.get(int(f.get("team_a") or 0), "???"),
+                home=_club(short_names, f.get("team_h")),
+                away=_club(short_names, f.get("team_a")),
                 home_difficulty=int(f.get("team_h_difficulty") or 0),
                 away_difficulty=int(f.get("team_a_difficulty") or 0),
                 kickoff=parse_utc(str(f["kickoff_time"])) if f.get("kickoff_time") else None,
