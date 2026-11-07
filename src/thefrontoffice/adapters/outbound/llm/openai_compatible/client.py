@@ -13,7 +13,6 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass
 from typing import Any
 
 import openai
@@ -27,7 +26,7 @@ from thefrontoffice.domain.errors import (
     AIUnavailableError,
     FrontOfficeError,
 )
-from thefrontoffice.domain.ports import AnalysisModel, ChatSession, HistoryTurn, TModel
+from thefrontoffice.domain.ports import AnalysisModel, ChatReply, ChatSession, HistoryTurn, TModel
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +79,6 @@ def _rejects_format(error: Exception) -> bool:
     )
 
 
-@dataclass(frozen=True)
-class Reply:
-    """What a chat turn returns: the text, as Gemini's response carries it."""
-
-    text: str
-
-
 class OpenAICompatibleChat:
     """A follow-up conversation, holding its own history.
 
@@ -99,11 +91,11 @@ class OpenAICompatibleChat:
         self._model = model
         self.messages = messages
 
-    def send_message(self, message: str) -> Reply:
+    def send_message(self, message: str) -> ChatReply:
         self.messages.append({"role": "user", "content": message})
         text = self._model.complete(self._model.provider.analysis_model, self.messages)
         self.messages.append({"role": "assistant", "content": text})
-        return Reply(text=text)
+        return ChatReply(text=text)
 
 
 class OpenAICompatibleClient(AnalysisModel):

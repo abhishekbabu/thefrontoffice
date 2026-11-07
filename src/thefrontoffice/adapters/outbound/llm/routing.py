@@ -161,17 +161,13 @@ class RoutedChat:
 
     def send_message(self, message: str) -> ChatReply:
         def turn(model: AnalysisModel) -> ChatReply:
-            reply = model.start_chat(initial_history=list(self.transcript), enable_search=self._search).send_message(
-                message
-            )
-            if not reply.text:
-                raise AIResponseError("The model returned an empty answer.")
-            return reply
+            chat = model.start_chat(initial_history=list(self.transcript), enable_search=self._search)
+            return chat.send_message(message)
 
         reply = self._router.attempt(turn)
         self.transcript += [
             HistoryTurn(role="user", parts=[message]),
-            HistoryTurn(role="model", parts=[str(reply.text)]),
+            HistoryTurn(role="model", parts=[reply.text]),
         ]
         return reply
 
