@@ -14,7 +14,8 @@ Run with `just doctor`.
 """
 
 from thefrontoffice import bootstrap
-from thefrontoffice.bootstrap import Registry
+from thefrontoffice.adapters.inbound.remedies import remedy
+from thefrontoffice.bootstrap import CompetitionEntry, Registry
 from thefrontoffice.config.env_file import EnvFile, Setting
 
 TRACING = "Tracing (Logfire)"
@@ -25,6 +26,15 @@ def shown(setting: Setting) -> str:
     if not setting.present:
         return "not set"
     return "set" if setting.secret else setting.effective
+
+
+def readiness(entry: CompetitionEntry) -> str:
+    """'ready', or what stands in the way and how a terminal fixes it — as the web picker judges it."""
+    blocker = entry.blocker()
+    if blocker is None:
+        return "ready"
+    fix = remedy(blocker)
+    return f"{blocker} {fix.command}" if fix and fix.command else str(blocker)
 
 
 def main(*, env: EnvFile, registry: Registry, providers: list[str]) -> int:
@@ -51,8 +61,7 @@ def main(*, env: EnvFile, registry: Registry, providers: list[str]) -> int:
     print("  Competitions")
     print("  " + "─" * (width + 22))
     for entry in registry.entries:
-        state = "ready" if entry.is_configured() else f"needs {entry.requires}"
-        print(f"  {entry.label.ljust(width)}   {state}")
+        print(f"  {entry.label.ljust(width)}   {readiness(entry)}")
 
     print()
     print("  Features")

@@ -113,11 +113,21 @@ class FakeLogin:
     waiting on its browser tab.
     """
 
-    def __init__(self, error: Exception | None = None, hold: threading.Event | None = None) -> None:
+    def __init__(
+        self, error: Exception | None = None, hold: threading.Event | None = None, *, token: bool = False
+    ) -> None:
+        """
+        Args:
+            token: whether a token is kept from an earlier login.
+        """
         self.error = error
         self.hold = hold
+        self.token = token
         self.logins: list[bool] = []
         self.verified = threading.Event()
+
+    def has_token(self) -> bool:
+        return self.token
 
     def login(self, force: bool = False) -> None:
         self.logins.append(force)

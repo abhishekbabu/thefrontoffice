@@ -49,7 +49,7 @@ class YahooLoginRequiredError(LoginRequiredError):
     cannot see.
     """
 
-    platform = "yahoo"
+    login = "yahoo"
 
     def __init__(self, detail: str = "") -> None:
         super().__init__(

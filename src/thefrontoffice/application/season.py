@@ -23,6 +23,7 @@ from thefrontoffice.domain.models import (
     TeamWeek,
     TradeIdea,
     TradeOption,
+    outcome,
 )
 from thefrontoffice.domain.ports import SeasonProvider, TradeMarketProvider
 
@@ -64,7 +65,7 @@ def simulate_season(season: SeasonInput, simulations: int = SEASONS) -> PlayoffO
                 mine = home if fixture.home == season.mine else away
                 theirs = away if fixture.home == season.mine else home
                 # A tie is not the win the split is asking about.
-                this_week = "win" if mine > theirs else "loss"
+                this_week = "win" if outcome(mine, theirs) == "won" else "loss"
         seeded = sorted(ids, key=lambda team: (-wins[team], -points[team]))[: season.spots]
         for team in seeded:
             made[team] += 1
@@ -72,8 +73,8 @@ def simulate_season(season: SeasonInput, simulations: int = SEASONS) -> PlayoffO
             split[this_week][0] += season.mine in seeded
             split[this_week][1] += 1
 
-    def chance(outcome: str) -> float | None:
-        reached, played = split[outcome]
+    def chance(week_was: str) -> float | None:
+        reached, played = split[week_was]
         return reached / played if played else None
 
     return PlayoffOdds(

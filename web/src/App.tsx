@@ -160,7 +160,7 @@ export default function App() {
                 {label}
               </RailLink>
             ) : (
-              <RailBlocked key={s.key} reason={s.blocked_reason}>
+              <RailBlocked key={s.key} reason={s.blocked?.detail ?? ""}>
                 {label}
                 <span className="font-mono text-[10px] opacity-60">{s.configured ? "blocked" : "off"}</span>
               </RailBlocked>

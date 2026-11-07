@@ -11,9 +11,11 @@ needs that competition configured.
 
 import sys
 
+from leagues import first_league
+
 from thefrontoffice.adapters.inbound.cli.output import print_error
 from thefrontoffice.application.forecasting import ForecastEngine
-from thefrontoffice.bootstrap import REGISTRY
+from thefrontoffice.bootstrap import REGISTRY, Registry
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.ports import ForecastProvider
@@ -21,12 +23,16 @@ from thefrontoffice.domain.ports import ForecastProvider
 
 def main() -> int:
     setup_logging()
-    key = sys.argv[1] if len(sys.argv) > 1 else "nfl-sleeper"
+    return run(REGISTRY, sys.argv[1] if len(sys.argv) > 1 else "nfl-sleeper")
+
+
+def run(registry: Registry, key: str) -> int:
+    """Backtest the competition `key` names; 1 where there is nothing to score."""
     try:
-        entry = REGISTRY.find(key)
+        entry = registry.find(key)
         competition = entry.open()
         provider = entry.as_port(competition, ForecastProvider, "simulating a matchup")
-        league = competition.list_leagues()[0]
+        league = first_league(competition, entry.label)
         weeks = provider.played_weeks(league.league_id)
         if not weeks:
             print("  No finished week to backtest yet.")

@@ -77,6 +77,20 @@ def test_an_untranslated_failure_is_not_shown_as_the_vendors_payload(capsys: pyt
     assert "❌" in out and "'code'" not in out  # a failure is shown, not the payload
 
 
+def _closed(_prompt: str) -> str:
+    raise EOFError
+
+
+def test_end_of_input_ends_the_follow_ups_without_blaming_the_model(capsys: pytest.CaptureFixture[str]) -> None:
+    """Ctrl-D once read as "the model did not answer": nothing was asked."""
+    chat = FakeChat()
+
+    output.follow_up(chat, "report", read=_closed)
+
+    assert chat.sent == []
+    assert "did not answer" not in capsys.readouterr().out
+
+
 # ── console encoding ────────────────────────────────────────────────────
 # The CLI prints emoji and box-drawing characters. On Windows those go out as
 # UTF-16 to a real console, but fall back to the locale encoding (cp1252) the

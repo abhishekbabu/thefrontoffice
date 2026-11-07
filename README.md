@@ -61,7 +61,9 @@ just run    # interactive CLI instead
 ```
 
 `just doctor` reports what this machine is configured for, without echoing a
-secret, and flags `.env` keys nothing will read. It describes each setting as the
+secret, and flags `.env` keys nothing will read. A competition is "ready" by the
+same test the web picker greys one out with (`CompetitionEntry.blocker`), so
+Yahoo with credentials and no login says so, with the command that fixes it. It describes each setting as the
 Settings page does: what a setting unlocks and whether it is a secret are marked
 on its field in `config/settings.py`, and both read them from there.
 
@@ -178,7 +180,8 @@ engine (`application/forecasting.py`) is generic: a competition supplies its
 players' ranges through the `ForecastProvider` port. `just backtest` rebuilds
 every finished week's matchups as they stood before kickoff and scores the
 chances against who won. `just tune` searches the few settings that shape a
-range (`RangeSettings` in `nfl/outcomes.py`) on individual player-games — a
+range (`RangeSettings` in `nfl/outcomes.py`, offered for searching by `nfl/tuning.py`
+through the `RangeTuningProvider` port) on individual player-games — a
 season holds thousands, where matchups are too few to tune on — holding the
 last week out, and recommends a change only if it is meaningfully better on
 that week too.
@@ -242,7 +245,10 @@ asks why, and what would change the call. The player drawer ends with **Ask
 about** that player, seeded with everything the drawer shows. Both are smaller
 than the report's whole-week context, so cheaper on every resent turn, and both
 go through the same failover as everything else. An item settled since the
-page loaded is said to be gone rather than answered about.
+page loaded is said to be gone rather than answered about. The server keeps each
+conversation's turns (`GET /api/chat/{id}`), so one closed and reopened shows
+what was said; after a server restart the id is `chat_expired`, and the page
+opens a fresh conversation and asks the question again.
 
 ![Free agents](docs/screenshots/free-agents.png)
 
@@ -431,7 +437,10 @@ leaving the UI to decode it: which columns are figures (the numbers a card
 sends in `values`), whether a status rules a player out, how a week ended, whose
 move an activity row was, the engines' limits, and what to do about a failure —
 each error code's remedy lives in one table, `adapters/inbound/remedies.py`,
-which the page renders as a button and the terminal prints as a command. It
+which the page renders as a button and the terminal prints as a command. Every
+failure — a domain error, a refused request, an unknown route — arrives as one
+`ErrorBody` (`detail`, `code`, `remedy`), and so does what blocks a competition
+in the picker (`Competition.blocked`). It
 also serves the built UI from `web/dist`, so one process on one port covers
 both.
 

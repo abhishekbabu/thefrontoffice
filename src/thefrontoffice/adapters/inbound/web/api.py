@@ -20,23 +20,32 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException
 
 from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound import presenting
-from thefrontoffice.adapters.inbound.remedies import Remedy, remedy
+from thefrontoffice.adapters.inbound.conversation import Conversation, Turn
+from thefrontoffice.adapters.inbound.remedies import ErrorBody
 from thefrontoffice.adapters.inbound.web import data
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import CompetitionEntry, Wiring
-from thefrontoffice.config.env_file import SettingsGroup, UnknownSettingError
+from thefrontoffice.config.env_file import SettingsGroup
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.config.settings import PROJECT_ROOT
 from thefrontoffice.config.telemetry import setup_telemetry
-from thefrontoffice.domain.errors import ErrorCode, FrontOfficeError, PlatformUnavailableError, UnknownCompetitionError
+from thefrontoffice.domain.errors import (
+    ChatExpiredError,
+    ErrorCode,
+    FrontOfficeError,
+    InvalidRequestError,
+    NotFoundError,
+)
 from thefrontoffice.domain.models import (
     ItemDecision,
     ItemState,
@@ -56,7 +65,6 @@ from thefrontoffice.domain.models import (
 )
 from thefrontoffice.domain.ports import (
     AccountLogin,
-    ChatSession,
     CompetitionProvider,
     LeagueRef,
     OutlookProvider,
@@ -108,14 +116,6 @@ class LoginState(BaseModel):
     detail: str = ""
 
 
-class ErrorBody(BaseModel):
-    """A failure the user can read, and what can be done about it."""
-
-    detail: str
-    code: ErrorCode
-    remedy: Remedy | None = None
-
-
 class JudgeRequest(BaseModel):
     """The free agents on screen to judge, best first."""
 
@@ -138,21 +138,28 @@ class _Chats:
     """Open conversations, by id.
 
     A chat is a live object holding conversation state, so it cannot cross the
-    wire. It stays here and the client refers to it by id. In-process because
-    this serves exactly one person on one machine; a second worker would need
+    wire. It stays here, with what has been said in it, and the client refers
+    to it by id — and reads its turns back from here, so a page reopened shows
+    the conversation the server is still carrying on. In-process because this
+    serves exactly one person on one machine; a second worker would need
     somewhere shared to put these.
     """
 
     def __init__(self) -> None:
-        self._open: dict[str, ChatSession] = {}
+        self._open: dict[str, Conversation] = {}
 
-    def remember(self, chat: ChatSession) -> str:
+    def remember(self, conversation: Conversation) -> str:
         chat_id = uuid.uuid4().hex
-        self._open[chat_id] = chat
+        self._open[chat_id] = conversation
         return chat_id
 
-    def get(self, chat_id: str) -> ChatSession | None:
-        return self._open.get(chat_id)
+    def get(self, chat_id: str) -> Conversation:
+        """Raises:
+        ChatExpiredError: this process never opened it — it restarted since.
+        """
+        if chat_id not in self._open:
+            raise ChatExpiredError()
+        return self._open[chat_id]
 
 
 class _Login:
@@ -192,13 +199,21 @@ class _Login:
             self.state = LoginState(status="ok", detail="The platform accepted a read with the new grant.")
 
 
-def _status(error: FrontOfficeError) -> int:
-    """400 for a condition the user can act on, 503 for a platform that is down, 404 for a name nothing answers to."""
-    if isinstance(error, PlatformUnavailableError):
-        return 503
-    if isinstance(error, UnknownCompetitionError):
-        return 404
-    return 400
+STATUS: dict[ErrorCode, int] = {
+    "unknown_competition": 404,
+    "not_found": 404,
+    "chat_expired": 404,
+    "invalid_request": 422,
+    "settings_unwritable": 500,
+    "ai_failed": 502,
+    "platform_unavailable": 503,
+}
+"""Each condition's status where it is not 400: a name nothing answers to, a request
+refused unread, a fault of this server's, the model's, or a platform that is down."""
+
+
+def _error_response(error: FrontOfficeError) -> JSONResponse:
+    return JSONResponse(status_code=STATUS.get(error.code, 400), content=ErrorBody.of(error).model_dump())
 
 
 def create_app(wiring: Wiring, *, dist: Path = DIST) -> FastAPI:
@@ -207,7 +222,7 @@ def create_app(wiring: Wiring, *, dist: Path = DIST) -> FastAPI:
         title="The Front Office",
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
-        responses={status: {"model": ErrorBody} for status in (400, 404, 503)},
+        responses={status: {"model": ErrorBody} for status in sorted({400, *STATUS.values()})},
         # Named for the route's function, so the client names a response type
         # `operations["roster"]` rather than restating its path.
         generate_unique_id_function=_operation_id,
@@ -215,16 +230,26 @@ def create_app(wiring: Wiring, *, dist: Path = DIST) -> FastAPI:
 
     @app.exception_handler(FrontOfficeError)
     async def _domain_error(_: Request, exc: FrontOfficeError) -> JSONResponse:
-        """Every expected failure reaches the client as a readable message.
+        """Every expected failure reaches the client as a readable message, with its code and remedy.
 
-        400 rather than 500: these are all conditions the user can act on — a
-        credential that is not set, a league they do not own, a misspelled
-        player — not faults in the server. A platform that is down is the
-        exception, and says so with 503: nothing in the request was wrong.
+        400 rather than 500 for most: a credential that is not set, a league
+        they do not own, a misspelled player — conditions the user can act
+        on, not faults in the server. `STATUS` names the exceptions.
         """
         logger.info(f"Domain error: {exc}")
-        body = ErrorBody(detail=str(exc), code=exc.code, remedy=remedy(exc))
-        return JSONResponse(status_code=_status(exc), content=body.model_dump())
+        return _error_response(exc)
+
+    # FastAPI's own failures are rendered the same way, so the client reads
+    # one shape for every failure and never guesses a code it was not sent.
+    @app.exception_handler(RequestValidationError)
+    async def _refused(_: Request, exc: RequestValidationError) -> JSONResponse:
+        return _error_response(InvalidRequestError([str(error["msg"]) for error in exc.errors()]))
+
+    @app.exception_handler(HTTPException)
+    async def _unrouted(request: Request, exc: HTTPException) -> JSONResponse:
+        """A path or method no route answers: the router's own 404 and 405, whose status it keeps."""
+        body = ErrorBody.of(NotFoundError(f"{request.method} {request.url.path}"))
+        return JSONResponse(status_code=exc.status_code, content=body.model_dump())
 
     _register_routes(app, wiring)
     _serve_frontend(app, dist)
@@ -248,7 +273,7 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
 
     def _login(platform: str) -> _Login:
         if platform not in logins:
-            raise HTTPException(status_code=404, detail=f"Nothing logs in to {platform!r}.")
+            raise NotFoundError(f"a login to {platform!r}")
         return logins[platform]
 
     def _open(key: str) -> tuple[CompetitionEntry, CompetitionProvider]:
@@ -296,13 +321,7 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         picks up looks saved and changes nothing, which is the exact failure
         this endpoint exists to prevent.
         """
-        try:
-            wiring.env.write_values(update.values)
-        except UnknownSettingError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        except OSError as e:
-            logger.error(f"Could not write .env: {e}")
-            raise HTTPException(status_code=500, detail=f"Could not write .env: {e}") from e
+        wiring.env.write_values(update.values)
         return read_settings()
 
     @app.get("/api/{platform}/login", response_model=LoginState)
@@ -426,7 +445,8 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         answered about Hall's row; the turns then go through the chat endpoint
         like any other conversation.
         """
-        return Thread(chat_id=chats.remember(wiring.ask(*_open(competition)).open(league_id, subject)))
+        chat = wiring.ask(*_open(competition)).open(league_id, subject)
+        return Thread(chat_id=chats.remember(Conversation(chat)))
 
     @app.post("/api/{competition}/leagues/{league_id}/free-agents/judge", response_model=list[PlayerCall])
     def judge_free_agents(competition: str, league_id: str, request: JudgeRequest) -> list[PlayerCall]:
@@ -446,26 +466,18 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         provider = entry.open_as(WireProvider, "judging free agents")
         return wiring.wire(entry, provider).kept(league_id, request.player_ids)
 
+    @app.get("/api/chat/{chat_id}", response_model=list[Turn])
+    def turns(chat_id: str) -> list[Turn]:
+        """What has been said in a conversation so far — what a page reopened on it shows.
+
+        An id this process never opened is `chat_expired`, the client's cue to open another.
+        """
+        return chats.get(chat_id).turns
+
     @app.post("/api/chat/{chat_id}", response_model=Reply)
     def ask(chat_id: str, request: ChatRequest) -> Reply:
         """Ask the next question in a conversation a thread opened."""
-        chat = chats.get(chat_id)
-        if chat is None:
-            # The server restarted, or the report predates it. Saying so is
-            # better than an empty answer the user cannot explain.
-            raise HTTPException(status_code=404, detail="That conversation has expired. Close it and ask again.")
-        try:
-            answer = chat.send_message(request.message).text
-        except FrontOfficeError:
-            # Already a sentence — "every model is out of quota" says more
-            # than "did not answer", and the handler renders it with its code.
-            raise
-        except Exception as e:  # anything the adapters did not translate
-            # Its message is a repr of a vendor's RPC payload; the log is where
-            # that belongs, not a panel someone is reading.
-            logger.error(f"Follow-up failed: {e}")
-            raise HTTPException(status_code=502, detail="The model did not answer. Try asking again.") from e
-        return Reply(answer=answer)
+        return Reply(answer=chats.get(chat_id).ask(request.message))
 
 
 def _serve_frontend(app: FastAPI, dist: Path) -> None:
@@ -492,7 +504,7 @@ def _serve_frontend(app: FastAPI, dist: Path) -> None:
         missing route it is.
         """
         if path.startswith("api/"):
-            raise HTTPException(status_code=404, detail=f"Unknown endpoint {'/' + path!r}.")
+            raise NotFoundError(f"/{path}")
         root = dist.resolve()
         candidate = (root / path).resolve()
         # `path` arrives URL-decoded, so `..%2F` climbs out of dist/ — as far as

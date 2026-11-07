@@ -74,12 +74,12 @@ export function Landing({
 
               {/* Stated once, with the action, rather than left to fail on the
                   first click into the competition. */}
-              {!competition.ready && (
+              {competition.blocked && (
                 <div className="flex flex-col items-start gap-3 px-4 py-3">
                   <p className="max-w-[70ch] text-[13px] leading-relaxed text-muted-foreground">
-                    {competition.blocked_reason}
+                    {competition.blocked.detail}
                   </p>
-                  {competition.blocked_remedy && <RemedyAction remedy={competition.blocked_remedy} />}
+                  {competition.blocked.remedy && <RemedyAction remedy={competition.blocked.remedy} />}
                 </div>
               )}
 

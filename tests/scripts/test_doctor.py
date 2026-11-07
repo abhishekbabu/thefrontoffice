@@ -10,7 +10,9 @@ from typing import Any
 
 import doctor
 import pytest
+from support.wiring import FakeCompetition, entry
 
+from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
 from thefrontoffice.bootstrap import REGISTRY
 from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import AppSettings
@@ -98,3 +100,22 @@ def test_prompt_capture_being_on_is_called_out(path: Path, capsys: pytest.Captur
     loud = capsys.readouterr().out.splitlines()
 
     assert len(loud) == len(quiet) + 1  # a line of its own, beyond what is shown when it is off
+
+
+# ── readiness ───────────────────────────────────────────────────────────
+
+
+def _no_token() -> None:
+    raise YahooLoginRequiredError()
+
+
+def test_a_configured_competition_without_its_login_is_not_called_ready() -> None:
+    """Credentials set and no token is what the web picker greys out; the doctor once said "ready"."""
+    blocked = entry(FakeCompetition(), competition="nba", platform="yahoo", check_ready=_no_token)
+
+    assert doctor.readiness(blocked).startswith(str(YahooLoginRequiredError()))
+    assert "just yahoo-login" in doctor.readiness(blocked)
+
+
+def test_a_competition_with_nothing_in_the_way_is_ready() -> None:
+    assert doctor.readiness(entry(FakeCompetition())) == "ready"

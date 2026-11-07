@@ -30,7 +30,7 @@ from thefrontoffice.application.wire import WireEngine
 from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import PROJECT_ROOT, AppSettings
 from thefrontoffice.config.settings import settings as process_settings
-from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionError, UnsupportedError
+from thefrontoffice.domain.errors import FrontOfficeError, NotConfiguredError, UnknownCompetitionError, UnsupportedError
 from thefrontoffice.domain.ports import (
     AccountLogin,
     AnalysisModel,
@@ -122,6 +122,21 @@ class CompetitionEntry:
     def can(self, port: type[object]) -> bool:
         """Whether its provider implements `port`: read off the class, so nothing is built to ask."""
         return issubclass(self.provider(), port)
+
+    def blocker(self) -> FrontOfficeError | None:
+        """What stands between this machine and using it, or None where it is ready.
+
+        Configured is necessary, not sufficient: Yahoo also needs a login. An
+        unconfigured entry is never probed, because its readiness check may look
+        for a token it has no reason to have yet.
+        """
+        if not self.is_configured():
+            return NotConfiguredError(self.label, self.requires)
+        try:
+            self.check_ready()
+        except FrontOfficeError as e:
+            return e
+        return None
 
     def open(self) -> CompetitionProvider:
         """Its provider, built — or why it cannot be, before anything is contacted.

@@ -69,6 +69,10 @@ class YahooAuth:
         self._cache = cache
         self._retry = retry
 
+    def has_token(self) -> bool:
+        """Whether a token is cached from an earlier login."""
+        return self._token_file.exists()
+
     def ensure_authorized(self) -> None:
         """Require a cached token without trying to obtain one.
 
@@ -79,7 +83,7 @@ class YahooAuth:
         Raises:
             YahooLoginRequiredError: no token has been cached yet.
         """
-        if not self._token_file.exists():
+        if not self.has_token():
             raise YahooLoginRequiredError()
 
     def login(self, force: bool = False) -> None:

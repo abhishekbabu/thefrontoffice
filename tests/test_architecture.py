@@ -20,8 +20,11 @@ CLIENTS = {"SleeperClient", "ESPNClient", "FPLClient", "YahooClient", "YahooAuth
 """Concrete platform clients, which only the composition root builds."""
 
 
-def _modules(under: str) -> list[Path]:
-    return sorted(p for p in (PACKAGE / under).rglob("*.py") if "__pycache__" not in p.parts)
+SCRIPTS = PACKAGE.parent.parent / "scripts"
+
+
+def _modules(under: str, root: Path = PACKAGE) -> list[Path]:
+    return sorted(p for p in (root / under).rglob("*.py") if "__pycache__" not in p.parts)
 
 
 def _imports(path: Path) -> list[tuple[int, str]]:
@@ -41,11 +44,11 @@ def _imports(path: Path) -> list[tuple[int, str]]:
     return found
 
 
-def _violations(under: str, allowed: tuple[str, ...]) -> list[str]:
+def _violations(under: str, allowed: tuple[str, ...], root: Path = PACKAGE) -> list[str]:
     """Every import under `under` of a module outside `allowed`, as `path:line imports module`."""
     return [
-        f"{path.relative_to(PACKAGE)}:{line} imports {module}"
-        for path in _modules(under)
+        f"{path.relative_to(root)}:{line} imports {module}"
+        for path in _modules(under, root)
         for line, module in _imports(path)
         if not module.startswith(allowed)
     ]
@@ -71,6 +74,16 @@ def test_the_core_names_no_vendor(layer: str) -> None:
     assert named == []
 
 
+INBOUND = (
+    "thefrontoffice.bootstrap",
+    "thefrontoffice.domain",
+    "thefrontoffice.application",
+    "thefrontoffice.config",
+    "thefrontoffice.adapters.inbound",
+)
+"""What an entry point may read: the wiring, the core, configuration, and the inbound adapters."""
+
+
 def test_inbound_adapters_reach_outbound_ones_only_through_bootstrap() -> None:
     """A route that imports a client is a route that only works with that client.
 
@@ -78,14 +91,12 @@ def test_inbound_adapters_reach_outbound_ones_only_through_bootstrap() -> None:
     besides it, an inbound adapter reads only the core, its own package, and
     configuration.
     """
-    allowed = (
-        "thefrontoffice.bootstrap",
-        "thefrontoffice.domain",
-        "thefrontoffice.application",
-        "thefrontoffice.config",
-        "thefrontoffice.adapters.inbound",
-    )
-    assert _violations("adapters/inbound", allowed) == []
+    assert _violations("adapters/inbound", INBOUND) == []
+
+
+def test_scripts_are_entry_points_like_any_other() -> None:
+    """A script reaching into a competition's internals is a script that only works with that competition."""
+    assert _violations(".", INBOUND, root=SCRIPTS) == []
 
 
 def test_only_the_composition_root_builds_a_platform_client() -> None:

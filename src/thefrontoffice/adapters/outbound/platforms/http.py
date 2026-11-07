@@ -130,7 +130,7 @@ class JsonApiClient:
             logger.error(f"{self._name} request failed ({url}): {e}")
             down = outage(e)
             if down:
-                raise self._unavailable(self._name, down) from e
+                raise self._unavailable(down) from e
             raise self._error(f"{self._name} request failed: {e}") from e
 
     def cached(

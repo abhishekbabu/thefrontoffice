@@ -15,13 +15,13 @@ import logging
 import os
 import re
 import stat
-import types
 from pathlib import Path
-from typing import Literal, Union, get_args, get_origin
+from typing import Literal, get_args, get_origin
 
 from pydantic import BaseModel
 
-from thefrontoffice.config.settings import GROUPS, AppSettings, env_var, group, is_secret
+from thefrontoffice.config.settings import GROUPS, AppSettings, env_var, group, is_secret, value_type
+from thefrontoffice.domain.errors import SettingsUnwritableError, UnknownSettingError
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +49,7 @@ def field_kind(field: str) -> tuple[SettingKind, list[str]]:
     Returns:
         The control to use, and the allowed values when there are a fixed few.
     """
-    annotation = AppSettings.model_fields[field].annotation
-    # Unwrap `X | None`: optionality is about whether a value is required, not
-    # about what kind of value it is.
-    if get_origin(annotation) in (Union, types.UnionType):
-        real = [arg for arg in get_args(annotation) if arg is not type(None)]
-        if len(real) == 1:
-            annotation = real[0]
-
+    annotation = value_type(field)
     if get_origin(annotation) is Literal:
         return "choice", [str(value) for value in get_args(annotation)]
     if annotation is bool:
@@ -136,12 +129,13 @@ def _format(value: str) -> str:
     return value
 
 
-class UnknownSettingError(ValueError):
-    """A key no `AppSettings` field reads. Writing it would be a silent no-op."""
-
-    def __init__(self, keys: list[str]) -> None:
-        super().__init__(f"No setting reads {', '.join(sorted(keys))}.")
-        self.keys = keys
+def _assignment(line: str) -> tuple[str, str] | None:
+    """The key and raw value a `.env` line assigns, or None for a blank line, a comment, or anything else."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        return None
+    key, _, value = stripped.partition("=")
+    return key.strip(), value.strip()
 
 
 class EnvFile:
@@ -160,14 +154,8 @@ class EnvFile:
         """The keys present in the file and their raw values, in file order."""
         if not self.path.exists():
             return {}
-        values: dict[str, str] = {}
-        for line in self.path.read_text(encoding="utf-8").splitlines():
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#") or "=" not in stripped:
-                continue
-            key, _, value = stripped.partition("=")
-            values[key.strip()] = _unquote(value.strip())
-        return values
+        lines = self.path.read_text(encoding="utf-8").splitlines()
+        return {key: _unquote(value) for key, value in filter(None, map(_assignment, lines))}
 
     def unknown(self) -> list[str]:
         """Keys in the file that no setting reads: a typo here is silent, since the setting keeps its default."""
@@ -182,21 +170,31 @@ class EnvFile:
         this".
 
         Raises:
-            UnknownSettingError: a key outside what AppSettings declares.
+            UnknownSettingError: a key outside what AppSettings declares; nothing is written.
+            SettingsUnwritableError: the file could not be read or written.
         """
         known = declared()
         if unknown := [key for key in updates if key not in known]:
             raise UnknownSettingError(unknown)
 
+        try:
+            self._rewrite(updates)
+        except OSError as e:
+            logger.error(f"Could not write {self.path}: {e}")
+            raise SettingsUnwritableError(self.path.name, str(e)) from e
+        _restrict(self.path)
+        logger.info(f"Updated {len(updates)} setting(s) in {self.path.name}")
+        self.reload()
+
+    def _rewrite(self, updates: dict[str, str]) -> None:
+        """Replace each updated key's line where it stands, and append the keys the file lacked."""
         lines = self.path.read_text(encoding="utf-8").splitlines() if self.path.exists() else []
         remaining = dict(updates)
 
         for index, line in enumerate(lines):
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#") or "=" not in stripped:
-                continue
-            key = stripped.partition("=")[0].strip()
-            if key in remaining:
+            assigned = _assignment(line)
+            if assigned and assigned[0] in remaining:
+                key = assigned[0]
                 lines[index] = f"{key}={_format(remaining.pop(key))}"
 
         if remaining:
@@ -205,9 +203,6 @@ class EnvFile:
             lines.extend(f"{key}={_format(value)}" for key, value in remaining.items())
 
         self.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        _restrict(self.path)
-        logger.info(f"Updated {len(updates)} setting(s) in {self.path.name}")
-        self.reload()
 
     def reload(self) -> None:
         """Re-read configuration into the settings this was handed.

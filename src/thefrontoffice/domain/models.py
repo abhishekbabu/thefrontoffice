@@ -576,6 +576,21 @@ class PlayedMatchup:
     theirs: float
 
 
+@dataclass(frozen=True)
+class RangeSearch:
+    """The settings that shape a competition's player ranges, as plain numbers a tuning run can search.
+
+    Named and valued by the competition, so the search needs to know nothing
+    about what each one means.
+    """
+
+    current: dict[str, float]
+    """Each setting as the app runs with it."""
+
+    grid: dict[str, tuple[float, ...]]
+    """The values worth trying for each, the current one among them."""
+
+
 class MarginRange(BaseModel):
     """How the margin falls across the simulated weeks: positive is a win."""
 

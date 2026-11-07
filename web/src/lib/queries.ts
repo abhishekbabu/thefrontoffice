@@ -34,6 +34,7 @@ export const keys = {
     [...inLeague(competition, league), "free-agent-calls"] as const,
   thread: (competition: string, league: string, kind: string, key: string) =>
     [...inLeague(competition, league), "thread", kind, key] as const,
+  turns: (chatId: string) => ["chat", chatId] as const,
 };
 
 /** What this installation can do: whether a model is configured, and the engines' limits. */

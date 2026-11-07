@@ -57,8 +57,8 @@ yahoo-login *args:
     uv run python scripts/yahoo_login.py {{ args }}
 
 # Search the settings that shape players' ranges, holding out the last week (reads the live league)
-tune:
-    uv run python scripts/tune.py
+tune *args:
+    uv run python scripts/tune.py {{ args }}
 
 # Score the win-probability simulation on weeks already played (reads the live league)
 backtest *args:

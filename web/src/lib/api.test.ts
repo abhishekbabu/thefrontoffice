@@ -1,23 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { failureMessage, leagueApi } from "@/lib/api";
+import { failure, isExpired, leagueApi } from "@/lib/api";
 
 describe("reading a failed response", () => {
-  it("shows the server's own sentence as it is", () => {
-    expect(failureMessage("Unknown competition 'x'.", "404 Not Found")).toBe("Unknown competition 'x'.");
+  it("carries the server's sentence, code and remedy as they are", () => {
+    const remedy = { action: "retry", label: "Try again", url: "", platform: "", command: "" } as const;
+    const error = failure({ detail: "Sleeper is not responding.", code: "platform_unavailable", remedy }, "503");
+
+    expect([error.message, error.code, error.remedy]).toEqual(["Sleeper is not responding.", "platform_unavailable", remedy]);
   });
 
-  it("reads a refused request's field list as words, not as an object", () => {
-    const detail = [
-      { loc: ["query", "limit"], msg: "Input should be less than or equal to 200", type: "less_than_equal" },
-      { loc: ["query", "offset"], msg: "Input should be greater than or equal to 0", type: "greater_than_equal" },
-    ];
-    expect(failureMessage(detail, "422 Unprocessable Entity")).toBe(
-      "Input should be less than or equal to 200; Input should be greater than or equal to 0",
-    );
+  it("names the condition a page acts on, such as a conversation the server no longer holds", () => {
+    expect(failure({ detail: "Expired.", code: "chat_expired", remedy: null }, "404 Not Found").code).toBe("chat_expired");
   });
 
-  it("falls back to the status line where the body says nothing", () => {
-    expect(failureMessage(undefined, "500 Internal Server Error")).toBe("500 Internal Server Error");
+  it("says the server did not answer where nothing it sent came back", () => {
+    const error = failure(null, "502 Bad Gateway");
+
+    expect(error.code).toBe("error");
+    expect(error.message).toContain("502 Bad Gateway");
   });
 });
 
@@ -35,5 +35,13 @@ describe("addressing a league", () => {
       globalThis.fetch = original;
     }
     expect(asked).toEqual(["/api/nfl-sleeper/leagues/a%2Fb/teams/t%201/roster"]);
+  });
+});
+
+describe("a conversation the server no longer holds", () => {
+  it("is told apart by its code, so the page opens a fresh one instead of asking the old id forever", () => {
+    expect(isExpired(failure({ detail: "Expired.", code: "chat_expired", remedy: null }, "404"))).toBe(true);
+    expect(isExpired(failure({ detail: "No such league.", code: "not_found", remedy: null }, "404"))).toBe(false);
+    expect(isExpired(new Error("chat_expired"))).toBe(false);
   });
 });
