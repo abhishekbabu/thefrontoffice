@@ -41,6 +41,8 @@ def read(cache: JsonDiskCache, scope: str, keep_for: timedelta) -> Any | None:
 
     Only a scope with nothing at all under it falls back: one emptied since —
     every decision restored — is an answer, and must not bring the old ones back.
+    The refiled entry keeps the time it was first stored, so moving it does not
+    buy it another `keep_for`.
     """
     hit = cache.lookup(scope, keep_for)
     if hit is not None:
@@ -48,5 +50,5 @@ def read(cache: JsonDiskCache, scope: str, keep_for: timedelta) -> Any | None:
     old = former(scope)
     if old is None or (found := cache.lookup(old, keep_for)) is None:
         return None
-    cache.set(scope, found.value)
+    cache.set(scope, found.value, now=found.stored_at)
     return found.value

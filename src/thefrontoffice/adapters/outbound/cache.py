@@ -66,10 +66,12 @@ class Hit:
 
     Its own type because the value may be null, and a stored null is an answer
     like any other: an endpoint that answered null is not asked again until the
-    entry expires.
+    entry expires. `stored_at` is when it was written, so a value moved to
+    another key can keep its age rather than start a fresh one.
     """
 
     value: Any
+    stored_at: datetime
 
 
 class JsonDiskCache:
@@ -127,8 +129,8 @@ class JsonDiskCache:
             if temp is not None:
                 temp.unlink(missing_ok=True)
 
-    def _fresh(self, key: str, ttl: timedelta, now: datetime | None) -> dict[str, Any] | None:
-        """The envelope for `key` if it was stored within `ttl` of `now`."""
+    def lookup(self, key: str, ttl: timedelta, now: datetime | None = None) -> Hit | None:
+        """What is stored for `key` within `ttl` of `now`, or None if absent or stale — never for a stored null."""
         entry = self._read(key)
         if entry is None:
             return None
@@ -138,12 +140,9 @@ class JsonDiskCache:
             return None
         if stored_at.tzinfo is None:
             return None  # no zone, so it cannot be placed on a timeline
-        return entry if (now or datetime.now(UTC)) - stored_at <= ttl else None
-
-    def lookup(self, key: str, ttl: timedelta, now: datetime | None = None) -> Hit | None:
-        """What is stored for `key` within `ttl`, or None if absent or stale — never for a stored null."""
-        entry = self._fresh(key, ttl, now)
-        return Hit(entry["value"]) if entry is not None else None
+        if (now or datetime.now(UTC)) - stored_at > ttl:
+            return None
+        return Hit(entry["value"], stored_at)
 
     def get(self, key: str, ttl: timedelta, now: datetime | None = None) -> Any | None:
         """The value stored for `key` within `ttl`, or None.
