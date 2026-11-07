@@ -47,6 +47,11 @@ def env_var(field: str) -> str:
     return alias if isinstance(alias, str) else field.upper()
 
 
+def spelled(value: object) -> str:
+    """A setting's value as `.env` spells it: a boolean in lower case, nothing as empty."""
+    return str(value).lower() if isinstance(value, bool) else str(value or "")
+
+
 def field_kind(field: str) -> tuple[str, list[str]]:
     """How a setting should be edited, derived from its own annotation.
 

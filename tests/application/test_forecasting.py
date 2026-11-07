@@ -294,8 +294,6 @@ def test_a_free_agent_who_only_hurts_says_by_how_much() -> None:
 class _Wire:
     """A matchup whose moves are whatever free agents it is asked about."""
 
-    label = "Test"
-
     def __init__(self) -> None:
         self.asked: list[list[str]] = []
 
@@ -304,6 +302,9 @@ class _Wire:
         mine = outcome("mine", 10.0)
         moves = tuple(LineupMove(f"{c}>mine", f"Start {c}", ("mine",), (outcome(c, 15.0),)) for c in candidates)
         return _match([mine], [outcome("them", 12.0)], *moves)
+
+    def played_weeks(self, league_id: str) -> list[int]:
+        return []
 
     def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
         return []

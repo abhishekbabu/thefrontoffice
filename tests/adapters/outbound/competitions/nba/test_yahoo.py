@@ -26,7 +26,7 @@ from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat
 
 def _scout(yahoo: FakeYahoo, ai: FakeAI | None = None, nba: FakeNBA | None = None) -> ScoutEngine:
     provider = nba_provider(yahoo, nba=nba)
-    return ScoutEngine(provider, ai=ai or FakeAI(), answers=FakeAnswers())
+    return ScoutEngine(provider, key="nba-yahoo", ai=ai or FakeAI(), answers=FakeAnswers())
 
 
 def test_returns_a_validated_report_and_an_open_chat() -> None:

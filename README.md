@@ -228,7 +228,8 @@ three days. Hidden items wait under a closed *Hidden* at the foot of the list,
 each with a way back. Neither needs a model: the list clears itself when league
 state settles an item, and these are for the decisions it cannot see — not to
 act, or not yet. Decisions are kept per league on this machine
-(`ITEM_STATE_DIR`), keyed by the same item key verdicts use.
+(`ITEM_STATE_DIR`), keyed by the same item key verdicts use, under the
+competition's registry key like kept answers.
 
 Questions are asked of the thing they are about. **Why?** under any to-do item
 opens a conversation inline, seeded with that item alone — the move, its reason
@@ -292,7 +293,9 @@ pages are gone; a trade is still evaluated from the CLI.
 (`application/answers.py`, behind an `AnswerStore` port, on disk under
 `ANSWER_CACHE_DIR` for a week). Each is kept under a scope naming what it is
 about — a league's week, or one free agent — with a digest of exactly what the
-model was given. Asking again with unchanged input returns the kept answer
+model was given — the competition named by its registry key (`nfl-sleeper`),
+never by its display label; anything kept under a label before is still found,
+and refiled under the key. Asking again with unchanged input returns the kept answer
 without a call; reading never asks; and a caller compares the digest with what
 it would send now to mark an answer stale. Anything model-backed added later
 asks through the same two calls.
@@ -382,7 +385,8 @@ src/thefrontoffice/
 │   └── outbound/      driven: platform clients, the model, and the
 │                      per-competition CompetitionProvider implementations.
 ├── bootstrap.py       composition root: the only module naming a concrete
-│                      implementation. Registers competitions, wires engines.
+│                      implementation. Registers competitions, wires engines,
+│                      and hands each entry point one `Wiring`.
 └── config/            validated settings, the .env writer, telemetry.
 ```
 
@@ -397,7 +401,15 @@ platform would be one more provider. The
 engines answer in figures; `adapters/inbound/presenting.py` puts the generic
 ones into words for the web page and the terminal alike, and a competition's own
 vocabulary stays its provider's.
-`tests/test_architecture.py` checks the import direction and both of these. Adding a competition is a
+`tests/test_architecture.py` checks the import direction and both of these.
+
+A competition's identity — key, label, sport, platform — lives on its
+`CompetitionEntry` alone, and what it can do (trades, judging the wire,
+planning ahead) is read off which ports its provider's class implements, so
+the two cannot disagree; the API sends both to the picker. The CLI and the API
+take every collaborator — the registry, the engines, the kept state, the Yahoo
+login — from one `Wiring` that `bootstrap.wiring()` builds, which a test builds
+from fakes instead. Adding a competition is a
 provider, a prompt template and one `CompetitionEntry` — see the
 [`adding-a-competition`](.agents/skills/adding-a-competition/SKILL.md) skill.
 

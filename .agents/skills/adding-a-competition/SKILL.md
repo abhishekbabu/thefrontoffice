@@ -24,21 +24,22 @@ several platforms, and one platform hosts several competitions of a sport.
    Sleeper for both stats and projections. Naming it this way leaves room for
    the same competition on a second platform — `nba/sleeper.py` beside
    `nba/yahoo.py`.
-   - `sport` / `competition` / `label` class attributes
    - `list_leagues() -> list[LeagueRef]`
    - `build_context(league_id) -> CompetitionContext`
-   - `roster_rows(league_id) -> list[dict[str, str]]` — cheap; no projections or
+   - `roster(league_id) -> list[PlayerCard]` — cheap; no projections or
      candidate pool
+   - no identity: its key, label, sport and platform are the registry entry's
 2. **Prompt template** in the competition's own `prompt.py`, beside its
    provider, rendered by `build_context`. Name it `<SPORT>_<REPORT>_PROMPT`.
    Its field guidance names only fields of the answer format it is read
    against (`application/formats.py`) — the schema itself is what the model
    is held to.
-3. **Registration** — one `CompetitionEntry` in `bootstrap.py`, whose `build`
-   constructs the platform clients and hands them in: a provider never builds
-   its own. Its capability flags (`supports_trades`, `judges_wire`,
-   `plans_ahead`) must match the ports the provider implements, which
-   `tests/test_bootstrap.py` checks.
+3. **Registration** — one `CompetitionEntry` in `bootstrap.py`: its identity,
+   a `provider` returning the provider's class (imported lazily), and a
+   `build` that constructs the platform clients and hands them in — a provider
+   never builds its own. What it can do (`supports_trades`, `judges_wire`,
+   `plans_ahead`) is read off the ports that class implements; there is
+   nothing to declare.
 4. **Tests** — a fake platform client, and assertions on the *prompt content*:
    this is where the league rules actually live.
 
@@ -163,8 +164,8 @@ third.
 
 ## Trades
 
-Trade support is separate: implement `TradeProvider.build_trade_context` and set
-`supports_trades=True` on the `CompetitionEntry`. The engine, the prompt structure and
+Trade support is separate: implement `TradeProvider.build_trade_context`, and the
+entry offers trades because its provider now implements the port. The engine, the prompt structure and
 the verdict model are already shared.
 
 ## Checklist

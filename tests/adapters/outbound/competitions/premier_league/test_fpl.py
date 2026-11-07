@@ -32,14 +32,14 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Player,
     Squad,
 )
-from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import NotConfiguredError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery, Spot
 
 # ── configuration ───────────────────────────────────────────────────────
 
 
 def test_an_unset_entry_id_is_reported_before_any_request() -> None:
-    with pytest.raises(LeagueNotFoundError, match="FPL_ENTRY_ID"):
+    with pytest.raises(NotConfiguredError, match="FPL_ENTRY_ID"):
         FPLProvider(None, client=FakeFPL()).list_leagues()
 
 

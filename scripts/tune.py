@@ -12,20 +12,14 @@ Run with `just tune`; it reads the live league.
 """
 
 import itertools
-import sys
 from dataclasses import replace
-from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
-
-from thefrontoffice.adapters.outbound.competitions.nfl import outcomes  # noqa: E402
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import NFL  # noqa: E402
-from thefrontoffice.application.forecasting import calibrate, score_ranges  # noqa: E402
-from thefrontoffice.bootstrap import nfl_provider  # noqa: E402
-from thefrontoffice.config.logging import setup_logging  # noqa: E402
-from thefrontoffice.domain.errors import FrontOfficeError  # noqa: E402
-from thefrontoffice.domain.models import RangeScore  # noqa: E402
+from thefrontoffice.adapters.outbound.competitions.nfl import outcomes
+from thefrontoffice.application.forecasting import calibrate, score_ranges
+from thefrontoffice.bootstrap import nfl_provider
+from thefrontoffice.config.logging import setup_logging
+from thefrontoffice.domain.errors import FrontOfficeError
+from thefrontoffice.domain.models import RangeScore
 
 MEANINGFUL = 0.01
 """A held-out loss at least this much lower, as a share, before a change is worth making:
@@ -59,8 +53,7 @@ def main() -> int:
     try:
         provider = nfl_provider()
         league = provider.list_leagues()[0]
-        current = provider.client.get_state(NFL).week
-        weeks = list(range(2, current))
+        weeks = provider.played_weeks(league.league_id)
         if len(weeks) < 2:
             print("  Not enough finished weeks to tune and hold one out.")
             return 1

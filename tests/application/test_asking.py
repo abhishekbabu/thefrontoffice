@@ -46,9 +46,6 @@ HALL = PlayerDetail(
 
 
 class OneWeek:
-    competition = "nfl"
-    label = "NFL (Sleeper)"
-
     def build_context(self, league_id: str) -> CompetitionContext:
         return CompetitionContext(
             prompt="prompt",
@@ -66,7 +63,7 @@ class OneWeek:
 
 def _ask(subject: Subject, *questions: str, answers: FakeAnswers | None = None) -> list[str]:
     ai = FakeAI()
-    chat = AskEngine(OneWeek(), ai=ai, answers=answers or FakeAnswers()).open("L1", subject)
+    chat = AskEngine(OneWeek(), key="nfl-sleeper", ai=ai, answers=answers or FakeAnswers()).open("L1", subject)
     for question in questions:
         chat.send_message(question)
     return ai.chat.sent
@@ -95,7 +92,7 @@ def test_an_earlier_verdict_on_the_item_is_part_of_the_conversation() -> None:
     )
     answers = FakeAnswers()
     answers.save(
-        scout_scope(OneWeek.label, "L1"),
+        scout_scope("nfl-sleeper", "L1"),
         Remembered(
             answer=MOCK_FPL_REPORT.model_copy(update={"tasks": [judged]}),
             answered_at=datetime.now(UTC),

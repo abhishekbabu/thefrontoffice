@@ -94,8 +94,8 @@ leave the process — report presence, never contents. `reload_settings` mutates
 the singleton in place; rebinding strands every module that imported it.
 
 **UI.** The API returns the domain models themselves — never a parallel response
-type for something `domain/models.py` already models. Provider access lives in
-`data.py`, free of any web framework, so it is testable with no server running.
+type for something `domain/models.py` already models. Routes take every collaborator
+from the `Wiring` they are built with; `data.py` stays free of any web framework.
 The model is optional: without `GOOGLE_API_KEY` nothing needing one is offered,
 rather than offered and refused. Never ship a canned report in the package.
 

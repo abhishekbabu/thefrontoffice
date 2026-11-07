@@ -4,16 +4,15 @@ from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.ports import ChatSession
 
 
-def _print_header(text: str) -> None:
-    """Print a styled section header."""
+def header(text: str) -> None:
     width = 60
     print("\n" + "═" * width)
     print(f"  {text}")
     print("═" * width)
 
 
-def _print_rows(rows: list[dict[str, str]]) -> None:
-    """Print table rows with columns sized to their content."""
+def rows(rows: list[dict[str, str]]) -> None:
+    """Table rows, each column as wide as its widest value."""
     if not rows:
         print("  (no players found)")
         return
@@ -25,14 +24,8 @@ def _print_rows(rows: list[dict[str, str]]) -> None:
         print("  " + "  ".join(str(row.get(c, "")).ljust(widths[c]) for c in columns))
 
 
-def _interactive_followup(
-    chat: ChatSession | None,
-    noun: str,
-) -> None:
-    """Run a follow-up Q&A loop against an open AI chat session."""
-    if not chat:
-        return
-
+def follow_up(chat: ChatSession, noun: str) -> None:
+    """Questions about what was just shown, asked in the open chat until an empty line."""
     print("\n  " + "─" * 60)
     print(f"  💬 Interactive Mode: Ask follow-up questions about this {noun}.")
     print("     Type your question or press Enter to continue.")
