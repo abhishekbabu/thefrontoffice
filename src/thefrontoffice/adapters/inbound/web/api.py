@@ -18,7 +18,7 @@ import threading
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -482,7 +482,7 @@ def _serve_frontend(app: FastAPI, dist: Path) -> None:
     app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
-    def spa(path: str) -> Any:
+    def spa(path: str) -> FileResponse:
         """Any non-API path returns index.html; the client owns routing.
 
         An unmatched API path is a 404 rather than the page, because this
@@ -493,10 +493,13 @@ def _serve_frontend(app: FastAPI, dist: Path) -> None:
         """
         if path.startswith("api/"):
             raise HTTPException(status_code=404, detail=f"Unknown endpoint {'/' + path!r}.")
-        candidate = dist / path
-        if path and candidate.is_file():
+        root = dist.resolve()
+        candidate = (root / path).resolve()
+        # `path` arrives URL-decoded, so `..%2F` climbs out of dist/ — as far as
+        # the repo's .env — unless the resolved file is held inside it.
+        if path and candidate.is_relative_to(root) and candidate.is_file():
             return FileResponse(candidate)
-        return FileResponse(dist / "index.html")
+        return FileResponse(root / "index.html")
 
 
 def main() -> None:
