@@ -2,10 +2,14 @@
 
 from collections.abc import Sequence
 
+from thefrontoffice.domain.models import Outcome, outcome
+
+WORTH: dict[Outcome, float] = {"won": 1.0, "drawn": 0.5, "lost": 0.0}
+
 
 def result(mine: float, theirs: float) -> float:
     """What a result adds to a record: a win, half for a tie, nothing for a loss."""
-    return 1.0 if mine > theirs else 0.5 if mine == theirs else 0.0
+    return WORTH[outcome(mine, theirs)]
 
 
 def quantile(ordered: Sequence[float], share: float) -> float:
