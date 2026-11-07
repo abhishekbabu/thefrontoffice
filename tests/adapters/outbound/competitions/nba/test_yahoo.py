@@ -11,6 +11,7 @@ import pytest
 from support.ai import FakeAI
 from support.nba import (
     FakeNBA,
+    FakeSleeperNBA,
     FakeSleeperProjections,
     FakeYahoo,
     FakeYahooAuth,
@@ -22,10 +23,11 @@ from support.nba import yahoo_team as _yahoo_team
 from support.reports import MOCK_NBA_REPORT
 from support.stores import FakeAnswers
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, PlayerStats, nine_cat
+from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, PlayerStats, SleeperNBAForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooTeam
 from thefrontoffice.application.scouting import ScoutEngine
@@ -152,6 +154,17 @@ def test_schedule_context_lists_teams_by_games_remaining() -> None:
     assert "BOS: 4 games left" in prompt
     assert "LAL: 2 games left" in prompt
     assert prompt.index("BOS: 4") < prompt.index("LAL: 2")  # descending
+
+
+def test_a_schedule_that_will_not_load_leaves_games_remaining_unknown_rather_than_nought() -> None:
+    """Nought games left for every club reads as a week nobody plays, and steers every add."""
+    yahoo = FakeYahoo(roster=[make_player("Roster One", team="LAL")])
+    form = SleeperNBAForm(client=FakeSleeperNBA(error=SleeperAPIError("down")), season="2026")
+
+    ctx = nba_provider(yahoo, nba=form).build_context()
+
+    assert "G left]" not in ctx.roster_lines["Roster One"]
+    assert "LAL:" not in ctx.extra
 
 
 def test_missing_matchup_dates_leave_games_remaining_uncounted() -> None:

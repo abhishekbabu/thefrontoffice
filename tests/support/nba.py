@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any
 
+from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame, SeasonState
@@ -227,7 +228,7 @@ class FakeNBA:
 def nba_provider(
     yahoo: FakeYahoo | None = None,
     *,
-    nba: FakeNBA | None = None,
+    nba: FormSource | None = None,
     sleeper: FakeSleeperProjections | None = None,
 ) -> YahooNBAProvider:
     """The NBA provider over these stand-ins, as bootstrap would wire it over the real clients."""

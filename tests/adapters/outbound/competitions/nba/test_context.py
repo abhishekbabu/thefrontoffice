@@ -70,7 +70,7 @@ def test_remaining_games_are_shown_when_the_window_is_known() -> None:
     known = _line(make_player("A B", team="LAL"), builder, matchup_start=START, matchup_end=END)
 
     assert known != _line(make_player("A B", team="LAL"), builder)
-    assert "4" in known
+    assert "[4G left]" in known
 
 
 def test_no_schedule_annotation_without_a_matchup_window() -> None:

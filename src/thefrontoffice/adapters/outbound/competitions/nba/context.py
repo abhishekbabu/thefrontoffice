@@ -47,7 +47,7 @@ class PlayerContextBuilder:
 
         Args:
             annotations: player_key -> extra text, e.g. "[Top in: PTS]".
-            remaining_games: precomputed counts; looked up if omitted.
+            remaining_games: precomputed counts, empty where unknown; looked up if omitted.
         """
         return "".join(
             self.build_player_lines(
@@ -72,10 +72,11 @@ class PlayerContextBuilder:
         if not players:
             return {}
 
-        remaining_games = remaining_games or {}
-        if not remaining_games and matchup_start and matchup_end:
-            teams = [p.team for p in players]
-            remaining_games = self.nba.get_remaining_games_bulk(teams, matchup_start, matchup_end)
+        if remaining_games is None:
+            remaining_games = {}
+            if matchup_start and matchup_end:
+                teams = [p.team for p in players]
+                remaining_games = self.nba.get_remaining_games_bulk(teams, matchup_start, matchup_end)
 
         lines: dict[str, str] = {}
         for p in players:
