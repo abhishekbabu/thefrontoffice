@@ -3,7 +3,7 @@ import type * as React from "react";
 import { AlarmClock, EyeOff, MessageCircleQuestion, Undo2 } from "lucide-react";
 import type { Action, ItemDecision, Move, MoveAction, TaskVerdict, Urgency } from "@/lib/api";
 import { SNOOZES, until } from "@/lib/snooze";
-import { Thread } from "@/components/ui/chat";
+import { askAssistant } from "@/lib/screen";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
@@ -340,52 +340,33 @@ function VerdictLine({ verdict, stale }: { verdict: TaskVerdict; stale: boolean 
 }
 
 /**
- * "Why?" under a to-do item: a conversation about that item alone.
+ * "Why?" under a to-do item: asked of the assistant, about that item.
  *
- * Mounted on first open and only hidden after, so closing it and opening it
- * again shows the same conversation instead of a blank one.
+ * The assistant docked in the corner rather than a conversation in the row,
+ * so asking about one move and then about the player it turns on, or the
+ * waiver wire, is one conversation rather than three.
  */
-export function WhyThread({
-  competition,
-  league,
+export function WhyButton({
   action,
   beside,
 }: {
-  competition: string;
-  league: string;
   action: Action;
   /** On the same line as the Why? control — the row's other controls. */
   beside?: React.ReactNode;
 }) {
-  const [opened, setOpened] = useState(false);
-  const [shown, setShown] = useState(false);
   return (
-    <div className="flex flex-col gap-2">
-      <span className="flex flex-wrap items-center gap-1">
-        <IconButton
-          label={shown ? "Hide the conversation" : "Why this move?"}
-          icon={<MessageCircleQuestion />}
-          onClick={() => {
-            setOpened(true);
-            setShown((s) => !s);
-          }}
-          aria-expanded={shown}
-        />
-        {beside}
-      </span>
-      {opened && (
-        <div className={cn("rounded-md border border-border p-3", !shown && "hidden")}>
-          <Thread
-            competition={competition}
-            league={league}
-            subject={{ kind: "task", key: action.key }}
-            opener="Why this move — and what would change your mind?"
-            placeholder="Ask about this move"
-            bare
-          />
-        </div>
-      )}
-    </div>
+    <span className="flex flex-wrap items-center gap-1">
+      <IconButton
+        label="Why this move?"
+        icon={<MessageCircleQuestion />}
+        onClick={() =>
+          askAssistant(`Why "${action.title}" — and what would change your mind?`, [
+            { subject: { kind: "task", key: action.key }, label: action.title },
+          ])
+        }
+      />
+      {beside}
+    </span>
   );
 }
 

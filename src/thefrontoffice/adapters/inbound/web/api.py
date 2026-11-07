@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from thefrontoffice.adapters.inbound import presenting
 from thefrontoffice.adapters.inbound.web import data
+from thefrontoffice.application.asking import Assistant
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import (
     CompetitionEntry,
@@ -60,6 +61,7 @@ from thefrontoffice.domain.models import (
     WeekAhead,
 )
 from thefrontoffice.domain.ports import (
+    ChatReply,
     ChatSession,
     OutlookProvider,
     TradeMarketProvider,
@@ -117,6 +119,13 @@ class League(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
+
+
+class AssistantRequest(BaseModel):
+    """A question to the assistant, and what was on screen when it was asked."""
+
+    message: str = Field(min_length=1)
+    on_screen: list[Subject] = Field(default_factory=list, max_length=8)
 
 
 class Reply(BaseModel):
@@ -192,6 +201,7 @@ class Thread(BaseModel):
 # somewhere shared to put these.
 
 _chats: dict[str, ChatSession] = {}
+_assistants: dict[str, Assistant] = {}
 
 
 # The Yahoo handshake opens a browser and waits for a click, which no request
@@ -227,6 +237,22 @@ def _remember(chat: ChatSession) -> str:
     chat_id = uuid.uuid4().hex
     _chats[chat_id] = chat
     return chat_id
+
+
+def _reply(turn: Callable[[], ChatReply]) -> Reply:
+    """One turn of a conversation, with a failure the adapters did not translate made readable."""
+    try:
+        answer = turn().text or ""
+    except FrontOfficeError:
+        # Already a sentence — "every model is out of quota" says more
+        # than "did not answer", and the handler renders it with its code.
+        raise
+    except Exception as e:  # anything the adapters did not translate
+        # Its message is a repr of a Google RPC payload; the log is where
+        # that belongs, not a panel someone is reading.
+        logger.error(f"Follow-up failed: {e}")
+        raise HTTPException(status_code=502, detail="The model did not answer. Try asking again.") from e
+    return Reply(answer=answer or "(no answer)")
 
 
 def create_app() -> FastAPI:
@@ -523,6 +549,26 @@ def _register_routes(app: FastAPI) -> None:
         provider = data.build_provider(entry.key)
         return wire_engine(provider).kept(league_id, request.player_ids)
 
+    @app.post("/api/{competition}/leagues/{league_id}/assistant", response_model=Thread)
+    def assistant(competition: str, league_id: str) -> Thread:
+        """Open the conversation that follows you around this league.
+
+        Briefed on nothing yet: each question says what is on screen, and is
+        briefed on whatever of that it has not seen.
+        """
+        provider = data.build_provider(competition)
+        chat_id = uuid.uuid4().hex
+        _assistants[chat_id] = ask_engine(provider).assistant(league_id)
+        return Thread(chat_id=chat_id)
+
+    @app.post("/api/assistant/{chat_id}", response_model=Reply)
+    def assist(chat_id: str, request: AssistantRequest) -> Reply:
+        """Ask the assistant the next question, with what is on screen as you ask it."""
+        chat = _assistants.get(chat_id)
+        if chat is None:
+            raise HTTPException(status_code=404, detail="That conversation has expired. Start a new one.")
+        return _reply(lambda: chat.ask(request.message, request.on_screen))
+
     @app.post("/api/chat/{chat_id}", response_model=Reply)
     def ask(chat_id: str, request: ChatRequest) -> Reply:
         """Ask the next question in a conversation a thread opened."""
@@ -531,18 +577,7 @@ def _register_routes(app: FastAPI) -> None:
             # The server restarted, or the report predates it. Saying so is
             # better than an empty answer the user cannot explain.
             raise HTTPException(status_code=404, detail="That conversation has expired. Re-run the report.")
-        try:
-            answer = chat.send_message(request.message).text or ""
-        except FrontOfficeError:
-            # Already a sentence — "every model is out of quota" says more
-            # than "did not answer", and the handler renders it with its code.
-            raise
-        except Exception as e:  # anything the adapters did not translate
-            # Its message is a repr of a Google RPC payload; the log is where
-            # that belongs, not a panel someone is reading.
-            logger.error(f"Follow-up failed: {e}")
-            raise HTTPException(status_code=502, detail="The model did not answer. Try asking again.") from e
-        return Reply(answer=answer or "(no answer)")
+        return _reply(lambda: chat.send_message(request.message))
 
 
 def _capable(competition: str, what: str, has: Callable[[CompetitionEntry], bool]) -> CompetitionEntry:

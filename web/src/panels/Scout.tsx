@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { api, type Action, type ItemDecision, type ScoutReport, type Remembered, type League, type Competition, type Summary } from "@/lib/api";
-import { ActionList, WhyThread } from "@/components/ui/actions";
+import { ActionList, WhyButton } from "@/components/ui/actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -98,12 +98,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
                 ai
                   ? (action, controls) =>
                       action.key && (
-                        <WhyThread
-                          competition={competition.key}
-                          league={league.league_id}
-                          action={action}
-                          beside={controls}
-                        />
+<WhyButton action={action} beside={controls} />
                       )
                   : undefined
               }

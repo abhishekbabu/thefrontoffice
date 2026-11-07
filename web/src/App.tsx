@@ -12,6 +12,7 @@ import { rise } from "@/lib/motion";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { Assistant } from "@/components/ui/assistant";
 
 // Each page loads when it is first opened rather than in the first download:
 // the entry bundle is what every visit waits on, and it was carrying all six.
@@ -260,6 +261,16 @@ export default function App() {
           </m.div>
         </AnimatePresence>
       </main>
+
+      {/* Beside every page rather than on one, and only where there is a model
+          to ask: without one, nothing that needs it is offered. */}
+      {ai && (
+        <Assistant
+          route={route.page === "competition" ? { ...route, view } : route}
+          competition={active}
+          league={league}
+        />
+      )}
     </div>
   );
 }

@@ -341,6 +341,36 @@ def test_an_empty_follow_up_is_rejected(client: TestClient) -> None:
     assert client.post(f"/api/chat/{_opened()}", json={"message": ""}).status_code == 422
 
 
+def test_the_assistant_is_asked_with_what_is_on_screen(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked: list[Any] = []
+
+    class _Assistant:
+        def ask(self, message: str, on_screen: Any) -> Any:
+            asked.append((message, [(s.kind, s.key) for s in on_screen]))
+            return FakeChat().send_message(message)
+
+    class _Asker:
+        def assistant(self, league_id: str) -> Any:
+            return _Assistant()
+
+    monkeypatch.setattr(web.data, "build_provider", lambda sport: FakeProvider())
+    monkeypatch.setattr(web, "ask_engine", lambda p: _Asker())
+    client = TestClient(web.create_app())
+
+    chat_id = client.post("/api/premier-league/leagues/900/assistant").json()["chat_id"]
+    on_screen = [{"kind": "page", "key": "team"}, {"kind": "player", "key": "123"}]
+    answer = client.post(f"/api/assistant/{chat_id}", json={"message": "Start him?", "on_screen": on_screen})
+
+    assert asked == [("Start him?", [("page", "team"), ("player", "123")])]
+    assert answer.json()["answer"]
+
+
+def test_an_assistant_the_server_no_longer_holds_says_it_has_expired(client: TestClient) -> None:
+    response = client.post("/api/assistant/gone", json={"message": "Hello?"})
+
+    assert response.status_code == 404
+
+
 # ── serving the built UI ────────────────────────────────────────────────
 
 

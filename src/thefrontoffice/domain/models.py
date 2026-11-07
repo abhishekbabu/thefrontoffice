@@ -850,15 +850,19 @@ class ScoutReport(BaseModel):
     )
 
 
+PAGES = ("week", "league", "team", "free-agents")
+"""The pages of a league, by the name each has in its address."""
+
+
 class Subject(BaseModel):
-    """What a conversation is about: one to-do item, by its key, or one player.
+    """What a conversation is about: one to-do item, by its key, one player, or one page.
 
     A question is asked of something on screen. Naming the thing is what lets
     the conversation be seeded with that thing and not the whole week.
     """
 
-    kind: Literal["task", "player"]
-    key: str = Field(description="The to-do item's key, or the player's id.")
+    kind: Literal["task", "player", "page"]
+    key: str = Field(description=f"The to-do item's key, the player's id, or one of {PAGES}.")
 
 
 WireDecision = Literal["ADD", "WATCH", "PASS"]
