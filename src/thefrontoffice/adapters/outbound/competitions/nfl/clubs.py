@@ -10,7 +10,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
-from thefrontoffice.adapters.outbound.competitions.nfl.model import PlayerInfo
+from thefrontoffice.adapters.outbound.competitions.nfl.model import FREE_AGENT, PlayerInfo
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS
 
 SLEEPER_TO_ESPN = {"WAS": "WSH"}
@@ -35,10 +35,10 @@ def players_by_club(players: Mapping[str, PlayerInfo]) -> dict[str, dict[str, st
     """
     clubs: dict[str, dict[str, str | None]] = defaultdict(dict)
     for player_id, meta in players.items():
-        team, position, name = str(meta.get("team") or ""), str(meta.get("position") or ""), meta.get("name")
-        if not team or team == "FA" or position not in FANTASY_POSITIONS or position in NOT_PLAYERS or not name:
+        team, position = meta.team, meta.position
+        if team in ("", FREE_AGENT) or position not in FANTASY_POSITIONS or position in NOT_PLAYERS:
             continue
-        key = normalize_name(str(name))
+        key = normalize_name(meta.name)
         if not key:
             continue
         roster = clubs[espn_club(team)]

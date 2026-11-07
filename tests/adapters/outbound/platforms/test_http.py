@@ -9,7 +9,7 @@ import pytest
 import requests
 from support.http import FakeResponse
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient, fetch_many
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
@@ -140,12 +140,28 @@ def test_an_expired_entry_is_refetched(tmp_path: Path) -> None:
     assert len(session.requests) == 1
 
 
-def test_a_caller_can_transform_before_storing(tmp_path: Path) -> None:
-    """The catalog is trimmed on the way in, so it bypasses `cached`."""
-    client = _client(tmp_path, FixedSession())
-    assert client.cache_get("k", TTL) is None
-    client.cache_set("k", {"trimmed": True})
-    assert client.cache_get("k", TTL) == {"trimmed": True}
+def test_a_caller_can_trim_what_is_stored(tmp_path: Path) -> None:
+    """The catalog is trimmed on the way in, so a hit is the trimmed form, not the whole response."""
+    cache = JsonDiskCache(tmp_path / "cache")
+    session = FixedSession({"kept": 1, "dropped": 2})
+    client = _client(tmp_path, session, cache=cache)
+
+    def keep(raw: Any) -> Any:
+        return {"kept": raw["kept"]}
+
+    assert client.cached("k", "https://example.test/a", TTL, keep=keep) == {"kept": 1}
+    assert client.cached("k", "https://example.test/a", TTL, keep=keep) == {"kept": 1}
+    assert cache.get("k", TTL) == {"kept": 1}
+    assert len(session.requests) == 1
+
+
+def test_an_endpoint_answering_null_is_not_asked_again_until_it_expires(tmp_path: Path) -> None:
+    session = FixedSession(None)
+    client = _client(tmp_path, session)
+
+    assert client.cached("k", "https://example.test/a", TTL) is None
+    assert client.cached("k", "https://example.test/a", TTL) is None
+    assert len(session.requests) == 1
 
 
 def test_the_cache_is_keyed_not_url_addressed(tmp_path: Path) -> None:
@@ -212,6 +228,18 @@ def test_a_batch_only_fetches_what_it_does_not_have(tmp_path: Path) -> None:
 
     assert sorted(session.requests) == [f"https://example.test/{i}" for i in (3, 4, 5)]
     assert result["k1"] == {"week": 1}
+
+
+def test_a_batch_takes_a_stored_null_as_a_hit(tmp_path: Path) -> None:
+    """The same rule `cached` keeps: null is an answer, and asking again every read is the bug."""
+    cache = JsonDiskCache(tmp_path / "cache")
+    cache.set("k1", None)
+    session = RoutedSession(ROUTES)
+
+    result = _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)
+
+    assert "https://example.test/1" not in session.requests
+    assert "k1" in result and result["k1"] is None
 
 
 def test_a_fully_cached_batch_never_touches_the_network(tmp_path: Path) -> None:

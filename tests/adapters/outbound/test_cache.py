@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 
 HOUR = timedelta(hours=1)
 T0 = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
@@ -269,6 +269,15 @@ def test_a_stored_null_is_a_hit_not_a_reason_to_fetch_again(tmp_path: Path) -> N
     cache.cached("k", HOUR, _fetch)
 
     assert calls == [1]
+
+
+def test_a_lookup_tells_a_stored_null_from_a_miss(tmp_path: Path) -> None:
+    cache = JsonDiskCache(tmp_path / "cache")
+    cache.set("null", None, now=T0)
+
+    hit = cache.lookup("null", HOUR, now=T0)
+    assert hit is not None and hit.value is None
+    assert cache.lookup("absent", HOUR, now=T0) is None
 
 
 def test_a_miss_fetches_and_stores(tmp_path: Path) -> None:

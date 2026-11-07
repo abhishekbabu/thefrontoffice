@@ -15,30 +15,61 @@ changed, a game whose status the scoreboard corrected — are concrete here,
 as the NFL's own.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, Protocol
 
 Scoring = Literal["pts_ppr", "pts_half_ppr", "pts_std"]
 """How a league scores a reception: full, half, or not at all."""
 
 
-class PlayerInfo(TypedDict, total=False):
-    """What the rules read about a player from the platform's catalog."""
+FREE_AGENT = "FA"
+"""The club a player on no NFL roster is filed under, in a catalog entry and a projection alike."""
 
-    player_id: str
-    name: str
-    position: str
-    team: str
-    status: str
-    injury_status: str
-    depth_chart_order: int
-    years_exp: int
-    age: int
-    college: str
-    number: int
-    injury_body_part: str
-    injury_notes: str
+
+class PlayerInfo(Protocol):
+    """What the rules read about a player from the platform's catalog: every field present, a number zero where unknown.
+
+    Nothing here is optional, so a reader takes each as it stands rather than
+    coercing a value that may be missing.
+    """
+
+    @property
+    def player_id(self) -> str: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def position(self) -> str:
+        """Empty where the catalog has none."""
+        ...
+
+    @property
+    def team(self) -> str:
+        """His club; `FREE_AGENT` where he has none."""
+        ...
+
+    @property
+    def injury_status(self) -> str:
+        """Empty for a player carrying no designation."""
+        ...
+
+    @property
+    def depth_chart_order(self) -> int:
+        """Zero where his club lists him nowhere."""
+        ...
+
+    @property
+    def years_exp(self) -> int: ...
+    @property
+    def age(self) -> int: ...
+    @property
+    def college(self) -> str: ...
+    @property
+    def number(self) -> int: ...
+    @property
+    def injury_body_part(self) -> str: ...
+    @property
+    def injury_notes(self) -> str: ...
 
 
 class Projection(Protocol):
@@ -323,19 +354,25 @@ class NFLSource(Protocol):
 
     def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Mapping[int, Sequence[Matchup]]: ...
 
-    def get_nfl_game_lines(self, season: str, weeks: list[int]) -> Sequence[GameLine]: ...
+    def get_nfl_game_lines(self, season: str, weeks: list[int], positions: Collection[str]) -> Sequence[GameLine]:
+        """Every line from each game in `weeks` by a player at one of `positions`."""
+        ...
 
-    def get_players(self, sport: str = "nfl") -> Mapping[str, PlayerInfo]: ...
+    def get_nfl_players(self) -> Mapping[str, PlayerInfo]: ...
 
-    def get_projections(self, season: str, week: int, scoring: Scoring) -> Mapping[str, Projection]: ...
+    def get_nfl_schedule(self, season: str) -> Sequence[Game]: ...
+
+    def get_nfl_state(self) -> Phase: ...
+
+    def get_projections(
+        self, season: str, week: int, scoring: Scoring, positions: Collection[str]
+    ) -> Mapping[str, Projection]:
+        """The week's projections for the players at `positions`, by player id."""
+        ...
 
     def get_rosters(self, league_id: str) -> Sequence[Team]: ...
 
-    def get_season_schedule(self, season: str) -> Sequence[Game]: ...
-
     def get_season_stats(self, season: str) -> Mapping[str, SeasonTotals]: ...
-
-    def get_state(self, sport: str = "nfl") -> Phase: ...
 
     def get_transactions(self, league_id: str, week: int) -> Sequence[LeagueMove]: ...
 

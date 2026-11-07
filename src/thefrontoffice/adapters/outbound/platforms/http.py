@@ -22,7 +22,7 @@ from typing import Any
 
 import requests
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy, outage
 from thefrontoffice.domain.errors import FrontOfficeError, PlatformUnavailableError
 
@@ -58,11 +58,11 @@ def fetch_many(cache: JsonDiskCache, fetches: Mapping[str, Callable[[], Any]], t
     batch = Batch()
     misses: dict[str, Callable[[], Any]] = {}
     for key, fetch in fetches.items():
-        hit = cache.get(key, ttl)
+        hit = cache.lookup(key, ttl)
         if hit is None:
             misses[key] = fetch
         else:
-            batch.values[key] = hit
+            batch.values[key] = hit.value
     if not misses:
         return batch
 
@@ -126,9 +126,22 @@ class JsonApiClient:
                 raise self._unavailable(self._name, down) from e
             raise self._error(f"{self._name} request failed: {e}") from e
 
-    def cached(self, key: str, url: str, ttl: timedelta, timeout: int | None = None) -> Any:
-        """The cached value for `key`, fetching and storing it when stale or absent."""
-        return self._cache.cached(key, ttl, lambda: self.get(url, timeout=timeout))
+    def cached(
+        self,
+        key: str,
+        url: str,
+        ttl: timedelta,
+        timeout: int | None = None,
+        keep: Callable[[Any], Any] | None = None,
+    ) -> Any:
+        """The cached value for `key`, fetching and storing it when stale or absent.
+
+        `keep` trims a response before it is stored, for an endpoint that
+        answers megabytes of which a handful of fields are ever read: what is
+        cached is then what is kept, not re-parsed from the whole on every read.
+        """
+        trim = keep or (lambda raw: raw)
+        return self._cache.cached(key, ttl, lambda: trim(self.get(url, timeout=timeout)))
 
     def cached_many(self, urls: dict[str, str], ttl: timedelta) -> dict[str, Any]:
         """Several cached GETs at once, fetching only the misses and in parallel.
@@ -141,10 +154,3 @@ class JsonApiClient:
         for key, error in batch.failures.items():
             logger.warning(f"{self._name} batch missing {key}: {error}")
         return batch.values
-
-    def cache_get(self, key: str, ttl: timedelta) -> Any:
-        """A cache read without a fetch, for a caller that transforms before storing."""
-        return self._cache.get(key, ttl)
-
-    def cache_set(self, key: str, value: Any) -> None:
-        self._cache.set(key, value)

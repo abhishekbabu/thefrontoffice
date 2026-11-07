@@ -118,8 +118,8 @@ def test_a_week_with_no_fixture_shows_no_opponent() -> None:
 
 def test_a_player_carries_their_week_and_their_depth() -> None:
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
-    catalog = client.get_players()
-    client.players_catalog = {**catalog, "qb1": PlayerMeta(**catalog["qb1"], depth_chart_order=2)}
+    catalog = client.get_nfl_players()
+    client.players_catalog = {**catalog, "qb1": replace(catalog["qb1"], depth_chart_order=2)}
     detail = nfl_provider(client).player("L1", "qb1")
     labels = {stat.label: stat.value for group in detail.groups for stat in group.stats}
 
@@ -377,7 +377,7 @@ def _with_injury(status: str) -> FakeSleeper:
     client = _live_client({})
     client.season_schedule = STALE
     client.projections = {pid: p for pid, p in DEFAULT_PROJECTIONS.items() if pid != "rb1"}
-    catalog = client.get_players()
+    catalog = client.get_nfl_players()
     client.players_catalog = {
         **catalog,
         "rb1": PlayerMeta(player_id="rb1", name="Good RB", position="RB", team="BUF", injury_status=status),

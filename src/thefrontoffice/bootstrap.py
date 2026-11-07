@@ -41,17 +41,17 @@ from thefrontoffice.domain.ports import (
 )
 
 if TYPE_CHECKING:
+    from thefrontoffice.adapters.outbound.cache import JsonDiskCache
     from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
     from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
     from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
-    from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
     from thefrontoffice.adapters.outbound.llm.routing import Cooldowns, RoutedModel
-    from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
     from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
     from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
     from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
     from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
     from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
+    from thefrontoffice.adapters.outbound.storage.answers import DiskAnswerStore
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +202,7 @@ class Registry:
 
 
 def _disk_cache(directory: str) -> JsonDiskCache:
-    from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+    from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 
     return JsonDiskCache(Path(directory))
 
@@ -254,27 +254,17 @@ def yahoo_auth() -> YahooAuth:
     return _yahoo_auth(_disk_cache(settings.yahoo_cache_dir))
 
 
-# What kept answers and decisions were filed under before they were keyed by
-# `CompetitionEntry.key`: each competition's label as it then read. History,
-# so spelled out rather than read off the entries, whose labels are free to change.
-_FORMER_NAMES = {
-    "nba-yahoo": "NBA (Yahoo)",
-    "nfl-sleeper": "NFL (Sleeper)",
-    "premier-league-fpl": "FPL (Fantasy Premier League)",
-}
-
-
 def _answer_store() -> DiskAnswerStore:
-    from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
+    from thefrontoffice.adapters.outbound.storage.answers import DiskAnswerStore
 
-    return DiskAnswerStore(_disk_cache(settings.answer_cache_dir), renamed=_FORMER_NAMES)
+    return DiskAnswerStore(_disk_cache(settings.answer_cache_dir))
 
 
 def _item_decisions() -> ItemDecisions:
     """The manager's decisions about to-do items, kept on this machine."""
     from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
 
-    return ItemDecisions(DiskItemStateStore(_disk_cache(settings.item_state_dir), renamed=_FORMER_NAMES))
+    return ItemDecisions(DiskItemStateStore(_disk_cache(settings.item_state_dir)))
 
 
 # ── competitions ────────────────────────────────────────────────────

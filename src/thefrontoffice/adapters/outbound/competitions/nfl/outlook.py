@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping, Sequence
 from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item, drop_candidate, join
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, lineup_points
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, NFLSource, Projection
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import SEASON_WEEKS, long_term
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS, long_term
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, lineup_for
 from thefrontoffice.domain.models import Action, WeekAhead
 
@@ -47,7 +47,10 @@ def build(
         return []
     playing = {week: {club for game in games for club in (game.home, game.away)} for week, games in schedule.items()}
     held = [pid for pid in state.roster.player_ids if pid not in state.roster.reserve_ids]
-    projections = {week: client.get_projections(state.season, week, state.league.scoring_format) for week in weeks}
+    projections = {
+        week: client.get_projections(state.season, week, state.league.scoring_format, FANTASY_POSITIONS)
+        for week in weeks
+    }
 
     def lineup(ids: list[str], week: int) -> list[LineupSlot]:
         return lineup_for(state, [pid for pid in ids if not _ruled_out(pid, state)], projections[week])
@@ -81,7 +84,7 @@ def build(
         if row.short:
             # Somebody for the positions the week is without, not a better
             # kicker: that is a different question, asked every week.
-            needed = {str(state.players.get(pid, {}).get("position") or "") for pid in away}
+            needed = {meta.position if (meta := state.players.get(pid)) else "" for pid in away}
             available = [
                 p
                 for pid, p in projections[week].items()
@@ -100,16 +103,17 @@ def build(
 
 def _ruled_out(player_id: str, state: Week) -> bool:
     """Whether his current ruling reaches into the weeks ahead: a long one does; a plain Out is for this week's game."""
-    return long_term(str(state.players.get(player_id, {}).get("injury_status") or ""))
+    meta = state.players.get(player_id)
+    return meta is not None and long_term(meta.injury_status)
 
 
 def _why(player_id: str, state: Week, week: int, playing: set[str]) -> str:
     """'Josh Allen (bye)': who, and why the lineup goes without him; empty where he is available."""
-    meta = state.players.get(player_id, {})
-    name = meta.get("name") or player_id
-    if playing and meta.get("team") not in playing:
+    meta = state.players.get(player_id)
+    name = meta.name if meta else player_id
+    if playing and (meta is None or meta.team not in playing):
         return f"{name} (bye)"
-    return f"{name} ({str(meta.get('injury_status')).lower()})" if _ruled_out(player_id, state) else ""
+    return f"{name} ({meta.injury_status.lower()})" if meta and _ruled_out(player_id, state) else ""
 
 
 def _fixed(

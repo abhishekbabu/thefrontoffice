@@ -25,7 +25,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     ruled_out,
 )
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import NBA, SleeperProjectionSource
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague, YahooPlayer, YahooTeam
@@ -365,7 +365,7 @@ class YahooNBAProvider:
         if start is None or end is None:
             return None
         try:
-            state = self.sleeper.get_state(NBA)
+            state = self.sleeper.get_nba_state()
             rows = self.sleeper.get_nba_projections(state.season, state.week)
             if not rows and state.week:
                 # A matchup can straddle two Sleeper weeks near a boundary.
