@@ -142,7 +142,7 @@ class YahooNBAProvider:
                 league_id=lg.league_key,
                 name=lg.name,
                 detail=lg.league_type,
-                url=LEAGUE_URL.format(league_id=lg.league_key),
+                url=_league_url(lg.league_key),
             )
             for lg in self._leagues()
         ]
@@ -245,15 +245,11 @@ class YahooNBAProvider:
         my_team = yahoo.get_user_team()
         week = yahoo.get_matchup(my_team.team_key)
 
-        # Roster context is enrichment: losing it degrades the prompt but must
-        # not block the evaluation the user asked for.
-        try:
-            roster = self.context_builder.build_context_for_players(
-                yahoo.roster(my_team.team_key), week.start if week else None, week.end if week else None
-            )
-        except FrontOfficeError as e:
-            logger.warning(f"Failed to build roster context for trade: {e}")
-            roster = "(Roster data unavailable)"
+        # Not enrichment: a trade is judged against the roster it changes, and
+        # one judged without it is an answer to a different question.
+        roster = self.context_builder.build_context_for_players(
+            yahoo.roster(my_team.team_key), week.start if week else None, week.end if week else None
+        )
 
         text = prompt.trade(
             giving=self.context_builder.build_context_for_players(giving),
@@ -330,11 +326,11 @@ class YahooNBAProvider:
         return cards
 
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
-        """One player, with their last-fifteen line where Sleeper has it."""
-        yahoo = self._yahoo(league_id)
-        player = next((p for p in yahoo.roster(yahoo.get_user_team().team_key) if p.player_key == player_id), None)
-        if player is None:
+        """Any player in the league — yours, a rival's or a free agent — with their last-fifteen line where Sleeper has it."""
+        found = self._yahoo(league_id).players([player_id])
+        if not found:
             raise PlayerNotFoundError([player_id])
+        player = found[0]
 
         stats = self.nba.get_player_stats(player.name)
         points = _recent(stats, POINTS)
@@ -446,17 +442,28 @@ def _standings(teams: list[YahooTeam]) -> list[StandingRow]:
     return sorted(rows, key=lambda row: row.rank)
 
 
-def _team_url(team_key: str) -> str:
-    """A team's page on Yahoo, addressed the way Yahoo addresses it.
+def _league_url(league_key: str) -> str:
+    """A league's page on Yahoo: `<game>.l.<league>` addressed by its number."""
+    numbers = _key_numbers(league_key, "l")
+    return LEAGUE_URL.format(league_id=numbers[0]) if numbers else ""
 
-    A team key is `nba.l.<league>.t.<team>` and the URL wants the two
-    numbers, not the key — so a key in an unexpected shape yields no link
-    rather than a broken one.
+
+def _team_url(team_key: str) -> str:
+    """A team's page on Yahoo: `<game>.l.<league>.t.<team>` addressed by its two numbers."""
+    numbers = _key_numbers(team_key, "l", "t")
+    return TEAM_URL.format(league_id=numbers[0], team_id=numbers[1]) if numbers else ""
+
+
+def _key_numbers(key: str, *kinds: str) -> list[str]:
+    """The number after each of `kinds` in a Yahoo key; empty for a key in any other shape.
+
+    A URL wants the numbers, not the key — so a key in an unexpected shape
+    yields no link rather than a broken one.
     """
-    parts = team_key.split(".")
-    if len(parts) != 5 or parts[3] != "t":
-        return ""
-    return TEAM_URL.format(league_id=parts[2], team_id=parts[4])
+    parts = key.split(".")
+    if len(parts) != 1 + 2 * len(kinds) or tuple(parts[1::2]) != kinds:
+        return []
+    return parts[2::2]
 
 
 def _adds(used: int, limit: int) -> list[Stat]:

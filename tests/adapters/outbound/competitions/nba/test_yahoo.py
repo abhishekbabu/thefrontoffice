@@ -29,7 +29,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProv
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooTeam
 from thefrontoffice.application.scouting import ScoutEngine
-from thefrontoffice.domain.errors import LeagueNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat
 
 
@@ -314,6 +314,20 @@ def test_recent_form_sorts_as_a_number() -> None:
     assert card.values == {"PTS": 20.0, "REB": 8.0, "AST": 5.0}
 
 
+def test_the_drawer_opens_for_a_player_on_nobodys_roster_or_a_rivals() -> None:
+    """The wire and other managers' rosters open the same drawer as your own."""
+    yahoo = FakeYahoo(available=[make_player("Free Man", key="fa")])
+    provider = nba_provider(yahoo)
+
+    assert provider.player("", "fa").name == "Free Man"
+    assert provider.player("", "their-team-one").name == "Their Team One"
+
+
+def test_a_player_the_league_does_not_know_is_not_found() -> None:
+    with pytest.raises(PlayerNotFoundError):
+        nba_provider().player("", "nobody")
+
+
 def test_a_percentage_with_nothing_attempted_is_a_dash_not_zero() -> None:
     yahoo = FakeYahoo(roster=[make_player("A B", key="ab")])
     detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(pts=10)})).player("", "ab")
@@ -499,6 +513,13 @@ def test_a_team_link_is_built_from_the_two_numbers_in_its_key() -> None:
     }
 
     assert teams["Theirs"] == "https://basketball.fantasysports.yahoo.com/nba/123/4"
+
+
+def test_a_league_link_is_built_from_the_number_in_its_key() -> None:
+    """The key `428.l.12345` is not a path Yahoo serves; its number is."""
+    [league] = _two_league_provider(FakeYahooAuth([yahoo_league("428.l.12345", "One")])).list_leagues()
+
+    assert league.url == "https://basketball.fantasysports.yahoo.com/nba/12345"
 
 
 def test_a_key_in_an_unexpected_shape_yields_no_link_rather_than_a_broken_one() -> None:

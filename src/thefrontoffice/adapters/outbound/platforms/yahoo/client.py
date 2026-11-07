@@ -141,6 +141,10 @@ class YahooSource(Protocol):
         """Players in the league whose name matches `query`."""
         ...
 
+    def players(self, player_keys: list[str]) -> list[YahooPlayer]:
+        """The players with these keys, whoever holds them; a key Yahoo does not know is left out."""
+        ...
+
     def teams(self) -> list[YahooTeam]:
         """Every team in the league."""
         ...
@@ -227,6 +231,20 @@ class YahooClient:
             f"player_search_{self.league.league_key}_{query}",
             SEARCH_TTL,
             lambda: self._fetch(f"players;search={query}"),
+        )
+        return self._players(raw)
+
+    def players(self, player_keys: list[str]) -> list[YahooPlayer]:
+        """The players with these keys, whoever holds them — yours, a rival's or nobody's.
+
+        A key Yahoo does not know is left out, so asking for one that is gone
+        is an empty answer rather than a failure.
+        """
+        keys = ",".join(player_keys)
+        raw = self._cache.cached(
+            f"players_by_key_{self.league.league_key}_{keys}",
+            ROSTER_TTL,
+            lambda: self._fetch(f"players;player_keys={keys}"),
         )
         return self._players(raw)
 

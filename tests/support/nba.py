@@ -126,6 +126,17 @@ class FakeYahoo:
     def search_players(self, query: str) -> list[YahooPlayer]:
         return self.search_results.get(query, [])
 
+    def players(self, player_keys: list[str]) -> list[YahooPlayer]:
+        """Anybody this league was built with, on a roster or not."""
+        everyone = [
+            *self.roster_players,
+            *(p for t in self.league_teams if t.team_key != "t.1" for p in self.roster(t.team_key)),
+            *self.available,
+            *(p for found in self.search_results.values() for p in found),
+            *(p for leaders in self.stat_leaders.values() for p in leaders),
+        ]
+        return [p for key in player_keys if (p := next((p for p in everyone if p.player_key == key), None))]
+
 
 def yahoo_league(key: str = "466.l.1", name: str = "One") -> YahooLeague:
     return YahooLeague(league_key=key, name=name, league_type="head", current_week=5)
