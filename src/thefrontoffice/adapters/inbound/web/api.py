@@ -18,7 +18,7 @@ import threading
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -482,7 +482,7 @@ def _serve_frontend(app: FastAPI, dist: Path) -> None:
     app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
-    def spa(path: str) -> Any:
+    def spa(path: str) -> FileResponse:
         """Any non-API path returns index.html; the client owns routing.
 
         An unmatched API path is a 404 rather than the page, because this
