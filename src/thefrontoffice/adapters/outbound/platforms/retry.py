@@ -1,9 +1,9 @@
-"""Retry policy shared by the platform clients.
+"""When a platform request is worth a second attempt, and when its failure means the platform is down.
 
-Every platform this app talks to fails the same two ways — the connection
-stalls, or the server returns a 5xx — and each has its own extra signal for
-"come back later". Encoding the common part once means a client only declares
-what is unusual about it.
+Every platform this app talks to fails the same ways — the connection stalls,
+the server answers 5xx, or it answers 429 to say "come back later" — so one
+classification serves them all, and the outage a user is told about is read off
+the same rules that decide a retry.
 
 The distinction that matters is transient versus permanent: retrying a 404 or a
 changed payload shape burns a rate-limit budget on a request that will fail
@@ -12,6 +12,7 @@ identically.
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import requests
 from tenacity import (
@@ -24,47 +25,57 @@ from tenacity import (
 
 logger = logging.getLogger(__name__)
 
-RETRYABLE_NETWORK_EXCEPTIONS = (
-    requests.exceptions.Timeout,
-    requests.exceptions.ConnectionError,
-    requests.exceptions.ChunkedEncodingError,
-)
+RATE_LIMITED = 429
+"""How Sleeper, FPL, ESPN and Yahoo all say "too many requests"."""
 
 
-def is_transient(exc: BaseException, retryable_status: frozenset[int] = frozenset()) -> bool:
-    """Whether a failure is worth a second attempt.
+def is_transient(exc: BaseException) -> bool:
+    """Whether a failure is worth a second attempt."""
+    return bool(outage(exc))
 
-    Args:
-        retryable_status: extra HTTP codes to retry beyond 5xx, such as a
-            platform's documented rate-limit code.
+
+def outage(exc: BaseException) -> str:
+    """What says the platform itself is not answering, in a few words; empty for any other failure.
+
+    A 5xx is the server saying it cannot answer, a 429 it refusing to for now,
+    and a timeout or a dropped connection it not answering at all. Any other 4xx
+    is a request it understood and turned down, which waiting will not change.
     """
-    if isinstance(exc, RETRYABLE_NETWORK_EXCEPTIONS):
-        return True
     if isinstance(exc, requests.exceptions.HTTPError):
-        response = exc.response
-        if response is None:
-            return False
-        return response.status_code >= 500 or response.status_code in retryable_status
-    return False
+        status = exc.response.status_code if exc.response is not None else 0
+        return f"it answered {status}" if status >= 500 or status == RATE_LIMITED else ""
+    if isinstance(exc, requests.exceptions.Timeout):
+        return "it timed out"
+    if isinstance(exc, (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError)):
+        return "the connection failed"
+    return ""
 
 
-def build_retry(
-    *,
-    attempts: int,
-    multiplier: float,
-    min_wait: float,
-    max_wait: float,
-    predicate: Callable[[BaseException], bool],
-) -> Retrying:
-    """A tenacity retry with exponential backoff, logging each pause.
+@dataclass(frozen=True)
+class RetryPolicy:
+    """How many times to try a transient failure, backing off exponentially between attempts.
 
-    `reraise=True` so callers see the original error rather than tenacity's
-    wrapper, and can translate it into a domain error.
+    Handed to each client by the composition root, so a test hands it one that
+    keeps the attempts and drops the waiting.
     """
-    return Retrying(
-        stop=stop_after_attempt(attempts),
-        wait=wait_exponential(multiplier=multiplier, min=min_wait, max=max_wait),
-        retry=retry_if_exception(predicate),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        reraise=True,
-    )
+
+    attempts: int = 3
+    min_wait: float = 2
+    max_wait: float = 20
+    multiplier: float = 2
+
+    def call[T](self, fetch: Callable[[], T]) -> T:
+        """`fetch`, retried while it fails transiently.
+
+        The original error is re-raised once attempts run out, so the caller can
+        translate it into its own platform's error. Tenacity's state lives in
+        the `Retrying` built here, one per call.
+        """
+        retrying = Retrying(
+            stop=stop_after_attempt(self.attempts),
+            wait=wait_exponential(multiplier=self.multiplier, min=self.min_wait, max=self.max_wait),
+            retry=retry_if_exception(is_transient),
+            before_sleep=before_sleep_log(logger, logging.WARNING),
+            reraise=True,
+        )
+        return retrying(fetch)

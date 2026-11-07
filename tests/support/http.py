@@ -4,6 +4,11 @@ from typing import Any
 
 import requests
 
+from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
+
+NO_WAIT = RetryPolicy(min_wait=0, max_wait=0)
+"""The real policy's attempts and its idea of transient, without the seconds of backoff between them."""
+
 
 def http_error(status: int) -> requests.exceptions.HTTPError:
     """A failed request carrying a real Response with `status`: all the retry and outage checks read off one."""

@@ -1,6 +1,6 @@
 """Yahoo's failures, as the rest of the app sees them — including the two its login can fix."""
 
-from thefrontoffice.domain.errors import FrontOfficeError, PlatformError
+from thefrontoffice.domain.errors import FrontOfficeError, PlatformError, PlatformUnavailableError
 
 
 class YahooAPIError(PlatformError):
@@ -11,6 +11,10 @@ class YahooAPIError(PlatformError):
     """
 
     platform = "Yahoo"
+
+
+class YahooUnavailableError(PlatformUnavailableError, YahooAPIError):
+    """Yahoo is down or not answering."""
 
 
 class YahooAuthError(FrontOfficeError):

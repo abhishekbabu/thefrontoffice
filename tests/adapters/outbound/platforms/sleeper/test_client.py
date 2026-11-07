@@ -9,14 +9,10 @@ from typing import Any
 
 import pytest
 import requests
-from support.http import FakeResponse, FakeSession
+from support.http import NO_WAIT, FakeResponse, FakeSession
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
-from thefrontoffice.adapters.outbound.platforms.sleeper.client import (
-    RETRY_MAX_ATTEMPTS,
-    SleeperClient,
-    _is_retryable,
-)
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
 
 STATE = {"week": 5, "season": "2026", "season_type": "regular", "display_week": 5}
@@ -26,31 +22,13 @@ def _client(
     routes: dict[str, Any], tmp_path: Path, error: Exception | None = None
 ) -> tuple[SleeperClient, FakeSession]:
     session = FakeSession(routes, error)
-    return SleeperClient(cache=JsonDiskCache(tmp_path / "cache"), session=session), session
+    return SleeperClient(cache=JsonDiskCache(tmp_path / "cache"), retry=NO_WAIT, session=session), session
 
 
 # ── retry policy ────────────────────────────────────────────────────────
 
 
-def test_network_failures_and_rate_limits_are_retryable() -> None:
-    assert _is_retryable(requests.exceptions.Timeout())
-    assert _is_retryable(requests.exceptions.ConnectionError())
-    r = requests.Response()
-    r.status_code = 429  # Sleeper's documented rate-limit code
-    assert _is_retryable(requests.exceptions.HTTPError(response=r))
-    r.status_code = 503
-    assert _is_retryable(requests.exceptions.HTTPError(response=r))
-
-
-def test_a_missing_league_is_not_retryable() -> None:
-    """A 404 means the league does not exist; retrying only burns rate limit."""
-    r = requests.Response()
-    r.status_code = 404
-    assert not _is_retryable(requests.exceptions.HTTPError(response=r))
-    assert not _is_retryable(ValueError("bad json"))
-
-
-def test_no_connection_is_sleeper_being_down(tmp_path: Path, no_retry_wait: None) -> None:
+def test_no_connection_is_sleeper_being_down(tmp_path: Path) -> None:
     # Still Sleeper's own error, so callers that carry on without Sleeper still
     # catch it, and the outage kind of it.
     client, _ = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
@@ -58,14 +36,14 @@ def test_no_connection_is_sleeper_being_down(tmp_path: Path, no_retry_wait: None
         client.get_state()
 
 
-def test_a_failing_request_is_retried_until_the_attempts_run_out(tmp_path: Path, no_retry_wait: None) -> None:
+def test_a_failing_request_is_retried_until_the_attempts_run_out(tmp_path: Path) -> None:
     client, session = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
     with pytest.raises(SleeperUnavailableError):
         client.get_state()
-    assert len(session.requests) == RETRY_MAX_ATTEMPTS
+    assert len(session.requests) == NO_WAIT.attempts
 
 
-def test_a_transient_failure_then_success_is_retried(tmp_path: Path, no_retry_wait: None) -> None:
+def test_a_transient_failure_then_success_is_retried(tmp_path: Path) -> None:
     class Flaky(FakeSession):
         def get(self, url: str, timeout: int = 0) -> FakeResponse:
             self.requests.append(url)
@@ -73,7 +51,7 @@ def test_a_transient_failure_then_success_is_retried(tmp_path: Path, no_retry_wa
                 raise requests.exceptions.Timeout()
             return FakeResponse(STATE)
 
-    client = SleeperClient(cache=JsonDiskCache(tmp_path / "cache"), session=Flaky({}))
+    client = SleeperClient(cache=JsonDiskCache(tmp_path / "cache"), retry=NO_WAIT, session=Flaky({}))
     assert client.get_state().week == 5
 
 

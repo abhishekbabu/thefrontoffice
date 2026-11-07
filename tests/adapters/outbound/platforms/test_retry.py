@@ -1,13 +1,10 @@
-"""Tests for the retry policy shared by the platform clients."""
-
-from collections.abc import Callable
+"""Tests for the retry policy and outage classification shared by the platform clients."""
 
 import pytest
 import requests
-from support.http import http_error
-from tenacity import Retrying
+from support.http import NO_WAIT, http_error
 
-from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
+from thefrontoffice.adapters.outbound.platforms.retry import is_transient, outage
 
 # ── classification ──────────────────────────────────────────────────────
 
@@ -30,12 +27,11 @@ def test_client_errors_are_not() -> None:
     """Retrying a 404 burns the budget on a request that will fail identically."""
     assert not is_transient(http_error(400))
     assert not is_transient(http_error(404))
-    assert not is_transient(http_error(429))
 
 
-def test_a_platform_can_add_its_own_retryable_codes() -> None:
-    assert is_transient(http_error(429), frozenset({429}))
-    assert not is_transient(http_error(404), frozenset({429}))
+def test_rate_limiting_is_transient() -> None:
+    """Every platform here says "come back later" with a 429."""
+    assert is_transient(http_error(429))
 
 
 def test_an_http_error_without_a_response_is_not_transient() -> None:
@@ -48,12 +44,31 @@ def test_unrelated_exceptions_are_not_transient() -> None:
     assert not is_transient(ValueError("bad literal"))
 
 
+# ── what an outage is ──────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("error", "said"),
+    [
+        (http_error(503), "it answered 503"),
+        (http_error(429), "it answered 429"),
+        (requests.exceptions.Timeout(), "it timed out"),
+        (requests.exceptions.ConnectionError(), "the connection failed"),
+        (requests.exceptions.ChunkedEncodingError(), "the connection failed"),
+    ],
+    ids=["server-error", "rate-limited", "timeout", "refused", "dropped-mid-response"],
+)
+def test_every_transient_failure_is_an_outage_named_in_a_few_words(error: Exception, said: str) -> None:
+    """One classification: what is worth retrying is what, once retries run out, says to wait."""
+    assert outage(error) == said
+
+
+@pytest.mark.parametrize("error", [http_error(404), requests.exceptions.HTTPError(), ValueError("bad json")])
+def test_a_permanent_failure_is_no_outage(error: Exception) -> None:
+    assert outage(error) == ""
+
+
 # ── behavior ───────────────────────────────────────────────────────────
-
-
-def _retry(predicate: Callable[[BaseException], bool] = is_transient) -> Retrying:
-    """A retry that does not really sleep, so the suite stays fast."""
-    return build_retry(attempts=3, multiplier=1, min_wait=0, max_wait=0, predicate=predicate).copy(wait=lambda _: 0)
 
 
 def test_a_transient_failure_then_success_is_retried() -> None:
@@ -65,7 +80,7 @@ def test_a_transient_failure_then_success_is_retried() -> None:
             raise requests.exceptions.Timeout()
         return "ok"
 
-    assert _retry()(flaky) == "ok"
+    assert NO_WAIT.call(flaky) == "ok"
     assert len(calls) == 2
 
 
@@ -77,7 +92,7 @@ def test_a_permanent_failure_is_not_retried() -> None:
         raise http_error(404)
 
     with pytest.raises(requests.exceptions.HTTPError):
-        _retry()(broken)
+        NO_WAIT.call(broken)
     assert len(calls) == 1
 
 
@@ -90,5 +105,5 @@ def test_attempts_are_bounded_and_the_original_error_reraises() -> None:
         raise requests.exceptions.Timeout()
 
     with pytest.raises(requests.exceptions.Timeout):
-        _retry()(always)
-    assert len(calls) == 3
+        NO_WAIT.call(always)
+    assert len(calls) == NO_WAIT.attempts

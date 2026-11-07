@@ -16,7 +16,7 @@ PACKAGE = Path(__file__).resolve().parent.parent / "src" / "thefrontoffice"
 VENDORS = ("Sleeper", "ESPN", "FPL", "Yahoo", "Gemini", "Groq", "OpenRouter")
 """Platforms and model vendors the core must never name: it describes what it needs, not who supplies it."""
 
-CLIENTS = {"SleeperClient", "ESPNClient", "FPLClient", "YahooClient"}
+CLIENTS = {"SleeperClient", "ESPNClient", "FPLClient", "YahooClient", "YahooAuth"}
 """Concrete platform clients, which only the composition root builds."""
 
 

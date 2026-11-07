@@ -12,14 +12,11 @@ effectively forever, trending for an hour.
 
 import logging
 from datetime import timedelta
-from pathlib import Path
 from typing import Any, Protocol
-
-from tenacity import Retrying
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
-from thefrontoffice.adapters.outbound.platforms.retry import build_retry, is_transient
+from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     EMPTY_SLOT,
@@ -46,7 +43,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     TrendingPlayer,
     WeeklyProjection,
 )
-from thefrontoffice.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -83,23 +79,6 @@ SEASON_SCHEDULE_TTL = timedelta(hours=12)
 NBA_LOGS_TTL = timedelta(hours=3)
 NFL_LINES_TTL = timedelta(hours=3)
 TRANSACTIONS_TTL = timedelta(minutes=15)
-
-RETRY_MAX_ATTEMPTS = 3
-
-# Sleeper documents 429 for rate limiting; everything else transient is common.
-RETRYABLE_STATUS = frozenset({429})
-
-
-def _is_retryable(exc: BaseException) -> bool:
-    """Whether a Sleeper failure is transient.
-
-    A 404 means the league or user does not exist and will never succeed.
-    """
-    return is_transient(exc, RETRYABLE_STATUS)
-
-
-def _retry() -> Retrying:
-    return build_retry(attempts=RETRY_MAX_ATTEMPTS, multiplier=2, min_wait=2, max_wait=20, predicate=_is_retryable)
 
 
 class SleeperNFLSource(Protocol):
@@ -163,13 +142,11 @@ class SleeperProjectionSource(Protocol):
 class SleeperClient:
     """Read-only access to Sleeper's fantasy and NFL data."""
 
-    def __init__(self, cache: JsonDiskCache | None = None, session: Any = None) -> None:
+    def __init__(self, *, cache: JsonDiskCache, retry: RetryPolicy, session: Any = None) -> None:
         self._api = JsonApiClient(
             name="Sleeper",
-            cache=cache or JsonDiskCache(Path(settings.sleeper_cache_dir)),
-            # Read through the module global rather than binding it here, so the
-            # policy stays one thing a test can replace.
-            retry=lambda: _retry(),
+            cache=cache,
+            retry=retry,
             error=SleeperAPIError,
             unavailable=SleeperUnavailableError,
             session=session,

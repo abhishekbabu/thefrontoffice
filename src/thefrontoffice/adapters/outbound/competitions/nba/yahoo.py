@@ -270,13 +270,13 @@ class YahooNBAProvider:
                 url=_team_url(str(getattr(team, "team_key", ""))),
                 is_mine=getattr(team, "team_key", None) == my_key,
             )
-            for team in yahoo.league.teams()
+            for team in yahoo.teams()
         ]
         return sorted([r for r in refs if r.team_id], key=lambda ref: (not ref.is_mine, ref.name.lower()))
 
     def roster_of(self, league_id: str, team_id: str) -> list[PlayerCard]:
         """Another manager's roster, in the same columns as your own."""
-        teams = self._yahoo(league_id).league.teams()
+        teams = self._yahoo(league_id).teams()
         team = next((t for t in teams if str(getattr(t, "team_key", "")) == team_id), None)
         if team is None:
             raise TeamNotFoundError(team_id)
@@ -429,7 +429,7 @@ def _standings(yahoo: YahooSource, mine: Team) -> list[StandingRow]:
     """Read defensively: yahoofantasy sets these by setattr at runtime, so
     a team missing its standings block is a shape question, not an error."""
     rows: list[tuple[int, StandingRow]] = []
-    for team in yahoo.league.teams():
+    for team in yahoo.teams():
         standings = getattr(team, "team_standings", None)
         if standings is None:
             continue

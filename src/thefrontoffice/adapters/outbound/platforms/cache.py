@@ -1,16 +1,11 @@
-"""One JSON cache on disk, shared by every platform this app reads from.
+"""One JSON cache on disk, the store every platform client and kept answer shares.
 
-The platforms differ in transport — two are plain public JSON, one is behind a
-vendor SDK, one is a stats endpoint that rate-limits aggressively — but they
-want the same thing from a cache: keep the last answer, and say when it stopped
-being true. So the store is shared and only the *freshness rule* varies.
-
-Most rules are a TTL, chosen from how fast the endpoint actually moves: Sleeper
-asks callers to fetch its ~14MB catalog at most once a day, and a finished
-season never changes again. Some are not expressible as a duration at all —
-basketball's game log is good until the next game tips off, which is a moment
-rather than an interval — so a rule is a predicate over when the entry was
-stored, and `within` is the common case of one.
+The platforms differ in transport — three are plain public JSON, one is behind
+a vendor SDK — but they want the same thing from a cache: keep the last answer,
+and say when it stopped being true. Each read says how old an entry may be, a
+TTL chosen from how fast that endpoint actually moves: Sleeper asks callers to
+fetch its ~14MB catalog at most once a day, while a live score is stale in
+minutes.
 
 A cache is a **directory** and each key is its own file inside it. The
 alternative, one document holding every entry, makes storing the smallest value
@@ -24,6 +19,9 @@ process killed mid-write leaves the previous entry intact rather than a
 half-written one. Nothing here is precious — the truth lives at the platform,
 and a lost or unreadable entry costs one refetch — but a cache that corrupts
 itself on Ctrl-C makes the next run slow for no reason.
+
+What has been read is held in memory, which is not safe to write from several
+threads at once: a caller fetching in parallel stores on one thread.
 """
 
 import hashlib
@@ -41,23 +39,10 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-Freshness = Callable[[datetime, datetime], bool]
-"""Given when an entry was stored and what time it is now, is it still good?"""
-
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 _SLUG_LIMIT = 60
 """Long enough to recognise an entry by eye, short enough to stay inside the
 path limits Windows still enforces once a deep repo path is prefixed."""
-
-
-def within(ttl: timedelta) -> Freshness:
-    """The common rule: good for a fixed interval after it was stored."""
-    return lambda stored_at, now: now - stored_at <= ttl
-
-
-def _rule(freshness: timedelta | Freshness) -> Freshness:
-    """Accept a bare TTL wherever a rule is asked for, since most are one."""
-    return within(freshness) if isinstance(freshness, timedelta) else freshness
 
 
 def _filename(key: str) -> str:
@@ -75,7 +60,7 @@ def _filename(key: str) -> str:
 
 
 class JsonDiskCache:
-    """Namespaced JSON values on disk, one file per key, each with its own rule."""
+    """Namespaced JSON values on disk, one file per key."""
 
     def __init__(self, path: Path) -> None:
         """`path` is the directory the entries live in; it is created on write."""
@@ -98,7 +83,7 @@ class JsonDiskCache:
         except (OSError, ValueError) as e:
             logger.warning(f"Discarding unreadable cache entry {path}: {e}")
             return None
-        if not isinstance(raw, dict) or "stored_at" not in raw:
+        if not isinstance(raw, dict) or "stored_at" not in raw or "value" not in raw:
             return None
         self._entries[key] = raw
         return raw
@@ -129,12 +114,8 @@ class JsonDiskCache:
             if temp is not None:
                 temp.unlink(missing_ok=True)
 
-    def get(self, key: str, freshness: timedelta | Freshness, now: datetime | None = None) -> Any | None:
-        """Return the cached value for `key`, or None if absent or stale.
-
-        `freshness` is a TTL for the usual case, or a predicate for a rule a
-        duration cannot express.
-        """
+    def _fresh(self, key: str, ttl: timedelta, now: datetime | None) -> dict[str, Any] | None:
+        """The envelope for `key` if it was stored within `ttl` of `now`."""
         entry = self._read(key)
         if entry is None:
             return None
@@ -144,10 +125,12 @@ class JsonDiskCache:
             return None
         if stored_at.tzinfo is None:
             return None  # no zone, so it cannot be placed on a timeline
-        moment = now or datetime.now(UTC)
-        if not _rule(freshness)(stored_at, moment):
-            return None
-        return entry.get("value")
+        return entry if (now or datetime.now(UTC)) - stored_at <= ttl else None
+
+    def get(self, key: str, ttl: timedelta, now: datetime | None = None) -> Any | None:
+        """The value stored for `key` within `ttl`, or None if absent or stale."""
+        entry = self._fresh(key, ttl, now)
+        return entry["value"] if entry is not None else None
 
     def set(self, key: str, value: Any, now: datetime | None = None) -> None:
         """Store `value` under `key` and persist it."""
@@ -156,23 +139,18 @@ class JsonDiskCache:
         self._entries[key] = entry
         self._write(key, entry)
 
-    def cached(
-        self,
-        key: str,
-        freshness: timedelta | Freshness,
-        fetch: Callable[[], T],
-        now: datetime | None = None,
-    ) -> T:
+    def cached(self, key: str, ttl: timedelta, fetch: Callable[[], T], now: datetime | None = None) -> T:
         """The stored value for `key`, calling `fetch` only when it is stale.
 
         The read-through every platform wants, in one place: a hit never
         touches the network, and a miss stores what it fetched. A fetch that
         raises propagates rather than caching a failure as though it were an
-        answer.
+        answer. A stored null is a hit like any other value: an endpoint that
+        answers null is not asked again until the entry expires.
         """
-        hit = self.get(key, freshness, now=now)
-        if hit is not None:
-            return hit
+        entry = self._fresh(key, ttl, now)
+        if entry is not None:
+            return entry["value"]
         value = fetch()
         self.set(key, value, now=now)
         return value
