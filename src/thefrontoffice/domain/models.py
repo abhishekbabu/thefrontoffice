@@ -43,6 +43,30 @@ class Move(BaseModel):
     """The counterpart dropped, benched or transferred out; empty where there is none."""
     replaces_rationale: str = ""
 
+    @computed_field
+    @property
+    def title(self) -> str:
+        """The move as an instruction, the way a to-do item words its own: 'Add Warren, drop Johnson'.
+
+        Written here, once, so a page and a terminal phrase a move alike.
+        """
+        verb, join = MOVE_WORDS[self.action]
+        rest = f"{join} {self.replaces}" if self.replaces and join else ""
+        return f"{verb} {self.player}{rest}"
+
+
+MOVE_WORDS: dict[MoveAction, tuple[str, str]] = {
+    "ADD": ("Add", ", drop"),
+    "DROP": ("Drop", ""),
+    "START": ("Start", " over"),
+    "BENCH": ("Bench", " for"),
+    "TRANSFER": ("Bring in", " for"),
+    "CAPTAIN": ("Captain", ""),
+    "MONITOR": ("Watch", ""),
+}
+"""Each action's verb, and how it joins the player it `replaces`: empty where the
+action takes nobody out, so a counterpart the model named anyway is not read as one."""
+
 
 Tone = Literal["neutral", "good", "warning"]
 """Whether a figure should pull the eye. Named so a provider computing one can
@@ -144,6 +168,18 @@ class PlayerCard(BaseModel):
         ),
     )
     tone: Tone = "neutral"
+    ruled_out: bool = Field(
+        default=False,
+        description=(
+            "Whether his status means he will not play, rather than that he might not — "
+            "decided by the provider, which knows its platform's words for it."
+        ),
+    )
+
+
+FIT_COLUMN = "Fits"
+"""The column where a provider says how a player fits your lineup: the inbound
+side places the chance of winning beside it."""
 
 
 class StatGroup(BaseModel):
@@ -161,8 +197,8 @@ NOT_APPLICABLE = "N/A"
 """What a cell reads where a period has no answer at all.
 
 Part of the contract rather than a formatting choice: a nought is an answer and
-this is the absence of one, and every client that dims one and not the other is
-matching on this exact string.
+this is the absence of one. Sent with every table as `StatTable.absent`, so a
+client dims it without keeping its own copy of the string.
 """
 
 
@@ -196,6 +232,10 @@ class StatTable(BaseModel):
         )
     )
     rows: list[StatRow] = Field(default_factory=list)
+    absent: str = Field(
+        default=NOT_APPLICABLE,
+        description="What a cell reads where its column has no answer, so a client can tell it from a figure.",
+    )
 
 
 class PlayerDetail(BaseModel):
@@ -363,6 +403,13 @@ class Action(BaseModel):
     resurfaced: bool = Field(
         default=False,
         description="Whether a dismissed item has changed since, and so is back.",
+    )
+    chance: Stat | None = Field(
+        default=None,
+        description=(
+            "`win_change` as it reads — '+2.8% to win', toned by its sign. Written where the "
+            "week is presented, so a page and a terminal say it alike; None where unpriced."
+        ),
     )
 
     @computed_field
@@ -732,6 +779,14 @@ class Calibration(BaseModel):
     buckets: list[CalibrationBucket] = Field(default_factory=list)
 
 
+Outcome = Literal["won", "lost", "drawn"]
+
+
+def outcome(mine: float, theirs: float) -> Outcome:
+    """How a played matchup ended for the side scoring `mine`."""
+    return "won" if mine > theirs else "lost" if mine < theirs else "drawn"
+
+
 class ScheduleRow(BaseModel):
     """One week of your own season, played or still to come."""
 
@@ -740,7 +795,7 @@ class ScheduleRow(BaseModel):
     opponent: str = Field(default="", description="Who you play. Empty on a bye, which is not an opponent named 'bye'.")
     detail: str = Field(default="", description="Their record, or however the league identifies them.")
     result: str = Field(default="", description="The score once it is played, and nothing before that.")
-    tone: Tone = "neutral"
+    outcome: Outcome | None = Field(default=None, description="How it ended, once it has; None before.")
     is_current: bool = False
     """The week in progress, so a long table can say where you are in it."""
     playoffs: bool = False
@@ -797,7 +852,8 @@ class ActivityRow(BaseModel):
     who: str = Field(default="", description="The manager, not the roster id.")
     what: str = Field(description="Add, drop, trade, waiver — in the platform's own vocabulary.")
     detail: str = Field(default="", description="The players involved.")
-    tone: Tone = "neutral"
+    is_mine: bool = False
+    """Your own move, so it can be found among everyone else's."""
 
 
 class LeagueSchedule(BaseModel):

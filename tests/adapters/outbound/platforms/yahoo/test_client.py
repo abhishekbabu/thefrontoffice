@@ -405,7 +405,7 @@ def test_a_403_names_the_permission_that_is_actually_missing() -> None:
     error = translate(http_error(403))
 
     assert isinstance(error, YahooAuthError)
-    assert error.code == "yahoo_not_approved"
+    assert error.code == "access_not_approved"
 
 
 @pytest.mark.parametrize("error", [http_error(500), requests.exceptions.Timeout()], ids=["5xx", "timeout"])
@@ -427,8 +427,8 @@ def test_conditions_an_adapter_can_offer_to_fix_carry_a_code() -> None:
     The remedy differs by adapter — a terminal names a command, the web offers a
     button — so neither belongs in the error and both need to recognize it.
     """
-    assert YahooLoginRequiredError().code == "yahoo_login_required"
-    assert YahooAuthError().code == "yahoo_not_approved"
+    assert YahooLoginRequiredError().code == "login_required"
+    assert YahooAuthError().code == "access_not_approved"
 
 
 def test_no_error_message_names_a_command_or_a_button() -> None:
