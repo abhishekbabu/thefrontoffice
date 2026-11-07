@@ -247,7 +247,7 @@ class YahooNBAProvider:
 
         # Not enrichment: a trade is judged against the roster it changes, and
         # one judged without it is an answer to a different question.
-        roster = self.context_builder.build_context_for_players(
+        roster = self.context_builder.build_player_lines(
             yahoo.roster(my_team.team_key), week.start if week else None, week.end if week else None
         )
 
@@ -255,9 +255,9 @@ class YahooNBAProvider:
             giving=self.context_builder.build_context_for_players(giving),
             receiving=self.context_builder.build_context_for_players(receiving),
             week=week,
-            roster=roster,
+            roster="".join(roster.values()),
         )
-        return CompetitionContext(prompt=text, situation=prompt.matchup(week))
+        return CompetitionContext(prompt=text, situation=prompt.matchup(week), roster_lines=roster)
 
     # ── players and teams ───────────────────────────────────────────
 

@@ -81,6 +81,16 @@ def test_the_matchup_is_carried_as_the_situation() -> None:
     assert "BLK: 12 vs 17" in situation
 
 
+def test_the_roster_rides_along_for_the_follow_up_briefing() -> None:
+    """A follow-up is seeded from the roster lines, not the generation prompt."""
+    yahoo = FakeYahoo(
+        search_results={n: [make_player(n)] for n in ("LeBron James", "Jayson Tatum")},
+        roster=[make_player("Existing Starter")],
+    )
+
+    assert list(_context(yahoo).roster_lines) == ["Existing Starter"]
+
+
 def test_a_roster_failure_fails_the_evaluation_rather_than_judging_without_it() -> None:
     """A trade is judged against the roster it changes; without it the answer is to a different question."""
     yahoo = FakeYahoo(
