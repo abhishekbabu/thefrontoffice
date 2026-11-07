@@ -9,7 +9,7 @@ import pytest
 import requests
 from support.http import FakeResponse
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient, fetch_many
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy

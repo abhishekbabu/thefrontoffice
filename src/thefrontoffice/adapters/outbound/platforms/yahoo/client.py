@@ -13,7 +13,7 @@ from typing import Any, Protocol
 
 from yahoofantasy.api.parse import as_list, parse_response
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.http import fetch_many
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy, outage
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (

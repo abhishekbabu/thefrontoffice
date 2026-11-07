@@ -22,7 +22,7 @@ from typing import Any
 
 import requests
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy, outage
 from thefrontoffice.domain.errors import FrontOfficeError, PlatformUnavailableError
 

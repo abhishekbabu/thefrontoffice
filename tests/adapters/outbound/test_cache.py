@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 
 HOUR = timedelta(hours=1)
 T0 = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)

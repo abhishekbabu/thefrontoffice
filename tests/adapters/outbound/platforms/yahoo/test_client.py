@@ -16,7 +16,7 @@ import requests
 from support.http import NO_WAIT, http_error
 from support.yahoo import SDK_STORE_TTL, FakeContext
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import SCOREBOARD_TTL_SECONDS, YahooClient, translate
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooAPIError,
