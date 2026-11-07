@@ -1,12 +1,12 @@
-"""Tests for keeping model answers on disk: `llm/answers.py`."""
+"""Tests for keeping model answers on disk: `storage/answers.py`."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from support.reports import MOCK_FPL_REPORT
 
-from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.storage.answers import DiskAnswerStore
 from thefrontoffice.domain.models import Action, PlayerCall, Remembered, ScoutReport, TaskVerdict
 
 TASK = Action(
@@ -24,12 +24,12 @@ def _kept(answer: object) -> Remembered:
 
 
 def test_a_report_survives_the_round_trip_through_the_file(tmp_path: Path) -> None:
-    DiskAnswerStore(JsonDiskCache(tmp_path), renamed={}).save(
+    DiskAnswerStore(JsonDiskCache(tmp_path)).save(
         "scout:NFL:L1", _kept(MOCK_FPL_REPORT.model_copy(update={"tasks": [TASK]}))
     )
 
     # A fresh store on the same directory: what a restarted server reads.
-    loaded = DiskAnswerStore(JsonDiskCache(tmp_path), renamed={}).latest("scout:NFL:L1", ScoutReport)
+    loaded = DiskAnswerStore(JsonDiskCache(tmp_path)).latest("scout:NFL:L1", ScoutReport)
 
     assert loaded is not None and loaded.inputs == "abc"
     [task] = loaded.answer.tasks
@@ -40,7 +40,7 @@ def test_a_report_survives_the_round_trip_through_the_file(tmp_path: Path) -> No
 
 def test_any_answer_shape_is_kept_the_same_way(tmp_path: Path) -> None:
     call = PlayerCall(player_id="8155", decision="WATCH", reason="His role is growing.")
-    store = DiskAnswerStore(JsonDiskCache(tmp_path), renamed={})
+    store = DiskAnswerStore(JsonDiskCache(tmp_path))
     store.save("wire:NFL:L1:8155", _kept(call))
 
     loaded = store.latest("wire:NFL:L1:8155", PlayerCall)
@@ -49,7 +49,7 @@ def test_any_answer_shape_is_kept_the_same_way(tmp_path: Path) -> None:
 
 
 def test_each_scope_keeps_its_own(tmp_path: Path) -> None:
-    store = DiskAnswerStore(JsonDiskCache(tmp_path), renamed={})
+    store = DiskAnswerStore(JsonDiskCache(tmp_path))
     store.save("scout:NFL:L1", _kept(MOCK_FPL_REPORT))
 
     assert store.latest("scout:NFL:L2", ScoutReport) is None
@@ -57,10 +57,9 @@ def test_each_scope_keeps_its_own(tmp_path: Path) -> None:
 
 def test_an_answer_kept_under_the_competitions_label_is_found_under_its_key(tmp_path: Path) -> None:
     """Judgments were once filed under the label: the week's verdicts survive keying them by entry."""
-    DiskAnswerStore(JsonDiskCache(tmp_path), renamed={}).save("scout:NFL (Sleeper):L1", _kept(MOCK_FPL_REPORT))
-    store = DiskAnswerStore(JsonDiskCache(tmp_path), renamed={"nfl-sleeper": "NFL (Sleeper)"})
+    DiskAnswerStore(JsonDiskCache(tmp_path)).save("scout:NFL (Sleeper):L1", _kept(MOCK_FPL_REPORT))
 
-    loaded = store.latest("scout:nfl-sleeper:L1", ScoutReport)
+    loaded = DiskAnswerStore(JsonDiskCache(tmp_path)).latest("scout:nfl-sleeper:L1", ScoutReport)
 
     assert loaded is not None and loaded.answer == MOCK_FPL_REPORT
-    assert DiskAnswerStore(JsonDiskCache(tmp_path), renamed={}).latest("scout:nfl-sleeper:L1", ScoutReport) is not None
+    assert JsonDiskCache(tmp_path).get("scout:nfl-sleeper:L1", timedelta(days=1)) is not None

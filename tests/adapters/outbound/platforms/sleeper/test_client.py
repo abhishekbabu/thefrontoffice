@@ -11,9 +11,11 @@ import pytest
 import requests
 from support.http import NO_WAIT, FakeResponse, FakeSession
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
+
+POSITIONS = ("QB", "RB", "WR", "TE", "K", "DEF")
 
 STATE = {"week": 5, "season": "2026", "season_type": "regular", "display_week": 5}
 
@@ -32,7 +34,7 @@ def test_no_connection_is_retried_then_reported_as_sleeper_being_down(tmp_path: 
     """Still Sleeper's own error, so callers that carry on without Sleeper still catch it."""
     client, session = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
     with pytest.raises(SleeperUnavailableError):
-        client.get_state()
+        client.get_nfl_state()
     assert len(session.requests) == NO_WAIT.attempts
 
 
@@ -45,7 +47,7 @@ def test_a_transient_failure_then_success_is_retried(tmp_path: Path) -> None:
             return FakeResponse(STATE)
 
     client = SleeperClient(cache=JsonDiskCache(tmp_path / "cache"), retry=NO_WAIT, session=Flaky({}))
-    assert client.get_state().week == 5
+    assert client.get_nfl_state().week == 5
 
 
 # ── state and user ──────────────────────────────────────────────────────
@@ -53,7 +55,7 @@ def test_a_transient_failure_then_success_is_retried(tmp_path: Path) -> None:
 
 def test_nfl_state_is_parsed(tmp_path: Path) -> None:
     client, _ = _client({"state/nfl": STATE}, tmp_path)
-    state = client.get_state()
+    state = client.get_nfl_state()
     assert state.week == 5
     assert state.season == "2026"
     assert state.is_regular_season
@@ -61,14 +63,14 @@ def test_nfl_state_is_parsed(tmp_path: Path) -> None:
 
 def test_preseason_is_not_the_regular_season(tmp_path: Path) -> None:
     client, _ = _client({"state/nfl": {**STATE, "season_type": "pre"}}, tmp_path)
-    assert not client.get_state().is_regular_season
+    assert not client.get_nfl_state().is_regular_season
 
 
 def test_state_is_cached_between_calls(tmp_path: Path) -> None:
     """Sleeper asks callers to stay under 1000 requests a minute."""
     client, session = _client({"state/nfl": STATE}, tmp_path)
-    client.get_state()
-    client.get_state()
+    client.get_nfl_state()
+    client.get_nfl_state()
     assert len(session.requests) == 1
 
 
@@ -177,27 +179,32 @@ def test_catalog_is_trimmed_to_the_fields_used(tmp_path: Path) -> None:
     """The raw response is ~14MB; caching it whole would dominate the file."""
     raw = {"1": {"full_name": "Star QB", "position": "QB", "team": "BUF", "unused": "x" * 500}}
     client, _ = _client({"players/nfl": raw}, tmp_path)
-    meta = client.get_players()["1"]
-    assert meta["name"] == "Star QB"
-    assert "unused" not in meta
+    meta = client.get_nfl_players()["1"]
+    assert (meta.name, meta.position, meta.team) == ("Star QB", "QB", "BUF")
 
 
 def test_catalog_falls_back_to_first_and_last_name(tmp_path: Path) -> None:
     raw = {"1": {"first_name": "Star", "last_name": "QB", "position": "QB"}}
     client, _ = _client({"players/nfl": raw}, tmp_path)
-    assert client.get_players()["1"]["name"] == "Star QB"
+    assert client.get_nfl_players()["1"].name == "Star QB"
+
+
+def test_a_player_on_no_roster_is_filed_as_a_free_agent(tmp_path: Path) -> None:
+    """Sleeper sends no club for him; the rules read FA."""
+    client, _ = _client({"players/nfl": {"1": {"full_name": "Loose End", "position": "TE", "team": None}}}, tmp_path)
+    assert client.get_nfl_players()["1"].team == "FA"
 
 
 def test_catalog_skips_malformed_entries(tmp_path: Path) -> None:
     client, _ = _client({"players/nfl": {"1": "not a dict"}}, tmp_path)
-    assert client.get_players() == {}
+    assert client.get_nfl_players() == {}
 
 
 def test_catalog_is_cached(tmp_path: Path) -> None:
     """The docs ask for at most one fetch per day."""
     client, session = _client({"players/nfl": {"1": {"full_name": "A", "position": "QB"}}}, tmp_path)
-    client.get_players()
-    client.get_players()
+    client.get_nfl_players()
+    client.get_nfl_players()
     assert len([r for r in session.requests if "players/nfl" in r]) == 1
 
 
@@ -214,7 +221,7 @@ PROJECTION_PAYLOAD = [
 
 def test_projections_are_keyed_by_player_and_use_the_league_currency(tmp_path: Path) -> None:
     client, _ = _client({"projections/nfl": PROJECTION_PAYLOAD}, tmp_path)
-    proj = client.get_projections("2026", 1, "pts_ppr")
+    proj = client.get_projections("2026", 1, "pts_ppr", POSITIONS)
     assert proj["1"].points == 22.4
     assert proj["1"].opponent == "MIA"
     assert proj["1"].name == "Star QB"
@@ -222,20 +229,27 @@ def test_projections_are_keyed_by_player_and_use_the_league_currency(tmp_path: P
 
 def test_a_different_scoring_format_reads_a_different_field(tmp_path: Path) -> None:
     client, _ = _client({"projections/nfl": PROJECTION_PAYLOAD}, tmp_path)
-    assert client.get_projections("2026", 1, "pts_std")["1"].points == 18.1
+    assert client.get_projections("2026", 1, "pts_std", POSITIONS)["1"].points == 18.1
 
 
 def test_players_without_a_projection_are_omitted(tmp_path: Path) -> None:
     client, _ = _client({"projections/nfl": PROJECTION_PAYLOAD}, tmp_path)
-    assert "2" not in client.get_projections("2026", 1, "pts_ppr")
+    assert "2" not in client.get_projections("2026", 1, "pts_ppr", POSITIONS)
 
 
 def test_projection_requests_cover_every_fantasy_position(tmp_path: Path) -> None:
     client, session = _client({"projections/nfl": []}, tmp_path)
-    client.get_projections("2026", 1, "pts_ppr")
+    client.get_projections("2026", 1, "pts_ppr", POSITIONS)
     url = session.requests[0]
-    for position in ("QB", "RB", "WR", "TE", "K", "DEF"):
+    for position in POSITIONS:
         assert f"position[]={position}" in url
+
+
+def test_projections_for_other_positions_are_not_served_from_the_first_ask(tmp_path: Path) -> None:
+    client, session = _client({"projections/nfl": []}, tmp_path)
+    client.get_projections("2026", 1, "pts_ppr", ("QB",))
+    client.get_projections("2026", 1, "pts_ppr", POSITIONS)
+    assert len(session.requests) == 2
 
 
 def test_projections_are_asked_for_by_sport(tmp_path: Path) -> None:
@@ -246,7 +260,7 @@ def test_projections_are_asked_for_by_sport(tmp_path: Path) -> None:
     that read as though no game had been scheduled all season.
     """
     client, session = _client({"projections/nfl": []}, tmp_path)
-    client.get_projections("2026", 1, "pts_ppr")
+    client.get_projections("2026", 1, "pts_ppr", POSITIONS)
     assert "/projections/nfl/2026/1" in session.requests[0]
 
 
@@ -259,12 +273,12 @@ def test_a_projection_carries_the_players_designation(tmp_path: Path) -> None:
         }
     ]
     client, _ = _client({"projections/nfl": payload}, tmp_path)
-    assert client.get_projections("2026", 1, "pts_ppr")["1"].injury_status == "Questionable"
+    assert client.get_projections("2026", 1, "pts_ppr", POSITIONS)["1"].injury_status == "Questionable"
 
 
 def test_a_healthy_player_carries_no_designation(tmp_path: Path) -> None:
     client, _ = _client({"projections/nfl": PROJECTION_PAYLOAD}, tmp_path)
-    assert client.get_projections("2026", 1, "pts_ppr")["1"].injury_status == ""
+    assert client.get_projections("2026", 1, "pts_ppr", POSITIONS)["1"].injury_status == ""
 
 
 # ── trending, stats, matchups ───────────────────────────────────────────
@@ -367,8 +381,8 @@ def test_out_of_season_yields_no_projections(tmp_path: Path) -> None:
 def test_state_is_fetched_per_sport(tmp_path: Path) -> None:
     """NBA and NFL are at different points in their seasons."""
     client, session = _client({"state/nba": {**STATE, "season_type": "off"}, "state/nfl": STATE}, tmp_path)
-    assert client.get_state("nba").season_type == "off"
-    assert client.get_state().season_type == "regular"
+    assert client.get_nba_state().season_type == "off"
+    assert client.get_nfl_state().season_type == "regular"
     assert any("state/nba" in r for r in session.requests)
     assert any("state/nfl" in r for r in session.requests)
 
@@ -381,8 +395,8 @@ def test_each_sports_catalog_is_cached_separately(tmp_path: Path) -> None:
         },
         tmp_path,
     )
-    assert "1" in client.get_players("nba")
-    assert "2" in client.get_players("nfl")
+    assert "1" in client.get_nba_players()
+    assert "2" in client.get_nfl_players()
     assert len([r for r in session.requests if "players/" in r]) == 2
 
 
@@ -399,7 +413,7 @@ def test_the_season_schedule_is_read_off_a_different_base_url(tmp_path: Path) ->
     """It is not under /v1, unlike everything else the client reads."""
     client, session = _client({"/schedule/nfl/regular/2026": SEASON_SCHEDULE}, tmp_path)
 
-    games = client.get_season_schedule("2026")
+    games = client.get_nfl_schedule("2026")
 
     assert [(g.week, g.date, g.away, g.home) for g in games] == [
         (1, "2026-09-13", "CHI", "CAR"),
@@ -411,7 +425,7 @@ def test_the_season_schedule_is_read_off_a_different_base_url(tmp_path: Path) ->
 def test_a_scheduled_game_knows_which_side_a_club_is_on(tmp_path: Path) -> None:
     client, _ = _client({"/schedule/nfl/regular/2026": SEASON_SCHEDULE}, tmp_path)
 
-    game = client.get_season_schedule("2026")[0]
+    game = client.get_nfl_schedule("2026")[0]
 
     assert game.opponent_of("CAR") == ("CHI", True)
     assert game.opponent_of("CHI") == ("CAR", False)
@@ -551,7 +565,7 @@ NFL_LINES = [
 def test_game_lines_keep_fantasy_players_with_the_usage_behind_their_points(tmp_path: Path) -> None:
     client, _ = _client({"/stats/nfl/2026/2": NFL_LINES}, tmp_path)
 
-    lines = {line.player_id: line for line in client.get_nfl_game_lines("2026", [2])}
+    lines = {line.player_id: line for line in client.get_nfl_game_lines("2026", [2], POSITIONS)}
 
     # A team total, a linebacker and a row with no game are nobody's starter.
     assert set(lines) == {"wr1", "KC"}
@@ -564,6 +578,6 @@ def test_game_lines_keep_fantasy_players_with_the_usage_behind_their_points(tmp_
 def test_a_week_that_will_not_load_leaves_a_gap_rather_than_failing(tmp_path: Path) -> None:
     client, _ = _client({"/stats/nfl/2026/2": NFL_LINES}, tmp_path)
 
-    lines = client.get_nfl_game_lines("2026", [1, 2])
+    lines = client.get_nfl_game_lines("2026", [1, 2], POSITIONS)
 
     assert {line.week for line in lines} == {2}

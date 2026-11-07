@@ -121,11 +121,11 @@ and platforms differ only where they genuinely differ; everything else is
 shared. When you find yourself writing something a second time, extract it then
 — not on the third. Existing seams:
 
-- `adapters/outbound/platforms/` — infrastructure every platform needs:
-  `http.py` (cached, retried JSON GETs; `fetch_many`, the parallel cached fetch),
-  `retry.py` (`RetryPolicy`, and what counts as transient or an outage), `cache.py`
-  (the disk cache — a directory, one atomically-replaced file per key, read with a TTL). Clients
-  take `cache=` and `retry=` from `bootstrap`; tests pass `NO_WAIT`.
+- `adapters/outbound/cache.py` — the disk cache platforms and `storage/` share: a directory,
+  one atomically-replaced file per key, read with a TTL; a stored null is a hit, not a miss.
+- `adapters/outbound/platforms/` — infrastructure every platform needs: `http.py` (cached,
+  retried JSON GETs; `fetch_many`, the parallel cached fetch), `retry.py` (`RetryPolicy`, and what
+  counts as transient or an outage). Clients take `cache=` and `retry=` from `bootstrap`; tests pass `NO_WAIT`.
 - `adapters/outbound/competitions/` — policy every competition needs: `names.py`
   (cross-platform player matching), `trades.py` (resolving a proposal).
 - `domain/` — rules that hold regardless of competition or platform.

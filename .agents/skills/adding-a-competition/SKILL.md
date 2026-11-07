@@ -155,7 +155,7 @@ Check these before implementing anything a competition "needs":
 | Resolve the players in a trade | `competitions/trades.py` — `resolve_sides` |
 | Retry a flaky platform call | `platforms/retry.py` — `RetryPolicy`, handed in by `bootstrap` |
 | Fetch many cached responses at once | `platforms/http.py` — `fetch_many` |
-| Cache a platform response | `platforms/cache.py` — `JsonDiskCache` |
+| Cache a platform response | `adapters/outbound/cache.py` — `JsonDiskCache` |
 | Talk to a public JSON API | `platforms/http.py` — `JsonApiClient` |
 
 If a second competition needs something the first already does, extract it into one of

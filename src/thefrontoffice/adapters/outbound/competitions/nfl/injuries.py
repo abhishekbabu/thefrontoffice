@@ -10,7 +10,7 @@ that he is fit. The join is by name within one club, refusing a name two
 players share, as the news is.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import players_by_club
@@ -49,12 +49,16 @@ def reported(projections: Mapping[str, Projection], designations: Mapping[str, s
     }
 
 
-def catalog(players: Mapping[str, PlayerInfo], designations: Mapping[str, str]) -> dict[str, PlayerInfo]:
-    """The player catalog, each under the designation the report gives him where it gives one."""
+def catalog[P: PlayerInfo](
+    players: Mapping[str, P], designations: Mapping[str, str], designate: Callable[[P, str], P]
+) -> dict[str, P]:
+    """The player catalog, each under the designation the report gives him where it gives one.
+
+    `designate` is the platform's own copy of an entry under a new designation:
+    the catalog's type is the platform's, and only it knows how one is made.
+    """
     updated = dict(players)
     for pid, status in designations.items():
-        if pid in players and players[pid].get("injury_status", "") != status:
-            meta = players[pid].copy()
-            meta["injury_status"] = status
-            updated[pid] = meta
+        if pid in players and players[pid].injury_status != status:
+            updated[pid] = designate(players[pid], status)
     return updated

@@ -8,7 +8,7 @@ import requests
 from support.http import NO_WAIT, http_error
 from support.yahoo import FakeContext
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooAPIError,

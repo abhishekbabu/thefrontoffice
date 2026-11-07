@@ -7,32 +7,45 @@ nothing under looks once more under the former name, and files what it finds
 under the current one, so no kept judgment or dismissal is lost to the rename.
 """
 
-from collections.abc import Mapping
 from datetime import timedelta
 from typing import Any
 
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+
+FORMER_NAMES = {
+    "nba-yahoo": "NBA (Yahoo)",
+    "nfl-sleeper": "NFL (Sleeper)",
+    "premier-league-fpl": "FPL (Fantasy Premier League)",
+}
+"""Each registry key's label as it read when things were filed under it.
+
+History, so spelled out rather than read off the registry, whose labels are free
+to change: a competition added since was never filed under a label at all.
+"""
 
 
-def former(scope: str, renamed: Mapping[str, str]) -> str | None:
+def former(scope: str) -> str | None:
     """`scope` as it was spelled before its competition was renamed; None where it never was.
 
     A scope is `kind:competition:...`, so the competition is its second part.
     """
     kind, sep, rest = scope.partition(":")
     competition, colon, about = rest.partition(":")
-    old = renamed.get(competition) if sep else None
+    old = FORMER_NAMES.get(competition) if sep else None
     return f"{kind}:{old}{colon}{about}" if old is not None else None
 
 
-def read(cache: JsonDiskCache, scope: str, keep_for: timedelta, renamed: Mapping[str, str]) -> Any | None:
+def read(cache: JsonDiskCache, scope: str, keep_for: timedelta) -> Any | None:
     """What `cache` holds for `scope`, falling back once to its former spelling and refiling it.
 
     Only a scope with nothing at all under it falls back: one emptied since —
     every decision restored — is an answer, and must not bring the old ones back.
     """
-    stored = cache.get(scope, keep_for)
-    old = former(scope, renamed) if stored is None else None
-    if old is not None and (stored := cache.get(old, keep_for)) is not None:
-        cache.set(scope, stored)
-    return stored
+    hit = cache.lookup(scope, keep_for)
+    if hit is not None:
+        return hit.value
+    old = former(scope)
+    if old is None or (found := cache.lookup(old, keep_for)) is None:
+        return None
+    cache.set(scope, found.value)
+    return found.value

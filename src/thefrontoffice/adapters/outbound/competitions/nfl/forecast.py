@@ -14,7 +14,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl import evidence, outcomes
 from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import fits
 from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueRules, Matchup, NFLSource, Projection, Team
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import SEASON_WEEKS, ruled_out
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Scoreboard,
     Week,
@@ -52,7 +52,9 @@ class Forecasts:
         key = f"{season}:{scoring}"
         if key not in self._previous:
             try:
-                lines = self.client.get_nfl_game_lines(str(int(season) - 1), list(range(1, SEASON_WEEKS + 1)))
+                lines = self.client.get_nfl_game_lines(
+                    str(int(season) - 1), list(range(1, SEASON_WEEKS + 1)), FANTASY_POSITIONS
+                )
             except (PlatformError, ValueError) as e:
                 logger.warning(f"Shaping ranges without last season: {e}")
                 lines = []
@@ -125,10 +127,10 @@ class Forecasts:
         range is scored against shaped it.
         """
         season = league.season
-        lines = self.client.get_nfl_game_lines(season, list(range(1, week + 1)))
+        lines = self.client.get_nfl_game_lines(season, list(range(1, week + 1)), FANTASY_POSITIONS)
         before = evidence.gather([line for line in lines if line.week < week], league.scoring_format)
         last = self.last_season(season, league.scoring_format)
-        projections = self.client.get_projections(season, week, league.scoring_format)
+        projections = self.client.get_projections(season, week, league.scoring_format, FANTASY_POSITIONS)
         that_week = evidence.gather([line for line in lines if line.week == week], league.scoring_format)
         played = [
             (projections[pid], games[0])
@@ -147,10 +149,10 @@ class Forecasts:
         be the answer leaking into the question.
         """
         season = league.season
-        projections = self.client.get_projections(season, week, league.scoring_format)
-        players = self.client.get_players()
+        projections = self.client.get_projections(season, week, league.scoring_format, FANTASY_POSITIONS)
+        players = self.client.get_nfl_players()
         earlier = list(range(1, week))
-        lines = self.client.get_nfl_game_lines(season, earlier) if earlier else []
+        lines = self.client.get_nfl_game_lines(season, earlier, FANTASY_POSITIONS) if earlier else []
         spread = outcomes.spreads(
             evidence.gather(lines, league.scoring_format),
             settings,

@@ -12,7 +12,7 @@ import pytest
 from support.wiring import FakeCompetition, entry
 
 from thefrontoffice import bootstrap
-from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
 from thefrontoffice.bootstrap import REGISTRY
 from thefrontoffice.config.settings import settings
@@ -215,7 +215,7 @@ class _OneItem(FakeCompetition):
 
 def test_a_dismissal_kept_under_the_competitions_old_label_still_hides_its_item() -> None:
     """Decisions are keyed by entry now; one made before that is not lost."""
-    old = DiskItemStateStore(JsonDiskCache(Path(settings.item_state_dir)), renamed={})
+    old = DiskItemStateStore(JsonDiskCache(Path(settings.item_state_dir)))
     old.save("items:NFL (Sleeper):L1", {SWAP.key: ItemState(key=SWAP.key, dismissed_as=SWAP.fingerprint)})
 
     week = bootstrap.wiring().week(REGISTRY.find("nfl"), _OneItem()).week("L1")

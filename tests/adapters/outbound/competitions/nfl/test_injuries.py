@@ -1,5 +1,6 @@
 """Tests for the latest injury report, joined to Sleeper: `nfl/injuries.py`."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from support.nfl import proj
@@ -63,7 +64,7 @@ def test_a_projection_the_report_does_not_name_is_left_as_published() -> None:
 
 
 def test_the_catalog_takes_the_reports_designation_without_changing_sleepers() -> None:
-    updated = catalog(PLAYERS, {"hall": "Questionable"})
+    updated = catalog(PLAYERS, {"hall": "Questionable"}, lambda meta, status: replace(meta, injury_status=status))
 
-    assert updated["hall"].get("injury_status") == "Questionable"
-    assert PLAYERS["hall"].get("injury_status") == "Out"
+    assert updated["hall"].injury_status == "Questionable"
+    assert PLAYERS["hall"].injury_status == "Out"

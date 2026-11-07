@@ -354,7 +354,7 @@ def _trending(state: Week, trending: Sequence[Trending] | None) -> str:
     lines = []
     for item in trending:
         meta = state.players.get(item.player_id)
-        name = meta.get("name") if meta else None
+        name = meta.name if meta else None
         if not name:
             continue
         proj = state.projections.get(item.player_id)
