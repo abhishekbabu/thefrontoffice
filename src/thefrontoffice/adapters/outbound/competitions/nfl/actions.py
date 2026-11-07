@@ -29,9 +29,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, Projec
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, listed, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
-from thefrontoffice.domain.models import Action, Stat, Urgency
-
-URGENCY_ORDER: dict[Urgency, int] = {"now": 0, "soon": 1, "later": 2}
+from thefrontoffice.domain.models import Action, Stat, Urgency, urgency_rank
 
 STACKED = 3
 """Starters riding on one real game at which a bad afternoon there is most of a bad week."""
@@ -88,7 +86,7 @@ def build(
     items += _same_game(state, week_games, started, {(i.action.player_id, i.action.replaces) for i in items})
     items += _next_week_byes(state, games.get(state.week + 1, []))
     items += _trade_deadline(state)
-    return sorted(_with_drops(state, items, started), key=lambda i: URGENCY_ORDER[i.action.urgency])
+    return sorted(_with_drops(state, items, started), key=lambda i: urgency_rank(i.action.urgency))
 
 
 def _lineup(

@@ -15,6 +15,7 @@ import random
 from collections.abc import Callable, Iterable
 from dataclasses import replace
 
+from thefrontoffice.application.results import result
 from thefrontoffice.domain.models import (
     PlayoffOdds,
     SeasonInput,
@@ -57,7 +58,7 @@ def simulate_season(season: SeasonInput, simulations: int = SEASONS) -> PlayoffO
             )
             points[fixture.home] += home
             points[fixture.away] += away
-            for team, share in ((fixture.home, _share(home, away)), (fixture.away, _share(away, home))):
+            for team, share in ((fixture.home, result(home, away)), (fixture.away, result(away, home))):
                 wins[team] += share
             if fixture.week == season.week and season.mine in (fixture.home, fixture.away):
                 mine = home if fixture.home == season.mine else away
@@ -98,11 +99,6 @@ def _score(
     """One team's score in one simulated week: around its mean and this season's offset, never below nought."""
     mean, spread = scoring.get((team, week), (0.0, 0.0))
     return max(0.0, gauss(mean + offset, spread) if spread else mean + offset)
-
-
-def _share(mine: float, theirs: float) -> float:
-    """What a result adds to a record: a win, half for a tie, nothing for a loss."""
-    return 1.0 if mine > theirs else 0.5 if mine == theirs else 0.0
 
 
 # ── this week, weighed in ───────────────────────────────────────────────────────
