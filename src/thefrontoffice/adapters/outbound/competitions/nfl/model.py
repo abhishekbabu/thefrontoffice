@@ -19,6 +19,8 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
+from thefrontoffice.domain.errors import FrontOfficeError
+
 Scoring = Literal["pts_ppr", "pts_half_ppr", "pts_std"]
 """How a league scores a reception: full, half, or not at all."""
 
@@ -356,6 +358,28 @@ class Trending(Protocol):
     def count(self) -> int: ...
 
 
+class Weeks[V](Protocol):
+    """What a read of several weeks found: each week that loaded, and why each that did not.
+
+    A failed week is carried rather than left out, so no reader has to tell
+    one from a week with nothing in it by its absence.
+    """
+
+    @property
+    def values(self) -> Mapping[int, V]:
+        """Each week that loaded."""
+        ...
+
+    @property
+    def failures(self) -> Mapping[int, FrontOfficeError]:
+        """Why each week that did not load did not."""
+        ...
+
+    def value(self, key: int) -> V:
+        """One week, raising why it would not load where it did not."""
+        ...
+
+
 class NFLSource(Protocol):
     """Every read the NFL's rules make of the league's platform, and nothing else."""
 
@@ -365,17 +389,17 @@ class NFLSource(Protocol):
 
     def get_matchups(self, league_id: str, week: int) -> Sequence[Matchup]: ...
 
-    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Mapping[int, Sequence[Matchup]]:
-        """Each of `weeks` that loaded; one that would not is absent, where an empty one is a bye."""
+    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Weeks[Sequence[Matchup]]:
+        """Each of `weeks`: its matchups, or why it would not load — where an empty one is a bye."""
         ...
 
     def get_nfl_game_lines(
         self, season: str, weeks: list[int], positions: Collection[str]
-    ) -> Mapping[int, Sequence[GameLine]]:
+    ) -> Weeks[Sequence[GameLine]]:
         """Every line from each game in `weeks` by a player at one of `positions`, by week.
 
-        A week that would not load is absent, not empty: no line in a week that
-        did is a game missed.
+        A week that would not load is a failure, not empty: no line in a week
+        that did is a game missed.
         """
         ...
 

@@ -202,23 +202,12 @@ def test_a_player_in_a_reserve_slot_adds_nothing_to_his_teams_expected_score() -
     assert reserved != means(["qb1", "rb1"], [])
 
 
-def test_a_week_the_bulk_read_lost_is_read_again_alone() -> None:
-    client = _with_playoffs(7)
-    client.unloaded_weeks = {8}
-
-    season = nfl_provider(client).season_input("L1")
-
-    assert season is not None
-    assert [f.week for f in season.fixtures] == [7, 8]
-
-
-def test_a_week_of_the_season_left_that_will_not_load_fails_the_simulation() -> None:
+def test_a_week_of_the_season_left_that_will_not_load_fails_the_simulation_with_why() -> None:
     """A season simulated without one week's games is a table nobody will finish in."""
     client = _with_playoffs(7)
     client.unloaded_weeks = {8}
-    client.matchups_error = SleeperAPIError("down")
 
-    with pytest.raises(SleeperAPIError):
+    with pytest.raises(SleeperAPIError, match="week 8"):
         nfl_provider(client).season_input("L1")
 
 

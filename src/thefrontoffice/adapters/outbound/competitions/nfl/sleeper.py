@@ -395,7 +395,7 @@ class SleeperNFLProvider:
         played = weeks_played(week, is_regular_season)
         if not played:
             return evidence.Evidence()
-        lines = evidence.season_lines(self.client.get_nfl_game_lines(season, played, FANTASY_POSITIONS))
+        lines = evidence.season_lines(self.client.get_nfl_game_lines(season, played, FANTASY_POSITIONS).values)
         out = {pid for pid, meta in players.items() if ruled_out(meta.injury_status)}
         return evidence.gather(lines, scoring, out)
 
