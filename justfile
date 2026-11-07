@@ -110,7 +110,7 @@ ui: web-build
 
 # API only, reloading on change. Pair with `just web` in a second terminal.
 api:
-    uv run uvicorn thefrontoffice.adapters.inbound.web.api:app --reload --port 8000
+    uv run uvicorn thefrontoffice.adapters.inbound.web.api:serve --factory --reload --port 8000
 
 # UI dev server with hot reload (http://localhost:5173), proxying /api to `just api`
 web:

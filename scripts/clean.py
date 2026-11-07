@@ -14,9 +14,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 TOOL_CACHES = (".ruff_cache", ".pytest_cache", ".pyrefly_cache")
 
-# The platform caches, one directory each. Named here rather than read from
-# settings so that cleaning never needs a valid .env to run.
-DATA_CACHES = (".yahoo_cache", ".sleeper_cache", ".fpl_cache")
+# The platform caches, one directory each: what was read from a platform and can
+# be read again. Named here rather than read from settings so that cleaning
+# never needs a valid .env to run; `tests/scripts/test_clean.py` holds them to
+# the settings' defaults. Kept answers and to-do decisions are the manager's
+# own and are never cleaned.
+DATA_CACHES = (".yahoo_cache", ".sleeper_cache", ".fpl_cache", ".espn_cache")
 
 
 def _remove(path: Path) -> bool:

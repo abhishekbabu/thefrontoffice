@@ -17,9 +17,6 @@ from thefrontoffice.domain.models import CompetitionContext, TradeProposal, Trad
 
 
 class FakeTradeProvider:
-    sport = "nba"
-    label = "NBA (Yahoo)"
-
     def __init__(self, error: Exception | None = None) -> None:
         self.error = error
         self.calls: list[tuple[str, TradeProposal]] = []

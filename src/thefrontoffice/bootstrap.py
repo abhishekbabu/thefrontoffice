@@ -1,11 +1,11 @@
 """The composition root: the one module that names concrete implementations.
 
-Registers the available sports and wires engines to a model. Everything else
-works against ports.
+Registers the competitions and wires engines to a model, and hands every entry
+point the result as one `Wiring`. Everything else works against ports.
 
 `is_configured` gates whether a platform is contacted at all — building a
-provider can open an OAuth flow, and a user who does not play that sport must
-never be made to sit through one.
+provider can open an OAuth flow, and a user who does not play that competition
+must never be made to sit through one.
 """
 
 import functools
@@ -24,17 +24,26 @@ from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.application.week import WeekEngine
 from thefrontoffice.application.wire import WireEngine
 from thefrontoffice.config.settings import settings
+from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionError, UnsupportedError
 from thefrontoffice.domain.ports import (
+    AccountLogin,
+    AnalysisModel,
+    AnswerStore,
     CompetitionProvider,
+    ContextProvider,
     ForecastProvider,
+    OutlookProvider,
     SeasonProvider,
+    SubjectProvider,
     TradeMarketProvider,
     TradeProvider,
     WireProvider,
 )
 
 if TYPE_CHECKING:
+    from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
     from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
+    from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
     from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
     from thefrontoffice.adapters.outbound.llm.routing import Cooldowns, RoutedModel
     from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
@@ -49,13 +58,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class CompetitionEntry:
-    """One competition on one platform.
+    """One competition on one platform: everything that identifies it, and how to build it.
 
     Keyed by that pair rather than by the sport. Two things make the sport too
     coarse to identify an entry: one competition runs on several platforms —
     the NBA on Yahoo and on Sleeper, separate accounts and separate leagues —
     and one sport has several competitions, so college football beside the NFL
     would collide on `football-sleeper` and quietly lose one of them.
+
+    The only place a competition's identity lives: its provider carries none,
+    and what it can do is read off which ports its provider's class implements
+    rather than declared beside them, so the two cannot disagree.
     """
 
     sport: str
@@ -69,43 +82,114 @@ class CompetitionEntry:
     """Where these fantasy leagues live: 'yahoo', 'sleeper', 'fpl'."""
 
     label: str
+    """Human name for pickers and headers: 'NBA (Yahoo)'. Never a key."""
+
+    provider: Callable[[], type[CompetitionProvider]]
+    """The provider's class, imported only when asked, so listing competitions loads no SDK."""
+
     build: Callable[[], CompetitionProvider]
     is_configured: Callable[[], bool]
     requires: str
     """What to put in .env to enable it, quoted in the 'not configured' message."""
 
     check_ready: Callable[[], None] = lambda: None
-    """Raise if the sport is configured but cannot be used yet.
+    """Raise if the competition is configured but cannot be used yet.
 
-    Separate from `is_configured` because credentials being present and a sport
-    being usable are different questions — Yahoo needs an authorization on top
-    of them, and offering a sport that will only fail is worse than greying it
-    out. Must stay cheap and non-interactive: it runs on every page load.
+    Separate from `is_configured` because credentials being present and a
+    competition being usable are different questions — Yahoo needs an
+    authorization on top of them, and offering one that will only fail is
+    worse than greying it out. Must stay cheap and non-interactive: it runs on
+    every page load.
     """
-
-    # What the competition can do beyond the CompetitionProvider every one is.
-    # Declared here rather than tested as `sport == "nba"` at each call site,
-    # and because a client asks before any provider is built — building Yahoo's
-    # touches the network. `tests/test_bootstrap.py` holds each to the ports
-    # its provider actually implements, so the two cannot drift.
-
-    supports_trades: bool = False
-    """Whether a proposed trade can be evaluated: the provider is a TradeProvider."""
-
-    judges_wire: bool = False
-    """Whether its available players can be judged: the provider is a WireProvider."""
-
-    plans_ahead: bool = False
-    """Whether its coming weeks and trades worth offering can be shown: an OutlookProvider and a TradeMarketProvider."""
 
     @property
     def key(self) -> str:
-        """What identifies this entry everywhere outside the registry.
+        """What identifies this entry everywhere outside the registry, kept answers included.
 
         A competition alone is ambiguous once two platforms carry it, so every
-        route, picker and stored preference uses the pair.
+        route, picker and stored scope uses the pair.
         """
         return f"{self.competition}-{self.platform}"
+
+    def can(self, port: type[object]) -> bool:
+        """Whether its provider implements `port`: read off the class, so nothing is built to ask."""
+        return issubclass(self.provider(), port)
+
+    @property
+    def supports_trades(self) -> bool:
+        """Whether a proposed trade can be evaluated."""
+        return self.can(TradeProvider)
+
+    @property
+    def judges_wire(self) -> bool:
+        """Whether its available players can be judged."""
+        return self.can(WireProvider)
+
+    @property
+    def plans_ahead(self) -> bool:
+        """Whether its coming weeks and the trades worth offering can be shown."""
+        return self.can(OutlookProvider) and self.can(TradeMarketProvider)
+
+    def open(self) -> CompetitionProvider:
+        """Its provider, built — or why it cannot be, before anything is contacted.
+
+        Raises:
+            NotConfiguredError: this machine has no credentials for it.
+        """
+        if not self.is_configured():
+            raise NotConfiguredError(self.label, self.requires)
+        return self.build()
+
+    def open_as[P](self, port: type[P], what: str) -> P:
+        """Its provider, as the port a route needs — refused, unbuilt, where it has no such capability.
+
+        Raises:
+            UnsupportedError: its provider does not implement `port`.
+            NotConfiguredError: this machine has no credentials for it.
+        """
+        if not self.can(port):
+            raise UnsupportedError(self.label, what)
+        return self.as_port(self.open(), port, what)
+
+    def as_port[P](self, provider: CompetitionProvider, port: type[P], what: str) -> P:
+        """`provider`, already built, as the port a caller needs.
+
+        Raises:
+            UnsupportedError: it does not implement `port`.
+        """
+        if not isinstance(provider, port):
+            raise UnsupportedError(self.label, what)
+        return provider
+
+
+@dataclass(frozen=True)
+class Registry:
+    """Every competition the app knows, configured on this machine or not."""
+
+    entries: tuple[CompetitionEntry, ...]
+
+    def find(self, token: str) -> CompetitionEntry:
+        """The entry a token names, by key or by competition alone.
+
+        Typing "nba" stays meaningful while only one platform carries it, and
+        becomes the first of them once two do — which is why anything that has
+        to be unambiguous, like a route, uses the key.
+
+        Raises:
+            UnknownCompetitionError: nothing goes by that name.
+        """
+        name = token.lower().lstrip("/")
+        found = next(
+            (e for e in self.entries if e.key == name),
+            next((e for e in self.entries if e.competition == name), None),
+        )
+        if found is None:
+            raise UnknownCompetitionError(token)
+        return found
+
+    def configured(self) -> list[CompetitionEntry]:
+        """Only the competitions this machine has credentials for."""
+        return [entry for entry in self.entries if entry.is_configured()]
 
 
 # ── platform transport ──────────────────────────────────────────────
@@ -167,10 +251,27 @@ def yahoo_auth() -> YahooAuth:
     return _yahoo_auth(_disk_cache(settings.yahoo_cache_dir))
 
 
+# What kept answers and decisions were filed under before they were keyed by
+# `CompetitionEntry.key`: each competition's label as it then read. History,
+# so spelled out rather than read off the entries, whose labels are free to change.
+_FORMER_NAMES = {
+    "nba-yahoo": "NBA (Yahoo)",
+    "nfl-sleeper": "NFL (Sleeper)",
+    "premier-league-fpl": "FPL (Fantasy Premier League)",
+}
+
+
 def _answer_store() -> DiskAnswerStore:
     from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
 
-    return DiskAnswerStore(_disk_cache(settings.answer_cache_dir))
+    return DiskAnswerStore(_disk_cache(settings.answer_cache_dir), renamed=_FORMER_NAMES)
+
+
+def _item_decisions() -> ItemDecisions:
+    """The manager's decisions about to-do items, kept on this machine."""
+    from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
+
+    return ItemDecisions(DiskItemStateStore(_disk_cache(settings.item_state_dir), renamed=_FORMER_NAMES))
 
 
 # ── competitions ────────────────────────────────────────────────────
@@ -183,8 +284,10 @@ def nfl_provider() -> SleeperNFLProvider:
     return SleeperNFLProvider(settings.sleeper_username, client=sleeper_client(), espn=_espn_client())
 
 
-def _build_nfl() -> CompetitionProvider:
-    return nfl_provider()
+def _nfl() -> type[SleeperNFLProvider]:
+    from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
+
+    return SleeperNFLProvider
 
 
 def _check_yahoo_ready() -> None:
@@ -192,13 +295,23 @@ def _check_yahoo_ready() -> None:
     yahoo_auth().ensure_authorized()
 
 
-def _build_fpl() -> CompetitionProvider:
+def _fpl() -> type[FPLProvider]:
     from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
 
-    return FPLProvider(settings.fpl_entry_id, client=_fpl_client())
+    return FPLProvider
 
 
-def _build_nba() -> CompetitionProvider:
+def _build_fpl() -> FPLProvider:
+    return _fpl()(settings.fpl_entry_id, client=_fpl_client())
+
+
+def _nba() -> type[YahooNBAProvider]:
+    from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
+
+    return YahooNBAProvider
+
+
+def _build_nba() -> YahooNBAProvider:
     """Yahoo needs an authorized context and a specific league object.
 
     Deferred to here so that constructing the registry — which every entry point
@@ -207,16 +320,16 @@ def _build_nba() -> CompetitionProvider:
     opens a browser and this runs inside a request handler as often as not.
     """
     from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm
-    from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
     from thefrontoffice.domain.errors import LeagueNotFoundError
 
+    provider = _nba()
     cache, retry = _disk_cache(settings.yahoo_cache_dir), _retry()
-    leagues = _yahoo_auth(cache).find_leagues("nba", YahooNBAProvider.season_year())
+    leagues = _yahoo_auth(cache).find_leagues("nba", provider.season_year())
     if not leagues:
         raise LeagueNotFoundError("no Yahoo NBA leagues for this season")
     sleeper = sleeper_client()
-    return YahooNBAProvider(
+    return provider(
         leagues[0],
         all_leagues=leagues,
         nba=SleeperNBAForm(sleeper),
@@ -226,71 +339,41 @@ def _build_nba() -> CompetitionProvider:
     )
 
 
-REGISTRY: tuple[CompetitionEntry, ...] = (
-    CompetitionEntry(
-        sport="basketball",
-        competition="nba",
-        platform="yahoo",
-        label="NBA (Yahoo)",
-        build=_build_nba,
-        is_configured=lambda: bool(settings.yahoo_client_id and settings.yahoo_client_secret),
-        requires="YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET",
-        check_ready=_check_yahoo_ready,
-        supports_trades=True,
-    ),
-    CompetitionEntry(
-        sport="football",
-        competition="nfl",
-        platform="sleeper",
-        label="NFL (Sleeper)",
-        build=_build_nfl,
-        is_configured=lambda: bool(settings.sleeper_username),
-        requires="SLEEPER_USERNAME",
-        supports_trades=True,
-        judges_wire=True,
-        plans_ahead=True,
-    ),
-    CompetitionEntry(
-        sport="soccer",
-        competition="premier-league",
-        platform="fpl",
-        label="FPL (Fantasy Premier League)",
-        build=_build_fpl,
-        is_configured=lambda: bool(settings.fpl_entry_id),
-        requires="FPL_ENTRY_ID",
-        # FPL managers do not trade with each other; the equivalent move is a
-        # transfer against the market, which the scouting report already covers.
-        supports_trades=False,
-    ),
-)
-
-
-def all_competitions() -> tuple[CompetitionEntry, ...]:
-    return REGISTRY
-
-
-def configured_competitions() -> list[CompetitionEntry]:
-    """Only the sports this user has credentials for."""
-    return [entry for entry in REGISTRY if entry.is_configured()]
-
-
-def requirements_summary() -> str:
-    """One line naming what to set for each sport, for a 'nothing configured' message."""
-    return "; ".join(f"{e.label}: {e.requires}" for e in REGISTRY)
-
-
-def find(key: str) -> CompetitionEntry | None:
-    """The entry a token names, by pair or by sport alone.
-
-    Typing "nba" stays meaningful while only one platform carries it, and
-    becomes the first of them once two do — which is why anything that has to
-    be unambiguous, like a route, uses the pair.
-    """
-    token = key.lower().lstrip("/")
-    return next(
-        (e for e in REGISTRY if e.key == token),
-        next((e for e in REGISTRY if e.competition == token), None),
+REGISTRY = Registry(
+    (
+        CompetitionEntry(
+            sport="basketball",
+            competition="nba",
+            platform="yahoo",
+            label="NBA (Yahoo)",
+            provider=_nba,
+            build=_build_nba,
+            is_configured=lambda: bool(settings.yahoo_client_id and settings.yahoo_client_secret),
+            requires="YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET",
+            check_ready=_check_yahoo_ready,
+        ),
+        CompetitionEntry(
+            sport="football",
+            competition="nfl",
+            platform="sleeper",
+            label="NFL (Sleeper)",
+            provider=_nfl,
+            build=nfl_provider,
+            is_configured=lambda: bool(settings.sleeper_username),
+            requires="SLEEPER_USERNAME",
+        ),
+        CompetitionEntry(
+            sport="soccer",
+            competition="premier-league",
+            platform="fpl",
+            label="FPL (Fantasy Premier League)",
+            provider=_fpl,
+            build=_build_fpl,
+            is_configured=lambda: bool(settings.fpl_entry_id),
+            requires="FPL_ENTRY_ID",
+        ),
     )
+)
 
 
 # ── models and engines ──────────────────────────────────────────────────
@@ -331,63 +414,67 @@ def _cooldowns() -> Cooldowns:
     return Cooldowns()
 
 
-def ai_available() -> bool:
-    """Whether any model can be called at all.
+@dataclass(frozen=True)
+class Wiring:
+    """Everything an entry point is handed: the competitions, and the engines over them.
 
-    Read before offering anything that needs it. Without a key the app has no
-    analysis to give, and the honest response is to not offer it — a button
-    that explains why it cannot work is worse than no button.
+    Built once per process by `wiring()`; a test builds one from fakes. The
+    model is built per call, so a key saved in Settings counts at once, and
+    so is the Yahoo login, so a client id saved there does too.
     """
-    return default_model().is_available
+
+    registry: Registry
+    model: Callable[[], AnalysisModel]
+    answers: AnswerStore
+    decisions: ItemDecisions
+    yahoo_login: Callable[[], AccountLogin]
+
+    def ai_available(self) -> bool:
+        """Whether any model can be called at all.
+
+        Read before offering anything that needs it. Without a key the app has
+        no analysis to give, and the honest response is to not offer it — a
+        button that explains why it cannot work is worse than no button.
+        """
+        return self.model().is_available
+
+    def scout(self, entry: CompetitionEntry, provider: ContextProvider) -> ScoutEngine:
+        """A scouting engine wired to the model and the judgments kept on disk."""
+        return ScoutEngine(provider, key=entry.key, ai=self.model(), answers=self.answers)
+
+    def ask(self, entry: CompetitionEntry, provider: SubjectProvider) -> AskEngine:
+        """Questions about one thing on screen, wired like the scouting engine."""
+        return AskEngine(provider, key=entry.key, ai=self.model(), answers=self.answers)
+
+    def wire(self, entry: CompetitionEntry, provider: WireProvider) -> WireEngine:
+        """Calls on available players, wired to the model."""
+        return WireEngine(provider, key=entry.key, ai=self.model(), answers=self.answers)
+
+    def trade(self, provider: TradeProvider) -> TradeEngine:
+        """A trade engine wired to the model."""
+        return TradeEngine(provider, ai=self.model())
+
+    def market(self, provider: TradeMarketProvider) -> MarketEngine:
+        """The trades worth offering, priced in playoff chance. Needs no model."""
+        return MarketEngine(provider)
+
+    def week(self, entry: CompetitionEntry, provider: CompetitionProvider) -> WeekEngine:
+        """A competition's week, season and wire, with whichever generic engines it can feed."""
+        return WeekEngine(
+            provider,
+            key=entry.key,
+            decisions=self.decisions,
+            forecast=ForecastEngine(provider) if isinstance(provider, ForecastProvider) else None,
+            season=SeasonEngine(provider) if isinstance(provider, SeasonProvider) else None,
+        )
 
 
-def scout_engine(provider: CompetitionProvider) -> ScoutEngine:
-    """A scouting engine wired to the configured model and the judgments kept on disk."""
-    return ScoutEngine(provider, ai=default_model(), answers=_answer_store())
-
-
-def forecast_engine(provider: ForecastProvider) -> ForecastEngine:
-    """A provider's matchup, simulated. Needs no model and no key."""
-    return ForecastEngine(provider)
-
-
-def season_engine(provider: SeasonProvider) -> SeasonEngine:
-    """A provider's regular season, simulated to the playoffs. Needs no model either."""
-    return SeasonEngine(provider)
-
-
-def market_engine(provider: TradeMarketProvider) -> MarketEngine:
-    """The trades worth offering, priced in playoff chance. Needs no model either."""
-    return MarketEngine(provider)
-
-
-def week_engine(provider: CompetitionProvider, decisions: ItemDecisions) -> WeekEngine:
-    """A competition's week, season and wire, with whichever generic engines it can feed."""
-    return WeekEngine(
-        provider,
-        decisions=decisions,
-        forecast=ForecastEngine(provider) if isinstance(provider, ForecastProvider) else None,
-        season=SeasonEngine(provider) if isinstance(provider, SeasonProvider) else None,
+def wiring() -> Wiring:
+    """The app as this machine runs it: the registry, the configured model, and what is kept on disk."""
+    return Wiring(
+        registry=REGISTRY,
+        model=default_model,
+        answers=_answer_store(),
+        decisions=_item_decisions(),
+        yahoo_login=yahoo_auth,
     )
-
-
-def item_decisions() -> ItemDecisions:
-    """The manager's decisions about to-do items, kept on this machine."""
-    from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
-
-    return ItemDecisions(DiskItemStateStore(_disk_cache(settings.item_state_dir)))
-
-
-def ask_engine(provider: CompetitionProvider) -> AskEngine:
-    """Questions about one thing on screen, wired like the scouting engine."""
-    return AskEngine(provider, ai=default_model(), answers=_answer_store())
-
-
-def wire_engine(provider: WireProvider) -> WireEngine:
-    """Calls on available players, wired to the configured model."""
-    return WireEngine(provider, ai=default_model(), answers=_answer_store())
-
-
-def trade_engine(provider: TradeProvider) -> TradeEngine:
-    """A trade engine wired to the configured model."""
-    return TradeEngine(provider, ai=default_model())

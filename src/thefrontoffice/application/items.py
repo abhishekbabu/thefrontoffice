@@ -13,14 +13,15 @@ than dropped, so the page can still offer them back.
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from thefrontoffice.application.answers import scope
 from thefrontoffice.domain.errors import ItemDecisionError
-from thefrontoffice.domain.models import Action, ItemDecision, ItemState, answer_scope
+from thefrontoffice.domain.models import Action, ItemDecision, ItemState
 from thefrontoffice.domain.ports import ItemStateStore
 
 
-def item_scope(competition: str, league_id: str) -> str:
-    """Where one league's decisions are kept."""
-    return answer_scope("items", competition, league_id)
+def item_scope(key: str, league_id: str) -> str:
+    """Where one league's decisions are kept, under the competition's registry key."""
+    return scope("items", key, league_id)
 
 
 def apply_decisions(actions: list[Action], states: dict[str, ItemState], now: datetime) -> list[Action]:
@@ -53,16 +54,16 @@ class ItemDecisions:
         self._store = store
         self._clock = clock
 
-    def apply(self, competition: str, league_id: str, actions: list[Action]) -> list[Action]:
-        return apply_decisions(actions, self._store.states(item_scope(competition, league_id)), self._clock())
+    def apply(self, key: str, league_id: str, actions: list[Action]) -> list[Action]:
+        return apply_decisions(actions, self._store.states(item_scope(key, league_id)), self._clock())
 
-    def decide(self, competition: str, league_id: str, decision: ItemDecision) -> ItemState | None:
+    def decide(self, key: str, league_id: str, decision: ItemDecision) -> ItemState | None:
         """Keep `decision`, replacing any earlier one on the same item; None once restored.
 
         Raises:
             ItemDecisionError: a snooze that ends in the past.
         """
-        scope = item_scope(competition, league_id)
+        scope = item_scope(key, league_id)
         states = self._store.states(scope)
         if decision.decision == "restore":
             states.pop(decision.key, None)

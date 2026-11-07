@@ -873,16 +873,6 @@ class PlayerCall(BaseModel):
     )
 
 
-def answer_scope(kind: str, *about: str) -> str:
-    """What a kept answer is about: the kind of call, then whose and of what.
-
-    `("scout", "NFL (Sleeper)", league)` for a week's judgment;
-    `("wire", "NFL (Sleeper)", league, player)` for one free agent's call.
-    One answer is kept per scope, so the scope is as fine as the answer.
-    """
-    return ":".join((kind, *about))
-
-
 class Remembered[AnswerT: BaseModel](BaseModel):
     """A model's answer, kept with exactly what it was given.
 

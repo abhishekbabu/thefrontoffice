@@ -40,7 +40,6 @@ class LeagueRef:
 
     league_id: str
     name: str
-    competition: str
     detail: str = ""
     """Anything worth showing beside the name — record, scoring format, team count."""
 
@@ -125,17 +124,12 @@ class AnalysisModel(Protocol):
 
 
 class ContextProvider(Protocol):
-    """A competition as the scouting engine sees it: a name, and the week's context.
+    """A competition as the scouting engine sees it: the week's context.
 
     Split out because that is all reading a week needs, and an engine that
-    asks for the whole provider makes every test of it fake one.
+    asks for the whole provider makes every test of it fake one. What the
+    competition is called, and what it is keyed by, is its registry entry's.
     """
-
-    competition: str
-    """Which competition this provides: 'nba', 'nfl', 'premier-league'."""
-
-    label: str
-    """Human name for pickers: 'NBA (Yahoo)'."""
 
     def build_context(self, league_id: str) -> CompetitionContext:
         """Gather this league's state and render the scouting prompt.
@@ -178,43 +172,6 @@ class WeekProvider(Protocol):
     every test of it fake one.
     """
 
-    label: str
-
-    def summary(self, league_id: str) -> Summary:
-        """Where this team stands this week. See `CompetitionProvider.summary`."""
-        ...
-
-    def schedule(self, league_id: str) -> LeagueSchedule:
-        """The league beyond this week. See `CompetitionProvider.schedule`."""
-        ...
-
-    def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
-        """One page of the players nobody holds. See `CompetitionProvider.free_agents`."""
-        ...
-
-
-@runtime_checkable
-class CompetitionProvider(SubjectProvider, Protocol):
-    """One competition on one platform.
-
-    A competition rather than a sport, because that is what a fantasy game is
-    played over: the NBA, the NFL, the Premier League. One sport can have
-    several — college football beside the NFL — and each is its own provider
-    with its own rules, so the sport is an attribute rather than the identity.
-    """
-
-    sport: str
-    """The game itself: 'basketball', 'football', 'soccer'. Groups competitions
-    that are the same sport; never identifies one on its own."""
-
-    def list_leagues(self) -> list[LeagueRef]:
-        """Every league this user plays in for the current season.
-
-        Raises:
-            FrontOfficeError: the platform is unreachable or unconfigured.
-        """
-        ...
-
     def summary(self, league_id: str) -> Summary:
         """Where this team stands, without producing an analysis.
 
@@ -224,6 +181,21 @@ class CompetitionProvider(SubjectProvider, Protocol):
         number here is already known.
 
         Cheaper than build_context: no candidate pool, no market, no model.
+
+        Raises:
+            FrontOfficeError: the league or the user's team within it is missing.
+        """
+        ...
+
+    def schedule(self, league_id: str) -> LeagueSchedule:
+        """The league beyond this week: the season, the table, the real games.
+
+        Separate from `summary` because it is a different question asked at a
+        different time — how the season is going, rather than what to do about
+        Sunday — and it costs requests that the week does not need.
+
+        Every section is optional. A platform that has no transaction feed
+        returns none rather than an empty promise.
 
         Raises:
             FrontOfficeError: the league or the user's team within it is missing.
@@ -247,6 +219,25 @@ class CompetitionProvider(SubjectProvider, Protocol):
         """
         ...
 
+
+@runtime_checkable
+class CompetitionProvider(SubjectProvider, WeekProvider, Protocol):
+    """One competition on one platform.
+
+    A competition rather than a sport, because that is what a fantasy game is
+    played over: the NBA, the NFL, the Premier League. Everything beyond this
+    — trades, the wire, a simulated week — is a port of its own, and what a
+    competition can do is read off which of them its provider implements.
+    """
+
+    def list_leagues(self) -> list[LeagueRef]:
+        """Every league this user plays in for the current season.
+
+        Raises:
+            FrontOfficeError: the platform is unreachable or unconfigured.
+        """
+        ...
+
     def teams(self, league_id: str) -> list[TeamRef]:
         """Everyone in the league, so their rosters can be opened.
 
@@ -263,34 +254,14 @@ class CompetitionProvider(SubjectProvider, Protocol):
         """
         ...
 
-    def schedule(self, league_id: str) -> LeagueSchedule:
-        """The league beyond this week: the season, the table, the real games.
-
-        Separate from `summary` because it is a different question asked at a
-        different time — how the season is going, rather than what to do about
-        Sunday — and it costs requests that the week does not need.
-
-        Every section is optional. A platform that has no transaction feed
-        returns none rather than an empty promise.
-
-        Raises:
-            FrontOfficeError: the league or the user's team within it is missing.
-        """
-        ...
-
 
 @runtime_checkable
 class TradeProvider(Protocol):
     """A competition that can also evaluate trades.
 
     Separate from CompetitionProvider because trade support arrives per
-    competition: a
-    provider can scout without yet being able to price a trade, and the registry
-    advertises which can via `supports_trades`.
+    competition: a provider can scout without yet being able to price a trade.
     """
-
-    sport: str
-    label: str
 
     def build_trade_context(self, league_id: str, proposal: TradeProposal) -> CompetitionContext:
         """Resolve both sides of the trade and render the evaluation prompt.
@@ -307,12 +278,8 @@ class WireProvider(Protocol):
     """A competition that can have its available players judged.
 
     Separate from CompetitionProvider for the reason TradeProvider is: the
-    capability arrives per competition, and the registry advertises which
-    have it via `judges_wire`.
+    capability arrives per competition.
     """
-
-    sport: str
-    label: str
 
     def build_wire_context(self, league_id: str, player_ids: list[str]) -> CompetitionContext:
         """Render the prompt asking for one call per listed available player.
@@ -332,14 +299,16 @@ class ForecastProvider(Protocol):
     engine does the rest, so a new competition is a provider, not a new engine.
     """
 
-    label: str
-
     def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput | None:
         """This week's matchup, ready to simulate; None where there is no opponent.
 
         With `candidates` — players on nobody's roster — the moves are instead
         every legal start of each of them, so the wire can be priced like the bench.
         """
+        ...
+
+    def played_weeks(self, league_id: str) -> list[int]:
+        """The weeks already played that `played_matchups` can rebuild, oldest first."""
         ...
 
     def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
@@ -355,8 +324,6 @@ class OutlookProvider(Protocol):
     capability arrives per competition.
     """
 
-    label: str
-
     def weeks_ahead(self, league_id: str) -> list[WeekAhead]:
         """The next few weeks, soonest first; none once the season has no weeks left."""
         ...
@@ -369,8 +336,6 @@ class SeasonProvider(Protocol):
     Records, the fixtures left, and how each team is expected to score in
     each of them; the generic engine plays it out and counts playoff places.
     """
-
-    label: str
 
     def season_input(self, league_id: str) -> SeasonInput | None:
         """The rest of the regular season; None where it is over or has no playoffs to reach."""
@@ -386,8 +351,18 @@ class TradeMarketProvider(Protocol):
     make sense, which is a question of its lineups and positions.
     """
 
-    label: str
-
     def trade_market(self, league_id: str) -> TradeMarket | None:
         """The season with the trades worth trying; None past the deadline or where there is no season to play."""
+        ...
+
+
+class AccountLogin(Protocol):
+    """A platform account this machine authorizes interactively, in a browser."""
+
+    def login(self, force: bool = False) -> None:
+        """Run the handshake; with `force`, even where a token is already kept."""
+        ...
+
+    def verify(self) -> None:
+        """Confirm the grant permits a read, raising where it does not."""
         ...
