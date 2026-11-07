@@ -15,6 +15,7 @@ import logging
 import random
 from collections.abc import Sequence
 
+from thefrontoffice.application.results import quantile, result
 from thefrontoffice.domain.models import (
     Action,
     Calibration,
@@ -27,7 +28,7 @@ from thefrontoffice.domain.models import (
     PickupChance,
     PlayedMatchup,
     RangeScore,
-    Urgency,
+    urgency_rank,
 )
 from thefrontoffice.domain.ports import ForecastProvider
 
@@ -38,8 +39,6 @@ SIMULATIONS = 10_000
 
 WORTH_A_ROW = 0.01
 """A move the to-do list lacks earns its own row once it adds a point of win chance."""
-
-URGENCY_ORDER: dict[Urgency, int] = {"now": 0, "soon": 1, "later": 2}
 
 
 def simulate(matchup: MatchupInput, simulations: int = SIMULATIONS) -> Forecast:
@@ -135,15 +134,14 @@ def _with(move: LineupMove, mine: list[float], theirs: list[float], draws: dict[
 
 
 def _win_rate(margins: list[float]) -> float:
-    wins = sum(1.0 if m > 0 else 0.5 if m == 0 else 0.0 for m in margins)
-    return wins / len(margins) if margins else 0.5
+    return sum(result(m, 0.0) for m in margins) / len(margins) if margins else 0.5
 
 
 def _range(margins: list[float]) -> MarginRange:
     ordered = sorted(margins)
 
     def at(share: float) -> float:
-        return round(ordered[min(len(ordered) - 1, int(share * len(ordered)))], 1) if ordered else 0.0
+        return round(quantile(ordered, share), 1) if ordered else 0.0
 
     return MarginRange(low=at(0.1), median=at(0.5), high=at(0.9))
 
@@ -174,7 +172,7 @@ def ranked(actions: list[Action] | None, forecast: Forecast, matchup: MatchupInp
 
     return sorted(
         priced,
-        key=lambda a: (URGENCY_ORDER[a.urgency], -(a.win_change if a.win_change is not None else float("-inf"))),
+        key=lambda a: (urgency_rank(a.urgency), -(a.win_change if a.win_change is not None else float("-inf"))),
     )
 
 
@@ -220,8 +218,7 @@ def calibrate(played: list[PlayedMatchup], simulations: int = SIMULATIONS) -> Ca
     pairs = []
     for game in played:
         chance = simulate(game.matchup, simulations).win
-        outcome = 1.0 if game.mine > game.theirs else 0.5 if game.mine == game.theirs else 0.0
-        pairs.append((chance, outcome))
+        pairs.append((chance, result(game.mine, game.theirs)))
     if not pairs:
         return Calibration(matchups=0, brier=0.0)
 
@@ -261,7 +258,7 @@ def score_ranges(played: list[tuple[Outcomes, float]], draws: int = 400, seed: i
     loss = 0.0
     for outcomes, actual in played:
         ordered = sorted(_draw(outcomes, rng, draws))
-        quantiles = [ordered[min(draws - 1, int(q * draws))] for q in DECILES]
+        quantiles = [quantile(ordered, q) for q in DECILES]
         low, high = quantiles[0], quantiles[-1]
         below += actual < low
         above += actual > high
