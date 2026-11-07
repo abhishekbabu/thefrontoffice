@@ -10,8 +10,9 @@ import pytest
 from support.ai import FakeAI, FakeChat
 from support.reports import MOCK_NBA_VERDICT
 
+from thefrontoffice.application.formats import TradeAnswer, TradeSides
 from thefrontoffice.application.trading import TradeEngine
-from thefrontoffice.domain.errors import AIResponseError, PlayerNotFoundError, TradeParseError
+from thefrontoffice.domain.errors import AIQuotaError, AIResponseError, PlayerNotFoundError, TradeParseError
 from thefrontoffice.domain.models import CompetitionContext, TradeProposal, TradeVerdict
 
 
@@ -56,7 +57,14 @@ def test_the_prose_is_structured_in_a_second_pass() -> None:
     """A response schema cannot accompany a tool, so prose is converted after."""
     ai = FakeAI()
     _engine(ai=ai).evaluate("L1", "x")
-    assert ai.structured_text == ["[FAKE] follow-up answer"]
+    assert ("[FAKE] follow-up answer", TradeAnswer) in [(text, schema) for text, schema, _ in ai.structured]
+
+
+def test_the_trade_is_parsed_into_its_two_sides_by_the_parsing_pass() -> None:
+    """Parsing is the fast model's job, held to a schema rather than read as JSON by hand."""
+    ai = FakeAI()
+    _engine(ai=ai).evaluate("L1", "Give LeBron, Get Tatum")
+    assert ("Give LeBron, Get Tatum", TradeSides) == ai.structured[0][:2]
 
 
 def test_an_unparseable_trade_raises_before_the_provider_is_asked() -> None:
@@ -82,6 +90,7 @@ def test_an_empty_model_response_raises() -> None:
         _engine(ai=FakeAI(chat=FakeChat(reply=""))).evaluate("L1", "x")
 
 
-def test_a_model_failure_is_wrapped_as_a_domain_error() -> None:
-    with pytest.raises(AIResponseError):
-        _engine(ai=FakeAI(chat=FakeChat(error=RuntimeError("503")))).evaluate("L1", "x")
+def test_a_model_failure_reaches_the_caller_as_the_domain_error_it_was() -> None:
+    """A chat's failures are already the model's domain errors; a spent quota stays one."""
+    with pytest.raises(AIQuotaError):
+        _engine(ai=FakeAI(chat=FakeChat(error=AIQuotaError("Gemini")))).evaluate("L1", "x")

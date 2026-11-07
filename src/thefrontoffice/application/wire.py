@@ -97,7 +97,7 @@ class WireEngine:
         answered: dict[str, PlayerCall] = {}
         for call in answer.calls:
             if call.player_id in due and call.player_id not in answered:
-                clean = PlayerCall(player_id=call.player_id, decision=call.decision, drop=call.drop, reason=call.reason)
+                clean = PlayerCall.model_validate(call.model_dump())
                 kept = self.answers.keep(
                     self._scope(league_id, call.player_id), context.targets.get(call.player_id, ""), clean
                 )

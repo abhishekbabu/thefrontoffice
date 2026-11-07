@@ -148,7 +148,6 @@ export type ScoutReport = {
   strategy: string;
   /** Read off the platform by the provider, not written by the model. */
   headline: Stat[];
-  verdicts: TaskVerdict[];
   /** The to-do items as computed, each carrying its verdict. Filled by the
       application, never by the model; empty where none are computed. */
   tasks: Action[];
