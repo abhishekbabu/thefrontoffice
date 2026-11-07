@@ -11,5 +11,7 @@ export default defineConfig({
     // Same-origin in production, where FastAPI serves dist/ itself.
     proxy: { "/api": { target: "http://127.0.0.1:8000", changeOrigin: true } },
   },
-  test: { environment: "happy-dom", globals: true },
+  // themes.css is read as text by a test of its own; every other stylesheet
+  // stays out of the suite, which renders no styles.
+  test: { environment: "happy-dom", globals: true, css: { include: [/themes\.css/] } },
 });

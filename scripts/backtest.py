@@ -11,6 +11,7 @@ needs that competition configured.
 
 import sys
 
+from thefrontoffice.adapters.inbound.cli.output import print_error
 from thefrontoffice.application.forecasting import ForecastEngine
 from thefrontoffice.bootstrap import REGISTRY
 from thefrontoffice.config.logging import setup_logging
@@ -32,7 +33,7 @@ def main() -> int:
             return 1
         calibration = ForecastEngine(provider).backtest(league.league_id, weeks)
     except FrontOfficeError as e:
-        print(f"  ❌ {e}")
+        print_error(e)
         return 1
 
     print(f"\n  {entry.label} — {league.name}, weeks {weeks[0]}-{weeks[-1]}")

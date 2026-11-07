@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { toneText } from "@/lib/tone";
 import type { Stat } from "@/lib/api";
+import { Label } from "@/components/ui/label";
 
 /**
  * Figures as the server sends them — a label, a value already written, and
@@ -76,18 +77,5 @@ export function StatList({ stats, className }: { stats: Stat[]; className?: stri
         </div>
       ))}
     </dl>
-  );
-}
-
-function Label({ className, children }: { className?: string; children: React.ReactNode }) {
-  return (
-    <div
-      className={cn(
-        "font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground",
-        className,
-      )}
-    >
-      {children}
-    </div>
   );
 }

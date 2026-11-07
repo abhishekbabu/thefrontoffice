@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Empty, Loading } from "@/components/ui/state";
 import { ErrorNote } from "@/components/ui/error-note";
 import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
 
 // Each page loads when it is first opened rather than in the first download:
 // the entry bundle is what every visit waits on, and it was carrying all six.
@@ -159,14 +160,10 @@ export default function App() {
                 {label}
               </RailLink>
             ) : (
-              <RailButton
-                key={s.key}
-                disabled
-                tooltip={s.blocked_reason}
-              >
+              <RailBlocked key={s.key} reason={s.blocked_reason}>
                 {label}
                 <span className="font-mono text-[10px] opacity-60">{s.configured ? "blocked" : "off"}</span>
-              </RailButton>
+              </RailBlocked>
             );
           })}
         </Group>
@@ -238,9 +235,9 @@ export default function App() {
 function Group({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <p className="px-2 pb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+      <Label as="p" className="px-2 pb-1.5">
         {label}
-      </p>
+      </Label>
       {children}
     </div>
   );
@@ -281,28 +278,18 @@ function RailLink({
   );
 }
 
-/** A rail item that goes nowhere — a competition you cannot play, and why. */
-function RailButton({
-  active,
-  disabled,
-  className,
-  tooltip,
-  children,
-  ...props
-}: React.ComponentProps<"button"> & { active?: boolean; tooltip?: string }) {
-  const button = (
-    <button disabled={disabled} className={railItem(active, disabled, className)} {...props}>
-      {children}
-    </button>
-  );
+/** A rail item that goes nowhere — a competition you cannot play — and why, on hover. */
+function RailBlocked({ reason, children }: { reason: string; children: React.ReactNode }) {
   // A disabled control cannot be hovered in every browser, so the reason is
   // wrapped rather than attached — and Radix keeps it reachable by keyboard.
-  return tooltip ? (
-    <Tooltip label={tooltip} side="right">
-      <span className={cn(disabled && "cursor-not-allowed")}>{button}</span>
+  return (
+    <Tooltip label={reason} side="right">
+      <span className="cursor-not-allowed">
+        <button disabled className={railItem(false, true)}>
+          {children}
+        </button>
+      </span>
     </Tooltip>
-  ) : (
-    button
   );
 }
 

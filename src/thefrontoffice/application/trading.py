@@ -27,7 +27,7 @@ class TradeEngine:
     """Turns any TradeProvider into a trade verdict."""
 
     def __init__(self, provider: TradeProvider, *, ai: AnalysisModel):
-        """Both collaborators are ports. `bootstrap.trade_engine` wires them."""
+        """Both collaborators are ports, which `Wiring.trade` in the composition root fills."""
         self.provider = provider
         self.ai = ai
 
