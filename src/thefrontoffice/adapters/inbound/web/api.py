@@ -455,7 +455,7 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
             # better than an empty answer the user cannot explain.
             raise HTTPException(status_code=404, detail="That conversation has expired. Close it and ask again.")
         try:
-            answer = chat.send_message(request.message).text or ""
+            answer = chat.send_message(request.message).text
         except FrontOfficeError:
             # Already a sentence — "every model is out of quota" says more
             # than "did not answer", and the handler renders it with its code.
@@ -465,7 +465,7 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
             # that belongs, not a panel someone is reading.
             logger.error(f"Follow-up failed: {e}")
             raise HTTPException(status_code=502, detail="The model did not answer. Try asking again.") from e
-        return Reply(answer=answer or "(no answer)")
+        return Reply(answer=answer)
 
 
 def _serve_frontend(app: FastAPI, dist: Path) -> None:

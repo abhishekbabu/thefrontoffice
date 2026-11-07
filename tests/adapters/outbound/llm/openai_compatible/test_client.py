@@ -15,7 +15,7 @@ import openai
 import pytest
 from pydantic import BaseModel
 
-from thefrontoffice.adapters.outbound.llm.openai_compatible.client import OpenAICompatibleClient, Reply
+from thefrontoffice.adapters.outbound.llm.openai_compatible.client import OpenAICompatibleClient
 from thefrontoffice.adapters.outbound.llm.openai_compatible.providers import Provider
 from thefrontoffice.domain.errors import AIKeyInvalidError, AIQuotaError, AIResponseError, AIUnavailableError
 
@@ -219,7 +219,7 @@ def test_a_chat_carries_its_seeded_history_and_every_turn_since() -> None:
     chat.send_message("why?")
     reply = chat.send_message("and then?")
 
-    assert isinstance(reply, Reply) and reply.text == "second answer"
+    assert reply.text == "second answer"
     roles = [m["role"] for m in completions.requests[-1]["messages"]]
     assert roles == ["user", "assistant", "user", "assistant", "user"]
 
@@ -230,4 +230,4 @@ def test_asking_for_search_still_opens_a_chat() -> None:
 
     reply = model.start_chat(enable_search=True).send_message("q")
 
-    assert isinstance(reply, Reply) and reply.text == "answer"
+    assert reply.text == "answer"

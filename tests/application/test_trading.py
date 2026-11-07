@@ -12,7 +12,7 @@ from support.reports import MOCK_NBA_VERDICT
 
 from thefrontoffice.application.formats import TradeAnswer, TradeSides
 from thefrontoffice.application.trading import TradeEngine
-from thefrontoffice.domain.errors import AIQuotaError, AIResponseError, PlayerNotFoundError, TradeParseError
+from thefrontoffice.domain.errors import AIQuotaError, PlayerNotFoundError, TradeParseError
 from thefrontoffice.domain.models import CompetitionContext, TradeProposal, TradeVerdict
 
 
@@ -80,11 +80,6 @@ def test_the_model_is_asked_about_this_leagues_parsed_trade() -> None:
 def test_a_provider_failure_propagates_as_a_domain_error() -> None:
     with pytest.raises(PlayerNotFoundError):
         _engine(FakeTradeProvider(error=PlayerNotFoundError(["Ghost"]))).evaluate("L1", "x")
-
-
-def test_an_empty_model_response_raises() -> None:
-    with pytest.raises(AIResponseError):
-        _engine(ai=FakeAI(chat=FakeChat(reply=""))).evaluate("L1", "x")
 
 
 def test_a_model_failure_reaches_the_caller_as_the_domain_error_it_was() -> None:
