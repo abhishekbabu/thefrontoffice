@@ -233,4 +233,4 @@ def test_a_dismissal_kept_under_the_competitions_old_label_still_hides_its_item(
     wiring = bootstrap.wiring(settings)
     week = wiring.week(wiring.registry.find("nfl"), _OneItem()).week("L1")
 
-    assert [a.hidden for a in week.summary.actions or []] == ["dismissed"]
+    assert [a.mark.hidden for a in week.summary.actions or []] == ["dismissed"]

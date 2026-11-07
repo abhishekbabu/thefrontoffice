@@ -93,13 +93,20 @@ export function Landing({
                 <CardNote>No leagues this season.</CardNote>
               )}
 
+              {/* A row, not a button: the way across to the platform sits inside
+                  it, and a link inside a button is two controls a screen reader
+                  and a keyboard cannot tell apart. The button's hit area is
+                  stretched over the row instead, with the link raised above it. */}
               {result?.data?.map((league) => (
-                <button
+                <div
                   key={league.league_id}
-                  onClick={() => onPick(competition, league)}
-                  className="flex w-full items-center gap-3 border-t border-border px-4 py-3 text-left transition-colors hover:bg-muted"
+                  className="relative flex w-full items-center gap-3 border-t border-border px-4 py-3 transition-colors hover:bg-muted"
                 >
-                  <div className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => onPick(competition, league)}
+                    className="min-w-0 flex-1 text-left after:absolute after:inset-0 after:content-['']"
+                  >
                     <div className="truncate font-display text-[15px] font-semibold tracking-tight">
                       {league.name}
                     </div>
@@ -108,12 +115,16 @@ export function Landing({
                         {league.detail}
                       </div>
                     )}
-                  </div>
+                  </button>
                   {/* Straight to the platform, for when you already know what
                       you came to do and this app is not it. */}
-                  <ExternalLink href={league.url} label={`Open ${league.name} on the platform`} />
+                  <ExternalLink
+                    href={league.url}
+                    label={`Open ${league.name} on the platform`}
+                    className="relative z-10"
+                  />
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                </button>
+                </div>
               ))}
             </Card>
             </m.div>

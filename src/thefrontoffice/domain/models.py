@@ -117,7 +117,49 @@ class Side(BaseModel):
     bench: list[Spot] = Field(default_factory=list)
 
 
-class PlayerQuery(BaseModel):
+PAGE_SIZE = 50
+"""Rows a page of a player list holds unless the caller asks for another number."""
+
+MAX_PAGE = 200
+"""The most rows one page may hold: as many as a screen could ever show at once."""
+
+
+class PlayerOrder(BaseModel):
+    """Which column a player list is ordered by, and which way.
+
+    One rule for every list, whether a page of the wire or a whole roster:
+    the number behind a formatted column where the card has one — "£15.5m"
+    sorted as text sits below "£9.0m" — and rows with nothing in the column
+    kept last in both directions.
+    """
+
+    sort: str = Field(default="", description="Column to order by. Empty means the competition's own ranking.")
+    descending: bool = True
+
+    def ordered(self, cards: list[PlayerCard]) -> list[PlayerCard]:
+        """`cards` in this order, or as they came where no column is named.
+
+        Blanks stay last either way, which a sort key cannot express on its
+        own: fold "is it missing" into the key and reversing the sort brings
+        them to the top, where they push every real answer off the first page.
+        """
+        column = self.sort
+        if not column:
+            return cards
+        numeric = any(column in card.values for card in cards)
+
+        def has_value(card: PlayerCard) -> bool:
+            return column in card.values if numeric else bool(card.columns.get(column))
+
+        def key(card: PlayerCard) -> float | str:
+            return card.values[column] if numeric else card.columns.get(column, "").casefold()
+
+        present = [card for card in cards if has_value(card)]
+        missing = [card for card in cards if not has_value(card)]
+        return sorted(present, key=key, reverse=self.descending) + missing
+
+
+class PlayerQuery(PlayerOrder):
     """How much of a player list to return, in what order, and which of it.
 
     A football league's free-agent pool is four thousand players, so the list
@@ -127,9 +169,7 @@ class PlayerQuery(BaseModel):
     """
 
     offset: int = Field(default=0, ge=0)
-    limit: int = Field(default=50, ge=1, le=200)
-    sort: str = Field(default="", description="Column to order by. Empty means the competition's own ranking.")
-    descending: bool = True
+    limit: int = Field(default=PAGE_SIZE, ge=1, le=MAX_PAGE)
     position: str = Field(default="", description="Keep only this position. Empty keeps all.")
     search: str = Field(default="", description="Substring match across a row's own values.")
 
@@ -140,10 +180,26 @@ class PlayerPage(BaseModel):
     players: list[PlayerCard] = Field(default_factory=list)
     total: int = Field(default=0, description="Rows matching the filters, before the window.")
     offset: int = 0
+    limit: int = Field(default=PAGE_SIZE, description="The window's size, which the next page steps by.")
     positions: list[str] = Field(
         default_factory=list,
         description="Every position in the unfiltered pool, so a filter can be offered without guessing.",
     )
+
+
+PLAYER_COLUMN = "Player"
+"""The column holding a player's name, in every competition's table."""
+
+STATUS_COLUMN = "Status"
+"""The column holding a player's availability, in the platform's own words."""
+
+SLOT_COLUMN = "Slot"
+"""The column holding where a rostered player sits in the lineup."""
+
+ColumnRole = Literal["player", "status", "slot"]
+"""What a column is, for the few a table renders as more than text."""
+
+_ROLES: dict[str, ColumnRole] = {PLAYER_COLUMN: "player", STATUS_COLUMN: "status", SLOT_COLUMN: "slot"}
 
 
 class PlayerCard(BaseModel):
@@ -153,7 +209,7 @@ class PlayerCard(BaseModel):
     Price and xPts, the NFL sends Slot — so a client renders whatever keys
     arrive rather than being taught each one. What sits beside it is what a
     table needs and a column should not be: an identifier to open, and whether
-    the row wants attention.
+    he will play.
     """
 
     player_id: str
@@ -167,7 +223,6 @@ class PlayerCard(BaseModel):
             "competition's units."
         ),
     )
-    tone: Tone = "neutral"
     ruled_out: bool = Field(
         default=False,
         description=(
@@ -175,6 +230,13 @@ class PlayerCard(BaseModel):
             "decided by the provider, which knows its platform's words for it."
         ),
     )
+
+    @computed_field(
+        description="The columns a table renders as more than text, by what they hold — so no client matches names."
+    )
+    @property
+    def roles(self) -> dict[str, ColumnRole]:
+        return {column: _ROLES[column] for column in self.columns if column in _ROLES}
 
 
 FIT_COLUMN = "Fits"
@@ -191,6 +253,7 @@ class StatGroup(BaseModel):
 
     title: str
     stats: list[Stat] = Field(default_factory=list)
+    note: str = Field(default="", description="What the heading says about the group as a whole: '2 available'.")
 
 
 NOT_APPLICABLE = "N/A"
@@ -337,6 +400,19 @@ def urgency_rank(urgency: Urgency) -> int:
     return get_args(Urgency).index(urgency)
 
 
+class ItemMark(BaseModel):
+    """What the manager's decisions make of one to-do item as it reads now."""
+
+    hidden: Literal["dismissed", "snoozed"] | None = Field(
+        default=None, description="Hidden by the manager's own decision: dismissed, or snoozed for now."
+    )
+    snoozed_until: datetime | None = Field(default=None, description="When a snooze runs out.")
+    resurfaced: bool = Field(
+        default=False,
+        description="Whether a dismissed item has changed since, and so is back.",
+    )
+
+
 class Action(BaseModel):
     """One decision the week asks of the manager, and why it is one.
 
@@ -396,14 +472,11 @@ class Action(BaseModel):
         default=None,
         description="The model's judgement, once a report has been run. None before, and for an item it skipped.",
     )
-    hidden: Literal["dismissed", "snoozed"] | None = Field(
-        default=None, description="Hidden by the manager's own decision: dismissed, or snoozed for now."
-    )
-    snoozed_until: datetime | None = Field(default=None, description="When a snooze runs out.")
-    resurfaced: bool = Field(
+    stale: bool = Field(
         default=False,
-        description="Whether a dismissed item has changed since, and so is back.",
+        description="Whether the item has changed since `verdict` was given: a verdict on last night's news.",
     )
+    mark: ItemMark = Field(default_factory=ItemMark, description="What the manager's own decisions make of the item.")
     chance: Stat | None = Field(
         default=None,
         description=(
@@ -718,6 +791,11 @@ class WeekAhead(BaseModel):
     short: bool = Field(description="Whether the week falls far enough below the usual to act on.")
     fix: str = Field(default="", description="The pickup that closes most of the gap, and who to drop for him.")
     gain: float = Field(default=0.0, description="What that pickup adds to the week's best lineup.")
+
+    @computed_field(description="How far the week falls below the usual one; negative where it is above.")
+    @property
+    def short_by(self) -> float:
+        return self.usual - self.points
 
 
 @dataclass(frozen=True)

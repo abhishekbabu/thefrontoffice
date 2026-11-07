@@ -208,8 +208,7 @@ def test_a_doubtful_player_is_offered_in_the_market_as_he_is_counted_in_a_lineup
     market = provider(players=_with_doubtful_target()).free_agents(H2H_LEAGUE, PlayerQuery()).players
     doubtful = next(card for card in market if card.player_id == "104")
 
-    assert doubtful.columns["Status"] == "doubtful 75%"
-    assert doubtful.tone == "warning"
+    assert (doubtful.columns["Status"], doubtful.ruled_out) == ("doubtful 75%", False)
 
 
 def test_a_doubtful_player_is_in_the_prompts_market() -> None:
@@ -778,6 +777,14 @@ def test_the_chips_carry_the_leagues_own_word_for_them() -> None:
 
 def test_a_chip_inside_its_window_is_available() -> None:
     assert _chips()["Bench Boost"] == "available"
+
+
+def test_the_chips_say_how_many_can_be_played_now() -> None:
+    boosts = provider().summary(H2H_LEAGUE).boosts
+
+    assert boosts is not None
+    available = [label for label, value in _chips().items() if value == "available"]
+    assert boosts.note == f"{len(available)} available"
 
 
 def test_a_chip_whose_window_has_not_opened_says_when_it_does() -> None:

@@ -36,6 +36,9 @@ from thefrontoffice.domain.errors import (
     TeamNotFoundError,
 )
 from thefrontoffice.domain.models import (
+    PLAYER_COLUMN,
+    SLOT_COLUMN,
+    STATUS_COLUMN,
     CompetitionContext,
     LeagueSchedule,
     PlayerCard,
@@ -310,16 +313,15 @@ class YahooNBAProvider:
             cards.append(
                 PlayerCard(
                     player_id=player.player_key,
-                    tone="warning" if player.status else "neutral",
                     ruled_out=ruled_out(player.status),
                     values={c.label: value for c in CARD_CATEGORIES if (value := _figure(stats, c)) is not None},
                     columns={
-                        "Player": player.name,
+                        PLAYER_COLUMN: player.name,
                         "Pos": player.position,
                         "Team": player.team,
-                        **({"Slot": player.slot} if slotted else {}),
+                        **({SLOT_COLUMN: player.slot} if slotted else {}),
                         **{c.label: _recent(stats, c) for c in CARD_CATEGORIES},
-                        "Status": player.status,
+                        STATUS_COLUMN: player.status,
                     },
                 )
             )

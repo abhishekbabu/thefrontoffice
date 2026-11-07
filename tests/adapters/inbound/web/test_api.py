@@ -151,6 +151,31 @@ def test_a_roster_keeps_the_competitions_own_columns(client: TestClient) -> None
     assert body[0]["player_id"] == "10"
 
 
+class _Squad(FakeProvider):
+    def roster(self, league_id: str) -> list[PlayerCard]:
+        return [
+            PlayerCard(player_id="1", columns={"Player": "Cheap", "Price": "£4.5m"}, values={"Price": 4.5}),
+            PlayerCard(player_id="2", columns={"Player": "Dear", "Price": "£15.5m"}, values={"Price": 15.5}),
+            PlayerCard(player_id="3", columns={"Player": "Mid", "Price": "£9.0m"}, values={"Price": 9.0}),
+        ]
+
+
+def test_a_roster_is_ordered_by_the_column_asked_for_as_a_page_of_the_wire_is() -> None:
+    """By the number behind the column: '£15.5m' sorted as text sits below '£9.0m'."""
+    client = _client(_Squad())
+
+    body = client.get("/api/premier-league/leagues/900/roster", params={"sort": "Price", "descending": True}).json()
+
+    assert [card["player_id"] for card in body] == ["2", "3", "1"]
+
+
+def test_a_roster_says_which_columns_hold_the_name_status_and_slot(client: TestClient) -> None:
+    """So the page renders them by role, never by matching a column's name."""
+    [card] = client.get("/api/premier-league/leagues/900/roster").json()
+
+    assert card["roles"] == {"Player": "player"}
+
+
 def test_an_unconfigured_competition_is_a_readable_400() -> None:
     """These are conditions the user can act on, not faults in the server."""
     client = TestClient(web.create_app(fake_wiring(registry=REGISTRY.entries)))
@@ -672,7 +697,7 @@ def _week_with_one_item() -> TestClient:
 
 
 def test_a_dismissed_item_comes_back_marked_rather_than_gone() -> None:
-    """Marked, so the page can hide it and still offer it back."""
+    """Marked, so the page can hide it and still offer it back — and the decision answers with that same mark."""
     client = _week_with_one_item()
 
     kept = client.post(
@@ -681,8 +706,27 @@ def test_a_dismissed_item_comes_back_marked_rather_than_gone() -> None:
     ).json()
     [shown] = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["actions"]
 
-    assert kept["dismissed_as"] == ITEM.fingerprint
-    assert shown["hidden"] == "dismissed"
+    assert kept == shown["mark"]
+    assert shown["mark"]["hidden"] == "dismissed"
+
+
+def test_the_week_carries_the_last_verdict_on_each_item() -> None:
+    """Joined on the server, so the page shows what it is sent rather than matching keys itself."""
+    from thefrontoffice.domain.models import Summary, TaskVerdict
+
+    verdict = TaskVerdict(task="T1", decision="WAIT", reason="His status is due Sunday.")
+    answers = FakeAnswers()
+    judged = MOCK_FPL_REPORT.model_copy(update={"tasks": [ITEM.model_copy(update={"verdict": verdict})]})
+    answers.save(scout_scope("nfl-sleeper", "L1"), Remembered(answer=judged, answered_at=datetime.now(UTC), inputs=""))
+    changed = ITEM.model_copy(update={"reason": "+6.0"})
+
+    [shown] = (
+        _client(_SummaryProvider(Summary(actions=[changed])), answers=answers)
+        .get("/api/nfl-sleeper/leagues/L1/summary")
+        .json()["actions"]
+    )
+
+    assert (shown["verdict"]["decision"], shown["stale"]) == ("WAIT", True)
 
 
 def test_a_decision_made_under_a_bare_competition_holds_under_its_key() -> None:
@@ -695,7 +739,7 @@ def test_a_decision_made_under_a_bare_competition_holds_under_its_key() -> None:
     )
     [shown] = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["actions"]
 
-    assert shown["hidden"] == "dismissed"
+    assert shown["mark"]["hidden"] == "dismissed"
 
 
 def test_a_restored_item_is_shown_again() -> None:
@@ -708,8 +752,8 @@ def test_a_restored_item_is_shown_again() -> None:
     restored = client.post("/api/nfl-sleeper/leagues/L1/items", json={"key": ITEM.key, "decision": "restore"})
     [shown] = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["actions"]
 
-    assert restored.json() is None
-    assert shown["hidden"] is None
+    assert restored.json() == shown["mark"]
+    assert shown["mark"]["hidden"] is None
 
 
 def test_a_decision_that_says_too_little_is_rejected(client: TestClient) -> None:
@@ -858,7 +902,7 @@ def test_the_weeks_ahead_come_back_with_their_fixes() -> None:
 
     [week] = client.get("/api/nfl-sleeper/leagues/L1/weeks-ahead").json()
 
-    assert (week["week"], week["short"], week["gain"]) == (8, True, 12.0)
+    assert (week["week"], week["short"], week["short_by"], week["gain"]) == (8, True, 23.0, 12.0)
 
 
 def test_a_competition_that_cannot_look_ahead_refuses_as_it_does_trades(client: TestClient) -> None:

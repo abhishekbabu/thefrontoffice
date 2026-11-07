@@ -1,10 +1,17 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
+import { prePaintScript } from "./src/themes/prepaint";
+
+/** The theme applied before first paint, written into the page from the registry (`src/themes/prepaint.ts`). */
+const prePaint = (): Plugin => ({
+  name: "pre-paint",
+  transformIndexHtml: () => [{ tag: "script", children: prePaintScript(), injectTo: "head" }],
+});
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), prePaint()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   server: {
     // The dev server owns the page; anything under /api is the Python process.

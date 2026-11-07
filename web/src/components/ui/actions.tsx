@@ -12,6 +12,7 @@ import { CardNote } from "@/components/ui/state";
 import { Verdict } from "@/components/ui/verdict";
 import { moment } from "@/lib/format";
 import { decisionTone, toneText, type Variant } from "@/lib/tone";
+import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 
@@ -32,10 +33,9 @@ const URGENCY: Record<Urgency, { label: string; variant: Variant }> = {
  * said out loud — "nothing to do" is an answer worth having, and a missing
  * card would look the same as a page that never checked.
  *
- * `judged` are the same items as the model last saw them. A verdict is shown
- * on the row with the same key, and marked stale where the row has changed
- * since — a verdict on last night's news is not a verdict on this morning's.
- * `suggested` are the moves the model added that the list did not hold.
+ * Each item arrives with the model's last verdict on it, marked stale by the
+ * server where the item has changed since. `suggested` are the moves the
+ * model added that the list did not hold.
  *
  * Items the manager dismissed or snoozed are kept out of the list but not out
  * of reach: they collect under a closed "Hidden" at the foot, each with a way
@@ -43,7 +43,6 @@ const URGENCY: Record<Urgency, { label: string; variant: Variant }> = {
  */
 export function ActionList({
   actions,
-  judged = [],
   suggested = [],
   onOpen,
   onDecide,
@@ -52,7 +51,6 @@ export function ActionList({
   footer,
 }: {
   actions: Action[];
-  judged?: Action[];
   suggested?: Move[];
   onOpen?: (id: string) => void;
   /** Dismiss, snooze or restore an item; absent where decisions cannot be kept. */
@@ -63,9 +61,8 @@ export function ActionList({
   /** Under each row, for what a caller hangs off an item; handed the row's own controls to place. */
   footer?: (action: Action, controls: React.ReactNode) => React.ReactNode;
 }) {
-  const byKey = new Map(judged.filter((task) => task.key).map((task) => [task.key, task]));
-  const shown = actions.filter((action) => !action.hidden);
-  const hidden = actions.filter((action) => action.hidden);
+  const shown = actions.filter((action) => !action.mark.hidden);
+  const hidden = actions.filter((action) => action.mark.hidden);
   const count = shown.length + suggested.length;
   return (
     <Card>
@@ -85,8 +82,6 @@ export function ActionList({
       ) : (
         <ol className="flex flex-col">
           {shown.map((action) => {
-            const then = byKey.get(action.key);
-            const verdict = then?.verdict ?? action.verdict;
             const controls = onDecide && action.key && (
               <Decide action={action} onDecide={onDecide} busy={deciding} />
             );
@@ -101,12 +96,12 @@ export function ActionList({
                 evidence={action.evidence}
                 open={action.player_id && onOpen ? () => onOpen(action.player_id) : undefined}
               >
-                {action.resurfaced && (
+                {action.mark.resurfaced && (
                   <Label as="div" className="mb-1.5">
                     back — changed since you dismissed it
                   </Label>
                 )}
-                {verdict && <VerdictLine verdict={verdict} stale={Boolean(then) && then?.fingerprint !== action.fingerprint} />}
+                {action.verdict && <VerdictLine verdict={action.verdict} stale={action.stale} />}
                 {footer ? footer(action, controls) : controls}
               </Row>
             );
@@ -201,8 +196,8 @@ function Hidden({
           <li key={action.key} className="flex items-center gap-3 px-4 py-1.5 text-[12.5px]">
             <span className="min-w-0 flex-1 truncate text-muted-foreground">{action.title}</span>
             <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {action.hidden === "snoozed" && action.snoozed_until
-                ? `snoozed until ${moment(action.snoozed_until)}`
+              {action.mark.hidden === "snoozed" && action.mark.snoozed_until
+                ? `snoozed until ${moment(action.mark.snoozed_until)}`
                 : "dismissed"}
             </span>
             {onDecide && (
@@ -244,10 +239,7 @@ function Row({
     // The badge's width, shared with the indent that lines a row's verdict up under its title.
     <li className="border-t border-border [--badge-column:5.5rem] first:border-t-0">
       <div
-        onClick={open}
-        onKeyDown={open && ((e) => e.key === "Enter" && open())}
-        tabIndex={open ? 0 : undefined}
-        role={open ? "button" : undefined}
+        {...clickable(open)}
         className={cn("flex items-start gap-3 px-4 py-3", open && "cursor-pointer hover:bg-muted")}
       >
         <Badge variant={badge.variant} appearance="status" className="mt-0.5 w-(--badge-column) shrink-0">

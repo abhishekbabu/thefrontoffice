@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   DEFAULT_PALETTE,
+  MODE_STORAGE_KEY,
   PALETTE_STORAGE_KEY,
   applyPalette,
   isPaletteId,
@@ -10,9 +11,7 @@ import {
 
 export type Mode = "light" | "dark";
 
-const MODE_STORAGE_KEY = "tfo:mode";
-
-/** What the pre-paint script in index.html already put on <html>. */
+/** What the pre-paint script (`themes/prepaint.ts`) already put on <html>. */
 function currentMode(): Mode {
   return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }

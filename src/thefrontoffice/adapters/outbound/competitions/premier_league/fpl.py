@@ -49,6 +49,9 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
 from thefrontoffice.domain.errors import PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
+    PLAYER_COLUMN,
+    SLOT_COLUMN,
+    STATUS_COLUMN,
     CompetitionContext,
     LeagueSchedule,
     PlayerCard,
@@ -412,11 +415,10 @@ class FPLProvider:
         return [
             PlayerCard(
                 player_id=str(player.id),
-                tone=_tone(player),
                 ruled_out=not plays(player),
                 columns={
                     **self._market_columns(player),
-                    "Slot": ("C" if pick.is_captain else "XI") if pick.is_starting else "BN",
+                    SLOT_COLUMN: ("C" if pick.is_captain else "XI") if pick.is_starting else "BN",
                 },
                 values=self._market_values(player),
             )
@@ -426,7 +428,6 @@ class FPLProvider:
     def _market_card(self, player: Player) -> PlayerCard:
         return PlayerCard(
             player_id=str(player.id),
-            tone=_tone(player),
             ruled_out=not plays(player),
             columns=self._market_columns(player),
             values=self._market_values(player),
@@ -448,7 +449,7 @@ class FPLProvider:
     @staticmethod
     def _market_columns(player: Player) -> dict[str, str]:
         return {
-            "Player": player.name,
+            PLAYER_COLUMN: player.name,
             "Pos": player.position,
             "Club": player.team,
             "Price": as_millions(player.cost),
@@ -457,7 +458,7 @@ class FPLProvider:
             "Points": str(player.total_points),
             "xGI": f"{player.expected_goal_involvements:.2f}",
             "Owned": f"{player.selected_by:.1f}%",
-            "Status": player.availability,
+            STATUS_COLUMN: player.availability,
         }
 
     def summary(self, league_id: str) -> Summary:
@@ -538,7 +539,8 @@ class FPLProvider:
             windows = sorted((c for c in issued if c.name == name), key=lambda c: c.start_event)
             live = next((c for c in windows if c.stop_event >= gameweek), None)
             stats.append(self._chip_stat(windows[0].label, live, played.get(name), gameweek))
-        return StatGroup(title="Chips", stats=stats)
+        available = sum(stat.tone == "good" for stat in stats)
+        return StatGroup(title="Chips", stats=stats, note=f"{available} available")
 
     @staticmethod
     def _chip_stat(label: str, live: Chip | None, played: int | None, gameweek: int) -> Stat:
@@ -721,7 +723,7 @@ class FPLProvider:
 
 
 def _tone(player: Player) -> Tone:
-    """A player row warns whenever the game has flagged them at all."""
+    """A player warns whenever the game has flagged them at all."""
     return "warning" if player.availability else "neutral"
 
 

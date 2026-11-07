@@ -11,22 +11,6 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600&display=swap"
     />
-    <script>
-      // Runs before first paint so the page never shows a light frame on its way
-      // to dark. Reads the same keys useTheme writes; a stored mode wins over the
-      // OS, and anything unreadable falls back to the OS rather than throwing.
-      (function () {
-        try {
-          var mode = localStorage.getItem("tfo:mode");
-          var dark = mode ? mode === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-          document.documentElement.classList.toggle("dark", dark);
-          var palette = localStorage.getItem("tfo:palette");
-          if (palette && palette !== "vercel") document.documentElement.setAttribute("data-theme", palette);
-        } catch (e) {
-          /* storage blocked; the light default stands */
-        }
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -257,7 +257,6 @@ def test_a_roster_card_carries_the_row_and_what_a_row_cannot() -> None:
     assert card.columns["Player"] == "A B"
     assert card.columns["Slot"] == "IL"
     assert card.player_id
-    assert card.tone == "warning"
     assert card.ruled_out
 
 
@@ -266,7 +265,7 @@ def test_a_game_time_decision_is_flagged_without_being_ruled_out() -> None:
 
     card = nba_provider(yahoo).roster()[0]
 
-    assert (card.tone, card.ruled_out) == ("warning", False)
+    assert (card.columns["Status"], card.ruled_out) == ("GTD", False)
 
 
 def _form(**stats: float) -> PlayerStats:

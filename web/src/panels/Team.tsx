@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, type League, type PlayerCard, type Competition, type TradeIdea, type WeekAhead } from "@/lib/api";
+import { api, type League, type Competition, type TradeIdea, type WeekAhead } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { ListCard, ListRow } from "@/components/ui/list";
 import { percent, percentPoints, signed } from "@/lib/format";
 import { Card, CardHeader } from "@/components/ui/card";
-import { RosterTable } from "@/components/ui/roster-table";
+import { RosterTable, useSortedRoster } from "@/components/ui/roster-table";
 import { CardNote, QueryState } from "@/components/ui/state";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { keys } from "@/lib/queries";
@@ -21,10 +21,10 @@ import { Label } from "@/components/ui/label";
 export function TeamPanel({ competition, league }: { competition: Competition; league: League }) {
   const { openPlayer, drawer } = usePlayerDrawer(competition, league);
 
-  const roster = useQuery<PlayerCard[], Error>({
-    queryKey: keys.roster(competition.key, league.league_id),
-    queryFn: api.league(competition.key, league.league_id).roster,
-  });
+  const { roster, sort, onSort } = useSortedRoster(
+    keys.roster(competition.key, league.league_id),
+    api.league(competition.key, league.league_id).roster,
+  );
 
   return (
     <>
@@ -46,6 +46,8 @@ export function TeamPanel({ competition, league }: { competition: Competition; l
               players={roster.data}
               empty={{ title: "No players yet", detail: "This roster is empty for the current season." }}
               onOpen={openPlayer}
+              sort={sort}
+              onSort={onSort}
             />
           </Card>
         </div>
@@ -70,6 +72,7 @@ function WeeksAhead({ competition, league }: { competition: Competition; league:
   });
 
   const short = weeks.data?.filter((w) => w.short).length ?? 0;
+  // Every week is measured against the same usual one, so any row says it.
   const usual = weeks.data?.[0]?.usual;
   return (
     <ListCard
@@ -90,7 +93,7 @@ function WeeksAhead({ competition, league }: { competition: Competition; league:
             {/* Said in words as well as tinted. */}
             {week.short && (
               <Badge variant="fail" appearance="pill" className="shrink-0">
-                short {(week.usual - week.points).toFixed(1)}
+                short {week.short_by.toFixed(1)}
               </Badge>
             )}
           </div>

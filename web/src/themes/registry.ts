@@ -10,6 +10,9 @@
 
 export const PALETTE_STORAGE_KEY = "tfo:palette";
 
+/** Where light or dark is kept: written by `useTheme`, read before first paint by `prepaint.ts`. */
+export const MODE_STORAGE_KEY = "tfo:mode";
+
 /** Defined in `index.css` under `@theme`, so it has no `themes.css` block. */
 export const DEFAULT_PALETTE = "vercel";
 

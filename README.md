@@ -434,13 +434,17 @@ The UI's TypeScript types are generated from that schema (`just api-types`,
 via `openapi-typescript`) into `web/src/lib/schema.ts`, and `just check-web`
 fails when they no longer match the server. The API carries meaning rather than
 leaving the UI to decode it: which columns are figures (the numbers a card
-sends in `values`), whether a status rules a player out, how a week ended, whose
-move an activity row was, the engines' limits, and what to do about a failure —
+sends in `values`) and which hold the name, status and slot (`roles`), whether a
+status rules a player out, how a week ended, whose move an activity row was, the
+engines' limits, each to-do item's last verdict and whether it is stale, what a
+dismissal or snooze makes of an item (the decision answers with it), how short a
+week ahead falls, and what to do about a failure —
 each error code's remedy lives in one table, `adapters/inbound/remedies.py`,
 which the page renders as a button and the terminal prints as a command. Every
 failure — a domain error, a refused request, an unknown route — arrives as one
 `ErrorBody` (`detail`, `code`, `remedy`), and so does what blocks a competition
-in the picker (`Competition.blocked`). It
+in the picker (`Competition.blocked`). Every player table sorts on the server by
+one rule (`PlayerOrder`), a whole roster as much as a page of the wire. It
 also serves the built UI from `web/dist`, so one process on one port covers
 both.
 
@@ -488,7 +492,10 @@ the Markdown subset the models write — paragraphs, headings, lists, bold —
 by `lib/prose.ts`, never as HTML. Color is themed in two
 orthogonal dimensions — a palette (`data-theme`) and light/dark
 (`color-scheme`) — so every token is a single `light-dark(light, dark)`
-declaration and no component branches on either.
+declaration and no component branches on either. The stored choice is applied
+before first paint by an inline script the Vite config writes into the page
+from the palette registry (`themes/prepaint.ts`), so its keys and palettes are
+never a second copy.
 
 **Tracing** — OpenTelemetry via `logfire`, configured in
 [`config/telemetry.py`](src/thefrontoffice/config/telemetry.py) and nowhere

@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 
 from thefrontoffice.application.answers import scope
 from thefrontoffice.domain.errors import ItemDecisionError
-from thefrontoffice.domain.models import Action, ItemDecision, ItemState
+from thefrontoffice.domain.models import Action, ItemDecision, ItemMark, ItemState
 from thefrontoffice.domain.ports import ItemStateStore
 
 
@@ -24,27 +24,28 @@ def item_scope(key: str, league_id: str) -> str:
     return scope("items", key, league_id)
 
 
-def apply_decisions(actions: list[Action], states: dict[str, ItemState], now: datetime) -> list[Action]:
-    """Every item, in order, marked by what the manager decided about it.
+def mark(fingerprint: str, state: ItemState, now: datetime) -> ItemMark:
+    """What `state` makes of an item that reads as `fingerprint` at `now`.
 
     A snooze that has run out no longer hides anything. A dismissal hides an
     item only while it still has the fingerprint it was dismissed with; one
     that has changed since comes back, saying so.
     """
-    marked = []
-    for action in actions:
-        state = states.get(action.key)
-        if state is None or not action.key:
-            marked.append(action)
-        elif state.snoozed_until is not None and state.snoozed_until > now:
-            marked.append(action.model_copy(update={"hidden": "snoozed", "snoozed_until": state.snoozed_until}))
-        elif state.dismissed_as and state.dismissed_as == action.fingerprint:
-            marked.append(action.model_copy(update={"hidden": "dismissed"}))
-        elif state.dismissed_as:
-            marked.append(action.model_copy(update={"resurfaced": True}))
-        else:
-            marked.append(action)
-    return marked
+    if state.snoozed_until is not None and state.snoozed_until > now:
+        return ItemMark(hidden="snoozed", snoozed_until=state.snoozed_until)
+    if state.dismissed_as and state.dismissed_as == fingerprint:
+        return ItemMark(hidden="dismissed")
+    return ItemMark(resurfaced=bool(state.dismissed_as))
+
+
+def apply_decisions(actions: list[Action], states: dict[str, ItemState], now: datetime) -> list[Action]:
+    """Every item, in order, marked by what the manager decided about it."""
+    return [
+        action.model_copy(update={"mark": mark(action.fingerprint, state, now)})
+        if action.key and (state := states.get(action.key)) is not None
+        else action
+        for action in actions
+    ]
 
 
 class ItemDecisions:
@@ -57,26 +58,31 @@ class ItemDecisions:
     def apply(self, key: str, league_id: str, actions: list[Action]) -> list[Action]:
         return apply_decisions(actions, self._store.states(item_scope(key, league_id)), self._clock())
 
-    def decide(self, key: str, league_id: str, decision: ItemDecision) -> ItemState | None:
-        """Keep `decision`, replacing any earlier one on the same item; None once restored.
+    def decide(self, key: str, league_id: str, decision: ItemDecision) -> ItemMark:
+        """Keep `decision`, replacing any earlier one on the same item; what it makes of the item.
+
+        The item is the one the decision was made on — for a dismissal, the
+        fingerprint it names — so the page can show the answer without
+        re-reading the week.
 
         Raises:
             ItemDecisionError: a snooze that ends in the past.
         """
         scope = item_scope(key, league_id)
         states = self._store.states(scope)
+        now = self._clock()
         if decision.decision == "restore":
             states.pop(decision.key, None)
             self._store.save(scope, states)
-            return None
+            return ItemMark()
         if decision.decision == "snooze":
             assert decision.until is not None  # the model validates it
             until = decision.until.astimezone(UTC)
-            if until <= self._clock():
+            if until <= now:
                 raise ItemDecisionError("A snooze has to end in the future.")
             state = ItemState(key=decision.key, snoozed_until=until)
         else:
             state = ItemState(key=decision.key, dismissed_as=decision.fingerprint)
         states[decision.key] = state
         self._store.save(scope, states)
-        return state
+        return mark(decision.fingerprint, state, now)

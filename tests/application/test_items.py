@@ -8,7 +8,7 @@ from support.stores import FakeItemStates
 
 from thefrontoffice.application.items import ItemDecisions, apply_decisions
 from thefrontoffice.domain.errors import ItemDecisionError
-from thefrontoffice.domain.models import Action, ItemDecision, ItemState
+from thefrontoffice.domain.models import Action, ItemDecision, ItemMark, ItemState
 
 NOW = datetime(2026, 10, 22, 18, tzinfo=UTC)
 
@@ -30,8 +30,8 @@ def test_an_item_with_no_decision_is_left_as_it_is() -> None:
 def test_a_dismissed_item_is_hidden_while_it_reads_as_it_did() -> None:
     [swap, bye] = _marked({SWAP.key: ItemState(key=SWAP.key, dismissed_as=SWAP.fingerprint)})
 
-    assert swap.hidden == "dismissed"
-    assert bye.hidden is None
+    assert swap.mark.hidden == "dismissed"
+    assert bye.mark.hidden is None
 
 
 def test_a_dismissed_item_that_has_changed_comes_back_saying_so() -> None:
@@ -40,7 +40,7 @@ def test_a_dismissed_item_that_has_changed_comes_back_saying_so() -> None:
 
     [swap] = _marked({SWAP.key: ItemState(key=SWAP.key, dismissed_as=SWAP.fingerprint)}, changed)
 
-    assert swap.hidden is None and swap.resurfaced
+    assert swap.mark.hidden is None and swap.mark.resurfaced
 
 
 def test_a_snoozed_item_is_hidden_until_its_time() -> None:
@@ -48,13 +48,13 @@ def test_a_snoozed_item_is_hidden_until_its_time() -> None:
 
     [swap] = _marked({SWAP.key: ItemState(key=SWAP.key, snoozed_until=until)}, SWAP)
 
-    assert (swap.hidden, swap.snoozed_until) == ("snoozed", until)
+    assert (swap.mark.hidden, swap.mark.snoozed_until) == ("snoozed", until)
 
 
 def test_a_snooze_that_has_run_out_hides_nothing() -> None:
     [swap] = _marked({SWAP.key: ItemState(key=SWAP.key, snoozed_until=NOW - timedelta(minutes=1))}, SWAP)
 
-    assert swap.hidden is None
+    assert swap.mark.hidden is None
 
 
 def test_the_order_of_the_list_is_kept() -> None:
@@ -78,7 +78,16 @@ def test_a_dismissal_is_kept_against_the_item_as_it_read() -> None:
     decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="dismiss", fingerprint=SWAP.fingerprint))
 
     [swap, _bye] = decisions.apply("NFL", "L1", [SWAP, BYE])
-    assert swap.hidden == "dismissed"
+    assert swap.mark.hidden == "dismissed"
+
+
+def test_a_decision_answers_with_the_item_as_it_now_reads() -> None:
+    """What the page shows the moment it is made, with no second reading of the week."""
+    decisions, _ = _decisions()
+
+    mark = decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="dismiss", fingerprint=SWAP.fingerprint))
+
+    assert mark == decisions.apply("NFL", "L1", [SWAP])[0].mark == ItemMark(hidden="dismissed")
 
 
 def test_a_later_decision_replaces_an_earlier_one() -> None:
@@ -88,14 +97,14 @@ def test_a_later_decision_replaces_an_earlier_one() -> None:
     decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="snooze", until=NOW + timedelta(hours=1)))
 
     [swap] = decisions.apply("NFL", "L1", [SWAP])
-    assert swap.hidden == "snoozed"
+    assert swap.mark.hidden == "snoozed"
 
 
 def test_restoring_forgets_the_decision() -> None:
     decisions, _ = _decisions()
     decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="dismiss", fingerprint=SWAP.fingerprint))
 
-    assert decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="restore")) is None
+    assert decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="restore")) == ItemMark()
     assert decisions.apply("NFL", "L1", [SWAP]) == [SWAP]
 
 
@@ -103,11 +112,11 @@ def test_a_snooze_is_kept_in_utc_whatever_offset_it_arrived_with() -> None:
     decisions, _ = _decisions()
     pacific = timezone(timedelta(hours=-7))
 
-    state = decisions.decide(
+    mark = decisions.decide(
         "NFL", "L1", ItemDecision(key=SWAP.key, decision="snooze", until=datetime(2026, 10, 23, 8, tzinfo=pacific))
     )
 
-    assert state is not None and state.snoozed_until == datetime(2026, 10, 23, 15, tzinfo=UTC)
+    assert mark == ItemMark(hidden="snoozed", snoozed_until=datetime(2026, 10, 23, 15, tzinfo=UTC))
 
 
 def test_a_snooze_into_the_past_is_refused() -> None:

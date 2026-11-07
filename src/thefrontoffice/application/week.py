@@ -12,8 +12,10 @@ it: a page that failed over a forecast would show nothing.
 import logging
 from dataclasses import dataclass, field
 
+from thefrontoffice.application.answers import Answers
 from thefrontoffice.application.forecasting import ForecastEngine, ranked
 from thefrontoffice.application.items import ItemDecisions
+from thefrontoffice.application.scouting import scout_scope, with_verdicts
 from thefrontoffice.application.season import SeasonEngine
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import (
@@ -24,9 +26,10 @@ from thefrontoffice.domain.models import (
     PlayerPage,
     PlayerQuery,
     PlayoffOdds,
+    ScoutReport,
     Summary,
 )
-from thefrontoffice.domain.ports import WeekProvider
+from thefrontoffice.domain.ports import AnswerStore, WeekProvider
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +39,8 @@ class WeekView:
     """The week, and what each engine made of it: figures, for an entry point to put into words."""
 
     summary: Summary
-    """The provider's week, its to-do list ranked by the forecast and marked with the manager's decisions."""
+    """The provider's week, its to-do list ranked by the forecast, each item carrying the last verdict
+    on it and marked with the manager's decisions."""
     forecast: Forecast | None = None
     odds: PlayoffOdds | None = None
 
@@ -74,12 +78,14 @@ class WeekEngine:
         *,
         key: str,
         decisions: ItemDecisions,
+        answers: AnswerStore,
         forecast: ForecastEngine | None,
         season: SeasonEngine | None,
     ):
         self.provider = provider
         self.key = key
         self.decisions = decisions
+        self.answers = Answers(answers)
         self.forecast = forecast
         self.season_engine = season
 
@@ -90,7 +96,9 @@ class WeekEngine:
         if forecast is not None:
             summary = summary.model_copy(update={"actions": ranked(summary.actions, *forecast)})
         if summary.actions is not None:
-            summary = summary.model_copy(update={"actions": self.decisions.apply(self.key, league_id, summary.actions)})
+            judged = self.answers.latest(scout_scope(self.key, league_id), ScoutReport)
+            actions = with_verdicts(summary.actions, judged.answer if judged else None)
+            summary = summary.model_copy(update={"actions": self.decisions.apply(self.key, league_id, actions)})
         return WeekView(summary=summary, forecast=forecast[0] if forecast else None, odds=self._odds(league_id))
 
     def season(self, league_id: str) -> SeasonView:

@@ -3,6 +3,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ErrorNote } from "@/components/ui/error-note";
 import { Loading } from "@/components/ui/state";
 import { list, listItem } from "@/lib/motion";
+import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 /**
@@ -71,10 +72,7 @@ export function ListRow({
   return (
     <m.div
       variants={listItem}
-      onClick={onClick}
-      onKeyDown={onClick && ((e) => e.key === "Enter" && onClick())}
-      tabIndex={onClick ? 0 : undefined}
-      role={onClick ? "button" : undefined}
+      {...clickable(onClick)}
       className={cn(
         "flex items-baseline gap-3 border-t border-border py-2.5 pr-4 text-[13px] first:border-t-0",
         current ? "border-l-2 border-l-foreground bg-muted pl-[calc(1rem-2px)]" : "pl-4",
