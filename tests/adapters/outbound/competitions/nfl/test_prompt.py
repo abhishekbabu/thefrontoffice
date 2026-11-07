@@ -9,8 +9,10 @@ from datetime import UTC
 from typing import Any
 
 from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeESPN, FakeSleeper, nfl_provider, proj
+from support.prompts import named_fields, schema_fields
 from support.summary import mine
 
+from thefrontoffice.adapters.outbound.competitions.nfl import prompt
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
@@ -19,6 +21,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperRoster,
     TrendingPlayer,
 )
+from thefrontoffice.application.formats import ScoutAnswer, TradeAnswer, WireAnswer
 from thefrontoffice.domain.models import Stat, task_id
 
 # ── context ─────────────────────────────────────────────────────────────
@@ -368,3 +371,10 @@ def test_each_player_line_carries_his_latest_news() -> None:
     prompt = nfl_provider(client, FakeESPN({"BUF": [article]})).build_context("L1").prompt
 
     assert article.headline in prompt and article.summary in prompt
+
+
+def test_the_prompts_name_only_fields_their_answers_have() -> None:
+    """A guided field the schema lacks is an instruction the model cannot follow."""
+    assert named_fields(prompt.NFL_SCOUT_PROMPT) <= schema_fields(ScoutAnswer)
+    assert named_fields(prompt.NFL_TRADE_PROMPT) <= schema_fields(TradeAnswer)
+    assert named_fields(prompt.NFL_WIRE_PROMPT) <= schema_fields(WireAnswer)

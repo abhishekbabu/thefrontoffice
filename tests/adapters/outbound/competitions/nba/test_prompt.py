@@ -2,9 +2,12 @@
 
 from datetime import date
 
+from support.prompts import named_fields, schema_fields
+
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, STEALS
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup, MatchupSide, RosteredPlayer
+from thefrontoffice.application.formats import ScoutAnswer, TradeAnswer
 
 
 def _week(roster_size: int = 1) -> Matchup:
@@ -50,3 +53,9 @@ def test_the_league_rules_name_the_nine_categories() -> None:
 def test_without_a_matchup_period_the_schedule_lists_no_clubs() -> None:
     assert "LAL" not in prompt.schedule(None, {"LAL": 3}, projected=False)
     assert "LAL: 3 games left" in prompt.schedule(_week(), {"LAL": 3}, projected=False)
+
+
+def test_the_prompts_name_only_fields_their_answers_have() -> None:
+    """A guided field the schema lacks is an instruction the model cannot follow."""
+    assert named_fields(prompt.NBA_SCOUT_PROMPT) <= schema_fields(ScoutAnswer)
+    assert named_fields(prompt.NBA_TRADE_PROMPT) <= schema_fields(TradeAnswer)
