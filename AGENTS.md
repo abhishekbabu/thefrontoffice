@@ -111,8 +111,8 @@ In `web/`, color comes only from semantic tokens (`bg-card`,
 `text-muted-foreground`) — never a raw Tailwind palette utility, which cannot
 follow a palette change. Every token is one `light-dark(light, dark)` pair, so a
 palette is a `themes.css` block plus a `registry.ts` entry and no component
-change. Status colors and the difficulty ramp are deliberately shared across
-palettes: they encode meaning, are tuned for color-blind legibility, and clear
+change. Status colors are deliberately shared across palettes: they encode
+meaning, are tuned for color-blind legibility, and clear
 WCAG AA against their own ground. State carried in color must also be carried
 in text or shape.
 

@@ -6,19 +6,20 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { IconButton } from "@/components/ui/icon-button";
 import { RosterTable } from "@/components/ui/roster-table";
 import type { SortState } from "@/components/ui/data-table";
-import { Busy, Loading } from "@/components/ui/state";
+import { Busy, QueryState } from "@/components/ui/state";
 import { ToggleChip } from "@/components/ui/toggle";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { Input } from "@/components/ui/input";
 import { Verdict } from "@/components/ui/verdict";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
+import { keys, useCapabilities } from "@/lib/queries";
+import type { Variant } from "@/lib/tone";
 
+/** Rows a page shows: the client's choice, within what the server allows. */
 const PAGE = 50;
-/** As many as the server will judge at once: a screen's worth of the best. */
-const JUDGE = 10;
 
-const CALL: Record<PlayerCall["decision"], { label: string; variant: "ok" | "warn" | "muted" }> = {
+const CALL: Record<PlayerCall["decision"], { label: string; variant: Variant }> = {
   ADD: { label: "Add", variant: "ok" },
   WATCH: { label: "Watch", variant: "warn" },
   PASS: { label: "Pass", variant: "muted" },
@@ -54,10 +55,11 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
   const [sort, setSort] = useState<SortState | null>(null);
   const [offset, setOffset] = useState(0);
 
+  const leagueApi = api.league(competition.key, league.league_id);
   const page = useQuery<PlayerPage, Error>({
-    queryKey: ["free-agents", competition.key, league.league_id, search, position, sort, offset],
+    queryKey: [...keys.freeAgents(competition.key, league.league_id), search, position, sort, offset],
     queryFn: () =>
-      api.freeAgents(competition.key, league.league_id, {
+      leagueApi.freeAgents({
         offset,
         limit: PAGE,
         search,
@@ -78,23 +80,25 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
 
   // The model's calls, kept across paging and filtering: a call on a player
   // is still his when he scrolls off the page and back.
-  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
-  const canJudge = (capabilities.data?.ai ?? false) && competition.judges_wire;
+  const capabilities = useCapabilities().data;
+  const canJudge = (capabilities?.ai ?? false) && competition.judges_wire;
+  // As many as the server judges at once: a screen's worth of the best.
+  const judged = capabilities?.limits.judged ?? 0;
   // Kept calls on the rows on screen, read without asking the model: a call
   // outlives the page, and one whose player has moved on since comes back
   // marked stale rather than gone.
   const visible = page.data?.players.map((p) => p.player_id) ?? [];
-  const callsKey = ["free-agent-calls", competition.key, league.league_id, visible.join(",")];
+  const callsKey = keys.freeAgentCalls(competition.key, league.league_id);
   const kept = useQuery<PlayerCall[], Error>({
-    queryKey: callsKey,
-    queryFn: () => api.freeAgentCalls(competition.key, league.league_id, visible),
+    queryKey: [...callsKey, visible.join(",")],
+    queryFn: () => leagueApi.freeAgentCalls(visible),
     enabled: canJudge && visible.length > 0,
   });
   const calls = Object.fromEntries((kept.data ?? []).map((c) => [c.player_id, c]));
   const queryClient = useQueryClient();
   const judge = useMutation<PlayerCall[], Error, string[]>({
-    mutationFn: (ids) => api.judgeFreeAgents(competition.key, league.league_id, ids),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["free-agent-calls", competition.key, league.league_id] }),
+    mutationFn: leagueApi.judgeFreeAgents,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: callsKey }),
   });
 
   const total = page.data?.total ?? 0;
@@ -105,8 +109,7 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
     <>
       <LeagueHeader league={league} />
 
-      {page.isError && <ErrorNote error={page.error} />}
-      {page.isLoading && <Loading lines={6} />}
+      <QueryState query={page} lines={6} />
 
       {page.data && (
         <div className="flex flex-col gap-4 p-5">
@@ -119,9 +122,9 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
                     worth a call first, whichever sort that is. */}
                 {canJudge && shown > 0 && (
                   <IconButton
-                    label={`Judge the first ${Math.min(shown, JUDGE)} shown`}
+                    label={`Judge the first ${Math.min(shown, judged)} shown`}
                     icon={<Sparkles />}
-                    onClick={() => judge.mutate(page.data.players.slice(0, JUDGE).map((p) => p.player_id))}
+                    onClick={() => judge.mutate(page.data.players.slice(0, judged).map((p) => p.player_id))}
                     disabled={judge.isPending}
                   />
                 )}

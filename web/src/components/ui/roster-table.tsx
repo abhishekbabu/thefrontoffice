@@ -4,35 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Empty } from "@/components/ui/state";
 import type { PlayerCard } from "@/lib/api";
 
-/** Columns whose values are figures, so they align right like numbers. */
-const NUMERIC = new Set([
-  "Fits",
-  "Win",
-  "xPts",
-  "Price",
-  "Proj",
-  "Points",
-  "Form",
-  "xGI",
-  "Owned",
-  "Depth",
-  "Exp",
-  "PTS",
-  "REB",
-  "AST",
-]);
-
-/**
- * Values that mean "look at this".
- *
- * The provider writes a status in the platform's own words — "doubtful 75%",
- * "Questionable", "OUT" — so anything non-empty is worth a badge, and the two
- * that mean definitely-not-playing get the stronger one.
- */
-function statusTone(value: string): "fail" | "warn" {
-  return /\b(out|suspended|injured|ir)\b/i.test(value) ? "fail" : "warn";
-}
-
 /**
  * Order a complete list in place.
  *
@@ -42,7 +13,7 @@ function statusTone(value: string): "fail" | "warn" {
  */
 function sortRows(players: PlayerCard[], sort: SortState | null): PlayerCard[] {
   if (!sort) return players;
-  const value = (p: PlayerCard) => p.values?.[sort.column];
+  const value = (p: PlayerCard) => p.values[sort.column];
   const numeric = players.some((p) => value(p) !== undefined);
   const has = (p: PlayerCard) => (numeric ? value(p) !== undefined : Boolean(p.columns[sort.column]));
 
@@ -89,17 +60,21 @@ export function RosterTable({
   const rows = controlled ? players : sortRows(players, local);
 
   if (players.length === 0) return <Empty title={empty.title} detail={empty.detail} />;
+  // A column is a figure where the provider sent the number behind it: that
+  // is what sorts it as one, and what aligns it like one.
+  const numeric = new Set(players.flatMap((p) => Object.keys(p.values)));
   return (
     <DataTable
       rows={rows}
-      numeric={NUMERIC}
+      numeric={numeric}
       sort={active}
       onSort={onSort ?? setLocal}
       onSelect={onOpen && ((row) => onOpen(row.player_id))}
       detail={detail}
-      render={(column, value) =>
+      render={(column, value, row) =>
+        // The status in the platform's own words; whether it rules him out is the provider's to say.
         column === "Status" && value ? (
-          <Badge variant={statusTone(value)} appearance="status">
+          <Badge variant={row.ruled_out ? "fail" : "warn"} appearance="status">
             {value}
           </Badge>
         ) : column === "Player" ? (
