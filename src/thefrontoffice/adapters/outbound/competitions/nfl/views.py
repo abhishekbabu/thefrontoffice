@@ -19,6 +19,8 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Projection,
     SeasonTotals,
     Team,
+    active,
+    by_club,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, listed, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
@@ -150,7 +152,7 @@ BLANK_POINTS = 5.0
 def lineup_order(state: Week, roster: Team) -> list[str]:
     """Read as a lineup: the starters slot by slot, then the bench best projected first, then reserve."""
     starters = [pid for pid in roster.starter_ids if pid in roster.player_ids]
-    bench = [pid for pid in roster.player_ids if pid not in starters and pid not in roster.reserve_ids]
+    bench = [pid for pid in active(roster) if pid not in starters]
     bench.sort(key=lambda pid: -(state.projections[pid].points if pid in state.projections else 0.0))
     return starters + bench + [pid for pid in roster.player_ids if pid in roster.reserve_ids]
 
@@ -416,7 +418,7 @@ def _game_log(
     for week in weeks:
         line = games.get(week)
         club = line.team if line else team
-        fixture = next((g for g in schedule.get(week, []) if club in (g.home, g.away)), None)
+        fixture = by_club(schedule.get(week, [])).get(club)
         if line:
             values = [
                 f"{line.stats.get(state.league.scoring_format, 0.0):.1f}",

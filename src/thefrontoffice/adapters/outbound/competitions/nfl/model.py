@@ -15,7 +15,7 @@ changed, a game whose status the scoreboard corrected — are concrete here,
 as the NFL's own.
 """
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
@@ -174,6 +174,11 @@ class Team(Protocol):
     def record(self) -> str: ...
 
 
+def active(team: Team) -> list[str]:
+    """Who takes a spot on the roster: everyone outside its injured-reserve and taxi slots."""
+    return [pid for pid in team.player_ids if pid not in team.reserve_ids]
+
+
 class LeagueRules(Protocol):
     """The league itself: its size, how it scores, its lineup, and its season's shape."""
 
@@ -225,6 +230,11 @@ class Game(Protocol):
     def status(self) -> str:
         """`pre_game`, `in_game` or `complete`; empty where the platform says nothing."""
         ...
+
+
+def by_club(games: Iterable[Game]) -> dict[str, Game]:
+    """Each club's game, under either side's abbreviation; a club on bye is in none."""
+    return {club: game for game in games for club in (game.home, game.away)}
 
 
 COMPLETE = "complete"

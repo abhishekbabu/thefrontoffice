@@ -267,6 +267,16 @@ def test_a_bench_player_on_bye_too_is_not_cover() -> None:
     assert (action.kind, action.when) == ("waiver", "week 4")
 
 
+def test_a_player_in_injured_reserve_is_not_cover_for_a_bye() -> None:
+    """He cannot be started from a reserve slot, however healthy his projection."""
+    client = _week_four_bye([replace(BENCH_RB, points=0.0)])
+    client.rosters = [replace(client.rosters[0], reserve_ids=[BENCH_RB.player_id])]
+
+    [action] = _actions(client)
+
+    assert (action.kind, action.when) == ("waiver", "week 4")
+
+
 # ── the trade deadline ──────────────────────────────────────────────────
 
 

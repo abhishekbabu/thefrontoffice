@@ -30,6 +30,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Projection,
     Team,
     Unprojected,
+    by_club,
     kicked_off,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews
@@ -129,13 +130,14 @@ class Week:
         return {slot.player.player_id for slot in self.lineup if slot.player}
 
     @property
+    def sitting(self) -> list[Projection]:
+        """Everyone your lineup does not start, reserve and taxi slots included."""
+        return [p for p in self.projected if p.player_id not in self.starter_ids]
+
+    @property
     def bench(self) -> list[Projection]:
-        """Who could come into the lineup: neither starting nor in an injured-reserve or taxi slot."""
-        return [
-            p
-            for p in self.projected
-            if p.player_id not in self.starter_ids and p.player_id not in self.roster.reserve_ids
-        ]
+        """Who could come into the lineup: sitting, and not in an injured-reserve or taxi slot."""
+        return [p for p in self.sitting if p.player_id not in self.roster.reserve_ids]
 
     @cached_property
     def owned(self) -> set[str]:
@@ -391,10 +393,7 @@ class Scoreboard:
     def started(self, state: Week) -> set[str]:
         """Clubs whose game this week has kicked off: their players are locked in or out."""
         return {
-            club
-            for game in self.games(state).get(state.week, [])
-            if kicked_off(game.status)
-            for club in (game.home, game.away)
+            club for club, game in by_club(self.games(state).get(state.week, [])).items() if kicked_off(game.status)
         }
 
     def board(self, state: Week) -> dict[str, ScoreboardGame]:

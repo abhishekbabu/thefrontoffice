@@ -419,7 +419,7 @@ class SleeperNFLProvider:
         state = self._week(league_id)
         live = self.scoreboard.live(state)
         # The bench as the page shows it, reserve slots included and marked.
-        sitting = sorted((p for p in state.projected if p.player_id not in state.starter_ids), key=lambda p: -p.points)
+        sitting = sorted(state.sitting, key=lambda p: -p.points)
         # No fixture notes: a bye is on the player's own row, and on the to-do
         # list when it costs a starter, so a list of clubs would say it twice.
         return Summary(

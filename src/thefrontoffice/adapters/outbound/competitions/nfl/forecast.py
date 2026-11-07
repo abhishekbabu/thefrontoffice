@@ -13,7 +13,14 @@ from collections.abc import Callable, Sequence
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, outcomes
 from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import fits
-from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueRules, Matchup, NFLSource, Projection, Team
+from thefrontoffice.adapters.outbound.competitions.nfl.model import (
+    LeagueRules,
+    Matchup,
+    NFLSource,
+    Projection,
+    Team,
+    by_club,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Scoreboard,
@@ -99,9 +106,7 @@ class Forecasts:
 
     def _outcomes(self, state: Week, scoreboard: Scoreboard) -> Callable[[Projection], Outcomes]:
         """Each player's week as a range: shaped by his games, and by how far into it his own game is."""
-        status = {
-            club: game.status for game in scoreboard.games(state).get(state.week, []) for club in (game.home, game.away)
-        }
+        status = {club: game.status for club, game in by_club(scoreboard.games(state).get(state.week, [])).items()}
         board = scoreboard.board(state)
         live = scoreboard.live(state)
         spread = outcomes.spreads(state.evidence, pool_from=self.last_season(state.season, state.league.scoring_format))
