@@ -31,7 +31,9 @@ NFL_READING_PLAYER_LINES = """READING THE PLAYER LINES:
   why; a rising target share or a soft defense is the why.
 - Never recommend a DROP off one poor game, or of a player whose role grows while a teammate
   ahead of him is out. A drop is the least reversible move, so it needs the strongest case.
-- A "news" line under a player is a recent headline about him, dated, from his own club's feed."""
+- A "news" line under a player is a recent headline about him, dated, from his own club's feed.
+- A player marked [reserve slot] is in an injured-reserve or taxi slot: he cannot start this week
+  without a move first, and costs no roster spot while he is there."""
 
 
 NFL_SCOUT_PROMPT = (
@@ -184,7 +186,7 @@ def build(state: Week, tasks: list[Action], trending: Sequence[Trending] | None)
         else f"- {slot.slot}: (empty)\n"
         for slot in state.lineup
     )
-    bench_str = "".join(player_line(p, evidence, news) for p in state.sitting) or "- (none)\n"
+    bench_str = "".join(held_line(p, state) for p in state.sitting) or "- (none)\n"
     tasks_str = "".join(task_line(i, task) for i, task in enumerate(tasks, start=1)) or (
         "- None. Nothing in league state needs deciding: the lineup is the best legal one and nobody "
         "in it is ruled out.\n"
@@ -310,22 +312,30 @@ def lineup_slots(state: Week, *notes: str) -> str:
 
 def roster_lines(state: Week) -> dict[str, str]:
     """Your roster as the model reads it, best projected first, keyed by name."""
-    return {
-        p.name: player_line(p, state.evidence, state.news) for p in sorted(state.projected, key=lambda x: -x.points)
-    }
+    return {p.name: held_line(p, state) for p in sorted(state.projected, key=lambda x: -x.points)}
+
+
+RESERVE_MARK = " [reserve slot]"
+"""How the model is told a player cannot start where he sits: `NFL_READING_PLAYER_LINES` explains it."""
+
+
+def held_line(p: Projection, state: Week) -> str:
+    """One of your own players as the model reads him, marked where a reserve or taxi slot keeps him out of the lineup."""
+    mark = RESERVE_MARK if p.player_id in state.roster.reserve_ids else ""
+    return player_line(p, state.evidence, state.news, mark=mark)
 
 
 NEWS_PER_PLAYER = 2
 """Enough to show a trend in the coverage, few enough that the pool stays readable."""
 
 
-def player_line(p: Projection, evidence: Evidence, news: PlayerNews, bullet: str = "- ") -> str:
+def player_line(p: Projection, evidence: Evidence, news: PlayerNews, bullet: str = "- ", mark: str = "") -> str:
     """One player as the model reads him: the projection, then what it rests on."""
     injury = f" [{p.injury_status}]" if listed(p.injury_status) else ""
     opponent = f" vs {p.opponent}" if p.opponent else " (no game)"
     behind = evidence.describe(p)
     return (
-        f"{bullet}{p.name} ({p.position}, {p.team}){injury}{opponent}: {p.points:.1f} proj pts\n"
+        f"{bullet}{p.name} ({p.position}, {p.team}){injury}{mark}{opponent}: {p.points:.1f} proj pts\n"
         + (f"  {behind}\n" if behind else "")
         + news_lines(news, p.player_id)
     )

@@ -5,6 +5,7 @@ rules live there, and a prompt that renders is not a prompt that is right.
 """
 
 import re
+from dataclasses import replace
 from datetime import UTC
 from typing import Any
 
@@ -50,6 +51,19 @@ def test_roster_and_available_players_are_separated() -> None:
     assert "Star QB" in ctx.roster_lines
     assert "Waiver WR" in ctx.candidate_lines
     assert "Waiver WR" not in ctx.roster_lines
+
+
+def test_a_player_in_a_reserve_slot_is_marked_wherever_the_model_reads_your_roster() -> None:
+    """Unmarked, a reserve player on the bench reads as a start the manager could make."""
+    client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS))
+    client.rosters = [replace(client.rosters[0], reserve_ids=["rb1"])]
+    context = nfl_provider(client).build_context("L1")
+
+    bench = context.prompt.split("BENCH:")[1].split("TO DO")[0]
+    [reserved] = [line for line in bench.splitlines() if "Good RB" in line]
+    assert prompt.RESERVE_MARK in reserved
+    assert prompt.RESERVE_MARK in context.roster_lines["Good RB"]
+    assert prompt.RESERVE_MARK not in context.roster_lines["Bad RB"]
 
 
 def test_rostered_players_are_never_offered_as_waiver_adds() -> None:

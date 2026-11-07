@@ -22,6 +22,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     NFLSource,
     Projection,
     Team,
+    active,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
@@ -324,7 +325,7 @@ def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | Non
     }
     miss_rate = _miss_rate(client, state)
     projected = {
-        (str(roster.roster_id), week): _expected_lineup(state, roster.player_ids, projections[week], miss_rate)
+        (str(roster.roster_id), week): _expected_lineup(state, active(roster), projections[week], miss_rate)
         for week in remaining
         for roster in rosters
     }

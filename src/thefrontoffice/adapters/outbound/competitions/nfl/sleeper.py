@@ -48,6 +48,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     PlayerInfo,
     Projection,
     Trending,
+    active,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, ruled_out, scoring_label
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
@@ -334,10 +335,12 @@ class SleeperNFLProvider:
         published = self.client.get_projections(season, week, league.scoring_format, FANTASY_POSITIONS)
         projections = {pid: counted(p) for pid, p in injuries.reported(published, designations).items()}
         projected = projections_for(roster.player_ids, projections, players)
+        # Nobody starts from an injured-reserve or taxi slot without a move first.
+        startable = projections_for(active(roster), projections, players)
 
         slots = league.starting_slots
         lineup = current_lineup(slots, roster.starter_ids, projected)
-        best = optimal_lineup(slots, projected)
+        best = optimal_lineup(slots, startable)
         current_points = round(lineup_points(lineup), 1)
         best_points = round(lineup_points(best), 1)
 
@@ -357,7 +360,7 @@ class SleeperNFLProvider:
             projected=projected,
             lineup=lineup,
             best=best,
-            changes=lineup_changes(slots, roster.starter_ids, projected),
+            changes=lineup_changes(slots, roster.starter_ids, startable),
             current_points=current_points,
             best_points=best_points,
             on_bench=round(best_points - current_points, 1),

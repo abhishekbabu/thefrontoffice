@@ -47,6 +47,18 @@ def test_the_summary_carries_the_lineup_and_the_changes() -> None:
     assert "Good RB" in swap.start and swap.out == ""
 
 
+def test_a_player_in_a_reserve_slot_is_never_a_swap_nor_in_the_best_lineup() -> None:
+    """Good RB would fill the empty RB slot from the bench, but not from injured reserve."""
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    client.rosters = [replace(client.rosters[0], reserve_ids=["rb1"])]
+
+    summary = nfl_provider(client).summary("L1")
+    context = nfl_provider(client).build_context("L1")
+
+    assert summary.swaps == []
+    assert "sitting on the bench" not in context.constraints
+
+
 def test_a_player_is_never_both_starting_and_benched() -> None:
     """The lineup block shows what is set; the bench holds everyone else."""
     side = mine(nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).summary("L1"))

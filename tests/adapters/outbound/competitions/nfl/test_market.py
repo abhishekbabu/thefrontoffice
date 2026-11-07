@@ -99,6 +99,21 @@ def test_a_trade_only_you_gain_from_is_not_offered() -> None:
     assert _market(client).options == ()
 
 
+def test_a_player_in_their_reserve_slot_does_not_fill_their_lineup() -> None:
+    """Their quarterback is on injured reserve, so your spare one still starts for them."""
+    client = _client()
+    client.rosters[1] = replace(
+        client.rosters[1], player_ids=[*client.rosters[1].player_ids, "qb9"], reserve_ids=["qb9"]
+    )
+    client.players_catalog = {
+        **(client.players_catalog or {}),
+        "qb9": PlayerMeta(player_id="qb9", name="Their QB", position="QB"),
+    }
+    client.projections = {**PROJECTIONS, "qb9": proj("qb9", "Their QB", "QB", 20.0)}
+
+    assert any(option.giving == ("Spare QB (QB)",) for option in _market(client).options)
+
+
 def test_past_the_deadline_there_is_no_market() -> None:
     assert nfl_provider(_client(week=8, deadline=7)).trade_market("L1") is None
 
