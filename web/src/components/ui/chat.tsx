@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { SendHorizontal } from "lucide-react";
 import { api, type Subject } from "@/lib/api";
+import { keys } from "@/lib/queries";
 import { IconButton } from "@/components/ui/icon-button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Busy } from "@/components/ui/state";
@@ -20,19 +21,7 @@ const OPENED = new Set<string>();
  * question the person already asked by pressing it. `bare` drops the card
  * for a conversation that lives inside something else, such as a to-do row.
  */
-export function Chat({
-  chatId,
-  title = "Ask a follow-up",
-  placeholder = "Why that move?",
-  opener,
-  bare = false,
-}: {
-  chatId: string;
-  title?: string;
-  placeholder?: string;
-  opener?: string;
-  bare?: boolean;
-}) {
+function Chat({ chatId, title, placeholder, opener, bare = false }: ChatProps & { chatId: string }) {
   // The opener is shown from the first render, as the question it already is.
   const [turns, setTurns] = useState<Turn[]>(() =>
     opener && !OPENED.has(chatId) ? [{ role: "you", text: opener }] : [],
@@ -42,7 +31,7 @@ export function Chat({
   const ask = useMutation({
     mutationFn: (message: string) => api.ask(chatId, message),
     onSuccess: (reply) => setTurns((t) => [...t, { role: "model", text: reply.answer }]),
-    onError: (e: Error) => setTurns((t) => [...t, { role: "model", text: e.message, failed: true }]),
+    onError: (error: Error) => setTurns((t) => [...t, { role: "model", text: error.message, error }]),
   });
 
   function say(message: string) {
@@ -80,10 +69,12 @@ export function Chat({
     <div className={cn("flex flex-col gap-3", !bare && "p-4")}>
       {turns.map((turn, i) => (
         <Bubble key={i} role={turn.role}>
-          {turn.role === "model" && !turn.failed ? (
+          {turn.error ? (
+            <ErrorNote error={turn.error} className="m-0" />
+          ) : turn.role === "model" ? (
             <Prose text={turn.text} />
           ) : (
-            <p className={cn("whitespace-pre-line", turn.failed && "text-destructive")}>{turn.text}</p>
+            <p className="whitespace-pre-line">{turn.text}</p>
           )}
         </Bubble>
       ))}
@@ -127,7 +118,15 @@ export function Chat({
   );
 }
 
-type Turn = { role: "you" | "model"; text: string; failed?: boolean };
+type Turn = { role: "you" | "model"; text: string; error?: Error };
+
+type ChatProps = {
+  /** The card's heading; a bare conversation has no card to head. */
+  title?: string;
+  placeholder: string;
+  opener?: string;
+  bare?: boolean;
+};
 
 /** One turn: yours to the right in a tint, the model's at full width of the column. */
 function Bubble({ role, children }: { role: Turn["role"]; children: React.ReactNode }) {
@@ -151,18 +150,14 @@ export function Thread({
   league,
   subject,
   ...chat
-}: {
+}: ChatProps & {
   competition: string;
   league: string;
   subject: Subject;
-  title?: string;
-  placeholder?: string;
-  opener?: string;
-  bare?: boolean;
 }) {
   const thread = useQuery({
-    queryKey: ["thread", competition, league, subject.kind, subject.key],
-    queryFn: () => api.thread(competition, league, subject),
+    queryKey: keys.thread(competition, league, subject.kind, subject.key),
+    queryFn: () => api.league(competition, league).thread(subject),
     staleTime: Infinity,
   });
   if (thread.isError) return <ErrorNote error={thread.error} className="m-0" />;

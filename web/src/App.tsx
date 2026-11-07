@@ -4,13 +4,15 @@ import { useQuery } from "@tanstack/react-query";
 import { Moon, Settings, Sun, Trophy } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
 import { api, type League, type Competition } from "@/lib/api";
+import { keys } from "@/lib/queries";
 import { DEFAULT_VIEW, LANDING, SETTINGS, VIEWS, type View, href, parse } from "@/lib/route";
 import { useTheme } from "@/lib/useTheme";
 import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { rise } from "@/lib/motion";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Empty, Loading } from "@/components/ui/state";
+import { ErrorNote } from "@/components/ui/error-note";
 import { cn } from "@/lib/utils";
 
 // Each page loads when it is first opened rather than in the first download:
@@ -25,21 +27,11 @@ const Landing = lazy(() => import("@/panels/Landing").then((m) => ({ default: m.
 type PanelProps = { competition: Competition; league: League };
 
 /**
- * Every view in one table: what the rail calls it, what renders it, and whether
- * this competition offers it at all. `Record<View, …>` makes a missing entry a
- * type error rather than a view that silently never renders.
+ * Every view in one table: what the rail calls it and what renders it.
+ * `Record<View, …>` makes a missing entry a type error rather than a view that
+ * silently never renders.
  */
-const PANELS: Record<
-  View,
-  {
-    label: string;
-    Panel: (props: PanelProps) => React.ReactNode;
-    /** Absent means always. A view that is not offered is not shown at all,
-     *  rather than shown and then refusing — from the outside, with no model
-     *  configured, there is nothing missing. */
-    offered?: (context: { ai: boolean; competition: Competition }) => boolean;
-  }
-> = {
+const PANELS: Record<View, { label: string; Panel: (props: PanelProps) => React.ReactNode }> = {
   week: { label: "This week", Panel: ScoutPanel },
   league: { label: "League", Panel: LeaguePanel },
   team: { label: "My team", Panel: TeamPanel },
@@ -52,17 +44,7 @@ export default function App() {
   const path = useLocation().pathname;
   const route = parse(path);
 
-  const competitions = useQuery({ queryKey: ["competitions"], queryFn: api.competitions });
-  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
-  const ai = capabilities.data?.ai ?? false;
-
-  // An error deep in a panel can send someone to Settings without every panel
-  // needing to know the shell exists.
-  useEffect(() => {
-    const open = () => navigate(SETTINGS);
-    window.addEventListener("tfo:settings", open);
-    return () => window.removeEventListener("tfo:settings", open);
-  }, [navigate]);
+  const competitions = useQuery({ queryKey: keys.competitions, queryFn: api.competitions });
 
   // How many platforms carry each sport, so the rail names the platform only
   // where it distinguishes something.
@@ -79,7 +61,7 @@ export default function App() {
     route.page === "competition" ? usable.find((s) => s.key === route.competition) : undefined;
 
   const leagues = useQuery({
-    queryKey: ["leagues", active?.key],
+    queryKey: keys.leagues(active?.key ?? ""),
     queryFn: () => api.leagues(active!.key),
     enabled: Boolean(active),
   });
@@ -90,8 +72,7 @@ export default function App() {
       ? ((leagues.data ?? []).find((l) => l.league_id === route.leagueId) ?? leagues.data?.[0])
       : undefined;
 
-  const views = active ? VIEWS.filter((v) => PANELS[v].offered?.({ ai, competition: active }) ?? true) : [];
-  const view = route.page === "competition" && views.includes(route.view) ? route.view : DEFAULT_VIEW;
+  const view = route.page === "competition" ? route.view : DEFAULT_VIEW;
 
   // Make the address say what is on screen.
   //
@@ -124,7 +105,7 @@ export default function App() {
    */
   function shell() {
     if (route.page === "settings") return <SettingsPanel onBack={() => navigate(LANDING)} />;
-    if (competitions.isSuccess && usable.length === 0) return <Empty competitions={competitions.data} />;
+    if (competitions.isSuccess && usable.length === 0) return <NothingConnected competitions={competitions.data} />;
 
     if (route.page !== "competition") {
       return competitions.isSuccess ? (
@@ -134,17 +115,7 @@ export default function App() {
       );
     }
 
-    if (!active || !league) {
-      return leagues.isError ? (
-        <div className="p-6">
-          <Badge variant="fail" appearance="status">
-            {(leagues.error as Error).message}
-          </Badge>
-        </div>
-      ) : (
-        <Loading />
-      );
-    }
+    if (!active || !league) return leagues.isError ? <ErrorNote error={leagues.error} /> : <Loading />;
 
     // Keyed so a competition or league change remounts the panel. Without it
     // the panel keeps the report it already fetched, and the previous
@@ -182,7 +153,7 @@ export default function App() {
           {competitions.isLoading && <Skeleton className="mx-2 h-7" />}
           {(competitions.data ?? []).map((s) => {
             // Two platforms under one sport need telling apart; one does not.
-            const label = (sportCounts[s.sport] ?? 0) > 1 ? s.label : s.label.replace(/\s*\(.*\)$/, "");
+            const label = (sportCounts[s.sport] ?? 0) > 1 ? s.label : s.name;
             return s.ready ? (
               <RailLink key={s.key} to={`/${s.key}`} active={s.key === active?.key}>
                 {label}
@@ -191,7 +162,7 @@ export default function App() {
               <RailButton
                 key={s.key}
                 disabled
-                tooltip={s.configured ? s.blocked_reason : `Not configured — set ${s.requires} in .env`}
+                tooltip={s.blocked_reason}
               >
                 {label}
                 <span className="font-mono text-[10px] opacity-60">{s.configured ? "blocked" : "off"}</span>
@@ -204,7 +175,7 @@ export default function App() {
             to yet would render as a control that does nothing. */}
         {active && league && (
           <Group label="View">
-            {views.map((v) => (
+            {VIEWS.map((v) => (
               <RailLink key={v} to={href(active.key, league.league_id, v)} active={v === view}>
                 {PANELS[v].label}
               </RailLink>
@@ -260,14 +231,6 @@ export default function App() {
           </m.div>
         </AnimatePresence>
       </main>
-    </div>
-  );
-}
-
-function Loading() {
-  return (
-    <div className="p-6">
-      <Skeleton className="h-40 w-full" />
     </div>
   );
 }
@@ -344,21 +307,23 @@ function RailButton({
 }
 
 /** Nothing is configured — say what to set rather than showing an empty shell. */
-function Empty({ competitions }: { competitions: Competition[] }) {
+function NothingConnected({ competitions }: { competitions: Competition[] }) {
   return (
-    <div className="mx-auto max-w-xl p-10">
-      <h1 className="font-display text-2xl font-semibold tracking-tight">Nothing connected yet</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Set one of these in Settings, or in <code className="font-mono text-accent-foreground">.env</code> directly.
-      </p>
-      <ul className="mt-5 flex flex-col gap-2">
-        {competitions.map((s) => (
-          <li key={s.sport} className="flex items-baseline justify-between gap-4 border-b border-border py-2 text-sm">
-            <span>{s.label}</span>
-            <code className="font-mono text-[12px] text-muted-foreground">{s.requires}</code>
-          </li>
-        ))}
-      </ul>
+    <div className="mx-auto max-w-xl p-5">
+      <Empty
+        title="Nothing connected yet"
+        detail="Set one of these in Settings, or in .env directly."
+        action={
+          <ul className="flex w-full flex-col gap-2">
+            {competitions.map((s) => (
+              <li key={s.key} className="flex items-baseline justify-between gap-4 border-b border-border py-2 text-sm">
+                <span>{s.label}</span>
+                <code className="font-mono text-[12px] text-muted-foreground">{s.requires}</code>
+              </li>
+            ))}
+          </ul>
+        }
+      />
     </div>
   );
 }

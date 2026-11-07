@@ -34,7 +34,7 @@ export function Tooltip({
         <RadixTooltip.Content
           side={side}
           sideOffset={6}
-          className="z-50 max-w-xs rounded-md border border-border bg-popover px-2.5 py-1.5 text-[12.5px] leading-snug text-popover-foreground shadow-md data-[state=delayed-open]:animate-in data-[state=closed]:animate-out"
+          className="z-50 max-w-xs rounded-md border border-border bg-popover px-2.5 py-1.5 text-[12.5px] leading-snug text-popover-foreground shadow-md"
         >
           {label}
           <RadixTooltip.Arrow className="fill-border" />

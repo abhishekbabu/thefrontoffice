@@ -1,16 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
-import { api, type Action, type ItemDecision, type ScoutReport, type Remembered, type League, type Competition, type Summary } from "@/lib/api";
+import {
+  api,
+  type Action,
+  type Competition,
+  type ItemDecision,
+  type League,
+  type RememberedReport,
+  type ScoutReport,
+  type Summary,
+} from "@/lib/api";
+import { keys, useCapabilities } from "@/lib/queries";
+import { moment } from "@/lib/format";
 import { ActionList, WhyThread } from "@/components/ui/actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
-import { Busy, Loading } from "@/components/ui/state";
-import { ListCard, ListRow } from "@/components/ui/list";
-import { StatStrip } from "@/components/ui/stat";
-import { LineupCard, SideCard } from "@/components/ui/lineup";
+import { Busy, QueryState } from "@/components/ui/state";
+import { StatGrid, StatList, StatStrip } from "@/components/ui/stat";
+import { LineupCard, SideCard, Swaps } from "@/components/ui/lineup";
 import { usePlayerDrawer } from "@/components/ui/player";
-import { cn } from "@/lib/utils";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
 
@@ -27,34 +36,31 @@ import { LeagueHeader } from "@/components/ui/page-header";
 export function ScoutPanel({ competition, league }: { competition: Competition; league: League }) {
   const { openPlayer, drawer } = usePlayerDrawer(competition, league);
 
-  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
-  const ai = capabilities.data?.ai ?? false;
+  const ai = useCapabilities().data?.ai ?? false;
+  const leagueApi = api.league(competition.key, league.league_id);
 
-  const week = useQuery<Summary, Error>({
-    queryKey: ["summary", competition.key, league.league_id],
-    queryFn: () => api.summary(competition.key, league.league_id),
-  });
+  const summaryKey = keys.summary(competition.key, league.league_id);
+  const week = useQuery<Summary, Error>({ queryKey: summaryKey, queryFn: leagueApi.summary });
 
   // The last judgment, read without asking the model anything: judging is a
   // click, and a reload should not throw the answer away.
-  const judgmentKey = ["judgment", competition.key, league.league_id];
-  const judgment = useQuery<Remembered<ScoutReport> | null, Error>({
+  const judgmentKey = keys.judgment(competition.key, league.league_id);
+  const judgment = useQuery<RememberedReport | null, Error>({
     queryKey: judgmentKey,
-    queryFn: () => api.judgment(competition.key, league.league_id),
+    queryFn: leagueApi.judgment,
     enabled: ai && Boolean(week.data?.actions),
   });
   const queryClient = useQueryClient();
   const judge = useMutation<ScoutReport, Error>({
-    mutationFn: () => api.scout(competition.key, league.league_id),
+    mutationFn: leagueApi.scout,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: judgmentKey }),
   });
   const report = judgment.data?.answer;
   // Shown at once, then confirmed: re-reading the week takes a second or two,
   // which is too long for a row to sit there after it was dismissed. The
   // re-read still happens, and a failed save puts the row back.
-  const summaryKey = ["summary", competition.key, league.league_id];
   const decide = useMutation<unknown, Error, ItemDecision, { before?: Summary }>({
-    mutationFn: (decision) => api.decide(competition.key, league.league_id, decision),
+    mutationFn: leagueApi.decide,
     onMutate: async (decision) => {
       await queryClient.cancelQueries({ queryKey: summaryKey });
       const before = queryClient.getQueryData<Summary>(summaryKey);
@@ -79,8 +85,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       <LeagueHeader league={league} meta={[week.data?.window, league.detail].filter(Boolean).join(" · ")} />
       <StatStrip stats={week.data?.headline ?? []} />
 
-      {week.isLoading && <Loading lines={4} />}
-      {week.isError && <ErrorNote error={week.error} />}
+      <QueryState query={week} lines={4} />
 
       {week.data && (
         <div className="flex flex-col gap-4 p-5">
@@ -113,7 +118,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
                 ai && (
                   <span className="flex items-center gap-2 normal-case tracking-normal">
                     {judgment.data && !judge.isPending && (
-                      <span className="font-normal">judged {judgedAt(judgment.data.answered_at)}</span>
+                      <span className="font-normal">judged {moment(judgment.data.answered_at)}</span>
                     )}
                     {judge.isPending && <Busy>judging…</Busy>}
                     <IconButton
@@ -146,15 +151,9 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
           {/* Shown beside the lineups when there is an opponent, since the
               swaps then have no card of their own to live in. */}
           {!week.data.actions && week.data.opponent && week.data.swaps.length > 0 && (
-            <ListCard title="Changes the projections imply">
-              {week.data.swaps.map((swap) => (
-                <ListRow key={swap.start} className="flex-wrap gap-x-2 gap-y-1">
-                  <span className="font-medium">{swap.start}</span>
-                  <span className="text-muted-foreground">for {swap.out || "an empty place"}</span>
-                  <span className="ml-auto font-mono text-[12px] text-ok">{swap.gain}</span>
-                </ListRow>
-              ))}
-            </ListCard>
+            <Card>
+              <Swaps swaps={week.data.swaps} />
+            </Card>
           )}
 
           {week.data.boosts && week.data.boosts.stats.length > 0 && (
@@ -165,43 +164,19 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
                   {week.data.boosts.stats.filter((s) => s.tone === "good").length} available
                 </span>
               </CardHeader>
-              {/* A grid rather than a strip: these are four parallel answers to
-                  the same question, and reading down a column beats hunting. */}
-              <div className="grid grid-cols-2 gap-x-4 px-4 py-1 sm:grid-cols-4">
-                {week.data.boosts.stats.map((boost) => (
-                  <div key={boost.label} className="flex flex-col gap-0.5 py-2.5">
-                    <span className="truncate font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-                      {boost.label}
-                    </span>
-                    <span
-                      className={cn(
-                        "truncate text-[13px]",
-                        boost.tone === "good" && "font-medium text-ok",
-                        boost.tone === "warning" && "text-warn",
-                        boost.tone === "neutral" && "text-muted-foreground",
-                      )}
-                    >
-                      {boost.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <StatGrid stats={week.data.boosts.stats} />
             </Card>
           )}
 
           {/* Only what a row cannot say for itself: a blank or a double gameweek
               changes what a whole club's players are worth. */}
           {week.data.fixtures.length > 0 && (
-            <ListCard title="Watch out for">
-              {week.data.fixtures.map((fixture) => (
-                <ListRow key={fixture.label}>
-                  <span className="w-14 shrink-0 font-mono text-[11px] text-muted-foreground">{fixture.label}</span>
-                  <span className={fixture.tone === "warning" ? "text-warn" : fixture.tone === "good" ? "text-ok" : "text-muted-foreground"}>
-                    {fixture.value}
-                  </span>
-                </ListRow>
-              ))}
-            </ListCard>
+            <Card>
+              <CardHeader>
+                <span>Watch out for</span>
+              </CardHeader>
+              <StatList stats={week.data.fixtures} className="px-4 py-1" />
+            </Card>
           )}
 
           {!week.data.opponent && (
@@ -216,18 +191,9 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
   );
 }
 
-/** "14:05" today, "Thu 14:05" before — when the verdicts were written, in the viewer's own zone. */
-function judgedAt(iso: string): string {
-  const when = new Date(iso);
-  const time = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  return when.toDateString() === new Date().toDateString()
-    ? time
-    : `${when.toLocaleDateString([], { weekday: "short" })} ${time}`;
-}
-
 /** An item as it will read once `decision` is kept — what the server will say, said early. */
 function decided(action: Action, decision: ItemDecision): Action {
   if (decision.decision === "dismiss") return { ...action, hidden: "dismissed", resurfaced: false };
-  if (decision.decision === "snooze") return { ...action, hidden: "snoozed", snoozed_until: decision.until };
+  if (decision.decision === "snooze") return { ...action, hidden: "snoozed", snoozed_until: decision.until ?? null };
   return { ...action, hidden: null, snoozed_until: null, resurfaced: false };
 }

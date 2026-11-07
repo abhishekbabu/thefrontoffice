@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type * as React from "react";
 import { AlarmClock, EyeOff, MessageCircleQuestion, Undo2 } from "lucide-react";
-import type { Action, ItemDecision, Move, MoveAction, TaskVerdict, Urgency } from "@/lib/api";
-import { SNOOZES, until } from "@/lib/snooze";
+import type { Action, ItemDecision, Move, Stat, TaskVerdict, Urgency } from "@/lib/api";
+import { SNOOZES } from "@/lib/snooze";
 import { Thread } from "@/components/ui/chat";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -10,12 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CardNote } from "@/components/ui/state";
 import { Verdict } from "@/components/ui/verdict";
-import { signed } from "@/lib/format";
-import { decisionTone } from "@/lib/tone";
+import { moment } from "@/lib/format";
+import { decisionTone, toneText, type Variant } from "@/lib/tone";
 import { cn } from "@/lib/utils";
 
 /** Said in words as well as color, so the order survives without the hue. */
-const URGENCY: Record<Urgency, { label: string; variant: "warn" | "info" | "muted" }> = {
+const URGENCY: Record<Urgency, { label: string; variant: Variant }> = {
   now: { label: "Now", variant: "warn" },
   soon: { label: "Soon", variant: "info" },
   later: { label: "Later", variant: "muted" },
@@ -96,7 +96,7 @@ export function ActionList({
                 title={action.title}
                 reason={action.reason}
                 when={action.when}
-                odds={action.win_change}
+                chance={action.chance}
                 evidence={action.evidence}
                 open={action.player_id && onOpen ? () => onOpen(action.player_id) : undefined}
               >
@@ -114,7 +114,7 @@ export function ActionList({
             <Row
               key={`suggested-${move.player}-${i}`}
               badge={{ label: "Suggested", variant: "info" }}
-              title={moveTitle(move)}
+              title={move.title}
               reason={move.rationale}
               when=""
             >
@@ -200,7 +200,9 @@ function Hidden({
           <li key={action.key} className="flex items-center gap-3 px-4 py-1.5 text-[12.5px]">
             <span className="min-w-0 flex-1 truncate text-muted-foreground">{action.title}</span>
             <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {action.hidden === "snoozed" && action.snoozed_until ? `snoozed until ${until(action.snoozed_until)}` : "dismissed"}
+              {action.hidden === "snoozed" && action.snoozed_until
+                ? `snoozed until ${moment(action.snoozed_until)}`
+                : "dismissed"}
             </span>
             {onDecide && (
               <IconButton
@@ -222,23 +224,24 @@ function Row({
   title,
   reason,
   when,
-  odds = null,
+  chance = null,
   evidence = [],
   open,
   children,
 }: {
-  badge: { label: string; variant: "warn" | "info" | "muted" };
+  badge: { label: string; variant: Variant };
   title: string;
   reason: string;
   when: string;
   /** What the move does to the chance of winning, where it was simulated. */
-  odds?: number | null;
+  chance?: Stat | null;
   evidence?: Action["evidence"];
   open?: () => void;
   children?: React.ReactNode;
 }) {
   return (
-    <li className="border-t border-border first:border-t-0">
+    // The badge's width, shared with the indent that lines a row's verdict up under its title.
+    <li className="border-t border-border [--badge-column:5.5rem] first:border-t-0">
       <div
         onClick={open}
         onKeyDown={open && ((e) => e.key === "Enter" && open())}
@@ -246,7 +249,7 @@ function Row({
         role={open ? "button" : undefined}
         className={cn("flex items-start gap-3 px-4 py-3", open && "cursor-pointer hover:bg-muted")}
       >
-        <Badge variant={badge.variant} appearance="status" className="mt-0.5 w-[5.5rem] shrink-0">
+        <Badge variant={badge.variant} appearance="status" className="mt-0.5 w-(--badge-column) shrink-0">
           {badge.label}
         </Badge>
         <div className="min-w-0 flex-1">
@@ -274,46 +277,18 @@ function Row({
             </ul>
           )}
         </div>
-        {(when || odds !== null) && (
+        {(when || chance) && (
           <span className="flex max-w-[11rem] shrink-0 flex-col items-end gap-0.5 pt-0.5 text-right font-mono text-[11px] text-muted-foreground">
             {/* The sign is in the words; the color only lets a cost be found at a glance. */}
-            {odds !== null && (
-              <span className={cn("font-semibold", odds >= 0.0005 && "text-ok", odds <= -0.0005 && "text-warn")}>
-                {chance(odds)}
-              </span>
-            )}
+            {chance && <span className={cn("font-semibold", toneText(chance.tone))}>{chance.value}</span>}
             {when}
           </span>
         )}
       </div>
       {/* Outside the clickable area: a verdict or a thread is read, not opened. */}
-      {children && <div className="px-4 pb-3 pl-[calc(5.5rem+1.75rem)]">{children}</div>}
+      {children && <div className="px-4 pb-3 pl-[calc(var(--badge-column)+1.75rem)]">{children}</div>}
     </li>
   );
-}
-
-const MOVE_VERB: Record<MoveAction, string> = {
-  ADD: "Add",
-  DROP: "Drop",
-  START: "Start",
-  BENCH: "Bench",
-  TRANSFER: "Bring in",
-  CAPTAIN: "Captain",
-  MONITOR: "Watch",
-};
-
-const MOVE_JOIN: Partial<Record<MoveAction, string>> = {
-  ADD: "drop",
-  START: "over",
-  TRANSFER: "for",
-  BENCH: "for",
-};
-
-/** "Add Jaylen Warren, drop Roschon Johnson" — the model's move as the list phrases its own. */
-function moveTitle(move: Move): string {
-  const join = MOVE_JOIN[move.action];
-  const rest = move.replaces && join ? (join === "drop" ? `, drop ${move.replaces}` : ` ${join} ${move.replaces}`) : "";
-  return `${MOVE_VERB[move.action]} ${move.player}${rest}`;
 }
 
 const DECISION_LABEL: Record<TaskVerdict["decision"], string> = {
@@ -387,10 +362,4 @@ export function WhyThread({
       )}
     </div>
   );
-}
-
-/** "+2.8% to win", "−0.4% to win", or "no change to win" for less than a twentieth of a point. */
-function chance(change: number): string {
-  if (Math.abs(change) < 0.0005) return "no change to win";
-  return `${signed(change * 100)}% to win`;
 }

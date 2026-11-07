@@ -415,7 +415,15 @@ provider, a prompt template and one `CompetitionEntry` — see the
 
 **API** — FastAPI returns the domain models directly: `ScoutReport` *is* a
 route's response schema, so there is no second representation to keep in step.
-It also serves the built UI from `web/dist`, so one process on one port covers
+The UI's TypeScript types are generated from that schema (`just api-types`,
+via `openapi-typescript`) into `web/src/lib/schema.ts`, and `just check-web`
+fails when they no longer match the server. The API carries meaning rather than
+leaving the UI to decode it: which columns are figures (the numbers a card
+sends in `values`), whether a status rules a player out, how a week ended, whose
+move an activity row was, the engines' limits, and what to do about a failure —
+each error code's remedy lives in one table, `adapters/inbound/remedies.py`,
+which the page renders as a button and the terminal prints as a command. It
+also serves the built UI from `web/dist`, so one process on one port covers
 both.
 
 **Platforms** — Yahoo via `yahoofantasy` (OAuth2, rosters, matchups, free agents
@@ -476,7 +484,8 @@ just doctor             # what this machine is configured for
 just backtest           # score the win-chance simulation on finished weeks (live data)
 just tune               # search the range settings, holding out the last week (live data)
 just check              # lint + format + types + tests + 95% coverage floor
-just check-web          # lint + typecheck + tests + bundle budget (UI)
+just check-web          # API types in step + lint + typecheck + tests + bundle budget (UI)
+just api-types          # regenerate the UI's API types after changing a response model
 just fmt                # auto-fix lint findings, then format
 just test               # hermetic suite (args pass through: just test "-k scout")
 just lock               # re-resolve uv.lock after editing pyproject.toml

@@ -130,8 +130,15 @@ web-build: web-install
 lint-web:
     cd web && pnpm lint
 
+# Regenerate the UI's API types from the server's OpenAPI schema
+api-types:
+    cd web && pnpm api-types
+
 # Lint, typecheck, test and build the front end — this is what CI runs
 check-web: web-install lint-web
+    # The generated API types must match the server: a model changed in
+    # Python and not regenerated fails here, not as an undefined at runtime.
+    cd web && pnpm api-types --check
     cd web && pnpm exec tsc -b
     cd web && pnpm test
     # Builds because the bundle budget is checked by the build and nothing
