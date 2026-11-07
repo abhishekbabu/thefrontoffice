@@ -9,13 +9,12 @@ from typing import Any
 import pytest
 
 from thefrontoffice.config import telemetry
-from thefrontoffice.config.settings import settings
+from thefrontoffice.config.settings import AppSettings
 
 
-@pytest.fixture(autouse=True)
-def _unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Reset the once-per-process guard; entry-point tests may have tripped it."""
-    monkeypatch.setattr(telemetry, "_configured", False)
+def _telemetry(**config: Any) -> telemetry.Telemetry:
+    """A process's tracing, not yet set up, over settings of the test's own."""
+    return telemetry.Telemetry(AppSettings(_env_file=None, **config))
 
 
 class FakeLogfire:
@@ -63,14 +62,13 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeLogfire:
 
 def test_without_a_token_nothing_is_exported(fake: FakeLogfire) -> None:
     """A fresh clone and CI must make no network call because logfire is installed."""
-    telemetry.setup_telemetry("front-office-cli")
+    _telemetry().setup("front-office-cli")
     assert fake.config["send_to_logfire"] == "if-token-present"
     assert fake.config["token"] is None
 
 
-def test_a_token_is_passed_through(fake: FakeLogfire, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "logfire_token", "pylf_v1_test")
-    telemetry.setup_telemetry("front-office-cli")
+def test_a_token_is_passed_through(fake: FakeLogfire) -> None:
+    _telemetry(logfire_token="pylf_v1_test").setup("front-office-cli")
     assert fake.config["token"] == "pylf_v1_test"
 
 
@@ -78,15 +76,14 @@ def test_prompt_text_is_not_exported_by_default(fake: FakeLogfire) -> None:
     """Prompts carry the roster, the leagues and the FPL entry id."""
     import os
 
-    telemetry.setup_telemetry("front-office-cli")
+    _telemetry().setup("front-office-cli")
     assert os.environ[telemetry.CAPTURE_CONTENT_VAR] == "false"
 
 
-def test_prompt_capture_can_be_turned_on(fake: FakeLogfire, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_prompt_capture_can_be_turned_on(fake: FakeLogfire) -> None:
     import os
 
-    monkeypatch.setattr(settings, "logfire_capture_prompts", True)
-    telemetry.setup_telemetry("front-office-cli")
+    _telemetry(logfire_capture_prompts=True).setup("front-office-cli")
     assert os.environ[telemetry.CAPTURE_CONTENT_VAR] == "true"
 
 
@@ -95,7 +92,7 @@ def test_an_explicit_otel_variable_wins(fake: FakeLogfire, monkeypatch: pytest.M
     import os
 
     monkeypatch.setenv(telemetry.CAPTURE_CONTENT_VAR, "true")
-    telemetry.setup_telemetry("front-office-cli")
+    _telemetry().setup("front-office-cli")
     assert os.environ[telemetry.CAPTURE_CONTENT_VAR] == "true"
 
 
@@ -104,26 +101,27 @@ def test_an_explicit_otel_variable_wins(fake: FakeLogfire, monkeypatch: pytest.M
 
 def test_the_libraries_carrying_the_latency_are_instrumented(fake: FakeLogfire) -> None:
     """Every call this app waits on is an HTTP request or a Gemini call."""
-    telemetry.setup_telemetry("front-office-cli")
+    _telemetry().setup("front-office-cli")
     assert set(fake.instrumented) == {"requests", "google_genai", "pydantic"}
 
 
 def test_the_front_end_names_itself(fake: FakeLogfire) -> None:
-    telemetry.setup_telemetry("front-office-web")
+    _telemetry(logfire_environment="laptop").setup("front-office-web")
     assert fake.config["service_name"] == "front-office-web"
-    assert fake.config["environment"] == settings.logfire_environment
+    assert fake.config["environment"] == "laptop"
 
 
 def test_spans_do_not_go_to_the_console(fake: FakeLogfire) -> None:
     """The CLI prints a formatted UI to the same stream."""
-    telemetry.setup_telemetry("front-office-cli")
+    _telemetry().setup("front-office-cli")
     assert fake.config["console"] is False
 
 
 def test_configuring_twice_instruments_once(fake: FakeLogfire) -> None:
     """Instrumenting a library twice would trace each call twice."""
-    telemetry.setup_telemetry("front-office-web")
-    telemetry.setup_telemetry("front-office-web")
+    process = _telemetry()
+    process.setup("front-office-web")
+    process.setup("front-office-web")
     assert fake.instrumented == ["requests", "google_genai", "pydantic"]
 
 
@@ -132,21 +130,15 @@ def test_standard_library_logs_are_bridged(fake: FakeLogfire) -> None:
     import logging
 
     before = len(logging.getLogger().handlers)
-    telemetry.setup_telemetry("front-office-cli")
+    _telemetry().setup("front-office-cli")
     assert len(logging.getLogger().handlers) == before + 1
     logging.getLogger().handlers.pop()
 
 
-def test_openai_calls_are_traced_only_where_prompt_text_may_leave(
-    fake: FakeLogfire, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_openai_calls_are_traced_only_where_prompt_text_may_leave(fake: FakeLogfire) -> None:
     """Its instrumentation records message text regardless, and a message carries the roster."""
-    from thefrontoffice.config import telemetry
-
-    telemetry.setup_telemetry("api")
+    _telemetry().setup("api")
     assert "openai" not in fake.instrumented
 
-    monkeypatch.setattr(telemetry, "_configured", False)
-    monkeypatch.setattr(telemetry.settings, "logfire_capture_prompts", True)
-    telemetry.setup_telemetry("api")
+    _telemetry(logfire_capture_prompts=True).setup("api")
     assert "openai" in fake.instrumented

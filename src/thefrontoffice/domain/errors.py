@@ -100,7 +100,7 @@ class NotConfiguredError(FrontOfficeError):
     code = "not_configured"
 
     def __init__(self, what: str, requires: str) -> None:
-        super().__init__(f"{what} is not configured — set {requires} in .env.")
+        super().__init__(f"{what} is not configured: it needs {requires}.")
         self.requires = requires
 
 
@@ -160,6 +160,18 @@ class ItemDecisionError(FrontOfficeError):
     code = "item_decision"
 
 
+class LoginRequiredError(FrontOfficeError):
+    """A platform this machine has not been authorized for yet, and cannot be without a person.
+
+    Which platform is the subclass's to say, so the remedy can offer that
+    platform's login rather than whichever one happened to exist first.
+    """
+
+    code = "login_required"
+    platform: str = ""
+    """The registry's name for the platform to log in to: 'yahoo'."""
+
+
 class AIUnavailableError(FrontOfficeError):
     """No model is configured, so there is no analysis to give.
 
@@ -174,9 +186,7 @@ class AIUnavailableError(FrontOfficeError):
     def __init__(self, keys: Sequence[str] = ()) -> None:
         *rest, last = keys or [""]
         named = f" — {', '.join(rest)} or {last}" if rest else f" — {last}" if last else ""
-        super().__init__(
-            f"Analysis is unavailable because no model key is set{named}. Add one in Settings to turn it on."
-        )
+        super().__init__(f"Analysis is unavailable because no model key is set{named}.")
         self.keys = list(keys)
         """The settings any one of which would turn analysis on, as the providers name them."""
 
@@ -192,7 +202,7 @@ class AIKeyInvalidError(FrontOfficeError):
     code = "ai_key_invalid"
 
     def __init__(self, provider: str, setting: str) -> None:
-        super().__init__(f"{provider} rejected the API key. Check {setting} in Settings.")
+        super().__init__(f"{provider} rejected the API key in {setting}.")
         self.provider = provider
 
 

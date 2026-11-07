@@ -1,11 +1,15 @@
 """Terminal output helpers."""
 
 import contextlib
+import logging
 import sys
+from collections.abc import Callable
 
 from thefrontoffice.adapters.inbound.remedies import remedy
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.ports import ChatSession
+
+logger = logging.getLogger(__name__)
 
 
 def configure_console() -> None:
@@ -50,8 +54,12 @@ def rows(rows: list[dict[str, str]]) -> None:
         print("  " + "  ".join(str(row.get(c, "")).ljust(widths[c]) for c in columns))
 
 
-def follow_up(chat: ChatSession, noun: str) -> None:
-    """Questions about what was just shown, asked in the open chat until an empty line."""
+def follow_up(chat: ChatSession, noun: str, *, read: Callable[[str], str] = input) -> None:
+    """Questions about what was just shown, asked in the open chat until an empty line.
+
+    Args:
+        read: what prompts for a line; the terminal's own `input` but in a test.
+    """
     print("\n  " + "─" * 60)
     print(f"  💬 Interactive Mode: Ask follow-up questions about this {noun}.")
     print("     Type your question or press Enter to continue.")
@@ -59,7 +67,7 @@ def follow_up(chat: ChatSession, noun: str) -> None:
 
     while True:
         try:
-            user_input = input("\n  Query > ").strip()
+            user_input = read("\n  Query > ").strip()
             if not user_input or user_input.lower() in ("/quit", "/exit", "q"):
                 break
 
@@ -68,8 +76,15 @@ def follow_up(chat: ChatSession, noun: str) -> None:
             print(f"\n  🤖 {response.text}")
         except KeyboardInterrupt:
             break
-        except Exception as e:
-            print(f"  ❌ Error: {e}")
+        except FrontOfficeError as e:
+            # Already a sentence, with a remedy the terminal can print.
+            print_error(e)
+            break
+        except Exception as e:  # anything the adapters did not translate
+            # Its message is a repr of a vendor's RPC payload; the log is where
+            # that belongs, not the conversation someone is reading.
+            logger.error(f"Follow-up failed: {e}")
+            print("  ❌ The model did not answer. Try asking again.")
             break
 
 
@@ -77,6 +92,6 @@ def print_error(error: FrontOfficeError, prefix: str = "") -> None:
     """Render a failure, plus the terminal's way of fixing it if there is one."""
     label = f"{prefix}: " if prefix else ""
     print(f"  ❌ {label}{error}")
-    fix = remedy(error.code)
+    fix = remedy(error)
     if fix and fix.command:
         print(f"     {fix.command}")

@@ -1,4 +1,4 @@
-"""Reading and writing `.env` in place.
+"""Reading and writing `.env` in place, and describing what it configures.
 
 The counterpart to `settings.py`: that module loads configuration, this one
 edits the file it loads from, so the UI can set a credential without anyone
@@ -19,32 +19,15 @@ import types
 from pathlib import Path
 from typing import Literal, Union, get_args, get_origin
 
-from thefrontoffice.config.settings import PROJECT_ROOT, AppSettings, settings
+from pydantic import BaseModel
+
+from thefrontoffice.config.settings import GROUPS, AppSettings, env_var, group, is_secret
 
 logger = logging.getLogger(__name__)
-
-ENV_PATH = PROJECT_ROOT / ".env"
-
-# Any one of these turns analysis on.
-MODEL_KEYS = ("GOOGLE_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY")
-
-# Values whose contents must never be read back out — only their presence.
-SECRET_KEYS = frozenset({*MODEL_KEYS, "YAHOO_CLIENT_ID", "YAHOO_CLIENT_SECRET", "LOGFIRE_TOKEN"})
 
 # Characters that make a bare value ambiguous to a dotenv parser: `#` starts a
 # comment, whitespace and quotes end or nest a token.
 _NEEDS_QUOTING = re.compile(r'[\s#"\'\\$]')
-
-
-def env_var(field: str) -> str:
-    """The environment variable a settings field reads.
-
-    Not always the field name upper-cased — `gemini_api_key` reads
-    `GOOGLE_API_KEY` — and the variable is what a user types, so it is the name
-    every public surface uses.
-    """
-    alias = AppSettings.model_fields[field].validation_alias
-    return alias if isinstance(alias, str) else field.upper()
 
 
 def spelled(value: object) -> str:
@@ -100,18 +83,36 @@ def is_shadowed(key: str) -> bool:
     return key in os.environ
 
 
-def read_values() -> dict[str, str]:
-    """The keys present in `.env` and their raw values, in file order."""
-    if not ENV_PATH.exists():
-        return {}
-    values: dict[str, str] = {}
-    for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, _, value = stripped.partition("=")
-        values[key.strip()] = _unquote(value.strip())
-    return values
+class Setting(BaseModel):
+    """One configurable value, described without ever carrying a secret."""
+
+    key: str
+    field: str
+    secret: bool
+    present: bool
+    kind: SettingKind
+    """Which control to render."""
+
+    choices: list[str] = []
+    value: str = ""
+    """What `.env` holds for it. Empty for a secret: presence is all anyone reading this needs, and all it should hold."""
+
+    shadowed: bool = False
+    """A shell variable is overriding .env, so an edit there will not take effect."""
+
+    effective: str = ""
+    """What is actually in force, including a default nothing has overridden.
+
+    An empty field with a default behind it is not unset, and showing it as
+    such invites someone to type the value it already has."""
+
+
+class SettingsGroup(BaseModel):
+    """The settings that unlock one thing, and what to know before setting them."""
+
+    title: str
+    note: str
+    settings: list[Setting]
 
 
 def _unquote(value: str) -> str:
@@ -143,40 +144,118 @@ class UnknownSettingError(ValueError):
         self.keys = keys
 
 
-def write_values(updates: dict[str, str]) -> None:
-    """Apply `updates` to `.env`, creating it if absent.
+class EnvFile:
+    """The `.env` at `path`, and the settings loaded from it, which every write refreshes."""
 
-    An empty value clears the key rather than writing an empty string, matching
-    how `AppSettings` already treats `KEY=` — the way people write "I do not use
-    this".
+    def __init__(self, path: Path, *, settings: AppSettings) -> None:
+        """
+        Args:
+            path: the file `settings` was loaded from.
+            settings: refreshed in place after each write, never replaced.
+        """
+        self.path = path
+        self.settings = settings
 
-    Raises:
-        UnknownSettingError: a key outside what AppSettings declares.
-    """
-    known = declared()
-    if unknown := [key for key in updates if key not in known]:
-        raise UnknownSettingError(unknown)
+    def read_values(self) -> dict[str, str]:
+        """The keys present in the file and their raw values, in file order."""
+        if not self.path.exists():
+            return {}
+        values: dict[str, str] = {}
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, _, value = stripped.partition("=")
+            values[key.strip()] = _unquote(value.strip())
+        return values
 
-    lines = ENV_PATH.read_text(encoding="utf-8").splitlines() if ENV_PATH.exists() else []
-    remaining = dict(updates)
+    def unknown(self) -> list[str]:
+        """Keys in the file that no setting reads: a typo here is silent, since the setting keeps its default."""
+        known = declared()
+        return [key for key in self.read_values() if key not in known]
 
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key = stripped.partition("=")[0].strip()
-        if key in remaining:
-            lines[index] = f"{key}={_format(remaining.pop(key))}"
+    def write_values(self, updates: dict[str, str]) -> None:
+        """Apply `updates` to the file, creating it if absent, and reload the settings from it.
 
-    if remaining:
-        if lines and lines[-1].strip():
-            lines.append("")
-        lines.extend(f"{key}={_format(value)}" for key, value in remaining.items())
+        An empty value clears the key rather than writing an empty string, matching
+        how `AppSettings` already treats `KEY=` — the way people write "I do not use
+        this".
 
-    ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    _restrict(ENV_PATH)
-    logger.info(f"Updated {len(updates)} setting(s) in .env")
-    reload_settings()
+        Raises:
+            UnknownSettingError: a key outside what AppSettings declares.
+        """
+        known = declared()
+        if unknown := [key for key in updates if key not in known]:
+            raise UnknownSettingError(unknown)
+
+        lines = self.path.read_text(encoding="utf-8").splitlines() if self.path.exists() else []
+        remaining = dict(updates)
+
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key = stripped.partition("=")[0].strip()
+            if key in remaining:
+                lines[index] = f"{key}={_format(remaining.pop(key))}"
+
+        if remaining:
+            if lines and lines[-1].strip():
+                lines.append("")
+            lines.extend(f"{key}={_format(value)}" for key, value in remaining.items())
+
+        self.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        _restrict(self.path)
+        logger.info(f"Updated {len(updates)} setting(s) in {self.path.name}")
+        self.reload()
+
+    def reload(self) -> None:
+        """Re-read configuration into the settings this was handed.
+
+        Mutated in place rather than rebound: every module imported `settings` by
+        value, so replacing the object would leave all of them pointing at the
+        old one.
+        """
+        fresh = AppSettings(_env_file=self.path)
+        for field in AppSettings.model_fields:
+            setattr(self.settings, field, getattr(fresh, field))
+
+    def describe(self, field: str, stored: str = "") -> Setting:
+        """One setting as it stands, with a secret reported only as present or absent.
+
+        Args:
+            stored: what the file holds for it, as `read_values` reads it.
+        """
+        key = env_var(field)
+        kind, choices = field_kind(field)
+        secret = is_secret(field)
+        current = getattr(self.settings, field)
+        return Setting(
+            key=key,
+            field=field,
+            secret=secret,
+            present=current is not None and current != "",
+            # A boolean's stored form can be absent while its value is False, so
+            # the effective value is shown rather than the raw file text.
+            value="" if secret else (spelled(current) if kind == "boolean" else stored),
+            effective="" if secret else spelled(current),
+            kind=kind,
+            choices=choices,
+            shadowed=is_shadowed(key),
+        )
+
+    def groups(self) -> list[SettingsGroup]:
+        """Every setting, described, under what it unlocks, in the order someone sets them up."""
+        stored = self.read_values()
+        described = [self.describe(field, stored.get(key, "")) for key, field in declared().items()]
+        return [
+            SettingsGroup(
+                title=each.title,
+                note=each.note,
+                settings=[setting for setting in described if group(setting.field) == each],
+            )
+            for each in GROUPS
+        ]
 
 
 def _restrict(path: Path) -> None:
@@ -189,15 +268,3 @@ def _restrict(path: Path) -> None:
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     except OSError as e:
         logger.debug(f"Could not restrict permissions on {path}: {e}")
-
-
-def reload_settings() -> None:
-    """Re-read configuration into the existing singleton.
-
-    Mutated in place rather than rebound: every module imported `settings` by
-    value, so replacing the object here would leave all of them pointing at the
-    old one.
-    """
-    fresh = AppSettings()
-    for field in AppSettings.model_fields:
-        setattr(settings, field, getattr(fresh, field))

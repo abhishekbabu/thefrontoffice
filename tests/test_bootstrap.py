@@ -18,7 +18,13 @@ from thefrontoffice.bootstrap import REGISTRY
 from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionError, UnsupportedError
 from thefrontoffice.domain.models import Action, ItemState, Summary
-from thefrontoffice.domain.ports import CompetitionProvider, TradeProvider, WireProvider
+from thefrontoffice.domain.ports import (
+    CompetitionProvider,
+    OutlookProvider,
+    TradeMarketProvider,
+    TradeProvider,
+    WireProvider,
+)
 
 # ── finding an entry ────────────────────────────────────────────────────
 
@@ -127,12 +133,13 @@ def test_every_registered_provider_implements_the_competition_port() -> None:
 
 def test_what_each_competition_can_do_is_read_off_its_provider() -> None:
     """FPL managers transfer against the market rather than trade; only the NFL simulates its season."""
-    can = {e.key: (e.supports_trades, e.judges_wire, e.plans_ahead) for e in REGISTRY.entries}
+    ports = (TradeProvider, WireProvider, OutlookProvider, TradeMarketProvider)
+    can = {e.key: tuple(e.can(port) for port in ports) for e in REGISTRY.entries}
 
     assert can == {
-        "nba-yahoo": (True, False, False),
-        "nfl-sleeper": (True, True, True),
-        "premier-league-fpl": (False, False, False),
+        "nba-yahoo": (True, False, False, False),
+        "nfl-sleeper": (True, True, True, True),
+        "premier-league-fpl": (False, False, False, False),
     }
 
 
@@ -146,7 +153,7 @@ def test_asking_what_a_competition_can_do_builds_nothing() -> None:
     built: list[int] = []
     trades = entry(_Trades(), built=built)
 
-    assert (trades.supports_trades, trades.judges_wire, trades.plans_ahead) == (True, False, False)
+    assert (trades.can(TradeProvider), trades.can(WireProvider), trades.can(OutlookProvider)) == (True, False, False)
     assert built == []
 
 

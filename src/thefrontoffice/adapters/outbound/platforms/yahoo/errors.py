@@ -1,6 +1,6 @@
 """Yahoo's failures, as the rest of the app sees them — including the two its login can fix."""
 
-from thefrontoffice.domain.errors import FrontOfficeError, PlatformError, PlatformUnavailableError
+from thefrontoffice.domain.errors import FrontOfficeError, LoginRequiredError, PlatformError, PlatformUnavailableError
 
 
 class YahooAPIError(PlatformError):
@@ -41,7 +41,7 @@ class YahooAuthError(FrontOfficeError):
         )
 
 
-class YahooLoginRequiredError(FrontOfficeError):
+class YahooLoginRequiredError(LoginRequiredError):
     """No cached Yahoo token, and this process cannot obtain one.
 
     The handshake opens a browser and waits, which is fine from a terminal and
@@ -49,7 +49,7 @@ class YahooLoginRequiredError(FrontOfficeError):
     cannot see.
     """
 
-    code = "login_required"
+    platform = "yahoo"
 
     def __init__(self, detail: str = "") -> None:
         super().__init__(

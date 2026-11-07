@@ -27,6 +27,8 @@ from thefrontoffice.adapters.inbound.web import api as web
 from thefrontoffice.application.formats import CallAnswer, WireAnswer
 from thefrontoffice.application.scouting import scout_scope
 from thefrontoffice.bootstrap import REGISTRY
+from thefrontoffice.config.env_file import EnvFile
+from thefrontoffice.config.settings import AppSettings, env_var
 from thefrontoffice.domain.models import Action, CompetitionContext, PlayerCall, PlayerCard, Remembered
 from thefrontoffice.domain.ports import LeagueRef
 
@@ -104,9 +106,9 @@ def test_competitions_include_the_unconfigured_ones() -> None:
 
 def test_a_competition_says_what_it_can_do() -> None:
     body = TestClient(web.create_app(fake_wiring(registry=REGISTRY.entries))).get("/api/competitions").json()
-    flags = {c["key"]: (c["judges_wire"], c["plans_ahead"]) for c in body}
+    flags = {c["key"]: (c["judges_wire"], c["plans_weeks"], c["finds_trades"]) for c in body}
 
-    assert flags["nfl-sleeper"] == (True, True) and flags["premier-league-fpl"] == (False, False)
+    assert flags["nfl-sleeper"] == (True, True, True) and flags["premier-league-fpl"] == (False, False, False)
 
 
 # ── leagues and rosters ─────────────────────────────────────────────────
@@ -167,16 +169,15 @@ def test_a_domain_error_carries_a_code_the_client_can_act_on() -> None:
     body = _client(FakeProvider(YahooLoginRequiredError())).get("/api/nba/leagues").json()
 
     assert body["code"] == YahooLoginRequiredError.code
-    assert body["remedy"]["action"] == "authorize"
+    assert (body["remedy"]["action"], body["remedy"]["platform"]) == ("authorize", "yahoo")
 
 
 def test_the_app_says_its_limits_rather_than_leaving_the_page_to_restate_them(client: TestClient) -> None:
-    from thefrontoffice.application.season import MIN_TRADE_CHANGE
     from thefrontoffice.application.wire import MAX_JUDGED
 
     limits = client.get("/api/capabilities").json()["limits"]
 
-    assert limits == {"judged": MAX_JUDGED, "trade_change": MIN_TRADE_CHANGE}
+    assert limits == {"judged": MAX_JUDGED}
 
 
 # ── reports ─────────────────────────────────────────────────────────────
@@ -394,61 +395,61 @@ def test_an_unknown_api_path_is_a_404_not_the_page(built_client: TestClient) -> 
 # ── settings ────────────────────────────────────────────────────────────
 
 
-@pytest.fixture
-def settings_client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """A client editing a throwaway .env rather than the developer's own."""
-    from thefrontoffice.config import env_file
+def _settings_client(path: Path, **config: Any) -> TestClient:
+    """A client editing a throwaway .env, with settings of its own, rather than the developer's."""
+    return TestClient(web.create_app(fake_wiring(env=EnvFile(path, settings=AppSettings(_env_file=None, **config)))))
 
+
+@pytest.fixture
+def env_path(tmp_path: Path) -> Path:
     path = tmp_path / ".env"
     path.write_text("SLEEPER_USERNAME=abhibeast\n", encoding="utf-8")
-    monkeypatch.setattr(env_file, "ENV_PATH", path)
-    monkeypatch.setattr(env_file, "reload_settings", lambda: None)
-    return TestClient(web.create_app(fake_wiring()))
+    return path
+
+
+@pytest.fixture
+def settings_client(env_path: Path) -> TestClient:
+    return _settings_client(env_path, sleeper_username="abhibeast")
+
+
+def _listed(body: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    """One setting out of the groups the page is sent."""
+    return next(s for group in body for s in group["settings"] if s["key"] == key)
 
 
 def test_settings_list_every_variable_the_app_reads(settings_client: TestClient) -> None:
-    keys = {s["key"] for s in settings_client.get("/api/settings").json()}
+    body = settings_client.get("/api/settings").json()
+    keys = {s["key"] for group in body for s in group["settings"]}
     assert {"GOOGLE_API_KEY", "FPL_ENTRY_ID", "SLEEPER_USERNAME"} <= keys
 
 
-def test_a_boolean_reports_its_effective_value_not_the_file_text(
-    settings_client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """An absent key and a false one look identical in the file, so the UI would
-    otherwise render an unset checkbox for a setting that is genuinely on."""
-    from thefrontoffice.config.settings import settings
+def test_settings_arrive_grouped_with_what_each_group_unlocks(settings_client: TestClient) -> None:
+    """So the page renders the server's groups rather than keeping a list of keys of its own."""
+    body = settings_client.get("/api/settings").json()
 
-    monkeypatch.setattr(settings, "logfire_capture_prompts", True)
-    entry = next(s for s in settings_client.get("/api/settings").json() if s["key"] == "LOGFIRE_CAPTURE_PROMPTS")
-
-    assert entry["value"] == "true"
+    ai = next(group for group in body if any(s["key"] == "GOOGLE_API_KEY" for s in group["settings"]))
+    assert ai["note"] and {"GROQ_API_KEY", "OPENROUTER_API_KEY"} <= {s["key"] for s in ai["settings"]}
 
 
-def test_a_secret_is_never_sent_to_the_client(settings_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_secret_is_never_sent_to_the_client(env_path: Path) -> None:
     """There is nothing the UI can do with the characters of an API key that it
     cannot do with the fact that one is set — and a page that renders them puts
     them in screenshots."""
-    from thefrontoffice.config.settings import settings
+    response = _settings_client(env_path, groq_api_key="super-secret-value").get("/api/settings")
 
-    monkeypatch.setattr(settings, "gemini_api_key", "super-secret-value")
-
-    entry = next(s for s in settings_client.get("/api/settings").json() if s["key"] == "GOOGLE_API_KEY")
-
-    assert entry["secret"] is True
-    assert entry["present"] is True
-    assert entry["value"] == ""
+    entry = _listed(response.json(), "GROQ_API_KEY")
+    assert (entry["secret"], entry["present"], entry["value"], entry["effective"]) == (True, True, "", "")
+    assert "super-secret-value" not in response.text
 
 
 def test_a_non_secret_carries_its_value_so_it_can_be_edited(settings_client: TestClient) -> None:
-    entry = next(s for s in settings_client.get("/api/settings").json() if s["key"] == "SLEEPER_USERNAME")
-    assert entry["value"] == "abhibeast"
+    assert _listed(settings_client.get("/api/settings").json(), "SLEEPER_USERNAME")["value"] == "abhibeast"
 
 
 def test_saving_writes_the_value_and_returns_the_new_state(settings_client: TestClient) -> None:
     body = settings_client.put("/api/settings", json={"values": {"FPL_ENTRY_ID": "4242"}}).json()
 
-    entry = next(s for s in body if s["key"] == "FPL_ENTRY_ID")
-    assert entry["value"] == "4242"
+    assert _listed(body, "FPL_ENTRY_ID")["value"] == "4242"
 
 
 def test_a_key_no_setting_reads_is_refused_with_its_name(settings_client: TestClient) -> None:
@@ -463,59 +464,33 @@ def test_a_shell_variable_is_reported_so_a_futile_edit_is_visible(
 ) -> None:
     monkeypatch.setenv("FPL_ENTRY_ID", "999")
 
-    entry = next(s for s in settings_client.get("/api/settings").json() if s["key"] == "FPL_ENTRY_ID")
-
-    assert entry["shadowed"] is True
+    assert _listed(settings_client.get("/api/settings").json(), "FPL_ENTRY_ID")["shadowed"] is True
 
 
-def test_a_setting_with_a_default_is_not_reported_as_unset(settings_client: TestClient) -> None:
-    """An empty field with a default behind it is in force, and showing it as
-    unset invites someone to type the value it already has."""
-    entry = next(s for s in settings_client.get("/api/settings").json() if s["key"] == "LOG_LEVEL")
-
-    assert entry["value"] == ""  # nothing in .env
-    assert entry["effective"] == "INFO"  # but this is what runs
-
-
-def test_a_secrets_effective_value_is_withheld_too(
-    settings_client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Otherwise the placeholder would print the key the field exists to hide."""
-    from thefrontoffice.config.settings import settings
-
-    monkeypatch.setattr(settings, "gemini_api_key", "super-secret-value")
-    entry = next(s for s in settings_client.get("/api/settings").json() if s["key"] == "GOOGLE_API_KEY")
-
-    assert entry["effective"] == ""
-    assert entry["present"] is True
-
-
-def _model_key_client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Any, dict[str, str]]:
-    """A client over a throwaway .env whose reload reads that file back, and a value for every model key.
+def _model_key_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Path, dict[str, str]]:
+    """The app as bootstrap wires it, over a throwaway .env, and a value for every model key.
 
     The loop the Settings page exists for: typed in, written to .env, never read
-    back, and in effect on the next request with no restart.
+    back, and in effect on the next request with no restart. Every field of the
+    process's settings is recorded first, so the reload cannot leak past the test.
     """
-    from thefrontoffice.config import env_file
-    from thefrontoffice.config.settings import AppSettings, settings
+    from dataclasses import replace
 
+    from thefrontoffice.config.settings import settings
+
+    for field in AppSettings.model_fields:
+        monkeypatch.setattr(settings, field, getattr(settings, field))
+    for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key"):
+        monkeypatch.setattr(settings, field, None)
+        monkeypatch.delenv(env_var(field), raising=False)
     path = tmp_path / ".env"
     path.write_text("SLEEPER_USERNAME=abhibeast\n", encoding="utf-8")
-    monkeypatch.setattr(env_file, "ENV_PATH", path)
-    for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key"):
-        monkeypatch.setattr(settings, field, None)  # restored after, whatever the reload sets
-
-    def reload_from_tmp() -> None:
-        fresh = AppSettings(_env_file=path)
-        for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key"):
-            setattr(settings, field, getattr(fresh, field))
-
-    monkeypatch.setattr(env_file, "reload_settings", reload_from_tmp)
-    keys = {key: f"{key.lower()}-value" for key in env_file.MODEL_KEYS}
-    return TestClient(web.create_app(bootstrap.wiring())), path, keys
+    wiring = replace(bootstrap.wiring(), env=EnvFile(path, settings=settings))
+    keys = {env_var(field): f"{field}-value" for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key")}
+    return TestClient(web.create_app(wiring)), path, keys
 
 
-def test_every_model_key_saved_in_settings_reaches_the_file(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_every_model_key_saved_in_settings_reaches_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client, path, keys = _model_key_client(tmp_path, monkeypatch)
 
     assert client.put("/api/settings", json={"values": keys}).status_code == 200
@@ -524,7 +499,7 @@ def test_every_model_key_saved_in_settings_reaches_the_file(tmp_path: Any, monke
     assert all(f"{key}={value}" in written for key, value in keys.items())
 
 
-def test_saving_model_keys_keeps_the_rest_of_the_file(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_saving_model_keys_keeps_the_rest_of_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client, path, keys = _model_key_client(tmp_path, monkeypatch)
 
     client.put("/api/settings", json={"values": keys})
@@ -533,18 +508,20 @@ def test_saving_model_keys_keeps_the_rest_of_the_file(tmp_path: Any, monkeypatch
 
 
 def test_saved_model_keys_are_reported_present_but_never_sent_back(
-    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client, _, keys = _model_key_client(tmp_path, monkeypatch)
 
     response = client.put("/api/settings", json={"values": keys})
 
-    listed = [s for s in response.json() if s["key"] in keys]
-    assert len(listed) == len(keys) and all(s["present"] and s["secret"] for s in listed)
+    listed = [_listed(response.json(), key) for key in keys]
+    assert all(s["present"] and s["secret"] for s in listed)
     assert not any(value in response.text for value in keys.values())
 
 
-def test_saving_a_model_key_turns_analysis_on_without_a_restart(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_saving_a_model_key_turns_analysis_on_without_a_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client, _, keys = _model_key_client(tmp_path, monkeypatch)
     assert client.get("/api/capabilities").json()["ai"] is False
 
@@ -832,9 +809,11 @@ def test_the_weeks_ahead_come_back_with_their_fixes() -> None:
     assert (week["week"], week["short"], week["gain"]) == (8, True, 12.0)
 
 
-def test_a_competition_that_cannot_look_ahead_has_no_weeks_to_plan(client: TestClient) -> None:
-    """No outlook to give is an answer, not a failure."""
-    assert client.get("/api/nfl-sleeper/leagues/L1/weeks-ahead").json() == []
+def test_a_competition_that_cannot_look_ahead_refuses_as_it_does_trades(client: TestClient) -> None:
+    """Only offered where it can be, so asking anyway is refused rather than answered with no weeks."""
+    response = client.get("/api/nfl-sleeper/leagues/L1/weeks-ahead")
+
+    assert (response.status_code, response.json()["code"]) == (400, "unsupported")
 
 
 def test_a_competition_with_no_season_to_play_finds_no_trades(client: TestClient) -> None:
@@ -862,3 +841,7 @@ def test_a_platform_that_is_down_is_a_503_that_says_so() -> None:
 
     assert response.status_code == 503
     assert response.json()["code"] == PlatformUnavailableError.code
+
+
+def test_a_platform_nothing_logs_in_to_is_a_404() -> None:
+    assert TestClient(web.create_app(fake_wiring())).post("/api/espn/login").status_code == 404

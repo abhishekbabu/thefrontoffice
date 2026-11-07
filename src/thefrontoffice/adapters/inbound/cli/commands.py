@@ -5,8 +5,13 @@ from thefrontoffice.adapters.inbound.cli import output
 from thefrontoffice.adapters.inbound.cli.output import print_error
 from thefrontoffice.adapters.inbound.cli.render import render_scout_report, render_trade_verdict, render_week
 from thefrontoffice.adapters.inbound.cli.session import Session
-from thefrontoffice.bootstrap import CompetitionEntry
-from thefrontoffice.domain.errors import FrontOfficeError, NotConfiguredError, UnsupportedError
+from thefrontoffice.bootstrap import CompetitionEntry, Registry
+from thefrontoffice.domain.errors import (
+    FrontOfficeError,
+    NotConfiguredError,
+    UnknownCompetitionError,
+    UnsupportedError,
+)
 from thefrontoffice.domain.ports import TradeProvider
 
 TRADES = "trade evaluation"
@@ -20,7 +25,7 @@ def print_help(session: Session) -> None:
     list, and the absence needs no explaining because nothing is missing.
     """
     keys = " | ".join(e.key for e in session.entries) or "none configured"
-    tradeable = " | ".join(e.key for e in session.entries if e.supports_trades)
+    tradeable = " | ".join(e.key for e in session.entries if e.can(TradeProvider))
     commands = [
         ("/leagues", "Every league you are in, per competition"),
         ("/week [competition]", "This week: the figures, the chance of winning, and what to do"),
@@ -47,28 +52,32 @@ def print_help(session: Session) -> None:
 def match(entries: list[CompetitionEntry], token: str) -> CompetitionEntry | None:
     """The entry in `entries` a token names — by key, or by competition alone — if any.
 
-    Matched within the list passed in rather than through the registry: the
+    Matched within the list passed in rather than the whole registry: the
     caller's list is the authority on what is available, and consulting the
     registry first lets the two disagree.
     """
-    name = token.lower().lstrip("/")
-    return next(
-        (e for e in entries if e.key == name),
-        next((e for e in entries if e.competition == name), None),
-    )
+    try:
+        return Registry(tuple(entries)).find(token)
+    except UnknownCompetitionError:
+        return None
 
 
-def _not_available(session: Session, token: str, unsupported: str = "") -> bool:
+def _not_available(session: Session, token: str, needs: tuple[type[object], str] | None = None) -> bool:
     """Say why `token` names nothing in the session, where it names a competition at all.
 
-    Whether it did: a word that is no competition can be the start of a trade.
+    Args:
+        needs: the port the command needs and what it is called, where the
+            competition may be known and unable to do it.
+
+    Returns:
+        Whether it did: a word that is no competition can be the start of a trade.
     """
     try:
         known = session.wiring.registry.find(token)
     except FrontOfficeError:
         return False
-    if unsupported and not known.supports_trades:
-        print(f"  ⚠️  {UnsupportedError(known.label, unsupported)}")
+    if needs is not None and not known.can(needs[0]):
+        print(f"  ⚠️  {UnsupportedError(known.label, needs[1])}")
     else:
         print(f"  ⚠️  {NotConfiguredError(known.label, known.requires)}")
     return True
@@ -166,7 +175,7 @@ def trade_competition(session: Session, args: list[str]) -> tuple[CompetitionEnt
     is nothing to disambiguate; with several the competition must be given
     rather than guessed.
     """
-    tradeable = [e for e in session.entries if e.supports_trades]
+    tradeable = [e for e in session.entries if e.can(TradeProvider)]
     if args and (chosen := match(tradeable, args[0])) is not None:
         return chosen, args[1:]
 
@@ -174,7 +183,7 @@ def trade_competition(session: Session, args: list[str]) -> tuple[CompetitionEnt
     # Falling through would fold its name into the trade description and price
     # the trade against whichever competition happened to be the only tradeable
     # one — silently, because a description is free text.
-    if args and _not_available(session, args[0], unsupported=TRADES):
+    if args and _not_available(session, args[0], needs=(TradeProvider, TRADES)):
         return None, args
 
     if len(tradeable) == 1:
@@ -187,7 +196,7 @@ def trade_competition(session: Session, args: list[str]) -> tuple[CompetitionEnt
 
 def trade(session: Session, args: list[str]) -> None:
     """Evaluate a trade: `/trade [competition] <description>`."""
-    if not any(e.supports_trades for e in session.entries):
+    if not any(e.can(TradeProvider) for e in session.entries):
         print("  ⚠️  No configured competition supports trade evaluation yet.")
         return
 

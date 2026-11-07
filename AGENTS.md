@@ -89,9 +89,9 @@ Format dates through `competitions/dates.py`; put scripts in `scripts/`.
 **Secrets.** Never commit `.env`, `.yahoofantasy`, or any `.*_cache/`. Read
 config through the `settings` singleton, never `os.getenv` at a call site.
 `config/env_file.py` is the only writer: it accepts only keys `AppSettings`
-declares, and edits line by line so comments survive. A secret's value must never
-leave the process — report presence, never contents. `reload_settings` mutates
-the singleton in place; rebinding strands every module that imported it.
+declares, and edits line by line so comments survive. Secrecy and group are marked
+on the `AppSettings` field, never listed beside it; a secret is reported as present,
+never by value (`EnvFile.describe`). A write reloads `settings` in place.
 
 **UI.** The API returns the domain models themselves — never a parallel response
 type for something `domain/models.py` already models. Routes take every collaborator
