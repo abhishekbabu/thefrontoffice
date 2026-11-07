@@ -4,12 +4,11 @@ The engine knows nothing about a platform: it parses, asks a provider to price
 the trade, and structures the answer.
 """
 
-from typing import Any
-
 import pytest
 from support.ai import FakeAI, FakeChat
 from support.reports import MOCK_NBA_VERDICT
 
+from thefrontoffice.application import briefing
 from thefrontoffice.application.formats import TradeAnswer, TradeSides
 from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.domain.errors import AIQuotaError, PlayerNotFoundError, TradeParseError
@@ -31,7 +30,7 @@ class FakeTradeProvider:
         return CompetitionContext(prompt=prompt, situation="matchup")
 
 
-def _engine(provider: Any = None, ai: Any = None) -> TradeEngine:
+def _engine(provider: FakeTradeProvider | None = None, ai: FakeAI | None = None) -> TradeEngine:
     return TradeEngine(provider or FakeTradeProvider(), ai=ai or FakeAI())
 
 
@@ -75,6 +74,20 @@ def test_the_model_is_asked_about_this_leagues_parsed_trade() -> None:
     ai = FakeAI(proposal=TradeProposal(giving=["A"], receiving=["B"]))
     _engine(ai=ai).evaluate("L7", "x")
     assert ai.chat.sent == ["L7: A for B"]
+
+
+def test_the_follow_up_chat_opens_on_a_briefing_not_the_prompt() -> None:
+    """The history is resent every turn; the prompt that produced the verdict is not worth resending."""
+    ai = FakeAI(proposal=TradeProposal(giving=["A"], receiving=["B"]))
+    _engine(ai=ai).evaluate("L7", "x")
+
+    seeded = [part for turn in ai.history for part in turn["parts"]]
+    assert "L7: A for B" not in seeded
+    assert seeded[0] == briefing.of_trade(
+        CompetitionContext(prompt="", situation="matchup"), TradeProposal(giving=["A"], receiving=["B"])
+    )
+    assert seeded[1] == ai.chat.reply
+    assert ai.search_enabled is True
 
 
 def test_a_provider_failure_propagates_as_a_domain_error() -> None:
