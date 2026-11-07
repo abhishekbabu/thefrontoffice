@@ -7,9 +7,8 @@ registry entry does it only once a competition has actually been chosen.
 
 from pydantic import BaseModel
 
-from thefrontoffice.adapters.inbound.remedies import Remedy, remedy
+from thefrontoffice.adapters.inbound.remedies import ErrorBody
 from thefrontoffice.bootstrap import CompetitionEntry
-from thefrontoffice.domain.errors import ErrorCode, FrontOfficeError, NotConfiguredError
 from thefrontoffice.domain.ports import OutlookProvider, TradeMarketProvider, WireProvider
 
 
@@ -48,26 +47,17 @@ class Competition(BaseModel):
     ready: bool
     """Whether it can actually be used. Configured is necessary, not sufficient."""
 
-    blocked_reason: str = ""
-    blocked_code: ErrorCode | None = None
-    blocked_remedy: Remedy | None = None
-    """What stands in the way, and what the client can offer to do about it."""
+    blocked: ErrorBody | None = None
+    """What stands in the way, as any failure is reported, so the client offers the same remedy."""
 
 
 def competition(entry: CompetitionEntry) -> Competition:
     """An entry as the picker sees it, including why it cannot be opened.
 
     Offering something that will only fail on the next click is worse than
-    greying it out and saying what is missing. An unconfigured entry is never
-    probed: its readiness check may look for a token it has no reason to have.
+    greying it out and saying what is missing.
     """
-    configured = entry.is_configured()
-    blocked: FrontOfficeError | None = None if configured else NotConfiguredError(entry.label, entry.requires)
-    if configured:
-        try:
-            entry.check_ready()
-        except FrontOfficeError as e:
-            blocked = e
+    blocker = entry.blocker()
     return Competition(
         key=entry.key,
         sport=entry.sport,
@@ -78,10 +68,8 @@ def competition(entry: CompetitionEntry) -> Competition:
         judges_wire=entry.can(WireProvider),
         plans_weeks=entry.can(OutlookProvider),
         finds_trades=entry.can(TradeMarketProvider),
-        configured=configured,
+        configured=entry.is_configured(),
         requires=entry.requires,
-        ready=blocked is None,
-        blocked_reason=str(blocked or ""),
-        blocked_code=blocked.code if blocked else None,
-        blocked_remedy=remedy(blocked) if blocked else None,
+        ready=blocker is None,
+        blocked=ErrorBody.of(blocker) if blocker else None,
     )

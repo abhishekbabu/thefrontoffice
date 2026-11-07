@@ -169,10 +169,25 @@ class AppSettings(BaseSettings):
         return v.upper() if isinstance(v, str) else v
 
 
+def _union(field: str) -> tuple[object, ...]:
+    """The members of a setting's annotation: itself alone unless it is a union."""
+    annotation = AppSettings.model_fields[field].annotation
+    return get_args(annotation) if get_origin(annotation) in (Union, types.UnionType) else (annotation,)
+
+
 def optional(field: str) -> bool:
     """Whether a setting may be absent: its annotation admits None."""
-    annotation = AppSettings.model_fields[field].annotation
-    return get_origin(annotation) in (Union, types.UnionType) and type(None) in get_args(annotation)
+    return type(None) in _union(field)
+
+
+def value_type(field: str) -> object:
+    """What kind of value a setting holds, with `| None` taken off.
+
+    Optionality is whether a value is required, not what kind of value it is.
+    A union of several real types is returned whole.
+    """
+    real = [member for member in _union(field) if member is not type(None)]
+    return real[0] if len(real) == 1 else AppSettings.model_fields[field].annotation
 
 
 def env_var(field: str) -> str:

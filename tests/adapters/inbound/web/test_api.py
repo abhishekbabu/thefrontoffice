@@ -334,11 +334,27 @@ def test_a_thread_must_name_what_it_is_about(client: TestClient) -> None:
     assert response.status_code == 422
 
 
-def test_an_expired_conversation_says_so(client: TestClient) -> None:
-    """Chats live in memory, so a restart loses them. Better said than answered blankly."""
-    response = client.post("/api/chat/does-not-exist", json={"message": "Hi"})
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_an_expired_conversation_says_so_with_a_code_the_page_can_act_on(client: TestClient, method: str) -> None:
+    """Chats live in memory, so a restart loses them. The page kept the old id
+    and was stuck on it: the code is what tells it to open a fresh one."""
+    response = client.request(method.upper(), "/api/chat/does-not-exist", json={"message": "Hi"})
 
-    assert response.status_code == 404
+    assert (response.status_code, response.json()["code"]) == (404, "chat_expired")
+
+
+def test_a_reopened_conversation_reads_back_what_was_said() -> None:
+    """The server carries the conversation on, so a page reopened on it shows it rather than a blank."""
+    client = _client(ai=FakeAI(chat=FakeChat(reply="Because he has no fixture.")))
+    chat_id = _opened(client).json()["chat_id"]
+    client.post(f"/api/chat/{chat_id}", json={"message": "Why bench him?"})
+
+    turns = client.get(f"/api/chat/{chat_id}").json()
+
+    assert [(t["role"], t["text"]) for t in turns] == [
+        ("you", "Why bench him?"),
+        ("model", "Because he has no fixture."),
+    ]
 
 
 def test_a_model_failure_is_a_bad_gateway_not_a_crash() -> None:
@@ -346,7 +362,8 @@ def test_a_model_failure_is_a_bad_gateway_not_a_crash() -> None:
 
     response = client.post(f"/api/chat/{_opened(client).json()['chat_id']}", json={"message": "Why?"})
 
-    assert response.status_code == 502
+    assert (response.status_code, response.json()["code"]) == (502, "ai_failed")
+    assert "quota exhausted" not in response.json()["detail"]  # a vendor's repr belongs in the log
 
 
 def test_a_follow_up_every_model_refused_says_why() -> None:
@@ -365,7 +382,10 @@ def test_a_follow_up_every_model_refused_says_why() -> None:
 def test_an_empty_follow_up_is_rejected(client: TestClient) -> None:
     chat_id = _opened(client).json()["chat_id"]
 
-    assert client.post(f"/api/chat/{chat_id}", json={"message": ""}).status_code == 422
+    response = client.post(f"/api/chat/{chat_id}", json={"message": ""})
+
+    assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+    assert isinstance(response.json()["detail"], str)  # one sentence, not FastAPI's field list
 
 
 # ── serving the built UI ────────────────────────────────────────────────
@@ -406,8 +426,18 @@ def test_an_unknown_api_path_is_a_404_not_the_page(built_client: TestClient) -> 
     """Otherwise a renamed or misspelled route answers 200 with HTML, and the
     caller fails on JSON that will not parse instead of on the missing route."""
     response = built_client.get("/api/does-not-exist")
-    assert response.status_code == 404
-    assert "text/html" not in response.headers["content-type"]
+    assert (response.status_code, response.json()["code"]) == (404, "not_found")
+
+
+def test_a_route_that_does_not_exist_carries_a_code_like_any_failure(client: TestClient) -> None:
+    """Without the page built, the router answers itself — in the same shape."""
+    response = client.get("/api/does-not-exist")
+    assert (response.status_code, response.json()["code"]) == (404, "not_found")
+
+
+def test_a_platform_with_no_login_is_a_404_with_its_code(client: TestClient) -> None:
+    response = client.post("/api/cricket/login")
+    assert (response.status_code, response.json()["code"]) == (404, "not_found")
 
 
 # ── settings ────────────────────────────────────────────────────────────
@@ -473,8 +503,18 @@ def test_saving_writes_the_value_and_returns_the_new_state(settings_client: Test
 def test_a_key_no_setting_reads_is_refused_with_its_name(settings_client: TestClient) -> None:
     response = settings_client.put("/api/settings", json={"values": {"GOOGLE_APIKEY": "oops"}})
 
-    assert response.status_code == 400
+    assert (response.status_code, response.json()["code"]) == (400, "unknown_setting")
     assert "GOOGLE_APIKEY" in response.json()["detail"]
+
+
+def test_an_env_that_cannot_be_written_is_a_server_fault_that_says_so(tmp_path: Path) -> None:
+    """A directory where the file should be: nothing the request did wrong."""
+    path = tmp_path / ".env"
+    path.mkdir()
+
+    response = _settings_client(path).put("/api/settings", json={"values": {"FPL_ENTRY_ID": "4242"}})
+
+    assert (response.status_code, response.json()["code"]) == (500, "settings_unwritable")
 
 
 def test_a_shell_variable_is_reported_so_a_futile_edit_is_visible(
@@ -847,7 +887,7 @@ def test_a_platform_that_is_down_is_a_503_that_says_so() -> None:
     from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLUnavailableError
     from thefrontoffice.domain.errors import PlatformUnavailableError
 
-    client = _client(FakeProvider(FPLUnavailableError("FPL", "it answered 503")))
+    client = _client(FakeProvider(FPLUnavailableError("it answered 503")))
 
     response = client.get("/api/premier-league-fpl/leagues")
 

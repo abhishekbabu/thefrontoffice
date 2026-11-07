@@ -66,7 +66,7 @@ def translate(error: Exception) -> FrontOfficeError:
         return YahooAuthError()
     down = outage(error)
     if down:
-        return YahooUnavailableError("Yahoo", down)
+        return YahooUnavailableError(down)
     return YahooAPIError(f"Yahoo request failed: {error}")
 
 

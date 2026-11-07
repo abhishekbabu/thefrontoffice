@@ -6,6 +6,7 @@ import pytest
 from support.ai import FakeAI
 from support.wiring import LEAGUE, FakeCompetition, entry, wiring
 
+from thefrontoffice.adapters.inbound import remedies
 from thefrontoffice.adapters.inbound.cli import commands
 from thefrontoffice.adapters.inbound.cli.session import Session
 from thefrontoffice.bootstrap import CompetitionEntry
@@ -65,7 +66,7 @@ def _fpl(**kw: Any) -> CompetitionEntry:
 
 
 def _session(*entries: CompetitionEntry, ai: FakeAI | None = None) -> Session:
-    return Session(wiring(*entries, ai=ai or FakeAI()))
+    return Session(wiring(*entries, ai=ai or FakeAI()), read=lambda _: "")
 
 
 # ── which competitions a command runs for ───────────────────────────────
@@ -93,7 +94,9 @@ def test_an_unknown_competition_resolves_to_nothing(capsys: pytest.CaptureFixtur
 def test_an_unconfigured_competition_names_what_to_set(capsys: pytest.CaptureFixture[str]) -> None:
     """Asking for one you have no credentials for must explain, not crash."""
     assert commands.resolve(_session(_nfl(), _nba(configured=False)), ["nba"]) == []
-    assert "YAHOO_CLIENT_ID" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "YAHOO_CLIENT_ID" in out
+    assert remedies.REMEDIES["not_configured"].command in out  # the remedy is printed, not dropped
 
 
 # ── help ────────────────────────────────────────────────────────────────

@@ -77,9 +77,9 @@ def _not_available(session: Session, token: str, needs: tuple[type[object], str]
     except FrontOfficeError:
         return False
     if needs is not None and not known.can(needs[0]):
-        print(f"  ⚠️  {UnsupportedError(known.label, needs[1])}")
+        print_error(UnsupportedError(known.label, needs[1]))
     else:
-        print(f"  ⚠️  {NotConfiguredError(known.label, known.requires)}")
+        print_error(NotConfiguredError(known.label, known.requires))
     return True
 
 
@@ -124,7 +124,7 @@ def scout(session: Session, args: list[str]) -> None:
                 print_error(e)
                 continue
             print("\n" + render_scout_report(report))
-            output.follow_up(chat, "report")
+            output.follow_up(chat, "report", read=session.read)
 
 
 def week(session: Session, args: list[str]) -> None:
@@ -226,4 +226,4 @@ def trade(session: Session, args: list[str]) -> None:
             print_error(e)
             continue
         print("\n" + render_trade_verdict(verdict))
-        output.follow_up(chat, "trade")
+        output.follow_up(chat, "trade", read=session.read)

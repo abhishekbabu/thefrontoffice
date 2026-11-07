@@ -18,7 +18,8 @@ export type Action = Schemas["Action"];
 export type ActivityRow = Schemas["ActivityRow"];
 export type Capabilities = Schemas["Capabilities"];
 export type Competition = Schemas["Competition"];
-export type ErrorCode = Schemas["ErrorBody"]["code"];
+export type ErrorBody = Schemas["ErrorBody"];
+export type ErrorCode = ErrorBody["code"];
 export type ItemDecision = Schemas["ItemDecision"];
 export type League = Schemas["LeagueRef"];
 export type LeagueSchedule = Schemas["LeagueSchedule"];
@@ -44,6 +45,7 @@ export type Swap = Schemas["Swap"];
 export type TaskVerdict = Schemas["TaskVerdict"];
 export type TeamRef = Schemas["TeamRef"];
 export type TradeIdea = Schemas["TradeIdea"];
+export type Turn = Schemas["Turn"];
 export type Urgency = Action["urgency"];
 export type WeekAhead = Schemas["WeekAhead"];
 
@@ -60,29 +62,33 @@ export type FreeAgentQuery = NonNullable<operations["free_agents"]["parameters"]
  * server's to say: the page renders the remedy rather than deciding one.
  */
 export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly code: ErrorCode = "error",
-    readonly remedy: Remedy | null = null,
-  ) {
-    super(message);
+  readonly code: ErrorCode;
+  readonly remedy: Remedy | null;
+
+  constructor({ detail, code, remedy }: ErrorBody) {
+    super(detail);
+    this.code = code;
+    this.remedy = remedy;
   }
 }
 
-/** FastAPI's own validation failure: one entry per field it refused. */
-type Refusal = { msg: string };
+/** Whether `error` is the server saying it no longer holds a conversation: it restarted since it was opened. */
+export function isExpired(error: unknown): boolean {
+  return error instanceof ApiError && error.code === "chat_expired";
+}
+
+function isErrorBody(body: unknown): body is ErrorBody {
+  return typeof body === "object" && body !== null && "detail" in body && "code" in body;
+}
 
 /**
- * The sentence a failed response carries.
+ * The failure a response carries.
  *
- * Every expected failure carries `detail` written for a person. A request the
- * server refused as malformed carries a list instead, one entry per field;
- * anything with neither is a genuine fault and gets the status line.
+ * The server sends every failure as an `ErrorBody`. A response without one
+ * never reached it — a proxy with the server down — and says so by its status.
  */
-export function failureMessage(detail: unknown, status: string): string {
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) return detail.map((refusal: Refusal) => refusal.msg).join("; ");
-  return status;
+export function failure(body: unknown, status: string): ApiError {
+  return new ApiError(isErrorBody(body) ? body : { detail: `The server did not answer (${status}).`, code: "error", remedy: null });
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -91,9 +97,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "content-type": "application/json", ...init?.headers },
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    const status = `${response.status} ${response.statusText}`;
-    throw new ApiError(failureMessage(body?.detail, status), body?.code ?? "error", body?.remedy ?? null);
+    throw failure(await response.json().catch(() => null), `${response.status} ${response.statusText}`);
   }
   return response.json() as Promise<T>;
 }
@@ -144,6 +148,8 @@ export const api = {
   capabilities: () => request<Ok<"capabilities">>("/api/capabilities"),
   leagues: (competition: string) => request<Ok<"list_leagues">>(`/api/${segment(competition)}/leagues`),
   league: leagueApi,
+  /** What has been said in a conversation: the server keeps it, so a reopened chat shows it. */
+  turns: (chatId: string) => request<Ok<"turns">>(`/api/chat/${segment(chatId)}`),
   ask: (chatId: string, message: string) => post<Ok<"ask">>(`/api/chat/${segment(chatId)}`, { message }),
   settings: () => request<Ok<"read_settings">>("/api/settings"),
   saveSettings: (values: Record<string, string>) => put<Ok<"save_settings">>("/api/settings", { values }),

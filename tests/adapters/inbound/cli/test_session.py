@@ -1,4 +1,4 @@
-"""Tests for a CLI session: which competitions it runs over, and building each provider once."""
+"""Tests for a CLI session: which competitions it runs over, and a provider built per command."""
 
 import pytest
 from support.wiring import FakeCompetition, entry, wiring
@@ -7,8 +7,9 @@ from thefrontoffice.adapters.inbound.cli.session import Session
 from thefrontoffice.domain.errors import NotConfiguredError
 
 
-def test_a_provider_is_built_once_per_session() -> None:
-    """Building the NBA provider opens an OAuth flow; twice would be twice."""
+def test_each_command_gets_a_provider_of_its_own() -> None:
+    """A provider holds the week it gathered; kept for the session, a waiver run
+    later the REPL would still be answering from the week before it."""
     built: list[int] = []
     nfl = entry(FakeCompetition(), built=built)
     session = Session(wiring(nfl))
@@ -16,7 +17,7 @@ def test_a_provider_is_built_once_per_session() -> None:
     session.provider(nfl)
     session.provider(nfl)
 
-    assert built == [1]
+    assert built == [1, 1]
 
 
 def test_a_session_runs_over_the_configured_competitions_only() -> None:

@@ -22,6 +22,11 @@ ErrorCode = Literal[
     "ai_failed",
     "login_required",
     "access_not_approved",
+    "chat_expired",
+    "not_found",
+    "invalid_request",
+    "unknown_setting",
+    "settings_unwritable",
 ]
 """Every condition an inbound adapter can tell apart, and so offer a remedy for.
 
@@ -62,6 +67,7 @@ class PlatformError(FrontOfficeError):
     """
 
     platform: str = "the platform"
+    """The platform's name as people say it: 'Yahoo'. Each platform's subclass sets it once."""
 
 
 class PlatformUnavailableError(PlatformError):
@@ -76,12 +82,11 @@ class PlatformUnavailableError(PlatformError):
 
     code = "platform_unavailable"
 
-    def __init__(self, platform: str, detail: str) -> None:
+    def __init__(self, detail: str) -> None:
         super().__init__(
-            f"{platform} is not responding right now ({detail}). That is on {platform}'s side, "
+            f"{self.platform} is not responding right now ({detail}). That is on {self.platform}'s side, "
             "not this app's; it usually passes within a few minutes."
         )
-        self.platform = platform
 
 
 class UnknownCompetitionError(FrontOfficeError):
@@ -168,8 +173,8 @@ class LoginRequiredError(FrontOfficeError):
     """
 
     code = "login_required"
-    platform: str = ""
-    """The registry's name for the platform to log in to: 'yahoo'."""
+    login: str = ""
+    """The registry's name for the platform to log in to: 'yahoo' — a key, not a name to show."""
 
 
 class AIUnavailableError(FrontOfficeError):
@@ -229,3 +234,49 @@ class AIResponseError(FrontOfficeError):
 
     def __init__(self, detail: str = "") -> None:
         super().__init__(detail or "The model did not return a usable answer. Try again.")
+
+
+class ChatExpiredError(FrontOfficeError):
+    """A conversation this process no longer holds: the server restarted since it was opened."""
+
+    code = "chat_expired"
+
+    def __init__(self) -> None:
+        super().__init__("That conversation has expired — the server restarted since it was opened.")
+
+
+class NotFoundError(FrontOfficeError):
+    """Nothing answers to the name asked for: a route, or a platform that has no login."""
+
+    code = "not_found"
+
+    def __init__(self, what: str) -> None:
+        super().__init__(f"Nothing answers to {what}.")
+
+
+class InvalidRequestError(FrontOfficeError):
+    """A request refused before anything ran, one reason per field it got wrong."""
+
+    code = "invalid_request"
+
+    def __init__(self, reasons: Sequence[str]) -> None:
+        super().__init__("; ".join(reasons) or "The request was malformed.")
+
+
+class UnknownSettingError(FrontOfficeError):
+    """A key no setting reads. Writing it would be a silent no-op."""
+
+    code = "unknown_setting"
+
+    def __init__(self, keys: Sequence[str]) -> None:
+        super().__init__(f"No setting reads {', '.join(sorted(keys))}.")
+        self.keys = list(keys)
+
+
+class SettingsUnwritableError(FrontOfficeError):
+    """The configuration file could not be written, so nothing was saved."""
+
+    code = "settings_unwritable"
+
+    def __init__(self, path: str, detail: str) -> None:
+        super().__init__(f"Could not write {path}: {detail}")

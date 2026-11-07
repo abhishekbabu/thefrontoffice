@@ -66,5 +66,17 @@ REMEDIES: dict[ErrorCode, Remedy] = {
 def remedy(error: FrontOfficeError) -> Remedy | None:
     """The remedy for `error`, or None where there is nothing to offer but the message."""
     if isinstance(error, LoginRequiredError):
-        return LOGINS.get(error.platform)
+        return LOGINS.get(error.login)
     return REMEDIES.get(error.code)
+
+
+class ErrorBody(BaseModel):
+    """A failure as every inbound adapter reports it: what went wrong, which condition, and what can be done."""
+
+    detail: str
+    code: ErrorCode
+    remedy: Remedy | None = None
+
+    @classmethod
+    def of(cls, error: FrontOfficeError) -> ErrorBody:
+        return cls(detail=str(error), code=error.code, remedy=remedy(error))

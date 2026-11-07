@@ -96,7 +96,7 @@ def test_a_roster_failure_fails_the_evaluation_rather_than_judging_without_it() 
     yahoo = FakeYahoo(
         search_results={n: [make_player(n)] for n in ("LeBron James", "Jayson Tatum")},
         roster=[make_player("Existing Starter")],
-        roster_error=YahooUnavailableError("Yahoo", "yahoo hiccup"),
+        roster_error=YahooUnavailableError("yahoo hiccup"),
     )
 
     with pytest.raises(YahooUnavailableError):

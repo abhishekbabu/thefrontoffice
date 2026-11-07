@@ -12,6 +12,7 @@ import pytest
 from thefrontoffice.config import env_file
 from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import AppSettings
+from thefrontoffice.domain.errors import UnknownSettingError
 
 TEMPLATE = """# Yahoo credentials
 YAHOO_CLIENT_ID=abc
@@ -90,13 +91,13 @@ def test_an_untouched_key_keeps_its_value(env: EnvFile) -> None:
 
 def test_a_key_no_setting_reads_is_refused(env: EnvFile) -> None:
     """A line nothing picks up looks saved and changes nothing."""
-    with pytest.raises(env_file.UnknownSettingError, match="GOOGLE_APIKEY"):
+    with pytest.raises(UnknownSettingError, match="GOOGLE_APIKEY"):
         env.write_values({"GOOGLE_APIKEY": "oops"})
 
 
 def test_a_refused_write_leaves_the_file_alone(env: EnvFile) -> None:
     before = env.path.read_text(encoding="utf-8")
-    with pytest.raises(env_file.UnknownSettingError):
+    with pytest.raises(UnknownSettingError):
         env.write_values({"SLEEPER_USERNAME": "valid", "NOT_A_SETTING": "x"})
     assert env.path.read_text(encoding="utf-8") == before
 

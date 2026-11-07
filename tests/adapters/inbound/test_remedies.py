@@ -33,7 +33,7 @@ def test_a_platform_with_no_login_to_offer_has_no_remedy() -> None:
     """Better no button than one that starts some other platform's handshake."""
 
     class Elsewhere(LoginRequiredError):
-        platform = "elsewhere"
+        login = "elsewhere"
 
     assert remedies.remedy(Elsewhere()) is None
 

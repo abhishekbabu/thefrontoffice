@@ -1,15 +1,13 @@
 """Terminal output helpers."""
 
 import contextlib
-import logging
 import sys
 from collections.abc import Callable
 
+from thefrontoffice.adapters.inbound.conversation import Conversation
 from thefrontoffice.adapters.inbound.remedies import remedy
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.ports import ChatSession
-
-logger = logging.getLogger(__name__)
 
 
 def configure_console() -> None:
@@ -60,6 +58,7 @@ def follow_up(chat: ChatSession, noun: str, *, read: Callable[[str], str] = inpu
     Args:
         read: what prompts for a line; the terminal's own `input` but in a test.
     """
+    conversation = Conversation(chat)
     print("\n  " + "─" * 60)
     print(f"  💬 Interactive Mode: Ask follow-up questions about this {noun}.")
     print("     Type your question or press Enter to continue.")
@@ -72,19 +71,11 @@ def follow_up(chat: ChatSession, noun: str, *, read: Callable[[str], str] = inpu
                 break
 
             print("  ⏳ Thinking...")
-            response = chat.send_message(user_input)
-            print(f"\n  🤖 {response.text}")
-        except KeyboardInterrupt:
+            print(f"\n  🤖 {conversation.ask(user_input)}")
+        except KeyboardInterrupt, EOFError:
             break
         except FrontOfficeError as e:
-            # Already a sentence, with a remedy the terminal can print.
             print_error(e)
-            break
-        except Exception as e:  # anything the adapters did not translate
-            # Its message is a repr of a vendor's RPC payload; the log is where
-            # that belongs, not the conversation someone is reading.
-            logger.error(f"Follow-up failed: {e}")
-            print("  ❌ The model did not answer. Try asking again.")
             break
 
 
