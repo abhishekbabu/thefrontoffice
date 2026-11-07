@@ -12,6 +12,7 @@ from thefrontoffice.application.answers import Answers
 from thefrontoffice.application.formats import ScoutAnswer, VerdictAnswer
 from thefrontoffice.domain.models import (
     Action,
+    CompetitionContext,
     Move,
     Remembered,
     ScoutReport,
@@ -49,8 +50,7 @@ class ScoutEngine:
         What the week's Judge asks for: its questions go to the row they are
         about, not to a chat about the whole report.
         """
-        context = self.provider.build_context(league_id)
-        return self._judge(league_id, context.prompt, context.headline, context.tasks)
+        return self._judge(league_id, self.provider.build_context(league_id))
 
     def start_analysis(self, league_id: str) -> tuple[ScoutReport, ChatSession]:
         """Produce a validated report and open a chat seeded with it.
@@ -60,7 +60,7 @@ class ScoutEngine:
                 unusable report.
         """
         context = self.provider.build_context(league_id)
-        report = self._judge(league_id, context.prompt, context.headline, context.tasks)
+        report = self._judge(league_id, context)
 
         brief = briefing.of_report(context, report)
         logger.debug(
@@ -74,10 +74,12 @@ class ScoutEngine:
         )
         return report, chat
 
-    def _judge(self, league_id: str, prompt: str, headline: list[Stat], tasks: list[Action]) -> ScoutReport:
-        """The model's report on `prompt`, or the kept one where nothing it read has changed."""
+    def _judge(self, league_id: str, context: CompetitionContext) -> ScoutReport:
+        """The model's report on the week's prompt, or the kept one where nothing it read has changed."""
         scope = scout_scope(self.provider.label, league_id)
-        return self.answers.answer(scope, prompt, ScoutReport, lambda: self._ask(prompt, headline, tasks)).answer
+        return self.answers.answer(
+            scope, context.prompt, ScoutReport, lambda: self._ask(context.prompt, context.headline, context.tasks)
+        ).answer
 
     def _ask(self, prompt: str, headline: list[Stat], tasks: list[Action]) -> ScoutReport:
         answer = self.ai.generate_structured(prompt, ScoutAnswer)
