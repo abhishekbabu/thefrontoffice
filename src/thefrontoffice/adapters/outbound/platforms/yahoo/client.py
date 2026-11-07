@@ -1,8 +1,9 @@
 """Yahoo Fantasy league data: rosters, matchups and player queries."""
 
 import logging
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -11,16 +12,17 @@ from yahoofantasy.api.parse import as_list, from_response_object, get_value, par
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo import oauth
-from thefrontoffice.adapters.outbound.platforms.yahoo.constants import SCOUT_CATEGORIES, STAT_CATEGORIES
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooAPIError,
     YahooAuthError,
     YahooLoginRequiredError,
 )
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
-    MatchupInfo,
+    Matchup,
+    MatchupSide,
     PlayerStat,
     PlayerStatus,
+    RosteredPlayer,
     Timeframe,
 )
 from thefrontoffice.config.settings import settings
@@ -74,13 +76,13 @@ class YahooSource(Protocol):
         ...
 
     def fetch_top_by_stat(
-        self, per_stat: int = 10, sort_type: Timeframe = Timeframe.LAST_WEEK
+        self, stats: Mapping[str, str], per_stat: int = 10, sort_type: Timeframe = Timeframe.LAST_WEEK
     ) -> dict[str, list[Player]]:
-        """Top available players per scoutable category, keyed by category name."""
+        """Top available players for each Yahoo stat id in `stats`, keyed as `stats` keys them."""
         ...
 
-    def get_matchup(self, my_team: Team) -> MatchupInfo:
-        """Fetch the current matchup once, returning both context and dates."""
+    def get_matchup(self, my_team: Team) -> Matchup | None:
+        """This week's head-to-head for `my_team`, or None when it has none this week."""
         ...
 
     def get_user_team(self) -> Team:
@@ -218,14 +220,14 @@ class YahooClient:
         self,
         count: int,
         status: PlayerStatus,
-        sort: PlayerStat | None,
+        sort: PlayerStat | str | None,
         sort_type: Timeframe | None,
         **extra_params: str,
     ) -> tuple[str, str]:
         """Build the Yahoo query string and its persistence key."""
         params: dict[str, str] = {"count": str(count), "status": status.value}
         if sort is not None:
-            params["sort"] = sort.value
+            params["sort"] = str(sort)
         if sort_type is not None:
             params["sort_type"] = sort_type.value
         params.update(extra_params)
@@ -249,16 +251,18 @@ class YahooClient:
 
     def fetch_top_by_stat(
         self,
+        stats: Mapping[str, str],
         per_stat: int = 10,
         sort_type: Timeframe = Timeframe.LAST_WEEK,
     ) -> dict[str, list[Player]]:
-        """Top available players per scoutable category, keyed by category name.
+        """Top available players for each Yahoo stat id in `stats`, keyed as `stats` keys them.
 
-        One request per category in SCOUT_CATEGORIES, run concurrently.
+        One request per stat, run concurrently. Which stats a sport scores is
+        the sport's to say, so the caller names them.
         """
         specs = {
-            stat_name: self._player_query(per_stat, PlayerStatus.ALL_AVAILABLE, stat, sort_type)
-            for stat, stat_name in SCOUT_CATEGORIES.items()
+            stat_name: self._player_query(per_stat, PlayerStatus.ALL_AVAILABLE, stat_id, sort_type)
+            for stat_name, stat_id in stats.items()
         }
 
         cached: dict[str, Any] = {}
@@ -376,59 +380,44 @@ class YahooClient:
         week.sync()
         return week
 
-    def _find_matchup(self, week: Week, my_team: Team) -> Any:
-        for m in week.matchups:
-            if my_team.team_key in (m.team1.team_key, m.team2.team_key):
-                return m
-        return None
+    def get_matchup(self, my_team: Team) -> Matchup | None:
+        """This week's head-to-head for `my_team`, or None when it has none this week.
 
-    def get_matchup(self, my_team: Team) -> MatchupInfo:
-        """Fetch the current matchup once, returning both context and dates."""
+        None is an answer — between seasons, or a week the team does not play.
+
+        Raises:
+            YahooAuthError: the app is not authorized for Fantasy Sports.
+            YahooAPIError: Yahoo could not be reached, or answered unreadably.
+        """
         try:
             week = self._sync_current_week()
             if week is None:
-                return MatchupInfo()
-
-            matchup = self._find_matchup(week, my_team)
-            if matchup is None:
-                return MatchupInfo()
-
-            return MatchupInfo(
-                context=self._render_matchup(matchup, my_team),
-                week_start=str(matchup.week_start),
-                week_end=str(matchup.week_end),
+                return None
+            found = next(
+                (m for m in week.matchups if my_team.team_key in (m.team1.team_key, m.team2.team_key)),
+                None,
             )
+            return self._read_matchup(found, my_team) if found is not None else None
+        except FrontOfficeError:
+            raise
         except Exception as e:
-            logger.warning(f"Could not fetch matchup: {e}")
-            return MatchupInfo()
+            logger.error(f"Could not fetch the matchup: {e}")
+            raise translate(e) from e
 
-    def _render_matchup(self, matchup: Any, my_team: Team) -> str:
-        """Format a matchup into the context block used in AI prompts."""
-        is_team1 = matchup.team1.team_key == my_team.team_key
-        opponent = matchup.team2 if is_team1 else matchup.team1
-
-        teams_data = as_list(matchup.teams.team)
-        my_data = teams_data[0] if is_team1 else teams_data[1]
-        opp_data = teams_data[1] if is_team1 else teams_data[0]
-
-        def get_stats(team_stats_obj: Any) -> dict[str, Any]:
-            return {str(s.stat_id): s.value for s in as_list(team_stats_obj.stats.stat)}
-
-        my_stats = get_stats(my_data.team_stats)
-        opp_stats = get_stats(opp_data.team_stats)
-
-        breakdown = "\nCATEGORY BREAKDOWN (Us vs Opponent):"
-        for stat, cat_name in STAT_CATEGORIES.items():
-            breakdown += f"\n- {cat_name}: {my_stats.get(stat.value, 'N/A')} vs {opp_stats.get(stat.value, 'N/A')}"
-
-        opp_roster: list[Player] = opponent.players()
-        opp_roster_str = ", ".join(f"{p.name.full} ({p.display_position})" for p in opp_roster[:12])
-
-        return (
-            f"\nCURRENT MATCHUP: Playing against {opponent.name}"
-            f"\nMATCHUP SCORE: You {my_data.team_points.total} - {opp_data.team_points.total} Opponent"
-            f"{breakdown}"
-            f"\nOPPONENT KEY PLAYERS: {opp_roster_str}"
+    @staticmethod
+    def _read_matchup(matchup: Any, my_team: Team) -> Matchup:
+        is_first = matchup.team1.team_key == my_team.team_key
+        mine, opponent = (matchup.team1, matchup.team2) if is_first else (matchup.team2, matchup.team1)
+        first, second = as_list(matchup.teams.team)[:2]
+        mine_data, opponent_data = (first, second) if is_first else (second, first)
+        return Matchup(
+            start=_day(matchup.week_start),
+            end=_day(matchup.week_end),
+            mine=_side(mine, mine_data),
+            opponent=_side(opponent, opponent_data),
+            opponent_roster=[
+                RosteredPlayer(name=str(p.name.full), position=str(p.display_position)) for p in opponent.players()
+            ],
         )
 
     def search_players(self, query: str) -> list[Player]:
@@ -472,3 +461,19 @@ class YahooClient:
         except Exception as e:
             logger.error(f"Error searching for player '{query}': {e}")
             raise YahooAPIError(f"Yahoo player search failed for {query!r}: {e}") from e
+
+
+def _side(team: Any, data: Any) -> MatchupSide:
+    return MatchupSide(
+        team_key=str(team.team_key),
+        name=str(team.name),
+        points=str(data.team_points.total),
+        stats={str(s.stat_id): str(s.value) for s in as_list(data.team_stats.stats.stat)},
+    )
+
+
+def _day(value: Any) -> date:
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError as e:
+        raise YahooAPIError(f"Yahoo returned an unreadable matchup date: {value!r}") from e

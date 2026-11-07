@@ -61,14 +61,13 @@ def test_percentages_use_totals_not_an_average_of_ratios() -> None:
             game("A B", "2026-01-07", fgm=0, fga=19),  # 0% on nineteen
         ]
     )
-    assert totals.fg_pct == 0.05
+    assert totals.line["FG%"] == 0.05
 
 
 def test_no_attempts_yields_no_percentage_rather_than_zero() -> None:
     """A player projected zero free throws has no FT%, which is different from 0%."""
     totals = aggregate([game("A B", "2026-01-05", ftm=0, fta=0)])
-    assert totals.ft_pct is None
-    assert "FT" not in totals.summary()
+    assert "FT%" not in totals.line
 
 
 def test_no_games_is_an_empty_projection() -> None:
@@ -77,16 +76,10 @@ def test_no_games_is_an_empty_projection() -> None:
     assert totals.totals == {}
 
 
-def test_summary_labels_three_pointers_unambiguously() -> None:
-    """ "5" + "3pm" renders as "53pm", which reads as fifty-three."""
-    summary = aggregate([game("A B", "2026-01-05", tpm=5)]).summary()
-    assert "5tpm" in summary
-    assert "53pm" not in summary
-
-
-def test_summary_leads_with_the_game_count() -> None:
-    summary = aggregate([game("A B", "2026-01-05"), game("A B", "2026-01-07")]).summary()
-    assert summary.startswith("2G")
+def test_the_line_carries_counts_as_totals_over_the_period() -> None:
+    """A category league is won on totals, so a projection is not averaged per game."""
+    totals = aggregate([game("A B", "2026-01-05", pts=20), game("A B", "2026-01-07", pts=30)])
+    assert totals.line["PTS"] == 50.0
 
 
 # ── the matchup window ──────────────────────────────────────────────────
@@ -117,13 +110,6 @@ def test_window_bounds_are_inclusive() -> None:
 def test_an_unparseable_date_is_excluded() -> None:
     index = ProjectionIndex([game("A B", "not-a-date")], WEEK_START, WEEK_END)
     assert index.is_empty
-
-
-def test_without_a_window_every_game_counts() -> None:
-    index = ProjectionIndex([game("A B", "2026-01-04"), game("A B", "2026-02-20")], None, None)
-    totals = index.lookup("A B")
-    assert totals is not None
-    assert totals.games == 2
 
 
 # ── lookup ──────────────────────────────────────────────────────────────

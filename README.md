@@ -275,7 +275,10 @@ the deadline, the eleven's expected points (with the best eleven's, when the
 bench holds more), the bank and the free transfers; season points, overall rank
 and the mini-league place head League; and **Watch out for** names a club with
 a blank or a double gameweek, which no player row can say. On NBA, the week's
-header is the add budget left, and League is headed by your record and place.
+header is the add budget left, League is headed by your record and place, and
+a player's drawer carries his last fifteen games in all nine categories. A
+trade naming a player only by an ambiguous surname is refused rather than
+priced for whichever player Yahoo listed first.
 
 ![Player detail](docs/screenshots/player.png)
 

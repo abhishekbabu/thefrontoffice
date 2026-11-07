@@ -1,8 +1,7 @@
-"""
-Yahoo Fantasy API type definitions.
-"""
+"""Yahoo Fantasy API type definitions."""
 
 from dataclasses import dataclass
+from datetime import date
 from enum import StrEnum
 
 
@@ -17,22 +16,15 @@ class PlayerStatus(StrEnum):
 
 
 class PlayerStat(StrEnum):
-    """Yahoo API player stat / sort field values."""
+    """Yahoo API sort fields that are not a stat.
+
+    A sport's own stat ids sort too, and belong to that sport's rules.
+    """
 
     OVERALL_RANK = "OR"
     ACTUAL_RANK = "AR"
     FANTASY_POINTS = "PTS"
     NAME = "NAME"
-    # Stat category IDs (sort by individual stat)
-    FG_PCT = "5"
-    FT_PCT = "8"
-    THREE_PTM = "10"
-    POINTS = "12"
-    REBOUNDS = "15"
-    ASSISTS = "16"
-    STEALS = "17"
-    BLOCKS = "18"
-    TURNOVERS = "19"
 
 
 class Timeframe(StrEnum):
@@ -44,14 +36,31 @@ class Timeframe(StrEnum):
     LAST_MONTH = "lastmonth"
 
 
-@dataclass
-class MatchupInfo:
-    """The current matchup, fetched once and used for both context and dates."""
+@dataclass(frozen=True)
+class MatchupSide:
+    """One team's side of a head-to-head week."""
 
-    context: str = ""
-    week_start: str = ""
-    week_end: str = ""
+    team_key: str
+    name: str
+    points: str
+    """Yahoo's score for the side, as it prints it: categories won, in a category league."""
 
-    @property
-    def has_dates(self) -> bool:
-        return bool(self.week_start and self.week_end)
+    stats: dict[str, str]
+    """Yahoo stat id -> the side's value, as Yahoo prints it."""
+
+
+@dataclass(frozen=True)
+class RosteredPlayer:
+    name: str
+    position: str
+
+
+@dataclass(frozen=True)
+class Matchup:
+    """This week's head-to-head, read once for its score, its categories and its dates."""
+
+    start: date
+    end: date
+    mine: MatchupSide
+    opponent: MatchupSide
+    opponent_roster: list[RosteredPlayer]

@@ -5,6 +5,7 @@ strings by hand, so the query shape and the response walk are both ours to get
 right. A fake context stands in for the HTTP layer.
 """
 
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -15,7 +16,6 @@ from support.http import http_error
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
-from thefrontoffice.adapters.outbound.platforms.yahoo.constants import SCOUT_CATEGORIES
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooLoginRequiredError
 from thefrontoffice.domain.errors import TeamNotFoundError
 
@@ -30,6 +30,10 @@ def _identity_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     import thefrontoffice.adapters.outbound.platforms.yahoo.client as mod
 
     monkeypatch.setattr(mod, "parse_response", lambda raw: raw)
+
+
+STATS = {"PTS": "12", "REB": "15", "BLK": "18"}
+"""Three of a sport's stat ids, named the way the caller names them."""
 
 
 def _player_payload(name: str) -> dict[str, Any]:
@@ -122,18 +126,19 @@ def _client(
 # ── fetch_top_by_stat ───────────────────────────────────────────────────
 
 
-def test_one_request_per_scoutable_category() -> None:
+def test_one_request_per_stat_asked_for_keyed_as_asked() -> None:
     client, ctx = _client(_response({"player": [_player_payload("A B")]}))
-    results = client.fetch_top_by_stat(per_stat=4)
-    assert set(results) == set(SCOUT_CATEGORIES.values())
-    assert len(ctx.raw_requests) == len(SCOUT_CATEGORIES)
+    results = client.fetch_top_by_stat(STATS, per_stat=4)
+    assert set(results) == set(STATS)
+    assert len(ctx.raw_requests) == len(STATS)
     assert all("count=4" in q for q in ctx.raw_requests)
+    assert {q.split("sort=")[1].split(";")[0] for q in ctx.raw_requests} == set(STATS.values())
 
 
 def test_category_requests_run_concurrently() -> None:
     """Eight independent queries were the dominant latency in a scout run."""
     client, ctx = _client(_response({"player": [_player_payload("A B")]}))
-    client.fetch_top_by_stat(per_stat=4)
+    client.fetch_top_by_stat(STATS, per_stat=4)
     assert len(ctx.request_threads) > 1, "requests ran on a single thread"
 
 
@@ -143,16 +148,16 @@ def test_cache_writes_stay_on_one_thread() -> None:
     thread-safe. Only the requests are allowed to fan out."""
     cache = RecordingCache()
     client, _ = _client(_response({"player": [_player_payload("A B")]}), cache=cache)
-    client.fetch_top_by_stat(per_stat=4)
+    client.fetch_top_by_stat(STATS, per_stat=4)
     assert len(cache.write_threads) == 1
-    assert len(cache.written) == len(SCOUT_CATEGORIES)
+    assert len(cache.written) == len(STATS)
 
 
 def test_cached_categories_are_not_refetched() -> None:
     client, ctx = _client(_response({"player": [_player_payload("A B")]}))
-    client.fetch_top_by_stat(per_stat=4)  # populates the fake cache
+    client.fetch_top_by_stat(STATS, per_stat=4)  # populates the fake cache
     before = len(ctx.raw_requests)
-    client.fetch_top_by_stat(per_stat=4)  # second run should be free
+    client.fetch_top_by_stat(STATS, per_stat=4)  # second run should be free
     assert len(ctx.raw_requests) == before
 
 
@@ -168,7 +173,7 @@ def test_unparseable_category_response_raises() -> None:
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(mod, "parse_response", _explode)
         with pytest.raises(YahooAPIError, match="unreadable"):
-            client.fetch_top_by_stat(per_stat=4)
+            client.fetch_top_by_stat(STATS, per_stat=4)
 
 
 def test_a_token_is_refreshed_once_before_the_pool() -> None:
@@ -182,7 +187,7 @@ def test_a_token_is_refreshed_once_before_the_pool() -> None:
         ctx._access_token = "fresh"
 
     ctx._get_access_token = _refresh
-    client.fetch_top_by_stat(per_stat=4)
+    client.fetch_top_by_stat(STATS, per_stat=4)
     assert refreshes == [1]
 
 
@@ -224,7 +229,8 @@ def test_a_failed_scoreboard_refresh_falls_back_to_the_persisted_copy(
 
     ctx._load_or_fetch = _boom
     info = client.get_matchup(_fake_team("t1"))
-    assert info.week_start == "2026-02-09"  # still served from Week.sync
+    assert info is not None
+    assert info.start == date(2026, 2, 9)  # still served from Week.sync
 
 
 def test_unpersistable_response_is_skipped_not_fatal() -> None:
@@ -235,19 +241,14 @@ def test_unpersistable_response_is_skipped_not_fatal() -> None:
             raise OSError("disk full")
 
     client, _ = _client(_response({"player": [_player_payload("A B")]}), cache=FullDisk())
-    results = client.fetch_top_by_stat(per_stat=4)
+    results = client.fetch_top_by_stat(STATS, per_stat=4)
     assert all(len(v) == 1 for v in results.values())
 
 
 def test_a_failing_category_raises_rather_than_silently_returning_none() -> None:
     client, _ = _client(error=RuntimeError("yahoo 500"))
     with pytest.raises(RuntimeError, match="yahoo 500"):
-        client.fetch_top_by_stat(per_stat=4)
-
-
-def test_turnovers_are_not_scouted() -> None:
-    """Leading the league in turnovers is not a reason to add someone."""
-    assert "TO" not in SCOUT_CATEGORIES.values()
+        client.fetch_top_by_stat(STATS, per_stat=4)
 
 
 # ── get_user_team ───────────────────────────────────────────────────────
@@ -415,6 +416,60 @@ def _matchup(my_key: str = "t1") -> Any:
         week_end="2026-02-15",
         teams=SimpleNamespace(team=[_team_data("50", [_stat("18", "12")]), _team_data("60", [_stat("18", "17")])]),
     )
+
+
+def _matchup_client(monkeypatch: pytest.MonkeyPatch, *matchups: Any, week: int | None = 5) -> YahooClient:
+    import thefrontoffice.adapters.outbound.platforms.yahoo.client as mod
+
+    FakeWeek.matchups_to_return = list(matchups)
+    monkeypatch.setattr(mod, "Week", FakeWeek)
+    client, _ = _client(_response(""))
+    client.league.current_week = week
+    return client
+
+
+def test_the_matchup_is_read_into_both_sides_by_stat_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    info = _matchup_client(monkeypatch, _matchup()).get_matchup(_fake_team("t1"))
+
+    assert info is not None
+    assert (info.start, info.end) == (date(2026, 2, 9), date(2026, 2, 15))
+    assert (info.mine.name, info.mine.points, info.mine.stats) == ("Mine", "50", {"18": "12"})
+    assert (info.opponent.name, info.opponent.points, info.opponent.stats) == ("Theirs", "60", {"18": "17"})
+    assert [(p.name, p.position) for p in info.opponent_roster] == [("Star Player", "PG")]
+
+
+def test_the_second_team_listed_still_reads_as_mine(monkeypatch: pytest.MonkeyPatch) -> None:
+    info = _matchup_client(monkeypatch, _matchup()).get_matchup(_fake_team("t2"))
+
+    assert info is not None
+    assert (info.mine.name, info.mine.stats) == ("Theirs", {"18": "17"})
+    assert info.opponent.name == "Mine"
+
+
+def test_no_matchup_this_week_is_an_answer_not_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _matchup_client(monkeypatch, _matchup()).get_matchup(_fake_team("t9")) is None
+    assert _matchup_client(monkeypatch, _matchup(), week=None).get_matchup(_fake_team("t1")) is None
+
+
+def test_a_failed_scoreboard_raises_rather_than_reading_as_no_matchup(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Broken(FakeWeek):
+        def sync(self) -> None:
+            raise requests.ConnectionError("yahoo down")
+
+    import thefrontoffice.adapters.outbound.platforms.yahoo.client as mod
+
+    client = _matchup_client(monkeypatch, _matchup())
+    monkeypatch.setattr(mod, "Week", Broken)
+    with pytest.raises(YahooAPIError):
+        client.get_matchup(_fake_team("t1"))
+
+
+def test_an_unreadable_matchup_date_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    odd = _matchup()
+    odd.week_start = "someday"
+
+    with pytest.raises(YahooAPIError, match="matchup date"):
+        _matchup_client(monkeypatch, odd).get_matchup(_fake_team("t1"))
 
 
 # ── translating transport failures ──────────────────────────────────────
