@@ -19,7 +19,8 @@ half a game to what he has.
 from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
-from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection
+from thefrontoffice.adapters.outbound.competitions.nfl.model import COMPLETE, Projection, kicked_off
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT
 from thefrontoffice.domain.models import Outcomes
 
 
@@ -75,16 +76,7 @@ PASSING_GAME = frozenset({"QB", "WR", "TE"})
 
 # The chance a player plays, by designation. Rough base rates, and the slot a
 # news reading of his situation would replace.
-PLAYS = {
-    "OUT": 0.0,
-    "IR": 0.0,
-    "PUP": 0.0,
-    "SUS": 0.0,
-    "NA": 0.0,
-    "DNR": 0.0,
-    "DOUBTFUL": 0.25,
-    "QUESTIONABLE": 0.8,
-}
+PLAYS = {**dict.fromkeys(RULED_OUT, 0.0), "DOUBTFUL": 0.25, "QUESTIONABLE": 0.8}
 
 
 @dataclass(frozen=True)
@@ -147,11 +139,11 @@ def outcomes(
     `scored` what he has so far, and `left` how much of it is still to
     play — the scoreboard's clock where there is one.
     """
-    if status == "complete":
+    if status == COMPLETE:
         return Outcomes(player.player_id, player.name, player.points, (), floor=scored, remaining=0.0)
     ratios = _blend(spread.own.get(player.player_id, ()), spread.pool.get(player.position, ()), settings.own_half)
     samples = tuple(player.points * r for r in ratios) if ratios else (player.points,)
-    started = bool(status) and status != "pre_game"
+    started = kicked_off(status)
     return Outcomes(
         player_id=player.player_id,
         name=player.name,

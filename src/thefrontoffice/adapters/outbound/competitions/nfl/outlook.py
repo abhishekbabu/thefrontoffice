@@ -10,14 +10,13 @@ and names the free agent who closes most of the gap.
 
 import logging
 import statistics
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
-from thefrontoffice.adapters.outbound.competitions.nfl.actions import join
-from thefrontoffice.adapters.outbound.competitions.nfl.evidence import season_average
+from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item, drop_candidate, join
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, lineup_points
-from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Projection
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import LONG_TERM, SEASON_WEEKS
-from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, games_by_week, lineup_for
+from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, NFLSource, Projection
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import SEASON_WEEKS, long_term
+from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, lineup_for
 from thefrontoffice.domain.models import Action, WeekAhead
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,9 @@ FIXES_TRIED = 40
 """Free agents tried for a short week, best projection first: past that the wire is nobody's start."""
 
 
-def build(client: NFLSource, state: Week, league_id: str, signable: Callable[[str], bool]) -> list[WeekAhead]:
+def build(
+    client: NFLSource, state: Week, schedule: Mapping[int, Sequence[Game]], signable: Callable[[str], bool]
+) -> list[WeekAhead]:
     """Each of the next weeks, soonest first, with a fix for any that is short.
 
     `signable` says whether a player could be added at all — on an NFL roster,
@@ -44,11 +45,7 @@ def build(client: NFLSource, state: Week, league_id: str, signable: Callable[[st
     weeks = list(range(state.week + 1, min(state.week + WEEKS_AHEAD, SEASON_WEEKS) + 1))
     if not weeks:
         return []
-    playing = {
-        week: {club for game in games for club in (game.home, game.away)}
-        for week, games in games_by_week(client, state.season).items()
-    }
-    owned = {pid for roster in client.get_rosters(league_id) for pid in roster.player_ids}
+    playing = {week: {club for game in games for club in (game.home, game.away)} for week, games in schedule.items()}
     held = [pid for pid in state.roster.player_ids if pid not in state.roster.reserve_ids]
     projections = {week: client.get_projections(state.season, week, state.league.scoring_format) for week in weeks}
 
@@ -88,10 +85,10 @@ def build(client: NFLSource, state: Week, league_id: str, signable: Callable[[st
             available = [
                 p
                 for pid, p in projections[week].items()
-                if pid not in owned
+                if pid not in state.owned
                 and p.position in needed
                 and p.opponent
-                and p.injury_status.upper() not in LONG_TERM
+                and not long_term(p.injury_status)
                 and signable(pid)
             ]
             row = _fixed(
@@ -103,7 +100,7 @@ def build(client: NFLSource, state: Week, league_id: str, signable: Callable[[st
 
 def _ruled_out(player_id: str, state: Week) -> bool:
     """Whether his current ruling reaches into the weeks ahead: a long one does; a plain Out is for this week's game."""
-    return str(state.players.get(player_id, {}).get("injury_status") or "").upper() in LONG_TERM
+    return long_term(str(state.players.get(player_id, {}).get("injury_status") or ""))
 
 
 def _why(player_id: str, state: Week, week: int, playing: set[str]) -> str:
@@ -131,22 +128,13 @@ def _fixed(
         return row
     fix = f"Pick up {pick.name} ({pick.position}, {pick.team}): {pick.points:.1f} projected in week {row.week}"
     if len(held) >= state.league.roster_spots:
-        drop = _cheapest(state, held, keep)
+        # Never a regular, nor one who is only away for the week.
+        drop = drop_candidate(state, (p for p in state.projected if p.player_id in held), keep)
         fix += f", drop {drop.name}" if drop else ""
     return row.model_copy(update={"fix": fix, "gain": round(gain, 1)})
 
 
-def _cheapest(state: Week, held: list[str], keep: set[str]) -> Projection | None:
-    """The player it costs least to lose: never a regular, nor one who is only away for the week."""
-    candidates = [
-        p
-        for p in state.projected
-        if p.player_id in held and p.player_id not in keep and p.player_id not in state.evidence.trends
-    ]
-    return min(candidates, key=lambda p: (season_average(state.evidence, p), p.points), default=None)
-
-
-def to_do(ahead: list[WeekAhead], state: Week) -> Action | None:
+def to_do(ahead: list[WeekAhead], state: Week) -> Item | None:
     """Next week, as a to-do item, where byes and injuries leave it short: while a waiver run can still fix it.
 
     Only next week: the weeks after stay on My team, and next week is the one
@@ -162,11 +150,14 @@ def to_do(ahead: list[WeekAhead], state: Week) -> Action | None:
         if week.fix
         else " No free agent at those positions adds two points; a trade may: see My team."
     )
-    return Action(
-        kind="waiver" if week.fix else "trade",
-        urgency="later",
-        title=f"Week {week.week} is short",
-        reason=f"Your best lineup projects {week.points:.1f} against {week.usual:.1f} in a usual week{without}.{fix}",
-        when=f"week {week.week}",
-        key=f"short:{week.week}",
+    return Item(
+        "short",
+        Action(
+            kind="waiver" if week.fix else "trade",
+            urgency="later",
+            title=f"Week {week.week} is short",
+            reason=f"Your best lineup projects {week.points:.1f} against {week.usual:.1f} in a usual week{without}.{fix}",
+            when=f"week {week.week}",
+            key=f"short:{week.week}",
+        ),
     )

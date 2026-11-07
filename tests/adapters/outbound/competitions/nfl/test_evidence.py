@@ -50,12 +50,19 @@ def test_a_game_he_never_took_the_field_in_is_not_part_of_his_role() -> None:
 
 def test_a_kicker_or_a_defense_is_not_given_a_snap_share() -> None:
     """Snaps are recorded for the offense only, and '0% of snaps' would be false."""
-    lines = [game_line("k", w, position="K", pts_ppr=9) for w in (2, 3)]
+    lines = [game_line("k", w, position="K", gp=1, pts_ppr=9) for w in (2, 3)]
 
     role = gather(lines, SCORING).roles["k"]
 
     assert role.snap_share is None
     assert role.describe() == "last 2 games: 9.0 pts"
+
+
+def test_a_kicker_counts_only_the_games_he_played() -> None:
+    """Sleeper files a row for a game he sat out; with no snaps to count, `gp` says whether he played."""
+    lines = [game_line("k", 2, position="K", gp=1, pts_ppr=9), game_line("k", 3, position="K")]
+
+    assert gather(lines, SCORING).games["k"] == (9.0,)
 
 
 def test_points_are_counted_in_the_leagues_own_scoring() -> None:

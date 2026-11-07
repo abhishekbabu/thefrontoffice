@@ -14,7 +14,7 @@ import logging
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
-from typing import Any
+from functools import cached_property
 
 from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
@@ -24,11 +24,13 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Game,
     GameNow,
     LeagueRules,
+    Matchup,
     NFLSource,
     PlayerInfo,
     Projection,
     Team,
     Unprojected,
+    kicked_off,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out
@@ -39,12 +41,6 @@ from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
 from thefrontoffice.domain.errors import PlatformError
 
 logger = logging.getLogger(__name__)
-
-SCORING_LABELS = {
-    "pts_ppr": "Full PPR (1 point per reception)",
-    "pts_half_ppr": "Half PPR (0.5 per reception)",
-    "pts_std": "Standard (no point per reception)",
-}
 
 
 @dataclass(frozen=True)
@@ -97,6 +93,15 @@ class Week:
     best_points: float
     on_bench: float
 
+    rosters: Sequence[Team] = ()
+    """Every team in the league, yours among them, each starting the lineup it set for this week."""
+
+    names: Mapping[str, str] = field(default_factory=dict)
+    """Each manager's name, by owner id."""
+
+    matchups: Sequence[Matchup] = ()
+    """This week's head-to-heads, one entry per team. Empty wherever they would not load."""
+
     is_regular_season: bool = False
     """Whether the season has actually begun. In preseason every season total
     is a nought that has not been earned yet."""
@@ -118,9 +123,83 @@ class Week:
         """
         return any(p.opponent for p in self.projected)
 
-    @property
+    @cached_property
     def starter_ids(self) -> set[str]:
+        """Who your lineup starts, as the solve read it: an ineligible or unknown player fills no slot."""
         return {slot.player.player_id for slot in self.lineup if slot.player}
+
+    @property
+    def bench(self) -> list[Projection]:
+        """Who could come into the lineup: neither starting nor in an injured-reserve or taxi slot."""
+        return [
+            p
+            for p in self.projected
+            if p.player_id not in self.starter_ids and p.player_id not in self.roster.reserve_ids
+        ]
+
+    @cached_property
+    def owned(self) -> set[str]:
+        """Every player on a roster in this league: who is not on the wire."""
+        return {pid for team in self.rosters for pid in team.player_ids}
+
+    @cached_property
+    def matchup(self) -> tuple[Matchup, Matchup] | None:
+        """Your side of this week's head-to-head and your opponent's; None on a bye or an unpaired week."""
+        return opponent_of(self.matchups, self.roster.roster_id)
+
+    @property
+    def opponent(self) -> Team | None:
+        """The team you play this week; None on a bye, an unpaired week, or matchups that would not load."""
+        if self.matchup is None:
+            return None
+        return next((team for team in self.rosters if team.roster_id == self.matchup[1].roster_id), None)
+
+    def team_name(self, team: Team) -> str:
+        return team_name(self.names, team)
+
+
+def team_name(names: Mapping[str, str], team: Team) -> str:
+    """Who manages a team, by name; the team's own number where the league names nobody."""
+    return names.get(team.owner_id, f"Roster {team.roster_id}")
+
+
+def weeks_played(week: int, is_regular_season: bool) -> list[int]:
+    """The weeks finished before this one: none until the regular season is under way.
+
+    The current week is left out even when it is part played: a player whose
+    game is on Monday has a line of noughts until then.
+    """
+    return list(range(1, week)) if is_regular_season else []
+
+
+# ── who plays whom ──────────────────────────────────────────────────────
+
+
+def pairings(matchups: Iterable[Matchup]) -> list[tuple[Matchup, Matchup]]:
+    """A week's head-to-heads, each as its two sides, the lower roster id first.
+
+    A team with nobody to play — a bye, or a pairing with one side missing — is in none.
+    """
+    paired: dict[int, list[Matchup]] = {}
+    for entry in matchups:
+        if entry.matchup_id is not None:
+            paired.setdefault(entry.matchup_id, []).append(entry)
+    return [
+        (first, second)
+        for first, second in (
+            sorted(sides, key=lambda side: side.roster_id) for sides in paired.values() if len(sides) == 2
+        )
+    ]
+
+
+def opponent_of(matchups: Iterable[Matchup], roster_id: int) -> tuple[Matchup, Matchup] | None:
+    """A team's side of the week and its opponent's; None where it plays nobody."""
+    for first, second in pairings(matchups):
+        if first.roster_id == roster_id:
+            return first, second
+        if second.roster_id == roster_id:
+            return second, first
+    return None
 
 
 # ── when the week is played ─────────────────────────────────────────────
@@ -165,22 +244,6 @@ def moment(epoch_ms: int) -> str:
     if not epoch_ms:
         return ""
     return day_month(datetime.fromtimestamp(epoch_ms / 1000, tz=UTC))
-
-
-def games_by_week(client: NFLSource, season: str) -> dict[int, list[Game]]:
-    """The season schedule bucketed by week, or nothing if it will not load.
-
-    Dates are enrichment: a week without them is still a week.
-    """
-    try:
-        games = client.get_season_schedule(season)
-    except PlatformError as e:
-        logger.warning(f"Continuing without schedule dates: {e}")
-        return {}
-    by_week: dict[int, list[Game]] = {}
-    for game in games:
-        by_week.setdefault(game.week, []).append(game)
-    return by_week
 
 
 # ── projections ─────────────────────────────────────────────────────────
@@ -231,6 +294,13 @@ def projection_for(
     return zero_projection(player_id, meta) if meta else None
 
 
+def projections_for(
+    player_ids: Iterable[str], projections: Mapping[str, Projection], players: Mapping[str, PlayerInfo]
+) -> list[Projection]:
+    """These players' projections, in their order; one nobody has heard of is left out."""
+    return [p for p in (projection_for(pid, projections, players) for pid in player_ids) if p]
+
+
 QUARTER = 15 * 60
 """Seconds in an NFL quarter; four of them make regulation."""
 
@@ -260,23 +330,7 @@ def lineup_for(state: Week, player_ids: Iterable[str], projections: Mapping[str,
     season simulation, the weeks ahead and the trade search all ask it, for
     weeks and rosters the week itself does not hold.
     """
-    players = [p for p in (projection_for(pid, projections, state.players) for pid in player_ids) if p]
-    return optimal_lineup(state.league.starting_slots, players)
-
-
-def opponent_entry(state: Week, matchups: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """The other side of your matchup this week, as Sleeper lists it; None on a bye or an unpaired week."""
-    mine = next((m for m in matchups if m.get("roster_id") == state.roster.roster_id), None)
-    if not mine or mine.get("matchup_id") is None:
-        return None
-    return next(
-        (
-            m
-            for m in matchups
-            if m.get("matchup_id") == mine.get("matchup_id") and m.get("roster_id") != state.roster.roster_id
-        ),
-        None,
-    )
+    return optimal_lineup(state.league.starting_slots, projections_for(player_ids, projections, state.players))
 
 
 # ── the week as it is being played ──────────────────────────────────────
@@ -286,31 +340,62 @@ SCOREBOARD_STATUS = {"pre": "pre_game", "in": "in_game", "post": "complete"}
 
 
 class Scoreboard:
-    """Which games have kicked off, how far they are, and what has been scored: the week while it is played.
+    """The season's real games, and this week's as they are played: which have kicked off, how far, what is scored.
 
     Sleeper's season schedule says which games have started, but it is a
     season-long file cached for hours, and it carries no clock. ESPN's
-    scoreboard is a minute old at most and says where each game is. Read once
-    per week per request, and shared by everything that asks.
+    scoreboard is a minute old at most and says where each game is. Each is
+    read once per request, and shared by everything that asks.
     """
 
     def __init__(self, client: NFLSource, espn: ESPNSource):
         self.client = client
         self.espn = espn
+        self._schedules: dict[str, dict[int, list[Game]]] = {}
         self._boards: dict[int, dict[str, ScoreboardGame]] = {}
+        self._games: dict[tuple[str, int], dict[int, list[Game]]] = {}
 
-    def games(self, state: Week) -> dict[int, list[Game]]:
+    def schedule(self, season: str) -> Mapping[int, Sequence[Game]]:
+        """The season's games bucketed by week, as the season's file has them; empty if it will not load.
+
+        Dates are enrichment: a week without them is still a week.
+        """
+        if season not in self._schedules:
+            try:
+                games = self.client.get_season_schedule(season)
+            except PlatformError as e:
+                logger.warning(f"Continuing without schedule dates: {e}")
+                games = []
+            by_week: dict[int, list[Game]] = {}
+            for game in games:
+                by_week.setdefault(game.week, []).append(game)
+            self._schedules[season] = by_week
+        return self._schedules[season]
+
+    def games(self, state: Week) -> Mapping[int, Sequence[Game]]:
         """The season's games, with this week's status read off the live scoreboard where it answers."""
-        games = games_by_week(self.client, state.season)
-        board = self.board(state)
-        if board and state.week in games:
-            games[state.week] = [
-                GameNow.of(game, SCOREBOARD_STATUS.get(board[game.home].state, game.status))
-                if game.home in board
-                else game
-                for game in games[state.week]
-            ]
-        return games
+        key = (state.season, state.week)
+        if key not in self._games:
+            games = {week: list(each) for week, each in self.schedule(state.season).items()}
+            board = self.board(state)
+            if board and state.week in games:
+                games[state.week] = [
+                    GameNow.of(game, SCOREBOARD_STATUS.get(board[game.home].state, game.status))
+                    if game.home in board
+                    else game
+                    for game in games[state.week]
+                ]
+            self._games[key] = games
+        return self._games[key]
+
+    def started(self, state: Week) -> set[str]:
+        """Clubs whose game this week has kicked off: their players are locked in or out."""
+        return {
+            club
+            for game in self.games(state).get(state.week, [])
+            if kicked_off(game.status)
+            for club in (game.home, game.away)
+        }
 
     def board(self, state: Week) -> dict[str, ScoreboardGame]:
         """This week's games as they stand, keyed by each of the two clubs in Sleeper's abbreviations."""
@@ -324,29 +409,14 @@ class Scoreboard:
             by_pair = {(game.home, game.away): game for game in board}
             self._boards[state.week] = {
                 club: by_pair[pair]
-                for game in games_by_week(self.client, state.season).get(state.week, [])
+                for game in self.schedule(state.season).get(state.week, [])
                 if (pair := (espn_club(game.home), espn_club(game.away))) in by_pair
                 for club in (game.home, game.away)
             }
         return self._boards[state.week]
 
-    def live(self, state: Week, league_id: str) -> Live:
+    def live(self, state: Week) -> Live:
         """What has actually been scored, whose clubs have kicked off, and where their games are."""
-        started = {
-            club
-            for game in self.games(state).get(state.week, [])
-            if game.status and game.status != "pre_game"
-            for club in (game.home, game.away)
-        }
         clock = {club: game.label for club, game in self.board(state).items() if game.state == "in" and game.label}
-        try:
-            matchups = self.client.get_matchups(league_id, state.week)
-        except PlatformError as e:
-            logger.warning(f"Continuing without live scores: {e}")
-            return Live(started=started, points={}, clock=clock)
-
-        points: dict[str, float] = {}
-        for entry in matchups:
-            for player_id, scored in (entry.get("players_points") or {}).items():
-                points[str(player_id)] = float(scored or 0)
-        return Live(started=started, points=points, clock=clock)
+        points = {pid: scored for entry in state.matchups for pid, scored in entry.players_points.items()}
+        return Live(started=self.started(state), points=points, clock=clock)

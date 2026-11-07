@@ -1,11 +1,19 @@
 """Tests for the Sleeper provider's trade context."""
 
+from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
+from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeESPN, FakeSleeper, nfl_provider, proj
 
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NFLGameLine, SleeperRoster
+from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
+    NFLGameLine,
+    PlayerMeta,
+    SleeperMatchup,
+    SleeperRoster,
+)
 from thefrontoffice.domain.errors import PlayerNotFoundError
 from thefrontoffice.domain.models import TradeProposal
 
@@ -72,8 +80,8 @@ def test_the_current_roster_is_included() -> None:
 def test_the_matchup_is_carried_as_the_situation() -> None:
     client = _client(
         matchups=[
-            {"roster_id": 1, "matchup_id": 7, "points": 60.2},
-            {"roster_id": 2, "matchup_id": 7, "points": 71.8},
+            SleeperMatchup(roster_id=1, matchup_id=7, points=60.2),
+            SleeperMatchup(roster_id=2, matchup_id=7, points=71.8),
         ],
         rosters=[
             SleeperRoster(roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1"]),
@@ -97,3 +105,37 @@ def test_both_sides_of_a_trade_are_priced_on_their_role_too() -> None:
     context = _context(["Bad RB"], ["Trade Target"], client=_client(game_lines=[line]))
 
     assert "90% of snaps" in context.prompt
+
+
+# ── designations ────────────────────────────────────────────────────────
+
+
+def _reported(name: str, team: str, status: str) -> FakeESPN:
+    """ESPN's injury report, naming one player."""
+    report = InjuryReport(name=name, club=team, status=status, updated=datetime(2026, 9, 22, tzinfo=UTC))
+    return FakeESPN(injuries=[report])
+
+
+def test_a_player_traded_for_carries_the_designation_the_latest_injury_report_gives_him() -> None:
+    """Sleeper still lists him healthy; ESPN's report, which every other view reads, has ruled him out."""
+    client = _client()
+    client.players_catalog = {
+        **client.get_players(),
+        "wr7": PlayerMeta(player_id="wr7", name="Trade Target", position="WR", team="KC"),
+    }
+    proposal = TradeProposal(giving=["Bad RB"], receiving=["Trade Target"])
+
+    context = nfl_provider(client, _reported("Trade Target", "KC", "Out")).build_trade_context("L1", proposal)
+
+    [target] = [line for line in context.prompt.splitlines() if "Trade Target" in line and "proj pts" in line]
+    assert "[Out]" in target
+
+
+def test_a_rostered_player_the_report_clears_is_not_flagged_on_your_roster() -> None:
+    client = _client()
+    client.projections = {**client.projections, "rb1": replace(client.projections["rb1"], injury_status="Out")}
+    proposal = TradeProposal(giving=["Bad RB"], receiving=["Trade Target"])
+
+    context = nfl_provider(client, _reported("Good RB", "BUF", "Active")).build_trade_context("L1", proposal)
+
+    assert "[Out]" not in context.roster_lines["Good RB"]

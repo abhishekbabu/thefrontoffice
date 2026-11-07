@@ -20,6 +20,7 @@ from support.nfl import (
     nfl_provider,
     proj,
 )
+from support.summary import mine
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
@@ -29,6 +30,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     ScheduledGame,
     SeasonStats,
     SleeperLeague,
+    SleeperMatchup,
     SleeperRoster,
 )
 from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
@@ -198,7 +200,7 @@ def test_a_game_reads_its_snap_share_and_box_score() -> None:
 
 
 def test_a_running_back_is_logged_without_passing_columns() -> None:
-    line = _rb_week(1, "MIA", gp=1, pts_ppr=8.0)
+    line = _rb_week(1, "MIA", gp=1, off_snp=30, tm_off_snp=60, pts_ppr=8.0)
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=BUFFALO_SCHEDULE, game_lines=[line])
 
     assert "Cmp/Att" not in _log(client)["__columns__"]
@@ -218,7 +220,7 @@ def test_a_kicker_is_logged_as_kicks_made_of_tried() -> None:
 
 
 def test_a_bye_reads_as_a_bye_rather_than_as_a_game_missed() -> None:
-    line = _rb_week(1, "MIA", gp=1, pts_ppr=8.0)
+    line = _rb_week(1, "MIA", gp=1, off_snp=30, tm_off_snp=60, pts_ppr=8.0)
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=BUFFALO_SCHEDULE, game_lines=[line])
 
     assert set(_log(client)["W2 bye"]) == {"N/A"}
@@ -227,7 +229,7 @@ def test_a_bye_reads_as_a_bye_rather_than_as_a_game_missed() -> None:
 def test_a_finished_game_he_sat_out_reads_as_one_he_did_not_play() -> None:
     """A gap is part of the record: an average over the games he played hides it."""
     schedule = [*BUFFALO_SCHEDULE, ScheduledGame(week=2, date="2026-09-20", home="BUF", away="NE")]
-    line = _rb_week(1, "MIA", gp=1, pts_ppr=8.0)
+    line = _rb_week(1, "MIA", gp=1, off_snp=30, tm_off_snp=60, pts_ppr=8.0)
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=schedule, game_lines=[line])
 
     assert set(_log(client)["W2 vs NE · DNP"]) == {"N/A"}
@@ -235,10 +237,19 @@ def test_a_finished_game_he_sat_out_reads_as_one_he_did_not_play() -> None:
 
 def test_this_weeks_game_has_no_row_until_he_has_played_in_it() -> None:
     """Until then it has not been played, and a "did not play" would be a guess."""
-    line = _rb_week(1, "MIA", gp=1, pts_ppr=8.0)
+    line = _rb_week(1, "MIA", gp=1, off_snp=30, tm_off_snp=60, pts_ppr=8.0)
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=BUFFALO_SCHEDULE, game_lines=[line])
 
     assert not any(label.startswith("W3") for label in _log(client))
+
+
+def test_the_log_counts_the_games_his_averages_do() -> None:
+    """A row filed for a game he never took a snap in is no game in the log, as it is none in his role."""
+    schedule = [*BUFFALO_SCHEDULE, ScheduledGame(week=2, date="2026-09-20", home="BUF", away="NE")]
+    lines = [_rb_week(1, "MIA", gp=1, off_snp=30, tm_off_snp=60, pts_ppr=8.0), _rb_week(2, "NE", gp=1)]
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=schedule, game_lines=lines)
+
+    assert set(_log(client)["W2 vs NE · DNP"]) == {"N/A"}
 
 
 def test_a_player_who_has_not_played_a_game_has_no_log() -> None:
@@ -559,8 +570,8 @@ def _paired() -> FakeSleeper:
     """The default two rosters, paired this week, with the starters and points each played."""
     client = league_client()
     client.matchups = [
-        {"roster_id": 1, "matchup_id": 7, "starters": ["qb1"], "points": 101.5},
-        {"roster_id": 2, "matchup_id": 7, "starters": ["rb2"], "points": 88.0},
+        SleeperMatchup(roster_id=1, matchup_id=7, starters=["qb1"], points=101.5),
+        SleeperMatchup(roster_id=2, matchup_id=7, starters=["rb2"], points=88.0),
     ]
     return client
 
@@ -720,9 +731,10 @@ def _one_out() -> FakeSleeper:
     client = _paired()
     client.league = replace(client.league, roster_positions=["QB", "RB", "BN", "BN"])
     client.rosters = [
-        replace(client.rosters[0], player_ids=["qb1", "rb1", "rb3"], starter_ids=["qb1", "rb3"]),
+        replace(client.rosters[0], player_ids=["qb1", "rb1", "rb3"]),
         *client.rosters[1:],
     ]
+    client.matchups = [replace(client.matchups[0], starters=["qb1", "rb3"]), *client.matchups[1:]]
     client.projections = {
         **client.projections,
         "rb1": proj("rb1", "Good RB", "RB", 15.0),
@@ -749,7 +761,7 @@ def test_a_free_agent_is_priced_against_the_lineup_the_bench_would_already_make(
 def test_a_free_agent_the_to_do_list_would_start_over_a_starter_is_priced_as_that_swap() -> None:
     client = _paired()
     client.league = replace(client.league, roster_positions=["QB", "RB", "BN", "BN"])
-    client.rosters = [replace(client.rosters[0], starter_ids=["qb1", "rb1"]), *client.rosters[1:]]
+    client.matchups = [replace(client.matchups[0], starters=["qb1", "rb1"]), *client.matchups[1:]]
     client.projections = {
         **client.projections,
         "rb1": proj("rb1", "Good RB", "RB", 10.0),
@@ -764,3 +776,68 @@ def test_a_free_agent_the_to_do_list_would_start_over_a_starter_is_priced_as_tha
 
     assert matchup is not None
     assert any(m.into[0].player_id == "rb9" and m.out == ("rb1",) for m in matchup.moves)
+
+
+def test_a_player_in_a_reserve_slot_is_no_start_to_price() -> None:
+    """A taxi or injured-reserve slot is not the bench: nobody starts from it without a move first."""
+    client = _paired()
+    client.rosters = [replace(client.rosters[0], reserve_ids=["rb1"]), *client.rosters[1:]]
+
+    matchup = nfl_provider(client).matchup_input("L1")
+
+    assert matchup is not None
+    assert not any(m.into[0].player_id == "rb1" for m in matchup.moves)
+
+
+# ── the week's lineups ──────────────────────────────────────────────────
+
+
+def _stale() -> FakeSleeper:
+    """Your roster still starting Good RB, days after you benched him for Bad RB this week."""
+    client = league_client()
+    client.league = replace(client.league, roster_positions=["QB", "RB", "BN", "BN"])
+    client.rosters = [
+        replace(client.rosters[0], player_ids=["qb1", "rb1", "rb3"], starter_ids=["qb1", "rb1"]),
+        replace(client.rosters[1], player_ids=["wr9"], starter_ids=["wr9"]),
+    ]
+    client.projections = {**client.projections, "rb3": proj("rb3", "Third RB", "RB", 2.0)}
+    client.players_catalog = {
+        **client.get_players(),
+        "rb3": PlayerMeta(player_id="rb3", name="Third RB", position="RB", team="BUF"),
+    }
+    client.matchups = [SleeperMatchup(roster_id=1, matchup_id=None, starters=["qb1", "rb3"])]
+    return client
+
+
+def _starting(provider: SleeperNFLProvider) -> list[str]:
+    return [spot.player for spot in mine(provider.summary("L1")).lineup]
+
+
+def test_your_lineup_is_the_one_set_for_this_week_not_the_rosters_stale_copy() -> None:
+    assert _starting(nfl_provider(_stale())) == ["Star QB", "Third RB"]
+
+
+def test_a_team_with_no_matchup_this_week_starts_the_lineup_its_roster_carries() -> None:
+    cards = {card.player_id: card.columns for card in nfl_provider(_stale()).roster_of("L1", "2")}
+
+    assert cards["wr9"]["Slot"] == "START"
+
+
+def test_where_the_weeks_matchups_will_not_load_the_rosters_lineup_stands() -> None:
+    client = _stale()
+    client.matchups_error = SleeperAPIError("down")
+
+    assert _starting(nfl_provider(client)) == ["Star QB", "Good RB"]
+
+
+def test_the_weeks_matchups_are_read_once_for_every_view_of_the_week() -> None:
+    """The summary, the prompt, the forecast and the tables all read one week, not one fetch each."""
+    client = _paired()
+    provider = nfl_provider(client)
+
+    provider.summary("L1")
+    provider.build_context("L1")
+    provider.matchup_input("L1")
+    provider.roster("L1")
+
+    assert client.matchup_fetches == 1
