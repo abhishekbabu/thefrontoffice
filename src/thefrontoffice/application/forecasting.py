@@ -300,5 +300,5 @@ class ForecastEngine:
 
     def backtest(self, league_id: str, weeks: list[int], simulations: int = SIMULATIONS) -> Calibration:
         played = [game for week in weeks for game in self.provider.played_matchups(league_id, week)]
-        logger.info(f"{self.provider.label}: backtesting {len(played)} matchups over weeks {weeks}")
+        logger.info(f"Backtesting {len(played)} matchups over weeks {weeks}")
         return calibrate(played, simulations)

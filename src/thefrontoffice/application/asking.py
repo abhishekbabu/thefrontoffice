@@ -50,9 +50,10 @@ class AnchoredChat:
 class AskEngine:
     """Opens a conversation about one subject."""
 
-    def __init__(self, provider: SubjectProvider, *, ai: AnalysisModel, answers: AnswerStore):
-        """Every collaborator is a port, supplied by `bootstrap.ask_engine`."""
+    def __init__(self, provider: SubjectProvider, *, key: str, ai: AnalysisModel, answers: AnswerStore):
+        """Every collaborator is a port, supplied by `bootstrap.Wiring`; `key` names the competition."""
         self.provider = provider
+        self.key = key
         self.ai = ai
         self.answers = Answers(answers)
 
@@ -74,10 +75,10 @@ class AskEngine:
         context = self.provider.build_context(league_id)
         task = next((t for t in context.tasks if t.key == key), None)
         if task is None:
-            logger.info(f"{self.provider.label}: asked about {key!r}, which the week no longer holds")
+            logger.info(f"{self.key}: asked about {key!r}, which the week no longer holds")
             raise SubjectGoneError()
 
-        judged = self.answers.latest(scout_scope(self.provider.label, league_id), ScoutReport)
+        judged = self.answers.latest(scout_scope(self.key, league_id), ScoutReport)
         then = next((t for t in judged.answer.tasks if t.key == key), None) if judged else None
         verdict = ""
         if then is not None and then.verdict is not None:

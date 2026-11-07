@@ -9,17 +9,11 @@ import sys
 import textwrap
 from datetime import datetime
 
-from thefrontoffice.adapters.inbound.cli.commands import (
-    _cmd_leagues,
-    _cmd_roster,
-    _cmd_scout,
-    _cmd_trade,
-    _cmd_week,
-    _print_help,
-)
-from thefrontoffice.adapters.inbound.cli.output import _print_header, print_error
+from thefrontoffice import bootstrap
+from thefrontoffice.adapters.inbound.cli import commands
+from thefrontoffice.adapters.inbound.cli.output import header, print_error
 from thefrontoffice.adapters.inbound.cli.session import Session
-from thefrontoffice.bootstrap import CompetitionEntry, all_competitions, configured_competitions
+from thefrontoffice.bootstrap import Wiring
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.config.telemetry import setup_telemetry
 from thefrontoffice.domain.errors import FrontOfficeError
@@ -68,27 +62,27 @@ def _configure_console() -> None:
 
 
 class QuitRequested(Exception):
-    """Raised by _dispatch when the user asks to exit."""
+    """Raised by `dispatch` when the user asks to exit."""
 
 
-def _dispatch(session: Session, entries: list[CompetitionEntry], cmd: str, args: list[str]) -> None:
+def dispatch(session: Session, cmd: str, args: list[str]) -> None:
     """Route one parsed command to its handler.
 
     Raises:
         QuitRequested: the user asked to exit.
     """
     if cmd == "/scout":
-        _cmd_scout(session, entries, args)
+        commands.scout(session, args)
     elif cmd == "/week":
-        _cmd_week(session, entries, args)
+        commands.week(session, args)
     elif cmd in ("/roster", "/rosters", "/my-roster"):
-        _cmd_roster(session, entries, args)
+        commands.roster(session, args)
     elif cmd == "/leagues":
-        _cmd_leagues(session, entries)
+        commands.leagues(session)
     elif cmd == "/trade":
-        _cmd_trade(session, entries, args)
+        commands.trade(session, args)
     elif cmd == "/help":
-        _print_help(entries)
+        commands.print_help(session)
     elif cmd in ("/quit", "/exit", "/q"):
         raise QuitRequested
     else:
@@ -96,28 +90,30 @@ def _dispatch(session: Session, entries: list[CompetitionEntry], cmd: str, args:
 
 
 def main() -> None:
-    """Start a REPL over whichever competitions are configured."""
+    """Start a REPL over whichever competitions are configured: `just run`."""
     _configure_console()
     setup_logging()
     # After setup_logging, so the bridge attaches to a root logger that already
     # has its level and its console handler.
     setup_telemetry("front-office-cli")
+    run(bootstrap.wiring())
 
-    _print_header("🏆 The Front Office — Fantasy Intelligence")
+
+def run(wiring: Wiring) -> None:
+    """The REPL over `wiring`, until the user quits."""
+    header("🏆 The Front Office — Fantasy Intelligence")
     # The reader's own clock, said so: a banner is for the person at the terminal.
     print(f"  {datetime.now().astimezone().strftime('%A, %B %d %Y  •  %I:%M %p')}")
 
-    entries = configured_competitions()
-    if not entries:
+    session = Session(wiring)
+    if not session.entries:
         print("\n  ⚠️  No competitions configured. Set one of these in .env:")
-        from thefrontoffice.bootstrap import all_competitions
-
-        for entry in all_competitions():
+        for entry in wiring.registry.entries:
             print(f"       {entry.label}: {entry.requires}")
         sys.exit(1)
 
-    print(f"\n  ✅ Configured: {', '.join(e.label for e in entries)}")
-    unconfigured = _unconfigured()
+    print(f"\n  ✅ Configured: {', '.join(e.label for e in session.entries)}")
+    unconfigured = [e for e in wiring.registry.entries if e not in session.entries]
     if unconfigured:
         print(
             textwrap.fill(
@@ -126,16 +122,14 @@ def main() -> None:
                 subsequent_indent="    ",
             )
         )
-    _print_help(entries)
-
-    session = Session()
+    commands.print_help(session)
 
     while True:
         try:
             raw = input("  ⚡ ").strip()
         except KeyboardInterrupt, EOFError:
             print("\n")
-            _print_header("Goodbye 👋")
+            header("Goodbye 👋")
             break
 
         if not raw:
@@ -144,22 +138,16 @@ def main() -> None:
         cmd, args = parse_command(raw)
 
         try:
-            _dispatch(session, entries, cmd, args)
+            dispatch(session, cmd, args)
         except FrontOfficeError as e:
             # Safety net — handlers render their own errors, but a session must
             # never die because one command raised.
             print_error(e)
         except QuitRequested:
-            _print_header("Goodbye 👋")
+            header("Goodbye 👋")
             break
 
-    _print_header("Done ✅")
-
-
-def _unconfigured() -> list[CompetitionEntry]:
-
-    configured = {e.competition for e in configured_competitions()}
-    return [e for e in all_competitions() if e.competition not in configured]
+    header("Done ✅")
 
 
 if __name__ == "__main__":

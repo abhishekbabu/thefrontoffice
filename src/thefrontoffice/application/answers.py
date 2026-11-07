@@ -20,6 +20,17 @@ from thefrontoffice.domain.models import Remembered
 from thefrontoffice.domain.ports import AnswerStore, TModel
 
 
+def scope(kind: str, competition: str, *about: str) -> str:
+    """What a kept answer is about: the kind of call, then whose and of what.
+
+    `("scout", "nfl-sleeper", league)` for a week's judgment;
+    `("wire", "nfl-sleeper", league, player)` for one free agent's call.
+    `competition` is the registry key, never a display name: a label is free
+    to change and a key is what a kept answer is found by.
+    """
+    return ":".join((kind, competition, *about))
+
+
 def digest(inputs: str) -> str:
     """What an answer was given, as something short enough to keep and compare."""
     return hashlib.sha256(inputs.encode("utf-8")).hexdigest()

@@ -127,7 +127,7 @@ class SeasonEngine:
         season = self.provider.season_input(league_id)
         if season is None or not season.spots:
             return None
-        logger.info(f"{self.provider.label}: simulating {len(season.fixtures)} fixtures to the playoffs")
+        logger.info(f"Simulating {len(season.fixtures)} fixtures to the playoffs")
         return simulate_season(season)
 
 
@@ -147,7 +147,7 @@ class MarketEngine:
         market = self.provider.trade_market(league_id)
         if market is None or not market.season.spots or not market.options:
             return []
-        logger.info(f"{self.provider.label}: pricing {len(market.options)} trades against the playoff race")
+        logger.info(f"Pricing {len(market.options)} trades against the playoff race")
         before = simulate_season(market.season)
         names = {t.team_id: t.name for t in market.season.teams}
         ideas = [_priced(market.season, before, option, names) for option in market.options]

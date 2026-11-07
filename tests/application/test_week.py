@@ -38,8 +38,6 @@ DEADLINE = Action(kind="trade", urgency="soon", title="Trade by week 11", reason
 class _Provider:
     """A competition whose week, season and wire are fixed, and whose simulations can be made to fail."""
 
-    label = "Test"
-
     def __init__(self, *, forecast_error: Exception | None = None, season_error: Exception | None = None) -> None:
         self.forecast_error = forecast_error
         self.season_error = season_error
@@ -61,6 +59,9 @@ class _Provider:
         move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(outcome("x", 20, 25, 30),))
         return MatchupInput(mine=(outcome("w", 0, 5, 10),), theirs=(outcome("t", 10, 20, 30),), moves=(move,), seed=1)
 
+    def played_weeks(self, league_id: str) -> list[int]:
+        return []
+
     def played_matchups(self, league_id: str, week: int) -> list:
         return []
 
@@ -74,6 +75,7 @@ class _Provider:
 def _engine(provider: _Provider, *, simulated: bool = True, store: FakeItemStates | None = None) -> WeekEngine:
     return WeekEngine(
         provider,
+        key="nfl-sleeper",
         decisions=ItemDecisions(store or FakeItemStates(), clock=lambda: datetime(2026, 10, 25, tzinfo=UTC)),
         forecast=ForecastEngine(provider) if simulated else None,
         season=SeasonEngine(provider) if simulated else None,
@@ -89,7 +91,7 @@ def test_the_to_do_list_is_ranked_by_what_each_move_does_to_the_chance() -> None
 
 def test_the_managers_decisions_are_applied_after_the_ranking() -> None:
     store = FakeItemStates()
-    store.save(item_scope("Test", "L1"), {SWAP.key: ItemState(key=SWAP.key, dismissed_as=SWAP.fingerprint)})
+    store.save(item_scope("nfl-sleeper", "L1"), {SWAP.key: ItemState(key=SWAP.key, dismissed_as=SWAP.fingerprint)})
 
     actions = _engine(_Provider(), store=store).week("L1").summary.actions or []
 

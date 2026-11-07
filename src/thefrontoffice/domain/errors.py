@@ -61,6 +61,35 @@ class PlatformUnavailableError(PlatformError):
         self.platform = platform
 
 
+class UnknownCompetitionError(FrontOfficeError):
+    """Nothing in the registry goes by that name."""
+
+    code = "unknown_competition"
+
+    def __init__(self, key: str) -> None:
+        super().__init__(f"Unknown competition {key!r}.")
+        self.key = key
+
+
+class NotConfiguredError(FrontOfficeError):
+    """Something this machine has no credentials for: what to set, rather than an OAuth flow."""
+
+    code = "not_configured"
+
+    def __init__(self, what: str, requires: str) -> None:
+        super().__init__(f"{what} is not configured — set {requires} in .env.")
+        self.requires = requires
+
+
+class UnsupportedError(FrontOfficeError):
+    """Something a competition cannot do: its provider does not implement the port asked for."""
+
+    code = "unsupported"
+
+    def __init__(self, label: str, what: str) -> None:
+        super().__init__(f"{label} does not support {what}.")
+
+
 class LeagueNotFoundError(FrontOfficeError):
     """The configured account has no matching league on its platform."""
 

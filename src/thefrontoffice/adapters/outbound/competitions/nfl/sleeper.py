@@ -66,7 +66,13 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperMatchup,
     SleeperRoster,
 )
-from thefrontoffice.domain.errors import LeagueNotFoundError, PlatformError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import (
+    LeagueNotFoundError,
+    NotConfiguredError,
+    PlatformError,
+    PlayerNotFoundError,
+    TeamNotFoundError,
+)
 from thefrontoffice.domain.models import (
     CompetitionContext,
     LeagueSchedule,
@@ -104,10 +110,6 @@ TEAM_LOGO_URL = "https://sleepercdn.com/images/team_logos/nfl/{team}.png"
 class SleeperNFLProvider:
     """CompetitionProvider for Sleeper points-league football."""
 
-    sport = "football"
-    competition = "nfl"
-    label = "NFL (Sleeper)"
-
     def __init__(self, username: str | None, *, client: SleeperNFLSource, espn: ESPNSource):
         """Every collaborator from bootstrap, which is the one place a real client is built."""
         self.username = username
@@ -126,7 +128,7 @@ class SleeperNFLProvider:
         if self._user_id:
             return self._user_id
         if not self.username:
-            raise LeagueNotFoundError("SLEEPER_USERNAME is not set in .env")
+            raise NotConfiguredError("Sleeper", "SLEEPER_USERNAME")
         self._user_id = self.client.get_user(self.username).user_id
         return self._user_id
 
@@ -136,7 +138,6 @@ class SleeperNFLProvider:
             LeagueRef(
                 league_id=lg.league_id,
                 name=lg.name,
-                competition=self.competition,
                 detail=f"{lg.total_rosters}-team · {scoring_label(lg.scoring_format)}",
                 url=LEAGUE_URL.format(league_id=lg.league_id),
             )
@@ -498,7 +499,7 @@ class SleeperNFLProvider:
         state = self._week(league_id)
         if state.opponent is None:
             return None
-        seeded = seed(self.label, league_id, state.week)
+        seeded = seed(league_id, state.week)
         if candidates:
             return self.forecasts.wire(state, self.scoreboard, state.opponent, candidates, seeded)
         return self.forecasts.matchup(state, self.scoreboard, state.opponent, self._tasks(state), seeded)
@@ -509,6 +510,10 @@ class SleeperNFLProvider:
         """A finished week's players, for scoring ranges: what was known before it, and what each scored."""
         return self.forecasts.played_week(self._this_season(league_id), week)
 
+    def played_weeks(self, league_id: str) -> list[int]:
+        """Every finished week but the first, which has no games before it to shape a range."""
+        return list(range(2, self.client.get_state().week))
+
     def played_matchups(
         self, league_id: str, week: int, settings: outcomes.RangeSettings = outcomes.DEFAULT
     ) -> list[PlayedMatchup]:
@@ -517,14 +522,14 @@ class SleeperNFLProvider:
             self._this_season(league_id),
             week,
             settings,
-            lambda matchup_id: seed(self.label, league_id, week, matchup_id),
+            lambda matchup_id: seed(league_id, week, matchup_id),
         )
 
     # ── the season ──────────────────────────────────────────────────
 
     def _season_seed(self, league_id: str, state: Week) -> int:
         """The same season simulation all week, for the same league."""
-        return seed(self.label, league_id, "season", state.week)
+        return seed(league_id, "season", state.week)
 
     def season_input(self, league_id: str) -> SeasonInput | None:
         """The rest of the regular season, ready to simulate to the playoffs."""

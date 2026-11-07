@@ -46,7 +46,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Player,
     as_millions,
 )
-from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import NotConfiguredError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
     CompetitionContext,
@@ -97,10 +97,6 @@ class FPLProvider:
     only one of each: the game is both.
     """
 
-    sport = "soccer"
-    competition = "premier-league"
-    label = "FPL (Fantasy Premier League)"
-
     def __init__(self, entry_id: int | None, *, client: FPLSource):
         """Every collaborator from bootstrap, which is the one place a real client is built."""
         self.entry_id = entry_id
@@ -108,7 +104,7 @@ class FPLProvider:
 
     def _resolve_entry_id(self) -> int:
         if not self.entry_id:
-            raise LeagueNotFoundError("FPL_ENTRY_ID is not set in .env")
+            raise NotConfiguredError("FPL", "FPL_ENTRY_ID")
         return self.entry_id
 
     # ── leagues ─────────────────────────────────────────────────────
@@ -130,7 +126,6 @@ class FPLProvider:
                 LeagueRef(
                     league_id=str(entry.entry_id),
                     name=entry.name,
-                    competition=self.competition,
                     detail=f"overall rank {entry.overall_rank:,} · {entry.overall_points} pts",
                     url=ENTRY_URL.format(entry_id=entry.entry_id),
                 )
@@ -139,7 +134,6 @@ class FPLProvider:
             LeagueRef(
                 league_id=str(lg.id),
                 name=lg.name,
-                competition=self.competition,
                 detail=f"{league.standing(lg)} · {entry.name}",
                 url=self._league_url(lg),
             )

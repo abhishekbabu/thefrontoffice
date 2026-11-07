@@ -72,11 +72,13 @@ class WeekEngine:
         self,
         provider: WeekProvider,
         *,
+        key: str,
         decisions: ItemDecisions,
         forecast: ForecastEngine | None,
         season: SeasonEngine | None,
     ):
         self.provider = provider
+        self.key = key
         self.decisions = decisions
         self.forecast = forecast
         self.season_engine = season
@@ -88,9 +90,7 @@ class WeekEngine:
         if forecast is not None:
             summary = summary.model_copy(update={"actions": ranked(summary.actions, *forecast)})
         if summary.actions is not None:
-            summary = summary.model_copy(
-                update={"actions": self.decisions.apply(self.provider.label, league_id, summary.actions)}
-            )
+            summary = summary.model_copy(update={"actions": self.decisions.apply(self.key, league_id, summary.actions)})
         return WeekView(summary=summary, forecast=forecast[0] if forecast else None, odds=self._odds(league_id))
 
     def season(self, league_id: str) -> SeasonView:

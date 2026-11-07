@@ -23,9 +23,6 @@ TASKS = [
 class ContextOnly:
     """A provider that has already gathered its week, whose prompt a test can change."""
 
-    competition = "nfl"
-    label = "NFL (Sleeper)"
-
     def __init__(self, tasks: list[Action], prompt: str = "prompt") -> None:
         self.context = CompetitionContext(prompt=prompt, headline=[Stat(label="Week", value="7")], tasks=tasks)
 
@@ -48,7 +45,7 @@ def _judged(report: ScoutReport) -> list[str]:
 
 
 def _run(report: ScoutAnswer, tasks: list[Action] = TASKS) -> ScoutReport:
-    engine = ScoutEngine(ContextOnly(tasks), ai=FakeAI(report=report), answers=FakeAnswers())
+    engine = ScoutEngine(ContextOnly(tasks), key="nfl-sleeper", ai=FakeAI(report=report), answers=FakeAnswers())
     judged, _ = engine.start_analysis("L1")
     return judged
 
@@ -104,7 +101,7 @@ def test_the_headline_still_comes_from_the_provider() -> None:
 def test_an_unchanged_week_is_answered_from_the_last_judgment_without_a_call() -> None:
     """On a free tier a call is the scarce thing, and the answer would be the same."""
     ai, answers = FakeAI(report=_report(_verdict(1))), FakeAnswers()
-    engine = ScoutEngine(ContextOnly(TASKS), ai=ai, answers=answers)
+    engine = ScoutEngine(ContextOnly(TASKS), key="nfl-sleeper", ai=ai, answers=answers)
 
     first, _ = engine.start_analysis("L1")
     second, _ = engine.start_analysis("L1")
@@ -115,9 +112,9 @@ def test_an_unchanged_week_is_answered_from_the_last_judgment_without_a_call() -
 
 def test_a_changed_week_is_judged_afresh_and_kept() -> None:
     ai, answers = FakeAI(report=_report(_verdict(1))), FakeAnswers()
-    ScoutEngine(ContextOnly(TASKS, prompt="monday"), ai=ai, answers=answers).start_analysis("L1")
+    ScoutEngine(ContextOnly(TASKS, prompt="monday"), key="nfl-sleeper", ai=ai, answers=answers).start_analysis("L1")
 
-    engine = ScoutEngine(ContextOnly(TASKS, prompt="tuesday"), ai=ai, answers=answers)
+    engine = ScoutEngine(ContextOnly(TASKS, prompt="tuesday"), key="nfl-sleeper", ai=ai, answers=answers)
     engine.start_analysis("L1")
 
     assert ai.prompts == ["monday", "tuesday"]
@@ -127,7 +124,7 @@ def test_a_changed_week_is_judged_afresh_and_kept() -> None:
 
 def test_judgments_are_kept_per_league() -> None:
     ai, answers = FakeAI(report=_report()), FakeAnswers()
-    engine = ScoutEngine(ContextOnly(TASKS), ai=ai, answers=answers)
+    engine = ScoutEngine(ContextOnly(TASKS), key="nfl-sleeper", ai=ai, answers=answers)
 
     engine.start_analysis("L1")
 

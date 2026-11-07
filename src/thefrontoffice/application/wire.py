@@ -12,10 +12,10 @@ again shows every kept call without asking — the moved ones marked stale.
 
 import logging
 
-from thefrontoffice.application.answers import Answers, is_current
+from thefrontoffice.application.answers import Answers, is_current, scope
 from thefrontoffice.application.formats import WireAnswer
 from thefrontoffice.domain.errors import PlayerNotFoundError
-from thefrontoffice.domain.models import PlayerCall, answer_scope
+from thefrontoffice.domain.models import PlayerCall
 from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, WireProvider
 
 logger = logging.getLogger(__name__)
@@ -31,9 +31,10 @@ MAX_SHOWN = 200
 class WireEngine:
     """Turns any WireProvider into calls on the players asked about."""
 
-    def __init__(self, provider: WireProvider, *, ai: AnalysisModel, answers: AnswerStore):
-        """Every collaborator is a port, wired by `bootstrap.wire_engine`."""
+    def __init__(self, provider: WireProvider, *, key: str, ai: AnalysisModel, answers: AnswerStore):
+        """Every collaborator is a port, wired by `bootstrap.Wiring`; `key` names the competition."""
         self.provider = provider
+        self.key = key
         self.ai = ai
         self.answers = Answers(answers)
 
@@ -62,7 +63,7 @@ class WireEngine:
             # free agent, so no call to show or make — but no reason to lose
             # every other row's over him.
             asked = [pid for pid in asked if pid not in e.names]
-            logger.info(f"{self.provider.label}: {', '.join(e.names)} no longer available; skipping")
+            logger.info(f"{self.key}: {', '.join(e.names)} no longer available; skipping")
             if not asked:
                 return []
             context = self.provider.build_wire_context(league_id, asked)
@@ -103,11 +104,11 @@ class WireEngine:
                 )
                 answered[call.player_id] = clean.model_copy(update={"judged_at": kept.answered_at})
             else:
-                logger.warning(f"{self.provider.label}: dropping a call on {call.player_id!r}, unasked or repeated")
+                logger.warning(f"{self.key}: dropping a call on {call.player_id!r}, unasked or repeated")
         return answered
 
     def _scope(self, league_id: str, player_id: str) -> str:
-        return answer_scope("wire", self.provider.label, league_id, player_id)
+        return scope("wire", self.key, league_id, player_id)
 
 
 def _distinct(player_ids: list[str]) -> list[str]:

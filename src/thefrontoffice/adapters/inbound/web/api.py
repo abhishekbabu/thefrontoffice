@@ -2,9 +2,11 @@
 
 An inbound adapter like the CLI: it renders errors and owns transport, and
 computes nothing. The engines already return Pydantic models, so a route's
-response schema is the domain model itself — `ScoutReport` and `TradeVerdict`
-cross the wire exactly as the CLI renders them, with no second representation
-to keep in step.
+response schema is the domain model itself — `ScoutReport` crosses the wire
+exactly as the CLI renders it, with no second representation to keep in step.
+
+Every collaborator arrives in the `Wiring` `create_app` is handed: `serve`
+builds the real one for uvicorn, and a test builds one from fakes.
 
 Serves the built front end from `web/dist` when it exists, so one process on one
 port covers both. In development the front end runs its own dev server and calls
@@ -14,7 +16,7 @@ back here across the proxy configured in `web/vite.config.ts`.
 import logging
 import threading
 import uuid
-from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -22,27 +24,16 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound import presenting
 from thefrontoffice.adapters.inbound.web import data
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
-from thefrontoffice.bootstrap import (
-    CompetitionEntry,
-    ai_available,
-    all_competitions,
-    ask_engine,
-    find,
-    item_decisions,
-    market_engine,
-    scout_engine,
-    week_engine,
-    wire_engine,
-    yahoo_auth,
-)
+from thefrontoffice.bootstrap import CompetitionEntry, Wiring
 from thefrontoffice.config import env_file
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.config.settings import PROJECT_ROOT, settings
 from thefrontoffice.config.telemetry import setup_telemetry
-from thefrontoffice.domain.errors import FrontOfficeError, PlatformUnavailableError
+from thefrontoffice.domain.errors import FrontOfficeError, PlatformUnavailableError, UnknownCompetitionError
 from thefrontoffice.domain.models import (
     ItemDecision,
     ItemState,
@@ -62,8 +53,11 @@ from thefrontoffice.domain.models import (
 )
 from thefrontoffice.domain.ports import (
     ChatSession,
+    CompetitionProvider,
+    LeagueRef,
     OutlookProvider,
     TradeMarketProvider,
+    WireProvider,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,46 +68,6 @@ DIST = PROJECT_ROOT / "web" / "dist"
 # ── wire types ──────────────────────────────────────────────────────────
 # Only for shapes the domain has no model for. Anything the domain does model
 # is returned as-is rather than copied into a parallel type that can drift.
-
-
-class Competition(BaseModel):
-    """One competition on one platform, as the picker sees it."""
-
-    key: str
-    """Identifies this entry in every route and picker: 'nba-yahoo'."""
-
-    sport: str
-    """The game itself — basketball, football, soccer — so the client can group
-    the competitions that are the same sport under one heading."""
-
-    competition: str
-    """Which competition: 'nba', 'nfl', 'premier-league'."""
-
-    platform: str
-    label: str
-    judges_wire: bool
-    plans_ahead: bool = False
-    """Whether its weeks ahead and trades worth offering can be shown."""
-    """Whether its free agents can be judged — offered only where it is."""
-    configured: bool
-    """Whether the credentials this competition needs are set."""
-
-    requires: str
-
-    ready: bool
-    """Whether it can actually be used. Configured is necessary, not sufficient."""
-
-    blocked_reason: str = ""
-    blocked_code: str = ""
-    """What stands in the way, and which remedy the client should offer."""
-
-
-class League(BaseModel):
-    league_id: str
-    name: str
-    detail: str
-    url: str = ""
-    """This league on its own platform, so a view can offer the way across."""
 
 
 class ChatRequest(BaseModel):
@@ -186,54 +140,74 @@ class Thread(BaseModel):
     chat_id: str
 
 
-# ── follow-up chats ─────────────────────────────────────────────────────
-# A chat is a live object holding conversation state, so it cannot cross the
-# wire. It stays here and the client refers to it by id. In-process because
-# this serves exactly one person on one machine; a second worker would need
-# somewhere shared to put these.
+class _Chats:
+    """Open conversations, by id.
 
-_chats: dict[str, ChatSession] = {}
+    A chat is a live object holding conversation state, so it cannot cross the
+    wire. It stays here and the client refers to it by id. In-process because
+    this serves exactly one person on one machine; a second worker would need
+    somewhere shared to put these.
+    """
 
+    def __init__(self) -> None:
+        self._open: dict[str, ChatSession] = {}
 
-# The Yahoo handshake opens a browser and waits for a click, which no request
-# can hold open. It runs on a thread and the client watches this instead.
-_login = LoginState(status="idle")
-_login_lock = threading.Lock()
+    def remember(self, chat: ChatSession) -> str:
+        chat_id = uuid.uuid4().hex
+        self._open[chat_id] = chat
+        return chat_id
 
-
-def _run_yahoo_login() -> None:
-    """Authorize, then confirm the grant is real before reporting success."""
-    global _login
-    try:
-        auth = yahoo_auth()
-        auth.login(force=True)
-        auth.verify()
-    except FrontOfficeError as e:
-        logger.error(f"Yahoo authorization failed: {e}")
-        _login = LoginState(status="failed", detail=str(e))
-    except Exception as e:  # a browser or socket failure, not a domain condition
-        logger.error(f"Yahoo authorization failed unexpectedly: {e}")
-        _login = LoginState(status="failed", detail=f"Authorization failed: {e}")
-    else:
-        _login = LoginState(status="ok", detail="Yahoo accepted a Fantasy Sports read.")
+    def get(self, chat_id: str) -> ChatSession | None:
+        return self._open.get(chat_id)
 
 
-def _as_text(value: object) -> str:
-    """Render a value the way `.env` spells it."""
-    return str(value).lower() if isinstance(value, bool) else str(value or "")
+class _YahooLogin:
+    """The Yahoo handshake, which opens a browser and waits for a click no request can hold open.
+
+    It runs on a thread, and the client watches `state` instead.
+    """
+
+    def __init__(self, wiring: Wiring) -> None:
+        self._wiring = wiring
+        self._lock = threading.Lock()
+        self.state = LoginState(status="idle")
+
+    def start(self) -> LoginState:
+        with self._lock:
+            if self.state.status == "running":
+                return self.state
+            # A stale outcome from a previous attempt would read as this one's.
+            self.state = LoginState(status="running", detail="Authorize in the browser tab that just opened.")
+        threading.Thread(target=self._run, daemon=True).start()
+        return self.state
+
+    def _run(self) -> None:
+        """Authorize, then confirm the grant is real before reporting success."""
+        try:
+            account = self._wiring.yahoo_login()
+            account.login(force=True)
+            account.verify()
+        except FrontOfficeError as e:
+            logger.error(f"Yahoo authorization failed: {e}")
+            self.state = LoginState(status="failed", detail=str(e))
+        except Exception as e:  # a browser or socket failure, not a domain condition
+            logger.error(f"Yahoo authorization failed unexpectedly: {e}")
+            self.state = LoginState(status="failed", detail=f"Authorization failed: {e}")
+        else:
+            self.state = LoginState(status="ok", detail="Yahoo accepted a Fantasy Sports read.")
 
 
-def _remember(chat: ChatSession) -> str:
-    chat_id = uuid.uuid4().hex
-    _chats[chat_id] = chat
-    return chat_id
+def _status(error: FrontOfficeError) -> int:
+    """400 for a condition the user can act on, 503 for a platform that is down, 404 for a name nothing answers to."""
+    if isinstance(error, PlatformUnavailableError):
+        return 503
+    if isinstance(error, UnknownCompetitionError):
+        return 404
+    return 400
 
 
-def create_app() -> FastAPI:
-    """The application, wired and ready to serve."""
-    setup_logging()
-    setup_telemetry("front-office-web")
-
+def create_app(wiring: Wiring, *, dist: Path = DIST) -> FastAPI:
+    """The application over `wiring`, serving the front end built into `dist`, ready to serve."""
     app = FastAPI(title="The Front Office", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
     @app.exception_handler(FrontOfficeError)
@@ -246,23 +220,40 @@ def create_app() -> FastAPI:
         exception, and says so with 503: nothing in the request was wrong.
         """
         logger.info(f"Domain error: {exc}")
-        status = 503 if isinstance(exc, PlatformUnavailableError) else 400
-        return JSONResponse(status_code=status, content={"detail": str(exc), "code": exc.code})
+        return JSONResponse(status_code=_status(exc), content={"detail": str(exc), "code": exc.code})
 
-    _register_routes(app)
-    _serve_frontend(app)
+    _register_routes(app, wiring)
+    _serve_frontend(app, dist)
     return app
 
 
-def _register_routes(app: FastAPI) -> None:
-    @app.get("/api/competitions", response_model=list[Competition])
-    def list_sports() -> list[Competition]:
+def serve() -> FastAPI:
+    """The application as this machine runs it, built once per process: what uvicorn starts."""
+    setup_logging()
+    setup_telemetry("front-office-web")
+    return create_app(bootstrap.wiring())
+
+
+def _register_routes(app: FastAPI, wiring: Wiring) -> None:
+    chats = _Chats()
+    yahoo = _YahooLogin(wiring)
+
+    def _open(key: str) -> tuple[CompetitionEntry, CompetitionProvider]:
+        """The entry a route names, and its provider."""
+        entry = wiring.registry.find(key)
+        return entry, entry.open()
+
+    def _provider(key: str) -> CompetitionProvider:
+        return wiring.registry.find(key).open()
+
+    @app.get("/api/competitions", response_model=list[data.Competition])
+    def list_sports() -> list[data.Competition]:
         """Every competition, including ones this machine has no credentials for.
 
-        Unconfigured sports are returned rather than hidden so the UI can say
+        Unconfigured ones are returned rather than hidden so the UI can say
         what to set instead of silently offering less than it could.
         """
-        return [_sport(entry) for entry in all_competitions()]
+        return [data.competition(entry) for entry in wiring.registry.entries]
 
     @app.get("/api/capabilities", response_model=Capabilities)
     def capabilities() -> Capabilities:
@@ -272,7 +263,7 @@ def _register_routes(app: FastAPI) -> None:
         give, so nothing that needs one is shown — rather than shown and then
         refused, which is a click spent learning the app cannot do it.
         """
-        return Capabilities(ai=ai_available())
+        return Capabilities(ai=wiring.ai_available())
 
     @app.get("/api/settings", response_model=list[Setting])
     def read_settings() -> list[Setting]:
@@ -296,8 +287,8 @@ def _register_routes(app: FastAPI) -> None:
             present=bool(current),
             # A boolean's stored form can be absent while its value is False, so
             # the effective value is shown rather than the raw file text.
-            value="" if secret else (_as_text(current) if kind == "boolean" else str(stored)),
-            effective="" if secret else _as_text(current),
+            value="" if secret else (env_file.spelled(current) if kind == "boolean" else str(stored)),
+            effective="" if secret else env_file.spelled(current),
             kind=kind,
             choices=choices,
             shadowed=env_file.is_shadowed(key),
@@ -320,37 +311,9 @@ def _register_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=500, detail=f"Could not write .env: {e}") from e
         return read_settings()
 
-    def _sport(entry: CompetitionEntry) -> Competition:
-        """A competition as the picker sees it, including why it cannot be opened.
-
-        Offering something that will only fail on the next click is worse than
-        greying it out and saying what is missing.
-        """
-        configured = entry.is_configured()
-        reason = code = ""
-        if configured:
-            try:
-                entry.check_ready()
-            except FrontOfficeError as e:
-                reason, code = str(e), e.code
-        return Competition(
-            key=entry.key,
-            sport=entry.sport,
-            competition=entry.competition,
-            platform=entry.platform,
-            label=entry.label,
-            judges_wire=entry.judges_wire,
-            plans_ahead=entry.plans_ahead,
-            configured=configured,
-            requires=entry.requires,
-            ready=configured and not reason,
-            blocked_reason=reason,
-            blocked_code=code,
-        )
-
     @app.get("/api/yahoo/login", response_model=LoginState)
     def yahoo_login_state() -> LoginState:
-        return _login
+        return yahoo.state
 
     @app.post("/api/yahoo/login", response_model=LoginState)
     def start_yahoo_login() -> LoginState:
@@ -360,19 +323,11 @@ def _register_routes(app: FastAPI) -> None:
         are the same place — but the click cannot be waited on inside a request,
         so progress is reported through the companion GET.
         """
-        global _login
-        with _login_lock:
-            if _login.status == "running":
-                return _login
-            # A stale outcome from a previous attempt would read as this one's.
-            _login = LoginState(status="running", detail="Authorize in the browser tab that just opened.")
-        threading.Thread(target=_run_yahoo_login, daemon=True).start()
-        return _login
+        return yahoo.start()
 
-    @app.get("/api/{competition}/leagues", response_model=list[League])
-    def list_leagues(competition: str) -> list[League]:
-        provider = data.build_provider(competition)
-        return [League(league_id=r.league_id, name=r.name, detail=r.detail, url=r.url) for r in provider.list_leagues()]
+    @app.get("/api/{competition}/leagues", response_model=list[LeagueRef])
+    def list_leagues(competition: str) -> list[LeagueRef]:
+        return _provider(competition).list_leagues()
 
     @app.get("/api/{competition}/leagues/{league_id}/roster", response_model=list[PlayerCard])
     def roster(competition: str, league_id: str) -> list[PlayerCard]:
@@ -382,12 +337,12 @@ def _register_routes(app: FastAPI) -> None:
         football sends Depth — so the client reads whatever keys arrive rather
         than being taught each competition.
         """
-        return data.build_provider(competition).roster(league_id)
+        return _provider(competition).roster(league_id)
 
     @app.get("/api/{competition}/leagues/{league_id}/players/{player_id}", response_model=PlayerDetail)
     def player(competition: str, league_id: str, player_id: str) -> PlayerDetail:
         """Everything worth knowing about one player, when someone asks."""
-        return data.build_provider(competition).player(league_id, player_id)
+        return _provider(competition).player(league_id, player_id)
 
     @app.get("/api/{competition}/leagues/{league_id}/summary", response_model=Summary)
     def summary(competition: str, league_id: str) -> Summary:
@@ -397,13 +352,12 @@ def _register_routes(app: FastAPI) -> None:
         showing nothing the app already knows. To-do items carry what the
         manager decided about them — dismissed, snoozed, or back since.
         """
-        return presenting.week(week_engine(data.build_provider(competition), item_decisions()).week(league_id))
+        return presenting.week(wiring.week(*_open(competition)).week(league_id))
 
     @app.post("/api/{competition}/leagues/{league_id}/items", response_model=ItemState | None)
     def decide(competition: str, league_id: str, decision: ItemDecision) -> ItemState | None:
         """Dismiss, snooze or restore one to-do item; the decision kept, or null once restored."""
-        provider = data.build_provider(competition)
-        return item_decisions().decide(provider.label, league_id, decision)
+        return wiring.decisions.decide(wiring.registry.find(competition).key, league_id, decision)
 
     @app.get("/api/{competition}/leagues/{league_id}/free-agents", response_model=PlayerPage)
     def free_agents(
@@ -434,18 +388,18 @@ def _register_routes(app: FastAPI) -> None:
             position=position,
             search=search,
         )
-        view = week_engine(data.build_provider(competition), item_decisions()).wire(league_id, query)
+        view = wiring.week(*_open(competition)).wire(league_id, query)
         return presenting.wire(view, order=descending if by_chance else None)
 
     @app.get("/api/{competition}/leagues/{league_id}/teams", response_model=list[TeamRef])
     def teams(competition: str, league_id: str) -> list[TeamRef]:
         """Everyone in the league, so their rosters can be opened."""
-        return data.build_provider(competition).teams(league_id)
+        return _provider(competition).teams(league_id)
 
     @app.get("/api/{competition}/leagues/{league_id}/teams/{team_id}/roster", response_model=list[PlayerCard])
     def team_roster(competition: str, league_id: str, team_id: str) -> list[PlayerCard]:
         """Somebody else's squad, in the same columns as your own."""
-        return data.build_provider(competition).roster_of(league_id, team_id)
+        return _provider(competition).roster_of(league_id, team_id)
 
     @app.get("/api/{competition}/leagues/{league_id}/schedule", response_model=LeagueSchedule)
     def schedule(competition: str, league_id: str) -> LeagueSchedule:
@@ -455,17 +409,19 @@ def _register_routes(app: FastAPI) -> None:
         costs requests the week does not need — nobody checking their lineup
         should wait on the whole season's fixtures.
         """
-        return presenting.season(week_engine(data.build_provider(competition), item_decisions()).season(league_id))
+        return presenting.season(wiring.week(*_open(competition)).season(league_id))
 
     @app.get("/api/{competition}/leagues/{league_id}/weeks-ahead", response_model=list[WeekAhead])
     def weeks_ahead(competition: str, league_id: str) -> list[WeekAhead]:
         """The next few weeks as your roster stands, and a pickup for any that comes up short.
 
-        None where a competition cannot project its weeks ahead: there is
+        Empty where a competition cannot project its weeks ahead: there is
         nothing to plan, which is an answer rather than a failure.
         """
-        provider = data.build_provider(competition)
-        return provider.weeks_ahead(league_id) if isinstance(provider, OutlookProvider) else []
+        entry = wiring.registry.find(competition)
+        if not entry.can(OutlookProvider):
+            return []
+        return entry.open_as(OutlookProvider, "planning the weeks ahead").weeks_ahead(league_id)
 
     @app.get("/api/{competition}/leagues/{league_id}/trades", response_model=list[TradeIdea])
     def trades(competition: str, league_id: str) -> list[TradeIdea]:
@@ -474,15 +430,13 @@ def _register_routes(app: FastAPI) -> None:
         Its own route because it plays the season out once per trade tried —
         seconds, not the instant a table should take to appear.
         """
-        provider = data.build_provider(competition)
-        if not isinstance(provider, TradeMarketProvider):
-            raise HTTPException(status_code=400, detail=f"{provider.label} does not support finding trades.")
-        return market_engine(provider).trades(league_id)
+        provider = wiring.registry.find(competition).open_as(TradeMarketProvider, "finding trades")
+        return wiring.market(provider).trades(league_id)
 
     @app.post("/api/{competition}/leagues/{league_id}/scout", response_model=ScoutReport)
     def scout(competition: str, league_id: str) -> ScoutReport:
         """Judge the week's to-do list — or return the kept judgment where nothing has changed."""
-        return scout_engine(data.build_provider(competition)).report(league_id)
+        return wiring.scout(*_open(competition)).report(league_id)
 
     @app.get("/api/{competition}/leagues/{league_id}/judgment", response_model=Remembered[ScoutReport] | None)
     def judgment(competition: str, league_id: str) -> Remembered[ScoutReport] | None:
@@ -491,8 +445,7 @@ def _register_routes(app: FastAPI) -> None:
         What lets the week show its verdicts on load: judging is a click,
         and a reload should not throw the answer away.
         """
-        provider = data.build_provider(competition)
-        return scout_engine(provider).latest(league_id)
+        return wiring.scout(*_open(competition)).latest(league_id)
 
     @app.post("/api/{competition}/leagues/{league_id}/threads", response_model=Thread)
     def thread(competition: str, league_id: str, subject: Subject) -> Thread:
@@ -502,15 +455,14 @@ def _register_routes(app: FastAPI) -> None:
         answered about Hall's row; the turns then go through the chat endpoint
         like any other conversation.
         """
-        provider = data.build_provider(competition)
-        return Thread(chat_id=_remember(ask_engine(provider).open(league_id, subject)))
+        return Thread(chat_id=chats.remember(wiring.ask(*_open(competition)).open(league_id, subject)))
 
     @app.post("/api/{competition}/leagues/{league_id}/free-agents/judge", response_model=list[PlayerCall])
     def judge_free_agents(competition: str, league_id: str, request: JudgeRequest) -> list[PlayerCall]:
         """A call on each of the free agents on screen, to show on their rows."""
-        entry = _capable(competition, "judging free agents", lambda e: e.judges_wire)
-        provider = data.build_provider(entry.key)
-        return wire_engine(provider).judge(league_id, request.player_ids)
+        entry = wiring.registry.find(competition)
+        provider = entry.open_as(WireProvider, "judging free agents")
+        return wiring.wire(entry, provider).judge(league_id, request.player_ids)
 
     @app.post("/api/{competition}/leagues/{league_id}/free-agents/calls", response_model=list[PlayerCall])
     def free_agent_calls(competition: str, league_id: str, request: CallsRequest) -> list[PlayerCall]:
@@ -519,14 +471,14 @@ def _register_routes(app: FastAPI) -> None:
         What lets the wire show its calls on load. A player whose situation
         has moved since his call comes back marked stale.
         """
-        entry = _capable(competition, "judging free agents", lambda e: e.judges_wire)
-        provider = data.build_provider(entry.key)
-        return wire_engine(provider).kept(league_id, request.player_ids)
+        entry = wiring.registry.find(competition)
+        provider = entry.open_as(WireProvider, "judging free agents")
+        return wiring.wire(entry, provider).kept(league_id, request.player_ids)
 
     @app.post("/api/chat/{chat_id}", response_model=Reply)
     def ask(chat_id: str, request: ChatRequest) -> Reply:
         """Ask the next question in a conversation a thread opened."""
-        chat = _chats.get(chat_id)
+        chat = chats.get(chat_id)
         if chat is None:
             # The server restarted, or the report predates it. Saying so is
             # better than an empty answer the user cannot explain.
@@ -538,43 +490,25 @@ def _register_routes(app: FastAPI) -> None:
             # than "did not answer", and the handler renders it with its code.
             raise
         except Exception as e:  # anything the adapters did not translate
-            # Its message is a repr of a Google RPC payload; the log is where
+            # Its message is a repr of a vendor's RPC payload; the log is where
             # that belongs, not a panel someone is reading.
             logger.error(f"Follow-up failed: {e}")
             raise HTTPException(status_code=502, detail="The model did not answer. Try asking again.") from e
         return Reply(answer=answer or "(no answer)")
 
 
-def _capable(competition: str, what: str, has: Callable[[CompetitionEntry], bool]) -> CompetitionEntry:
-    """The entry a route names, refusing one without the capability asked for.
-
-    Checked here rather than left to the provider: one without the capability
-    lacks the method entirely, so the failure would otherwise be an
-    AttributeError rather than something the user can read. Resolved through
-    `find`, which takes the registry key every route uses ("nfl-sleeper") as
-    well as a bare competition — matching the bare name alone refused every
-    request the UI made.
-    """
-    entry = find(competition)
-    if entry is None:
-        raise HTTPException(status_code=404, detail=f"Unknown competition {competition!r}.")
-    if not has(entry):
-        raise HTTPException(status_code=400, detail=f"{entry.label} does not support {what}.")
-    return entry
-
-
-def _serve_frontend(app: FastAPI) -> None:
+def _serve_frontend(app: FastAPI, dist: Path) -> None:
     """Serve the built UI, if it has been built.
 
     Mounted last so it never shadows `/api`. Missing `dist/` is the normal
     state during front-end development and while the API is under test, so it
     is not an error — the routes above work either way.
     """
-    if not DIST.is_dir():
+    if not dist.is_dir():
         logger.info("web/dist not built; serving the API only. Run `just ui` for the dev server.")
         return
 
-    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
+    app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str) -> Any:
@@ -588,7 +522,7 @@ def _serve_frontend(app: FastAPI) -> None:
         """
         if path.startswith("api/"):
             raise HTTPException(status_code=404, detail=f"Unknown endpoint {'/' + path!r}.")
-        root = DIST.resolve()
+        root = dist.resolve()
         candidate = (root / path).resolve()
         # `path` arrives URL-decoded, so `..%2F` climbs out of dist/ — as far as
         # the repo's .env — unless the resolved file is held inside it.
@@ -597,14 +531,11 @@ def _serve_frontend(app: FastAPI) -> None:
         return FileResponse(root / "index.html")
 
 
-app = create_app()
-
-
 def main() -> None:
-    """Run the server. `just serve`."""
+    """Run the server: `just ui`."""
     import uvicorn
 
-    uvicorn.run("thefrontoffice.adapters.inbound.web.api:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run("thefrontoffice.adapters.inbound.web.api:serve", factory=True, host="127.0.0.1", port=8000)
 
 
 if __name__ == "__main__":

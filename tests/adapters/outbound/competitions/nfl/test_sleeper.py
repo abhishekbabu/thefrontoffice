@@ -33,24 +33,31 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperMatchup,
     SleeperRoster,
 )
-from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import LeagueNotFoundError, NotConfiguredError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery
 
 # ── leagues ─────────────────────────────────────────────────────────────
+
+
+def test_the_weeks_a_backtest_can_rebuild_are_the_finished_ones_after_the_first() -> None:
+    """Week 1 has no games before it to shape a range, and the week in progress has no result."""
+    client = FakeSleeper()
+    client.week = 6
+
+    assert nfl_provider(client).played_weeks("L1") == [2, 3, 4, 5]
 
 
 def test_leagues_are_listed_with_format_and_size() -> None:
     refs = nfl_provider(FakeSleeper()).list_leagues()
     assert len(refs) == 1
     assert refs[0].name == "Sunday Money"
-    assert refs[0].competition == "nfl"
     assert "12-team" in refs[0].detail
     assert "PPR" in refs[0].detail
 
 
 def test_missing_username_is_a_clear_error() -> None:
     provider = SleeperNFLProvider(username=None, client=FakeSleeper(), espn=FakeESPN())
-    with pytest.raises(LeagueNotFoundError, match="SLEEPER_USERNAME"):
+    with pytest.raises(NotConfiguredError, match="SLEEPER_USERNAME"):
         provider.list_leagues()
 
 

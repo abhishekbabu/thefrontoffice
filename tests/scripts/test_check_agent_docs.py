@@ -5,15 +5,11 @@ into a real file keeps working until someone edits one half and wonders why the
 other tool ignored it.
 """
 
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
+import check_agent_docs as checker
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-
-import check_agent_docs as checker  # noqa: E402
 
 
 def _agents(root: Path, folder: str = "", body: str = "# Rules\n") -> Path:

@@ -14,22 +14,16 @@ the real thing — which is itself worth being able to look at both ways.
 Run with `just preview`.
 """
 
-import sys
-from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
-
 PORT = 8100
 
 
 def main() -> int:
     import uvicorn
 
-    from thefrontoffice.adapters.inbound.web.api import create_app
+    from thefrontoffice.adapters.inbound.web.api import serve
 
     print(f"\n  Preview on http://127.0.0.1:{PORT}\n")
-    uvicorn.run(create_app(), host="127.0.0.1", port=PORT, log_level="warning")
+    uvicorn.run(serve(), host="127.0.0.1", port=PORT, log_level="warning")
     return 0
 
 
