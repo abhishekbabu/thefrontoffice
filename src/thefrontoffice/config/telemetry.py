@@ -29,9 +29,7 @@ _configured = False
 def setup_telemetry(service_name: str) -> None:
     """Configure tracing once per process.
 
-    Idempotent because both entry points call it and Streamlit reruns its whole
-    script on every interaction, which would otherwise re-instrument each
-    library on every click.
+    Idempotent because instrumenting a library twice would trace each call twice.
 
     Args:
         service_name: which front end this process is, so traces from the CLI
