@@ -360,6 +360,22 @@ def test_a_view_url_returns_the_page_so_a_deep_link_loads(built_client: TestClie
     assert "text/html" in response.headers["content-type"]
 
 
+def test_a_built_file_is_served_as_itself(built_client: TestClient, tmp_path: Any) -> None:
+    (tmp_path / "dist" / "favicon.svg").write_text("<svg/>")
+    assert built_client.get("/favicon.svg").text == "<svg/>"
+
+
+@pytest.mark.parametrize("escape", ["..%2Fsecret.txt", "%2E%2E/secret.txt"])
+def test_a_path_climbing_out_of_the_build_never_reads_the_file_there(
+    built_client: TestClient, tmp_path: Any, escape: str
+) -> None:
+    """dist/ sits inside the repo, beside .env; an encoded `..` must not reach it."""
+    (tmp_path / "secret.txt").write_text("API_KEY=leaked")
+    response = built_client.get(f"/{escape}")
+    assert "leaked" not in response.text
+    assert "<title>app</title>" in response.text
+
+
 def test_an_unknown_api_path_is_a_404_not_the_page(built_client: TestClient) -> None:
     """Otherwise a renamed or misspelled route answers 200 with HTML, and the
     caller fails on JSON that will not parse instead of on the missing route."""
