@@ -5,9 +5,9 @@ import { ListCard, ListRow } from "@/components/ui/list";
 import { percent, percentPoints, signed } from "@/lib/format";
 import { Card, CardHeader } from "@/components/ui/card";
 import { RosterTable } from "@/components/ui/roster-table";
-import { CardNote, Loading } from "@/components/ui/state";
+import { CardNote, QueryState } from "@/components/ui/state";
 import { usePlayerDrawer } from "@/components/ui/player";
-import { ErrorNote } from "@/components/ui/error-note";
+import { keys, useCapabilities } from "@/lib/queries";
 import { LeagueHeader } from "@/components/ui/page-header";
 
 /**
@@ -21,16 +21,15 @@ export function TeamPanel({ competition, league }: { competition: Competition; l
   const { openPlayer, drawer } = usePlayerDrawer(competition, league);
 
   const roster = useQuery<PlayerCard[], Error>({
-    queryKey: ["roster", competition.key, league.league_id],
-    queryFn: () => api.roster(competition.key, league.league_id),
+    queryKey: keys.roster(competition.key, league.league_id),
+    queryFn: api.league(competition.key, league.league_id).roster,
   });
 
   return (
     <>
       <LeagueHeader league={league} />
 
-      {roster.isError && <ErrorNote error={roster.error} />}
-      {roster.isLoading && <Loading lines={5} />}
+      <QueryState query={roster} lines={5} />
 
       {roster.data && (
         <div className="flex flex-col gap-4 p-5">
@@ -65,8 +64,8 @@ export function TeamPanel({ competition, league }: { competition: Competition; l
  */
 function WeeksAhead({ competition, league }: { competition: Competition; league: League }) {
   const weeks = useQuery<WeekAhead[], Error>({
-    queryKey: ["weeks-ahead", competition.key, league.league_id],
-    queryFn: () => api.weeksAhead(competition.key, league.league_id),
+    queryKey: keys.weeksAhead(competition.key, league.league_id),
+    queryFn: api.league(competition.key, league.league_id).weeksAhead,
   });
 
   const short = weeks.data?.filter((w) => w.short).length ?? 0;
@@ -117,9 +116,10 @@ function WeeksAhead({ competition, league }: { competition: Competition; league:
  */
 function Trades({ competition, league }: { competition: Competition; league: League }) {
   const trades = useQuery<TradeIdea[], Error>({
-    queryKey: ["trades", competition.key, league.league_id],
-    queryFn: () => api.trades(competition.key, league.league_id),
+    queryKey: keys.trades(competition.key, league.league_id),
+    queryFn: api.league(competition.key, league.league_id).trades,
   });
+  const least = useCapabilities().data?.limits.trade_change;
 
   return (
     <ListCard
@@ -130,8 +130,9 @@ function Trades({ competition, league }: { competition: Competition; league: Lea
     >
       {trades.data?.length === 0 && (
         <CardNote>
-          No one-for-one swap improves both starting lineups and raises your playoff chance by half a point or
-          more. Trading is closed after the deadline.
+          No one-for-one swap improves both starting lineups and raises your playoff chance
+          {least !== undefined && ` by ${(least * 100).toFixed(1)} points or more`}. Trading is closed after the
+          deadline.
         </CardNote>
       )}
       {trades.data?.map((idea) => (

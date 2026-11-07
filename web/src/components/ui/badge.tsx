@@ -40,17 +40,3 @@ function Badge({
 }
 
 export { Badge, badgeVariants };
-
-/** A row of labels — a set of short facts that are read together. */
-export function Chips({ items, className }: { items: string[]; className?: string }) {
-  if (!items.length) return null;
-  return (
-    <div className={cn("flex flex-wrap gap-1.5", className)}>
-      {items.map((item) => (
-        <Badge key={item} variant="muted" appearance="label">
-          {item}
-        </Badge>
-      ))}
-    </div>
-  );
-}

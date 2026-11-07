@@ -299,6 +299,7 @@ def test_a_provider_that_cannot_trade_is_refused_by_name_before_any_evaluation(
         competition="nfl",
         platform="sleeper",
         label="NFL (Sleeper)",
+        name="NFL",
         provider=lambda: _Trades,
         build=FakeCompetition,
         is_configured=lambda: True,

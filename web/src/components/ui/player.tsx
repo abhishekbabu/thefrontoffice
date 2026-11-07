@@ -6,32 +6,16 @@ import { fade, list, listItem, portrait, slideOver } from "@/lib/motion";
 import { useLoadedImage } from "@/lib/useLoadedImage";
 import { IconButton } from "@/components/ui/icon-button";
 import { ExternalLink } from "@/components/ui/external-link";
-import { Loading } from "@/components/ui/state";
+import { QueryState } from "@/components/ui/state";
 import { Thread } from "@/components/ui/chat";
-import { ErrorNote } from "@/components/ui/error-note";
-import {
-  NOT_APPLICABLE,
-  api,
-  type Competition,
-  type League,
-  type PlayerDetail,
-  type StatTable,
-} from "@/lib/api";
+import { api, type Competition, type League, type PlayerDetail, type StatTable } from "@/lib/api";
+import { keys, useCapabilities } from "@/lib/queries";
+import { toneText } from "@/lib/tone";
 import { Badge } from "@/components/ui/badge";
+import { StatList } from "@/components/ui/stat";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-/**
- * One player, opened from wherever their name appears.
- *
- * A panel rather than a page: you open it to settle a question about a row you
- * are already looking at, and closing it should put you back exactly there.
- *
- * Mounted whether or not anyone is open — `playerId` of null is the closed
- * state, not a reason to render nothing. A caller that instead dropped the
- * component would take this AnimatePresence down with it, and an exit
- * animation cannot play from a tree that has already gone.
- */
 /**
  * The one figure this player is judged on, beside their name.
  *
@@ -73,7 +57,7 @@ function Headline({ detail }: { detail: PlayerDetail }) {
  * left. Scrolls inside itself rather than widening the drawer — a
  * quarterback's game log is the widest, and a phone is narrower still.
  */
-function StatGrid({ table }: { table: StatTable }) {
+function TableOfStats({ table }: { table: StatTable }) {
   return (
     <div className="overflow-x-auto rounded-md border border-border">
       <table className="w-full border-collapse text-[13px]">
@@ -113,9 +97,8 @@ function StatGrid({ table }: { table: StatTable }) {
                   className={cn(
                     "whitespace-nowrap px-3 py-1.5 text-right font-mono text-[12.5px] tabular-nums",
                     // Nothing to report reads as absence, not as a figure.
-                    value === NOT_APPLICABLE && "text-muted-foreground/50",
-                    row.tone === "good" && "text-ok",
-                    row.tone === "warning" && "text-warn",
+                    value === table.absent && "text-muted-foreground/50",
+                    toneText(row.tone),
                   )}
                 >
                   {value}
@@ -202,7 +185,18 @@ function Portrait({ src }: { src: string }) {
   );
 }
 
-export function PlayerPanel({
+/**
+ * One player, opened from wherever their name appears.
+ *
+ * A panel rather than a page: you open it to settle a question about a row you
+ * are already looking at, and closing it should put you back exactly there.
+ *
+ * Mounted whether or not anyone is open — `playerId` of null is the closed
+ * state, not a reason to render nothing. A caller that instead dropped the
+ * component would take this AnimatePresence down with it, and an exit
+ * animation cannot play from a tree that has already gone.
+ */
+function PlayerPanel({
   competition,
   league,
   playerId,
@@ -219,12 +213,11 @@ export function PlayerPanel({
   if (playerId) last.current = playerId;
   const shown = playerId ?? last.current;
 
-  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities });
-  const ai = capabilities.data?.ai ?? false;
+  const ai = useCapabilities().data?.ai ?? false;
 
   const player = useQuery<PlayerDetail, Error>({
-    queryKey: ["player", competition, league, shown],
-    queryFn: () => api.player(competition, league, shown),
+    queryKey: keys.player(competition, league, shown),
+    queryFn: () => api.league(competition, league).player(shown),
     enabled: Boolean(shown),
   });
 
@@ -290,8 +283,7 @@ export function PlayerPanel({
             </div>
           </div>
 
-          {player.isLoading && <Loading lines={4} />}
-          {player.isError && <ErrorNote error={player.error} />}
+          <QueryState query={player} lines={4} />
 
           {player.data && (
             <m.div variants={list} initial="hidden" animate="shown" className="flex flex-col gap-5 px-5 py-4">
@@ -300,7 +292,7 @@ export function PlayerPanel({
                   <h3 className="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                     {table.title}
                   </h3>
-                  <StatGrid table={table} />
+                  <TableOfStats table={table} />
                 </m.section>
               ))}
 
@@ -314,25 +306,7 @@ export function PlayerPanel({
                   <h3 className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                     {group.title}
                   </h3>
-                  <dl>
-                    {group.stats.map((stat) => (
-                      <div
-                        key={stat.label}
-                        className="flex items-baseline justify-between gap-3 border-b border-border/45 py-1.5 last:border-b-0"
-                      >
-                        <dt className="text-[13px] text-muted-foreground">{stat.label}</dt>
-                        <dd
-                          className={cn(
-                            "font-mono text-[13px] tabular-nums",
-                            stat.tone === "good" && "text-ok",
-                            stat.tone === "warning" && "text-warn",
-                          )}
-                        >
-                          {stat.value}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
+                  <StatList stats={group.stats} />
                 </m.section>
               ))}
             </m.div>
@@ -348,7 +322,7 @@ export function PlayerPanel({
                 league={league}
                 subject={{ kind: "player", key: player.data.player_id }}
                 title={`Ask about ${player.data.name}`}
-                placeholder="Is he the lead back now?"
+                placeholder="Form, role, whether to start"
               />
             </div>
           )}

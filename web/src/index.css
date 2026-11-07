@@ -59,27 +59,9 @@
      reason the status colors are: it encodes a fact, not a taste. */
   --color-photo: #f1f1f3;
 
-  /* Fixture and matchup difficulty, 1 (easiest) to 5 (hardest). The obvious
-     ramp is green to red, which is exactly the axis CVD flattens — so lightness
-     falls monotonically across the five as well, and every component that uses
-     these also prints the number. The color is reinforcement, never the only
-     carrier of the value. */
-  --color-fdr-1: light-dark(#0b5d4a, #0b5d4a);
-  --color-fdr-2: light-dark(#3d8a6b, #35785d);
-  --color-fdr-3: light-dark(#8b8f7e, #6f7364);
-  --color-fdr-4: light-dark(#b8724a, #9c5c38);
-  --color-fdr-5: light-dark(#a83228, #8f2a21);
-  --color-fdr-1-foreground: #eafff8;
-  --color-fdr-2-foreground: #f2fffb;
-  --color-fdr-3-foreground: #fbfbf7;
-  --color-fdr-4-foreground: #fff6f0;
-  --color-fdr-5-foreground: #fff0ee;
-
   --radius-lg: 0.75rem;
   --radius-md: 0.5rem;
   --radius-sm: 0.375rem;
-
-  --container-page: 96rem;
 }
 
 /* The load-bearing line for theming. `color-scheme` tells the browser to render

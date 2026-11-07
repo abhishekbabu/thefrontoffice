@@ -3,30 +3,32 @@ import { useQuery } from "@tanstack/react-query";
 import { m } from "motion/react";
 import {
   api,
+  type Competition,
   type League,
   type LeagueSchedule,
   type PlayerCard,
-  type Competition,
+  type ScheduleRow,
   type TeamRef,
 } from "@/lib/api";
+import { keys } from "@/lib/queries";
+import { toneText, type Variant } from "@/lib/tone";
 import { StatStrip } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ListCard, ListRow } from "@/components/ui/list";
 import { ToggleChip } from "@/components/ui/toggle";
-import { Empty, Loading } from "@/components/ui/state";
+import { Empty, QueryState } from "@/components/ui/state";
 import { RosterTable } from "@/components/ui/roster-table";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { ExternalLink } from "@/components/ui/external-link";
 import { rise } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
 
 /**
  * The league beyond this week.
  *
- * Four questions that are all "how is the season going" rather than "what do I
+ * Questions that are all "how is the season going" rather than "what do I
  * do about Sunday", which is what the week view is for. They are tabs rather
  * than four cards down one page because they are read one at a time — you come
  * here to check the table, or to see what you missed, not both.
@@ -43,15 +45,15 @@ const TABS: { id: TabId; label: string }[] = [
 
 export function LeaguePanel({ competition, league }: { competition: Competition; league: League }) {
   const schedule = useQuery<LeagueSchedule, Error>({
-    queryKey: ["schedule", competition.key, league.league_id],
-    queryFn: () => api.schedule(competition.key, league.league_id),
+    queryKey: keys.schedule(competition.key, league.league_id),
+    queryFn: api.league(competition.key, league.league_id).schedule,
   });
 
   // Rosters come from their own call rather than the schedule: browsing them
   // is a different question, and the season view should not wait on it.
   const teams = useQuery<TeamRef[], Error>({
-    queryKey: ["teams", competition.key, league.league_id],
-    queryFn: () => api.teams(competition.key, league.league_id),
+    queryKey: keys.teams(competition.key, league.league_id),
+    queryFn: api.league(competition.key, league.league_id).teams,
   });
 
   // Only the sections this platform actually answers. A tab that is always
@@ -89,8 +91,7 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
       {/* The season in figures, here rather than on the week: how it is going, not what Sunday needs. */}
       <StatStrip stats={schedule.data?.headline ?? []} />
 
-      {schedule.isLoading && <Loading lines={6} />}
-      {schedule.isError && <ErrorNote error={schedule.error} />}
+      <QueryState query={schedule} lines={6} />
 
       {schedule.data && !current && (
         <Empty
@@ -140,8 +141,8 @@ function Rosters({
   const selected = teams.find((t) => t.team_id === team) ?? teams[0];
 
   const roster = useQuery<PlayerCard[], Error>({
-    queryKey: ["team-roster", competition.key, league.league_id, selected?.team_id],
-    queryFn: () => api.teamRoster(competition.key, league.league_id, selected!.team_id),
+    queryKey: keys.teamRoster(competition.key, league.league_id, selected?.team_id),
+    queryFn: () => api.league(competition.key, league.league_id).teamRoster(selected!.team_id),
     enabled: Boolean(selected),
   });
 
@@ -167,8 +168,7 @@ function Rosters({
             </span>
             <span>{selected.detail}</span>
           </CardHeader>
-          {roster.isLoading && <Loading lines={5} />}
-          {roster.isError && <ErrorNote error={roster.error} />}
+          <QueryState query={roster} lines={5} />
           {roster.data && (
             <RosterTable
               players={roster.data}
@@ -182,6 +182,12 @@ function Rosters({
     </div>
   );
 }
+
+const OUTCOME: Record<NonNullable<ScheduleRow["outcome"]>, { letter: string; variant: Variant }> = {
+  won: { letter: "W", variant: "ok" },
+  lost: { letter: "L", variant: "fail" },
+  drawn: { letter: "D", variant: "muted" },
+};
 
 function Season({ rows }: { rows: LeagueSchedule["season"] }) {
   return (
@@ -211,15 +217,11 @@ function Season({ rows }: { rows: LeagueSchedule["season"] }) {
           {row.opponent && row.detail && (
             <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{row.detail}</span>
           )}
-          {/* Won and lost are carried by the word as well as the color: state
+          {/* Won and lost are carried by the letter as well as the color: state
               in color alone is state a colorblind reader cannot see. */}
           {row.result && (
-            <Badge
-              variant={row.tone === "good" ? "ok" : row.tone === "warning" ? "fail" : "muted"}
-              appearance="pill"
-              className="tabular-nums"
-            >
-              {row.tone === "good" ? "W" : row.tone === "warning" ? "L" : "D"} {row.result}
+            <Badge variant={row.outcome ? OUTCOME[row.outcome].variant : "muted"} appearance="pill" className="tabular-nums">
+              {row.outcome && OUTCOME[row.outcome].letter} {row.result}
             </Badge>
           )}
         </ListRow>
@@ -285,7 +287,7 @@ function Matches({ rows }: { rows: LeagueSchedule["matches"] }) {
             {row.away} <span className="text-muted-foreground">at</span> {row.home}
           </span>
           {row.detail && (
-            <span className={cn("shrink-0 font-mono text-[11px]", row.tone === "warning" ? "text-warn" : "text-muted-foreground")}>
+            <span className={cn("shrink-0 font-mono text-[11px]", toneText(row.tone, "text-muted-foreground"))}>
               {row.detail}
             </span>
           )}
@@ -299,7 +301,7 @@ function Activity({ rows }: { rows: LeagueSchedule["activity"] }) {
   return (
     <ListCard title="Recent activity" count={`${rows.length} moves`}>
       {rows.map((row, i) => (
-        <ListRow key={`${row.when}-${i}`} current={row.tone === "good"}>
+        <ListRow key={`${row.when}-${i}`} current={row.is_mine}>
           <span className="w-16 shrink-0 font-mono text-[11px] text-muted-foreground">{row.when}</span>
           <span className="w-32 shrink-0 truncate">{row.who}</span>
           <Badge variant="muted" appearance="label" className="shrink-0">

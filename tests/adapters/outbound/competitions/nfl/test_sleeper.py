@@ -726,6 +726,22 @@ def test_roster_rows_mark_starters_and_bench() -> None:
     assert {r["Player"]: r["Slot"] for r in rows} == {"Star QB": "START", "Good RB": "BN"}
 
 
+def test_roster_rows_say_who_is_ruled_out_rather_than_merely_listed() -> None:
+    client = FakeSleeper(
+        projections=dict(DEFAULT_PROJECTIONS),
+        rosters=[SleeperRoster(roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1"], starter_ids=["qb1"])],
+    )
+    catalog = client.get_players()
+    hurt, doubtful = catalog["qb1"].copy(), catalog["rb1"].copy()
+    hurt["injury_status"], doubtful["injury_status"] = "IR", "Questionable"
+    client.players_catalog = {**catalog, "qb1": hurt, "rb1": doubtful}
+
+    cards = {c.columns["Player"]: c for c in nfl_provider(client).roster("L1")}
+
+    assert (cards["Star QB"].ruled_out, cards["Good RB"].ruled_out) == (True, False)
+    assert cards["Good RB"].tone == "warning"
+
+
 def test_roster_rows_skip_players_missing_from_the_catalog() -> None:
     client = FakeSleeper(
         rosters=[SleeperRoster(roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["ghost"], starter_ids=[])]

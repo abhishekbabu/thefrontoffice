@@ -7,8 +7,9 @@ registry entry does it only once a competition has actually been chosen.
 
 from pydantic import BaseModel
 
+from thefrontoffice.adapters.inbound.remedies import Remedy, remedy
 from thefrontoffice.bootstrap import CompetitionEntry
-from thefrontoffice.domain.errors import FrontOfficeError
+from thefrontoffice.domain.errors import ErrorCode, FrontOfficeError, NotConfiguredError
 
 
 class Competition(BaseModel):
@@ -26,6 +27,9 @@ class Competition(BaseModel):
 
     platform: str
     label: str
+    name: str
+    """The competition without its platform, for wherever only one platform carries it."""
+
     judges_wire: bool
     """Whether its free agents can be judged — offered only where it is."""
 
@@ -41,8 +45,9 @@ class Competition(BaseModel):
     """Whether it can actually be used. Configured is necessary, not sufficient."""
 
     blocked_reason: str = ""
-    blocked_code: str = ""
-    """What stands in the way, and which remedy the client should offer."""
+    blocked_code: ErrorCode | None = None
+    blocked_remedy: Remedy | None = None
+    """What stands in the way, and what the client can offer to do about it."""
 
 
 def competition(entry: CompetitionEntry) -> Competition:
@@ -53,23 +58,25 @@ def competition(entry: CompetitionEntry) -> Competition:
     probed: its readiness check may look for a token it has no reason to have.
     """
     configured = entry.is_configured()
-    reason = code = ""
+    blocked: FrontOfficeError | None = None if configured else NotConfiguredError(entry.label, entry.requires)
     if configured:
         try:
             entry.check_ready()
         except FrontOfficeError as e:
-            reason, code = str(e), e.code
+            blocked = e
     return Competition(
         key=entry.key,
         sport=entry.sport,
         competition=entry.competition,
         platform=entry.platform,
         label=entry.label,
+        name=entry.name,
         judges_wire=entry.judges_wire,
         plans_ahead=entry.plans_ahead,
         configured=configured,
         requires=entry.requires,
-        ready=configured and not reason,
-        blocked_reason=reason,
-        blocked_code=code,
+        ready=blocked is None,
+        blocked_reason=str(blocked or ""),
+        blocked_code=blocked.code if blocked else None,
+        blocked_remedy=remedy(blocked.code) if blocked else None,
     )

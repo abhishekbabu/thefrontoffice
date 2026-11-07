@@ -11,10 +11,13 @@ Only the generic figures are written here: a competition's own vocabulary
 from thefrontoffice.application.season import chance_now
 from thefrontoffice.application.week import SeasonView, WeekView, WirePage
 from thefrontoffice.domain.models import (
+    FIT_COLUMN,
+    Action,
     Forecast,
     LeagueSchedule,
     PickupChance,
     PlayerPage,
+    PlayerQuery,
     PlayoffOdds,
     Stat,
     Summary,
@@ -24,19 +27,47 @@ from thefrontoffice.domain.models import (
 WIN_COLUMN = "Win"
 """The column a free agent's chance is shown in — beside the competition's own columns."""
 
-FIT_COLUMN = "Fits"
-"""Where a competition says how a player fits your lineup: the chance reads best beside it."""
+NO_CHANGE = 0.0005
+"""Below a twentieth of a point, a change in the chance of winning reads as none:
+"+0.0%" claims a direction the simulation cannot tell apart from noise."""
+
+
+def win_change(change: float) -> str:
+    """'+2.8%', '−0.4%', or 'no change': what a move does to the chance of winning."""
+    if abs(change) < NO_CHANGE:
+        return "no change"
+    return f"{'+' if change > 0 else '−'}{abs(change):.1%}"
 
 
 def week(view: WeekView) -> Summary:
-    """The week's header with the chance of winning and what the week is worth to the playoffs."""
+    """The week's header with the chance of winning and what the week is worth to the playoffs,
+    and each to-do item's effect on that chance in words."""
     summary = view.summary
     stats = [*summary.headline]
     if view.forecast is not None:
         stats.append(_win_chance(view.forecast))
     if view.odds is not None:
         stats.append(_stake(view.odds, view.forecast.win if view.forecast else None))
-    return summary.model_copy(update={"forecast": view.forecast, "headline": stats})
+    actions = None if summary.actions is None else [_priced(action) for action in summary.actions]
+    return summary.model_copy(update={"forecast": view.forecast, "headline": stats, "actions": actions})
+
+
+def _priced(action: Action) -> Action:
+    if action.win_change is None:
+        return action
+    change = action.win_change
+    tone: Tone = "good" if change >= NO_CHANGE else "warning" if change <= -NO_CHANGE else "neutral"
+    return action.model_copy(update={"chance": Stat(label="Win", value=f"{win_change(change)} to win", tone=tone)})
+
+
+def ranking(query: PlayerQuery) -> PlayerQuery:
+    """`query` as the competition answers it.
+
+    The chance of winning is priced for the page alone, so it cannot rank the
+    pool: sorting by it takes the competition's own ranking, which puts the
+    likeliest to help first, and `wire` then orders that page.
+    """
+    return query.model_copy(update={"sort": ""}) if query.sort == WIN_COLUMN else query
 
 
 def season(view: SeasonView) -> LeagueSchedule:
@@ -58,20 +89,21 @@ def season(view: SeasonView) -> LeagueSchedule:
     return schedule.model_copy(update={"standings": rows, "headline": headline})
 
 
-def wire(view: WirePage, *, order: bool | None = None) -> PlayerPage:
+def wire(view: WirePage, query: PlayerQuery | None = None) -> PlayerPage:
     """The page with each priced player's chance in a column of its own; "—" for the rest.
 
-    `order` re-sorts the page by it, descending when true, with the unpriced
-    kept last either way. Only the page: what it would do is priced for the
-    rows on screen, since pricing four thousand players is a minute nobody waits.
+    Where `query` sorts by that chance, the page is re-sorted by it, with the
+    unpriced kept last either way. Only the page: what it would do is priced for
+    the rows on screen, since pricing four thousand players is a minute nobody waits.
     """
     if not view.priced:
         return view.page
+    order = query.descending if query is not None and query.sort == WIN_COLUMN else None
     by_player: dict[str, PickupChance] = {c.player_id: c for c in view.chances}
     cards = []
     for card in view.page.players:
         chance = by_player.get(card.player_id)
-        columns = _beside(card.columns, FIT_COLUMN, f"{chance.win_change:+.1%}" if chance else "—")
+        columns = _beside(card.columns, FIT_COLUMN, win_change(chance.win_change) if chance else "—")
         values = {**card.values, **({WIN_COLUMN: chance.win_change} if chance else {})}
         cards.append(card.model_copy(update={"columns": columns, "values": values}))
     if order is not None:

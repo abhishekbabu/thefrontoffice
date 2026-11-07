@@ -6,6 +6,29 @@ caller can tell apart from a real result. The inbound adapters catch
 """
 
 from collections.abc import Sequence
+from typing import Literal
+
+ErrorCode = Literal[
+    "error",
+    "platform_unavailable",
+    "unknown_competition",
+    "not_configured",
+    "unsupported",
+    "subject_gone",
+    "item_decision",
+    "ai_unavailable",
+    "ai_key_invalid",
+    "ai_quota",
+    "ai_failed",
+    "login_required",
+    "access_not_approved",
+]
+"""Every condition an inbound adapter can tell apart, and so offer a remedy for.
+
+A closed set, so a remedy table keyed by it is checked for typos, and the web
+client's copy of it is generated rather than written: a code added here reaches
+the browser's types without anyone restating it. Named for the condition, not
+the platform: which platform's login is missing is the error's message to say."""
 
 
 class FrontOfficeError(Exception):
@@ -17,7 +40,7 @@ class FrontOfficeError(Exception):
     can offer to fix, without matching on message text that is free to change.
     """
 
-    code: str = "error"
+    code: ErrorCode = "error"
 
 
 class TeamNotFoundError(FrontOfficeError):

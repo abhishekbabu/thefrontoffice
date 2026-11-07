@@ -6,12 +6,14 @@ from thefrontoffice.adapters.inbound import presenting
 from thefrontoffice.application.season import chance_now
 from thefrontoffice.application.week import SeasonView, WeekView, WirePage
 from thefrontoffice.domain.models import (
+    Action,
     Forecast,
     LeagueSchedule,
     MarginRange,
     PickupChance,
     PlayerCard,
     PlayerPage,
+    PlayerQuery,
     PlayoffOdds,
     StandingRow,
     Stat,
@@ -109,8 +111,34 @@ def test_ordering_by_the_chance_keeps_the_unpriced_last_either_way() -> None:
     ]
 
     for descending, expected in ((True, ["c", "a", "b"]), (False, ["a", "c", "b"])):
-        page = presenting.wire(WirePage(page=_page("a", "b", "c"), chances=chances, priced=True), order=descending)
+        query = PlayerQuery(sort=presenting.WIN_COLUMN, descending=descending)
+        page = presenting.wire(WirePage(page=_page("a", "b", "c"), chances=chances, priced=True), query)
         assert [p.player_id for p in page.players] == expected
+
+
+def test_sorting_by_the_chance_asks_the_competition_for_its_own_ranking() -> None:
+    """The chance is priced for one page, so it cannot rank the pool the page is cut from."""
+    assert presenting.ranking(PlayerQuery(sort=presenting.WIN_COLUMN)).sort == ""
+    assert presenting.ranking(PlayerQuery(sort="Proj")).sort == "Proj"
+
+
+def test_a_change_too_small_to_tell_from_noise_reads_as_none() -> None:
+    assert [presenting.win_change(c) for c in (0.028, -0.004, 0.0001)] == ["+2.8%", "−0.4%", "no change"]
+
+
+def test_each_priced_item_says_what_it_does_to_the_chance_in_words_and_tone() -> None:
+    actions = [
+        Action(kind="lineup", urgency="now", title="Start A", reason="r", win_change=0.028),
+        Action(kind="lineup", urgency="now", title="Start B", reason="r", win_change=-0.004),
+        Action(kind="lineup", urgency="now", title="Start C", reason="r"),
+    ]
+    week = presenting.week(WeekView(summary=Summary(actions=actions)))
+
+    assert week.actions is not None
+    gain, cost, unpriced = week.actions
+    assert gain.chance is not None and (gain.chance.value, gain.chance.tone) == ("+2.8% to win", "good")
+    assert cost.chance is not None and (cost.chance.value, cost.chance.tone) == ("−0.4% to win", "warning")
+    assert unpriced.chance is None
 
 
 def test_a_page_priced_to_no_effect_still_has_its_column() -> None:
