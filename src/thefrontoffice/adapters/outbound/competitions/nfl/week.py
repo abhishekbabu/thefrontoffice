@@ -13,10 +13,10 @@ which of the two it is showing.
 import logging
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from functools import cached_property
 
-from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.dates import day_month, parse_day, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot, optimal_lineup
@@ -207,17 +207,9 @@ def opponent_of(matchups: Iterable[Matchup], roster_id: int) -> tuple[Matchup, M
 # ── when the week is played ─────────────────────────────────────────────
 
 
-def parse_date(iso: str) -> date | None:
-    """Sleeper publishes a day, not an instant, so this is a label not a time."""
-    try:
-        return date.fromisoformat(iso[:10])
-    except ValueError, TypeError:
-        return None
-
-
 def day(iso: str) -> str:
     """One date, as a person reads it: 'Sun 13 Sep'."""
-    parsed = parse_date(iso)
+    parsed = parse_day(iso)
     return weekday_day_month(parsed) if parsed else ""
 
 
@@ -227,7 +219,7 @@ def week_dates(games: Sequence[Game]) -> str:
     An NFL week runs Thursday to Monday, so one date would be wrong for most
     of it and a range is what somebody checks against their own calendar.
     """
-    days = sorted({d for d in (parse_date(g.date) for g in games) if d})
+    days = sorted({d for d in (parse_day(g.date) for g in games) if d})
     if not days:
         return ""
     if days[0] == days[-1]:

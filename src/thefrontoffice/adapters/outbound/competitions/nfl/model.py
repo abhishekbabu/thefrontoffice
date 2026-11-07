@@ -24,7 +24,10 @@ Scoring = Literal["pts_ppr", "pts_half_ppr", "pts_std"]
 
 
 FREE_AGENT = "FA"
-"""The club a player on no NFL roster is filed under, in a catalog entry and a projection alike."""
+"""The club a player on no NFL roster is filed under, in a catalog entry and a projection alike — never empty.
+
+The platform's client files him there, and cannot import this; the two are
+kept equal by `test_model.py`."""
 
 
 class PlayerInfo(Protocol):

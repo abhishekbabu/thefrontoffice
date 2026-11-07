@@ -406,7 +406,7 @@ class SleeperNFLProvider:
 
     def _news(self, players: dict[str, PlayerMeta]) -> news.PlayerNews:
         """Recent articles about every player, from each club's own feed."""
-        clubs = sorted({espn_club(m.team) for m in players.values() if m.team not in ("", FREE_AGENT)})
+        clubs = sorted({espn_club(m.team) for m in players.values() if m.team != FREE_AGENT})
         try:
             feeds = self.espn.get_team_news(espn.NFL, clubs)
         except ESPNAPIError as e:

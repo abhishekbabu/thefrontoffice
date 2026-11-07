@@ -36,7 +36,7 @@ def players_by_club(players: Mapping[str, PlayerInfo]) -> dict[str, dict[str, st
     clubs: dict[str, dict[str, str | None]] = defaultdict(dict)
     for player_id, meta in players.items():
         team, position = meta.team, meta.position
-        if team in ("", FREE_AGENT) or position not in FANTASY_POSITIONS or position in NOT_PLAYERS:
+        if team == FREE_AGENT or position not in FANTASY_POSITIONS or position in NOT_PLAYERS:
             continue
         key = normalize_name(meta.name)
         if not key:
