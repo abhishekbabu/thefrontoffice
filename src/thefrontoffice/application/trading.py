@@ -8,7 +8,7 @@ the registry, not tested here.
 import logging
 
 from thefrontoffice.application.formats import TradeAnswer, TradeSides
-from thefrontoffice.domain.errors import AIResponseError, TradeParseError
+from thefrontoffice.domain.errors import TradeParseError
 from thefrontoffice.domain.models import TradeProposal, TradeVerdict
 from thefrontoffice.domain.ports import AnalysisModel, ChatSession, TradeProvider
 
@@ -53,8 +53,5 @@ class TradeEngine:
         # prose is structured in a cheap second pass.
         chat = self.ai.start_chat(enable_search=True)
         text = chat.send_message(context.prompt).text
-        if not text:
-            raise AIResponseError("The model returned an empty trade evaluation.")
-
         answer = self.ai.structure_text(text, TradeAnswer, instruction=EVALUATION_INSTRUCTION)
         return TradeVerdict.model_validate(answer.model_dump()), chat

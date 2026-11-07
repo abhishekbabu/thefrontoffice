@@ -251,8 +251,16 @@ def test_a_chat_failure_arrives_as_a_domain_error() -> None:
         c.start_chat().send_message("why?")
 
 
-def test_a_chat_answer_passes_through_untouched() -> None:
-    reply = SimpleNamespace(text="because")
-    c = GeminiClient(client=FakeGenAI(chats=FakeChats(lambda message: reply)))
+def test_a_chat_answer_carries_the_model_text() -> None:
+    c = GeminiClient(client=FakeGenAI(chats=FakeChats(lambda message: SimpleNamespace(text="because"))))
 
-    assert c.start_chat().send_message("why?") is reply
+    assert c.start_chat().send_message("why?").text == "because"
+
+
+@pytest.mark.parametrize("text", ["", None])
+def test_a_chat_answer_with_nothing_said_is_a_failed_turn(text: str | None) -> None:
+    """The SDK reports silence as None or empty; the port promises an answer."""
+    c = GeminiClient(client=FakeGenAI(chats=FakeChats(lambda message: SimpleNamespace(text=text))))
+
+    with pytest.raises(AIResponseError):
+        c.start_chat().send_message("why?")

@@ -1,14 +1,11 @@
 """Stand-ins for the model: a conversation, and the `AnalysisModel` port."""
 
-from types import SimpleNamespace
-from typing import Any
-
 from pydantic import BaseModel
 
 from support.reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
 from thefrontoffice.application.formats import TradeSides
 from thefrontoffice.domain.models import TradeProposal
-from thefrontoffice.domain.ports import HistoryTurn, TModel
+from thefrontoffice.domain.ports import ChatReply, HistoryTurn, TModel
 
 
 class FakeChat:
@@ -19,11 +16,11 @@ class FakeChat:
         self.error = error
         self.sent: list[str] = []
 
-    def send_message(self, message: Any) -> Any:
-        self.sent.append(str(message))
+    def send_message(self, message: str) -> ChatReply:
+        self.sent.append(message)
         if self.error:
             raise self.error
-        return SimpleNamespace(text=self.reply)
+        return ChatReply(text=self.reply)
 
 
 class FakeAI:

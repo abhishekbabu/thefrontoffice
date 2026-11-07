@@ -69,7 +69,10 @@ class GeminiChat:
         self._chat = chat
 
     def send_message(self, message: str) -> ChatReply:
-        return _translated("chat", lambda: self._chat.send_message(message))
+        text = _translated("chat", lambda: self._chat.send_message(message)).text
+        if not text:
+            raise AIResponseError("The model returned an empty answer.")
+        return ChatReply(text=text)
 
 
 class GenAIModels(Protocol):

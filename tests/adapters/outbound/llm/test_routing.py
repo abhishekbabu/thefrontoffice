@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from thefrontoffice.adapters.outbound.llm.routing import DEFAULT_COOLDOWN_SECONDS, Cooldowns, RoutedModel
 from thefrontoffice.domain.errors import AIKeyInvalidError, AIQuotaError, AIResponseError, AIUnavailableError
+from thefrontoffice.domain.ports import ChatReply
 
 
 class Answer(BaseModel):
@@ -51,18 +52,12 @@ class Scripted:
 
     def start_chat(self, initial_history: Any = None, enable_search: bool = False) -> Any:
         self.histories.append(list(initial_history or []))
-        return SimpleNamespace(send_message=lambda message: SimpleNamespace(text=self._next()))
+        return SimpleNamespace(send_message=lambda message: ChatReply(text=self._next()))
 
 
 def _router(*providers: Scripted, clock: Clock | None = None) -> tuple[RoutedModel, Cooldowns]:
     cooldowns = Cooldowns(clock=clock or Clock())
     return RoutedModel(providers, cooldowns), cooldowns
-
-
-def _text(reply: object) -> str:
-    """A chat reply's text; the port types a reply as any object carrying one."""
-    assert isinstance(reply, SimpleNamespace)
-    return reply.text
 
 
 def _ask(router: RoutedModel) -> str:
@@ -209,16 +204,13 @@ def test_a_chat_carries_on_with_the_next_provider_holding_the_whole_conversation
     gemini.outcomes.append(AIQuotaError("Gemini"))
     reply = chat.send_message("second?")
 
-    assert _text(reply) == "Groq"
+    assert reply.text == "Groq"
     # Groq was seeded with the brief and the first exchange.
     assert [turn["parts"][0] for turn in groq.histories[-1]] == ["brief", "first?", "Gemini"]
 
 
-def test_an_empty_chat_answer_moves_on_like_a_failed_one() -> None:
-    class Silent(Scripted):
-        def start_chat(self, initial_history: Any = None, enable_search: bool = False) -> Any:
-            return SimpleNamespace(send_message=lambda message: SimpleNamespace(text=""))
+def test_a_chat_turn_with_no_answer_moves_on_like_a_failed_one() -> None:
+    """A provider that said nothing raises; the next provider takes the turn."""
+    router, _ = _router(Scripted("Gemini", AIResponseError("The model returned an empty answer.")), Scripted("Groq"))
 
-    router, _ = _router(Silent("Gemini"), Scripted("Groq"))
-
-    assert _text(router.start_chat().send_message("q")) == "Groq"
+    assert router.start_chat().send_message("q").text == "Groq"
