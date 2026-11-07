@@ -1,14 +1,13 @@
 """Tests for the Yahoo provider's trade context."""
 
 import logging
-from types import SimpleNamespace
 
 import pytest
-import requests
 from support.logs import capture_logs
 from support.nba import FakeYahoo, make_player, nba_provider
 
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
+from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooUnavailableError
 from thefrontoffice.domain.errors import PlayerNotFoundError
 from thefrontoffice.domain.models import CompetitionContext, TradeProposal
 
@@ -17,13 +16,9 @@ from thefrontoffice.domain.models import CompetitionContext, TradeProposal
 YAHOO_LOGGER = YahooNBAProvider.__module__
 
 
-def _provider(yahoo: FakeYahoo) -> YahooNBAProvider:
-    return nba_provider(yahoo, league=SimpleNamespace(id="1", name="One"))
-
-
 def _giving(yahoo: FakeYahoo, *names: str) -> str:
     """The prompt for giving `names` away for nothing, which names whom each resolved to."""
-    return _provider(yahoo).build_trade_context("", TradeProposal(giving=list(names), receiving=[])).prompt
+    return nba_provider(yahoo).build_trade_context("", TradeProposal(giving=list(names), receiving=[])).prompt
 
 
 def _yahoo_with(*names: str) -> FakeYahoo:
@@ -68,12 +63,12 @@ def test_an_ambiguous_surname_resolves_to_nobody_rather_than_the_first() -> None
 
 def _context(yahoo: FakeYahoo) -> CompetitionContext:
     proposal = TradeProposal(giving=["LeBron James"], receiving=["Jayson Tatum"])
-    return _provider(yahoo).build_trade_context("", proposal)
+    return nba_provider(yahoo).build_trade_context("", proposal)
 
 
 def test_both_sides_and_the_roster_reach_the_prompt() -> None:
     yahoo = _yahoo_with("LeBron James", "Jayson Tatum")
-    yahoo.roster = [make_player("Existing Starter")]
+    yahoo.roster_players = [make_player("Existing Starter")]
     prompt = _context(yahoo).prompt
     assert "LeBron James" in prompt
     assert "Jayson Tatum" in prompt
@@ -91,7 +86,7 @@ def test_a_roster_failure_degrades_without_losing_the_evaluation() -> None:
     yahoo = FakeYahoo(
         search_results={n: [make_player(n)] for n in ("LeBron James", "Jayson Tatum")},
         roster=[make_player("Existing Starter")],
-        roster_error=requests.ConnectionError("yahoo hiccup"),
+        roster_error=YahooUnavailableError("Yahoo", "yahoo hiccup"),
     )
 
     prompt = _context(yahoo).prompt

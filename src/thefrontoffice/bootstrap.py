@@ -315,28 +315,22 @@ def _nba() -> type[YahooNBAProvider]:
 
 
 def _build_nba() -> YahooNBAProvider:
-    """Yahoo needs an authorized context and a specific league object.
-
-    Deferred to here so that constructing the registry — which every entry point
-    does at startup — never touches Yahoo. Nothing in this path is interactive:
-    an absent token is reported rather than obtained, because the handshake
-    opens a browser and this runs inside a request handler as often as not.
+    """Deferred to here so that constructing the registry — which every entry point
+    does at startup — never touches Yahoo. Building contacts nothing either: the
+    provider finds its leagues when first asked, and an absent token is reported
+    then rather than obtained, because the handshake opens a browser and this
+    runs inside a request handler as often as not.
     """
     from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
-    from thefrontoffice.domain.errors import LeagueNotFoundError
 
-    provider = _nba()
     cache, retry = _disk_cache(settings.yahoo_cache_dir), _retry()
-    leagues = _yahoo_auth(cache).find_leagues("nba", provider.season_year())
-    if not leagues:
-        raise LeagueNotFoundError("no Yahoo NBA leagues for this season")
+    auth = _yahoo_auth(cache)
     sleeper = sleeper_client()
-    return provider(
-        leagues[0],
-        all_leagues=leagues,
+    return _nba()(
+        auth=auth,
+        yahoo_for=lambda league: YahooClient(league, context=auth.context(), cache=cache, retry=retry),
         nba=SleeperNBAForm(sleeper),
-        yahoo_for=lambda league: YahooClient(league, cache=cache, retry=retry),
         sleeper=sleeper,
         max_weekly_adds=settings.yahoo_max_weekly_adds,
     )

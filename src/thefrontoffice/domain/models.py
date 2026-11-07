@@ -787,6 +787,12 @@ def outcome(mine: float, theirs: float) -> Outcome:
     return "won" if mine > theirs else "lost" if mine < theirs else "drawn"
 
 
+def record(wins: int, losses: int, ties: int = 0) -> str:
+    """A head-to-head season as it is said: '4-2', and '4-2-1' only where there was a tie."""
+    base = f"{wins}-{losses}"
+    return f"{base}-{ties}" if ties else base
+
+
 class ScheduleRow(BaseModel):
     """One week of your own season, played or still to come."""
 

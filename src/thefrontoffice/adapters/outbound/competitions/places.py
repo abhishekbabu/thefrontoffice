@@ -1,5 +1,7 @@
 """Where a team sits in a table, said the way a person says it: '5th of 14'."""
 
+from thefrontoffice.domain.models import Stat
+
 
 def ordinal(n: int) -> str:
     """1st, 2nd, 3rd, 4th, 11th, 12th, 13th, 21st."""
@@ -10,3 +12,15 @@ def ordinal(n: int) -> str:
 def place(rank: int, teams: int) -> str:
     """'5th of 14'."""
     return f"{ordinal(rank)} of {teams}"
+
+
+def season(record: str, rank: int, teams: int) -> list[Stat]:
+    """Your record and where it puts you, at the head of the league view.
+
+    Either is left out where the league has not given it: no record yet, or a
+    rank of 0 for a table not yet ranked.
+    """
+    stats = [Stat(label="Record", value=record)] if record else []
+    if rank:
+        stats.append(Stat(label="Place", value=place(rank, teams)))
+    return stats

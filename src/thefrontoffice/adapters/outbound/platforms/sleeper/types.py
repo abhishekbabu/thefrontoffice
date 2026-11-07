@@ -8,6 +8,8 @@ plain GET.
 from dataclasses import dataclass, field
 from typing import Literal, TypedDict, get_args
 
+from thefrontoffice.domain.models import record
+
 ScoringFormat = Literal["pts_ppr", "pts_half_ppr", "pts_std"]
 
 SCORING_FORMATS: tuple[ScoringFormat, ...] = get_args(ScoringFormat)
@@ -94,8 +96,7 @@ class SleeperRoster:
 
     @property
     def record(self) -> str:
-        base = f"{self.wins}-{self.losses}"
-        return f"{base}-{self.ties}" if self.ties else base
+        return record(self.wins, self.losses, self.ties)
 
 
 @dataclass(frozen=True)

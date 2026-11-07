@@ -49,15 +49,15 @@ outgrows one file splits the same way each time — `week.py` (state), `views.py
 `league.py` (season, table), `prompt.py` (model text), `rules.py` (shared facts) — leaving the port behind.
 
 **Types.** Avoid `Any`; prefer builtin generics and PEP 604 unions, which ruff's
-`UP` rules enforce. yahoofantasy is read as `Any` (`replace-imports-with-any`):
-it sets attributes via `setattr` at runtime. There is no `type: ignore` anywhere —
+`UP` rules enforce. yahoofantasy is read as `Any` (`replace-imports-with-any`), and only inside
+`platforms/yahoo/`, which reads it into its own `types.py`. There is no `type: ignore` anywhere —
 fix the type, the fake or the port instead, and disable no check globally.
 
 **Yahoo.** Responses go through our own `JsonDiskCache`, not the SDK's store:
 `make_request` is the only fetch that parallelises safely and the vendor's
-`_load` takes no expiry. `_load_or_fetch` survives for the scoreboard alone,
-where `Week.sync` reads the SDK's store internally and a short `persist_ttl` is
-the only way to force a refresh. Cache writes stay on one thread. The SDK raises requests' own
+`_load` takes no expiry. `_load_or_fetch` survives for the scoreboard alone: a short
+`persist_ttl` refreshes it, and a failed refresh falls back to the persisted copy.
+Cache writes stay on one thread. The SDK raises requests' own
 exceptions, which escape as a 500 unless passed through `yahoo.client.call` (retry, then `translate`).
 `YahooAuth` logs in and finds leagues — never implicitly: non-interactive callers use `ensure_authorized`.
 

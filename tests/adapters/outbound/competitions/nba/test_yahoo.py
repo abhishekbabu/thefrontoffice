@@ -9,7 +9,15 @@ from typing import Any
 
 import pytest
 from support.ai import FakeAI
-from support.nba import FakeNBA, FakeSleeperProjections, FakeYahoo, make_player, nba_provider
+from support.nba import (
+    FakeNBA,
+    FakeSleeperProjections,
+    FakeYahoo,
+    FakeYahooAuth,
+    make_player,
+    nba_provider,
+    yahoo_league,
+)
 from support.nba import yahoo_team as _yahoo_team
 from support.reports import MOCK_NBA_REPORT
 from support.stores import FakeAnswers
@@ -19,8 +27,9 @@ from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooTeam
 from thefrontoffice.application.scouting import ScoutEngine
-from thefrontoffice.domain.errors import TeamNotFoundError
+from thefrontoffice.domain.errors import LeagueNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat
 
 
@@ -67,7 +76,7 @@ def test_missing_team_raises_before_any_ai_call() -> None:
     """A billed Gemini call for a league we do not play in is pure waste."""
 
     class NoTeam(FakeYahoo):
-        def get_user_team(self) -> Any:
+        def get_user_team(self) -> YahooTeam:
             raise TeamNotFoundError("Some League")
 
     ai = FakeAI()
@@ -163,36 +172,50 @@ def test_il_players_are_flagged_so_they_are_not_dropped_carelessly() -> None:
 # ── multi-league selection ──────────────────────────────────────────────
 
 
-def _two_league_provider() -> YahooNBAProvider:
+def _two_league_provider(auth: FakeYahooAuth | None = None) -> YahooNBAProvider:
     """A login in two leagues, each with its own table, roster and budget, so which was read shows."""
-    from types import SimpleNamespace
-
-    one = SimpleNamespace(id="1", name="One", league_type="head")
-    two = SimpleNamespace(id="2", name="Two", league_type="head")
     clients = {
         "1": FakeYahoo(
-            teams=[_yahoo_team("League One Side", "t.1", rank=1, wins=1, losses=0)],
+            teams=[_yahoo_team("League One Side", "t.1", rank=1, wins=1, losses=0, mine=True)],
             roster=[make_player("League One Player", key="p1")],
             adds_used=0,
         ),
         "2": FakeYahoo(
-            teams=[_yahoo_team("League Two Side", "t.1", rank=1, wins=1, losses=0)],
+            teams=[_yahoo_team("League Two Side", "t.1", rank=1, wins=1, losses=0, mine=True)],
             roster=[make_player("League Two Player", key="p2")],
             adds_used=3,
         ),
     }
     return YahooNBAProvider(
-        one,
-        all_leagues=[one, two],
+        auth=auth or FakeYahooAuth([yahoo_league("1", "One"), yahoo_league("2", "Two")]),
+        yahoo_for=lambda league: clients[league.league_key],
         nba=FakeNBA(),
-        yahoo_for=lambda league: clients[league.id],
         sleeper=FakeSleeperProjections(),
         max_weekly_adds=3,
     )
 
 
 def test_every_league_of_the_login_is_listed() -> None:
-    assert [r.league_id for r in _two_league_provider().list_leagues()] == ["1", "2"]
+    leagues = _two_league_provider().list_leagues()
+
+    assert [(r.league_id, r.name, r.detail) for r in leagues] == [("1", "One", "head"), ("2", "Two", "head")]
+
+
+def test_this_seasons_nba_leagues_are_looked_up_once_per_provider() -> None:
+    auth = FakeYahooAuth([yahoo_league("1", "One")])
+    provider = _two_league_provider(auth)
+
+    provider.list_leagues()
+    provider.teams("1")
+
+    assert auth.searches == [("nba", YahooNBAProvider.season_year())]
+
+
+def test_playing_in_no_nba_league_is_a_clear_error() -> None:
+    provider = _two_league_provider(FakeYahooAuth([]))
+
+    with pytest.raises(LeagueNotFoundError):
+        provider.list_leagues()
 
 
 def test_a_specific_league_can_be_selected() -> None:
@@ -220,14 +243,8 @@ def test_every_view_reads_the_league_it_names_whatever_was_asked_before() -> Non
 
 
 def test_selecting_an_unknown_league_raises() -> None:
-    from types import SimpleNamespace
-
-    from thefrontoffice.domain.errors import LeagueNotFoundError
-
-    one = SimpleNamespace(id="1", name="One")
-    provider = nba_provider(league=one, all_leagues=[one])
     with pytest.raises(LeagueNotFoundError):
-        provider.schedule("999")
+        nba_provider().schedule("999")
 
 
 def test_a_roster_card_carries_the_row_and_what_a_row_cannot() -> None:
@@ -339,9 +356,7 @@ def _game(name: str, day: str, **stats: float) -> Any:
 
 
 def _provider_with(sleeper: Any, yahoo: FakeYahoo | None = None) -> Any:
-    from types import SimpleNamespace
-
-    return nba_provider(yahoo or _rich_yahoo(), league=SimpleNamespace(id="1", name="One"), sleeper=sleeper)
+    return nba_provider(yahoo or _rich_yahoo(), sleeper=sleeper)
 
 
 def test_projected_totals_are_attached_to_players() -> None:
@@ -424,19 +439,13 @@ def test_the_season_is_headed_by_your_record_and_place() -> None:
 
 
 def test_without_your_row_in_the_table_the_season_has_no_figures_to_head_it() -> None:
-    from types import SimpleNamespace
-
-    yahoo = FakeYahoo(teams=[SimpleNamespace(name="Half-loaded", team_key="t.9")])
+    yahoo = FakeYahoo(teams=[_yahoo_team("Theirs", "t.2", rank=1, wins=1, losses=0)])
 
     assert nba_provider(yahoo).schedule("").headline == []
 
 
-def test_a_team_with_no_standings_block_is_skipped_rather_than_failing() -> None:
-    """yahoofantasy sets these by setattr, so a missing block is a shape
-    question rather than an error."""
-    from types import SimpleNamespace
-
-    yahoo = FakeYahoo(teams=[SimpleNamespace(name="Half-loaded", team_key="t.9")])
+def test_a_team_sent_without_standings_has_no_row_in_the_table() -> None:
+    yahoo = FakeYahoo(teams=[YahooTeam(name="Half-loaded", team_key="t.9")])
 
     assert nba_provider(yahoo).schedule("").standings == []
 
@@ -446,7 +455,7 @@ def test_the_teams_list_puts_you_first() -> None:
     yahoo = FakeYahoo(
         teams=[
             _yahoo_team("Aardvarks", "t.2", rank=1, wins=5, losses=1),
-            _yahoo_team("Zebras", "t.1", rank=2, wins=4, losses=2),  # FakeYahoo's user team is t.1
+            _yahoo_team("Zebras", "t.1", rank=2, wins=4, losses=2, mine=True),
         ]
     )
 
