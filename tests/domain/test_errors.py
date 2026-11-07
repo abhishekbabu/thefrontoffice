@@ -30,7 +30,11 @@ def test_trade_parse_error_quotes_what_was_typed() -> None:
 
 
 def test_ai_unavailable_names_every_key_that_would_turn_it_on() -> None:
-    from thefrontoffice.config import env_file
+    keys = ["FIRST_API_KEY", "SECOND_API_KEY", "THIRD_API_KEY"]
+    message = str(AIUnavailableError(keys))
+    assert all(key in message for key in keys)
 
-    message = str(AIUnavailableError())
-    assert all(key in message for key in env_file.MODEL_KEYS)
+
+def test_ai_unavailable_names_no_key_of_its_own() -> None:
+    """Which settings turn a model on is the providers' to say, not the domain's."""
+    assert "_API_KEY" not in str(AIUnavailableError())

@@ -7,9 +7,19 @@ the whole prompt.
 
 import logging
 
+from thefrontoffice.application import briefing
 from thefrontoffice.application.answers import Answers
-from thefrontoffice.application.formats import ScoutAnswer
-from thefrontoffice.domain.models import Action, Remembered, ScoutReport, Stat, TaskVerdict, answer_scope, task_id
+from thefrontoffice.application.formats import ScoutAnswer, VerdictAnswer
+from thefrontoffice.domain.models import (
+    Action,
+    Move,
+    Remembered,
+    ScoutReport,
+    Stat,
+    TaskVerdict,
+    answer_scope,
+    task_id,
+)
 from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, ChatSession, ContextProvider
 
 logger = logging.getLogger(__name__)
@@ -52,13 +62,13 @@ class ScoutEngine:
         context = self.provider.build_context(league_id)
         report = self._judge(league_id, context.prompt, context.headline, context.tasks)
 
-        briefing = context.briefing(report)
+        brief = briefing.of_report(context, report)
         logger.debug(
-            f"{self.provider.competition}: briefing is {len(briefing):,} chars vs {len(context.prompt):,} for the prompt"
+            f"{self.provider.competition}: briefing is {len(brief):,} chars vs {len(context.prompt):,} for the prompt"
         )
         chat = self.ai.start_chat(
             initial_history=[
-                {"role": "user", "parts": [briefing]},
+                {"role": "user", "parts": [brief]},
                 {"role": "model", "parts": [report.model_dump_json()]},
             ]
         )
@@ -77,18 +87,19 @@ class ScoutEngine:
         # a field to restate either in, so a hallucinated rank cannot reach
         # the page however the answer reads.
         verdicts = self._verdicts(answer.verdicts, len(tasks))
-        judged = [task.model_copy(update={"verdict": verdicts.get(task_id(i))}) for i, task in _numbered(tasks)]
+        judged = [
+            task.model_copy(update={"verdict": verdicts.get(task_id(i))}) for i, task in enumerate(tasks, start=1)
+        ]
         return ScoutReport(
             situation=answer.situation,
             focus=answer.focus,
-            moves=answer.moves,
+            moves=[Move.model_validate(move.model_dump()) for move in answer.moves],
             strategy=answer.strategy,
-            verdicts=list(verdicts.values()),
             tasks=judged,
             headline=headline,
         )
 
-    def _verdicts(self, verdicts: list[TaskVerdict], count: int) -> dict[str, TaskVerdict]:
+    def _verdicts(self, verdicts: list[VerdictAnswer], count: int) -> dict[str, TaskVerdict]:
         """The model's verdicts keyed by task, keeping only ones that name a real task once.
 
         A verdict on an id the prompt never listed is about nothing, and a
@@ -99,7 +110,7 @@ class ScoutEngine:
         kept: dict[str, TaskVerdict] = {}
         for verdict in verdicts:
             if verdict.task in known and verdict.task not in kept:
-                kept[verdict.task] = verdict
+                kept[verdict.task] = TaskVerdict.model_validate(verdict.model_dump())
             else:
                 logger.warning(
                     f"{self.provider.competition}: dropping a verdict on unknown or repeated task {verdict.task!r}"
@@ -107,10 +118,6 @@ class ScoutEngine:
         if len(kept) < count:
             logger.info(f"{self.provider.competition}: the model judged {len(kept)} of {count} to-do items")
         return kept
-
-
-def _numbered(tasks: list[Action]) -> list[tuple[int, Action]]:
-    return list(enumerate(tasks, start=1))
 
 
 def scout_scope(competition: str, league_id: str) -> str:

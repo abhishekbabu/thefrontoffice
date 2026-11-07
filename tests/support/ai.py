@@ -3,7 +3,12 @@
 from types import SimpleNamespace
 from typing import Any
 
+from pydantic import BaseModel
+
 from support.reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
+from thefrontoffice.application.formats import TradeSides
+from thefrontoffice.domain.models import TradeProposal
+from thefrontoffice.domain.ports import HistoryTurn, TModel
 
 
 class FakeChat:
@@ -22,45 +27,47 @@ class FakeChat:
 
 
 class FakeAI:
-    """Stands in for GeminiClient, recording what it was asked."""
+    """Stands in for the model, recording what it was asked.
+
+    Answers in whatever format it is held to, as a model does: `report` for an
+    analysis, `proposal` for a trade's two sides, `verdict` for anything else
+    it structures.
+    """
 
     def __init__(
         self,
-        report: Any = MOCK_NBA_REPORT,
-        verdict: Any = MOCK_NBA_VERDICT,
-        proposal: Any = None,
-        prose: str = "[FAKE] trade prose",
+        report: BaseModel = MOCK_NBA_REPORT,
+        verdict: BaseModel = MOCK_NBA_VERDICT,
+        proposal: TradeProposal | None = None,
         chat: FakeChat | None = None,
+        available: bool = True,
     ) -> None:
         self.report = report
         self.verdict = verdict
-        self.proposal = proposal
-        self.prose = prose
+        self.proposal = proposal or TradeProposal(giving=["LeBron James"], receiving=["Jayson Tatum"])
+        self.available = available
         self.prompts: list[str] = []
-        self.structured_text: list[str] = []
-        self.history: Any = None
+        self.structured: list[tuple[str, type[BaseModel], str]] = []
+        self.history: list[HistoryTurn] = []
+        """What the last chat opened was seeded with."""
         self.search_enabled: bool | None = None
         self.chat = chat or FakeChat()
 
-    def generate_structured(self, prompt: str, schema: type, mock: Any = None) -> Any:
-        """The scripted report, in whatever format was asked for: a model answers in the schema it is held to."""
+    @property
+    def is_available(self) -> bool:
+        return self.available
+
+    def generate_structured(self, prompt: str, schema: type[TModel]) -> TModel:
         self.prompts.append(prompt)
-        return self.report if isinstance(self.report, schema) else schema.model_validate(self.report.model_dump())
+        return schema.model_validate(self.report.model_dump())
 
-    def structure_text(self, text: str, schema: type, instruction: str, mock: Any = None) -> Any:
-        self.structured_text.append(text)
-        return self.verdict
+    def structure_text(self, text: str, schema: type[TModel], instruction: str) -> TModel:
+        self.structured.append((text, schema, instruction))
+        if schema is TradeSides:
+            return schema.model_validate({"giving": self.proposal.giving, "receiving": self.proposal.receiving})
+        return schema.model_validate(self.verdict.model_dump())
 
-    def start_chat(self, initial_history: Any = None, enable_search: bool = False) -> FakeChat:
-        self.history = initial_history
+    def start_chat(self, initial_history: list[HistoryTurn] | None = None, enable_search: bool = False) -> FakeChat:
+        self.history = list(initial_history or [])
         self.search_enabled = enable_search
         return self.chat
-
-    def parse_trade_string(self, text: str) -> Any:
-        from thefrontoffice.domain.models import TradeProposal
-
-        return (
-            self.proposal
-            if self.proposal is not None
-            else TradeProposal(giving=["LeBron James"], receiving=["Jayson Tatum"])
-        )

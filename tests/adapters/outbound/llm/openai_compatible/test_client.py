@@ -141,13 +141,19 @@ def test_prose_is_structured_by_the_fast_model() -> None:
     assert completions.requests[0]["model"] == PROVIDER.parsing_model
 
 
-def test_a_trade_is_parsed_into_its_two_sides_by_the_fast_model() -> None:
-    model, completions = _model(json.dumps({"giving": ["Bijan Robinson"], "receiving": ["Puka Nacua"]}))
+def test_structuring_carries_the_instruction_and_the_text() -> None:
+    model, completions = _model(GOOD)
 
-    proposal = model.parse_trade_string("Give Bijan, get Puka")
+    model.structure_text("Start him.", Verdict, "Convert this.")
 
-    assert (proposal.giving, proposal.receiving) == (["Bijan Robinson"], ["Puka Nacua"])
-    assert completions.requests[0]["model"] == PROVIDER.parsing_model
+    content = completions.requests[0]["messages"][-1]["content"]
+    assert "Convert this." in content and "Start him." in content
+
+
+def test_the_provider_names_itself_and_its_key() -> None:
+    model, _ = _model(GOOD)
+
+    assert (model.name, model.key_setting) == (PROVIDER.name, PROVIDER.setting)
 
 
 # ── failures ────────────────────────────────────────────────────────────
@@ -198,8 +204,9 @@ def test_with_no_key_nothing_is_offered_and_nothing_is_called() -> None:
     model = OpenAICompatibleClient(replace(PROVIDER, api_key=None))
 
     assert not model.is_available
-    with pytest.raises(AIUnavailableError):
+    with pytest.raises(AIUnavailableError) as raised:
         model.generate_structured("judge", Verdict)
+    assert raised.value.keys == [PROVIDER.setting]
 
 
 # ── follow-up chats ─────────────────────────────────────────────────────

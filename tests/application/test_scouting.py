@@ -10,8 +10,9 @@ from support.ai import FakeAI
 from support.reports import MOCK_NBA_REPORT
 from support.stores import FakeAnswers
 
+from thefrontoffice.application.formats import ScoutAnswer, VerdictAnswer
 from thefrontoffice.application.scouting import ScoutEngine
-from thefrontoffice.domain.models import Action, CompetitionContext, ScoutReport, Stat, TaskVerdict, task_id
+from thefrontoffice.domain.models import Action, CompetitionContext, ScoutReport, Stat, task_id
 
 TASKS = [
     Action(kind="lineup", urgency="now", title="Start A over B", reason="B is out.", player_id="a"),
@@ -32,15 +33,21 @@ class ContextOnly:
         return self.context
 
 
-def _report(*verdicts: TaskVerdict, tasks: list[Action] | None = None) -> ScoutReport:
-    return MOCK_NBA_REPORT.model_copy(update={"verdicts": list(verdicts), "tasks": tasks or []})
+def _report(*verdicts: VerdictAnswer) -> ScoutAnswer:
+    """What the model writes: the mock report's judgement, with these verdicts."""
+    written = MOCK_NBA_REPORT.model_dump(include={"situation", "focus", "moves", "strategy"})
+    return ScoutAnswer.model_validate({**written, "verdicts": [v.model_dump() for v in verdicts]})
 
 
-def _verdict(position: int, decision: Any = "AGREE") -> TaskVerdict:
-    return TaskVerdict(task=task_id(position), decision=decision, reason="because")
+def _verdict(position: int, decision: Any = "AGREE") -> VerdictAnswer:
+    return VerdictAnswer(task=task_id(position), decision=decision, reason="because")
 
 
-def _run(report: ScoutReport, tasks: list[Action] = TASKS) -> ScoutReport:
+def _judged(report: ScoutReport) -> list[str]:
+    return [t.verdict.task for t in report.tasks if t.verdict]
+
+
+def _run(report: ScoutAnswer, tasks: list[Action] = TASKS) -> ScoutReport:
     engine = ScoutEngine(ContextOnly(tasks), ai=FakeAI(report=report), answers=FakeAnswers())
     judged, _ = engine.start_analysis("L1")
     return judged
@@ -64,7 +71,7 @@ def test_a_task_the_model_skipped_is_kept_without_a_verdict() -> None:
 def test_a_verdict_on_a_task_that_was_never_listed_is_dropped() -> None:
     report = _run(_report(_verdict(1), _verdict(3)))
 
-    assert [v.task for v in report.verdicts] == [task_id(1)]
+    assert _judged(report) == [task_id(1)]
 
 
 def test_only_the_first_of_two_verdicts_on_one_task_counts() -> None:
@@ -72,22 +79,19 @@ def test_only_the_first_of_two_verdicts_on_one_task_counts() -> None:
     report = _run(_report(_verdict(1, "AGREE"), _verdict(1, "OVERRULE")))
 
     assert report.tasks[0].verdict is not None and report.tasks[0].verdict.decision == "AGREE"
-    assert len(report.verdicts) == 1
 
 
-def test_tasks_the_model_writes_itself_are_discarded() -> None:
-    """It judges the list; it does not get to restate it."""
-    invented = Action(kind="waiver", urgency="now", title="Pick up Nobody", reason="trust me", player_id="x")
+def test_the_moves_are_the_models_and_the_tasks_the_providers() -> None:
+    report = _run(_report())
 
-    report = _run(_report(tasks=[invented]))
-
-    assert "x" not in [t.player_id for t in report.tasks]
+    assert [m.player for m in report.moves] == [m.player for m in MOCK_NBA_REPORT.moves]
+    assert [t.player_id for t in report.tasks] == ["a", "c"]
 
 
 def test_a_competition_with_no_tasks_reports_none() -> None:
     report = _run(_report(_verdict(1)), tasks=[])
 
-    assert (report.tasks, report.verdicts) == ([], [])
+    assert report.tasks == []
 
 
 def test_the_headline_still_comes_from_the_provider() -> None:

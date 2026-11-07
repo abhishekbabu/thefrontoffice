@@ -1,30 +1,60 @@
-"""Tests for GeminiClient's structured-generation paths, with a fake SDK client."""
+"""Tests for GeminiClient's generation paths, with a fake SDK client handed in."""
 
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from google.genai import errors, types
+from pydantic import BaseModel
 from support.logs import capture_logs
 from support.reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
 
-from thefrontoffice.adapters.outbound.llm.gemini.client import GeminiClient
+from thefrontoffice.adapters.outbound.llm.gemini.client import GeminiClient, translate
 from thefrontoffice.adapters.outbound.llm.gemini.constants import MODEL_FLASH, MODEL_PRO
-from thefrontoffice.domain.errors import AIResponseError, AIUnavailableError
+from thefrontoffice.domain.errors import AIKeyInvalidError, AIQuotaError, AIResponseError
 from thefrontoffice.domain.models import ScoutReport, TradeVerdict
 
 # The module logs through `getLogger(__name__)`, so the class's module is the
 # logger's name — and follows the module if it ever moves.
 GEMINI_LOGGER = GeminiClient.__module__
 
+BAD_KEY = errors.ClientError(
+    400,
+    {
+        "error": {
+            "code": 400,
+            "message": "API key not valid. Please pass a valid API key.",
+            "status": "INVALID_ARGUMENT",
+        }
+    },
+)
+SPENT = errors.ClientError(429, {"error": {"code": 429, "message": "Quota exceeded.", "status": "RESOURCE_EXHAUSTED"}})
+BROKEN = errors.ServerError(
+    500,
+    {"error": {"code": 500, "message": "{'@type': 'type.googleapis.com/google.rpc.ErrorInfo'}", "status": "INTERNAL"}},
+)
+
+
+def _response(
+    parsed: BaseModel | None = None, text: str = "", usage: types.GenerateContentResponseUsageMetadata | None = None
+) -> types.GenerateContentResponse:
+    """A genai response as the SDK builds one: `parsed` where it validated, the raw text either way."""
+    parts = [types.Part(text=text)] if text else []
+    return types.GenerateContentResponse(
+        candidates=[types.Candidate(content=types.Content(role="model", parts=parts))],
+        parsed=parsed,
+        usage_metadata=usage,
+    )
+
 
 class FakeModels:
-    def __init__(self, response: Any = None, error: Exception | None = None) -> None:
-        self.response = response
+    def __init__(self, response: types.GenerateContentResponse | None = None, error: Exception | None = None) -> None:
+        self.response = response or _response()
         self.error = error
         self.calls: list[dict[str, Any]] = []
 
-    def generate_content(self, **kwargs: Any) -> Any:
+    def generate_content(self, **kwargs: Any) -> types.GenerateContentResponse:
         self.calls.append(kwargs)
         if self.error:
             raise self.error
@@ -49,23 +79,23 @@ class FakeGenAI:
         self.chats = chats or FakeChats(lambda message: SimpleNamespace(text=""))
 
 
-def _client(response: Any = None, error: Exception | None = None) -> tuple[GeminiClient, FakeModels]:
-    c = GeminiClient(api_key="fake-key")
+def _client(
+    response: types.GenerateContentResponse | None = None, error: Exception | None = None
+) -> tuple[GeminiClient, FakeModels]:
     models = FakeModels(response, error)
-    c.client = FakeGenAI(models=models)
-    return c, models
+    return GeminiClient(client=FakeGenAI(models=models)), models
 
 
 # ── generate_structured ─────────────────────────────────────────────────
 
 
 def test_parsed_model_is_returned_directly() -> None:
-    c, _ = _client(SimpleNamespace(parsed=MOCK_NBA_REPORT, text="{}"))
+    c, _ = _client(_response(MOCK_NBA_REPORT, "{}"))
     assert c.generate_structured("p", ScoutReport) == MOCK_NBA_REPORT
 
 
 def test_reports_use_pro_and_request_a_json_schema() -> None:
-    c, models = _client(SimpleNamespace(parsed=MOCK_NBA_REPORT, text="{}"))
+    c, models = _client(_response(MOCK_NBA_REPORT, "{}"))
     c.generate_structured("p", ScoutReport)
     call = models.calls[0]
     assert call["model"] == MODEL_PRO
@@ -75,24 +105,31 @@ def test_reports_use_pro_and_request_a_json_schema() -> None:
 
 def test_raw_json_is_used_when_the_sdk_does_not_populate_parsed() -> None:
     """Guards against a client-library change degrading into a crash."""
-    c, _ = _client(SimpleNamespace(parsed=None, text=MOCK_NBA_REPORT.model_dump_json()))
+    c, _ = _client(_response(text=MOCK_NBA_REPORT.model_dump_json()))
     assert c.generate_structured("p", ScoutReport) == MOCK_NBA_REPORT
 
 
 def test_json_that_does_not_match_the_schema_raises() -> None:
-    c, _ = _client(SimpleNamespace(parsed=None, text='{"matchup_insight": "x"}'))
+    c, _ = _client(_response(text='{"matchup_insight": "x"}'))
     with pytest.raises(AIResponseError):
         c.generate_structured("p", ScoutReport)
 
 
 def test_empty_response_raises() -> None:
-    c, _ = _client(SimpleNamespace(parsed=None, text=""))
+    c, _ = _client(_response())
     with pytest.raises(AIResponseError):
         c.generate_structured("p", ScoutReport)
 
 
 def test_api_failure_is_wrapped_as_a_domain_error() -> None:
-    c, _ = _client(error=RuntimeError("503 backend error"))
+    c, _ = _client(error=BROKEN)
+    with pytest.raises(AIResponseError):
+        c.generate_structured("p", ScoutReport)
+
+
+def test_a_dropped_connection_is_a_failed_answer_another_provider_can_take() -> None:
+    """The SDK raises its transport's own exceptions unwrapped."""
+    c, _ = _client(error=ConnectionError("reset by peer"))
     with pytest.raises(AIResponseError):
         c.generate_structured("p", ScoutReport)
 
@@ -102,76 +139,44 @@ def test_api_failure_is_wrapped_as_a_domain_error() -> None:
 
 def test_structuring_uses_flash_not_pro() -> None:
     """Converting prose is a parsing job — the cheap model, per project policy."""
-    c, models = _client(SimpleNamespace(parsed=MOCK_NBA_VERDICT, text="{}"))
+    c, models = _client(_response(MOCK_NBA_VERDICT, "{}"))
     c.structure_text("some prose", TradeVerdict, instruction="Extract it.")
     assert models.calls[0]["model"] == MODEL_FLASH
 
 
 def test_structuring_passes_the_prose_and_instruction_through() -> None:
-    c, models = _client(SimpleNamespace(parsed=MOCK_NBA_VERDICT, text="{}"))
+    c, models = _client(_response(MOCK_NBA_VERDICT, "{}"))
     c.structure_text("VERDICT: accept", TradeVerdict, instruction="Extract it.")
     contents = models.calls[0]["contents"]
     assert "VERDICT: accept" in contents
     assert "Extract it." in contents
 
 
+def test_structuring_is_held_to_the_schema() -> None:
+    c, models = _client(_response(MOCK_NBA_VERDICT, "{}"))
+    c.structure_text("prose", TradeVerdict, instruction="x")
+    assert models.calls[0]["config"]["response_schema"] is TradeVerdict
+
+
 def test_structuring_failure_is_wrapped() -> None:
-    c, _ = _client(error=RuntimeError("bad request"))
+    c, _ = _client(error=BROKEN)
     with pytest.raises(AIResponseError):
         c.structure_text("prose", TradeVerdict, instruction="x")
-
-
-def test_structuring_without_credentials_raises() -> None:
-    c = GeminiClient(api_key=None)
-    with pytest.raises(AIUnavailableError):
-        c.structure_text("prose", TradeVerdict, instruction="x")
-
-
-# ── parse_trade_string ──────────────────────────────────────────────────
-
-
-def test_trade_parsing_returns_both_sides() -> None:
-    c, _ = _client(SimpleNamespace(text='{"giving": ["A"], "receiving": ["B"]}'))
-    proposal = c.parse_trade_string("Give A, Get B")
-    assert proposal.giving == ["A"]
-    assert proposal.receiving == ["B"]
-    assert proposal.is_valid
-
-
-def test_trade_parsing_coerces_a_bare_string_into_a_list() -> None:
-    """The model sometimes returns a string when only one player is involved."""
-    c, _ = _client(SimpleNamespace(text='{"giving": "A", "receiving": "B"}'))
-    proposal = c.parse_trade_string("Give A, Get B")
-    assert proposal.giving == ["A"]
-    assert proposal.receiving == ["B"]
-
-
-def test_trade_parsing_failure_raises() -> None:
-    c, _ = _client(error=RuntimeError("boom"))
-    with pytest.raises(AIResponseError):
-        c.parse_trade_string("x")
-
-
-def test_unparseable_json_raises_rather_than_returning_an_empty_trade() -> None:
-    c, _ = _client(SimpleNamespace(text="not json at all"))
-    with pytest.raises(AIResponseError):
-        c.parse_trade_string("x")
 
 
 # ── usage logging ───────────────────────────────────────────────────────
 
 
-class Usage:
-    prompt_token_count = 3400
-    candidates_token_count = 310
-    total_token_count = 3710
-    cached_content_token_count = 0
+def _usage(cached: int | None = None) -> types.GenerateContentResponseUsageMetadata:
+    return types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=3400, candidates_token_count=310, total_token_count=3710, cached_content_token_count=cached
+    )
 
 
 def test_token_usage_is_logged() -> None:
     """Gemini Pro on a large prompt is the only real expense; nothing else
     measures it."""
-    c, _ = _client(SimpleNamespace(parsed=MOCK_NBA_REPORT, text="{}", usage_metadata=Usage()))
+    c, _ = _client(_response(MOCK_NBA_REPORT, "{}", _usage()))
     with capture_logs(GEMINI_LOGGER) as logs:
         c.generate_structured("p", ScoutReport)
     assert "3400 in" in logs.text
@@ -180,15 +185,14 @@ def test_token_usage_is_logged() -> None:
 
 
 def test_structuring_logs_against_flash() -> None:
-    c, _ = _client(SimpleNamespace(parsed=MOCK_NBA_VERDICT, text="{}", usage_metadata=Usage()))
+    c, _ = _client(_response(MOCK_NBA_VERDICT, "{}", _usage()))
     with capture_logs(GEMINI_LOGGER) as logs:
         c.structure_text("prose", TradeVerdict, instruction="x")
     assert MODEL_FLASH in logs.text
 
 
 def test_missing_usage_metadata_still_returns_the_answer_and_logs_the_call() -> None:
-    """An SDK change that drops usage_metadata must not break the call."""
-    c, _ = _client(SimpleNamespace(parsed=MOCK_NBA_REPORT, text="{}"))
+    c, _ = _client(_response(MOCK_NBA_REPORT, "{}"))
     with capture_logs(GEMINI_LOGGER) as logs:
         result = c.generate_structured("p", ScoutReport)
     assert result == MOCK_NBA_REPORT
@@ -196,10 +200,7 @@ def test_missing_usage_metadata_still_returns_the_answer_and_logs_the_call() -> 
 
 
 def test_cached_tokens_are_reported_when_present() -> None:
-    class Cached(Usage):
-        cached_content_token_count = 1200
-
-    c, _ = _client(SimpleNamespace(parsed=MOCK_NBA_REPORT, text="{}", usage_metadata=Cached()))
+    c, _ = _client(_response(MOCK_NBA_REPORT, "{}", _usage(cached=1200)))
     with capture_logs(GEMINI_LOGGER) as logs:
         c.generate_structured("p", ScoutReport)
     assert "1200 cached" in logs.text
@@ -211,28 +212,23 @@ def test_cached_tokens_are_reported_when_present() -> None:
 def test_a_rejected_key_is_named_as_such() -> None:
     """Distinct from having no key, which the app hides: something was
     configured and is wrong, and only the person who typed it can fix it."""
-    from thefrontoffice.adapters.outbound.llm.gemini.client import translate
-    from thefrontoffice.domain.errors import AIKeyInvalidError
-
-    error = translate(Exception("400 INVALID_ARGUMENT ... 'reason': 'API_KEY_INVALID' ..."))
+    error = translate(BAD_KEY)
 
     assert isinstance(error, AIKeyInvalidError)
+    assert GeminiClient.key_setting in str(error)
 
 
 def test_an_exhausted_quota_is_told_apart_from_a_bad_key() -> None:
-    from thefrontoffice.adapters.outbound.llm.gemini.client import translate
-    from thefrontoffice.domain.errors import AIQuotaError
+    error = translate(SPENT)
 
-    assert isinstance(translate(Exception("429 RESOURCE_EXHAUSTED")), AIQuotaError)
+    assert isinstance(error, AIQuotaError)
+    assert error.provider == GeminiClient.name
 
 
 def test_no_vendor_payload_reaches_the_message() -> None:
     """The SDK embeds a repr of a Google RPC payload — nested dicts, type URLs,
     a locale — which is unreadable anywhere a person is looking."""
-    from thefrontoffice.adapters.outbound.llm.gemini.client import translate
-
-    raw = "500 INTERNAL {'error': {'details': [{'@type': 'type.googleapis.com/google.rpc.ErrorInfo'}]}}"
-    message = str(translate(Exception(raw)))
+    message = str(translate(BROKEN))
 
     assert "@type" not in message
     assert "googleapis" not in message
@@ -245,13 +241,11 @@ def test_no_vendor_payload_reaches_the_message() -> None:
 def test_a_chat_failure_arrives_as_a_domain_error() -> None:
     """The SDK's chat raises its own exceptions; a spent quota has to be
     recognisable as one, or no other provider can take the turn."""
-    from thefrontoffice.domain.errors import AIQuotaError
 
     def failing(message: str) -> Any:
-        raise RuntimeError("429 RESOURCE_EXHAUSTED")
+        raise SPENT
 
-    c = GeminiClient(api_key="fake-key")
-    c.client = FakeGenAI(chats=FakeChats(failing))
+    c = GeminiClient(client=FakeGenAI(chats=FakeChats(failing)))
 
     with pytest.raises(AIQuotaError):
         c.start_chat().send_message("why?")
@@ -259,7 +253,6 @@ def test_a_chat_failure_arrives_as_a_domain_error() -> None:
 
 def test_a_chat_answer_passes_through_untouched() -> None:
     reply = SimpleNamespace(text="because")
-    c = GeminiClient(api_key="fake-key")
-    c.client = FakeGenAI(chats=FakeChats(lambda message: reply))
+    c = GeminiClient(client=FakeGenAI(chats=FakeChats(lambda message: reply)))
 
     assert c.start_chat().send_message("why?") is reply

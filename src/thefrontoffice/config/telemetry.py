@@ -65,8 +65,8 @@ def setup_telemetry(service_name: str) -> None:
     # model, latency and token counts still arrive through its log line.
     if settings.logfire_capture_prompts:
         logfire.instrument_openai()
-    # Records validation failures on ScoutReport and TradeVerdict, which is how
-    # a malformed model response actually presents.
+    # Records validation failures on the answer formats the model fills, which
+    # is how a malformed model response actually presents.
     logfire.instrument_pydantic()
 
     # The app already logs through the standard library everywhere outside the

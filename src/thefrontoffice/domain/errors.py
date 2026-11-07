@@ -5,6 +5,8 @@ caller can tell apart from a real result. The inbound adapters catch
 `FrontOfficeError` and render it; nothing else prints.
 """
 
+from collections.abc import Sequence
+
 
 class FrontOfficeError(Exception):
     """Base class for every expected, user-facing failure.
@@ -117,12 +119,14 @@ class AIUnavailableError(FrontOfficeError):
 
     code = "ai_unavailable"
 
-    def __init__(self, detail: str = "") -> None:
+    def __init__(self, keys: Sequence[str] = ()) -> None:
+        *rest, last = keys or [""]
+        named = f" — {', '.join(rest)} or {last}" if rest else f" — {last}" if last else ""
         super().__init__(
-            detail
-            or "Analysis is unavailable because no model key is set — GOOGLE_API_KEY, GROQ_API_KEY or "
-            "OPENROUTER_API_KEY. Add one in Settings to turn it on."
+            f"Analysis is unavailable because no model key is set{named}. Add one in Settings to turn it on."
         )
+        self.keys = list(keys)
+        """The settings any one of which would turn analysis on, as the providers name them."""
 
 
 class AIKeyInvalidError(FrontOfficeError):
@@ -135,7 +139,7 @@ class AIKeyInvalidError(FrontOfficeError):
 
     code = "ai_key_invalid"
 
-    def __init__(self, provider: str = "Google", setting: str = "GOOGLE_API_KEY") -> None:
+    def __init__(self, provider: str, setting: str) -> None:
         super().__init__(f"{provider} rejected the API key. Check {setting} in Settings.")
         self.provider = provider
 
@@ -145,7 +149,7 @@ class AIQuotaError(FrontOfficeError):
 
     code = "ai_quota"
 
-    def __init__(self, provider: str = "Google", retry_after: float | None = None, detail: str = "") -> None:
+    def __init__(self, provider: str, retry_after: float | None = None, detail: str = "") -> None:
         super().__init__(detail or f"The {provider} API quota is exhausted. Analysis will work again once it resets.")
         self.provider = provider
         self.retry_after = retry_after
@@ -155,8 +159,8 @@ class AIQuotaError(FrontOfficeError):
 class AIResponseError(FrontOfficeError):
     """The model was reachable and the call still did not produce a report.
 
-    The vendor's own message is a Python repr of a Google RPC payload, which is
-    unreadable and belongs in the log. This carries a sentence instead.
+    The vendor's own message is often a Python repr of an RPC payload, which
+    is unreadable and belongs in the log. This carries a sentence instead.
     """
 
     code = "ai_failed"
