@@ -27,7 +27,6 @@ def _render_move(move: Move, number: int) -> str:
 
 
 def render_scout_report(report: ScoutReport) -> str:
-    """Render a scout report for the terminal."""
     focus = ", ".join(report.focus) or "none identified"
     parts = [
         f"{_INDENT}SITUATION",
@@ -46,7 +45,6 @@ def render_scout_report(report: ScoutReport) -> str:
 
 
 def render_trade_verdict(verdict: TradeVerdict) -> str:
-    """Render a trade verdict for the terminal."""
     gained = ", ".join(verdict.gains) or "—"
     lost = ", ".join(verdict.losses) or "—"
     return "\n".join(
