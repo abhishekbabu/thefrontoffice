@@ -41,7 +41,7 @@ FAIR_SHARE = 0.8
 better lineup can talk a manager into, and no wider."""
 
 
-def build(client: NFLSource, state: Week, league_id: str, seed: int) -> TradeMarket | None:
+def build(client: NFLSource, state: Week, seed: int) -> TradeMarket | None:
     """The season, and the trades that improve both lineups the most for you; None once trading is over.
 
     A trade lands after the league's review, so it changes the weeks after
@@ -50,7 +50,7 @@ def build(client: NFLSource, state: Week, league_id: str, seed: int) -> TradeMar
     deadline = state.league.trade_deadline
     if deadline and state.week > deadline:
         return None
-    model = season_model(client, state, league_id, seed)
+    model = season_model(client, state, seed)
     if model is None:
         return None
     weeks = [week for week in model.projections if week > state.week]

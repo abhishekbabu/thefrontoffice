@@ -29,6 +29,29 @@ TARGET_POSITIONS = frozenset({"RB", "WR", "TE"})
 CARRY_POSITIONS = frozenset({"QB", "RB"})
 
 
+def took_the_field(line: GameLine) -> bool:
+    """Whether a line is a game he played: offensive snaps where his position has them, a game played otherwise.
+
+    Sleeper files a row for a game a player sat out, and averaging its noughts
+    in halves a role that did not change.
+    """
+    return bool(line.stats.get("off_snp")) if line.position in SNAP_POSITIONS else bool(line.stats.get("gp"))
+
+
+def snap_share(line: GameLine) -> float | None:
+    """His share of his offense's snaps in one game; None where nobody counted them."""
+    team = line.stats.get("tm_off_snp")
+    return line.stats.get("off_snp", 0.0) / team if team else None
+
+
+def _team_targets(lines: Sequence[GameLine]) -> dict[tuple[str, int], float]:
+    """Every club's targets in each week, which a player's share is of."""
+    totals: dict[tuple[str, int], float] = defaultdict(float)
+    for line in lines:
+        totals[(line.team, line.week)] += line.stats.get("rec_tgt", 0.0)
+    return totals
+
+
 @dataclass(frozen=True)
 class Role:
     """What a player has been asked to do, per game, over his last few games."""
@@ -189,9 +212,8 @@ def _games(lines: Sequence[GameLine], scoring: str) -> tuple[dict[str, tuple[flo
     """Each player's scores in the games he took the field in, by the same rule his role is read by."""
     played: dict[str, list[GameLine]] = defaultdict(list)
     for line in lines:
-        if line.position in SNAP_POSITIONS and not line.stats.get("off_snp"):
-            continue
-        played[line.player_id].append(line)
+        if took_the_field(line):
+            played[line.player_id].append(line)
     games = {
         pid: tuple(game.stats.get(scoring, 0.0) for game in sorted(each, key=lambda game: game.week))
         for pid, each in played.items()
@@ -201,15 +223,11 @@ def _games(lines: Sequence[GameLine], scoring: str) -> tuple[dict[str, tuple[flo
 
 
 def _roles(lines: Sequence[GameLine], scoring: str) -> dict[str, Role]:
-    team_targets: dict[tuple[str, int], float] = defaultdict(float)
+    team_targets = _team_targets(lines)
     by_player: dict[str, list[GameLine]] = defaultdict(list)
     for line in lines:
-        team_targets[(line.team, line.week)] += line.stats.get("rec_tgt", 0.0)
-        # A row for a game he never took the field in is not a game he
-        # played; averaging it in halves a role that did not change.
-        if line.position in SNAP_POSITIONS and not line.stats.get("off_snp"):
-            continue
-        by_player[line.player_id].append(line)
+        if took_the_field(line):
+            by_player[line.player_id].append(line)
 
     roles = {}
     for player_id, played in by_player.items():
@@ -249,17 +267,16 @@ def _trends(lines: Sequence[GameLine], out: Collection[str]) -> dict[str, Trend]
     if not lines:
         return {}
     latest = max(line.week for line in lines)
-    team_targets: dict[tuple[str, int], float] = defaultdict(float)
+    team_targets = _team_targets(lines)
     by_player: dict[str, list[GameLine]] = defaultdict(list)
     for line in lines:
-        team_targets[(line.team, line.week)] += line.stats.get("rec_tgt", 0.0)
-        if line.position in SNAP_POSITIONS and line.stats.get("off_snp"):
+        if line.position in SNAP_POSITIONS and took_the_field(line):
             by_player[line.player_id].append(line)
 
     def measures(line: GameLine) -> dict[str, float]:
         found = {}
-        if line.stats.get("tm_off_snp"):
-            found["snaps"] = line.stats.get("off_snp", 0.0) / line.stats["tm_off_snp"]
+        if (share := snap_share(line)) is not None:
+            found["snaps"] = share
         if line.position in TARGET_POSITIONS and team_targets[(line.team, line.week)]:
             found["targets"] = line.stats.get("rec_tgt", 0.0) / team_targets[(line.team, line.week)]
         if line.position in CARRY_POSITIONS:
@@ -292,7 +309,7 @@ def _trends(lines: Sequence[GameLine], out: Collection[str]) -> dict[str, Trend]
             if teammate == line.player_id or teammate not in out or played[-1].position != line.position:
                 continue
             mine = [game for game in played if game.team == line.team and game.week in weeks]
-            shares = [game.stats["off_snp"] / game.stats["tm_off_snp"] for game in mine if game.stats.get("tm_off_snp")]
+            shares = [share for game in mine if (share := snap_share(game)) is not None]
             if shares and sum(shares) / len(shares) >= floor and all(game.week != line.week for game in played):
                 return True
         return False
@@ -322,13 +339,13 @@ def misses(lines: Sequence[GameLine]) -> tuple[int, int]:
     team_weeks: dict[str, set[int]] = defaultdict(set)
     by_player: dict[str, list[GameLine]] = defaultdict(list)
     for line in lines:
-        if line.position in SNAP_POSITIONS and line.stats.get("off_snp"):
+        if line.position in SNAP_POSITIONS and took_the_field(line):
             team_weeks[line.team].add(line.week)
-            if line.stats.get("tm_off_snp"):
+            if snap_share(line) is not None:
                 by_player[line.player_id].append(line)
     missed = chances = 0
     for played in by_player.values():
-        shares = [line.stats["off_snp"] / line.stats["tm_off_snp"] for line in played]
+        shares = [share for line in played if (share := snap_share(line)) is not None]
         if sum(shares) / len(shares) < floor:
             continue
         team = max(played, key=lambda line: line.week).team
@@ -376,10 +393,16 @@ MIN_GAMES_FOR_AVERAGE = 2
 """Games a player needs before his average says more about him than his projection does."""
 
 
+def average(evidence: Evidence, player_id: str) -> float | None:
+    """His points a game this season; None until he has played enough games for it to say anything."""
+    games = evidence.games.get(player_id, ())
+    return sum(games) / len(games) if len(games) >= MIN_GAMES_FOR_AVERAGE else None
+
+
 def season_average(evidence: Evidence, player: Projection) -> float:
     """What he is worth over a season: his average a game where he has played enough, else his projection.
 
     Not this week's projection alone, which reads a starter on bye as nothing.
     """
-    games = evidence.games.get(player.player_id, ())
-    return sum(games) / len(games) if len(games) >= MIN_GAMES_FOR_AVERAGE else player.points
+    played = average(evidence, player.player_id)
+    return player.points if played is None else played

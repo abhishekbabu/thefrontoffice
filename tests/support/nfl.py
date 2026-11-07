@@ -16,6 +16,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SeasonState,
     SeasonStats,
     SleeperLeague,
+    SleeperMatchup,
     SleeperRoster,
     SleeperUser,
     Transaction,
@@ -38,7 +39,7 @@ class FakeSleeper:
         rosters: list[SleeperRoster] | None = None,
         projections: dict[str, WeeklyProjection] | None = None,
         league: SleeperLeague | None = None,
-        matchups: list[dict[str, Any]] | None = None,
+        matchups: list[SleeperMatchup] | None = None,
         trending: list[TrendingPlayer] | None = None,
         trending_error: Exception | None = None,
         season_stats: dict[str, dict[str, SeasonStats]] | None = None,
@@ -92,10 +93,10 @@ class FakeSleeper:
         self.trending_error = trending_error
         self.matchup_fetches = 0
 
-    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[dict[str, Any]]]:
+    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[SleeperMatchup]]:
         return {w: self.get_matchups(league_id, w) for w in weeks}
 
-    def get_season_schedule(self, season: str, sport: str = "nfl") -> list[ScheduledGame]:
+    def get_season_schedule(self, season: str) -> list[ScheduledGame]:
         if self.schedule_error:
             raise self.schedule_error
         return self.season_schedule
@@ -111,7 +112,7 @@ class FakeSleeper:
         source = self.game_lines if season == self.get_state().season else self.last_season_lines
         return [line for line in source if line.week in weeks]
 
-    def get_season_stats(self, season: str, sport: str = "nfl") -> dict[str, SeasonStats]:
+    def get_season_stats(self, season: str) -> dict[str, SeasonStats]:
         if self.season_stats_error:
             raise self.season_stats_error
         return self.season_stats.get(season, {})
@@ -121,9 +122,6 @@ class FakeSleeper:
 
     def get_state(self, sport: str = "nfl") -> SeasonState:
         return SeasonState(week=self.week, season="2026", season_type="regular")
-
-    def get_nfl_state(self) -> SeasonState:
-        return self.get_state()
 
     def get_user(self, username: str) -> SleeperUser:
         return SleeperUser(user_id=SLEEPER_USER_ID, username=username, display_name=username)
@@ -137,7 +135,7 @@ class FakeSleeper:
     def get_league_users(self, league_id: str) -> dict[str, str]:
         return {SLEEPER_USER_ID: "Me", "user-2": "Rival"}
 
-    def get_matchups(self, league_id: str, week: int) -> list[dict[str, Any]]:
+    def get_matchups(self, league_id: str, week: int) -> list[SleeperMatchup]:
         self.matchup_fetches += 1
         if self.matchups_error:
             raise self.matchups_error
@@ -246,8 +244,8 @@ def league_client(**extra: Any) -> FakeSleeper:
             SleeperRoster(roster_id=2, owner_id="them", player_ids=["rb2"], starter_ids=["rb2"], wins=3),
         ],
         matchups=[
-            {"roster_id": 1, "matchup_id": 7, "points": 88.5},
-            {"roster_id": 2, "matchup_id": 7, "points": 96.1},
+            SleeperMatchup(roster_id=1, matchup_id=7, points=88.5),
+            SleeperMatchup(roster_id=2, matchup_id=7, points=96.1),
         ],
         **extra,
     )

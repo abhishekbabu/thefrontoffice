@@ -9,15 +9,21 @@ week already played, which is what the simulation is scored and tuned on.
 import hashlib
 import logging
 from collections.abc import Callable, Sequence
-from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, outcomes
+from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import fits
-from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueRules, NFLSource, Projection, Team
+from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueRules, Matchup, NFLSource, Projection, Team
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import SEASON_WEEKS, ruled_out
-from thefrontoffice.adapters.outbound.competitions.nfl.week import Scoreboard, Week, left_in, projection_for
+from thefrontoffice.adapters.outbound.competitions.nfl.week import (
+    Scoreboard,
+    Week,
+    left_in,
+    pairings,
+    projections_for,
+)
 from thefrontoffice.domain.errors import PlatformError
-from thefrontoffice.domain.models import Action, LineupMove, MatchupInput, Outcomes, PlayedMatchup
+from thefrontoffice.domain.models import LineupMove, MatchupInput, Outcomes, PlayedMatchup
 
 logger = logging.getLogger(__name__)
 
@@ -54,27 +60,47 @@ class Forecasts:
         return self._previous[key]
 
     def matchup(
-        self,
-        state: Week,
-        league_id: str,
-        scoreboard: Scoreboard,
-        opponent: Team,
-        to_do: list[Action],
-        candidates: Sequence[str],
-        owned: set[str],
-        seeded: int,
+        self, state: Week, scoreboard: Scoreboard, opponent: Team, to_do: Sequence[Item], seeded: int
     ) -> MatchupInput:
         """This week's matchup: both lineups, and the moves worth pricing.
 
         The moves are every single swap your bench allows — the simulation
         finds the one a projection would not — and every waiver pickup the
-        to-do list names. With `candidates` they are instead every legal
-        start of each of those free agents, priced as if already claimed.
+        to-do list names.
         """
-        games = scoreboard.games(state)
-        status = {club: game.status for game in games.get(state.week, []) for club in (game.home, game.away)}
+        outcome = self._outcomes(state, scoreboard)
+        started = scoreboard.started(state)
+        lineup = [slot.player for slot in state.lineup if slot.player]
+        moves = starts(state, lineup, state.bench, outcome, started) + pickups(state, to_do, outcome)
+        return MatchupInput(
+            mine=_side(lineup, outcome), theirs=_theirs(state, opponent, outcome), moves=moves, seed=seeded
+        )
+
+    def wire(
+        self, state: Week, scoreboard: Scoreboard, opponent: Team, candidates: Sequence[str], seeded: int
+    ) -> MatchupInput:
+        """This week's matchup with every legal start of each of these free agents, priced as if already claimed.
+
+        Priced against the lineup your bench would already make: against the
+        one as set, a free agent is credited with filling a slot a bench
+        player fills anyway.
+        """
+        outcome = self._outcomes(state, scoreboard)
+        started = scoreboard.started(state)
+        lineup = settled(state, started)
+        wire = [state.projections[pid] for pid in candidates if pid in state.projections and pid not in state.owned]
+        moves = starts(state, lineup, wire, outcome, started)
+        return MatchupInput(
+            mine=_side(lineup, outcome), theirs=_theirs(state, opponent, outcome), moves=moves, seed=seeded
+        )
+
+    def _outcomes(self, state: Week, scoreboard: Scoreboard) -> Callable[[Projection], Outcomes]:
+        """Each player's week as a range: shaped by his games, and by how far into it his own game is."""
+        status = {
+            club: game.status for game in scoreboard.games(state).get(state.week, []) for club in (game.home, game.away)
+        }
         board = scoreboard.board(state)
-        live = scoreboard.live(state, league_id)
+        live = scoreboard.live(state)
         spread = outcomes.spreads(state.evidence, pool_from=self.last_season(state.season, state.league.scoring_format))
 
         def outcome(player: Projection) -> Outcomes:
@@ -82,30 +108,11 @@ class Forecasts:
                 player,
                 spread,
                 status=status.get(player.team, ""),
-                scored=live.points.get(player.player_id, 0.0),
+                scored=live.scored(player.player_id, player.team) or 0.0,
                 left=left_in(board[player.team]) if player.team in board else outcomes.UNDER_WAY,
             )
 
-        started = {club for club, s in status.items() if s and s != "pre_game"}
-        # The wire is priced against the lineup your bench would already make:
-        # against the one as set, a free agent is credited with filling a slot
-        # a bench player fills anyway.
-        lineup = settled(state, started) if candidates else [slot.player for slot in state.lineup if slot.player]
-        mine = tuple(outcome(p) for p in lineup)
-        theirs = tuple(
-            outcome(p)
-            for p in (
-                projection_for(pid, state.projections, state.players) for pid in opponent.starter_ids if pid != "0"
-            )
-            if p
-        )
-        if candidates:
-            wire = [state.projections[pid] for pid in candidates if pid in state.projections and pid not in owned]
-            moves = starts(state, lineup, wire, outcome, started)
-        else:
-            bench = [p for p in state.projected if p.player_id not in state.starter_ids]
-            moves = starts(state, lineup, bench, outcome, started) + pickups(state, to_do, outcome)
-        return MatchupInput(mine=mine, theirs=theirs, moves=moves, seed=seeded)
+        return outcome
 
     def played_week(
         self, league: LeagueRules, week: int
@@ -117,7 +124,7 @@ class Forecasts:
         score. What was known is the games before it alone, so nothing a
         range is scored against shaped it.
         """
-        season = self.client.get_nfl_state().season
+        season = league.season
         lines = self.client.get_nfl_game_lines(season, list(range(1, week + 1)))
         before = evidence.gather([line for line in lines if line.week < week], league.scoring_format)
         last = self.last_season(season, league.scoring_format)
@@ -139,7 +146,7 @@ class Forecasts:
         played before it — a range shaped by the week being predicted would
         be the answer leaking into the question.
         """
-        season = self.client.get_nfl_state().season
+        season = league.season
         projections = self.client.get_projections(season, week, league.scoring_format)
         players = self.client.get_players()
         earlier = list(range(1, week))
@@ -150,33 +157,30 @@ class Forecasts:
             pool_from=self.last_season(season, league.scoring_format),
         )
 
-        def side(entry: dict[str, Any]) -> tuple[Outcomes, ...]:
-            starters = [str(pid) for pid in entry.get("starters") or [] if str(pid) not in ("0", "")]
+        def side(entry: Matchup) -> tuple[Outcomes, ...]:
             return tuple(
                 outcomes.outcomes(p, spread, settings=settings)
-                for p in (projection_for(pid, projections, players) for pid in starters)
-                if p
+                for p in projections_for(entry.starters, projections, players)
             )
 
-        paired: dict[Any, list[dict[str, Any]]] = {}
-        for entry in self.client.get_matchups(league.league_id, week):
-            if entry.get("matchup_id") is not None:
-                paired.setdefault(entry["matchup_id"], []).append(entry)
-
-        played = []
-        for matchup_id, entries in paired.items():
-            if len(entries) != 2:
-                continue
-            first, second = sorted(entries, key=lambda e: int(e.get("roster_id") or 0))
-            played.append(
-                PlayedMatchup(
-                    week=week,
-                    matchup=MatchupInput(mine=side(first), theirs=side(second), seed=seeded(matchup_id)),
-                    mine=float(first.get("points") or 0),
-                    theirs=float(second.get("points") or 0),
-                )
+        return [
+            PlayedMatchup(
+                week=week,
+                matchup=MatchupInput(mine=side(first), theirs=side(second), seed=seeded(first.matchup_id)),
+                mine=first.points,
+                theirs=second.points,
             )
-        return played
+            for first, second in pairings(self.client.get_matchups(league.league_id, week))
+        ]
+
+
+def _side(players: Sequence[Projection], outcome: Callable[[Projection], Outcomes]) -> tuple[Outcomes, ...]:
+    return tuple(outcome(p) for p in players)
+
+
+def _theirs(state: Week, opponent: Team, outcome: Callable[[Projection], Outcomes]) -> tuple[Outcomes, ...]:
+    """Who they start, as their lineup is set: an empty slot scores nothing and has no range."""
+    return _side(projections_for(opponent.starter_ids, state.projections, state.players), outcome)
 
 
 def settled(state: Week, started: set[str]) -> list[Projection]:
@@ -234,11 +238,7 @@ def starts(
     return tuple(moves)
 
 
-STARTS = ("hole:", "upgrade:")
-"""The to-do items whose pickup goes straight into the lineup."""
-
-
-def pickups(state: Week, to_do: list[Action], outcome: Callable[[Projection], Outcomes]) -> tuple[LineupMove, ...]:
+def pickups(state: Week, to_do: Sequence[Item], outcome: Callable[[Projection], Outcomes]) -> tuple[LineupMove, ...]:
     """The pickups that start this week — filling a hole, or replacing a starter they outscore — priced as if claimed.
 
     Only those: a bye warning names your own starter, and a breakout is a
@@ -246,9 +246,10 @@ def pickups(state: Week, to_do: list[Action], outcome: Callable[[Projection], Ou
     added to a full lineup, which no move can do.
     """
     moves = []
-    for action in to_do:
+    for item in to_do:
+        action = item.action
         projection = state.projections.get(action.player_id)
-        if action.kind != "waiver" or not action.key.startswith(STARTS) or projection is None:
+        if not item.starts_now or projection is None:
             continue
         moves.append(
             LineupMove(

@@ -15,6 +15,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPI
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     SleeperLeague,
+    SleeperMatchup,
     SleeperRoster,
     TrendingPlayer,
 )
@@ -97,8 +98,8 @@ def test_a_player_with_no_projection_is_kept_at_zero() -> None:
 def test_matchup_opponent_and_live_score_are_surfaced() -> None:
     ctx = _context(
         matchups=[
-            {"roster_id": 1, "matchup_id": 7, "points": 60.2},
-            {"roster_id": 2, "matchup_id": 7, "points": 71.8},
+            SleeperMatchup(roster_id=1, matchup_id=7, points=60.2),
+            SleeperMatchup(roster_id=2, matchup_id=7, points=71.8),
         ],
         rosters=[
             SleeperRoster(
@@ -114,7 +115,7 @@ def test_matchup_opponent_and_live_score_are_surfaced() -> None:
 
 def test_a_week_with_no_matchup_reports_no_opponent_figures() -> None:
     """Paired with nobody is not a 0-0 scoreline against somebody."""
-    labels = {s.label for s in _context(matchups=[{"roster_id": 1, "matchup_id": None}]).headline}
+    labels = {s.label for s in _context(matchups=[SleeperMatchup(roster_id=1, matchup_id=None)]).headline}
 
     assert not labels & {"Opponent", "Live"}
 
@@ -242,8 +243,8 @@ def test_the_header_carries_the_matchup() -> None:
     client = FakeSleeper(
         projections=DEFAULT_PROJECTIONS,
         matchups=[
-            {"roster_id": 1, "matchup_id": 7, "points": 88.5},
-            {"roster_id": 2, "matchup_id": 7, "points": 71.0},
+            SleeperMatchup(roster_id=1, matchup_id=7, points=88.5),
+            SleeperMatchup(roster_id=2, matchup_id=7, points=71.0),
         ],
     )
     labels = {s.label: s for s in nfl_provider(client).build_context("L1").headline}
@@ -257,8 +258,8 @@ def test_trailing_is_the_figure_that_warns() -> None:
     client = FakeSleeper(
         projections=DEFAULT_PROJECTIONS,
         matchups=[
-            {"roster_id": 1, "matchup_id": 7, "points": 60.0},
-            {"roster_id": 2, "matchup_id": 7, "points": 84.0},
+            SleeperMatchup(roster_id=1, matchup_id=7, points=60.0),
+            SleeperMatchup(roster_id=2, matchup_id=7, points=84.0),
         ],
     )
     live = next(s for s in nfl_provider(client).build_context("L1").headline if s.label == "Live")
@@ -280,8 +281,8 @@ def test_the_matchup_is_fetched_once_for_both_the_prompt_and_the_header() -> Non
     client = FakeSleeper(
         projections=DEFAULT_PROJECTIONS,
         matchups=[
-            {"roster_id": 1, "matchup_id": 7, "points": 88.5},
-            {"roster_id": 2, "matchup_id": 7, "points": 71.0},
+            SleeperMatchup(roster_id=1, matchup_id=7, points=88.5),
+            SleeperMatchup(roster_id=2, matchup_id=7, points=71.0),
         ],
     )
     context = nfl_provider(client).build_context("L1")
