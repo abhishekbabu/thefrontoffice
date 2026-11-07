@@ -165,7 +165,7 @@ def _todo(client: FakeSleeper) -> list:
 def test_a_short_week_next_week_is_on_the_to_do_list() -> None:
     [short] = [a for a in _todo(_client()) if a.key.startswith("short:")]
 
-    assert short.key == f"short:{BYE_WEEK}"
+    assert (short.kind, short.when) == ("waiver", f"week {BYE_WEEK}")
 
 
 def test_the_short_week_stands_in_for_that_weeks_bye_items() -> None:

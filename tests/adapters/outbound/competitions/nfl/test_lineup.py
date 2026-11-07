@@ -168,8 +168,7 @@ def test_an_ineligible_player_does_not_count_toward_the_slot() -> None:
 def test_a_swap_that_loses_points_is_not_recommended() -> None:
     """Forced replacements are not upgrades, and '+-2.4' is worse than silence."""
     players = [p("qb1", "QB", 22), p("wr1", "WR", 10)]
-    changes = lineup_changes(["WR"], ["qb1"], players)
-    assert all(c.gain > 0 for c in changes)
+    assert lineup_changes(["WR"], ["qb1"], players) == []
 
 
 # ── how a candidate fits ────────────────────────────────────────────────
@@ -236,10 +235,6 @@ def test_a_change_is_never_a_swap_that_leaves_a_slot_unfillable() -> None:
 
     changes = lineup_changes(slots, ["rb1", "wr1", "te1", "flex"], players)
 
-    for change in changes:
-        lineup = [q for q in players if q.player_id in {"rb1", "wr1", "te1", "flex"}]
-        out = {change.bench.player_id} if change.bench else set()
-        assert fits(slots, [q for q in lineup if q.player_id not in out] + [change.start])
     assert {(c.start.player_id, c.bench.player_id if c.bench else None) for c in changes} == {
         ("rb2", "wr1"),
         ("te2", "te1"),

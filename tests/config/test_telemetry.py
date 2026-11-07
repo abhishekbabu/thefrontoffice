@@ -121,7 +121,7 @@ def test_spans_do_not_go_to_the_console(fake: FakeLogfire) -> None:
 
 
 def test_configuring_twice_instruments_once(fake: FakeLogfire) -> None:
-    """Streamlit reruns the whole script on every interaction."""
+    """Instrumenting a library twice would trace each call twice."""
     telemetry.setup_telemetry("front-office-web")
     telemetry.setup_telemetry("front-office-web")
     assert fake.instrumented == ["requests", "google_genai", "pydantic"]

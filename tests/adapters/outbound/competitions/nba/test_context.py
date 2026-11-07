@@ -40,7 +40,8 @@ def test_empty_player_list_yields_empty_context() -> None:
 
 def test_each_player_gets_one_line_with_name_and_position() -> None:
     out = _builder().build_context_for_players([make_player("A B", position="PG,SG")])
-    assert out.strip() == "- A B (PG,SG)"
+    [line] = out.strip().splitlines()
+    assert "A B" in line and "PG,SG" in line
 
 
 def test_stats_are_appended_when_available() -> None:

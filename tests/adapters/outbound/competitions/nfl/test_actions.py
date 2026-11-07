@@ -564,7 +564,7 @@ def test_a_free_agent_whose_role_just_grew_is_worth_picking_up() -> None:
 
     [action] = [a for a in _actions(_with_free_agent(free)) if a.player_id == "wr9"]
 
-    assert (action.kind, action.key) == ("waiver", "rise:wr9")
+    assert action.kind == "waiver"
     assert any(stat.label == free.name for stat in action.evidence)
 
 

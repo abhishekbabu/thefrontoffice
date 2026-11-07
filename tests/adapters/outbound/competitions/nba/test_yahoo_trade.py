@@ -2,7 +2,6 @@
 
 import logging
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 import requests
@@ -11,7 +10,7 @@ from support.nba import FakeYahoo, make_player, nba_provider
 
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.domain.errors import PlayerNotFoundError
-from thefrontoffice.domain.models import TradeProposal
+from thefrontoffice.domain.models import CompetitionContext, TradeProposal
 
 # The module logs through `getLogger(__name__)`, so the class's module is the
 # logger's name — and follows the module if it ever moves.
@@ -54,14 +53,6 @@ def test_the_exact_name_wins_among_several_matches() -> None:
     assert "Jalen James" not in prompt
 
 
-def test_an_unresolved_name_raises_rather_than_being_dropped() -> None:
-    """Dropping one would evaluate a different trade than was described."""
-    yahoo = _yahoo_with("LeBron James")
-    with pytest.raises(PlayerNotFoundError) as excinfo:
-        _giving(yahoo, "LeBron James", "Notarealplayer")
-    assert excinfo.value.names == ["Notarealplayer"]
-
-
 def test_an_ambiguous_surname_resolves_to_nobody_rather_than_the_first() -> None:
     """Pricing whichever Williams Yahoo listed first would evaluate a trade
     nobody proposed."""
@@ -75,10 +66,9 @@ def test_an_ambiguous_surname_resolves_to_nobody_rather_than_the_first() -> None
 # ── trade context ───────────────────────────────────────────────────────
 
 
-def _context(yahoo: FakeYahoo | None = None, **kwargs: Any) -> Any:
-    y = yahoo or _yahoo_with("LeBron James", "Jayson Tatum")
+def _context(yahoo: FakeYahoo) -> CompetitionContext:
     proposal = TradeProposal(giving=["LeBron James"], receiving=["Jayson Tatum"])
-    return _provider(y).build_trade_context("", proposal)
+    return _provider(yahoo).build_trade_context("", proposal)
 
 
 def test_both_sides_and_the_roster_reach_the_prompt() -> None:

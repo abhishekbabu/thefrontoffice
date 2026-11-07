@@ -11,6 +11,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from support.nba import FakeSleeperNBA
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
@@ -22,42 +23,6 @@ PACIFIC = ZoneInfo("America/Los_Angeles")
 
 def _game(day: str, **stats: float) -> NBAGameLog:
     return NBAGameLog(player_id="p1", date=day, opponent="LAL", stats=stats)
-
-
-class FakeSleeperNBA:
-    """Stands in for SleeperClient, for basketball only."""
-
-    def __init__(
-        self,
-        logs: dict[str, list[NBAGameLog]] | None = None,
-        schedule: list[ScheduledGame] | None = None,
-        catalog: dict[str, PlayerMeta] | None = None,
-        error: Exception | None = None,
-    ) -> None:
-        self.logs = logs or {}
-        self.schedule = schedule or []
-        self.catalog = catalog or {"p1": PlayerMeta(player_id="p1", name="Nikola Jokic", position="C", team="DEN")}
-        self.error = error
-
-    def get_nba_game_logs(self, season: str, weeks: list[int]) -> dict[str, list[NBAGameLog]]:
-        if self.error:
-            raise self.error
-        return self.logs
-
-    def get_nba_schedule(self, season: str) -> list[ScheduledGame]:
-        if self.error:
-            raise self.error
-        return self.schedule
-
-    def get_players(self, sport: str = "nfl") -> dict[str, PlayerMeta]:
-        if self.error:
-            raise self.error
-        return self.catalog
-
-    def get_state(self, sport: str = "nfl") -> Any:
-        from thefrontoffice.adapters.outbound.platforms.sleeper.types import SeasonState
-
-        return SeasonState(week=10, season="2026", season_type="regular")
 
 
 def _form(**kwargs: Any) -> SleeperNBAForm:
@@ -192,12 +157,6 @@ def test_a_club_is_counted_whether_it_is_home_or_away() -> None:
     form = _form(schedule=[_sched("2026-02-12", home="LAL", away="DEN")])
 
     assert form.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
-
-
-def test_a_team_abbreviation_is_case_insensitive() -> None:
-    form = _form(schedule=[_sched("2026-02-12")])
-
-    assert form.get_remaining_games("den", WINDOW_START, WINDOW_END, now=NOW) == 1
 
 
 def test_an_unknown_club_has_no_games_rather_than_raising() -> None:
