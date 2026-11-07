@@ -18,7 +18,7 @@ import threading
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -455,7 +455,7 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
             # better than an empty answer the user cannot explain.
             raise HTTPException(status_code=404, detail="That conversation has expired. Close it and ask again.")
         try:
-            answer = chat.send_message(request.message).text or ""
+            answer = chat.send_message(request.message).text
         except FrontOfficeError:
             # Already a sentence — "every model is out of quota" says more
             # than "did not answer", and the handler renders it with its code.
@@ -465,7 +465,7 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
             # that belongs, not a panel someone is reading.
             logger.error(f"Follow-up failed: {e}")
             raise HTTPException(status_code=502, detail="The model did not answer. Try asking again.") from e
-        return Reply(answer=answer or "(no answer)")
+        return Reply(answer=answer)
 
 
 def _serve_frontend(app: FastAPI, dist: Path) -> None:
@@ -482,7 +482,7 @@ def _serve_frontend(app: FastAPI, dist: Path) -> None:
     app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
-    def spa(path: str) -> Any:
+    def spa(path: str) -> FileResponse:
         """Any non-API path returns index.html; the client owns routing.
 
         An unmatched API path is a 404 rather than the page, because this

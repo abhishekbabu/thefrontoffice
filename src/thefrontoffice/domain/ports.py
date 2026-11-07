@@ -81,19 +81,24 @@ class ItemStateStore(Protocol):
     def save(self, scope: str, states: dict[str, ItemState]) -> None: ...
 
 
-class ChatReply(Protocol):
-    """One answer in a conversation. Gemini's response and our own both satisfy it."""
+@dataclass(frozen=True)
+class ChatReply:
+    """One answer in a conversation: never empty — a model that said nothing
+    is an `AIResponseError` from the adapter, not a reply to check for."""
 
-    @property
-    def text(self) -> str | None:
-        """What the model said; None or empty where it said nothing."""
-        ...
+    text: str
 
 
 class ChatSession(Protocol):
     """An open conversation, for follow-up questions about a finished report."""
 
-    def send_message(self, message: str) -> ChatReply: ...
+    def send_message(self, message: str) -> ChatReply:
+        """The model's answer to `message`.
+
+        Raises:
+            AIResponseError: the model answered with nothing.
+        """
+        ...
 
 
 class AnalysisModel(Protocol):
