@@ -46,7 +46,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Player,
     as_millions,
 )
-from thefrontoffice.domain.errors import NotConfiguredError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
     CompetitionContext,
@@ -97,15 +97,14 @@ class FPLProvider:
     only one of each: the game is both.
     """
 
-    def __init__(self, entry_id: int | None, *, client: FPLSource):
-        """Every collaborator from bootstrap, which is the one place a real client is built."""
+    def __init__(self, entry_id: int, *, client: FPLSource):
+        """Every collaborator from bootstrap, which is the one place a real client is built.
+
+        The entry id is required: whether one is set, and what to set when it
+        is not, is the registry entry's to say before this is ever built.
+        """
         self.entry_id = entry_id
         self.client = client
-
-    def _resolve_entry_id(self) -> int:
-        if not self.entry_id:
-            raise NotConfiguredError("FPL", "FPL_ENTRY_ID")
-        return self.entry_id
 
     # ── leagues ─────────────────────────────────────────────────────
 
@@ -119,7 +118,7 @@ class FPLProvider:
         Falls back to the overall standing when the manager has joined no
         private league, so a brand-new account still has something to scout.
         """
-        entry = self.client.get_entry(self._resolve_entry_id())
+        entry = self.client.get_entry(self.entry_id)
         private = [lg for lg in entry.leagues if lg.is_private]
         if not private:
             return [
@@ -363,7 +362,7 @@ class FPLProvider:
 
     def roster(self, league_id: str) -> list[PlayerCard]:
         """The squad in full, with the season numbers a week view leaves out."""
-        return self._squad_cards(self._resolve_entry_id())
+        return self._squad_cards(self.entry_id)
 
     def teams(self, league_id: str) -> list[TeamRef]:
         """Everyone in the mini-league, yours first.
@@ -372,7 +371,7 @@ class FPLProvider:
         overall standing a manager with no private league is offered is not a
         league with a table, so it has no teams to browse.
         """
-        entry_id = self._resolve_entry_id()
+        entry_id = self.entry_id
         mini_league = self._find_league(league_id, entry_id)
         if mini_league is None:
             return []
@@ -401,7 +400,7 @@ class FPLProvider:
         question is not who is free but who is worth the money. Ranked on the
         game's own projection, which is what a transfer is decided on.
         """
-        squad = self.client.get_squad(self._resolve_entry_id(), self._gameweek().id)
+        squad = self.client.get_squad(self.entry_id, self._gameweek().id)
         owned = {pick.element for pick in squad.picks}
 
         market = [p for p in self.client.get_players().values() if p.id not in owned and plays(p)]
@@ -468,7 +467,7 @@ class FPLProvider:
         made of — and stops short of the transfer market, which is the expensive
         half of a report and answers a different question.
         """
-        entry_id = self._resolve_entry_id()
+        entry_id = self.entry_id
         # Points are landing in this one; the next deadline is a plan, and the
         # report is where plans go.
         gameweek = self._gameweek()
@@ -565,7 +564,7 @@ class FPLProvider:
 
     def schedule(self, league_id: str) -> LeagueSchedule:
         """The season, the table, and the real matches behind the gameweek."""
-        entry_id = self._resolve_entry_id()
+        entry_id = self.entry_id
         # Marked on the week being played, so the season table and the week
         # view agree about which row is "now". Before the season opens nothing
         # is being played, and the calendar still has a first week to mark.
@@ -707,7 +706,7 @@ class FPLProvider:
         allowance are for the gameweek still open, which is the one advice
         can change.
         """
-        entry_id = self._resolve_entry_id()
+        entry_id = self.entry_id
         upcoming = self.client.upcoming_gameweek()
         mine = self._roster(entry_id, self._gameweek().id)
         return prompt.build(

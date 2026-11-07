@@ -15,7 +15,7 @@ changed, a game whose status the scoreboard corrected — are concrete here,
 as the NFL's own.
 """
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
@@ -24,7 +24,10 @@ Scoring = Literal["pts_ppr", "pts_half_ppr", "pts_std"]
 
 
 FREE_AGENT = "FA"
-"""The club a player on no NFL roster is filed under, in a catalog entry and a projection alike."""
+"""The club a player on no NFL roster is filed under, in a catalog entry and a projection alike — never empty.
+
+The platform's client files him there, and cannot import this; the two are
+kept equal by `test_model.py`."""
 
 
 class PlayerInfo(Protocol):
@@ -174,6 +177,11 @@ class Team(Protocol):
     def record(self) -> str: ...
 
 
+def active(team: Team) -> list[str]:
+    """Who takes a spot on the roster: everyone outside its injured-reserve and taxi slots."""
+    return [pid for pid in team.player_ids if pid not in team.reserve_ids]
+
+
 class LeagueRules(Protocol):
     """The league itself: its size, how it scores, its lineup, and its season's shape."""
 
@@ -225,6 +233,11 @@ class Game(Protocol):
     def status(self) -> str:
         """`pre_game`, `in_game` or `complete`; empty where the platform says nothing."""
         ...
+
+
+def by_club(games: Iterable[Game]) -> dict[str, Game]:
+    """Each club's game, under either side's abbreviation; a club on bye is in none."""
+    return {club: game for game in games for club in (game.home, game.away)}
 
 
 COMPLETE = "complete"
@@ -352,10 +365,18 @@ class NFLSource(Protocol):
 
     def get_matchups(self, league_id: str, week: int) -> Sequence[Matchup]: ...
 
-    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Mapping[int, Sequence[Matchup]]: ...
+    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Mapping[int, Sequence[Matchup]]:
+        """Each of `weeks` that loaded; one that would not is absent, where an empty one is a bye."""
+        ...
 
-    def get_nfl_game_lines(self, season: str, weeks: list[int], positions: Collection[str]) -> Sequence[GameLine]:
-        """Every line from each game in `weeks` by a player at one of `positions`."""
+    def get_nfl_game_lines(
+        self, season: str, weeks: list[int], positions: Collection[str]
+    ) -> Mapping[int, Sequence[GameLine]]:
+        """Every line from each game in `weeks` by a player at one of `positions`, by week.
+
+        A week that would not load is absent, not empty: no line in a week that
+        did is a game missed.
+        """
         ...
 
     def get_nfl_players(self) -> Mapping[str, PlayerInfo]: ...

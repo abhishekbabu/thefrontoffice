@@ -189,6 +189,24 @@ def test_yahoo_staying_down_says_to_wait(tmp_path: Path) -> None:
     assert len(ctx.requests) == NO_WAIT.attempts
 
 
+# ── players by key ──────────────────────────────────────────────────────
+
+
+def test_players_are_looked_up_by_key_across_the_league(tmp_path: Path) -> None:
+    """Not a roster read: the drawer opens on free agents and rivals' players too."""
+    client, ctx = _client(tmp_path, players_xml("LeBron James"))
+
+    found = client.players(["466.p.0"])
+
+    assert ctx.requests == [("players;player_keys=466.p.0", "466.l.123")]
+    assert [p.name for p in found] == ["LeBron James"]
+
+
+def test_a_key_yahoo_does_not_know_is_an_empty_answer(tmp_path: Path) -> None:
+    client, _ = _client(tmp_path, players_xml())
+    assert client.players(["466.p.999"]) == []
+
+
 # ── search_players ──────────────────────────────────────────────────────
 
 

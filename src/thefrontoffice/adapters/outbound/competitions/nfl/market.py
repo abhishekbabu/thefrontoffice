@@ -20,7 +20,7 @@ import logging
 from collections.abc import Callable, Iterable
 
 from thefrontoffice.adapters.outbound.competitions.nfl.league import SeasonModel, season_model
-from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Team
+from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Team, active
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import STREAMED
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.domain.models import TeamWeek, TradeMarket, TradeOption
@@ -142,11 +142,7 @@ def _over_the_wire(model: SeasonModel, weeks: list[int]) -> Callable[[str], floa
 
 def _tradeable(roster: Team, state: Week) -> list[str]:
     """Players who could move: not those in injured reserve or taxi, whose slot would not follow them, nor a streamer."""
-    return [
-        pid
-        for pid in roster.player_ids
-        if pid not in roster.reserve_ids and not ((meta := state.players.get(pid)) and meta.position in STREAMED)
-    ]
+    return [pid for pid in active(roster) if not ((meta := state.players.get(pid)) and meta.position in STREAMED)]
 
 
 def _label(player_id: str, state: Week) -> str:

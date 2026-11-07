@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping, Sequence
 
 from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item, drop_candidate, join
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, lineup_points
-from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, NFLSource, Projection
+from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, NFLSource, Projection, active, by_club
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS, long_term
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, lineup_for
 from thefrontoffice.domain.models import Action, WeekAhead
@@ -45,8 +45,8 @@ def build(
     weeks = list(range(state.week + 1, min(state.week + WEEKS_AHEAD, SEASON_WEEKS) + 1))
     if not weeks:
         return []
-    playing = {week: {club for game in games for club in (game.home, game.away)} for week, games in schedule.items()}
-    held = [pid for pid in state.roster.player_ids if pid not in state.roster.reserve_ids]
+    playing = {week: set(by_club(games)) for week, games in schedule.items()}
+    held = active(state.roster)
     projections = {
         week: client.get_projections(state.season, week, state.league.scoring_format, FANTASY_POSITIONS)
         for week in weeks

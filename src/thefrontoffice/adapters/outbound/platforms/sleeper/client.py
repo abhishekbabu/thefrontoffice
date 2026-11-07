@@ -11,13 +11,13 @@ effectively forever, trending for an hour.
 """
 
 import logging
-from collections.abc import Callable, Collection, Iterator
+from collections.abc import Callable, Collection
 from dataclasses import asdict
 from datetime import timedelta
 from typing import Any, Protocol
 
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
-from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
+from thefrontoffice.adapters.outbound.platforms.http import Batch, JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -99,7 +99,9 @@ class SleeperNFLSource(Protocol):
 
     def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[SleeperMatchup]]: ...
 
-    def get_nfl_game_lines(self, season: str, weeks: list[int], positions: Collection[str]) -> list[NFLGameLine]: ...
+    def get_nfl_game_lines(
+        self, season: str, weeks: list[int], positions: Collection[str]
+    ) -> dict[int, list[NFLGameLine]]: ...
 
     def get_nfl_players(self) -> dict[str, PlayerMeta]: ...
 
@@ -260,14 +262,16 @@ class SleeperClient:
         return _matchups(self._api.cached(f"matchups_{league_id}_{week}", url, MATCHUPS_TTL))
 
     def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[SleeperMatchup]]:
-        """Every requested week's matchups, fetched concurrently.
+        """Every requested week's matchups that loaded, fetched concurrently.
 
         The season view needs all eighteen; asked one at a time they are the
-        whole wait on the page.
+        whole wait on the page. A week that would not load is absent rather
+        than empty: an empty week is a bye, and a failed request is not one.
         """
-        urls = {f"matchups_{league_id}_{w}": f"{BASE_URL}/league/{league_id}/matchups/{w}" for w in weeks}
-        raw = self._api.cached_many(urls, MATCHUPS_TTL)
-        return {w: _matchups(raw.get(f"matchups_{league_id}_{w}")) for w in weeks}
+        batch = self._weekly(
+            weeks, lambda w: f"matchups_{league_id}_{w}", lambda w: f"{BASE_URL}/league/{league_id}/matchups/{w}"
+        )
+        return {w: _matchups(raw) for w, raw in batch.values.items()}
 
     # ── player data ─────────────────────────────────────────────────
 
@@ -362,9 +366,17 @@ class SleeperClient:
         Trimmed before caching for the same reason the catalog is: six weeks of
         raw rows is ~9MB of quarter splits and plus-minus, and the cache is one
         file shared with everything else the client reads.
+
+        Raises:
+            SleeperAPIError: any week would not load — a window with a week
+                missing from its middle reads the games either side of the gap
+                as consecutive, which is not anybody's recent form.
         """
+        batch = self._game_rows(NBA, season, weeks)
+        for error in batch.failures.values():
+            raise error
         logs: dict[str, list[NBAGameLog]] = {}
-        for _, player_id, row in self._game_rows(NBA, season, weeks):
+        for player_id, row in (pair for rows in batch.values.values() for pair in rows):
             stats = row.get("stats") or {}
             # Sleeper files a row for every game a player was scheduled for,
             # carrying no stats at all where they did not appear. A game
@@ -385,50 +397,56 @@ class SleeperClient:
             runs.sort(key=lambda g: g.date, reverse=True)
         return logs
 
-    def get_nfl_game_lines(self, season: str, weeks: list[int], positions: Collection[str]) -> list[NFLGameLine]:
-        """Every line from each game in `weeks` by a player at one of `positions`.
+    def get_nfl_game_lines(
+        self, season: str, weeks: list[int], positions: Collection[str]
+    ) -> dict[int, list[NFLGameLine]]:
+        """Every line from each game in `weeks` by a player at one of `positions`, by week.
 
         The raw material for both a player's role — snaps, targets, carries —
         and what each defense gives up to each position, which no endpoint
         publishes directly. Linemen and defensive players ride in the same
         feed, which is why a caller names the positions it scores.
-        """
-        lines: list[NFLGameLine] = []
-        for week, player_id, row in self._game_rows(NFL, season, weeks):
-            position = str((row.get("player") or {}).get("position") or "")
-            opponent = str(row.get("opponent") or "")
-            if position not in positions or not opponent:
-                continue
-            stats = row.get("stats") or {}
-            lines.append(
-                NFLGameLine(
-                    player_id=player_id,
-                    week=week,
-                    team=str(row.get("team") or ""),
-                    opponent=opponent,
-                    position=position,
-                    stats={k: float(v) for k in NFL_LINE_KEYS if (v := stats.get(k)) is not None},
-                )
-            )
-        return lines
 
-    def _game_rows(self, sport: str, season: str, weeks: list[int]) -> Iterator[tuple[int, str, dict[str, Any]]]:
-        """Each player's row from each game in `weeks`, with its week and player id; the weeks fetched in parallel.
+        A week that would not load is absent, not empty: a week with no line
+        for a player is a game he missed, and a failed request is not one.
+        """
+        return {
+            week: [line for player_id, row in rows if (line := _nfl_line(week, player_id, row, positions))]
+            for week, rows in self._game_rows(NFL, season, weeks).values.items()
+        }
+
+    def _game_rows(self, sport: str, season: str, weeks: list[int]) -> Batch[int, list[tuple[str, dict[str, Any]]]]:
+        """Each player's row from each game in `weeks`, with his player id, by week; the weeks fetched in parallel.
 
         Team totals ride in the same feed under a prefixed id, and a team's
         points are not a player's line.
         """
-        urls = {
-            f"game_rows_{sport}_{season}_{w}": f"{STATS_URL}/{sport}/{season}/{w}?season_type=regular" for w in weeks
-        }
-        raw = self._api.cached_many(urls, GAME_ROWS_TTL)
-        for week in weeks:
-            for row in raw.get(f"game_rows_{sport}_{season}_{week}") or []:
-                if not isinstance(row, dict):
-                    continue
-                player_id = str(row.get("player_id") or "")
-                if player_id and not player_id.startswith(TEAM_ROW_PREFIX):
-                    yield week, player_id, row
+        batch = self._weekly(
+            weeks,
+            lambda w: f"game_rows_{sport}_{season}_{w}",
+            lambda w: f"{STATS_URL}/{sport}/{season}/{w}?season_type=regular",
+            GAME_ROWS_TTL,
+        )
+        return Batch(
+            values={
+                week: [
+                    (player_id, row)
+                    for row in raw or []
+                    if isinstance(row, dict)
+                    and (player_id := str(row.get("player_id") or ""))
+                    and not player_id.startswith(TEAM_ROW_PREFIX)
+                ]
+                for week, raw in batch.values.items()
+            },
+            failures=batch.failures,
+        )
+
+    def _weekly(
+        self, weeks: list[int], key: Callable[[int], str], url: Callable[[int], str], ttl: timedelta = MATCHUPS_TTL
+    ) -> Batch[int, Any]:
+        """One cached GET per week, run in parallel, keyed by week number."""
+        keys = {w: key(w) for w in weeks}
+        return self._api.cached_many({keys[w]: url(w) for w in weeks}, ttl).rekeyed(keys)
 
     def get_transactions(self, league_id: str, week: int) -> list[Transaction]:
         """What the league did in one week: waivers, free agents and trades.
@@ -577,6 +595,23 @@ def _trim_season_stats(raw: Any) -> dict[str, dict[str, Any]]:
 def _full_name(player: dict[str, Any]) -> str:
     """'First Last', from whichever halves Sleeper sent."""
     return " ".join(filter(None, [player.get("first_name"), player.get("last_name")]))
+
+
+def _nfl_line(week: int, player_id: str, row: dict[str, Any], positions: Collection[str]) -> NFLGameLine | None:
+    """A player's line from one game; None for a position nobody scores or a row with no game behind it."""
+    position = str((row.get("player") or {}).get("position") or "")
+    opponent = str(row.get("opponent") or "")
+    if position not in positions or not opponent:
+        return None
+    stats = row.get("stats") or {}
+    return NFLGameLine(
+        player_id=player_id,
+        week=week,
+        team=str(row.get("team") or ""),
+        opponent=opponent,
+        position=position,
+        stats={k: float(v) for k in NFL_LINE_KEYS if (v := stats.get(k)) is not None},
+    )
 
 
 def _matchups(data: Any) -> list[SleeperMatchup]:

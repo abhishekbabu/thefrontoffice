@@ -33,7 +33,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperMatchup,
     SleeperRoster,
 )
-from thefrontoffice.domain.errors import LeagueNotFoundError, NotConfiguredError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery
 
 # ── leagues ─────────────────────────────────────────────────────────────
@@ -53,12 +53,6 @@ def test_leagues_are_listed_with_format_and_size() -> None:
     assert refs[0].name == "Sunday Money"
     assert "12-team" in refs[0].detail
     assert "PPR" in refs[0].detail
-
-
-def test_missing_username_is_a_clear_error() -> None:
-    provider = SleeperNFLProvider(username=None, client=FakeSleeper(), espn=FakeESPN())
-    with pytest.raises(NotConfiguredError, match="SLEEPER_USERNAME"):
-        provider.list_leagues()
 
 
 def test_a_league_you_are_not_in_raises() -> None:
@@ -242,6 +236,15 @@ def test_a_finished_game_he_sat_out_reads_as_one_he_did_not_play() -> None:
     assert set(_log(client)["W2 vs NE · DNP"]) == {"N/A"}
 
 
+def test_a_week_whose_lines_would_not_load_is_no_row_rather_than_a_game_missed() -> None:
+    schedule = [*BUFFALO_SCHEDULE, ScheduledGame(week=2, date="2026-09-20", home="BUF", away="NE")]
+    line = _rb_week(1, "MIA", gp=1, off_snp=30, tm_off_snp=60, pts_ppr=8.0)
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=schedule, game_lines=[line])
+    client.unloaded_weeks = {2}
+
+    assert [label for label in _log(client) if label.startswith("W")] == ["W1 @ MIA"]
+
+
 def test_this_weeks_game_has_no_row_until_he_has_played_in_it() -> None:
     """Until then it has not been played, and a "did not play" would be a guess."""
     line = _rb_week(1, "MIA", gp=1, off_snp=30, tm_off_snp=60, pts_ppr=8.0)
@@ -265,8 +268,9 @@ def test_a_player_who_has_not_played_a_game_has_no_log() -> None:
     assert all(t.title != "Game log" for t in nfl_provider(client).player("L1", "rb1").tables)
 
 
-def test_a_failed_game_log_lookup_does_not_take_the_player_down() -> None:
-    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, game_lines_error=SleeperAPIError("down"))
+def test_game_lines_that_will_not_load_do_not_take_the_player_down() -> None:
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    client.unloaded_weeks = {1, 2, 3}
 
     detail = nfl_provider(client).player("L1", "rb1")
 
@@ -623,7 +627,7 @@ def test_last_season_is_read_for_the_shape_of_each_position() -> None:
 
 def test_a_week_that_cannot_read_last_season_still_simulates() -> None:
     client = _paired()
-    client.game_lines_error = SleeperAPIError("down")
+    client.unloaded_weeks = set(range(1, 19))
 
     assert nfl_provider(client).matchup_input("L1") is not None
 

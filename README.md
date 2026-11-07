@@ -122,7 +122,9 @@ surname, and never across clubs — in the row, the drawer and the prompt.
 The drawer also carries his **game log**: a row per week so far, as Sleeper's
 own page reads it — opponent, points in the league's scoring, snap share and the
 box score his position is scored on — with byes and games he sat out shown as
-gaps, not skipped.
+gaps, not skipped. A week whose lines would not load is left out rather than
+read as a game missed, and in the season schedule such a week reads
+*unavailable* rather than *bye*.
 
 A free agent who **simply outscores one of your starters** — most often a
 defense or kicker to stream — is a pickup on the list too: at least three
@@ -279,9 +281,11 @@ bench holds more), the bank and the free transfers; season points, overall rank
 and the mini-league place head League; and **Watch out for** names a club with
 a blank or a double gameweek, which no player row can say. On NBA, the week's
 header is the add budget left, League is headed by your record and place, and
-a player's drawer carries his last fifteen games in all nine categories. A
-trade naming a player only by an ambiguous surname is refused rather than
-priced for whichever player Yahoo listed first.
+a player's drawer — yours, a rival's or a free agent's — carries his last
+fifteen games in all nine categories. A trade naming a player only by an
+ambiguous surname is refused rather than priced for whichever player Yahoo
+listed first, and one whose roster will not load fails rather than being
+judged without it.
 
 ![Player detail](docs/screenshots/player.png)
 

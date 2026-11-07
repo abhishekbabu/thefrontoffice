@@ -13,10 +13,10 @@ which of the two it is showing.
 import logging
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from functools import cached_property
 
-from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.dates import day_month, parse_day, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot, optimal_lineup
@@ -30,6 +30,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Projection,
     Team,
     Unprojected,
+    by_club,
     kicked_off,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews
@@ -129,13 +130,14 @@ class Week:
         return {slot.player.player_id for slot in self.lineup if slot.player}
 
     @property
+    def sitting(self) -> list[Projection]:
+        """Everyone your lineup does not start, reserve and taxi slots included."""
+        return [p for p in self.projected if p.player_id not in self.starter_ids]
+
+    @property
     def bench(self) -> list[Projection]:
-        """Who could come into the lineup: neither starting nor in an injured-reserve or taxi slot."""
-        return [
-            p
-            for p in self.projected
-            if p.player_id not in self.starter_ids and p.player_id not in self.roster.reserve_ids
-        ]
+        """Who could come into the lineup: sitting, and not in an injured-reserve or taxi slot."""
+        return [p for p in self.sitting if p.player_id not in self.roster.reserve_ids]
 
     @cached_property
     def owned(self) -> set[str]:
@@ -205,17 +207,9 @@ def opponent_of(matchups: Iterable[Matchup], roster_id: int) -> tuple[Matchup, M
 # ── when the week is played ─────────────────────────────────────────────
 
 
-def parse_date(iso: str) -> date | None:
-    """Sleeper publishes a day, not an instant, so this is a label not a time."""
-    try:
-        return date.fromisoformat(iso[:10])
-    except ValueError, TypeError:
-        return None
-
-
 def day(iso: str) -> str:
     """One date, as a person reads it: 'Sun 13 Sep'."""
-    parsed = parse_date(iso)
+    parsed = parse_day(iso)
     return weekday_day_month(parsed) if parsed else ""
 
 
@@ -225,7 +219,7 @@ def week_dates(games: Sequence[Game]) -> str:
     An NFL week runs Thursday to Monday, so one date would be wrong for most
     of it and a range is what somebody checks against their own calendar.
     """
-    days = sorted({d for d in (parse_date(g.date) for g in games) if d})
+    days = sorted({d for d in (parse_day(g.date) for g in games) if d})
     if not days:
         return ""
     if days[0] == days[-1]:
@@ -391,10 +385,7 @@ class Scoreboard:
     def started(self, state: Week) -> set[str]:
         """Clubs whose game this week has kicked off: their players are locked in or out."""
         return {
-            club
-            for game in self.games(state).get(state.week, [])
-            if kicked_off(game.status)
-            for club in (game.home, game.away)
+            club for club, game in by_club(self.games(state).get(state.week, [])).items() if kicked_off(game.status)
         }
 
     def board(self, state: Week) -> dict[str, ScoreboardGame]:

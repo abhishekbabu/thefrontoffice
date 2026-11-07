@@ -12,7 +12,7 @@ Monday-night starter as a player who did nothing.
 """
 
 from collections import defaultdict
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from thefrontoffice.adapters.outbound.competitions.nfl.model import GameLine, Projection
@@ -27,6 +27,11 @@ ROLE_GAMES = 3
 SNAP_POSITIONS = frozenset({"QB", "RB", "WR", "TE"})
 TARGET_POSITIONS = frozenset({"RB", "WR", "TE"})
 CARRY_POSITIONS = frozenset({"QB", "RB"})
+
+
+def season_lines(by_week: Mapping[int, Sequence[GameLine]]) -> list[GameLine]:
+    """Every week's lines as one run, for a reading that does not care which week a line came from."""
+    return [line for lines in by_week.values() for line in lines]
 
 
 def took_the_field(line: GameLine) -> bool:

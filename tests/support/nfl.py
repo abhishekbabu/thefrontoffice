@@ -50,10 +50,10 @@ class FakeSleeper:
         transactions: dict[int, list[Transaction]] | None = None,
         transactions_error: Exception | None = None,
         game_lines: list[NFLGameLine] | None = None,
-        game_lines_error: Exception | None = None,
     ) -> None:
         self.game_lines = game_lines if game_lines is not None else []
-        self.game_lines_error = game_lines_error
+        self.unloaded_weeks: set[int] = set()
+        """Weeks whose bulk reads would not load: absent from what the readers return, as the client leaves them."""
         self.last_season_lines: list[NFLGameLine] = []
         self.season_stats = season_stats if season_stats is not None else {}
         self.season_stats_error = season_stats_error
@@ -95,7 +95,7 @@ class FakeSleeper:
         self.matchup_fetches = 0
 
     def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[SleeperMatchup]]:
-        return {w: self.get_matchups(league_id, w) for w in weeks}
+        return {w: self.get_matchups(league_id, w) for w in weeks if w not in self.unloaded_weeks}
 
     def get_nfl_schedule(self, season: str) -> list[ScheduledGame]:
         if self.schedule_error:
@@ -107,11 +107,11 @@ class FakeSleeper:
             raise self.transactions_error
         return self.transactions.get(week, [])
 
-    def get_nfl_game_lines(self, season: str, weeks: list[int], positions: Collection[str]) -> list[NFLGameLine]:
-        if self.game_lines_error:
-            raise self.game_lines_error
+    def get_nfl_game_lines(
+        self, season: str, weeks: list[int], positions: Collection[str]
+    ) -> dict[int, list[NFLGameLine]]:
         source = self.game_lines if season == self.get_nfl_state().season else self.last_season_lines
-        return [line for line in source if line.week in weeks]
+        return {w: [line for line in source if line.week == w] for w in weeks if w not in self.unloaded_weeks}
 
     def get_season_stats(self, season: str) -> dict[str, SeasonStats]:
         if self.season_stats_error:

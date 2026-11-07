@@ -184,10 +184,7 @@ def build(state: Week, tasks: list[Action], trending: Sequence[Trending] | None)
         else f"- {slot.slot}: (empty)\n"
         for slot in state.lineup
     )
-    bench_str = (
-        "".join(player_line(p, evidence, news) for p in state.projected if p.player_id not in state.starter_ids)
-        or "- (none)\n"
-    )
+    bench_str = "".join(player_line(p, evidence, news) for p in state.sitting) or "- (none)\n"
     tasks_str = "".join(task_line(i, task) for i, task in enumerate(tasks, start=1)) or (
         "- None. Nothing in league state needs deciding: the lineup is the best legal one and nobody "
         "in it is ruled out.\n"

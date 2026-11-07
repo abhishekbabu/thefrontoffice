@@ -269,7 +269,23 @@ def nfl_provider(settings: AppSettings = process_settings) -> SleeperNFLProvider
     """The NFL provider, wired to the real clients: for the scripts that need its own methods, not just the port."""
     from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
 
-    return SleeperNFLProvider(settings.sleeper_username, client=_sleeper_client(settings), espn=_espn_client(settings))
+    return SleeperNFLProvider(
+        _configured(settings.sleeper_username, "nfl-sleeper"),
+        client=_sleeper_client(settings),
+        espn=_espn_client(settings),
+    )
+
+
+def _configured[T](value: T | None, key: str) -> T:
+    """A setting an entry needs, as its gate checked it; asked for directly, the entry says what is missing.
+
+    Raises:
+        NotConfiguredError: it is unset — named as the entry's `requires` names it, so no provider repeats it.
+    """
+    if value is None or value == "":
+        entry = REGISTRY.find(key)
+        raise NotConfiguredError(entry.label, entry.requires)
+    return value
 
 
 def _nfl() -> type[SleeperNFLProvider]:
@@ -285,7 +301,7 @@ def _fpl() -> type[FPLProvider]:
 
 
 def _build_fpl(settings: AppSettings) -> FPLProvider:
-    return _fpl()(settings.fpl_entry_id, client=_fpl_client(settings))
+    return _fpl()(_configured(settings.fpl_entry_id, "premier-league-fpl"), client=_fpl_client(settings))
 
 
 def _nba() -> type[YahooNBAProvider]:

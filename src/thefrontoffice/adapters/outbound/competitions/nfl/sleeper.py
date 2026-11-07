@@ -75,7 +75,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
 )
 from thefrontoffice.domain.errors import (
     LeagueNotFoundError,
-    NotConfiguredError,
     PlatformError,
     PlayerNotFoundError,
     TeamNotFoundError,
@@ -117,8 +116,12 @@ TEAM_LOGO_URL = "https://sleepercdn.com/images/team_logos/nfl/{team}.png"
 class SleeperNFLProvider:
     """CompetitionProvider for Sleeper points-league football."""
 
-    def __init__(self, username: str | None, *, client: SleeperNFLSource, espn: ESPNSource):
-        """Every collaborator from bootstrap, which is the one place a real client is built."""
+    def __init__(self, username: str, *, client: SleeperNFLSource, espn: ESPNSource):
+        """Every collaborator from bootstrap, which is the one place a real client is built.
+
+        The username is required: whether one is set, and what to set when it
+        is not, is the registry entry's to say before this is ever built.
+        """
         self.username = username
         self.client = client
         self.espn = espn
@@ -134,8 +137,6 @@ class SleeperNFLProvider:
     def _resolve_user_id(self) -> str:
         if self._user_id:
             return self._user_id
-        if not self.username:
-            raise NotConfiguredError("Sleeper", "SLEEPER_USERNAME")
         self._user_id = self.client.get_user(self.username).user_id
         return self._user_id
 
@@ -385,16 +386,11 @@ class SleeperNFLProvider:
     def _evidence(
         self, season: str, week: int, scoring: str, is_regular_season: bool, players: Mapping[str, PlayerMeta]
     ) -> evidence.Evidence:
-        """Roles and matchups from every week finished so far."""
+        """Roles and matchups from every week finished so far that loads."""
         played = weeks_played(week, is_regular_season)
         if not played:
             return evidence.Evidence()
-        try:
-            lines = self.client.get_nfl_game_lines(season, played, FANTASY_POSITIONS)
-        except SleeperAPIError as e:
-            # Enrichment: a week with no evidence is the week as it was before.
-            logger.warning(f"Continuing without role and matchup evidence: {e}")
-            return evidence.Evidence()
+        lines = evidence.season_lines(self.client.get_nfl_game_lines(season, played, FANTASY_POSITIONS))
         out = {pid for pid, meta in players.items() if ruled_out(meta.injury_status)}
         return evidence.gather(lines, scoring, out)
 
@@ -410,7 +406,7 @@ class SleeperNFLProvider:
 
     def _news(self, players: dict[str, PlayerMeta]) -> news.PlayerNews:
         """Recent articles about every player, from each club's own feed."""
-        clubs = sorted({espn_club(m.team) for m in players.values() if m.team not in ("", FREE_AGENT)})
+        clubs = sorted({espn_club(m.team) for m in players.values() if m.team != FREE_AGENT})
         try:
             feeds = self.espn.get_team_news(espn.NFL, clubs)
         except ESPNAPIError as e:
@@ -424,7 +420,7 @@ class SleeperNFLProvider:
         state = self._week(league_id)
         live = self.scoreboard.live(state)
         # The bench as the page shows it, reserve slots included and marked.
-        sitting = sorted((p for p in state.projected if p.player_id not in state.starter_ids), key=lambda p: -p.points)
+        sitting = sorted(state.sitting, key=lambda p: -p.points)
         # No fixture notes: a bye is on the player's own row, and on the to-do
         # list when it costs a starter, so a list of clubs would say it twice.
         return Summary(

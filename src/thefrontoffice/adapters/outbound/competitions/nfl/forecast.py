@@ -13,7 +13,14 @@ from collections.abc import Callable, Sequence
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, outcomes
 from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import fits
-from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueRules, Matchup, NFLSource, Projection, Team
+from thefrontoffice.adapters.outbound.competitions.nfl.model import (
+    LeagueRules,
+    Matchup,
+    NFLSource,
+    Projection,
+    Team,
+    by_club,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Scoreboard,
@@ -22,7 +29,6 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     pairings,
     projections_for,
 )
-from thefrontoffice.domain.errors import PlatformError
 from thefrontoffice.domain.models import LineupMove, MatchupInput, Outcomes, PlayedMatchup
 
 logger = logging.getLogger(__name__)
@@ -48,16 +54,18 @@ class Forecasts:
         self._previous: dict[str, evidence.Evidence] = {}
 
     def last_season(self, season: str, scoring: str) -> evidence.Evidence:
-        """Last season's games, for the shape of each position's spread. Empty where they will not load."""
+        """Last season's games, for the shape of each position's spread. Without the weeks that will not load."""
         key = f"{season}:{scoring}"
         if key not in self._previous:
             try:
-                lines = self.client.get_nfl_game_lines(
-                    str(int(season) - 1), list(range(1, SEASON_WEEKS + 1)), FANTASY_POSITIONS
-                )
-            except (PlatformError, ValueError) as e:
+                previous = str(int(season) - 1)
+            except ValueError as e:
                 logger.warning(f"Shaping ranges without last season: {e}")
                 lines = []
+            else:
+                lines = evidence.season_lines(
+                    self.client.get_nfl_game_lines(previous, list(range(1, SEASON_WEEKS + 1)), FANTASY_POSITIONS)
+                )
             self._previous[key] = evidence.gather(lines, scoring)
         return self._previous[key]
 
@@ -98,9 +106,7 @@ class Forecasts:
 
     def _outcomes(self, state: Week, scoreboard: Scoreboard) -> Callable[[Projection], Outcomes]:
         """Each player's week as a range: shaped by his games, and by how far into it his own game is."""
-        status = {
-            club: game.status for game in scoreboard.games(state).get(state.week, []) for club in (game.home, game.away)
-        }
+        status = {club: game.status for club, game in by_club(scoreboard.games(state).get(state.week, [])).items()}
         board = scoreboard.board(state)
         live = scoreboard.live(state)
         spread = outcomes.spreads(state.evidence, pool_from=self.last_season(state.season, state.league.scoring_format))
@@ -128,10 +134,12 @@ class Forecasts:
         """
         season = league.season
         lines = self.client.get_nfl_game_lines(season, list(range(1, week + 1)), FANTASY_POSITIONS)
-        before = evidence.gather([line for line in lines if line.week < week], league.scoring_format)
+        before = evidence.gather(
+            [line for w, played in lines.items() if w < week for line in played], league.scoring_format
+        )
         last = self.last_season(season, league.scoring_format)
         projections = self.client.get_projections(season, week, league.scoring_format, FANTASY_POSITIONS)
-        that_week = evidence.gather([line for line in lines if line.week == week], league.scoring_format)
+        that_week = evidence.gather(lines.get(week, []), league.scoring_format)
         played = [
             (projections[pid], games[0])
             for pid, games in that_week.games.items()
@@ -152,7 +160,7 @@ class Forecasts:
         projections = self.client.get_projections(season, week, league.scoring_format, FANTASY_POSITIONS)
         players = self.client.get_nfl_players()
         earlier = list(range(1, week))
-        lines = self.client.get_nfl_game_lines(season, earlier, FANTASY_POSITIONS) if earlier else []
+        lines = evidence.season_lines(self.client.get_nfl_game_lines(season, earlier, FANTASY_POSITIONS))
         spread = outcomes.spreads(
             evidence.gather(lines, league.scoring_format),
             settings,

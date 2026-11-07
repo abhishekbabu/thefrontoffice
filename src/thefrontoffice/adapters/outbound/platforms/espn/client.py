@@ -98,7 +98,7 @@ class ESPNClient:
             for club in clubs
             if club in ids
         }
-        raw = self._api.cached_many(urls, NEWS_TTL)
+        raw = self._api.cached_many(urls, NEWS_TTL).values
         news = {}
         for club in clubs:
             payload = raw.get(f"news_{prefix}_{club}")

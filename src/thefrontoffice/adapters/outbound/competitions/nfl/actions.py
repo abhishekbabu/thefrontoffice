@@ -25,7 +25,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     eligible_positions,
     fits,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, Projection
+from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, Projection, active, by_club
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, listed, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
@@ -78,7 +78,7 @@ def build(
     pointed at the top of it.
     """
     week_games = games.get(state.week, [])
-    kickoff = {club: game.date for game in week_games for club in (game.home, game.away)}
+    kickoff = by_club(week_games)
 
     items = _lineup(state, started, kickoff, free_agents)
     items += _upgrades(state, free_agents, started, {i.action.player_id for i in items})
@@ -92,7 +92,7 @@ def build(
 def _lineup(
     state: Week,
     started: set[str],
-    kickoff: dict[str, str],
+    kickoff: Mapping[str, Game],
     free_agents: Sequence[Projection],
 ) -> list[Item]:
     """Starters who cannot score, empty slots, and swaps the bench allows."""
@@ -234,7 +234,7 @@ def _swap_key(change: LineupChange) -> str:
 
 
 def _swap(
-    change: LineupChange, urgency: Urgency, reason: str, kickoff: dict[str, str], evidence: list[Stat], key: str
+    change: LineupChange, urgency: Urgency, reason: str, kickoff: Mapping[str, Game], evidence: list[Stat], key: str
 ) -> Action:
     """A bench player in, a starter out, by the earlier of their two kickoffs."""
     title = (
@@ -245,7 +245,7 @@ def _swap(
     # Either player locks at his own kickoff, so the swap closes at whichever
     # comes first. ISO dates sort as dates.
     teams = [change.start.team, *([change.bench.team] if change.bench else [])]
-    dates = sorted(kickoff[t] for t in teams if kickoff.get(t))
+    dates = sorted(game.date for t in teams if (game := kickoff.get(t)) and game.date)
     return Action(
         kind="lineup",
         urgency=urgency,
@@ -382,8 +382,7 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
     fourteen-point tight end on a one-week injury for a seven-point flier is
     not a to-do item.
     """
-    active = [pid for pid in state.roster.player_ids if pid not in state.roster.reserve_ids]
-    open_spots = state.league.roster_spots - len(active)
+    open_spots = state.league.roster_spots - len(active(state.roster))
     named = {pid for item in items for pid in (item.action.player_id, item.action.replaces) if pid}
     chosen: set[str] = set()
     out = []
@@ -463,7 +462,7 @@ def _same_game(
     behind it is the chance you need, and the forecast prices the swap, so the
     row says which way it cuts rather than telling anyone to break it up.
     """
-    game_of = {club: game for game in week_games for club in (game.home, game.away)}
+    game_of = by_club(week_games)
     starters = [slot.player for slot in state.lineup if slot.player]
     stacks: dict[tuple[str, str], list[Projection]] = defaultdict(list)
     for player in starters:
@@ -515,11 +514,12 @@ def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Item]:
 
     Asked of the starters only: a bench player on bye costs nothing. A
     position is short when fewer bench players can cover it than starters
-    are missing from it.
+    are missing from it — and a player in injured reserve or taxi covers
+    nothing, since he cannot be started.
     """
     if not next_games:
         return []
-    playing = {club for game in next_games for club in (game.home, game.away)}
+    playing = by_club(next_games)
     week = state.week + 1
 
     missing: dict[str, list[Projection]] = defaultdict(list)
@@ -530,12 +530,7 @@ def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Item]:
     items = []
     for position, out in missing.items():
         cover = [
-            p
-            for p in state.projected
-            if p.position == position
-            and p.team in playing
-            and p.player_id not in state.starter_ids
-            and not ruled_out(p.injury_status)
+            p for p in state.bench if p.position == position and p.team in playing and not ruled_out(p.injury_status)
         ]
         if len(cover) >= len(out):
             continue
