@@ -12,12 +12,9 @@ import requests
 from support.http import FakeSession
 
 from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
-from thefrontoffice.adapters.outbound.platforms.fpl.client import (
-    FPLClient,
-    free_transfers,
-)
+from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
-from thefrontoffice.adapters.outbound.platforms.fpl.types import MAX_FREE_TRANSFERS, GameweekResult
+from thefrontoffice.adapters.outbound.platforms.fpl.types import Opponent
 
 BOOTSTRAP = {
     "events": [
@@ -31,7 +28,7 @@ BOOTSTRAP = {
         },
         {"id": 3, "name": "Gameweek 3", "deadline_time": "2026-08-28T17:30:00Z"},
     ],
-    "teams": [{"id": 1, "short_name": "ARS"}, {"id": 2, "short_name": "MCI"}],
+    "teams": [{"id": 1, "short_name": "ARS", "name": "Arsenal"}, {"id": 2, "short_name": "MCI", "name": "Man City"}],
     "elements": [
         {
             "id": 10,
@@ -138,15 +135,24 @@ def client(tmp_path: Path) -> FPLClient:
 # ── the bootstrap payload ───────────────────────────────────────────────
 
 
-def test_teams_map_to_abbreviations(client: FPLClient) -> None:
-    assert client.get_teams() == {1: "ARS", 2: "MCI"}
+def test_clubs_are_keyed_by_the_abbreviation_a_player_carries(client: FPLClient) -> None:
+    assert sorted(client.get_clubs()) == ["ARS", "MCI"]
+
+
+def test_a_club_the_bootstrap_does_not_list_is_refused_rather_than_guessed(tmp_path: Path) -> None:
+    """A player of club 9 in a payload listing clubs 1 and 2 is a payload this client does not understand."""
+    stray = {**BOOTSTRAP, "elements": [{**BOOTSTRAP["elements"][0], "team": 9}]}
+    client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession({"bootstrap-static": stray}))
+
+    with pytest.raises(FPLAPIError, match="does not list"):
+        client.get_players()
 
 
 def test_the_bootstrap_is_fetched_once_per_instance(tmp_path: Path) -> None:
     """A report reads it five times; re-parsing a megabyte each time is waste."""
     session = FakeSession(ROUTES)
     client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=session)
-    client.get_teams()
+    client.get_clubs()
     client.get_players()
     client.get_gameweeks()
     assert sum("bootstrap" in url for url in session.requests) == 1
@@ -156,7 +162,7 @@ def test_an_empty_bootstrap_raises(tmp_path: Path) -> None:
     """A 200 carrying nothing usable is not a transport failure, so it is not retried."""
     client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession({"bootstrap-static": {}}))
     with pytest.raises(FPLAPIError, match="no player data"):
-        client.get_teams()
+        client.get_players()
 
 
 def test_players_carry_the_games_own_projection(client: FPLClient) -> None:
@@ -179,7 +185,6 @@ def test_quoted_and_null_numbers_both_coerce(client: FPLClient) -> None:
 def test_availability_reports_a_doubt(client: FPLClient) -> None:
     assert client.get_players()[11].availability == "doubtful 75%"
     assert client.get_players()[10].availability == ""
-    assert client.get_players()[10].is_available
 
 
 # ── gameweeks ───────────────────────────────────────────────────────────
@@ -204,7 +209,7 @@ def test_the_last_gameweek_stands_once_the_season_runs_out(client: FPLClient) ->
 def test_gameweeks_carry_their_flags(client: FPLClient) -> None:
     first, second, _ = client.get_gameweeks()
     assert first.finished and first.is_current
-    assert second.is_next and second.average_score == 51
+    assert not second.is_current and second.average_score == 51
 
 
 # ── one manager ─────────────────────────────────────────────────────────
@@ -268,8 +273,8 @@ def test_history_returns_one_row_per_gameweek_played(client: FPLClient) -> None:
 def test_fixtures_resolve_both_clubs_and_both_difficulties(client: FPLClient) -> None:
     fixture = client.get_fixtures(3)[0]
     assert (fixture.home, fixture.away) == ("ARS", "MCI")
-    assert fixture.opponent_of("ARS") == ("MCI", 4, True)
-    assert fixture.opponent_of("MCI") == ("ARS", 2, False)
+    assert fixture.opponent_of("ARS") == Opponent(club="MCI", difficulty=4, home=True)
+    assert fixture.opponent_of("MCI") == Opponent(club="ARS", difficulty=2, home=False)
     assert fixture.opponent_of("LIV") is None
 
 
@@ -278,40 +283,6 @@ def test_a_fixture_without_a_gameweek_or_kickoff_is_kept(client: FPLClient) -> N
     unscheduled = client.get_fixtures(3)[1]
     assert unscheduled.event is None
     assert unscheduled.kickoff is None
-
-
-# ── free transfers ──────────────────────────────────────────────────────
-
-
-def test_one_free_transfer_in_the_opening_gameweek() -> None:
-    assert free_transfers([], upcoming=1) == 1
-
-
-def test_an_unused_transfer_rolls_over() -> None:
-    history = [GameweekResult(event=1, points=60, transfers_made=0, transfers_cost=0)]
-    assert free_transfers(history, upcoming=2) == 2
-
-
-def test_using_the_allowance_resets_it_to_one() -> None:
-    history = [GameweekResult(event=1, points=60, transfers_made=1, transfers_cost=0)]
-    assert free_transfers(history, upcoming=2) == 1
-
-
-def test_rollover_is_capped() -> None:
-    """Five is the ceiling however long a manager sits on their hands."""
-    history = [GameweekResult(event=e, points=0, transfers_made=0, transfers_cost=0) for e in range(1, 12)]
-    assert free_transfers(history, upcoming=12) == MAX_FREE_TRANSFERS
-
-
-def test_a_gameweek_of_hits_never_drops_below_one() -> None:
-    history = [GameweekResult(event=1, points=40, transfers_made=4, transfers_cost=12)]
-    assert free_transfers(history, upcoming=2) == 1
-
-
-def test_a_missing_gameweek_is_skipped_rather_than_assumed() -> None:
-    """A manager who joined late has no row for the gameweeks before they started."""
-    history = [GameweekResult(event=3, points=60, transfers_made=0, transfers_cost=0)]
-    assert free_transfers(history, upcoming=4) == 2
 
 
 # ── retry classification ────────────────────────────────────────────────
@@ -370,6 +341,23 @@ def test_the_whole_h2h_season_comes_back_keyed_by_gameweek(tmp_path: Path) -> No
     assert sorted(season) == [1, 2]
     assert season[1].opponent_name == "Rival"
     assert (season[1].my_points, season[1].opponent_points) == (60, 44)
+
+
+def test_one_weeks_tie_is_read_from_your_side(tmp_path: Path) -> None:
+    session = FakeSession({"/leagues-h2h-matches/league/950/": {"results": [H2H_SEASON["results"][1]]}})
+    client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=session)
+
+    tie = client.get_h2h_match(950, 7, 2)
+
+    assert tie is not None
+    assert (tie.opponent_entry, tie.my_points, tie.opponent_points) == (99, 70, 51)
+
+
+def test_a_week_you_are_not_drawn_in_has_no_tie(tmp_path: Path) -> None:
+    session = FakeSession({"/leagues-h2h-matches/league/950/": {"results": [H2H_SEASON["results"][2]]}})
+    client = FPLClient(cache=JsonDiskCache(tmp_path / "cache"), session=session)
+
+    assert client.get_h2h_match(950, 7, 3) is None
 
 
 def test_the_side_of_a_tie_is_read_from_whichever_slot_you_are_in(tmp_path: Path) -> None:

@@ -1,6 +1,9 @@
-"""Picking a starting eleven, and pricing a transfer.
+"""The rules of the game: who plays, what a pick scores, picking an eleven, pricing a transfer.
 
-Both have exact answers, so neither is asked of the model. Which legal eleven
+Everything else in the competition asks here rather than restating a rule, so
+that the market, the lineups and the live score cannot disagree about one.
+
+Lineups and transfers have exact answers, so neither is asked of the model. Which legal eleven
 maximises expected points is a small search over formations; what a transfer
 costs is arithmetic on prices the game publishes. The model's job is the part
 that is genuinely judgement — whether a projection is believable, whether a
@@ -12,24 +15,130 @@ slots, only a count of each position that must fall between a minimum and a
 maximum. That is why this does not reuse the football lineup solver.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     FORMATION_LIMITS,
     STARTING_SIZE,
+    Fixture,
+    GameweekResult,
+    LiveStat,
+    Opponent,
+    Pick,
     Player,
+    Squad,
 )
+
+RULED_OUT = frozenset({"i", "s", "u", "n"})
+"""Injured, suspended, unavailable, not in the squad. Doubtful ("d") is not
+among them: a doubt is flagged, priced and started like anyone else."""
+
+MAX_FREE_TRANSFERS = 5
+"""Free transfers roll over, capped at five. Not exposed by the public API."""
+
+TRANSFER_HIT = 4
+"""Points deducted per transfer beyond the free allowance."""
+
+
+def plays(player: Player) -> bool:
+    """Whether the game expects this player to be able to feature.
+
+    The one availability rule, read by the market and the lineups alike: a
+    ruled-out status or a published nought percent says no, and anything else —
+    a doubt included — says yes, with the doubt shown beside the player.
+    """
+    return player.chance_of_playing != 0 and player.status not in RULED_OUT
 
 
 def effective_points(player: Player) -> float:
-    """Expected points, zeroed for a player the game says will not feature.
+    """Expected points, zeroed for a player who will not feature.
 
     The game leaves a stale `ep_next` on a ruled-out player, and starting one is
     a guaranteed blank rather than a small return.
     """
-    if player.chance_of_playing == 0 or player.status in ("i", "s", "u", "n"):
-        return 0.0
-    return player.expected_points
+    return player.expected_points if plays(player) else 0.0
+
+
+def free_transfers(history: list[GameweekResult], upcoming: int) -> int:
+    """How many free transfers are available going into gameweek `upcoming`.
+
+    The public API does not expose this — only `my-team`, which needs a login —
+    but it is fully determined by the rules and by transfers already made. One
+    is earned per gameweek, unused ones roll over, and the total is capped.
+
+    Falls back to a single transfer when the history is missing, which is the
+    floor: it is never wrong in the manager's favor.
+    """
+    played = {row.event: row for row in history}
+    available = 1
+    for event in range(1, upcoming):
+        row = played.get(event)
+        if row is None:
+            continue
+        available = min(MAX_FREE_TRANSFERS, max(1, available - row.transfers_made + 1))
+    return available
+
+
+@dataclass(frozen=True)
+class Roster:
+    """A manager's fifteen for one gameweek, each player beside the pick that placed them.
+
+    In pick order rather than expected-points order: the bench order is itself
+    a decision, since auto-subs come on in the order the manager listed them.
+    """
+
+    squad: Squad
+    picked: list[tuple[Pick, Player]]
+
+    @property
+    def players(self) -> list[Player]:
+        return [player for _, player in self.picked]
+
+    @property
+    def starters(self) -> list[Player]:
+        return [player for pick, player in self.picked if pick.is_starting]
+
+    @property
+    def bench(self) -> list[Player]:
+        return [player for pick, player in self.picked if not pick.is_starting]
+
+    @property
+    def captain(self) -> Player | None:
+        return next((player for pick, player in self.picked if pick.is_captain), None)
+
+    def scored(self, live: dict[int, LiveStat]) -> int | None:
+        """What the gameweek has scored so far, or None before anyone counted has played.
+
+        Each player counts by their pick's multiplier, which is the game's own
+        statement of the week's chips: 2 for the captain, 3 under Triple
+        Captain, 0 on the bench unless Bench Boost made it 1.
+        """
+        counted = [(pick, live[player.id]) for pick, player in self.picked if pick.multiplier and player.id in live]
+        if not any(stat.has_played for _, stat in counted):
+            return None
+        return sum(stat.points * pick.multiplier for pick, stat in counted)
+
+
+def roster(squad: Squad, catalog: dict[int, Player]) -> Roster:
+    """The picks joined to the players they name, in the order the manager set them."""
+    picked = [(pick, catalog[pick.element]) for pick in squad.picks if pick.element in catalog]
+    picked.sort(key=lambda pair: pair[0].position)
+    return Roster(squad=squad, picked=picked)
+
+
+def points_of(pick: Pick, stat: LiveStat) -> int:
+    """What one row scored as the manager sees it: multiplied for an armband, raw on the bench."""
+    return stat.points * max(pick.multiplier, 1)
+
+
+def fixtures_by_club(fixtures: list[Fixture], clubs: Iterable[str]) -> dict[str, list[Opponent]]:
+    """Each club's matches this gameweek.
+
+    No match is a blank — every player of that club scores nothing — and two is
+    a double; those are the two cases that change what a squad is worth.
+    """
+    return {club: [m for f in fixtures if (m := f.opponent_of(club))] for club in sorted(set(clubs))}
 
 
 def formations() -> list[dict[str, int]]:
@@ -173,7 +282,8 @@ def affordable_transfers(
     squad: list[Player],
     market: list[Player],
     bank: int,
-    limit: int = 12,
+    *,
+    limit: int,
 ) -> list[Transfer]:
     """The best single-player upgrades this squad can pay for, best gain first.
 
@@ -183,7 +293,7 @@ def affordable_transfers(
     owned = {p.id for p in squad}
     candidates: dict[str, list[Player]] = {}
     for player in market:
-        if player.id not in owned and player.is_available:
+        if player.id not in owned and plays(player):
             candidates.setdefault(player.position, []).append(player)
 
     # One row per incoming player, paired with whoever they most improve on.
