@@ -66,7 +66,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperMatchup,
     SleeperRoster,
 )
-from thefrontoffice.config.constants import NFL_TRADE_PROMPT, NFL_WIRE_PROMPT
 from thefrontoffice.domain.errors import LeagueNotFoundError, PlatformError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     CompetitionContext,
@@ -241,22 +240,7 @@ class SleeperNFLProvider:
         index = self._name_index(state.projections, state.players)
         giving, receiving = resolve_sides(proposal, index.lookup)
 
-        roster_lines = prompt.roster_lines(state)
-        situation, _ = prompt.matchup(state)
-        constraints = prompt.lineup_slots(
-            state,
-            "Only points from the starting lineup score. Bench depth has value only as insurance or as a future "
-            "starter.",
-        )
-        text = NFL_TRADE_PROMPT.format(
-            giving_str="".join(prompt.player_line(p, state.evidence, state.news) for p in giving),
-            receiving_str="".join(prompt.player_line(p, state.evidence, state.news) for p in receiving),
-            situation=situation,
-            constraints=constraints,
-            roster_str="".join(roster_lines.values()),
-            scoring_label=scoring_label(state.league.scoring_format),
-        )
-        return CompetitionContext(prompt=text, situation=situation, constraints=constraints, roster_lines=roster_lines)
+        return prompt.trade(state, giving, receiving)
 
     # ── the wire ────────────────────────────────────────────────────
 
@@ -275,35 +259,9 @@ class SleeperNFLProvider:
         if unavailable:
             raise PlayerNotFoundError(unavailable)
 
-        candidates = projections_for(player_ids, state.projections, state.players)
-        targets = {p.player_id: self._wire_line(p, state) for p in candidates}
-        candidate_lines = {p.name: targets[p.player_id] for p in candidates}
-        roster_lines = prompt.roster_lines(state)
-        situation, _ = prompt.matchup(state)
-        constraints = prompt.lineup_slots(
-            state, "Only the starting lineup scores; a bench spot is insurance or a future starter."
-        )
-        text = NFL_WIRE_PROMPT.format(
-            scoring_label=scoring_label(state.league.scoring_format),
-            situation=situation,
-            constraints=constraints,
-            roster_str="".join(roster_lines.values()),
-            candidates_str="".join(candidate_lines.values()),
-        )
-        return CompetitionContext(
-            prompt=text,
-            situation=situation,
-            constraints=constraints,
-            roster_lines=roster_lines,
-            candidate_lines=candidate_lines,
-            targets=targets,
-        )
-
-    def _wire_line(self, player: Projection, state: Week) -> str:
-        """One candidate as the model reads him: his id, his line, and how he fits."""
-        line = prompt.player_line(player, state.evidence, state.news, bullet=f"- [id {player.player_id}] ")
-        fit = views.fit(state, player)
-        return line + (f"  fits: {fit[1]}\n" if fit else "")
+        candidates = {p.player_id: p for p in projections_for(player_ids, state.projections, state.players)}
+        fits = {pid: fit[1] for pid, p in candidates.items() if (fit := views.fit(state, p))}
+        return prompt.wire(state, candidates, fits)
 
     @staticmethod
     def _name_index(projections: Mapping[str, Projection], players: Mapping[str, PlayerMeta]) -> NameIndex[Projection]:

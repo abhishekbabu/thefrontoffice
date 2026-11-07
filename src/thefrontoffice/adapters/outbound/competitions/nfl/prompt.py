@@ -5,20 +5,166 @@ here turns state already gathered into prose, and none of it decides anything.
 The provider fetches and the prompt describes.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection, Trending
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews, dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import listed, scoring_label
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
-from thefrontoffice.config.constants import NFL_SCOUT_PROMPT
 from thefrontoffice.domain.models import Action, CompetitionContext, Stat, task_id
 
 AVAILABLE_PLAYER_LIMIT = 25
 TRENDING_LIMIT = 10
 TRENDING_HOURS = 24
 """How far back the crowd's adds are counted."""
+
+# How every NFL prompt's player lines read. Shared, because the lines are
+# built by one function for every prompt, and two explanations of one format
+# would drift apart.
+NFL_READING_PLAYER_LINES = """READING THE PLAYER LINES:
+- Under a player, where games have been played, is what the projection rests on. The matchup:
+  how many points a game this week's opponent has given up to the position, ranked 1 (the most,
+  the softest) to 32. The role, over his last games: share of the offense's snaps, carries,
+  targets and share of the team's targets, and points.
+- Weigh role and matchup over the projection itself. A projection is a single number that hides
+  why; a rising target share or a soft defense is the why.
+- Never recommend a DROP off one poor game, or of a player whose role grows while a teammate
+  ahead of him is out. A drop is the least reversible move, so it needs the strongest case.
+- A "news" line under a player is a recent headline about him, dated, from his own club's feed."""
+
+
+NFL_SCOUT_PROMPT = (
+    """
+You are an elite NFL fantasy football manager.
+Produce a concise, high-impact weekly report.
+
+LEAGUE RULES:
+- Scoring: {scoring_label}. Every projection below is in that currency.
+- Each player plays at most one game per week, so a bye or an inactive is a zero, not a reduced score.
+- Winning means out-scoring one opponent this week. Chasing season-long upside at the cost of this
+  week's points is only correct when the roster is already comfortably ahead.
+
+"""
+    + NFL_READING_PLAYER_LINES
+    + """
+
+{situation}
+
+{constraints}
+
+YOUR CURRENT LINEUP (slot, player, projection):
+{lineup_str}
+
+BENCH:
+{bench_str}
+
+TO DO — WHAT LEAGUE STATE ALREADY SAYS NEEDS DECIDING:
+- Computed exactly from the league, not estimated: starters who cannot play, empty slots, swaps
+  the bench allows, byes ahead, the trade deadline. The manager sees this list; your verdicts
+  appear beside it, so judge these items rather than restating them.
+{tasks_str}
+
+TOP AVAILABLE PLAYERS (not rostered anywhere in this league):
+{available_str}
+
+TRENDING ADDS ACROSS SLEEPER (crowd signal, often ahead of projections):
+{trending_str}
+
+YOUR TASK:
+1. Read the matchup: are we favored or chasing, and by how much?
+2. Give a verdict on every TO DO item, by its id. AGREE to make it; OVERRULE when the role, the
+   matchup or the news says otherwise, even where the projection favors it; WAIT when it turns on
+   news due before its deadline, such as a questionable player's final status.
+3. Recommend further moves only where the TO DO list misses one — chiefly ADDs from the available
+   list, each paired with a DROP from the bench. Never repeat a TO DO item as a move.
+4. Skip any move you would not actually make. Three good moves beat six padded ones.
+
+Return your analysis in the required structured form. Field guidance:
+- situation: the matchup, the projected margin, and what it turns on.
+- focus: what this week hinges on — thin positions, byes, injury risk. Short labels.
+- verdicts: exactly one per TO DO item, `task` set to its id ('{first_task}'). Empty if the list is empty.
+- moves: action START/BENCH/ADD/MONITOR. Put the projected points in `metric`
+  (e.g. "14.2 proj pts, +4.1 over Smith"). Pair every ADD with the player it `replaces`.
+- Be specific and tactical. Do not restate the inputs.
+"""
+)
+
+
+NFL_TRADE_PROMPT = """
+# Trade Evaluation Request
+
+## 1. The Trade
+**Giving Away:**
+{giving_str}
+
+**Receiving:**
+{receiving_str}
+
+## 2. Team Context
+{situation}
+
+{constraints}
+
+## 3. Current Roster
+{roster_str}
+
+## 4. Analysis Instructions
+Act as a ruthless NFL fantasy general manager. Scoring is {scoring_label}, and every
+projection above is in that currency. Judge this trade on:
+1. **Starting-lineup impact**: only points that reach the starting lineup count. Upgrading a
+   bench player behind an entrenched starter is worth little.
+2. **Positional scarcity**: a mid-range RB is not interchangeable with a mid-range WR when the
+   lineup slots differ, and depth at a position you already start two of is worth less.
+3. **Byes and availability**: a bye week or an injury designation is a zero, not a reduced
+   score. Check whether the incoming side leaves a hole in a given week.
+4. **Rest of season**: weigh the remaining schedule, especially the fantasy playoff weeks.
+5. **Role over projection**: where a player line carries snap share, targets and carries, judge
+   him on that usage. A projection hides whether a role is growing or shrinking.
+6. **Roster awareness**: do not recommend acquiring a player already on this roster.
+
+Return the evaluation in the required structured form. Field guidance:
+- gains / losses: short labels in this league's own terms, e.g. ['RB depth', 'WR ceiling'].
+- impact: the net weekly change to the starting lineup, in points.
+- schedule: bye weeks and the playoff-week fixtures on both sides.
+- risk: availability risk on the incoming side — injury designations, committee usage.
+- strategy: what to do next, including any counter worth offering.
+"""
+
+
+NFL_WIRE_PROMPT = (
+    """
+You are an elite NFL fantasy football manager deciding which available players are worth a roster spot.
+
+LEAGUE RULES:
+- Scoring: {scoring_label}. Every projection below is in that currency.
+- A claim costs a roster spot, so every ADD names who on the roster makes way.
+
+"""
+    + NFL_READING_PLAYER_LINES
+    + """
+- "Fits" compares an available player with the weakest starter he could replace: the gap in
+  projected points this week, positive where he would start.
+
+{situation}
+
+{constraints}
+
+YOUR ROSTER (who could make way):
+{roster_str}
+
+THE AVAILABLE PLAYERS TO JUDGE, each with its id:
+{candidates_str}
+
+YOUR TASK:
+Give exactly one call per available player above, by id. ADD to claim him now, naming in `drop`
+who on the roster makes way. WATCH when a change in his situation — a teammate's injury, a role
+trending up — would make him worth it. PASS otherwise. Ground each reason in role, matchup or
+news, not the projection alone.
+
+Return the calls in the required structured form.
+"""
+)
 
 
 def build(state: Week, tasks: list[Action], trending: Sequence[Trending] | None) -> CompetitionContext:
@@ -69,6 +215,7 @@ def build(state: Week, tasks: list[Action], trending: Sequence[Trending] | None)
         tasks_str=tasks_str,
         available_str="".join(available_lines.values()) or "- (none available)\n",
         trending_str=_trending(state, trending),
+        first_task=task_id(1),
     )
 
     return CompetitionContext(
@@ -81,6 +228,59 @@ def build(state: Week, tasks: list[Action], trending: Sequence[Trending] | None)
         headline=headline(state),
         tasks=tasks,
     )
+
+
+def trade(state: Week, giving: Sequence[Projection], receiving: Sequence[Projection]) -> CompetitionContext:
+    """The trade prompt: both sides priced against this roster, on the week every other view reads."""
+    roster = roster_lines(state)
+    situation, _ = matchup(state)
+    constraints = lineup_slots(
+        state,
+        "Only points from the starting lineup score. Bench depth has value only as insurance or as a future starter.",
+    )
+    text = NFL_TRADE_PROMPT.format(
+        giving_str="".join(player_line(p, state.evidence, state.news) for p in giving),
+        receiving_str="".join(player_line(p, state.evidence, state.news) for p in receiving),
+        situation=situation,
+        constraints=constraints,
+        roster_str="".join(roster.values()),
+        scoring_label=scoring_label(state.league.scoring_format),
+    )
+    return CompetitionContext(prompt=text, situation=situation, constraints=constraints, roster_lines=roster)
+
+
+def wire(state: Week, candidates: Mapping[str, Projection], fits: Mapping[str, str]) -> CompetitionContext:
+    """The prompt asking for one call per candidate, each by the id the call has to name.
+
+    `candidates` is keyed by player id; `fits` holds how each would fit this
+    lineup, where he would.
+    """
+    targets = {pid: _wire_line(p, state, fits.get(pid, "")) for pid, p in candidates.items()}
+    candidate_lines = {p.name: targets[pid] for pid, p in candidates.items()}
+    roster = roster_lines(state)
+    situation, _ = matchup(state)
+    constraints = lineup_slots(state, "Only the starting lineup scores; a bench spot is insurance or a future starter.")
+    text = NFL_WIRE_PROMPT.format(
+        scoring_label=scoring_label(state.league.scoring_format),
+        situation=situation,
+        constraints=constraints,
+        roster_str="".join(roster.values()),
+        candidates_str="".join(candidate_lines.values()),
+    )
+    return CompetitionContext(
+        prompt=text,
+        situation=situation,
+        constraints=constraints,
+        roster_lines=roster,
+        candidate_lines=candidate_lines,
+        targets=targets,
+    )
+
+
+def _wire_line(player: Projection, state: Week, fit: str) -> str:
+    """One candidate as the model reads him: his id, his line, and how he fits."""
+    line = player_line(player, state.evidence, state.news, bullet=f"- [id {player.player_id}] ")
+    return line + (f"  fits: {fit}\n" if fit else "")
 
 
 def task_line(position: int, task: Action) -> str:

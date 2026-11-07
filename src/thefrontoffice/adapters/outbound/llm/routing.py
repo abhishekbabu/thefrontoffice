@@ -11,14 +11,15 @@ answer:
 - a rejected key or a failed answer moves on without resting it, so a key
   fixed in Settings is tried again on the very next call.
 
-Names no vendor: `bootstrap` hands it the providers in order.
+Names no vendor: `bootstrap` hands it the providers in order, and each
+names itself.
 """
 
 import logging
 import threading
 import time
-from collections.abc import Callable
-from typing import TypeVar
+from collections.abc import Callable, Sequence
+from typing import Protocol, TypeVar
 
 from thefrontoffice.domain.errors import (
     AIKeyInvalidError,
@@ -27,7 +28,6 @@ from thefrontoffice.domain.errors import (
     AIUnavailableError,
     FrontOfficeError,
 )
-from thefrontoffice.domain.models import TradeProposal
 from thefrontoffice.domain.ports import AnalysisModel, ChatReply, ChatSession, HistoryTurn, TModel
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,20 @@ DEFAULT_COOLDOWN_SECONDS = 60.0
 """Where a provider gives no Retry-After: Groq's limits are per minute."""
 
 T = TypeVar("T")
+
+
+class Vendor(AnalysisModel, Protocol):
+    """One provider of the model, as it names itself in logs and errors."""
+
+    @property
+    def name(self) -> str:
+        """As a person would say it: 'Gemini', 'Groq'."""
+        ...
+
+    @property
+    def key_setting(self) -> str:
+        """The environment variable holding its key, which an error points at."""
+        ...
 
 
 class Cooldowns:
@@ -64,27 +78,31 @@ class Cooldowns:
 class RoutedModel(AnalysisModel):
     """The configured providers, in order, as one model."""
 
-    def __init__(self, models: list[tuple[str, AnalysisModel]], cooldowns: Cooldowns) -> None:
-        self._models = models
+    def __init__(self, vendors: Sequence[Vendor], cooldowns: Cooldowns) -> None:
+        self._vendors = vendors
         self._cooldowns = cooldowns
 
     @property
     def is_available(self) -> bool:
-        return bool(self._configured())
+        return bool(self.configured())
 
-    def _configured(self) -> list[tuple[str, AnalysisModel]]:
-        return [(name, model) for name, model in self._models if getattr(model, "is_available", False)]
+    def configured(self) -> list[Vendor]:
+        """The providers with a key, in the order they are preferred."""
+        return [vendor for vendor in self._vendors if vendor.is_available]
 
-    def _order(self) -> list[tuple[str, AnalysisModel]]:
+    def _order(self) -> list[Vendor]:
         """Rested providers first, in preference order; then the resting ones.
 
         A resting provider is tried last rather than never: a cooldown is a
         guess at when quota returns, and a stale guess beats a certain failure.
         """
-        configured = self._configured()
-        return [m for m in configured if not self._cooldowns.resting(m[0])] + [
-            m for m in configured if self._cooldowns.resting(m[0])
+        configured = self.configured()
+        return [v for v in configured if not self._cooldowns.resting(v.name)] + [
+            v for v in configured if self._cooldowns.resting(v.name)
         ]
+
+    def _unavailable(self) -> AIUnavailableError:
+        return AIUnavailableError(keys=[vendor.key_setting for vendor in self._vendors])
 
     def attempt(self, call: Callable[[AnalysisModel], T]) -> T:
         """`call` on each provider in turn until one answers.
@@ -95,9 +113,10 @@ class RoutedModel(AnalysisModel):
                 failed; the most actionable of their failures.
         """
         failures: list[tuple[str, FrontOfficeError]] = []
-        for name, model in self._order():
+        for vendor in self._order():
+            name = vendor.name
             try:
-                answer = call(model)
+                answer = call(vendor)
             except AIQuotaError as e:
                 self._cooldowns.rest(name, e.retry_after or DEFAULT_COOLDOWN_SECONDS)
                 logger.warning(f"{name} is out of quota; resting it and trying the next provider")
@@ -109,6 +128,8 @@ class RoutedModel(AnalysisModel):
                 if failures:
                     logger.info(f"Answered by {name} after {', '.join(n for n, _ in failures)} could not")
                 return answer
+        if not failures:
+            raise self._unavailable()
         raise _verdict(failures)
 
     # ── the port ────────────────────────────────────────────────────
@@ -119,12 +140,9 @@ class RoutedModel(AnalysisModel):
     def structure_text(self, text: str, schema: type[TModel], instruction: str) -> TModel:
         return self.attempt(lambda model: model.structure_text(text, schema, instruction))
 
-    def parse_trade_string(self, text: str) -> TradeProposal:
-        return self.attempt(lambda model: model.parse_trade_string(text))
-
     def start_chat(self, initial_history: list[HistoryTurn] | None = None, enable_search: bool = False) -> ChatSession:
-        if not self._configured():
-            raise AIUnavailableError()
+        if not self.configured():
+            raise self._unavailable()
         return RoutedChat(self, initial_history or [], enable_search)
 
 
@@ -164,8 +182,6 @@ _PRIORITY: tuple[type[FrontOfficeError], ...] = (AIKeyInvalidError, AIQuotaError
 
 def _verdict(failures: list[tuple[str, FrontOfficeError]]) -> FrontOfficeError:
     """One error for a call every provider failed."""
-    if not failures:
-        return AIUnavailableError()
     quotas = [(name, e) for name, e in failures if isinstance(e, AIQuotaError)]
     if len(quotas) == len(failures) and len(quotas) > 1:
         names = ", ".join(name for name, _ in quotas)

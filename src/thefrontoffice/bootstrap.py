@@ -25,7 +25,6 @@ from thefrontoffice.application.week import WeekEngine
 from thefrontoffice.application.wire import WireEngine
 from thefrontoffice.config.settings import settings
 from thefrontoffice.domain.ports import (
-    AnalysisModel,
     CompetitionProvider,
     ForecastProvider,
     SeasonProvider,
@@ -37,7 +36,7 @@ from thefrontoffice.domain.ports import (
 if TYPE_CHECKING:
     from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
     from thefrontoffice.adapters.outbound.llm.answers import DiskAnswerStore
-    from thefrontoffice.adapters.outbound.llm.routing import Cooldowns
+    from thefrontoffice.adapters.outbound.llm.routing import Cooldowns, RoutedModel
     from thefrontoffice.adapters.outbound.platforms.cache import JsonDiskCache
     from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
     from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
@@ -297,38 +296,32 @@ def find(key: str) -> CompetitionEntry | None:
 # ── models and engines ──────────────────────────────────────────────────
 
 
-def _models() -> list[tuple[str, AnalysisModel]]:
-    """Every model provider, in the order they are preferred, configured or not.
+def default_model() -> RoutedModel:
+    """Every model provider as one model, failing over between them in the order they are preferred.
 
-    The single place a vendor is named. Imported lazily so that merely
+    The single place a vendor is chosen. Imported lazily so that merely
     importing the composition root does not pull in an SDK. Gemini first: it
     alone enforces a response schema itself and grounds a trade in search.
-    """
-    from thefrontoffice.adapters.outbound.llm.gemini.client import GeminiClient
-    from thefrontoffice.adapters.outbound.llm.openai_compatible import providers
-    from thefrontoffice.adapters.outbound.llm.openai_compatible.client import OpenAICompatibleClient
-
-    return [
-        ("Gemini", GeminiClient()),
-        ("Groq", OpenAICompatibleClient(providers.groq())),
-        ("OpenRouter", OpenAICompatibleClient(providers.openrouter())),
-    ]
-
-
-def ai_providers() -> list[str]:
-    """The providers with a key, in the order they are tried."""
-    return [name for name, model in _models() if getattr(model, "is_available", False)]
-
-
-def default_model() -> AnalysisModel:
-    """Every configured provider as one model, failing over between them.
 
     Built per call, so a key saved in Settings counts at once; the cooldowns
     are the process's, so a provider out of quota stays rested across requests.
     """
+    from thefrontoffice.adapters.outbound.llm.gemini import client as gemini
+    from thefrontoffice.adapters.outbound.llm.openai_compatible import providers
+    from thefrontoffice.adapters.outbound.llm.openai_compatible.client import OpenAICompatibleClient
     from thefrontoffice.adapters.outbound.llm.routing import RoutedModel
 
-    return RoutedModel(_models(), _cooldowns())
+    vendors = [
+        gemini.GeminiClient(client=gemini.connect(settings.gemini_api_key)),
+        OpenAICompatibleClient(providers.groq()),
+        OpenAICompatibleClient(providers.openrouter()),
+    ]
+    return RoutedModel(vendors, _cooldowns())
+
+
+def ai_providers() -> list[str]:
+    """The providers with a key, in the order they are tried."""
+    return [vendor.name for vendor in default_model().configured()]
 
 
 @functools.cache
@@ -345,7 +338,7 @@ def ai_available() -> bool:
     analysis to give, and the honest response is to not offer it — a button
     that explains why it cannot work is worse than no button.
     """
-    return bool(ai_providers())
+    return default_model().is_available
 
 
 def scout_engine(provider: CompetitionProvider) -> ScoutEngine:

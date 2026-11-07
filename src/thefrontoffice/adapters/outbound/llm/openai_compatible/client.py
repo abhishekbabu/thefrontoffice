@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import openai
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
 from thefrontoffice.adapters.outbound.llm.openai_compatible.providers import Provider
 from thefrontoffice.domain.errors import (
@@ -27,7 +27,6 @@ from thefrontoffice.domain.errors import (
     AIUnavailableError,
     FrontOfficeError,
 )
-from thefrontoffice.domain.models import TradeProposal
 from thefrontoffice.domain.ports import AnalysisModel, ChatSession, HistoryTurn, TModel
 
 logger = logging.getLogger(__name__)
@@ -44,9 +43,6 @@ SCHEMA_INSTRUCTION = (
 REPAIR_INSTRUCTION = (
     "That answer did not validate against the schema:\n{errors}\n\n"
     "Return the corrected JSON object only, changing nothing the errors do not require."
-)
-TRADE_INSTRUCTION = (
-    'Extract the players being given and received in this trade offer, using full player names.\n\nTrade: "{text}"'
 )
 
 _FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$")
@@ -82,13 +78,6 @@ def _rejects_format(error: Exception) -> bool:
     return isinstance(error, openai.BadRequestError) and any(
         word in text for word in ("response_format", "json_schema", "structured", "json mode", "json_object")
     )
-
-
-class _TradeSides(BaseModel):
-    """The shape a trade is parsed into. TradeProposal is a dataclass, not a schema."""
-
-    giving: list[str] = Field(description="Full names of the players being given away.")
-    receiving: list[str] = Field(description="Full names of the players being received.")
 
 
 @dataclass(frozen=True)
@@ -138,6 +127,14 @@ class OpenAICompatibleClient(AnalysisModel):
         )
 
     @property
+    def name(self) -> str:
+        return self.provider.name
+
+    @property
+    def key_setting(self) -> str:
+        return self.provider.setting
+
+    @property
     def is_available(self) -> bool:
         return self.client is not None
 
@@ -148,11 +145,8 @@ class OpenAICompatibleClient(AnalysisModel):
         return self._structured(self.provider.analysis_model, prompt, schema)
 
     def structure_text(self, text: str, schema: type[TModel], instruction: str) -> TModel:
-        """Prose already written, put into `schema` by the fast model without changing it."""
-        prompt = (
-            f"{instruction}\n\nConvert the following analysis verbatim — do not add, drop or soften anything:\n\n{text}"
-        )
-        return self._structured(self.provider.parsing_model, prompt, schema)
+        """`text` put into `schema` by the fast model: parsing is the cheap model's job."""
+        return self._structured(self.provider.parsing_model, f"{instruction}\n\n{text}", schema)
 
     def start_chat(self, initial_history: list[HistoryTurn] | None = None, enable_search: bool = False) -> ChatSession:
         """A conversation seeded with `initial_history`.
@@ -170,16 +164,11 @@ class OpenAICompatibleClient(AnalysisModel):
         ]
         return OpenAICompatibleChat(self, messages)
 
-    def parse_trade_string(self, text: str) -> TradeProposal:
-        """The two sides of a trade typed in prose, by the fast model."""
-        sides = self._structured(self.provider.parsing_model, TRADE_INSTRUCTION.format(text=text), _TradeSides)
-        return TradeProposal(giving=sides.giving, receiving=sides.receiving)
-
     # ── the wire ────────────────────────────────────────────────────
 
     def _require_client(self) -> Any:
         if self.client is None:
-            raise AIUnavailableError()
+            raise AIUnavailableError(keys=[self.provider.setting])
         return self.client
 
     def complete(
