@@ -21,20 +21,39 @@ describe("reading a failed response", () => {
   });
 });
 
+/** The paths `ask` requested, each answered with an empty list. */
+async function pathsAsked(ask: () => Promise<unknown>): Promise<string[]> {
+  const asked: string[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (path: string) => {
+    asked.push(path);
+    return new Response("[]");
+  }) as typeof fetch;
+  try {
+    await ask();
+  } finally {
+    globalThis.fetch = original;
+  }
+  return asked;
+}
+
 describe("addressing a league", () => {
   it("encodes every segment, so an id with a slash in it stays one segment", async () => {
-    const asked: string[] = [];
-    const original = globalThis.fetch;
-    globalThis.fetch = (async (path: string) => {
-      asked.push(path);
-      return new Response("[]");
-    }) as typeof fetch;
-    try {
-      await leagueApi("nfl-sleeper", "a/b").teamRoster("t 1");
-    } finally {
-      globalThis.fetch = original;
-    }
-    expect(asked).toEqual(["/api/nfl-sleeper/leagues/a%2Fb/teams/t%201/roster"]);
+    expect(await pathsAsked(() => leagueApi("nfl-sleeper", "a/b").teamRoster("t 1"))).toEqual([
+      "/api/nfl-sleeper/leagues/a%2Fb/teams/t%201/roster",
+    ]);
+  });
+
+  it("asks a roster in the order clicked, leaving out what the server defaults", async () => {
+    const league = leagueApi("nfl-sleeper", "1");
+    const asked = await pathsAsked(async () => {
+      await league.roster({ sort: "Proj", descending: false });
+      await league.roster({ sort: "", descending: true });
+    });
+    expect(asked).toEqual([
+      "/api/nfl-sleeper/leagues/1/roster?sort=Proj&descending=false",
+      "/api/nfl-sleeper/leagues/1/roster?descending=true",
+    ]);
   });
 });
 

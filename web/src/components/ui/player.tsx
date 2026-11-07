@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { X } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
-import { fade, list, listItem, portrait, slideOver } from "@/lib/motion";
+import { fade, list, listItem, portrait } from "@/lib/motion";
 import { useLoadedImage } from "@/lib/useLoadedImage";
 import { IconButton } from "@/components/ui/icon-button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { QueryState } from "@/components/ui/state";
+import { SlideOver } from "@/components/ui/dialog";
 import { Thread } from "@/components/ui/chat";
 import { api, type Competition, type League, type PlayerDetail, type StatTable } from "@/lib/api";
 import { keys, useCapabilities } from "@/lib/queries";
@@ -191,11 +192,7 @@ function Portrait({ src }: { src: string }) {
  *
  * A panel rather than a page: you open it to settle a question about a row you
  * are already looking at, and closing it should put you back exactly there.
- *
- * Mounted whether or not anyone is open — `playerId` of null is the closed
- * state, not a reason to render nothing. A caller that instead dropped the
- * component would take this AnimatePresence down with it, and an exit
- * animation cannot play from a tree that has already gone.
+ * `playerId` of null is the closed state.
  */
 function PlayerPanel({
   competition,
@@ -223,114 +220,96 @@ function PlayerPanel({
   });
 
   return (
-    <AnimatePresence>
-      {playerId && (
-      <m.div
-        variants={fade}
-        initial="hidden"
-        animate="shown"
-        exit="gone"
-        key="player-panel"
-        className="fixed inset-0 z-50 flex justify-end bg-foreground/20"
-        onClick={onClose}
-        role="presentation"
-      >
-        <m.aside
-          variants={slideOver}
-          initial="hidden"
-          animate="shown"
-          exit="gone"
-          // Wide enough that a season table fits without scrolling inside
-          // itself — three columns of "£14.0m → £14.7m" is what sets the
-          // floor. Still capped, and still full width on a narrow screen.
-          className="flex h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-border bg-popover shadow-lg"
-          onClick={(e) => e.stopPropagation()}
-          aria-label="Player detail"
-        >
-          {/* Everything that says who this is, pinned. On a long stat table
-              the name and the one figure they are judged on are exactly what
-              you stop being able to see, and they are what every row below is
-              about. */}
-          <div className="sticky top-0 z-10 flex items-start gap-4 border-b border-border bg-popover px-5 py-4">
-            {player.data && <Portrait src={player.data.image_url} />}
+    <SlideOver
+      open={Boolean(playerId)}
+      onClose={onClose}
+      label={player.data?.name ?? "Player"}
+      // Wide enough that a season table fits without scrolling inside
+      // itself — three columns of "£14.0m → £14.7m" is what sets the
+      // floor. Still capped, and still full width on a narrow screen.
+      className="max-w-2xl border-l border-border"
+    >
+      {/* Everything that says who this is, pinned. On a long stat table
+          the name and the one figure they are judged on are exactly what
+          you stop being able to see, and they are what every row below is
+          about. */}
+      <div className="sticky top-0 z-10 flex items-start gap-4 border-b border-border bg-popover px-5 py-4">
+        {player.data && <Portrait src={player.data.image_url} />}
 
-            <div className="min-w-0 flex-1 pt-0.5">
-              {player.data ? (
-                <>
-                  <h2 className="font-display text-[22px] font-semibold leading-tight tracking-tight">
-                    {player.data.name}
-                  </h2>
-                  <TeamLine detail={player.data} />
-                  <Headline detail={player.data} />
-                  {player.data.note && (
-                    <Badge variant="warn" appearance="status" className="mt-2">
-                      {player.data.note}
-                    </Badge>
-                  )}
-                </>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <Skeleton className="h-6 w-44" />
-                  <Skeleton className="h-3 w-24" />
-                </div>
+        <div className="min-w-0 flex-1 pt-0.5">
+          {player.data ? (
+            <>
+              <h2 className="font-display text-[22px] font-semibold leading-tight tracking-tight">
+                {player.data.name}
+              </h2>
+              <TeamLine detail={player.data} />
+              <Headline detail={player.data} />
+              {player.data.note && (
+                <Badge variant="warn" appearance="status" className="mt-2">
+                  {player.data.note}
+                </Badge>
               )}
-            </div>
-
-            <div className="flex shrink-0 items-center">
-              {player.data?.url && (
-                <ExternalLink href={player.data.url} label={`Open ${player.data.name} on the platform`} />
-              )}
-              <IconButton label="Close" side="left" icon={<X />} onClick={onClose} />
-            </div>
-          </div>
-
-          <QueryState query={player} lines={4} />
-
-          {player.data && (
-            <m.div variants={list} initial="hidden" animate="shown" className="flex flex-col gap-5 px-5 py-4">
-              {player.data.tables.map((table) => (
-                <m.section key={table.title} variants={listItem}>
-                  <Label as="h3" className="mb-1.5 block">
-                    {table.title}
-                  </Label>
-                  <TableOfStats table={table} />
-                </m.section>
-              ))}
-
-              {/* A group with nothing in it is a heading that says nothing —
-                  a kicker has no passing line, and "Projected line" over empty
-                  space reads as a figure that failed to arrive. */}
-              {player.data.groups
-                .filter((group) => group.stats.length > 0)
-                .map((group) => (
-                <m.section key={group.title} variants={listItem}>
-                  <Label as="h3" className="mb-1 block">
-                    {group.title}
-                  </Label>
-                  <StatList stats={group.stats} />
-                </m.section>
-              ))}
-            </m.div>
-          )}
-
-          {/* Last, under everything it can be asked about. Keyed by player, so
-              opening someone else starts their conversation, not his. */}
-          {ai && player.data && (
-            <div className="px-5 pb-6">
-              <Thread
-                key={player.data.player_id}
-                competition={competition}
-                league={league}
-                subject={{ kind: "player", key: player.data.player_id }}
-                title={`Ask about ${player.data.name}`}
-                placeholder="Form, role, whether to start"
-              />
+            </>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-6 w-44" />
+              <Skeleton className="h-3 w-24" />
             </div>
           )}
-        </m.aside>
-      </m.div>
+        </div>
+
+        <div className="flex shrink-0 items-center">
+          {player.data?.url && (
+            <ExternalLink href={player.data.url} label={`Open ${player.data.name} on the platform`} />
+          )}
+          <IconButton label="Close" side="left" icon={<X />} onClick={onClose} />
+        </div>
+      </div>
+
+      <QueryState query={player} lines={4} />
+
+      {player.data && (
+        <m.div variants={list} initial="hidden" animate="shown" className="flex flex-col gap-5 px-5 py-4">
+          {player.data.tables.map((table) => (
+            <m.section key={table.title} variants={listItem}>
+              <Label as="h3" className="mb-1.5 block">
+                {table.title}
+              </Label>
+              <TableOfStats table={table} />
+            </m.section>
+          ))}
+
+          {/* A group with nothing in it is a heading that says nothing —
+              a kicker has no passing line, and "Projected line" over empty
+              space reads as a figure that failed to arrive. */}
+          {player.data.groups
+            .filter((group) => group.stats.length > 0)
+            .map((group) => (
+            <m.section key={group.title} variants={listItem}>
+              <Label as="h3" className="mb-1 block">
+                {group.title}
+              </Label>
+              <StatList stats={group.stats} />
+            </m.section>
+          ))}
+        </m.div>
       )}
-    </AnimatePresence>
+
+      {/* Last, under everything it can be asked about. Keyed by player, so
+          opening someone else starts their conversation, not his. */}
+      {ai && player.data && (
+        <div className="px-5 pb-6">
+          <Thread
+            key={player.data.player_id}
+            competition={competition}
+            league={league}
+            subject={{ kind: "player", key: player.data.player_id }}
+            title={`Ask about ${player.data.name}`}
+            placeholder="Form, role, whether to start"
+          />
+        </div>
+      )}
+    </SlideOver>
   );
 }
 

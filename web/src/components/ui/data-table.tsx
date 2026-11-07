@@ -4,6 +4,7 @@ import { m } from "motion/react";
 import { list, listItem } from "@/lib/motion";
 import { Table, Td, Th } from "@/components/ui/table";
 import { Tooltip } from "@/components/ui/tooltip";
+import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 /**
@@ -164,9 +165,7 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
           <m.tr
             key={row.player_id}
             variants={listItem}
-            onClick={onSelect && (() => onSelect(row))}
-            onKeyDown={onSelect && ((e: React.KeyboardEvent) => e.key === "Enter" && onSelect(row))}
-            tabIndex={onSelect ? 0 : undefined}
+            {...clickable(onSelect && (() => onSelect(row)), { role: null })}
             className={cn("hover:bg-muted", onSelect && "cursor-pointer")}
           >
             {columns.map((column) => {

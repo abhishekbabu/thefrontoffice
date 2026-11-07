@@ -110,13 +110,14 @@ const put = <T,>(path: string, body: unknown) => request<T>(path, { method: "PUT
 
 const segment = encodeURIComponent;
 
-/** A query string of the values given, leaving out the ones left empty for the server's own default. */
-function queryString(query: Record<string, string | number | boolean | undefined>): string {
+/** `path` asking for the values given, leaving out the ones left empty for the server's own default. */
+function withQuery(path: string, query: Record<string, string | number | boolean | undefined>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value !== "" && value !== undefined) params.set(key, String(value));
   }
-  return params.toString();
+  const asked = params.toString();
+  return asked ? `${path}?${asked}` : path;
 }
 
 /**
@@ -128,7 +129,7 @@ function queryString(query: Record<string, string | number | boolean | undefined
 export function leagueApi(competition: string, league: string) {
   const base = `/api/${segment(competition)}/leagues/${segment(league)}`;
   return {
-    roster: (order: PlayerOrder = {}) => request<Ok<"roster">>(`${base}/roster?${queryString(order)}`),
+    roster: (order: PlayerOrder = {}) => request<Ok<"roster">>(withQuery(`${base}/roster`, order)),
     player: (id: string) => request<Ok<"player">>(`${base}/players/${segment(id)}`),
     summary: () => request<Ok<"summary">>(`${base}/summary`),
     schedule: () => request<Ok<"schedule">>(`${base}/schedule`),
@@ -136,9 +137,9 @@ export function leagueApi(competition: string, league: string) {
     trades: () => request<Ok<"trades">>(`${base}/trades`),
     teams: () => request<Ok<"teams">>(`${base}/teams`),
     teamRoster: (team: string, order: PlayerOrder = {}) =>
-      request<Ok<"team_roster">>(`${base}/teams/${segment(team)}/roster?${queryString(order)}`),
+      request<Ok<"team_roster">>(withQuery(`${base}/teams/${segment(team)}/roster`, order)),
     decide: (decision: ItemDecision) => post<Ok<"decide">>(`${base}/items`, decision),
-    freeAgents: (query: FreeAgentQuery = {}) => request<Ok<"free_agents">>(`${base}/free-agents?${queryString(query)}`),
+    freeAgents: (query: FreeAgentQuery = {}) => request<Ok<"free_agents">>(withQuery(`${base}/free-agents`, query)),
     freeAgentCalls: (playerIds: string[]) =>
       post<Ok<"free_agent_calls">>(`${base}/free-agents/calls`, { player_ids: playerIds }),
     judgeFreeAgents: (playerIds: string[]) =>

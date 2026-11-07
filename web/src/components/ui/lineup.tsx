@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CardNote } from "@/components/ui/state";
 import type { Side, Spot, Swap } from "@/lib/api";
+import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 
@@ -81,10 +82,7 @@ function SpotList({ spots, empty, onOpen }: { spots: Spot[]; empty?: string; onO
         return (
         <div
           key={`${spot.player}-${i}`}
-          onClick={open}
-          onKeyDown={open && ((e) => e.key === "Enter" && open())}
-          tabIndex={open ? 0 : undefined}
-          role={open ? "button" : undefined}
+          {...clickable(open)}
           className={cn(
             "flex items-baseline gap-3 border-b border-border/45 px-4 py-2 last:border-b-0",
             open && "cursor-pointer hover:bg-muted",

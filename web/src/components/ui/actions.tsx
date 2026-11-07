@@ -12,6 +12,7 @@ import { CardNote } from "@/components/ui/state";
 import { Verdict } from "@/components/ui/verdict";
 import { moment } from "@/lib/format";
 import { decisionTone, toneText, type Variant } from "@/lib/tone";
+import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 
@@ -238,10 +239,7 @@ function Row({
     // The badge's width, shared with the indent that lines a row's verdict up under its title.
     <li className="border-t border-border [--badge-column:5.5rem] first:border-t-0">
       <div
-        onClick={open}
-        onKeyDown={open && ((e) => e.key === "Enter" && open())}
-        tabIndex={open ? 0 : undefined}
-        role={open ? "button" : undefined}
+        {...clickable(open)}
         className={cn("flex items-start gap-3 px-4 py-3", open && "cursor-pointer hover:bg-muted")}
       >
         <Badge variant={badge.variant} appearance="status" className="mt-0.5 w-(--badge-column) shrink-0">
