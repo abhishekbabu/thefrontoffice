@@ -8,7 +8,7 @@ rendered on a laptop and raised `ValueError` in CI. Nothing here may reach for
 
 from datetime import UTC, date, datetime
 
-from thefrontoffice.adapters.outbound.competitions.dates import at_time, day_month, weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.dates import at_time, day_month, parse_day, weekday_day_month
 
 
 def test_a_day_carries_no_leading_zero() -> None:
@@ -42,3 +42,15 @@ def test_a_time_is_shown_beside_the_day() -> None:
 def test_a_time_keeps_its_leading_zero() -> None:
     """A clock reads 09:30, not 9:30 — the dash rule is about the date only."""
     assert at_time(datetime(2026, 8, 29, 9, 5, tzinfo=UTC)) == "Sat 29 Aug, 09:05"
+
+
+def test_a_date_label_reads_as_its_day() -> None:
+    assert parse_day("2026-02-09") == date(2026, 2, 9)
+
+
+def test_a_timestamp_reads_as_the_day_it_falls_on() -> None:
+    assert parse_day("2026-02-09T19:30:00") == date(2026, 2, 9)
+
+
+def test_a_label_that_names_no_day_is_none() -> None:
+    assert parse_day("not-a-date") is None

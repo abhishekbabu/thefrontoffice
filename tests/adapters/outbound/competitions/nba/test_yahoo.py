@@ -14,8 +14,11 @@ from support.nba import yahoo_team as _yahoo_team
 from support.reports import MOCK_NBA_REPORT
 from support.stores import FakeAnswers
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC
+from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, PlayerStats, nine_cat
+from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
+from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.domain.errors import TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat
@@ -155,7 +158,7 @@ def test_free_agents_are_annotated_with_the_categories_they_lead() -> None:
     fa = make_player("Multi Cat", key="fa-1")
     yahoo = FakeYahoo(stat_leaders={"BLK": [fa], "REB": [fa]})
     prompt = _prompt_for(yahoo)
-    assert "Top in: BLK, REB" in prompt
+    assert "Top in: REB, BLK" in prompt  # in the league's own order
 
 
 def test_free_agents_appearing_in_several_categories_are_listed_once_and_first() -> None:
@@ -194,10 +197,11 @@ def test_schedule_context_lists_teams_by_games_remaining() -> None:
 
 
 def test_missing_matchup_dates_leave_games_remaining_uncounted() -> None:
-    yahoo = FakeYahoo(roster=[make_player("Roster One", team="LAL")], matchup_dates=("", ""))
+    yahoo = FakeYahoo(roster=[make_player("Roster One", team="LAL")], matchup_dates=None)
     ctx = nba_provider(yahoo, nba=FakeNBA(games={"LAL": 2})).build_context()
     assert "G left]" not in ctx.roster_lines["Roster One"]
     assert "LAL: 2" not in ctx.extra
+    assert ctx.situation == NO_MATCHUP
 
 
 def test_il_players_are_flagged_so_they_are_not_dropped_carelessly() -> None:
@@ -211,14 +215,22 @@ def test_il_players_are_flagged_so_they_are_not_dropped_carelessly() -> None:
 
 
 def _two_league_provider() -> YahooNBAProvider:
-    """A login in two leagues, each with its own table, so which was read shows in the teams."""
+    """A login in two leagues, each with its own table, roster and budget, so which was read shows."""
     from types import SimpleNamespace
 
     one = SimpleNamespace(id="1", name="One", league_type="head")
     two = SimpleNamespace(id="2", name="Two", league_type="head")
     clients = {
-        "1": FakeYahoo(teams=[_yahoo_team("League One Side", "t.1", rank=1, wins=1, losses=0)]),
-        "2": FakeYahoo(teams=[_yahoo_team("League Two Side", "t.1", rank=1, wins=1, losses=0)]),
+        "1": FakeYahoo(
+            teams=[_yahoo_team("League One Side", "t.1", rank=1, wins=1, losses=0)],
+            roster=[make_player("League One Player", key="p1")],
+            adds_used=0,
+        ),
+        "2": FakeYahoo(
+            teams=[_yahoo_team("League Two Side", "t.1", rank=1, wins=1, losses=0)],
+            roster=[make_player("League Two Player", key="p2")],
+            adds_used=3,
+        ),
     }
     return YahooNBAProvider(
         one,
@@ -243,6 +255,21 @@ def test_no_league_id_reads_the_current_league() -> None:
     assert [t.name for t in _two_league_provider().teams("")] == ["League One Side"]
 
 
+def test_every_view_reads_the_league_it_names_whatever_was_asked_before() -> None:
+    """The provider once moved itself to whichever league the last call named,
+    so the summary, roster and player views answered from that league instead."""
+    provider = _two_league_provider()
+    provider.teams("1")
+
+    assert [c.columns["Player"] for c in provider.roster("2")] == ["League Two Player"]
+    assert provider.summary("2").headline[0].value == "0 of 3"
+    assert provider.player("2", "p2").name == "League Two Player"
+
+    provider.teams("2")
+    assert [c.columns["Player"] for c in provider.roster("1")] == ["League One Player"]
+    assert provider.summary("1").headline[0].value == "3 of 3"
+
+
 def test_selecting_an_unknown_league_raises() -> None:
     from types import SimpleNamespace
 
@@ -265,6 +292,51 @@ def test_a_roster_card_carries_the_row_and_what_a_row_cannot() -> None:
     assert card.columns["Slot"] == "IL"
     assert card.player_id
     assert card.tone == "warning"
+
+
+def _form(**stats: float) -> PlayerStats:
+    """Fifteen identical games, run through the real nine-category line."""
+    games = [NBAGameLog(player_id="p", date=f"2026-01-{i + 1:02d}", opponent="BOS", stats=stats) for i in range(15)]
+    return PlayerStats(last_15=nine_cat(games))
+
+
+def test_the_drawer_shows_every_category_of_the_last_fifteen() -> None:
+    """The drawer once looked figures up in a way the form line never matched,
+    and showed a dash where every figure should have been."""
+    stats = _form(pts=20, reb=8, ast=5, stl=1, blk=2, tpm=3, to=2, fgm=9, fga=18, ftm=4, fta=5)
+    yahoo = FakeYahoo(roster=[make_player("A B", key="ab")])
+
+    detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": stats})).player("", "ab")
+
+    figures = {stat.label: stat.value for stat in detail.groups[0].stats}
+    assert list(figures) == [c.label for c in CATEGORIES]
+    assert figures == {
+        "PTS": "20.0",
+        "REB": "8.0",
+        "AST": "5.0",
+        "STL": "1.0",
+        "BLK": "2.0",
+        "3PTM": "3.0",
+        "FG%": "50.0%",
+        "FT%": "80.0%",
+        "TO": "2.0",
+    }
+    assert detail.headline == "20.0"
+
+
+def test_a_table_row_carries_recent_form() -> None:
+    yahoo = FakeYahoo(roster=[make_player("A B")])
+    card = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(pts=20, reb=8, ast=5)})).roster()[0]
+
+    assert (card.columns["PTS"], card.columns["REB"], card.columns["AST"]) == ("20.0", "8.0", "5.0")
+
+
+def test_a_percentage_with_nothing_attempted_is_a_dash_not_zero() -> None:
+    yahoo = FakeYahoo(roster=[make_player("A B", key="ab")])
+    detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(pts=10)})).player("", "ab")
+
+    figures = {stat.label: stat.value for stat in detail.groups[0].stats}
+    assert (figures["FT%"], figures["PTS"]) == ("—", "10.0")
 
 
 def test_recent_form_is_a_dash_when_there_is_none() -> None:
@@ -310,7 +382,7 @@ def test_projected_totals_are_attached_to_players() -> None:
     sleeper = FakeSleeperProjections([_game("Roster Player 0", "2026-02-10")])
     ctx = _provider_with(sleeper).build_context()
     assert "PROJ 1G" in ctx.roster_lines["Roster Player 0"]
-    assert "25p" in ctx.roster_lines["Roster Player 0"]
+    assert "25.0p" in ctx.roster_lines["Roster Player 0"]
 
 
 def test_only_games_inside_the_matchup_period_are_counted() -> None:

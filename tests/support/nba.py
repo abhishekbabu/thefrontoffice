@@ -1,12 +1,14 @@
 """Fantasy basketball on Yahoo, standing in: the league platform, Sleeper's form and projections beside it."""
 
+from collections.abc import Mapping
 from datetime import date, datetime
 from types import SimpleNamespace
 from typing import Any
 
+from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import SeasonState
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import Timeframe
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup, MatchupSide, RosteredPlayer, Timeframe
 
 
 def make_player(
@@ -67,7 +69,7 @@ class FakeYahoo:
         self,
         roster: list[Any] | None = None,
         stat_leaders: dict[str, list[Any]] | None = None,
-        matchup_dates: tuple[str, str] = ("2026-02-09", "2026-02-15"),
+        matchup_dates: tuple[date, date] | None = (date(2026, 2, 9), date(2026, 2, 15)),
         search_results: dict[str, list[Any]] | None = None,
         adds_used: int = 0,
         teams: list[Any] | None = None,
@@ -92,6 +94,7 @@ class FakeYahoo:
             team_key="t.1",
             roster_adds=SimpleNamespace(value=self.adds_used),
             players=self._players,
+            roster=lambda: SimpleNamespace(players=self._players()),
         )
 
     def _players(self) -> list[Any]:
@@ -109,25 +112,25 @@ class FakeYahoo:
             raise self.available_error
         return self.available[:count]
 
-    def get_matchup(self, my_team: Any) -> Any:
-        from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupInfo
-
+    def get_matchup(self, my_team: Any) -> Matchup | None:
+        """This week against Their Team, 12 blocks to 17; no matchup when built without dates."""
         self.matchup_fetches += 1
-        return MatchupInfo(
-            context="CURRENT MATCHUP: vs Their Team\n- BLK: 12 vs 17",
-            week_start=self.matchup_dates[0],
-            week_end=self.matchup_dates[1],
+        if self.matchup_dates is None:
+            return None
+        start, end = self.matchup_dates
+        return Matchup(
+            start=start,
+            end=end,
+            mine=MatchupSide(team_key="t.1", name="My Team", points="4", stats={BLOCKS.yahoo_stat: "12"}),
+            opponent=MatchupSide(team_key="t.2", name="Their Team", points="5", stats={BLOCKS.yahoo_stat: "17"}),
+            opponent_roster=[RosteredPlayer(name="Their Star", position="C")],
         )
 
-    def get_matchup_context(self, my_team: Any) -> str:
-        return self.get_matchup(my_team).context
-
-    def get_matchup_dates(self, my_team: Any) -> tuple[str, str]:
-        info = self.get_matchup(my_team)
-        return (info.week_start, info.week_end)
-
-    def fetch_top_by_stat(self, per_stat: int = 10, sort_type: Timeframe = Timeframe.LAST_WEEK) -> dict[str, list[Any]]:
-        return self.stat_leaders
+    def fetch_top_by_stat(
+        self, stats: Mapping[str, str], per_stat: int = 10, sort_type: Timeframe = Timeframe.LAST_WEEK
+    ) -> dict[str, list[Any]]:
+        """The leaders this was built with, for the categories asked about."""
+        return {name: self.stat_leaders[name] for name in stats if name in self.stat_leaders}
 
     def search_players(self, query: str) -> list[Any]:
         self.searches.append(query)

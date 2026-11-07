@@ -14,7 +14,9 @@ from datetime import date, datetime
 from typing import Literal, Protocol, TypedDict
 from zoneinfo import ZoneInfo
 
+from thefrontoffice.adapters.outbound.competitions.dates import parse_day
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
+from thefrontoffice.adapters.outbound.competitions.nba.rules import BOX_SCORE, Line, line
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import NBA, SleeperNBASource
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
@@ -39,46 +41,16 @@ WINDOWS: dict[int, Window] = {5: "last_5", 10: "last_10", 15: "last_15"}
 SEASON_WEEKS = 25
 
 
-class NineCatStats(TypedDict):
-    PTS: float
-    REB: float
-    AST: float
-    STL: float
-    BLK: float
-    TOV: float
-    FG3M: float
-    FG_PCT: float
-    FT_PCT: float
-
-
 class PlayerStats(TypedDict, total=False):
-    last_5: NineCatStats
-    last_10: NineCatStats
-    last_15: NineCatStats
+    last_5: Line
+    last_10: Line
+    last_15: Line
 
 
-def nine_cat(games: list[NBAGameLog]) -> NineCatStats:
-    """Average a run of games into a nine-category line.
-
-    Percentages come from summed makes and attempts rather than averaged
-    per-game percentages: the two differ whenever attempts vary between games,
-    which is exactly when the number matters.
-    """
-    n = len(games)
-    total = lambda key: sum(g.get(key) for g in games)  # noqa: E731
-    fga, fgm = total("fga"), total("fgm")
-    fta, ftm = total("fta"), total("ftm")
-    return NineCatStats(
-        PTS=round(total("pts") / n, 1),
-        REB=round(total("reb") / n, 1),
-        AST=round(total("ast") / n, 1),
-        STL=round(total("stl") / n, 1),
-        BLK=round(total("blk") / n, 1),
-        TOV=round(total("to") / n, 1),
-        FG3M=round(total("tpm") / n, 1),
-        FG_PCT=round(fgm / fga, 3) if fga else 0.0,
-        FT_PCT=round(ftm / fta, 3) if fta else 0.0,
-    )
+def nine_cat(games: list[NBAGameLog]) -> Line:
+    """Average a run of games into a nine-category line."""
+    totals = {key: sum(g.get(key) for g in games) for key in BOX_SCORE}
+    return line(totals, games=len(games))
 
 
 class FormSource(Protocol):
@@ -170,7 +142,7 @@ class SleeperNBAForm:
 
     @staticmethod
     def _is_remaining(game: ScheduledGame, start: date, end: date, today: date) -> bool:
-        played = _parse(game.date)
+        played = parse_day(game.date)
         if played is None or not (start <= played <= end):
             return False
         if played < today:
@@ -242,10 +214,3 @@ class SleeperNBAForm:
     def _today(now: datetime | None) -> date:
         moment = now or datetime.now(tz=PACIFIC)
         return moment.astimezone(PACIFIC).date()
-
-
-def _parse(iso: str) -> date | None:
-    try:
-        return date.fromisoformat(iso[:10])
-    except ValueError, TypeError:
-        return None

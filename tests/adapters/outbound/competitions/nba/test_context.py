@@ -6,36 +6,28 @@ from typing import Any
 from support.nba import FakeNBA, make_player
 
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
-from thefrontoffice.adapters.outbound.competitions.nba.form import NineCatStats, PlayerStats
+from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats
+from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
+from thefrontoffice.adapters.outbound.competitions.nba.rules import Line
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import GameProjection
 
 START, END = date(2026, 2, 9), date(2026, 2, 15)
 
 
-def _stats(**overrides: float) -> NineCatStats:
-    """A player's averages over a window, with any of them overridden."""
-    defaults = {
+def _stats(**overrides: float) -> Line:
+    """A player's averages over a window, keyed by category label."""
+    return {
         "PTS": 20.0,
         "REB": 10.0,
         "AST": 5.0,
         "STL": 1.0,
         "BLK": 2.0,
-        "TOV": 3.0,
-        "FG3M": 2.0,
-        "FG_PCT": 0.523,
-        "FT_PCT": 0.781,
+        "3PTM": 2.0,
+        "FG%": 0.523,
+        "FT%": 0.781,
+        "TO": 3.0,
+        **overrides,
     }
-    value = {**defaults, **overrides}.__getitem__
-    return NineCatStats(
-        PTS=value("PTS"),
-        REB=value("REB"),
-        AST=value("AST"),
-        STL=value("STL"),
-        BLK=value("BLK"),
-        TOV=value("TOV"),
-        FG3M=value("FG3M"),
-        FG_PCT=value("FG_PCT"),
-        FT_PCT=value("FT_PCT"),
-    )
 
 
 def _builder(stats: dict[str, Any] | None = None, games: dict[str, int] | None = None) -> PlayerContextBuilder:
@@ -111,8 +103,12 @@ def test_annotations_are_attached_to_the_right_player() -> None:
     assert "[Top in: BLK]" not in line_b
 
 
-def test_get_remaining_games_returns_none_without_a_window() -> None:
-    builder = _builder(games={"LAL": 3})
-    assert builder.get_remaining_games("LAL", None, END) is None
-    assert builder.get_remaining_games("LAL", START, None) is None
-    assert builder.get_remaining_games("LAL", START, END) == 3
+def test_projections_reach_the_joined_lines_too() -> None:
+    """The trade path reads the joined text, and must see what the scout sees."""
+    rows = [
+        GameProjection(player_id="ab", name="A B", team="LAL", opponent="BOS", date="2026-02-10", stats={"pts": 25})
+    ]
+    out = _builder().build_context_for_players(
+        [make_player("A B")], START, END, projections=ProjectionIndex(rows, START, END)
+    )
+    assert "PROJ 1G" in out

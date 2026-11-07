@@ -10,7 +10,10 @@ from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm, nine_cat
+from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame
 
@@ -69,7 +72,7 @@ def test_percentages_come_from_summed_attempts_not_averaged_rates() -> None:
     when the number matters: 1/1 and 2/10 is 27%, not 60%."""
     line = nine_cat([_game("2026-01-02", fgm=1, fga=1), _game("2026-01-01", fgm=2, fga=10)])
 
-    assert line["FG_PCT"] == round(3 / 11, 3)
+    assert line["FG%"] == pytest.approx(3 / 11)
 
 
 def test_a_category_nobody_recorded_averages_to_zero() -> None:
@@ -81,8 +84,17 @@ def test_a_category_nobody_recorded_averages_to_zero() -> None:
     assert line["STL"] == 0.0
 
 
-def test_no_attempts_is_zero_percent_rather_than_a_division_by_zero() -> None:
-    assert nine_cat([_game("2026-01-01", pts=2)])["FT_PCT"] == 0.0
+def test_no_attempts_is_no_percentage_rather_than_zero() -> None:
+    """Nothing attempted is a different thing from 0%, and the drawer shows it as absent."""
+    assert "FT%" not in nine_cat([_game("2026-01-01", pts=2)])
+
+
+def test_the_line_is_keyed_by_every_category_label() -> None:
+    """The drawer and the prompt read the line by these labels; a key spelled any
+    other way is a figure nobody finds."""
+    line = nine_cat([_game("2026-01-01", pts=2, fgm=1, fga=2, ftm=1, fta=1)])
+
+    assert set(line) == {c.label for c in CATEGORIES}
 
 
 # ── the windows ─────────────────────────────────────────────────────────
