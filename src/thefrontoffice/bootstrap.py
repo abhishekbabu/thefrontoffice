@@ -3,6 +3,10 @@
 Registers the competitions and wires engines to a model, and hands every entry
 point the result as one `Wiring`. Everything else works against ports.
 
+Every builder takes the settings it reads, so a test hands it its own rather
+than patching the process's; an entry point that names none gets the
+process's, which a save in Settings refreshes in place.
+
 `is_configured` gates whether a platform is contacted at all — building a
 provider can open an OAuth flow, and a user who does not play that competition
 must never be made to sit through one.
@@ -24,7 +28,8 @@ from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.application.week import WeekEngine
 from thefrontoffice.application.wire import WireEngine
 from thefrontoffice.config.env_file import EnvFile
-from thefrontoffice.config.settings import PROJECT_ROOT, settings
+from thefrontoffice.config.settings import PROJECT_ROOT, AppSettings
+from thefrontoffice.config.settings import settings as process_settings
 from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionError, UnsupportedError
 from thefrontoffice.domain.ports import (
     AccountLogin,
@@ -198,25 +203,25 @@ def _retry() -> RetryPolicy:
     return RetryPolicy()
 
 
-def sleeper_client() -> SleeperClient:
+def _sleeper_client(settings: AppSettings) -> SleeperClient:
     from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
 
     return SleeperClient(cache=_disk_cache(settings.sleeper_cache_dir), retry=_retry())
 
 
-def _espn_client() -> ESPNClient:
+def _espn_client(settings: AppSettings) -> ESPNClient:
     from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
 
     return ESPNClient(cache=_disk_cache(settings.espn_cache_dir), retry=_retry())
 
 
-def _fpl_client() -> FPLClient:
+def _fpl_client(settings: AppSettings) -> FPLClient:
     from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
 
     return FPLClient(cache=_disk_cache(settings.fpl_cache_dir), retry=_retry())
 
 
-def _yahoo_auth(cache: JsonDiskCache) -> YahooAuth:
+def _yahoo_auth(settings: AppSettings, cache: JsonDiskCache) -> YahooAuth:
     from yahoofantasy import Context
 
     from thefrontoffice.adapters.outbound.platforms.yahoo import oauth
@@ -234,23 +239,23 @@ def _yahoo_auth(cache: JsonDiskCache) -> YahooAuth:
     )
 
 
-def yahoo_auth() -> YahooAuth:
+def yahoo_auth(settings: AppSettings = process_settings) -> YahooAuth:
     """This machine's Yahoo login: for the entry points that log in and check the grant."""
-    return _yahoo_auth(_disk_cache(settings.yahoo_cache_dir))
+    return _yahoo_auth(settings, _disk_cache(settings.yahoo_cache_dir))
 
 
-def env_file() -> EnvFile:
-    """The `.env` this process was configured from, which a save reloads it from."""
-    return EnvFile(PROJECT_ROOT / ".env", settings=settings)
+def env_file(settings: AppSettings = process_settings, path: Path = PROJECT_ROOT / ".env") -> EnvFile:
+    """The `.env` at `path`, which `settings` were loaded from and a save reloads them from."""
+    return EnvFile(path, settings=settings)
 
 
-def _answer_store() -> DiskAnswerStore:
+def _answer_store(settings: AppSettings) -> DiskAnswerStore:
     from thefrontoffice.adapters.outbound.storage.answers import DiskAnswerStore
 
     return DiskAnswerStore(_disk_cache(settings.answer_cache_dir))
 
 
-def _item_decisions() -> ItemDecisions:
+def _item_decisions(settings: AppSettings) -> ItemDecisions:
     """The manager's decisions about to-do items, kept on this machine."""
     from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
 
@@ -260,11 +265,11 @@ def _item_decisions() -> ItemDecisions:
 # ── competitions ────────────────────────────────────────────────────
 
 
-def nfl_provider() -> SleeperNFLProvider:
+def nfl_provider(settings: AppSettings = process_settings) -> SleeperNFLProvider:
     """The NFL provider, wired to the real clients: for the scripts that need its own methods, not just the port."""
     from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
 
-    return SleeperNFLProvider(settings.sleeper_username, client=sleeper_client(), espn=_espn_client())
+    return SleeperNFLProvider(settings.sleeper_username, client=_sleeper_client(settings), espn=_espn_client(settings))
 
 
 def _nfl() -> type[SleeperNFLProvider]:
@@ -273,19 +278,14 @@ def _nfl() -> type[SleeperNFLProvider]:
     return SleeperNFLProvider
 
 
-def _check_yahoo_ready() -> None:
-    """Yahoo also needs a cached token, which is a file this can just look for."""
-    yahoo_auth().ensure_authorized()
-
-
 def _fpl() -> type[FPLProvider]:
     from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
 
     return FPLProvider
 
 
-def _build_fpl() -> FPLProvider:
-    return _fpl()(settings.fpl_entry_id, client=_fpl_client())
+def _build_fpl(settings: AppSettings) -> FPLProvider:
+    return _fpl()(settings.fpl_entry_id, client=_fpl_client(settings))
 
 
 def _nba() -> type[YahooNBAProvider]:
@@ -294,7 +294,7 @@ def _nba() -> type[YahooNBAProvider]:
     return YahooNBAProvider
 
 
-def _build_nba() -> YahooNBAProvider:
+def _build_nba(settings: AppSettings) -> YahooNBAProvider:
     """Deferred to here so that constructing the registry — which every entry point
     does at startup — never touches Yahoo. Building contacts nothing either: the
     provider finds its leagues when first asked, and an absent token is reported
@@ -305,8 +305,8 @@ def _build_nba() -> YahooNBAProvider:
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
 
     cache, retry = _disk_cache(settings.yahoo_cache_dir), _retry()
-    auth = _yahoo_auth(cache)
-    sleeper = sleeper_client()
+    auth = _yahoo_auth(settings, cache)
+    sleeper = _sleeper_client(settings)
     return _nba()(
         auth=auth,
         yahoo_for=lambda league: YahooClient(league, context=auth.context(), cache=cache, retry=retry),
@@ -316,50 +316,57 @@ def _build_nba() -> YahooNBAProvider:
     )
 
 
-REGISTRY = Registry(
-    (
-        CompetitionEntry(
-            sport="basketball",
-            competition="nba",
-            platform="yahoo",
-            label="NBA (Yahoo)",
-            name="NBA",
-            provider=_nba,
-            build=_build_nba,
-            is_configured=lambda: bool(settings.yahoo_client_id and settings.yahoo_client_secret),
-            requires="YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET",
-            check_ready=_check_yahoo_ready,
-        ),
-        CompetitionEntry(
-            sport="football",
-            competition="nfl",
-            platform="sleeper",
-            label="NFL (Sleeper)",
-            name="NFL",
-            provider=_nfl,
-            build=nfl_provider,
-            is_configured=lambda: bool(settings.sleeper_username),
-            requires="SLEEPER_USERNAME",
-        ),
-        CompetitionEntry(
-            sport="soccer",
-            competition="premier-league",
-            platform="fpl",
-            label="FPL (Fantasy Premier League)",
-            name="Premier League",
-            provider=_fpl,
-            build=_build_fpl,
-            is_configured=lambda: bool(settings.fpl_entry_id),
-            requires="FPL_ENTRY_ID",
-        ),
+def registry(settings: AppSettings) -> Registry:
+    """Every competition, configured and built from `settings` as they stand when asked."""
+    return Registry(
+        (
+            CompetitionEntry(
+                sport="basketball",
+                competition="nba",
+                platform="yahoo",
+                label="NBA (Yahoo)",
+                name="NBA",
+                provider=_nba,
+                build=lambda: _build_nba(settings),
+                is_configured=lambda: bool(settings.yahoo_client_id and settings.yahoo_client_secret),
+                requires="YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET",
+                # Yahoo also needs a cached token, which is a file this can just look for.
+                check_ready=lambda: yahoo_auth(settings).ensure_authorized(),
+            ),
+            CompetitionEntry(
+                sport="football",
+                competition="nfl",
+                platform="sleeper",
+                label="NFL (Sleeper)",
+                name="NFL",
+                provider=_nfl,
+                build=lambda: nfl_provider(settings),
+                is_configured=lambda: bool(settings.sleeper_username),
+                requires="SLEEPER_USERNAME",
+            ),
+            CompetitionEntry(
+                sport="soccer",
+                competition="premier-league",
+                platform="fpl",
+                label="FPL (Fantasy Premier League)",
+                name="Premier League",
+                provider=_fpl,
+                build=lambda: _build_fpl(settings),
+                is_configured=lambda: bool(settings.fpl_entry_id),
+                requires="FPL_ENTRY_ID",
+            ),
+        )
     )
-)
+
+
+REGISTRY = registry(process_settings)
+"""The process's registry, for the scripts that need no other part of the wiring."""
 
 
 # ── models and engines ──────────────────────────────────────────────────
 
 
-def default_model() -> RoutedModel:
+def default_model(settings: AppSettings = process_settings) -> RoutedModel:
     """Every model provider as one model, failing over between them in the order they are preferred.
 
     The single place a vendor is chosen. Imported lazily so that merely
@@ -382,9 +389,9 @@ def default_model() -> RoutedModel:
     return RoutedModel(vendors, _cooldowns())
 
 
-def ai_providers() -> list[str]:
+def ai_providers(settings: AppSettings = process_settings) -> list[str]:
     """The providers with a key, in the order they are tried."""
-    return [vendor.name for vendor in default_model().configured()]
+    return [vendor.name for vendor in default_model(settings).configured()]
 
 
 @functools.cache
@@ -453,13 +460,17 @@ class Wiring:
         )
 
 
-def wiring() -> Wiring:
-    """The app as this machine runs it: the registry, the configured model, and what is kept on disk."""
+def wiring(settings: AppSettings = process_settings, env: Path = PROJECT_ROOT / ".env") -> Wiring:
+    """The app as `settings` configure it: the registry, the model, and what is kept on disk.
+
+    Args:
+        env: the file `settings` were loaded from, which the Settings page edits.
+    """
     return Wiring(
-        registry=REGISTRY,
-        model=default_model,
-        answers=_answer_store(),
-        decisions=_item_decisions(),
-        logins={"yahoo": yahoo_auth},
-        env=env_file(),
+        registry=registry(settings),
+        model=lambda: default_model(settings),
+        answers=_answer_store(settings),
+        decisions=_item_decisions(settings),
+        logins={"yahoo": lambda: yahoo_auth(settings)},
+        env=env_file(settings, env),
     )

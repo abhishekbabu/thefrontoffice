@@ -6,7 +6,6 @@ from collections.abc import Iterator
 import pytest
 
 from thefrontoffice.config.logging import setup_logging
-from thefrontoffice.config.settings import settings
 
 
 @pytest.fixture(autouse=True)
@@ -19,12 +18,17 @@ def _restore_root() -> Iterator[None]:
     root.handlers[:] = handlers
 
 
-def test_root_level_follows_the_configured_setting(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "log_level", "DEBUG")
-
-    setup_logging()
+def test_root_level_follows_the_level_given() -> None:
+    setup_logging("DEBUG")
 
     assert logging.getLogger().level == logging.DEBUG
+
+
+def test_without_a_level_the_configured_one_holds() -> None:
+    """The suite's isolated settings carry the default, INFO."""
+    setup_logging()
+
+    assert logging.getLogger().level == logging.INFO
 
 
 def test_repeated_calls_do_not_stack_handlers() -> None:

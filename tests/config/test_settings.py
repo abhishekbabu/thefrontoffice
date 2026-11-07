@@ -5,7 +5,7 @@ from functools import partial
 import pytest
 from pydantic import ValidationError
 
-from thefrontoffice.config.settings import ADVANCED, AppSettings, env_var, group, is_secret
+from thefrontoffice.config.settings import ADVANCED, AppSettings, env_var, group, is_local, is_secret
 
 # Settings from explicit values, ignoring any real .env on disk. A partial
 # rather than a typed wrapper: several tests pass deliberately wrong values to
@@ -58,3 +58,10 @@ def test_credentials_are_secret_and_identifiers_are_not() -> None:
 def test_every_setting_says_what_it_unlocks() -> None:
     assert all(group(field) for field in AppSettings.model_fields)
     assert group("log_level") == ADVANCED
+
+
+def test_every_cache_and_token_path_is_marked_local() -> None:
+    """The suite moves each local path under a test's own directory; an unmarked one would be read from this machine."""
+    paths = {f for f in AppSettings.model_fields if f.endswith(("_dir", "_file"))}
+
+    assert paths and paths == {f for f in AppSettings.model_fields if is_local(f)}
