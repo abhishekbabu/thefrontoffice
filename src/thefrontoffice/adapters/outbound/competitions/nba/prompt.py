@@ -46,12 +46,12 @@ YOUR TASK:
 5. Use a professional, tactical tone. Avoid flowery prose.
 
 Return your analysis in the required structured form. Guidance for the fields:
-- matchup_insight: name specific categories and margins (e.g. "trailing in BLK by 5"), and say
+- situation: name specific categories and margins (e.g. "trailing in BLK by 5"), and say
   which are worth contesting. Ignore categories lost by a landslide.
-- close_categories: only the ones genuinely in play.
-- targets: exactly three, most valuable first. Set games_remaining from the schedule data above,
-  and 0 if it is not listed. Use action ADD when adds remain, MONITOR when they do not — a
-  MONITOR entry leaves drop_player empty.
+- focus: only the categories genuinely in play, e.g. ['BLK', 'FG%'].
+- moves: exactly three, most valuable first. Put the games the player has left in `metric`,
+  from the schedule data above (e.g. "4 games left, 2.1 blk"). Use action ADD when adds remain,
+  paired with the player it `replaces`; MONITOR when they do not, with `replaces` left empty.
 - Keep every field tactical and specific. No filler, no restating the inputs.
 """
 
