@@ -33,7 +33,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperMatchup,
     SleeperRoster,
 )
-from thefrontoffice.domain.errors import LeagueNotFoundError, NotConfiguredError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery
 
 # ── leagues ─────────────────────────────────────────────────────────────
@@ -53,12 +53,6 @@ def test_leagues_are_listed_with_format_and_size() -> None:
     assert refs[0].name == "Sunday Money"
     assert "12-team" in refs[0].detail
     assert "PPR" in refs[0].detail
-
-
-def test_missing_username_is_a_clear_error() -> None:
-    provider = SleeperNFLProvider(username=None, client=FakeSleeper(), espn=FakeESPN())
-    with pytest.raises(NotConfiguredError, match="SLEEPER_USERNAME"):
-        provider.list_leagues()
 
 
 def test_a_league_you_are_not_in_raises() -> None:

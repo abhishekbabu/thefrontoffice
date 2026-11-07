@@ -31,15 +31,10 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Player,
     Squad,
 )
-from thefrontoffice.domain.errors import NotConfiguredError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery, Spot
 
 # ── configuration ───────────────────────────────────────────────────────
-
-
-def test_an_unset_entry_id_is_reported_before_any_request() -> None:
-    with pytest.raises(NotConfiguredError, match="FPL_ENTRY_ID"):
-        FPLProvider(None, client=FakeFPL()).list_leagues()
 
 
 def test_the_registry_advertises_no_trade_support() -> None:

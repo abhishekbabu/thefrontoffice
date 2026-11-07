@@ -75,7 +75,6 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
 )
 from thefrontoffice.domain.errors import (
     LeagueNotFoundError,
-    NotConfiguredError,
     PlatformError,
     PlayerNotFoundError,
     TeamNotFoundError,
@@ -117,8 +116,12 @@ TEAM_LOGO_URL = "https://sleepercdn.com/images/team_logos/nfl/{team}.png"
 class SleeperNFLProvider:
     """CompetitionProvider for Sleeper points-league football."""
 
-    def __init__(self, username: str | None, *, client: SleeperNFLSource, espn: ESPNSource):
-        """Every collaborator from bootstrap, which is the one place a real client is built."""
+    def __init__(self, username: str, *, client: SleeperNFLSource, espn: ESPNSource):
+        """Every collaborator from bootstrap, which is the one place a real client is built.
+
+        The username is required: whether one is set, and what to set when it
+        is not, is the registry entry's to say before this is ever built.
+        """
         self.username = username
         self.client = client
         self.espn = espn
@@ -134,8 +137,6 @@ class SleeperNFLProvider:
     def _resolve_user_id(self) -> str:
         if self._user_id:
             return self._user_id
-        if not self.username:
-            raise NotConfiguredError("Sleeper", "SLEEPER_USERNAME")
         self._user_id = self.client.get_user(self.username).user_id
         return self._user_id
 

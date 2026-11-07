@@ -14,7 +14,7 @@ from support.wiring import FakeCompetition, entry
 from thefrontoffice import bootstrap
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
-from thefrontoffice.bootstrap import REGISTRY, Registry
+from thefrontoffice.bootstrap import REGISTRY, Registry, nfl_provider
 from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionError, UnsupportedError
 from thefrontoffice.domain.models import Action, CompetitionContext, ItemState, Summary, TradeProposal
 from thefrontoffice.domain.ports import (
@@ -89,6 +89,12 @@ def test_an_unconfigured_competition_names_what_to_set_rather_than_building(tmp_
     """A football-only user picking NBA must be told what is missing, not dropped into an OAuth flow."""
     with pytest.raises(NotConfiguredError, match="YAHOO_CLIENT_ID"):
         _registry(tmp_path).find("nba").open()
+
+
+def test_the_nfl_provider_asked_for_directly_names_what_its_entry_requires(tmp_path: Path) -> None:
+    """The scripts build it without the registry's gate, and hear the same remedy the gate gives."""
+    with pytest.raises(NotConfiguredError, match="SLEEPER_USERNAME"):
+        nfl_provider(isolated_settings(tmp_path))
 
 
 def test_yahoo_is_not_ready_until_a_token_is_cached(tmp_path: Path) -> None:
