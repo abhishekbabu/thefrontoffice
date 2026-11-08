@@ -8,9 +8,10 @@ Every app is built over a wiring of fakes from `support/wiring.py`: nothing is
 patched, and nothing leaves the process.
 """
 
+import socket
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from thefrontoffice.application.formats import CallAnswer, WireAnswer
 from thefrontoffice.application.scouting import scout_scope
 from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import AppSettings, env_var
+from thefrontoffice.domain.errors import PortInUseError
 from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
@@ -961,3 +963,33 @@ def test_a_platform_that_is_down_is_a_503_that_says_so() -> None:
 
 def test_a_platform_nothing_logs_in_to_is_a_404() -> None:
     assert TestClient(web.create_app(fake_wiring())).post("/api/espn/login").status_code == 404
+
+
+# ── choosing a port ─────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def taken() -> Iterator[int]:
+    """A port something else on this machine is already listening on."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as other:
+        other.bind((web.HOST, 0))
+        other.listen()
+        yield other.getsockname()[1]
+
+
+def test_a_taken_port_moves_the_server_up_to_a_free_one(taken: int) -> None:
+    """Another app on 8000 must not stop `just ui` from starting."""
+    port = web.free_port(web.HOST, taken)
+    assert port > taken
+    assert web.is_free(web.HOST, port)
+
+
+def test_a_free_port_is_kept_as_configured(taken: int) -> None:
+    free = web.free_port(web.HOST, taken)
+    assert web.free_port(web.HOST, free) == free
+
+
+def test_no_free_port_in_range_is_an_error_naming_the_setting(taken: int) -> None:
+    with pytest.raises(PortInUseError, match="PORT") as raised:
+        web.free_port(web.HOST, taken, tries=1)
+    assert (raised.value.first, raised.value.last) == (taken, taken)

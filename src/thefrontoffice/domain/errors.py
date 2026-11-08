@@ -256,6 +256,15 @@ class ChatExpiredError(FrontOfficeError):
         super().__init__("That conversation has expired — the server no longer holds it.")
 
 
+class PortInUseError(FrontOfficeError):
+    """Every port the server would try is taken by something else on this machine."""
+
+    def __init__(self, first: int, last: int) -> None:
+        super().__init__(f"Ports {first}–{last} are all in use. Set PORT to a free one.")
+        self.first = first
+        self.last = last
+
+
 class NotFoundError(FrontOfficeError):
     """Nothing answers to the name asked for: a route, or a platform that has no login."""
 

@@ -149,6 +149,10 @@ class AppSettings(BaseSettings):
     # ── Logging ─────────────────────────────────────────────────────────
     log_level: Annotated[Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], ADVANCED] = "INFO"
 
+    # ── Web server ──────────────────────────────────────────────────────
+    port: Annotated[int, ADVANCED] = Field(default=8000, ge=1, le=65535)
+    """Where `just ui` and `just api` listen. Read at startup, so a change takes a restart."""
+
     @field_validator("*", mode="before")
     @classmethod
     def _blank_is_unset(cls, v: object, info: ValidationInfo) -> object:
