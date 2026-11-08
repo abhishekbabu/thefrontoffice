@@ -1,6 +1,11 @@
 """Yahoo's failures, as the rest of the app sees them — including the two its login can fix."""
 
-from thefrontoffice.domain.errors import FrontOfficeError, LoginRequiredError, PlatformError, PlatformUnavailableError
+from thefrontoffice.domain.errors import (
+    AccessNotApprovedError,
+    LoginRequiredError,
+    PlatformError,
+    PlatformUnavailableError,
+)
 
 
 class YahooAPIError(PlatformError):
@@ -17,7 +22,7 @@ class YahooUnavailableError(PlatformUnavailableError, YahooAPIError):
     """Yahoo is down or not answering."""
 
 
-class YahooAuthError(FrontOfficeError):
+class YahooAuthError(AccessNotApprovedError):
     """Yahoo authenticated the token and refused the Fantasy Sports API.
 
     Not a credential problem and not a scope problem, both of which look
@@ -27,7 +32,7 @@ class YahooAuthError(FrontOfficeError):
     which is what distinguishes it from a consent that went wrong.
     """
 
-    code = "access_not_approved"
+    login = "yahoo"
 
     def __init__(self) -> None:
         super().__init__(

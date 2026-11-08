@@ -10,7 +10,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from thefrontoffice.domain.errors import ErrorCode, FrontOfficeError, LoginRequiredError
+from thefrontoffice.domain.errors import (
+    AccessNotApprovedError,
+    ErrorCode,
+    FrontOfficeError,
+    LoginRequiredError,
+)
 
 YAHOO_DEVELOPER_ACCESS = "https://sports.yahoo.com/developer/access/"
 """Where a Yahoo application applies for Fantasy Sports API access."""
@@ -45,13 +50,17 @@ LOGINS: dict[str, Remedy] = {
 }
 """Each platform's login, by the registry's name for the platform."""
 
-REMEDIES: dict[ErrorCode, Remedy] = {
-    "access_not_approved": Remedy(
+APPROVALS: dict[str, Remedy] = {
+    "yahoo": Remedy(
         action="link",
         label="Apply for API access",
         url=YAHOO_DEVELOPER_ACCESS,
         command=f"Apply at {YAHOO_DEVELOPER_ACCESS}, then `just yahoo-login --force`.",
     ),
+}
+"""Where each platform's application applies for API access, by the registry's name for the platform."""
+
+REMEDIES: dict[ErrorCode, Remedy] = {
     "not_configured": Remedy(
         action="settings", label=SETTINGS, command="Set it in .env; `just doctor` shows what is set."
     ),
@@ -67,6 +76,8 @@ def remedy(error: FrontOfficeError) -> Remedy | None:
     """The remedy for `error`, or None where there is nothing to offer but the message."""
     if isinstance(error, LoginRequiredError):
         return LOGINS.get(error.login)
+    if isinstance(error, AccessNotApprovedError):
+        return APPROVALS.get(error.login)
     return REMEDIES.get(error.code)
 
 
