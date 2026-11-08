@@ -42,6 +42,6 @@ def test_an_unconfigured_competition_is_not_probed() -> None:
 
 
 def test_a_competition_is_listed_under_its_key_with_what_it_needs() -> None:
-    listed = data.competition(entry(FakeCompetition(), requires="SLEEPER_USERNAME"))
+    listed = data.competition(entry(FakeCompetition(), needs=("sleeper_username",)))
 
     assert (listed.key, listed.requires) == ("nfl-sleeper", "SLEEPER_USERNAME")

@@ -35,9 +35,10 @@ several platforms, and one platform hosts several competitions of a sport.
    against (`application/formats.py`) — the schema itself is what the model
    is held to.
 3. **Registration** — one `CompetitionEntry` in `bootstrap.py`: its identity,
-   a `provider` returning the provider's class (imported lazily), and a
-   `build` that constructs the platform clients and hands them in — a provider
-   never builds its own. What it can do (`entry.can(TradeProvider)`, and so
+   a `provider` returning the provider's class (imported lazily), the settings
+   fields it `needs`, and a `build` that is handed the entry, constructs the
+   platform clients from its settings and hands them in — a provider never
+   builds its own. What it can do (`entry.can(TradeProvider)`, and so
    on for each port) is read off the ports that class implements; there is
    nothing to declare.
 4. **Tests** — a fake platform client, and assertions on the *prompt content*:
@@ -92,10 +93,11 @@ in `tests/support/<competition>.py`.
 text all read `bootstrap.py`. If you are editing `adapters/inbound/` to add a
 competition, the design has been bypassed.
 
-**`is_configured` must be honest.** It gates whether a platform is contacted at
-all. Building a provider may open an OAuth flow, and a user who does not play
-that competition must never be made to sit through one. Check for the credentials the
-provider actually needs, and nothing else.
+**`needs` must be honest.** The entry's settings fields decide whether it is
+configured and what the "not configured" message asks for, and that gate decides
+whether its provider is built at all: a user who does not play the competition
+is never asked to log in to its platform. List the fields the provider actually
+needs, and nothing else; a login goes in `login`, a check that it holds in `check_ready`.
 
 **Widen the shared models; do not fork them.** `Move`, `ScoutReport` and
 `TradeVerdict` are deliberately competition-neutral. If a competition needs a field they

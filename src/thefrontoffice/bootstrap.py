@@ -7,9 +7,11 @@ Every builder takes the settings it reads, so a test hands it its own rather
 than patching the process's; an entry point that names none gets the
 process's, which a save in Settings refreshes in place.
 
-`is_configured` gates whether a platform is contacted at all — building a
-provider can open an OAuth flow, and a user who does not play that competition
-must never be made to sit through one.
+Each entry names the settings it cannot run without, and whether it is
+configured and what the "not configured" message asks for are both read off
+them. That gate decides whether a platform is built at all: a user who does
+not play a competition never has its provider built, nor a readiness check
+look for a login they have no reason to have.
 """
 
 import functools
@@ -28,7 +30,7 @@ from thefrontoffice.application.trading import TradeEngine
 from thefrontoffice.application.week import WeekEngine
 from thefrontoffice.application.wire import WireEngine
 from thefrontoffice.config.env_file import EnvFile
-from thefrontoffice.config.settings import PROJECT_ROOT, AppSettings
+from thefrontoffice.config.settings import PROJECT_ROOT, AppSettings, env_var
 from thefrontoffice.config.settings import settings as process_settings
 from thefrontoffice.domain.errors import FrontOfficeError, NotConfiguredError, UnknownCompetitionError, UnsupportedError
 from thefrontoffice.domain.ports import (
@@ -95,10 +97,21 @@ class CompetitionEntry:
     provider: Callable[[], type[CompetitionProvider]]
     """The provider's class, imported only when asked, so listing competitions loads no SDK."""
 
-    build: Callable[[], CompetitionProvider]
-    is_configured: Callable[[], bool]
-    requires: str
-    """What to put in .env to enable it, quoted in the 'not configured' message."""
+    build: Callable[[CompetitionEntry], CompetitionProvider]
+    """Its provider, built from the entry's settings; called by `open`, once `needs` are all set."""
+
+    settings: AppSettings
+    """What it is configured and built from, read when asked, so a value saved in Settings counts at once."""
+
+    needs: tuple[str, ...]
+    """The settings fields it cannot run without, by field name.
+
+    Whether it is configured and what the 'not configured' message asks for
+    are both read off these, so the two cannot name different settings.
+    """
+
+    login: Callable[[], AccountLogin] | None = None
+    """Its platform's browser login, where it has one: offered under the platform's name."""
 
     check_ready: Callable[[], None] = lambda: None
     """Raise if the competition is configured but cannot be used yet.
@@ -109,6 +122,15 @@ class CompetitionEntry:
     worse than greying it out. Must stay cheap and non-interactive: it runs on
     every page load.
     """
+
+    def is_configured(self) -> bool:
+        """Whether every setting it needs is set."""
+        return all(_present(getattr(self.settings, field)) for field in self.needs)
+
+    @property
+    def requires(self) -> str:
+        """What to put in .env to enable it, as the variables a user types: 'YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET'."""
+        return " and ".join(env_var(field) for field in self.needs)
 
     @property
     def key(self) -> str:
@@ -146,7 +168,7 @@ class CompetitionEntry:
         """
         if not self.is_configured():
             raise NotConfiguredError(self.label, self.requires)
-        return self.build()
+        return self.build(self)
 
     def open_as[P](self, port: type[P], what: str) -> P:
         """Its provider, as the port a route needs — refused, unbuilt, where it has no such capability.
@@ -198,6 +220,15 @@ class Registry:
     def configured(self) -> list[CompetitionEntry]:
         """Only the competitions this machine has credentials for."""
         return [entry for entry in self.entries if entry.is_configured()]
+
+    def logins(self) -> dict[str, Callable[[], AccountLogin]]:
+        """Each platform that logs in through a browser, by the platform's name in its entries."""
+        return {entry.platform: entry.login for entry in self.entries if entry.login is not None}
+
+
+def _present(value: object) -> bool:
+    """Whether a setting holds a value: a blank one is as good as unset."""
+    return value is not None and value != ""
 
 
 # ── platform transport ──────────────────────────────────────────────
@@ -280,25 +311,13 @@ def _item_decisions(settings: AppSettings) -> ItemDecisions:
 # ── competitions ────────────────────────────────────────────────────
 
 
-def nfl_provider(settings: AppSettings = process_settings) -> SleeperNFLProvider:
-    """The NFL provider, wired to the real clients: for the scripts that need its own methods, not just the port."""
-    from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
-
-    return SleeperNFLProvider(
-        _configured(settings.sleeper_username, "nfl-sleeper"),
-        client=_sleeper_client(settings),
-        espn=_espn_client(settings),
-    )
-
-
-def _configured[T](value: T | None, key: str) -> T:
-    """A setting an entry needs, as its gate checked it; asked for directly, the entry says what is missing.
+def _required[T](value: T | None, entry: CompetitionEntry) -> T:
+    """A setting `entry` needs, which its gate has already checked; narrowed here for the builder that reads it.
 
     Raises:
-        NotConfiguredError: it is unset — named as the entry's `requires` names it, so no provider repeats it.
+        NotConfiguredError: it is unset after all — a builder called without the gate.
     """
-    if value is None or value == "":
-        entry = REGISTRY.find(key)
+    if value is None or not _present(value):
         raise NotConfiguredError(entry.label, entry.requires)
     return value
 
@@ -315,8 +334,17 @@ def _fpl() -> type[FPLProvider]:
     return FPLProvider
 
 
-def _build_fpl(settings: AppSettings) -> FPLProvider:
-    return _fpl()(_configured(settings.fpl_entry_id, "premier-league-fpl"), client=_fpl_client(settings))
+def _build_nfl(entry: CompetitionEntry) -> SleeperNFLProvider:
+    settings = entry.settings
+    return _nfl()(
+        _required(settings.sleeper_username, entry),
+        client=_sleeper_client(settings),
+        espn=_espn_client(settings),
+    )
+
+
+def _build_fpl(entry: CompetitionEntry) -> FPLProvider:
+    return _fpl()(_required(entry.settings.fpl_entry_id, entry), client=_fpl_client(entry.settings))
 
 
 def _nba() -> type[YahooNBAProvider]:
@@ -325,16 +353,16 @@ def _nba() -> type[YahooNBAProvider]:
     return YahooNBAProvider
 
 
-def _build_nba(settings: AppSettings) -> YahooNBAProvider:
-    """Deferred to here so that constructing the registry — which every entry point
-    does at startup — never touches Yahoo. Building contacts nothing either: the
-    provider finds its leagues when first asked, and an absent token is reported
-    then rather than obtained, because the handshake opens a browser and this
-    runs inside a request handler as often as not.
+def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
+    """Building contacts nothing: the provider finds its leagues when first asked,
+    and an absent token is reported then rather than obtained, because the
+    handshake opens a browser and this runs inside a request handler as often
+    as not.
     """
     from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
 
+    settings = entry.settings
     cache, retry = _disk_cache(settings.yahoo_cache_dir), _retry()
     auth = _yahoo_auth(settings, cache)
     sleeper = _sleeper_client(settings)
@@ -347,7 +375,7 @@ def _build_nba(settings: AppSettings) -> YahooNBAProvider:
     )
 
 
-def registry(settings: AppSettings) -> Registry:
+def registry(settings: AppSettings = process_settings) -> Registry:
     """Every competition, configured and built from `settings` as they stand when asked."""
     return Registry(
         (
@@ -358,9 +386,10 @@ def registry(settings: AppSettings) -> Registry:
                 label="NBA (Yahoo)",
                 name="NBA",
                 provider=_nba,
-                build=lambda: _build_nba(settings),
-                is_configured=lambda: bool(settings.yahoo_client_id and settings.yahoo_client_secret),
-                requires="YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET",
+                build=_build_nba,
+                settings=settings,
+                needs=("yahoo_client_id", "yahoo_client_secret"),
+                login=lambda: yahoo_auth(settings),
                 # Yahoo also needs a cached token, which is a file this can just look for.
                 check_ready=lambda: yahoo_auth(settings).ensure_authorized(),
             ),
@@ -371,9 +400,9 @@ def registry(settings: AppSettings) -> Registry:
                 label="NFL (Sleeper)",
                 name="NFL",
                 provider=_nfl,
-                build=lambda: nfl_provider(settings),
-                is_configured=lambda: bool(settings.sleeper_username),
-                requires="SLEEPER_USERNAME",
+                build=_build_nfl,
+                settings=settings,
+                needs=("sleeper_username",),
             ),
             CompetitionEntry(
                 sport="soccer",
@@ -382,16 +411,12 @@ def registry(settings: AppSettings) -> Registry:
                 label="FPL (Fantasy Premier League)",
                 name="Premier League",
                 provider=_fpl,
-                build=lambda: _build_fpl(settings),
-                is_configured=lambda: bool(settings.fpl_entry_id),
-                requires="FPL_ENTRY_ID",
+                build=_build_fpl,
+                settings=settings,
+                needs=("fpl_entry_id",),
             ),
         )
     )
-
-
-REGISTRY = registry(process_settings)
-"""The process's registry, for the scripts that need no other part of the wiring."""
 
 
 # ── models and engines ──────────────────────────────────────────────────
@@ -446,7 +471,7 @@ class Wiring:
     answers: AnswerStore
     decisions: ItemDecisions
     logins: Mapping[str, Callable[[], AccountLogin]]
-    """Each platform that logs in through a browser, by its registry name."""
+    """Each platform that logs in through a browser, by the platform's name in its entries."""
 
     env: EnvFile
     """The configuration, as the Settings page reads and edits it."""
@@ -498,11 +523,12 @@ def wiring(settings: AppSettings = process_settings, env: Path = PROJECT_ROOT / 
     Args:
         env: the file `settings` were loaded from, which the Settings page edits.
     """
+    competitions = registry(settings)
     return Wiring(
-        registry=registry(settings),
+        registry=competitions,
         model=lambda: default_model(settings),
         answers=_answer_store(settings),
         decisions=_item_decisions(settings),
-        logins={"yahoo": lambda: yahoo_auth(settings)},
+        logins=competitions.logins(),
         env=env_file(settings, env),
     )

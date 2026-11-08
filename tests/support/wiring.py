@@ -10,6 +10,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from support.ai import FakeAI
+from support.settings import NOWHERE, isolated_settings
 from support.stores import FakeAnswers, FakeItemStates
 from thefrontoffice.application.items import ItemDecisions
 from thefrontoffice.bootstrap import CompetitionEntry, Registry, Wiring
@@ -81,17 +82,21 @@ def entry(
     name: str = "NFL",
     sport: str = "football",
     configured: bool = True,
-    requires: str = "SLEEPER_USERNAME",
+    needs: tuple[str, ...] = ("sleeper_username",),
     check_ready: Callable[[], None] = lambda: None,
     built: list[int] | None = None,
 ) -> CompetitionEntry:
-    """A registry entry whose provider is `provider`; each build appended to `built`, where given."""
+    """A registry entry whose provider is `provider`; each build appended to `built`, where given.
 
-    def build() -> CompetitionProvider:
+    Configured, every setting it `needs` holds "1" — a value every field accepts, and nothing reads.
+    """
+
+    def build(_: CompetitionEntry) -> CompetitionProvider:
         if built is not None:
             built.append(1)
         return provider
 
+    values: dict[str, object] = dict.fromkeys(needs, "1") if configured else {}
     return CompetitionEntry(
         sport=sport,
         competition=competition,
@@ -100,8 +105,8 @@ def entry(
         name=name,
         provider=lambda: type(provider),
         build=build,
-        is_configured=lambda: configured,
-        requires=requires,
+        settings=isolated_settings(NOWHERE, **values),
+        needs=needs,
         check_ready=check_ready,
     )
 

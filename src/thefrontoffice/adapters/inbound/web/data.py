@@ -1,8 +1,8 @@
 """What the web adapter reads off the registry, free of any web framework.
 
-The routes call these, and so can a test with no server running. Building a
-provider is the side-effecting part — it can open an OAuth flow — so the
-registry entry does it only once a competition has actually been chosen.
+The routes call these, and so can a test with no server running. Nothing here
+builds a provider: what an entry can do is read off its provider's class, and
+whether it is ready off its settings and a cheap readiness check.
 """
 
 from pydantic import BaseModel

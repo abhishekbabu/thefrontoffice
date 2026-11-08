@@ -323,8 +323,15 @@ class ForecastProvider(Protocol):
         """The weeks already played that `played_matchups` can rebuild, oldest first."""
         ...
 
-    def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
-        """Every matchup of a week already played, as it stood before kickoff, with the result."""
+    def played_matchups(
+        self, league_id: str, week: int, settings: Mapping[str, float] | None = None
+    ) -> list[PlayedMatchup]:
+        """Every matchup of a week already played, as it stood before kickoff, with the result.
+
+        Args:
+            settings: searched settings to range players under in place of the provider's own —
+                only ever given to a `RangeTuningProvider`, by the search over them.
+        """
         ...
 
 
@@ -343,12 +350,6 @@ class RangeTuningProvider(ForecastProvider, Protocol):
 
         One list per candidate, in order: each overrides the searched settings it names.
         """
-        ...
-
-    def played_matchups(
-        self, league_id: str, week: int, settings: Mapping[str, float] | None = None
-    ) -> list[PlayedMatchup]:
-        """Every matchup of a week already played, its players ranged under `settings` where given."""
         ...
 
 

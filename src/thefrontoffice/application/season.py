@@ -15,7 +15,7 @@ import random
 from collections.abc import Callable, Iterable
 from dataclasses import replace
 
-from thefrontoffice.application.results import result
+from thefrontoffice.application.results import WORTH, result
 from thefrontoffice.domain.models import (
     PlayoffOdds,
     SeasonInput,
@@ -49,7 +49,7 @@ def simulate_season(season: SeasonInput, simulations: int = SEASONS) -> PlayoffO
     gauss = rng.gauss
 
     for _ in range(simulations):
-        wins = {t.team_id: t.wins + 0.5 * t.ties for t in season.teams}
+        wins = {t.team_id: t.wins + WORTH["drawn"] * t.ties for t in season.teams}
         points = {t.team_id: t.points_for for t in season.teams}
         offset = {team: gauss(0.0, season.strength_error) if season.strength_error else 0.0 for team in ids}
         this_week = ""

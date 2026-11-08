@@ -8,6 +8,7 @@ import pytest
 from support.ai import FakeChat
 
 from thefrontoffice.adapters.inbound.cli import output
+from thefrontoffice.adapters.inbound.conversation import NO_ANSWER
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
 from thefrontoffice.domain.errors import AIKeyInvalidError, AIQuotaError
 
@@ -88,7 +89,7 @@ def test_end_of_input_ends_the_follow_ups_without_blaming_the_model(capsys: pyte
     output.follow_up(chat, "report", read=_closed)
 
     assert chat.sent == []
-    assert "did not answer" not in capsys.readouterr().out
+    assert NO_ANSWER not in capsys.readouterr().out
 
 
 # ── console encoding ────────────────────────────────────────────────────

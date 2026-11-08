@@ -13,7 +13,7 @@ lots of random noise — which is what makes a "+2.8% to win" worth reading.
 
 import logging
 import random
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from thefrontoffice.application.results import quantile, result
 from thefrontoffice.domain.models import (
@@ -298,7 +298,14 @@ class ForecastEngine:
             return []
         return pickup_chances(simulate(matchup), matchup)
 
-    def backtest(self, league_id: str, weeks: list[int], simulations: int = SIMULATIONS) -> Calibration:
-        played = [game for week in weeks for game in self.provider.played_matchups(league_id, week)]
+    def backtest(
+        self,
+        league_id: str,
+        weeks: list[int],
+        settings: Mapping[str, float] | None = None,
+        simulations: int = SIMULATIONS,
+    ) -> Calibration:
+        """How well the simulation called every matchup of `weeks`, its players ranged under `settings` where given."""
+        played = [game for week in weeks for game in self.provider.played_matchups(league_id, week, settings)]
         logger.info(f"Backtesting {len(played)} matchups over weeks {weeks}")
         return calibrate(played, simulations)

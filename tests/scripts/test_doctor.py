@@ -12,8 +12,8 @@ import doctor
 import pytest
 from support.wiring import FakeCompetition, entry
 
+from thefrontoffice import bootstrap
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
-from thefrontoffice.bootstrap import REGISTRY
 from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import AppSettings
 
@@ -27,7 +27,7 @@ def path(tmp_path: Path) -> Path:
 def _report(path: Path, **config: Any) -> int:
     """The doctor's verdict on `path`, with settings of the test's own."""
     env = EnvFile(path, settings=AppSettings(_env_file=None, **config))
-    return doctor.main(env=env, registry=REGISTRY, providers=[])
+    return doctor.main(env=env, registry=bootstrap.registry(env.settings), providers=[])
 
 
 # ── typo detection ──────────────────────────────────────────────────────

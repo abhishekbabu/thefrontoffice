@@ -8,13 +8,13 @@ CLI, the UI and the help text and remembering all three.
 from pathlib import Path
 
 import pytest
-from support.settings import isolated_settings
+from support.settings import NOWHERE, isolated_settings
 from support.wiring import FakeCompetition, entry
 
 from thefrontoffice import bootstrap
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
-from thefrontoffice.bootstrap import REGISTRY, Registry, nfl_provider
+from thefrontoffice.bootstrap import Registry
 from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionError, UnsupportedError
 from thefrontoffice.domain.models import Action, CompetitionContext, ItemState, Summary, TradeProposal
 from thefrontoffice.domain.ports import (
@@ -25,39 +25,42 @@ from thefrontoffice.domain.ports import (
     WireProvider,
 )
 
+
+def _registry(tmp_path: Path = NOWHERE, **values: object) -> Registry:
+    """The registry over settings holding exactly `values`, read from nowhere else; kept under `tmp_path`."""
+    return bootstrap.registry(isolated_settings(tmp_path, **values))
+
+
 # ── finding an entry ────────────────────────────────────────────────────
 
 
 def test_lookup_is_case_insensitive_and_tolerates_a_slash() -> None:
-    assert REGISTRY.find("NFL") is REGISTRY.find("nfl")
-    assert REGISTRY.find("/nfl") is REGISTRY.find("nfl")
+    registry = _registry()
+
+    assert registry.find("NFL") is registry.find("nfl")
+    assert registry.find("/nfl") is registry.find("nfl")
 
 
 def test_an_unknown_competition_is_an_error_naming_it() -> None:
     with pytest.raises(UnknownCompetitionError, match="cricket"):
-        REGISTRY.find("cricket")
+        _registry().find("cricket")
 
 
 def test_every_key_is_unique() -> None:
-    keys = [e.key for e in REGISTRY.entries]
+    keys = [e.key for e in _registry().entries]
     assert len(set(keys)) == len(keys)
 
 
 def test_a_key_resolves_exactly() -> None:
-    assert REGISTRY.find("nfl-sleeper").platform == "sleeper"
+    assert _registry().find("nfl-sleeper").platform == "sleeper"
 
 
 def test_a_bare_competition_still_resolves_while_one_platform_carries_it() -> None:
     """Typing "nba" stays meaningful until a second platform makes it ambiguous."""
-    assert REGISTRY.find("nba").key == "nba-yahoo"
+    assert _registry().find("nba").key == "nba-yahoo"
 
 
 # ── configuration ───────────────────────────────────────────────────────
-
-
-def _registry(tmp_path: Path, **values: object) -> Registry:
-    """The registry over settings holding exactly `values`, read from nowhere else."""
-    return bootstrap.registry(isolated_settings(tmp_path, **values))
 
 
 def test_nothing_is_configured_without_credentials(tmp_path: Path) -> None:
@@ -91,10 +94,38 @@ def test_an_unconfigured_competition_names_what_to_set_rather_than_building(tmp_
         _registry(tmp_path).find("nba").open()
 
 
-def test_the_nfl_provider_asked_for_directly_names_what_its_entry_requires(tmp_path: Path) -> None:
-    """The scripts build it without the registry's gate, and hear the same remedy the gate gives."""
+def test_what_an_entry_asks_for_names_the_variables_its_settings_read() -> None:
+    """Said once, by the fields it needs: the message names what a user types, `GOOGLE_API_KEY` style."""
+    requires = {e.key: e.requires for e in _registry().entries}
+
+    assert requires == {
+        "nba-yahoo": "YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET",
+        "nfl-sleeper": "SLEEPER_USERNAME",
+        "premier-league-fpl": "FPL_ENTRY_ID",
+    }
+
+
+def test_a_blank_setting_configures_nothing(tmp_path: Path) -> None:
+    """Saved from the UI as an empty field, a username is as good as unset."""
+    settings = isolated_settings(tmp_path)
+    registry = bootstrap.registry(settings)
+
+    settings.sleeper_username = ""
+
+    assert registry.configured() == []
+
+
+def test_a_provider_built_without_the_gate_names_what_its_entry_requires(tmp_path: Path) -> None:
+    """A builder handed an unconfigured entry says what is missing, as the gate would, rather than build with None."""
+    nfl = _registry(tmp_path).find("nfl")
+
     with pytest.raises(NotConfiguredError, match="SLEEPER_USERNAME"):
-        nfl_provider(isolated_settings(tmp_path))
+        nfl.build(nfl)
+
+
+def test_only_a_platform_with_a_browser_login_offers_one(tmp_path: Path) -> None:
+    """Keyed by the platform its entry names, which is what a login remedy asks for."""
+    assert list(_registry(tmp_path).logins()) == ["yahoo"]
 
 
 def test_yahoo_is_not_ready_until_a_token_is_cached(tmp_path: Path) -> None:
@@ -130,7 +161,7 @@ def test_the_nba_entry_builds_its_provider_without_contacting_yahoo(tmp_path: Pa
 
     nba = _registry(tmp_path).find("nba")
 
-    provider = nba.build()
+    provider = nba.build(nba)
 
     assert isinstance(provider, nba.provider())
     with pytest.raises(YahooLoginRequiredError):
@@ -142,14 +173,14 @@ def test_the_nba_entry_builds_its_provider_without_contacting_yahoo(tmp_path: Pa
 
 def test_every_registered_provider_implements_the_competition_port() -> None:
     """A competition that forgets a method fails here rather than at the point of use."""
-    for e in REGISTRY.entries:
+    for e in _registry().entries:
         assert e.can(CompetitionProvider), e.key
 
 
 def test_what_each_competition_can_do_is_read_off_its_provider() -> None:
     """FPL managers transfer against the market rather than trade; only the NFL simulates its season."""
     ports = (TradeProvider, WireProvider, OutlookProvider, TradeMarketProvider)
-    can = {e.key: tuple(e.can(port) for port in ports) for e in REGISTRY.entries}
+    can = {e.key: tuple(e.can(port) for port in ports) for e in _registry().entries}
 
     assert can == {
         "nba-yahoo": (True, False, False, False),
@@ -164,7 +195,7 @@ class _Trades(FakeCompetition):
 
 
 def test_asking_what_a_competition_can_do_builds_nothing() -> None:
-    """Building can open an OAuth flow; a client asks before anything is chosen."""
+    """A client asks before anything is chosen, and building one reads its settings and opens its caches."""
     built: list[int] = []
     trades = entry(_Trades(), built=built)
 

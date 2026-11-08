@@ -4,6 +4,9 @@ from pathlib import Path
 
 from thefrontoffice.config.settings import AppSettings, env_var, is_local
 
+NOWHERE = Path(__file__).with_name("nowhere")
+"""A directory no test creates: settings whose paths sit under it keep nothing, for a test that builds nothing."""
+
 
 def isolated_settings(directory: Path, **values: object) -> AppSettings:
     """Every setting at its default, every local path under `directory`, then `values` by field name.

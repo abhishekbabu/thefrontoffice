@@ -59,7 +59,9 @@ def test_a_trade_briefing_says_what_was_left_out() -> None:
     assert briefing.TRADE_LEFT_OUT in briefing.of_trade(_context(), TRADE)
 
 
-def test_a_trade_briefing_without_roster_lines_heads_no_empty_roster() -> None:
-    text = briefing.of_trade(CompetitionContext(prompt="p", situation="SITUATION"), TRADE)
+def test_a_briefing_without_roster_lines_heads_no_empty_roster() -> None:
+    """A roster heading over nothing reads as a manager with no players, which the model then reasons from."""
+    bare = CompetitionContext(prompt="p", situation="SITUATION")
 
-    assert "ROSTER" not in text
+    assert "ROSTER" not in briefing.of_trade(bare, TRADE)
+    assert "ROSTER" not in briefing.of_report(bare, MOCK_NBA_REPORT)

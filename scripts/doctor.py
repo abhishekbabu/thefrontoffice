@@ -90,4 +90,4 @@ def main(*, env: EnvFile, registry: Registry, providers: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(env=bootstrap.env_file(), registry=bootstrap.REGISTRY, providers=bootstrap.ai_providers()))
+    raise SystemExit(main(env=bootstrap.env_file(), registry=bootstrap.registry(), providers=bootstrap.ai_providers()))

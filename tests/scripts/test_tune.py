@@ -4,32 +4,23 @@ from collections.abc import Mapping, Sequence
 
 import pytest
 import tune
+from support.simulation import FakeForecast
 from support.wiring import FakeCompetition, entry
 
 from thefrontoffice.bootstrap import Registry
-from thefrontoffice.domain.models import MatchupInput, Outcomes, PlayedMatchup, RangeSearch
+from thefrontoffice.domain.models import Outcomes, RangeSearch
 
 SEARCH = RangeSearch(current={"spread": 1.0}, grid={"spread": (1.0, 4.0)})
 
 
-class _Tunable(FakeCompetition):
+class _Tunable(FakeForecast, FakeCompetition):
     """Ranges as wide as `spread` around 10 points, for players who all then score 12."""
 
     weeks: tuple[int, ...] = (2, 3, 4)
 
     def __init__(self) -> None:
-        self.asked: list[list[Mapping[str, float]]] = []
-
-    def matchup_input(self, league_id: str, candidates: object = ()) -> MatchupInput | None:
-        return None
-
-    def played_weeks(self, league_id: str) -> list[int]:
-        return list(self.weeks)
-
-    def played_matchups(
-        self, league_id: str, week: int, settings: Mapping[str, float] | None = None
-    ) -> list[PlayedMatchup]:
-        return []
+        super().__init__()
+        self.ranged: list[list[Mapping[str, float]]] = []
 
     def range_search(self) -> RangeSearch:
         return SEARCH
@@ -37,7 +28,7 @@ class _Tunable(FakeCompetition):
     def ranged_games(
         self, league_id: str, weeks: Sequence[int], candidates: Sequence[Mapping[str, float]]
     ) -> list[list[tuple[Outcomes, float]]]:
-        self.asked.append(list(candidates))
+        self.ranged.append(list(candidates))
         return [
             [
                 (Outcomes("p", "P", 10.0, tuple(10.0 + c["spread"] * (i - 5) / 5 for i in range(11))), 12.0)
@@ -61,7 +52,7 @@ def test_every_week_is_read_once_for_all_the_candidates() -> None:
 
     tune.run(Registry((entry(provider),)), "nfl-sleeper")
 
-    assert len(provider.asked) == 2  # the training weeks, then the held-out one
+    assert len(provider.ranged) == 2  # the training weeks, then the held-out one
 
 
 def test_an_account_with_no_league_says_so_rather_than_crashing(capsys: pytest.CaptureFixture[str]) -> None:

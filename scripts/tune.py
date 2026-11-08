@@ -15,11 +15,12 @@ that competition configured and able to range its players.
 import itertools
 import sys
 
-from leagues import first_league
+from leagues import chosen, open_league
 
+from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound.cli.output import print_error
-from thefrontoffice.application.forecasting import calibrate, score_ranges
-from thefrontoffice.bootstrap import REGISTRY, Registry
+from thefrontoffice.application.forecasting import ForecastEngine, score_ranges
+from thefrontoffice.bootstrap import Registry
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import RangeScore
@@ -36,16 +37,13 @@ def line(name: str, result: RangeScore) -> str:
 
 def main() -> int:
     setup_logging()
-    return run(REGISTRY, sys.argv[1] if len(sys.argv) > 1 else "nfl-sleeper")
+    return run(bootstrap.registry(), chosen(sys.argv))
 
 
 def run(registry: Registry, key: str) -> int:
     """Tune the competition `key` names; 1 where there is too little played to hold a week out."""
     try:
-        entry = registry.find(key)
-        competition = entry.open()
-        provider = entry.as_port(competition, RangeTuningProvider, "tuning player ranges")
-        league = first_league(competition, entry.label)
+        _, provider, league = open_league(registry, key, RangeTuningProvider, "tuning player ranges")
         weeks = provider.played_weeks(league.league_id)
         if len(weeks) < 2:
             print("  Not enough finished weeks to tune and hold one out.")
@@ -57,13 +55,15 @@ def run(registry: Registry, key: str) -> int:
         trained = provider.ranged_games(league.league_id, weeks[:-1], [default, *candidates])
         trained_default, *scores = (score_ranges(games) for games in trained)
         best = min(range(len(candidates)), key=lambda i: scores[i].loss)
-        chosen = candidates[best]
+        best_settings = candidates[best]
         held_default, held_best = (
-            score_ranges(games) for games in provider.ranged_games(league.league_id, weeks[-1:], [default, chosen])
+            score_ranges(games)
+            for games in provider.ranged_games(league.league_id, weeks[-1:], [default, best_settings])
         )
-        matchups = {
-            name: [g for w in weeks for g in provider.played_matchups(league.league_id, w, settings)]
-            for name, settings in (("current", default), ("best", chosen))
+        engine = ForecastEngine(provider)
+        calibrations = {
+            name: engine.backtest(league.league_id, weeks, settings)
+            for name, settings in (("current", default), ("best", best_settings))
         }
     except FrontOfficeError as e:
         print_error(e)
@@ -80,10 +80,10 @@ def run(registry: Registry, key: str) -> int:
     print(line("best", held_best))
 
     print("\n  matchups, all weeks (Brier: lower is better, 0.250 a coin flip)")
-    for name, played in matchups.items():
-        print(f"  {name:<26}{calibrate(played).brier:>7.3f}  over {len(played)} matchups")
+    for name, calibration in calibrations.items():
+        print(f"  {name:<26}{calibration.brier:>7.3f}  over {calibration.matchups} matchups")
 
-    changed = {k: v for k, v in chosen.items() if v != default[k]}
+    changed = {k: v for k, v in best_settings.items() if v != default[k]}
     print()
     if not changed:
         print("  The current settings are already the best of the grid.")

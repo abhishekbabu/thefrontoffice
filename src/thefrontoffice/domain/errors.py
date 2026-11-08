@@ -165,16 +165,27 @@ class ItemDecisionError(FrontOfficeError):
     code = "item_decision"
 
 
-class LoginRequiredError(FrontOfficeError):
-    """A platform this machine has not been authorized for yet, and cannot be without a person.
+class AccountError(FrontOfficeError):
+    """A condition of this machine's account with one platform, which only that platform's remedy fixes.
 
-    Which platform is the subclass's to say, so the remedy can offer that
-    platform's login rather than whichever one happened to exist first.
+    Which platform is the subclass's to say, so the remedy offered is that
+    platform's rather than whichever one happened to exist first.
     """
 
-    code = "login_required"
     login: str = ""
-    """The registry's name for the platform to log in to: 'yahoo' — a key, not a name to show."""
+    """The registry's name for the platform: 'yahoo' — a key, not a name to show."""
+
+
+class LoginRequiredError(AccountError):
+    """A platform this machine has not been authorized for yet, and cannot be without a person."""
+
+    code = "login_required"
+
+
+class AccessNotApprovedError(AccountError):
+    """A platform accepted the login and refused the application itself: it has not approved this app's access yet."""
+
+    code = "access_not_approved"
 
 
 class AIUnavailableError(FrontOfficeError):

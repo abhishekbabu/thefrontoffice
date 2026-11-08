@@ -2,23 +2,14 @@
 
 import backtest
 import pytest
+from support.simulation import FakeForecast
 from support.wiring import FakeCompetition, entry
 
 from thefrontoffice.bootstrap import Registry
-from thefrontoffice.domain.models import MatchupInput, PlayedMatchup
 
 
-class _Forecasts(FakeCompetition):
-    weeks: tuple[int, ...] = ()
-
-    def matchup_input(self, league_id: str, candidates: object = ()) -> MatchupInput | None:
-        return None
-
-    def played_weeks(self, league_id: str) -> list[int]:
-        return list(self.weeks)
-
-    def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
-        return []
+class _Forecasts(FakeForecast, FakeCompetition):
+    pass
 
 
 class _NoLeagues(_Forecasts):

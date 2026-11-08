@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from thefrontoffice.application.answers import Answers
 from thefrontoffice.application.forecasting import ForecastEngine, ranked
 from thefrontoffice.application.items import ItemDecisions
-from thefrontoffice.application.scouting import scout_scope, with_verdicts
+from thefrontoffice.application.scouting import last_judgment, with_verdicts
 from thefrontoffice.application.season import SeasonEngine
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import (
@@ -26,7 +26,6 @@ from thefrontoffice.domain.models import (
     PlayerPage,
     PlayerQuery,
     PlayoffOdds,
-    ScoutReport,
     Summary,
 )
 from thefrontoffice.domain.ports import AnswerStore, WeekProvider
@@ -96,8 +95,7 @@ class WeekEngine:
         if forecast is not None:
             summary = summary.model_copy(update={"actions": ranked(summary.actions, *forecast)})
         if summary.actions is not None:
-            judged = self.answers.latest(scout_scope(self.key, league_id), ScoutReport)
-            actions = with_verdicts(summary.actions, judged.answer if judged else None)
+            actions = with_verdicts(summary.actions, last_judgment(self.answers, self.key, league_id))
             summary = summary.model_copy(update={"actions": self.decisions.apply(self.key, league_id, actions)})
         return WeekView(summary=summary, forecast=forecast[0] if forecast else None, odds=self._odds(league_id))
 

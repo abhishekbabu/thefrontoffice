@@ -26,6 +26,11 @@ def sections(*parts: str) -> str:
     return "\n\n".join(part for part in (p.strip() for p in parts) if part)
 
 
+def titled(title: str, body: str) -> str:
+    """`body` under its heading; nothing at all where it is empty, rather than a heading over nothing."""
+    return f"{title}:\n{body}" if body.strip() else ""
+
+
 def roster(context: CompetitionContext) -> str:
     """The manager's roster, as the prompt carried it."""
     return "".join(context.roster_lines.values()).strip()
@@ -46,7 +51,7 @@ def of_report(context: CompetitionContext, report: ScoutReport) -> str:
         context.situation,
         context.constraints,
         context.extra,
-        "CURRENT ROSTER:\n" + roster(context),
+        titled("CURRENT ROSTER", roster(context)),
         "PLAYERS NAMED IN THE REPORT:\n" + (kept or "(none)"),
         LEFT_OUT,
     )
@@ -59,13 +64,12 @@ def of_trade(context: CompetitionContext, proposal: TradeProposal) -> str:
     against and the two sides by name; the evaluation itself is the model's
     turn beside it. Says what was left out, as `of_report` does.
     """
-    mine = roster(context)
     return sections(
         "This is a condensed briefing on a trade you just evaluated.",
         context.situation,
         context.constraints,
         context.extra,
-        "CURRENT ROSTER:\n" + mine if mine else "",
+        titled("CURRENT ROSTER", roster(context)),
         f"THE TRADE: giving {', '.join(proposal.giving)}; receiving {', '.join(proposal.receiving)}.",
         TRADE_LEFT_OUT,
     )
