@@ -13,11 +13,14 @@ port covers both. In development the front end runs its own dev server and calls
 back here across the proxy configured in `web/vite.config.ts`.
 """
 
+import argparse
 import logging
+import socket
+import sys
 import threading
 import uuid
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -38,7 +41,7 @@ from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import CompetitionEntry, Wiring
 from thefrontoffice.config.env_file import SettingsGroup
 from thefrontoffice.config.logging import setup_logging
-from thefrontoffice.config.settings import PROJECT_ROOT
+from thefrontoffice.config.settings import PROJECT_ROOT, settings
 from thefrontoffice.config.telemetry import setup_telemetry
 from thefrontoffice.domain.errors import (
     ChatExpiredError,
@@ -46,6 +49,7 @@ from thefrontoffice.domain.errors import (
     FrontOfficeError,
     InvalidRequestError,
     NotFoundError,
+    PortInUseError,
 )
 from thefrontoffice.domain.models import (
     ItemDecision,
@@ -534,11 +538,55 @@ def _serve_frontend(app: FastAPI, dist: Path) -> None:
         return FileResponse(root / "index.html")
 
 
-def main() -> None:
-    """Run the server: `just ui`."""
+HOST = "127.0.0.1"
+PORTS_TRIED = 20
+"""How far past the configured port `just ui` looks for a free one."""
+
+
+def is_free(host: str, port: int) -> bool:
+    """Whether nothing on this machine is listening on `port` yet."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind((host, port))
+        except OSError:
+            return False
+        return True
+
+
+def free_port(host: str, preferred: int, tries: int = PORTS_TRIED) -> int:
+    """The preferred port, or the next one up that is free.
+
+    Raises:
+        PortInUseError: none of the `tries` ports from `preferred` is free.
+    """
+    last = min(preferred + tries - 1, 65535)
+    for port in range(preferred, last + 1):
+        if is_free(host, port):
+            return port
+    raise PortInUseError(preferred, last)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the server: `just ui`, or `just api` with `--reload`.
+
+    `just ui` moves up to the next free port when the configured one is taken,
+    so another app on 8000 does not stop it. `--reload` keeps the configured
+    port, because the Vite dev server proxies `/api` to exactly that one.
+    """
     import uvicorn
 
-    uvicorn.run("thefrontoffice.adapters.inbound.web.api:serve", factory=True, host="127.0.0.1", port=8000)
+    parser = argparse.ArgumentParser(description="Serve The Front Office.")
+    parser.add_argument("--reload", action="store_true", help="restart on code changes, on PORT exactly")
+    args = parser.parse_args(argv)
+    port = settings.port
+    if not args.reload:
+        try:
+            port = free_port(HOST, settings.port)
+        except PortInUseError as e:
+            sys.exit(str(e))
+        if port != settings.port:
+            print(f"Port {settings.port} is in use; serving on {port} instead.", flush=True)
+    uvicorn.run("thefrontoffice.adapters.inbound.web.api:serve", factory=True, host=HOST, port=port, reload=args.reload)
 
 
 if __name__ == "__main__":

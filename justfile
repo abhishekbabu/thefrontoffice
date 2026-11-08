@@ -104,13 +104,13 @@ hooks:
 run:
     uv run python -m thefrontoffice
 
-# Build the UI and serve everything from one process (http://localhost:8000)
+# Build the UI and serve everything from one process (http://localhost:8000, or the next free port; PORT in .env changes it)
 ui: web-build
     uv run python -m thefrontoffice.adapters.inbound.web.api
 
-# API only, reloading on change. Pair with `just web` in a second terminal.
+# API only, reloading on change, on PORT exactly. Pair with `just web` in a second terminal.
 api:
-    uv run uvicorn thefrontoffice.adapters.inbound.web.api:serve --factory --reload --port 8000
+    uv run python -m thefrontoffice.adapters.inbound.web.api --reload
 
 # UI dev server with hot reload (http://localhost:5173), proxying /api to `just api`
 web:
