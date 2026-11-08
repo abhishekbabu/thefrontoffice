@@ -10,7 +10,7 @@ player. It runs on your own machine against NFL on
 [Premier League](https://fantasy.premierleague.com) and NBA on
 [Yahoo](https://sports.yahoo.com/fantasy).
 
-![This week](docs/screenshots/week.png)
+![This week](docs/screenshots/week-dark.png)
 
 ## Features
 
@@ -34,8 +34,8 @@ NFL has the deepest analysis. FPL and NBA share the week, team and league pages.
 
 | | |
 | --- | --- |
-| ![My team](docs/screenshots/team.png) | ![Free agents](docs/screenshots/free-agents.png) |
-| ![A player](docs/screenshots/player.png) | ![Fantasy Premier League](docs/screenshots/fpl-week.png) |
+| ![My team](docs/screenshots/team-dark.png) | ![Free agents](docs/screenshots/free-agents-dark.png) |
+| ![A player](docs/screenshots/player-dark.png) | ![Fantasy Premier League](docs/screenshots/fpl-week-dark.png) |
 
 ## Quick start
 
