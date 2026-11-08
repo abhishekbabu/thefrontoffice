@@ -168,6 +168,11 @@ class Team(Protocol):
         ...
 
     @property
+    def ir_ids(self) -> Sequence[str]:
+        """The injured-reserve slots alone."""
+        ...
+
+    @property
     def wins(self) -> int: ...
     @property
     def losses(self) -> int: ...
@@ -206,6 +211,11 @@ class LeagueRules(Protocol):
     def playoff_teams(self) -> int: ...
     @property
     def playoff_week_start(self) -> int: ...
+    @property
+    def ir_allows(self) -> frozenset[str]:
+        """The designations the injured-reserve slot takes, upper-cased."""
+        ...
+
     @property
     def roster_spots(self) -> int:
         """Players the roster holds outside its reserve and taxi slots."""

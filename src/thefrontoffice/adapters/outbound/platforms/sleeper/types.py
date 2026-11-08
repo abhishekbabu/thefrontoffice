@@ -75,6 +75,9 @@ class SleeperLeague:
     """How many teams the regular season sends to the playoffs. Zero where unknown."""
     playoff_week_start: int = 0
     """The first playoff week; the regular season is every week before it. Zero where unknown."""
+    ir_allows: frozenset[str] = frozenset({"IR"})
+    """The designations the league's injured-reserve slot takes, upper-cased. A player on IR whose
+    designation is no longer among them locks the roster: Sleeper refuses every move until he leaves it."""
 
     @property
     def roster_spots(self) -> int:
@@ -95,6 +98,8 @@ class SleeperRoster:
     starter_ids: list[str]
     reserve_ids: list[str] = field(default_factory=list)
     """Players in injured-reserve or taxi slots: on the roster, but not taking a spot on it."""
+    ir_ids: list[str] = field(default_factory=list)
+    """The injured-reserve slots alone, taxi left out."""
     wins: int = 0
     losses: int = 0
     ties: int = 0

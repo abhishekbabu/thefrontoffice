@@ -135,6 +135,19 @@ def test_a_league_with_no_trade_deadline_reads_as_week_zero(tmp_path: Path) -> N
     assert client.get_leagues("42", "2026")[0].trade_deadline == 0
 
 
+def test_a_leagues_ir_slot_takes_ir_and_whatever_its_settings_switch_on(tmp_path: Path) -> None:
+    payload = [{**LEAGUE_PAYLOAD[0], "settings": {"reserve_allow_out": 1, "reserve_allow_doubtful": 0}}]
+    client, _ = _client({"leagues/nfl": payload}, tmp_path)
+    assert client.get_leagues("42", "2026")[0].ir_allows == {"IR", "OUT"}
+
+
+def test_rosters_tell_injured_reserve_from_taxi(tmp_path: Path) -> None:
+    payload = [{"roster_id": 1, "owner_id": "42", "players": ["a", "b", "c"], "reserve": ["b"], "taxi": ["c"]}]
+    client, _ = _client({"rosters": payload}, tmp_path)
+    roster = client.get_rosters("L1")[0]
+    assert (roster.reserve_ids, roster.ir_ids) == (["b", "c"], ["b"])
+
+
 def test_rosters_carry_record_and_bench(tmp_path: Path) -> None:
     payload = [
         {

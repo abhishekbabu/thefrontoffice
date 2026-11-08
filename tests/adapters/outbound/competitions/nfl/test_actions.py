@@ -769,3 +769,56 @@ def test_a_regular_held_to_fewer_snaps_than_yours_still_counts() -> None:
 def test_a_long_ruling_is_already_in_the_projections() -> None:
     """IR outlasts the week, so the projection has long since moved the work."""
     assert _behind("IR") == []
+
+
+# ── a player injured reserve no longer takes ───────────────────────────
+
+HEALING = proj("wr8", "Healing Receiver", "WR", 7.0, team="KC", opp="LV")
+
+
+def _on_ir(status: str, client: FakeSleeper | None = None) -> FakeSleeper:
+    """Healing Receiver held on IR under `status`, on a full roster unless another is given."""
+    client = client or _full_roster(HEALING)
+    roster = client.rosters[0]
+    client.rosters = [replace(roster, player_ids=[*roster.player_ids, "wr8"], reserve_ids=["wr8"], ir_ids=["wr8"])]
+    catalog = client.get_nfl_players()
+    client.players_catalog = {**catalog, "wr8": replace(catalog["wr8"], injury_status=status)}
+    return client
+
+
+def _ir_items(client: FakeSleeper) -> list[Action]:
+    return [a for a in _actions(client) if a.key.startswith("ir:")]
+
+
+def test_a_player_on_ir_the_slot_no_longer_takes_comes_first_with_who_to_drop() -> None:
+    actions = _actions(_on_ir("Questionable"))
+
+    first = actions[0]
+    assert (first.key, first.urgency, first.player_id, first.drop) == ("ir:wr8:QUESTIONABLE", "now", "wr8", "wr2")
+
+
+def test_a_player_still_designated_ir_needs_nothing() -> None:
+    assert _ir_items(_on_ir("IR")) == []
+
+
+def test_out_is_ineligible_unless_the_league_lets_ir_take_it() -> None:
+    assert len(_ir_items(_on_ir("Out"))) == 1
+
+    lenient = _full_roster(HEALING)
+    lenient.league = replace(lenient.league, ir_allows=frozenset({"IR", "OUT"}))
+    assert _ir_items(_on_ir("Out", lenient)) == []
+
+
+def test_activating_into_an_open_spot_drops_nobody() -> None:
+    client = _on_ir("Questionable", _client([QB, RB, WR, FLEX, HEALING], ["qb", "rb", "wr", "te"], []))
+
+    [item] = _ir_items(client)
+
+    assert item.drop == ""
+
+
+def test_a_pickup_never_names_the_drop_the_ir_move_already_spent() -> None:
+    drops = [a.drop for a in _actions(_on_ir("Questionable")) if a.drop]
+
+    assert "wr2" in drops
+    assert len(drops) == len(set(drops))

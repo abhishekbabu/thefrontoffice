@@ -144,6 +144,17 @@ class SleeperProjectionSource(Protocol):
     def get_nba_state(self) -> SeasonState: ...
 
 
+IR_SETTINGS = {
+    "reserve_allow_out": "OUT",
+    "reserve_allow_doubtful": "DOUBTFUL",
+    "reserve_allow_sus": "SUS",
+    "reserve_allow_na": "NA",
+    "reserve_allow_dnr": "DNR",
+    "reserve_allow_cov": "COV",
+}
+"""The league settings that open the IR slot to a designation besides IR, and the designation each opens."""
+
+
 class SleeperClient:
     """Read-only access to Sleeper's fantasy and NFL data."""
 
@@ -209,7 +220,13 @@ class SleeperClient:
             trade_deadline=int((data.get("settings") or {}).get("trade_deadline") or 0),
             playoff_teams=int((data.get("settings") or {}).get("playoff_teams") or 0),
             playoff_week_start=int((data.get("settings") or {}).get("playoff_week_start") or 0),
+            ir_allows=SleeperClient.ir_allows(data.get("settings") or {}),
         )
+
+    @staticmethod
+    def ir_allows(settings: dict[str, Any]) -> frozenset[str]:
+        """What the league's IR slot takes: IR always, and each designation its settings switch on."""
+        return frozenset({"IR"} | {status for key, status in IR_SETTINGS.items() if settings.get(key)})
 
     @staticmethod
     def detect_scoring_format(scoring_settings: dict[str, Any]) -> ScoringFormat:
@@ -243,6 +260,7 @@ class SleeperClient:
                     player_ids=[str(p) for p in item.get("players") or []],
                     starter_ids=[str(p) for p in item.get("starters") or []],
                     reserve_ids=[str(p) for p in (item.get("reserve") or []) + (item.get("taxi") or [])],
+                    ir_ids=[str(p) for p in item.get("reserve") or []],
                     wins=int(record.get("wins", 0)),
                     losses=int(record.get("losses", 0)),
                     ties=int(record.get("ties", 0)),
