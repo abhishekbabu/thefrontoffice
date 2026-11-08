@@ -297,7 +297,19 @@ class SleeperNFLProvider:
         judges the moves somebody is looking at rather than inventing its own.
         """
         state = self._week(league_id)
-        return prompt.build(state, [item.action for item in self._tasks(state)], self._trending())
+        context = prompt.build(state, [item.action for item in self._tasks(state)], self._trending())
+        context.movable = self._movable(state)
+        return context
+
+    def _movable(self, state: Week) -> frozenset[str]:
+        """Who a move could still name: yours outside IR and taxi, and anyone unowned, before their kickoff."""
+        started = self.scoreboard.started(state)
+        mine = set(active(state.roster))
+        return frozenset(
+            meta.name
+            for pid, meta in state.players.items()
+            if (pid in mine or pid not in state.owned) and meta.team not in started
+        )
 
     def _trending(self) -> Sequence[Trending] | None:
         """Who the crowd is adding; None where it will not load — an independent signal, not load-bearing."""

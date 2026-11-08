@@ -1113,3 +1113,8 @@ class CompetitionContext:
     """What each player the prompt names is worth a game over the season, keyed by name as the
     prompt writes it — what a suggested add is weighed against the player it would drop. A
     position filled week to week by matchup is left out, since a season says nothing about it."""
+    movable: frozenset[str] | None = None
+    """Every player a move could still name this week, by name: yours, and those nobody holds,
+    whose game has not kicked off. A kept judgment's moves are read back through it, so a
+    pickup for a game already played, or of a player someone else has since added, is not
+    shown. None where the competition does not say, and every kept move stands."""

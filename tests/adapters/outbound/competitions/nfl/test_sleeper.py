@@ -12,9 +12,11 @@ from typing import Any
 import pytest
 from support.nfl import (
     DEFAULT_PROJECTIONS,
+    SEASON_SCHEDULE,
     SLEEPER_USER_ID,
     FakeESPN,
     FakeSleeper,
+    at_week,
     game_line,
     league_client,
     nfl_provider,
@@ -898,3 +900,15 @@ def test_the_weeks_matchups_are_read_once_for_every_view_of_the_week() -> None:
     provider.roster("L1")
 
     assert client.matchup_fetches == 1
+
+
+def test_a_move_can_name_only_yours_or_the_wires_before_their_kickoff() -> None:
+    """BUF has kicked off, so its players are locked; Bad RB is somebody else's."""
+    schedule = [replace(g, status="in_game") if g.home == "MIA" else g for g in SEASON_SCHEDULE]
+    client = at_week(2)
+    client.season_schedule = schedule
+    movable = nfl_provider(client).build_context("L1").movable
+
+    assert movable is not None
+    assert "Waiver WR" in movable
+    assert {"Star QB", "Good RB", "Bad RB"}.isdisjoint(movable)
