@@ -4,10 +4,10 @@ The provider and the simulations are stood in for, so each test can say what
 the week must come back as when one of its parts is missing or fails.
 """
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any
 
-from support.simulation import outcome
+from support.simulation import FakeForecast, outcome
 from support.stores import FakeAnswers, FakeItemStates
 
 from thefrontoffice.application.forecasting import ForecastEngine
@@ -39,13 +39,12 @@ SWAP = Action(
 DEADLINE = Action(kind="trade", urgency="soon", title="Trade by week 11", reason="", key="deadline:11")
 
 
-class _Provider:
+class _Provider(FakeForecast):
     """A competition whose week, season and wire are fixed, and whose simulations can be made to fail."""
 
     def __init__(self, *, forecast_error: Exception | None = None, season_error: Exception | None = None) -> None:
-        self.forecast_error = forecast_error
+        super().__init__(forecast_error)
         self.season_error = season_error
-        self.matchups_asked = 0
 
     def summary(self, league_id: str) -> Summary:
         return Summary(actions=[DEADLINE, SWAP])
@@ -56,18 +55,9 @@ class _Provider:
     def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
         return PlayerPage(players=[PlayerCard(player_id="x", columns={"Player": "X"})])
 
-    def matchup_input(self, league_id: str, candidates: Any = ()) -> MatchupInput | None:
-        self.matchups_asked += 1
-        if self.forecast_error:
-            raise self.forecast_error
+    def matchup(self, candidates: Sequence[str]) -> MatchupInput | None:
         move = LineupMove(key="x>w", title="Start X over W", out=("w",), into=(outcome("x", 20, 25, 30),))
         return MatchupInput(mine=(outcome("w", 0, 5, 10),), theirs=(outcome("t", 10, 20, 30),), moves=(move,), seed=1)
-
-    def played_weeks(self, league_id: str) -> list[int]:
-        return []
-
-    def played_matchups(self, league_id: str, week: int) -> list:
-        return []
 
     def season_input(self, league_id: str) -> SeasonInput | None:
         if self.season_error:
@@ -166,7 +156,7 @@ def test_a_season_with_no_odds_does_not_simulate_the_week_for_nothing() -> None:
 
     view = _engine(provider).season("L1")
 
-    assert view.odds is None and provider.matchups_asked == 0
+    assert view.odds is None and provider.asked == []
 
 
 def test_the_wire_is_priced() -> None:

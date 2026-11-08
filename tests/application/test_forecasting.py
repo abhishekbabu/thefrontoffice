@@ -5,10 +5,10 @@ simulation should conclude — a sure thing, a coin flip, a move that cannot
 hurt — without depending on any sport's data.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import pytest
-from support.simulation import FEW, outcome
+from support.simulation import FEW, FakeForecast, outcome
 
 from thefrontoffice.application.forecasting import (
     WORTH_A_ROW,
@@ -168,6 +168,32 @@ def _played(mine: float, theirs: float, ours: float, others: float) -> PlayedMat
     return PlayedMatchup(week=2, matchup=_match([outcome("a", ours)], [outcome("b", others)]), mine=mine, theirs=theirs)
 
 
+class _Season(FakeForecast):
+    """Two weeks played, each one sure call that came true, ranged under whatever settings it is handed."""
+
+    weeks = (2, 3)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.ranged_under: list[Mapping[str, float] | None] = []
+
+    def played_matchups(
+        self, league_id: str, week: int, settings: Mapping[str, float] | None = None
+    ) -> list[PlayedMatchup]:
+        self.ranged_under.append(settings)
+        return [_played(30, 10, 25, 5)]
+
+
+def test_a_backtest_scores_every_matchup_of_the_weeks_given_under_the_settings_given() -> None:
+    """The range search re-runs it per candidate, so a candidate's settings must reach every week."""
+    season = _Season()
+
+    calibration = ForecastEngine(season).backtest("L1", [2, 3], {"spread": 2.0}, simulations=FEW)
+
+    assert (calibration.matchups, calibration.brier) == (2, 0.0)
+    assert season.ranged_under == [{"spread": 2.0}, {"spread": 2.0}]
+
+
 def test_certain_calls_that_came_true_score_perfectly() -> None:
     calibration = calibrate([_played(30, 10, 25, 5), _played(5, 20, 5, 25)], FEW)
 
@@ -276,23 +302,13 @@ def test_a_free_agent_who_only_hurts_says_by_how_much() -> None:
     assert chance.win_change < 0
 
 
-class _Wire:
+class _Wire(FakeForecast):
     """A matchup whose moves are whatever free agents it is asked about."""
 
-    def __init__(self) -> None:
-        self.asked: list[list[str]] = []
-
-    def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput | None:
-        self.asked.append(list(candidates))
+    def matchup(self, candidates: Sequence[str]) -> MatchupInput | None:
         mine = outcome("mine", 10.0)
         moves = tuple(LineupMove(f"{c}>mine", f"Start {c}", ("mine",), (outcome(c, 15.0),)) for c in candidates)
         return _match([mine], [outcome("them", 12.0)], *moves)
-
-    def played_weeks(self, league_id: str) -> list[int]:
-        return []
-
-    def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
-        return []
 
 
 def test_the_engine_prices_each_free_agent_it_is_given() -> None:

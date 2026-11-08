@@ -1,5 +1,6 @@
 """Tests for the slash commands, each run over a session of fake competitions."""
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -48,7 +49,7 @@ def _nba(provider: FakeCompetition | None = None, **kw: Any) -> CompetitionEntry
         platform="yahoo",
         label="NBA (Yahoo)",
         sport="basketball",
-        requires="YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET",
+        needs=("yahoo_client_id", "yahoo_client_secret"),
         **kw,
     )
 
@@ -60,7 +61,7 @@ def _fpl(**kw: Any) -> CompetitionEntry:
         platform="fpl",
         label="FPL (Fantasy Premier League)",
         sport="soccer",
-        requires="FPL_ENTRY_ID",
+        needs=("fpl_entry_id",),
         **kw,
     )
 
@@ -228,7 +229,7 @@ def test_trade_reports_when_no_competition_supports_it(capsys: pytest.CaptureFix
     commands.trade(_session(_nfl(built=built)), ["Give A, Get B"])
 
     assert built == []  # nothing was run
-    assert "trade" in capsys.readouterr().out.lower()  # and the user is told what cannot be done
+    assert commands.TRADES in capsys.readouterr().out  # and the user is told what cannot be done
 
 
 def test_trade_usage_is_shown_without_arguments(capsys: pytest.CaptureFixture[str]) -> None:
@@ -299,17 +300,7 @@ def test_a_provider_that_cannot_trade_is_refused_by_name_before_any_evaluation(
 ) -> None:
     """The class says it trades and the build returns something that does not: said plainly, not an AttributeError."""
     ai = FakeAI()
-    slip = CompetitionEntry(
-        sport="football",
-        competition="nfl",
-        platform="sleeper",
-        label="NFL (Sleeper)",
-        name="NFL",
-        provider=lambda: _Trades,
-        build=FakeCompetition,
-        is_configured=lambda: True,
-        requires="SLEEPER_USERNAME",
-    )
+    slip = replace(entry(FakeCompetition()), provider=lambda: _Trades)
 
     commands.trade(_session(slip, ai=ai), ["Give A, Get B"])
 

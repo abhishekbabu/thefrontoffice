@@ -29,7 +29,7 @@ def test_a_session_runs_over_the_configured_competitions_only() -> None:
 
 def test_an_unconfigured_competition_is_never_built() -> None:
     built: list[int] = []
-    nba = entry(FakeCompetition(), configured=False, requires="YAHOO_CLIENT_ID", built=built)
+    nba = entry(FakeCompetition(), configured=False, needs=("yahoo_client_id",), built=built)
 
     with pytest.raises(NotConfiguredError, match="YAHOO_CLIENT_ID"):
         Session(wiring(nba)).provider(nba)

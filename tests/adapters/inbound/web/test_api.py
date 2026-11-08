@@ -19,7 +19,8 @@ import pytest
 from fastapi.testclient import TestClient
 from support.ai import FakeAI, FakeChat
 from support.reports import MOCK_FPL_REPORT
-from support.settings import isolated_settings
+from support.settings import NOWHERE, isolated_settings
+from support.simulation import FakeForecast
 from support.stores import FakeAnswers
 from support.wiring import FakeCompetition, FakeLogin, entry
 from support.wiring import wiring as fake_wiring
@@ -28,7 +29,6 @@ from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound.web import api as web
 from thefrontoffice.application.formats import CallAnswer, WireAnswer
 from thefrontoffice.application.scouting import scout_scope
-from thefrontoffice.bootstrap import REGISTRY
 from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import AppSettings, env_var
 from thefrontoffice.domain.models import (
@@ -37,7 +37,6 @@ from thefrontoffice.domain.models import (
     LeagueSchedule,
     MatchupInput,
     Outlook,
-    PlayedMatchup,
     PlayerCall,
     PlayerCard,
     PlayerPage,
@@ -49,6 +48,9 @@ from thefrontoffice.domain.models import (
     TradeProposal,
 )
 from thefrontoffice.domain.ports import LeagueRef
+
+REGISTRY = bootstrap.registry(isolated_settings(NOWHERE))
+"""The app's competitions, none of them configured: what every fake entry here borrows its identity from."""
 
 ITEM = Action(kind="lineup", urgency="soon", title="Start A over B", reason="+2.5", key="swap:a:b")
 
@@ -98,7 +100,7 @@ def _client(provider: FakeCompetition | None = None, **wiring: Any) -> TestClien
             label=e.label,
             name=e.name,
             sport=e.sport,
-            requires=e.requires,
+            needs=e.needs,
         )
         for e in REGISTRY.entries
     ]
@@ -800,25 +802,17 @@ def test_a_snooze_into_the_past_is_refused_by_name(client: TestClient) -> None:
 # ── the week, simulated ─────────────────────────────────────────────────
 
 
-class _ForecastProvider(_SummaryProvider):
+class _ForecastProvider(FakeForecast, _SummaryProvider):
     """A provider whose matchup can be simulated, or whose forecast fails."""
 
     def __init__(self, summary: Summary | None, error: Exception | None = None) -> None:
-        super().__init__(summary)
-        self.error = error
+        _SummaryProvider.__init__(self, summary)
+        FakeForecast.__init__(self, error)
 
-    def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput:
+    def matchup(self, candidates: Sequence[str]) -> MatchupInput:
         from thefrontoffice.domain.models import MatchupInput, Outcomes
 
-        if self.error:
-            raise self.error
         return MatchupInput(mine=(Outcomes("a", "A", 20.0, (20.0,)),), theirs=(Outcomes("b", "B", 10.0, (10.0,)),))
-
-    def played_weeks(self, league_id: str) -> list[int]:
-        return []
-
-    def played_matchups(self, league_id: str, week: int) -> list[PlayedMatchup]:
-        return []
 
 
 class _WireProvider(_ForecastProvider):
@@ -832,11 +826,9 @@ class _WireProvider(_ForecastProvider):
             players=[PlayerCard(player_id=pid, columns={"Player": pid}) for pid in ("bench", "starter")], total=2
         )
 
-    def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput:
+    def matchup(self, candidates: Sequence[str]) -> MatchupInput:
         from thefrontoffice.domain.models import LineupMove, MatchupInput, Outcomes
 
-        if self.error:
-            raise self.error
         mine = Outcomes("a", "A", 10.0, (10.0,))
         moves = tuple(
             LineupMove(f"{c}>a", f"Start {c}", ("a",), (Outcomes(c, c, 20.0, (20.0,)),))
