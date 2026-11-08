@@ -702,3 +702,70 @@ def test_a_stack_whose_game_has_kicked_off_is_no_longer_a_decision() -> None:
     started = [replace(g, status="in_game") if g.home == "KC" and g.week == 3 else g for g in SCHEDULE]
 
     assert _stacked(BENCH_RB, schedule=started) == []
+
+
+# ── a teammate ahead of yours who may sit ───────────────────────────────
+
+
+def _snaps(player_id: str, team: str, position: str, share: float) -> list[NFLGameLine]:
+    """Two finished weeks at a steady share of his club's snaps."""
+    return [
+        NFLGameLine(
+            player_id=player_id,
+            week=week,
+            team=team,
+            opponent="LV",
+            position=position,
+            stats={"off_snp": round(60 * share), "tm_off_snp": 60, "rec_tgt": 5, "pts_ppr": 10},
+        )
+        for week in (1, 2)
+    ]
+
+
+def _behind(status: str, *, his_share: float = 0.9, mine: float = 0.4) -> list[Action]:
+    """What the list says about Bench Receiver (KC) while Star Wideout, a teammate on nobody's roster here, is `status`."""
+    client = _client(
+        [QB, RB, WR, FLEX, BENCH_WR],
+        ["qb", "rb", "wr", "te"],
+        ["wr2"],
+        game_lines=_snaps("star", "KC", "WR", his_share) + _snaps("wr2", "KC", "WR", mine),
+    )
+    client.players_catalog = {
+        **(client.players_catalog or {}),
+        "star": PlayerMeta(player_id="star", name="Star Wideout", position="WR", team="KC", injury_status=status),
+    }
+    return [a for a in _actions(client) if a.key.startswith("teammate:") and a.player_id == "wr2"]
+
+
+def test_a_questionable_regular_beside_your_player_is_a_status_to_check_before_kickoff() -> None:
+    """Projections leave a questionable starter in and his backup where he was;
+    whether the work moves is settled by the inactives, not the numbers."""
+    [action] = _behind("Questionable")
+
+    assert (action.kind, action.urgency, action.player_id, action.key) == ("lineup", "soon", "wr2", "teammate:wr2:star")
+    assert "Star Wideout" in action.title and "Bench Receiver" in action.title
+    assert "Sun 27 Sep" in action.when
+    assert not action.replaces and not action.drop
+
+
+def test_a_teammate_already_ruled_out_still_names_whose_work_grows() -> None:
+    [action] = _behind("Out")
+
+    assert action.player_id == "wr2"
+    assert "Star Wideout" in action.title
+
+
+def test_a_depth_player_sitting_moves_nothing() -> None:
+    assert _behind("Questionable", his_share=0.3, mine=0.2) == []
+
+
+def test_a_regular_held_to_fewer_snaps_than_yours_still_counts() -> None:
+    """A starter playing through an injury plays less, and still takes his targets with him when he sits."""
+    [action] = _behind("Questionable", his_share=0.6, mine=0.8)
+
+    assert action.player_id == "wr2"
+
+
+def test_a_long_ruling_is_already_in_the_projections() -> None:
+    """IR outlasts the week, so the projection has long since moved the work."""
+    assert _behind("IR") == []

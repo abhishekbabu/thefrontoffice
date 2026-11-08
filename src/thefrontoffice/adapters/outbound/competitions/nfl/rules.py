@@ -32,6 +32,13 @@ report sets it for that week — and past it his projection, which Sleeper keeps
 is the better guess."""
 
 
+THIS_WEEK = frozenset({"QUESTIONABLE", "DOUBTFUL", "OUT"})
+"""The injury report's own designations: this week's game, settled by Sunday's inactives.
+
+A long ruling (IR, PUP, a suspension) is in every projection already; these
+are the ones that move work between teammates on the day."""
+
+
 def ruled_out(status: str) -> bool:
     """Whether a designation means he will not play this week."""
     return status.upper() in RULED_OUT
