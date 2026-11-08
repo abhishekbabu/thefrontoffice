@@ -4,6 +4,7 @@ The provider is a stand-in returning a fixed context, since what is under test
 is what the engine does with the model's answer — not how a context is built.
 """
 
+from dataclasses import replace
 from typing import Any
 
 from support.ai import FakeAI
@@ -12,6 +13,7 @@ from support.stores import FakeAnswers
 
 from thefrontoffice.application.formats import ScoutAnswer, VerdictAnswer
 from thefrontoffice.application.scouting import ScoutEngine
+from thefrontoffice.domain.errors import PlatformError
 from thefrontoffice.domain.models import Action, CompetitionContext, ScoutReport, Stat, task_id
 
 TASKS = [
@@ -181,3 +183,57 @@ def test_a_move_naming_a_player_of_unknown_worth_stands() -> None:
     answer = _suggesting(("New Orleans Saints", "Cincinnati Bengals"))
 
     assert _moves_kept(answer, {}) == ["New Orleans Saints"]
+
+
+def _judged_then(answer: ScoutAnswer, judged_on: dict[str, float], **now: Any) -> list[str]:
+    """The kept judgment's moves as the page reads them back once the week has moved on to `now`."""
+    provider = ContextOnly(TASKS)
+    provider.context.worth = judged_on
+    engine = ScoutEngine(provider, key="nfl-sleeper", ai=FakeAI(report=answer), answers=FakeAnswers())
+    engine.report("L1")
+    provider.context = replace(provider.context, prompt="later", **now)
+    latest = engine.latest("L1")
+    assert latest is not None
+    return [m.player for m in latest.answer.moves]
+
+
+SUGGESTED = _suggesting(("Jahan Dotson", "Germie Bernard"))
+
+
+def test_a_kept_move_for_a_game_already_played_is_not_shown() -> None:
+    assert _judged_then(SUGGESTED, {}, movable=frozenset({"Germie Bernard"})) == []
+
+
+def test_a_kept_move_everyone_in_can_still_make_is_shown() -> None:
+    movable = frozenset({"Jahan Dotson", "Germie Bernard"})
+    assert _judged_then(SUGGESTED, {}, movable=movable) == ["Jahan Dotson"]
+
+
+def test_a_kept_move_a_rule_added_since_would_strike_is_not_shown() -> None:
+    assert _judged_then(SUGGESTED, {}, worth={"Jahan Dotson": 7.5, "Germie Bernard": 8.4}) == []
+
+
+def test_a_competition_that_names_no_movable_players_keeps_every_move() -> None:
+    assert _judged_then(SUGGESTED, {}) == ["Jahan Dotson"]
+
+
+class Unreachable(ContextOnly):
+    """A provider whose week will not load once the judgment is kept."""
+
+    down = False
+
+    def build_context(self, league_id: str) -> CompetitionContext:
+        if self.down:
+            raise PlatformError("Sleeper is down")
+        return self.context
+
+
+def test_a_week_that_will_not_load_shows_the_kept_moves_unchecked() -> None:
+    provider = Unreachable(TASKS)
+    engine = ScoutEngine(provider, key="nfl-sleeper", ai=FakeAI(report=SUGGESTED), answers=FakeAnswers())
+    engine.report("L1")
+    provider.down = True
+
+    latest = engine.latest("L1")
+
+    assert latest is not None and [m.player for m in latest.answer.moves] == ["Jahan Dotson"]

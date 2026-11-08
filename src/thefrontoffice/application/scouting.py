@@ -9,7 +9,8 @@ import logging
 
 from thefrontoffice.application import briefing
 from thefrontoffice.application.answers import Answers, scope
-from thefrontoffice.application.formats import MoveAnswer, ScoutAnswer, VerdictAnswer
+from thefrontoffice.application.formats import ScoutAnswer, VerdictAnswer
+from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
@@ -41,8 +42,24 @@ class ScoutEngine:
         self.answers = Answers(answers)
 
     def latest(self, league_id: str) -> Remembered[ScoutReport] | None:
-        """The last judgment of this league, without asking anything new."""
-        return last_judgment(self.answers, self.key, league_id)
+        """The last judgment of this league, without asking anything new, less the moves that have lapsed.
+
+        A judgment is kept until the next is asked for, and the week moves on
+        under it: a pickup for a game already played is no move at all, nor
+        one a rule added since would have struck. Its moves are read back
+        through the week as it stands now; its verdicts are each item's, and
+        marked stale where they are (`with_verdicts`).
+        """
+        kept = last_judgment(self.answers, self.key, league_id)
+        if kept is None or not kept.answer.moves:
+            return kept
+        try:
+            context = self.provider.build_context(league_id)
+        except FrontOfficeError as e:
+            logger.warning(f"{self.key}: showing the kept judgment's moves unchecked, the week would not load: {e}")
+            return kept
+        moves = self._worth_making(_still_open(kept.answer.moves, context.movable), context.worth)
+        return kept.model_copy(update={"answer": kept.answer.model_copy(update={"moves": moves})})
 
     def report(self, league_id: str) -> ScoutReport:
         """The judged report alone, with no conversation opened beside it.
@@ -92,13 +109,13 @@ class ScoutEngine:
         return ScoutReport(
             situation=answer.situation,
             focus=answer.focus,
-            moves=[Move.model_validate(move.model_dump()) for move in self._worth_making(answer.moves, context.worth)],
+            moves=self._worth_making([Move.model_validate(move.model_dump()) for move in answer.moves], context.worth),
             strategy=answer.strategy,
             tasks=judged,
             headline=context.headline,
         )
 
-    def _worth_making(self, moves: list[MoveAnswer], worth: dict[str, float]) -> list[MoveAnswer]:
+    def _worth_making(self, moves: list[Move], worth: dict[str, float]) -> list[Move]:
         """The model's moves, less any add worth less a game over the season than the player it drops.
 
         The same rule the to-do list holds its own pickups to. A model reading
@@ -137,6 +154,17 @@ class ScoutEngine:
         if len(kept) < count:
             logger.info(f"{self.key}: the model judged {len(kept)} of {count} to-do items")
         return kept
+
+
+def _still_open(moves: list[Move], movable: frozenset[str] | None) -> list[Move]:
+    """The moves every player named in can still be moved: none whose game has kicked off, nor anyone gone since.
+
+    A defense is named by its club ("New Orleans Saints"), as the catalog names it.
+    """
+    if movable is None:
+        return moves
+    names = {_name(name) for name in movable}
+    return [m for m in moves if _name(m.player) in names and (not m.replaces or _name(m.replaces) in names)]
 
 
 def _name(written: str) -> str:
