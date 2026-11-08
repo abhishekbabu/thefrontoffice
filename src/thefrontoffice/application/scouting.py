@@ -9,14 +9,13 @@ import logging
 
 from thefrontoffice.application import briefing
 from thefrontoffice.application.answers import Answers, scope
-from thefrontoffice.application.formats import ScoutAnswer, VerdictAnswer
+from thefrontoffice.application.formats import MoveAnswer, ScoutAnswer, VerdictAnswer
 from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
     Move,
     Remembered,
     ScoutReport,
-    Stat,
     TaskVerdict,
     task_id,
 )
@@ -76,12 +75,11 @@ class ScoutEngine:
     def _judge(self, league_id: str, context: CompetitionContext) -> ScoutReport:
         """The model's report on the week's prompt, or the kept one where nothing it read has changed."""
         scope = scout_scope(self.key, league_id)
-        return self.answers.answer(
-            scope, context.prompt, ScoutReport, lambda: self._ask(context.prompt, context.headline, context.tasks)
-        ).answer
+        return self.answers.answer(scope, context.prompt, ScoutReport, lambda: self._ask(context)).answer
 
-    def _ask(self, prompt: str, headline: list[Stat], tasks: list[Action]) -> ScoutReport:
-        answer = self.ai.generate_structured(prompt, ScoutAnswer)
+    def _ask(self, context: CompetitionContext) -> ScoutReport:
+        answer = self.ai.generate_structured(context.prompt, ScoutAnswer)
+        tasks = context.tasks
 
         # The figures are the provider's, read off the platform, and the to-do
         # items the provider's too: the model judges them and is never given
@@ -94,11 +92,33 @@ class ScoutEngine:
         return ScoutReport(
             situation=answer.situation,
             focus=answer.focus,
-            moves=[Move.model_validate(move.model_dump()) for move in answer.moves],
+            moves=[Move.model_validate(move.model_dump()) for move in self._worth_making(answer.moves, context.worth)],
             strategy=answer.strategy,
             tasks=judged,
-            headline=headline,
+            headline=context.headline,
         )
+
+    def _worth_making(self, moves: list[MoveAnswer], worth: dict[str, float]) -> list[MoveAnswer]:
+        """The model's moves, less any add worth less a game over the season than the player it drops.
+
+        The same rule the to-do list holds its own pickups to. A model reading
+        this week's projections sees a player on bye as nothing and cuts him
+        for a one-week body; a prompt can say not to, and this makes sure.
+        Where either player's worth is unknown the move stands — there is
+        nothing to weigh it by.
+        """
+        by_name = {_name(name): value for name, value in worth.items()}
+        kept = []
+        for move in moves:
+            added, dropped = by_name.get(_name(move.player)), by_name.get(_name(move.replaces))
+            if move.action == "ADD" and added is not None and dropped is not None and dropped > added:
+                logger.info(
+                    f"{self.key}: dropping a suggested add of {move.player} ({added:.1f} a game) "
+                    f"for {move.replaces} ({dropped:.1f} a game)"
+                )
+                continue
+            kept.append(move)
+        return kept
 
     def _verdicts(self, verdicts: list[VerdictAnswer], count: int) -> dict[str, TaskVerdict]:
         """The model's verdicts keyed by task, keeping only ones that name a real task once.
@@ -117,6 +137,11 @@ class ScoutEngine:
         if len(kept) < count:
             logger.info(f"{self.key}: the model judged {len(kept)} of {count} to-do items")
         return kept
+
+
+def _name(written: str) -> str:
+    """A player's name as the model wrote it, without the "(WR, ATL)" it tends to add, for matching."""
+    return written.split(" (")[0].strip().casefold()
 
 
 def scout_scope(key: str, league_id: str) -> str:

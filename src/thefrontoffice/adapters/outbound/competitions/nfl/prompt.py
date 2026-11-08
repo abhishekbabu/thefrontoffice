@@ -7,10 +7,10 @@ The provider fetches and the prompt describes.
 
 from collections.abc import Mapping, Sequence
 
-from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence, season_average
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection, Trending
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews, dated
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import listed, scoring_label
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import STREAMED, listed, scoring_label
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.domain.models import Action, CompetitionContext, Stat, task_id
 
@@ -31,6 +31,10 @@ NFL_READING_PLAYER_LINES = """READING THE PLAYER LINES:
   why; a rising target share or a soft defense is the why.
 - Never recommend a DROP off one poor game, or of a player whose role grows while a teammate
   ahead of him is out. A drop is the least reversible move, so it needs the strongest case.
+- A bye or a one-week absence is never a reason to DROP: he scores nothing on your bench that week
+  either way. Weigh a drop by his points a game this season, and suggest an ADD only when the player
+  starts this week or is worth more a game than the one he replaces. Kickers and defenses are the
+  exception: they are streamed for the week's matchup.
 - A "news" line under a player is a recent headline about him, dated, from his own club's feed.
 - A player marked [reserve slot] is in an injured-reserve or taxi slot: he cannot start this week
   without a move first, and costs no roster spot while he is there."""
@@ -226,7 +230,21 @@ def build(state: Week, tasks: list[Action], trending: Sequence[Trending] | None)
         candidate_lines=available_lines,
         headline=headline(state),
         tasks=tasks,
+        worth=_worth(state),
     )
+
+
+def _worth(state: Week) -> dict[str, float]:
+    """Each player who could be added or dropped, by his average a game this season.
+
+    Yours — including a player on bye, who has no projection this week and
+    is exactly the one a model reading projections would cut — and everyone
+    nobody holds: whoever the model could name in a move. Kickers and
+    defenses are left out — they are streamed for the week's matchup, so a
+    season average is the wrong measure of either.
+    """
+    free = [p for pid, p in state.projections.items() if pid not in state.owned]
+    return {p.name: season_average(state.evidence, p) for p in (*state.projected, *free) if p.position not in STREAMED}
 
 
 def trade(state: Week, giving: Sequence[Projection], receiving: Sequence[Projection]) -> CompetitionContext:

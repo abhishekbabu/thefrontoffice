@@ -9,7 +9,7 @@ from dataclasses import replace
 from datetime import UTC
 from typing import Any
 
-from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeESPN, FakeSleeper, nfl_provider, proj
+from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeESPN, FakeSleeper, game_line, nfl_provider, proj
 from support.prompts import named_fields, schema_fields
 
 from thefrontoffice.adapters.outbound.competitions.nfl import prompt
@@ -69,6 +69,43 @@ def test_a_player_in_a_reserve_slot_is_marked_wherever_the_model_reads_your_rost
 def test_rostered_players_are_never_offered_as_waiver_adds() -> None:
     ctx = _context()
     assert "Good RB" not in ctx.candidate_lines
+
+
+def test_a_suggested_move_is_weighed_by_each_players_season_not_this_weeks_projection() -> None:
+    """Bad RB projects 4 this week but has averaged 11: the figure a drop is weighed by is the 11."""
+    client = FakeSleeper(
+        projections=dict(DEFAULT_PROJECTIONS),
+        game_lines=[
+            game_line("rb2", week, position="RB", team="BUF", off_snp=40, tm_off_snp=60, pts_ppr=points)
+            for week, points in ((1, 10.0), (2, 12.0))
+        ],
+    )
+    client.week = 3
+    worth = nfl_provider(client).build_context("L1").worth
+
+    assert worth["Bad RB"] == 11.0
+    assert worth["Waiver WR"] == 14.0
+
+
+def test_a_player_of_yours_on_bye_is_weighed_too() -> None:
+    """He has no projection this week, and is exactly who a model reading projections would cut."""
+    projections = {pid: p for pid, p in DEFAULT_PROJECTIONS.items() if pid != "rb2"}
+    client = FakeSleeper(
+        projections=projections,
+        game_lines=[
+            game_line("rb2", week, position="RB", team="BUF", off_snp=40, tm_off_snp=60, pts_ppr=9.0) for week in (1, 2)
+        ],
+    )
+    client.week = 3
+
+    assert nfl_provider(client).build_context("L1").worth["Bad RB"] == 9.0
+
+
+def test_a_streamed_position_is_left_for_the_weeks_matchup_to_decide() -> None:
+    """A defense is picked for whom it plays; its season says little about this week."""
+    client = FakeSleeper(projections={**DEFAULT_PROJECTIONS, "DEN": proj("DEN", "Denver Broncos", "DEF", 9.0)})
+
+    assert "Denver Broncos" not in nfl_provider(client).build_context("L1").worth
 
 
 SMALL_LEAGUE = SleeperLeague(

@@ -1109,3 +1109,7 @@ class CompetitionContext:
     targets: dict[str, str] = field(default_factory=dict)
     """Each subject's own lines in the prompt, keyed by its id — what an answer
     kept per subject was given, and so what tells whether it is still current."""
+    worth: dict[str, float] = field(default_factory=dict)
+    """What each player the prompt names is worth a game over the season, keyed by name as the
+    prompt writes it — what a suggested add is weighed against the player it would drop. A
+    position filled week to week by matchup is left out, since a season says nothing about it."""
