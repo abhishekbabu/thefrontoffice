@@ -129,3 +129,55 @@ def test_judgments_are_kept_per_league() -> None:
     engine.start_analysis("L1")
 
     assert engine.latest("L2") is None
+
+
+# ── moves the model suggests ────────────────────────────────────────────
+
+
+def _suggesting(*moves: tuple[str, str]) -> ScoutAnswer:
+    """The mock report with these ADDs in place of its moves, each (added, dropped)."""
+    written = MOCK_NBA_REPORT.model_dump(include={"situation", "focus", "strategy"})
+    return ScoutAnswer.model_validate(
+        {
+            **written,
+            "moves": [
+                {
+                    "action": "ADD",
+                    "player": added,
+                    "position": "WR",
+                    "team": "ATL",
+                    "metric": "8.7 proj pts",
+                    "rationale": "why",
+                    "replaces": dropped,
+                }
+                for added, dropped in moves
+            ],
+        }
+    )
+
+
+def _moves_kept(answer: ScoutAnswer, worth: dict[str, float]) -> list[str]:
+    provider = ContextOnly(TASKS)
+    provider.context.worth = worth
+    engine = ScoutEngine(provider, key="nfl-sleeper", ai=FakeAI(report=answer), answers=FakeAnswers())
+    return [m.player for m in engine.report("L1").moves]
+
+
+def test_an_add_worth_less_a_game_than_the_player_it_drops_is_not_suggested() -> None:
+    """A player on bye reads as nothing this week; the season says what he is worth."""
+    answer = _suggesting(("Jahan Dotson (WR, ATL)", "Germie Bernard"))
+
+    assert _moves_kept(answer, {"Jahan Dotson": 7.5, "Germie Bernard": 8.4}) == []
+
+
+def test_an_add_worth_more_than_his_drop_stands() -> None:
+    answer = _suggesting(("Jahan Dotson", "Germie Bernard"))
+
+    assert _moves_kept(answer, {"Jahan Dotson": 9.0, "Germie Bernard": 8.4}) == ["Jahan Dotson"]
+
+
+def test_a_move_naming_a_player_of_unknown_worth_stands() -> None:
+    """A streamed position, or a competition that sends no worth: nothing to weigh it by."""
+    answer = _suggesting(("New Orleans Saints", "Cincinnati Bengals"))
+
+    assert _moves_kept(answer, {}) == ["New Orleans Saints"]
