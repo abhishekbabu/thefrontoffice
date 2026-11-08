@@ -8,6 +8,8 @@ Only the generic figures are written here: a competition's own vocabulary
 (xPts, adds, "5th of 14") is its provider's.
 """
 
+from typing import Protocol
+
 from thefrontoffice.application.season import chance_now
 from thefrontoffice.application.week import SeasonView, WeekView, WirePage
 from thefrontoffice.domain.models import (
@@ -49,7 +51,7 @@ def week(view: WeekView) -> Summary:
     if view.odds is not None:
         stats.append(_stake(view.odds, view.forecast.win if view.forecast else None))
     actions = None if summary.actions is None else [_priced(action) for action in summary.actions]
-    return summary.model_copy(update={"forecast": view.forecast, "headline": stats, "actions": actions})
+    return summary.model_copy(update={"headline": stats, "actions": actions})
 
 
 def _priced(action: Action) -> Action:
@@ -57,17 +59,7 @@ def _priced(action: Action) -> Action:
         return action
     change = action.win_change
     tone: Tone = "good" if change >= NO_CHANGE else "warning" if change <= -NO_CHANGE else "neutral"
-    return action.model_copy(update={"chance": Stat(label="Win", value=f"{win_change(change)} to win", tone=tone)})
-
-
-def ranking(query: PlayerQuery) -> PlayerQuery:
-    """`query` as the competition answers it.
-
-    The chance of winning is priced for the page alone, so it cannot rank the
-    pool: sorting by it takes the competition's own ranking, which puts the
-    likeliest to help first, and `wire` then orders that page.
-    """
-    return query.model_copy(update={"sort": ""}) if query.sort == WIN_COLUMN else query
+    return action.model_copy(update={"chance": Stat(label=WIN_COLUMN, value=f"{win_change(change)} to win", tone=tone)})
 
 
 def season(view: SeasonView) -> LeagueSchedule:
@@ -89,16 +81,24 @@ def season(view: SeasonView) -> LeagueSchedule:
     return schedule.model_copy(update={"standings": rows, "headline": headline})
 
 
-def wire(view: WirePage, query: PlayerQuery | None = None) -> PlayerPage:
-    """The page with each priced player's chance in a column of its own; "—" for the rest.
+class Wire(Protocol):
+    """Where a page of free agents comes from, each priced: the week engine."""
 
-    Where `query` sorts by that chance, the page is re-sorted by it, with the
-    unpriced kept last either way. Only the page: what it would do is priced for
-    the rows on screen, since pricing four thousand players is a minute nobody waits.
+    def wire(self, league_id: str, query: PlayerQuery) -> WirePage: ...
+
+
+def wire(engine: Wire, league_id: str, query: PlayerQuery) -> PlayerPage:
+    """One page of free agents, with each priced player's chance in a column of its own; "—" for the rest.
+
+    The chance is priced for the page alone — pricing four thousand players is
+    a minute nobody waits — so it cannot rank the pool: sorting by it asks the
+    competition for its own ranking, which puts the likeliest to help first,
+    and orders that page by the chance, by the rule every list is ordered by.
     """
+    asked = query.model_copy(update={"sort": ""}) if query.sort == WIN_COLUMN else query
+    view = engine.wire(league_id, asked)
     if not view.priced:
         return view.page
-    order = query.descending if query is not None and query.sort == WIN_COLUMN else None
     by_player: dict[str, PickupChance] = {c.player_id: c for c in view.chances}
     cards = []
     for card in view.page.players:
@@ -106,9 +106,8 @@ def wire(view: WirePage, query: PlayerQuery | None = None) -> PlayerPage:
         columns = _beside(card.columns, FIT_COLUMN, win_change(chance.win_change) if chance else "—")
         values = {**card.values, **({WIN_COLUMN: chance.win_change} if chance else {})}
         cards.append(card.model_copy(update={"columns": columns, "values": values}))
-    if order is not None:
-        priced = sorted((c for c in cards if WIN_COLUMN in c.values), key=lambda c: c.values[WIN_COLUMN], reverse=order)
-        cards = priced + [c for c in cards if WIN_COLUMN not in c.values]
+    if query.sort == WIN_COLUMN:
+        cards = query.ordered(cards)
     return view.page.model_copy(update={"players": cards})
 
 

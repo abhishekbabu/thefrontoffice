@@ -40,10 +40,6 @@ def test_a_long_shot_week_is_flagged_as_a_warning() -> None:
     assert _week_at(0.01).headline[1].tone == "warning"
 
 
-def test_the_forecast_itself_travels_with_the_week() -> None:
-    assert _week_at(0.01).forecast == _forecast(0.01)
-
-
 def test_a_week_with_nothing_simulated_is_the_providers_alone() -> None:
     week = Summary(headline=[Stat(label="Week", value="7")])
 
@@ -85,18 +81,30 @@ def test_the_seasons_header_weighs_this_week_as_the_weeks_header_does() -> None:
 # ── the wire ────────────────────────────────────────────────────────────
 
 
-def _page(*ids: str) -> PlayerPage:
-    return PlayerPage(
-        players=[PlayerCard(player_id=pid, columns={"Player": pid, "Fits": "+1.0", "Opponent": "MIA"}) for pid in ids]
-    )
+class _Wire:
+    """A page of free agents with what each is priced at, and the query it was asked."""
+
+    def __init__(self, *ids: str, chances: list[PickupChance] | None = None, priced: bool = True) -> None:
+        self.page = PlayerPage(
+            players=[
+                PlayerCard(player_id=pid, columns={"Player": pid, "Fits": "+1.0", "Opponent": "MIA"}) for pid in ids
+            ]
+        )
+        self.chances = chances or []
+        self.priced = priced
+        self.asked: list[PlayerQuery] = []
+
+    def wire(self, league_id: str, query: PlayerQuery) -> WirePage:
+        self.asked.append(query)
+        return WirePage(page=self.page, chances=self.chances, priced=self.priced)
+
+
+def _wire(source: _Wire, query: PlayerQuery | None = None) -> PlayerPage:
+    return presenting.wire(source, "L1", query or PlayerQuery())
 
 
 def test_a_priced_page_shows_the_chance_beside_the_fit_and_a_dash_for_the_rest() -> None:
-    page = presenting.wire(
-        WirePage(
-            page=_page("a", "b"), chances=[PickupChance(player_id="a", win_change=0.019, title="Start A")], priced=True
-        )
-    )
+    page = _wire(_Wire("a", "b", chances=[PickupChance(player_id="a", win_change=0.019, title="Start A")]))
 
     a, b = page.players
     assert list(a.columns) == ["Player", "Fits", presenting.WIN_COLUMN, "Opponent"]
@@ -112,14 +120,18 @@ def test_ordering_by_the_chance_keeps_the_unpriced_last_either_way() -> None:
 
     for descending, expected in ((True, ["c", "a", "b"]), (False, ["a", "c", "b"])):
         query = PlayerQuery(sort=presenting.WIN_COLUMN, descending=descending)
-        page = presenting.wire(WirePage(page=_page("a", "b", "c"), chances=chances, priced=True), query)
+        page = _wire(_Wire("a", "b", "c", chances=chances), query)
         assert [p.player_id for p in page.players] == expected
 
 
 def test_sorting_by_the_chance_asks_the_competition_for_its_own_ranking() -> None:
     """The chance is priced for one page, so it cannot rank the pool the page is cut from."""
-    assert presenting.ranking(PlayerQuery(sort=presenting.WIN_COLUMN)).sort == ""
-    assert presenting.ranking(PlayerQuery(sort="Proj")).sort == "Proj"
+    source = _Wire("a")
+
+    _wire(source, PlayerQuery(sort=presenting.WIN_COLUMN))
+    _wire(source, PlayerQuery(sort="Proj"))
+
+    assert [q.sort for q in source.asked] == ["", "Proj"]
 
 
 def test_a_change_too_small_to_tell_from_noise_reads_as_none() -> None:
@@ -143,10 +155,10 @@ def test_each_priced_item_says_what_it_does_to_the_chance_in_words_and_tone() ->
 
 def test_a_page_priced_to_no_effect_still_has_its_column() -> None:
     """Every game under way leaves nobody to price; the column says so rather than vanishing."""
-    page = presenting.wire(WirePage(page=_page("a"), priced=True))
+    page = _wire(_Wire("a"))
 
     assert page.players[0].columns[presenting.WIN_COLUMN] == "—"
 
 
 def test_a_page_never_priced_has_no_chance_column() -> None:
-    assert presenting.WIN_COLUMN not in presenting.wire(WirePage(page=_page("a"))).players[0].columns
+    assert presenting.WIN_COLUMN not in _wire(_Wire("a", priced=False)).players[0].columns

@@ -237,12 +237,12 @@ class AIResponseError(FrontOfficeError):
 
 
 class ChatExpiredError(FrontOfficeError):
-    """A conversation this process no longer holds: the server restarted since it was opened."""
+    """A conversation this process no longer holds: the server restarted, or dropped it as the oldest."""
 
     code = "chat_expired"
 
     def __init__(self) -> None:
-        super().__init__("That conversation has expired — the server restarted since it was opened.")
+        super().__init__("That conversation has expired — the server no longer holds it.")
 
 
 class NotFoundError(FrontOfficeError):

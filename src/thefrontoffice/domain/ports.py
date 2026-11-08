@@ -18,6 +18,7 @@ from thefrontoffice.domain.models import (
     LeagueSchedule,
     MatchupInput,
     Outcomes,
+    Outlook,
     PlayedMatchup,
     PlayerCard,
     PlayerDetail,
@@ -30,7 +31,6 @@ from thefrontoffice.domain.models import (
     TeamRef,
     TradeMarket,
     TradeProposal,
-    WeekAhead,
 )
 
 TModel = TypeVar("TModel", bound=BaseModel)
@@ -360,7 +360,7 @@ class OutlookProvider(Protocol):
     capability arrives per competition.
     """
 
-    def weeks_ahead(self, league_id: str) -> list[WeekAhead]:
+    def weeks_ahead(self, league_id: str) -> Outlook:
         """The next few weeks, soonest first; none once the season has no weeks left."""
         ...
 

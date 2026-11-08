@@ -5,7 +5,7 @@ import { Landing } from "@/panels/Landing";
 import { offlineClient, render } from "@/test/render";
 
 // Only what the landing page reads; the rest of a competition is other pages' business.
-const NFL = { key: "nfl-sleeper", label: "NFL", configured: true, ready: true } as Competition;
+const NFL = { key: "nfl-sleeper", label: "NFL", configured: true, blocked: null } as Competition;
 const LEAGUE: League = { league_id: "900", name: "Work League", detail: "3 of 12", url: "https://sleeper.example/900" };
 
 async function landing(onPick = vi.fn()) {

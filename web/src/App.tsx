@@ -53,9 +53,9 @@ export default function App() {
     counts[s.sport] = (counts[s.sport] ?? 0) + 1;
     return counts;
   }, {});
-  // Ready, not merely configured: credentials being set says nothing about
+  // Unblocked, not merely configured: credentials being set says nothing about
   // whether a platform will actually answer.
-  const usable = (competitions.data ?? []).filter((s) => s.ready);
+  const usable = (competitions.data ?? []).filter((s) => !s.blocked);
   // No fallback to the first usable competition: until one is chosen the
   // landing page is what shows, and choosing for the user is what it avoids.
   const active: Competition | undefined =
@@ -155,7 +155,7 @@ export default function App() {
           {(competitions.data ?? []).map((s) => {
             // Two platforms under one sport need telling apart; one does not.
             const label = (sportCounts[s.sport] ?? 0) > 1 ? s.label : s.name;
-            return s.ready ? (
+            return !s.blocked ? (
               <RailLink key={s.key} to={`/${s.key}`} active={s.key === active?.key}>
                 {label}
               </RailLink>

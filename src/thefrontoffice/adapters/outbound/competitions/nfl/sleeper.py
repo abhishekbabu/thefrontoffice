@@ -85,6 +85,7 @@ from thefrontoffice.domain.models import (
     LeagueSchedule,
     MatchupInput,
     Outcomes,
+    Outlook,
     PlayedMatchup,
     PlayerCard,
     PlayerDetail,
@@ -94,11 +95,9 @@ from thefrontoffice.domain.models import (
     SeasonInput,
     Side,
     Summary,
-    Swap,
     TeamRef,
     TradeMarket,
     TradeProposal,
-    WeekAhead,
 )
 from thefrontoffice.domain.ports import LeagueRef
 
@@ -421,7 +420,7 @@ class SleeperNFLProvider:
         return news.attach(feeds, players, datetime.now(UTC))
 
     def summary(self, league_id: str) -> Summary:
-        """The week as it stands: both lineups, the swaps, the byes. No model."""
+        """The week as it stands: both lineups and the to-do list, which carries the swaps. No model."""
         state = self._week(league_id)
         live = self.scoreboard.live(state)
         # The bench as the page shows it, reserve slots included and marked.
@@ -438,14 +437,6 @@ class SleeperNFLProvider:
                 bench=[views.reserved(views.spot(p, state.scheduled, live=live), state.roster) for p in sitting],
             ),
             opponent=self._opponent(state, live),
-            swaps=[
-                Swap(
-                    start=f"{change.start.name} ({change.slot})",
-                    out=change.bench.name if change.bench else "",
-                    gain=f"+{change.gain:.1f} proj pts",
-                )
-                for change in state.changes
-            ],
             actions=[item.action for item in self._with_short_week(state, self._tasks(state))],
             window=self._window(state, self.scoreboard.games(state)),
         )
@@ -551,7 +542,7 @@ class SleeperNFLProvider:
         state = self._week(league_id)
         return league.season_input(self.client, state, seed=self._season_seed(league_id, state))
 
-    def weeks_ahead(self, league_id: str) -> list[WeekAhead]:
+    def weeks_ahead(self, league_id: str) -> Outlook:
         """The next few weeks as your roster stands, with a pickup for any that byes and injuries leave short."""
         state = self._week(league_id)
         return outlook.build(self.client, state, self.scoreboard.schedule(state.season), self._signable(state))

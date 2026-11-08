@@ -44,11 +44,9 @@ class Competition(BaseModel):
 
     requires: str
 
-    ready: bool
-    """Whether it can actually be used. Configured is necessary, not sufficient."""
-
     blocked: ErrorBody | None = None
-    """What stands in the way, as any failure is reported, so the client offers the same remedy."""
+    """What stands in the way, as any failure is reported, so the client offers the same remedy.
+    None where it can be opened — being configured is necessary, not sufficient."""
 
 
 def competition(entry: CompetitionEntry) -> Competition:
@@ -70,6 +68,5 @@ def competition(entry: CompetitionEntry) -> Competition:
         finds_trades=entry.can(TradeMarketProvider),
         configured=entry.is_configured(),
         requires=entry.requires,
-        ready=blocker is None,
         blocked=ErrorBody.of(blocker) if blocker else None,
     )

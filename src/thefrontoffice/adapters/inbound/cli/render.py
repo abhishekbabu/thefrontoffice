@@ -71,11 +71,17 @@ def render_trade_verdict(verdict: TradeVerdict) -> str:
 
 
 def render_week(summary: Summary) -> str:
-    """Render the week for the terminal: its figures, then what to do, most urgent first.
+    """Render the week for the terminal: its figures, the changes the projections imply, then what to do,
+    most urgent first.
 
     Items the manager dismissed or snoozed stay out, as they do on the page.
     """
     parts = [f"{_INDENT}{stat.label}: {stat.value}" for stat in summary.headline]
+    if summary.swaps:
+        parts.extend(["", f"{_INDENT}CHANGES THE PROJECTIONS IMPLY"])
+        parts.extend(
+            f"{_INDENT}   {swap.start} for {swap.out or 'an empty place'} ({swap.gain})" for swap in summary.swaps
+        )
     if summary.actions is None:
         return "\n".join(parts)
     shown = [action for action in summary.actions if not action.mark.hidden]

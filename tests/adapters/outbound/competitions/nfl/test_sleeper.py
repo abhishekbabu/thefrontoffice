@@ -778,9 +778,15 @@ def _one_out() -> FakeSleeper:
 
 
 def test_the_best_lineup_benches_a_starter_who_is_ruled_out_whatever_he_is_still_projected() -> None:
-    [swap] = nfl_provider(_one_out()).summary("L1").swaps
+    summary = nfl_provider(_one_out()).summary("L1")
 
-    assert "Good RB" in swap.start and swap.out == "Hurt RB"
+    [swap] = [a for a in summary.actions or [] if a.kind == "lineup"]
+    assert (swap.player_id, swap.replaces) == ("rb1", "rb3")
+
+
+def test_the_swaps_ride_on_the_to_do_list_alone() -> None:
+    """The list carries each swap as an item; a second copy beside it would say every one twice."""
+    assert nfl_provider(_one_out()).summary("L1").swaps == []
 
 
 def test_a_free_agent_is_priced_against_the_lineup_the_bench_would_already_make() -> None:

@@ -100,7 +100,7 @@ async function main() {
     // Straight to each view by its address. Driving the rail instead would tie
     // this run to the shape of a control, and break whenever that changes.
     const competitions = await (await fetch(`${BASE}/api/competitions`)).json();
-    for (const competition of competitions.filter((c) => c.ready)) {
+    for (const competition of competitions.filter((c) => !c.blocked)) {
       const leagues = await (await fetch(`${BASE}/api/${competition.key}/leagues`)).json();
       const league = leagues[0];
       if (!league) continue;

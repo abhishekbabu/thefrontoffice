@@ -26,6 +26,7 @@ export type League = Schemas["LeagueRef"];
 export type LeagueSchedule = Schemas["LeagueSchedule"];
 export type LoginState = Schemas["LoginState"];
 export type Move = Schemas["Move"];
+export type Outlook = Schemas["Outlook"];
 export type PlayerCall = Schemas["PlayerCall"];
 export type PlayerCard = Schemas["PlayerCard"];
 export type PlayerDetail = Schemas["PlayerDetail"];
@@ -49,7 +50,6 @@ export type TeamRef = Schemas["TeamRef"];
 export type TradeIdea = Schemas["TradeIdea"];
 export type Turn = Schemas["Turn"];
 export type Urgency = Action["urgency"];
-export type WeekAhead = Schemas["WeekAhead"];
 
 /** What a route answers with, named by the route's own function on the server. */
 type Ok<Route extends keyof operations> = operations[Route]["responses"][200]["content"]["application/json"];
@@ -74,7 +74,7 @@ export class ApiError extends Error {
   }
 }
 
-/** Whether `error` is the server saying it no longer holds a conversation: it restarted since it was opened. */
+/** Whether `error` is the server saying it no longer holds a conversation: it restarted, or dropped it as the oldest. */
 export function isExpired(error: unknown): boolean {
   return error instanceof ApiError && error.code === "chat_expired";
 }
@@ -157,6 +157,7 @@ export const api = {
   league: leagueApi,
   /** What has been said in a conversation: the server keeps it, so a reopened chat shows it. */
   turns: (chatId: string) => request<Ok<"turns">>(`/api/chat/${segment(chatId)}`),
+  /** Ask the next question; answered with every turn so far, the answer last. */
   ask: (chatId: string, message: string) => post<Ok<"ask">>(`/api/chat/${segment(chatId)}`, { message }),
   settings: () => request<Ok<"read_settings">>("/api/settings"),
   saveSettings: (values: Record<string, string>) => put<Ok<"save_settings">>("/api/settings", { values }),

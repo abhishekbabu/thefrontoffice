@@ -30,13 +30,13 @@ export function Landing({
   // One query per competition rather than one combined endpoint: they fail
   // independently — one platform being down must not take the page down — and
   // each is cached under the same key the panels already use. A competition that is
-  // not ready is not asked at all; the request could only fail, and the reason
+  // blocked is not asked at all; the request could only fail, and the reason
   // is already known.
   const results = useQueries({
     queries: configured.map((competition) => ({
       queryKey: keys.leagues(competition.key),
       queryFn: () => api.leagues(competition.key),
-      enabled: competition.ready,
+      enabled: !competition.blocked,
     })),
   });
 
@@ -60,12 +60,12 @@ export function Landing({
             <Card>
               <CardHeader>
                 <span>{competition.label}</span>
-                {competition.ready && result?.isSuccess && (
+                {!competition.blocked && result?.isSuccess && (
                   <span>
                     {result.data.length} {result.data.length === 1 ? "league" : "leagues"}
                   </span>
                 )}
-                {!competition.ready && (
+                {competition.blocked && (
                   <Badge variant="warn" appearance="status">
                     unavailable
                   </Badge>
@@ -83,7 +83,7 @@ export function Landing({
                 </div>
               )}
 
-              {competition.ready && result?.isLoading && <Skeleton className="m-4 h-14" />}
+              {!competition.blocked && result?.isLoading && <Skeleton className="m-4 h-14" />}
 
               {/* Shown in place rather than as a page-level failure: the other
                   competitions are still usable, and this one names its own fix. */}

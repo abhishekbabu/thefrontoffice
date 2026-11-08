@@ -43,8 +43,8 @@ def test_the_summary_carries_the_lineup_and_the_changes() -> None:
 
     assert [spot.slot for spot in mine(summary).lineup] == ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
     # Good RB sits on the bench while an RB slot stands empty: the one change to make.
-    [swap] = summary.swaps
-    assert "Good RB" in swap.start and swap.out == ""
+    [swap] = [a for a in summary.actions or [] if a.kind == "lineup"]
+    assert (swap.player_id, swap.replaces) == ("rb1", "")  # Good RB into the slot, nobody out
 
 
 def test_a_player_in_a_reserve_slot_is_never_a_swap_nor_in_the_best_lineup() -> None:

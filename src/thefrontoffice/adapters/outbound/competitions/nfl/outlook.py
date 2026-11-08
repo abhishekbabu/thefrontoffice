@@ -17,7 +17,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot,
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, NFLSource, Projection, active, by_club
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS, long_term
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, lineup_for
-from thefrontoffice.domain.models import Action, WeekAhead
+from thefrontoffice.domain.models import Action, Outlook, WeekAhead
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ FIXES_TRIED = 40
 
 def build(
     client: NFLSource, state: Week, schedule: Mapping[int, Sequence[Game]], signable: Callable[[str], bool]
-) -> list[WeekAhead]:
+) -> Outlook:
     """Each of the next weeks, soonest first, with a fix for any that is short.
 
     `signable` says whether a player could be added at all — on an NFL roster,
@@ -44,7 +44,7 @@ def build(
     """
     weeks = list(range(state.week + 1, min(state.week + WEEKS_AHEAD, SEASON_WEEKS) + 1))
     if not weeks:
-        return []
+        return Outlook()
     playing = {week: set(by_club(games)) for week, games in schedule.items()}
     held = active(state.roster)
     projections = {
@@ -77,7 +77,7 @@ def build(
         row = WeekAhead(
             week=week,
             points=points,
-            usual=usual,
+            short_by=usual - points,
             missing=list(away.values()),
             short=points < usual - SHORT_BY,
         )
@@ -98,7 +98,7 @@ def build(
                 row, state, held, available, lambda ids, week: lineup_points(lineup(ids, week)), needed_soon | set(away)
             )
         ahead.append(row)
-    return ahead
+    return Outlook(usual=usual, weeks=ahead)
 
 
 def _ruled_out(player_id: str, state: Week) -> bool:
@@ -138,15 +138,15 @@ def _fixed(
     return row.model_copy(update={"fix": fix, "gain": round(gain, 1)})
 
 
-def to_do(ahead: list[WeekAhead], state: Week) -> Item | None:
+def to_do(ahead: Outlook, state: Week) -> Item | None:
     """Next week, as a to-do item, where byes and injuries leave it short: while a waiver run can still fix it.
 
     Only next week: the weeks after stay on My team, and next week is the one
     the to-do list can act on. It names the byes itself, so it stands in for
     that week's bye items rather than sitting beside them.
     """
-    week = next((w for w in ahead if w.week == state.week + 1 and w.short), None)
-    if week is None:
+    week = next((w for w in ahead.weeks if w.week == state.week + 1 and w.short), None)
+    if week is None or ahead.usual is None:
         return None
     without = f", without {join(week.missing)}" if week.missing else ""
     fix = (
@@ -160,7 +160,7 @@ def to_do(ahead: list[WeekAhead], state: Week) -> Item | None:
             kind="waiver" if week.fix else "trade",
             urgency="later",
             title=f"Week {week.week} is short",
-            reason=f"Your best lineup projects {week.points:.1f} against {week.usual:.1f} in a usual week{without}.{fix}",
+            reason=f"Your best lineup projects {week.points:.1f} against {ahead.usual:.1f} in a usual week{without}.{fix}",
             when=f"week {week.week}",
             key=f"short:{week.week}",
         ),
