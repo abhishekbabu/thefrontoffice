@@ -54,6 +54,7 @@ from thefrontoffice.domain.errors import (
 from thefrontoffice.domain.models import (
     ItemDecision,
     ItemMark,
+    Judgment,
     LeagueSchedule,
     Outlook,
     PlayerCall,
@@ -62,7 +63,6 @@ from thefrontoffice.domain.models import (
     PlayerOrder,
     PlayerPage,
     PlayerQuery,
-    Remembered,
     ScoutReport,
     Subject,
     Summary,
@@ -446,8 +446,8 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         """Judge the week's to-do list — or return the kept judgment where nothing has changed."""
         return wiring.scout(*_open(competition)).report(league_id)
 
-    @app.get("/api/{competition}/leagues/{league_id}/judgment", response_model=Remembered[ScoutReport] | None)
-    def judgment(competition: str, league_id: str) -> Remembered[ScoutReport] | None:
+    @app.get("/api/{competition}/leagues/{league_id}/judgment", response_model=Judgment | None)
+    def judgment(competition: str, league_id: str) -> Judgment | None:
         """The league's last judgment, or null — read without asking the model anything.
 
         What lets the week show its verdicts on load: judging is a click,

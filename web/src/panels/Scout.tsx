@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import {
@@ -5,8 +6,8 @@ import {
   type Competition,
   type ItemDecision,
   type ItemMark,
+  type Judgment,
   type League,
-  type RememberedReport,
   type ScoutReport,
   type Summary,
 } from "@/lib/api";
@@ -24,14 +25,31 @@ import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
 
 /**
+ * Judge again on arrival where the server says the week has moved on from the
+ * kept judgment — an item it never saw, or half a day of changes. Once per
+ * league for as long as the page is open: a judgment that fails, or comes
+ * back still due, is not retried in a loop.
+ */
+export function useJudgeWhenDue(due: boolean, scope: string, judge: { mutate: () => void; isPending: boolean }) {
+  const asked = useRef(new Set<string>());
+  const { mutate, isPending } = judge;
+  useEffect(() => {
+    if (!due || isPending || asked.current.has(scope)) return;
+    asked.current.add(scope);
+    mutate();
+  }, [due, isPending, scope, mutate]);
+}
+
+/**
  * The week: where you stand, what you are fielding, and who against.
  *
  * Complete without a model: everything is read or computed from league state,
  * so the page is whole the moment it opens. Where a model is configured it
  * annotates what is already here — Judge fills each to-do with a verdict and
  * adds the moves the list missed, in place — rather than producing a page of
- * its own to be read beside this one. It never runs on load; the last
- * judgment does, from where it was kept.
+ * its own to be read beside this one. The last judgment shows on load, from
+ * where it was kept, and is asked again only once the week has moved on
+ * from it — the server's `due`, never merely a reload.
  */
 export function ScoutPanel({ competition, league }: { competition: Competition; league: League }) {
   const { openPlayer, drawer } = usePlayerDrawer(competition, league);
@@ -45,7 +63,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
   // The last judgment, read without asking the model anything: judging is a
   // click, and a reload should not throw the answer away.
   const judgmentKey = keys.judgment(competition.key, league.league_id);
-  const judgment = useQuery<RememberedReport | null, Error>({
+  const judgment = useQuery<Judgment | null, Error>({
     queryKey: judgmentKey,
     queryFn: leagueApi.judgment,
     enabled: ai && Boolean(week.data?.actions),
@@ -62,6 +80,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       ]),
   });
   const report = judgment.data?.answer;
+  useJudgeWhenDue(ai && judgment.data?.due === true, `${competition.key}:${league.league_id}`, judge);
   // The decision answers with the item's new mark, which goes straight onto
   // its row: re-reading the week would take a second or two for one field.
   const decide = useMutation<ItemMark, Error, ItemDecision>({

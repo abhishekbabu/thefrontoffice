@@ -735,6 +735,29 @@ export interface components {
             player_ids: string[];
         };
         /**
+         * Judgment
+         * @description A league's kept judgment of its week, as the week page reads it back.
+         */
+        Judgment: {
+            answer: components["schemas"]["ScoutReport"];
+            /**
+             * Inputs
+             * @description A digest of what the answer was given; a fresh ask compares against it.
+             */
+            inputs: string;
+            /**
+             * Answered At
+             * Format: date-time
+             */
+            answered_at: string;
+            /**
+             * Due
+             * @description Whether the week has moved on far enough to judge it again unasked: the to-do list holds an item this judgment never saw, or what it was given has changed and it is over twelve hours old. Never while the list is empty — there is nothing left to judge.
+             * @default false
+             */
+            due: boolean;
+        };
+        /**
          * LeagueRef
          * @description A league the user is in, in whatever platform the competition uses.
          */
@@ -1102,20 +1125,6 @@ export interface components {
              * @default
              */
             command: string;
-        };
-        /** Remembered[ScoutReport] */
-        Remembered_ScoutReport_: {
-            answer: components["schemas"]["ScoutReport"];
-            /**
-             * Inputs
-             * @description A digest of what the answer was given; a fresh ask compares against it.
-             */
-            inputs: string;
-            /**
-             * Answered At
-             * Format: date-time
-             */
-            answered_at: string;
         };
         /**
          * ScheduleRow
@@ -3092,7 +3101,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Remembered_ScoutReport_"] | null;
+                    "application/json": components["schemas"]["Judgment"] | null;
                 };
             };
             /** @description Bad Request */
