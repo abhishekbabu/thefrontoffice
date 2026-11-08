@@ -18,26 +18,26 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
 
-from thefrontoffice.adapters.outbound.competitions.nfl.evidence import average, season_average
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import RISES, average, season_average
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupChange,
     best_upgrade,
     eligible_positions,
     fits,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, Projection, active, by_club
+from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, PlayerInfo, Projection, active, by_club
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, listed, ruled_out
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, THIS_WEEK, listed, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.domain.models import Action, Stat, Urgency, urgency_rank
 
 STACKED = 3
 """Starters riding on one real game at which a bad afternoon there is most of a bad week."""
 
-Move = Literal["hole", "swap", "upgrade", "rise", "stack", "bye", "deadline", "short"]
+Move = Literal["hole", "swap", "upgrade", "rise", "stack", "teammate", "bye", "deadline", "short"]
 """What an item on the list is about: a starter who cannot play or an empty slot, a swap the bench
-allows, a free agent who outscores a starter, a role that grew, a stacked game, next week's byes,
-the trade deadline, a week ahead left short."""
+allows, a free agent who outscores a starter, a role that grew, a stacked game, a teammate ahead of
+one of yours who may sit, next week's byes, the trade deadline, a week ahead left short."""
 
 STARTS_NOW: frozenset[Move] = frozenset({"hole", "upgrade"})
 """Pickups that go straight into this week's lineup."""
@@ -84,6 +84,7 @@ def build(
     items += _upgrades(state, free_agents, started, {i.action.player_id for i in items})
     items += _breakouts(state, free_agents, {i.action.player_id for i in items})
     items += _same_game(state, week_games, started, {(i.action.player_id, i.action.replaces) for i in items})
+    items += _teammates(state, kickoff, started)
     items += _next_week_byes(state, games.get(state.week + 1, []))
     items += _trade_deadline(state)
     return sorted(_with_drops(state, items, started), key=lambda i: urgency_rank(i.action.urgency))
@@ -213,10 +214,7 @@ def _evidence(state: Week, players: Sequence[Projection]) -> list[Stat]:
     for player in players:
         if stat := state.evidence.stat(player):
             lines.append(stat)
-        lines += [
-            Stat(label=player.name, value=f"News, {dated(a)}: {a.headline}")
-            for a in state.news.latest(player.player_id)
-        ]
+        lines += _news(state, [player])
     return lines
 
 
@@ -507,6 +505,101 @@ def _same_game(
             )
         )
     return items
+
+
+REGULAR = RISES["snaps"][1]
+"""Snap share over his last few games at which a player's absence is felt by whoever plays behind him."""
+
+WORK_POSITIONS = frozenset({"RB", "WR", "TE"})
+"""Where a teammate's absence hands his snaps and touches to the next man: a quarterback's backup is
+nobody's fantasy starter, and a kicker or a defense has no understudy on a roster."""
+
+
+def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> list[Item]:
+    """Your players whose teammate at their position, a regular, is on this week's injury report.
+
+    Projections leave a questionable player in and everyone around him where
+    they were, so whose work grows if he sits is something to check, not a
+    number to trust: the club names its inactives about ninety minutes before
+    kickoff. Only a regular counts, since a depth player sitting moves nothing
+    — but not only one who out-snaps yours: a starter the injury has already
+    held to fewer snaps still takes his targets with him when he sits. It
+    names no move, so nothing on the list is dropped for it, and the player it
+    is about is kept off the drop list while it stands.
+    """
+    roles = state.evidence.roles
+    items = []
+    for player_id in active(state.roster):
+        mine = state.projections.get(player_id)
+        if (
+            mine is None
+            or mine.position not in WORK_POSITIONS
+            or not mine.opponent
+            or mine.team in started
+            or ruled_out(mine.injury_status)
+        ):
+            continue
+        regulars = sorted(
+            (
+                (other, share)
+                for other in state.players.values()
+                if other.player_id != player_id
+                and other.team == mine.team
+                and other.position == mine.position
+                and other.injury_status.upper() in THIS_WEEK
+                and (role := roles.get(other.player_id)) is not None
+                and (share := role.snap_share) is not None
+                and share >= REGULAR
+            ),
+            key=lambda pair: -pair[1],
+        )
+        if not regulars:
+            continue
+        doubt = [other for other, _ in regulars if not ruled_out(other.injury_status)]
+        out = [other for other, _ in regulars if ruled_out(other.injury_status)]
+        described = join(
+            [f"{other.name} ({other.injury_status.lower()}, {share:.0%} of snaps)" for other, share in regulars]
+        )
+        if doubt:
+            title = f"Check whether {join([o.name for o in doubt])} plays before setting {mine.name}"
+            outcome = (
+                f"If {'he sits' if len(doubt) == 1 else 'they sit'}, more of the work at {mine.position} falls to "
+                f"{mine.name}, who projects {mine.points:.1f} as things stand. {mine.team} names its inactives "
+                "about 90 minutes before kickoff."
+            )
+        else:
+            title = f"More work for {mine.name} with {join([o.name for o in out])} out"
+            outcome = (
+                f"Sleeper projects {mine.name} at {mine.points:.1f}; whether that already counts the extra work is "
+                "not something the projection says."
+            )
+        game = kickoff.get(mine.team)
+        items.append(
+            Item(
+                "teammate",
+                Action(
+                    kind="lineup",
+                    urgency="soon",
+                    title=title,
+                    reason=f"{described} {'is' if len(regulars) == 1 else 'are'} a regular at {mine.position} "
+                    f"for {mine.team}. {outcome}",
+                    when=f"before kickoff, {day(game.date)}" if game and game.date else "",
+                    player_id=mine.player_id,
+                    evidence=_evidence(state, [mine]) + _news(state, [other for other, _ in regulars]),
+                    key=f"teammate:{mine.player_id}:" + ",".join(sorted(other.player_id for other, _ in regulars)),
+                ),
+            )
+        )
+    return items
+
+
+def _news(state: Week, players: Sequence[Projection | PlayerInfo]) -> list[Stat]:
+    """Each player's latest headlines."""
+    return [
+        Stat(label=player.name, value=f"News, {dated(a)}: {a.headline}")
+        for player in players
+        for a in state.news.latest(player.player_id)
+    ]
 
 
 def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Item]:

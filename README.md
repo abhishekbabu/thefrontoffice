@@ -15,7 +15,8 @@ player. It runs on your own machine against NFL on
 ## Features
 
 - **To-do list**: starters out or on bye, empty slots, bench swaps, next week's
-  byes, free agents whose role just grew, and the trade deadline. Each item
+  byes, free agents whose role just grew, a regular on the injury report whose
+  work could fall to one of your players, and the trade deadline. Each item
   names the fix, who to drop and the deadline.
 - **Win chance and playoff odds**: the week is simulated 10,000 times and the
   season 5,000 times, and every move shows what it does to both.
