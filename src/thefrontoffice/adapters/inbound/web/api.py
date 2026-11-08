@@ -16,6 +16,7 @@ back here across the proxy configured in `web/vite.config.ts`.
 import logging
 import threading
 import uuid
+from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Literal
@@ -50,6 +51,7 @@ from thefrontoffice.domain.models import (
     ItemDecision,
     ItemMark,
     LeagueSchedule,
+    Outlook,
     PlayerCall,
     PlayerCard,
     PlayerDetail,
@@ -62,7 +64,6 @@ from thefrontoffice.domain.models import (
     Summary,
     TeamRef,
     TradeIdea,
-    WeekAhead,
 )
 from thefrontoffice.domain.ports import (
     AccountLogin,
@@ -85,10 +86,6 @@ DIST = PROJECT_ROOT / "web" / "dist"
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
-
-
-class Reply(BaseModel):
-    answer: str
 
 
 class SettingsUpdate(BaseModel):
@@ -135,32 +132,46 @@ class Thread(BaseModel):
     chat_id: str
 
 
+MAX_CHATS = 64
+"""Conversations held at once. Each carries its whole history, resent to the
+model every turn, so one person's week of reopened threads is bounded here
+rather than by how long the process happens to run."""
+
+
 class _Chats:
-    """Open conversations, by id.
+    """Open conversations, by id, the least recently used dropped past `MAX_CHATS`.
 
     A chat is a live object holding conversation state, so it cannot cross the
     wire. It stays here, with what has been said in it, and the client refers
     to it by id — and reads its turns back from here, so a page reopened shows
-    the conversation the server is still carrying on. In-process because this
-    serves exactly one person on one machine; a second worker would need
-    somewhere shared to put these.
+    the conversation the server is still carrying on. One dropped answers as
+    one never opened: `chat_expired`, the client's cue to open another.
+    In-process because this serves exactly one person on one machine; a second
+    worker would need somewhere shared to put these.
     """
 
-    def __init__(self) -> None:
-        self._open: dict[str, Conversation] = {}
+    def __init__(self, limit: int = MAX_CHATS) -> None:
+        self._limit = limit
+        self._open: OrderedDict[str, Conversation] = OrderedDict()
+        self._lock = threading.Lock()
 
     def remember(self, conversation: Conversation) -> str:
         chat_id = uuid.uuid4().hex
-        self._open[chat_id] = conversation
+        with self._lock:
+            self._open[chat_id] = conversation
+            while len(self._open) > self._limit:
+                self._open.popitem(last=False)
         return chat_id
 
     def get(self, chat_id: str) -> Conversation:
         """Raises:
-        ChatExpiredError: this process never opened it — it restarted since.
+        ChatExpiredError: this process does not hold it — it restarted since, or dropped it as the oldest.
         """
-        if chat_id not in self._open:
-            raise ChatExpiredError()
-        return self._open[chat_id]
+        with self._lock:
+            if chat_id not in self._open:
+                raise ChatExpiredError()
+            self._open.move_to_end(chat_id)
+            return self._open[chat_id]
 
 
 class _Login:
@@ -217,8 +228,9 @@ def _error_response(error: FrontOfficeError) -> JSONResponse:
     return JSONResponse(status_code=STATUS.get(error.code, 400), content=ErrorBody.of(error).model_dump())
 
 
-def create_app(wiring: Wiring, *, dist: Path = DIST) -> FastAPI:
-    """The application over `wiring`, serving the front end built into `dist`, ready to serve."""
+def create_app(wiring: Wiring, *, dist: Path = DIST, max_chats: int = MAX_CHATS) -> FastAPI:
+    """The application over `wiring`, serving the front end built into `dist`, holding up to `max_chats`
+    conversations, ready to serve."""
     app = FastAPI(
         title="The Front Office",
         docs_url="/api/docs",
@@ -252,7 +264,7 @@ def create_app(wiring: Wiring, *, dist: Path = DIST) -> FastAPI:
         body = ErrorBody.of(NotFoundError(f"{request.method} {request.url.path}"))
         return JSONResponse(status_code=exc.status_code, content=body.model_dump())
 
-    _register_routes(app, wiring)
+    _register_routes(app, wiring, _Chats(max_chats))
     _serve_frontend(app, dist)
     return app
 
@@ -268,8 +280,7 @@ def serve() -> FastAPI:
     return create_app(bootstrap.wiring())
 
 
-def _register_routes(app: FastAPI, wiring: Wiring) -> None:
-    chats = _Chats()
+def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
     logins = {platform: _Login(platform, account) for platform, account in wiring.logins.items()}
 
     def _login(platform: str) -> _Login:
@@ -382,8 +393,7 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         is four thousand players: a client holding fifty of them can only
         reorder those fifty, which is a worse answer than none.
         """
-        view = wiring.week(*_open(competition)).wire(league_id, presenting.ranking(query))
-        return presenting.wire(view, query)
+        return presenting.wire(wiring.week(*_open(competition)), league_id, query)
 
     @app.get("/api/{competition}/leagues/{league_id}/teams", response_model=list[TeamRef])
     def teams(competition: str, league_id: str) -> list[TeamRef]:
@@ -407,8 +417,8 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
         """
         return presenting.season(wiring.week(*_open(competition)).season(league_id))
 
-    @app.get("/api/{competition}/leagues/{league_id}/weeks-ahead", response_model=list[WeekAhead])
-    def weeks_ahead(competition: str, league_id: str) -> list[WeekAhead]:
+    @app.get("/api/{competition}/leagues/{league_id}/weeks-ahead", response_model=Outlook)
+    def weeks_ahead(competition: str, league_id: str) -> Outlook:
         """The next few weeks as your roster stands, and a pickup for any that comes up short.
 
         Offered only where a competition can project them, as trades are, so
@@ -474,14 +484,20 @@ def _register_routes(app: FastAPI, wiring: Wiring) -> None:
     def turns(chat_id: str) -> list[Turn]:
         """What has been said in a conversation so far — what a page reopened on it shows.
 
-        An id this process never opened is `chat_expired`, the client's cue to open another.
+        An id this process does not hold is `chat_expired`, the client's cue to open another.
         """
         return chats.get(chat_id).turns
 
-    @app.post("/api/chat/{chat_id}", response_model=Reply)
-    def ask(chat_id: str, request: ChatRequest) -> Reply:
-        """Ask the next question in a conversation a thread opened."""
-        return Reply(answer=chats.get(chat_id).ask(request.message))
+    @app.post("/api/chat/{chat_id}", response_model=list[Turn])
+    def ask(chat_id: str, request: ChatRequest) -> list[Turn]:
+        """Ask the next question in a conversation a thread opened; every turn so far, the answer last.
+
+        The whole conversation rather than the answer alone, so the client shows
+        what the server holds instead of keeping a copy of its own in step.
+        """
+        conversation = chats.get(chat_id)
+        conversation.ask(request.message)
+        return conversation.turns
 
 
 def _serve_frontend(app: FastAPI, dist: Path) -> None:

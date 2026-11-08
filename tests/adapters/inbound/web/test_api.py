@@ -36,6 +36,7 @@ from thefrontoffice.domain.models import (
     CompetitionContext,
     LeagueSchedule,
     MatchupInput,
+    Outlook,
     PlayedMatchup,
     PlayerCall,
     PlayerCard,
@@ -46,7 +47,6 @@ from thefrontoffice.domain.models import (
     Summary,
     TradeMarket,
     TradeProposal,
-    WeekAhead,
 )
 from thefrontoffice.domain.ports import LeagueRef
 
@@ -343,7 +343,7 @@ def test_a_thread_about_one_thing_opens_and_is_asked_through_the_chat() -> None:
     chat_id = _opened(client).json()["chat_id"]
     body = client.post(f"/api/chat/{chat_id}", json={"message": "Why bench him?"}).json()
 
-    assert body["answer"] == "Because he has no fixture."
+    assert body[-1] == {"role": "model", "text": "Because he has no fixture."}
     assert ITEM.title in chat.sent[0]  # the first question carries the item it is about
 
 
@@ -380,6 +380,31 @@ def test_a_reopened_conversation_reads_back_what_was_said() -> None:
         ("you", "Why bench him?"),
         ("model", "Because he has no fixture."),
     ]
+
+
+def test_a_follow_up_answers_with_the_whole_conversation_as_the_server_holds_it() -> None:
+    """The page shows what it is sent rather than appending a copy it must keep in step."""
+    client = _client(ai=FakeAI(chat=FakeChat(reply="Because.")))
+    chat_id = _opened(client).json()["chat_id"]
+    client.post(f"/api/chat/{chat_id}", json={"message": "Why?"})
+
+    body = client.post(f"/api/chat/{chat_id}", json={"message": "Really?"}).json()
+
+    assert body == client.get(f"/api/chat/{chat_id}").json()
+    assert [t["text"] for t in body if t["role"] == "you"] == ["Why?", "Really?"]
+
+
+def test_the_server_holds_a_bounded_number_of_conversations_dropping_the_least_recently_used() -> None:
+    """Each one carries its whole history; kept for as long as the process runs, they only grow."""
+    fpl = entry(FakeProvider(), competition="premier-league", platform="fpl")
+    client = TestClient(web.create_app(fake_wiring(fpl), max_chats=2))
+    first, second = (_opened(client).json()["chat_id"] for _ in range(2))
+    client.get(f"/api/chat/{first}")  # read since, so the second is now the oldest
+
+    _opened(client)
+
+    assert client.get(f"/api/chat/{first}").status_code == 200
+    assert client.get(f"/api/chat/{second}").json()["code"] == "chat_expired"
 
 
 def test_a_model_failure_is_a_bad_gateway_not_a_crash() -> None:
@@ -887,12 +912,13 @@ def test_trades_are_priced_in_playoff_chance() -> None:
 
 
 class _OutlookProvider(_SummaryProvider):
-    def weeks_ahead(self, league_id: str) -> list[WeekAhead]:
+    def weeks_ahead(self, league_id: str) -> Outlook:
         from thefrontoffice.domain.models import WeekAhead
 
-        return [
-            WeekAhead(week=8, points=98.0, usual=121.0, missing=["A (bye)"], short=True, fix="Pick up B", gain=12.0)
-        ]
+        week = WeekAhead(
+            week=8, points=98.0, short_by=23.0, missing=["A (bye)"], short=True, fix="Pick up B", gain=12.0
+        )
+        return Outlook(usual=121.0, weeks=[week])
 
 
 def test_the_weeks_ahead_come_back_with_their_fixes() -> None:
@@ -900,8 +926,10 @@ def test_the_weeks_ahead_come_back_with_their_fixes() -> None:
 
     client = _client(_OutlookProvider(Summary()))
 
-    [week] = client.get("/api/nfl-sleeper/leagues/L1/weeks-ahead").json()
+    outlook = client.get("/api/nfl-sleeper/leagues/L1/weeks-ahead").json()
+    [week] = outlook["weeks"]
 
+    assert outlook["usual"] == 121.0
     assert (week["week"], week["short"], week["short_by"], week["gain"]) == (8, True, 23.0, 12.0)
 
 

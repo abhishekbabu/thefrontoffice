@@ -544,8 +544,9 @@ class Summary(BaseModel):
     """Absent when the week has no fixture, which is not a nil-nil scoreline."""
 
     swaps: list[Swap] = Field(default_factory=list)
-    """Changes the projections imply. Exact, and the report's job is to endorse
-    or overrule them rather than to find them."""
+    """Changes the projections imply, where the competition has no to-do list to carry them:
+    one that has lists them there, as items, and sends none here. Exact, and the report's
+    job is to endorse or overrule them rather than to find them."""
 
     actions: list[Action] | None = None
     """What to do about the week, most urgent first. None where a competition
@@ -572,10 +573,6 @@ class Summary(BaseModel):
             "'GW 2 · deadline Sat 22 Aug 10:30'. A week with no dates on it is a number."
         ),
     )
-
-    forecast: Forecast | None = None
-    """The matchup simulated, where the competition can be. None where it cannot
-    or there is no opponent this week."""
 
 
 # ── simulating a matchup ────────────────────────────────────────────────
@@ -787,18 +784,23 @@ class WeekAhead(BaseModel):
 
     week: int
     points: float = Field(description="Your best legal lineup's projection that week.")
-    usual: float = Field(description="What your best lineup projects in a typical one of these weeks.")
     missing: list[str] = Field(
         default_factory=list, description="Regular starters who will not play that week, and why: 'Josh Allen (bye)'."
     )
+    short_by: float = Field(description="How far the week falls below the usual one; negative where it is above.")
     short: bool = Field(description="Whether the week falls far enough below the usual to act on.")
     fix: str = Field(default="", description="The pickup that closes most of the gap, and who to drop for him.")
     gain: float = Field(default=0.0, description="What that pickup adds to the week's best lineup.")
 
-    @computed_field(description="How far the week falls below the usual one; negative where it is above.")
-    @property
-    def short_by(self) -> float:
-        return self.usual - self.points
+
+class Outlook(BaseModel):
+    """The next few weeks for your roster, soonest first, each measured against the same usual week."""
+
+    usual: float | None = Field(
+        default=None,
+        description="What your best lineup projects in a typical one of these weeks. None once none are left.",
+    )
+    weeks: list[WeekAhead] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -1107,7 +1109,3 @@ class CompetitionContext:
     targets: dict[str, str] = field(default_factory=dict)
     """Each subject's own lines in the prompt, keyed by its id — what an answer
     kept per subject was given, and so what tells whether it is still current."""
-
-
-# `Summary.forecast` names a model defined after it.
-Summary.model_rebuild()

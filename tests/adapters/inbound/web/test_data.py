@@ -18,7 +18,7 @@ def test_a_configured_competition_can_still_be_unusable() -> None:
     """Credentials being set says nothing about whether the platform answers."""
     listed = data.competition(entry(FakeCompetition(), check_ready=_blocked))
 
-    assert (listed.configured, listed.ready) == (True, False)
+    assert listed.configured
     assert listed.blocked is not None
     assert (listed.blocked.code, listed.blocked.detail) == (
         YahooLoginRequiredError.code,
@@ -27,10 +27,8 @@ def test_a_configured_competition_can_still_be_unusable() -> None:
     assert listed.blocked.remedy is not None and listed.blocked.remedy.action == "authorize"
 
 
-def test_a_competition_with_nothing_in_the_way_is_ready() -> None:
-    listed = data.competition(entry(FakeCompetition()))
-
-    assert (listed.ready, listed.blocked) == (True, None)
+def test_a_competition_with_nothing_in_the_way_is_not_blocked() -> None:
+    assert data.competition(entry(FakeCompetition())).blocked is None
 
 
 def test_an_unconfigured_competition_is_not_probed() -> None:
@@ -39,7 +37,7 @@ def test_an_unconfigured_competition_is_not_probed() -> None:
     listed = data.competition(entry(FakeCompetition(), configured=False, check_ready=_never_probed))
 
     assert listed.blocked is not None
-    assert (listed.configured, listed.ready, listed.blocked.code) == (False, False, "not_configured")
+    assert (listed.configured, listed.blocked.code) == (False, "not_configured")
     assert "SLEEPER_USERNAME" in listed.blocked.detail
 
 

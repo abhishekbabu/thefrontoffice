@@ -2,8 +2,8 @@
 
 from support.reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
 
-from thefrontoffice.adapters.inbound.cli.render import render_scout_report, render_trade_verdict
-from thefrontoffice.domain.models import Move, ScoutReport
+from thefrontoffice.adapters.inbound.cli.render import render_scout_report, render_trade_verdict, render_week
+from thefrontoffice.domain.models import Move, ScoutReport, Summary, Swap
 
 
 def _rec(**overrides: object) -> Move:
@@ -85,3 +85,12 @@ def test_empty_category_lists_render_as_a_dash() -> None:
     out = render_trade_verdict(v)
     assert "Gained: —" in out
     assert "Lost:   —" in out
+
+
+def test_the_week_shows_the_changes_the_projections_imply_as_the_page_does() -> None:
+    """A competition with no to-do list sends its swaps to be shown; the terminal dropped them."""
+    out = render_week(
+        Summary(swaps=[Swap(start="Saka", out="Foden", gain="+2.1 xPts"), Swap(start="Isak", gain="+4.0")])
+    )
+
+    assert all(name in out for name in ("Saka", "Foden", "+2.1 xPts", "Isak"))

@@ -5,7 +5,7 @@ from dataclasses import replace
 from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, ScheduledGame, SleeperRoster
-from thefrontoffice.domain.models import WeekAhead
+from thefrontoffice.domain.models import Outlook, WeekAhead
 
 MINE = {
     "qb1": proj("qb1", "Star QB", "QB", 22.0),
@@ -54,7 +54,7 @@ def _client(
 
 
 def _weeks(client: FakeSleeper) -> dict[int, WeekAhead]:
-    return {w.week: w for w in nfl_provider(client).weeks_ahead("L1")}
+    return {w.week: w for w in nfl_provider(client).weeks_ahead("L1").weeks}
 
 
 def test_the_next_four_weeks_are_projected_soonest_first() -> None:
@@ -62,9 +62,11 @@ def test_the_next_four_weeks_are_projected_soonest_first() -> None:
 
 
 def test_a_week_byes_leave_short_says_so_and_who_is_missing() -> None:
-    week = _weeks(_client())[BYE_WEEK]
+    outlook = nfl_provider(_client()).weeks_ahead("L1")
+    [week] = [w for w in outlook.weeks if w.week == BYE_WEEK]
 
-    assert week.short and week.points < week.usual
+    assert outlook.usual is not None and week.short and week.points < outlook.usual
+    assert week.short_by == outlook.usual - week.points
     assert {"Star QB (bye)", "Good RB (bye)"} <= set(week.missing)
 
 
@@ -105,7 +107,7 @@ def test_the_last_regular_season_week_has_nothing_ahead() -> None:
     client = _client()
     client.week = 18
 
-    assert nfl_provider(client).weeks_ahead("L1") == []
+    assert nfl_provider(client).weeks_ahead("L1") == Outlook()
 
 
 def test_a_plain_out_costs_none_of_the_weeks_ahead() -> None:
