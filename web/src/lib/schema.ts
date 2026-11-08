@@ -469,13 +469,16 @@ export interface paths {
          * Turns
          * @description What has been said in a conversation so far — what a page reopened on it shows.
          *
-         *     An id this process never opened is `chat_expired`, the client's cue to open another.
+         *     An id this process does not hold is `chat_expired`, the client's cue to open another.
          */
         get: operations["turns"];
         put?: never;
         /**
          * Ask
-         * @description Ask the next question in a conversation a thread opened.
+         * @description Ask the next question in a conversation a thread opened; every turn so far, the answer last.
+         *
+         *     The whole conversation rather than the answer alone, so the client shows
+         *     what the server holds instead of keeping a copy of its own in step.
          */
         post: operations["ask"];
         delete?: never;
@@ -661,8 +664,6 @@ export interface components {
             configured: boolean;
             /** Requires */
             requires: string;
-            /** Ready */
-            ready: boolean;
             blocked: components["schemas"]["ErrorBody"] | null;
         };
         /**
@@ -678,33 +679,6 @@ export interface components {
              */
             code: "error" | "platform_unavailable" | "unknown_competition" | "not_configured" | "unsupported" | "subject_gone" | "item_decision" | "ai_unavailable" | "ai_key_invalid" | "ai_quota" | "ai_failed" | "login_required" | "access_not_approved" | "chat_expired" | "not_found" | "invalid_request" | "unknown_setting" | "settings_unwritable";
             remedy: components["schemas"]["Remedy"] | null;
-        };
-        /**
-         * Forecast
-         * @description The week played many times over, and what each move does to it.
-         */
-        Forecast: {
-            /**
-             * Win
-             * @description Chance of winning, a tie counting half.
-             */
-            win: number;
-            margin: components["schemas"]["MarginRange"];
-            /** Simulations */
-            simulations: number;
-            /**
-             * Moves
-             * @description Each move's key, and the chance of winning with it.
-             */
-            moves: {
-                [key: string]: number;
-            };
-            /**
-             * Best Move
-             * @description The move that most raises the chance, if any does; empty otherwise.
-             * @default
-             */
-            best_move: string;
         };
         /**
          * ItemDecision
@@ -832,24 +806,6 @@ export interface components {
             detail: string;
         };
         /**
-         * MarginRange
-         * @description How the margin falls across the simulated weeks: positive is a win.
-         */
-        MarginRange: {
-            /**
-             * Low
-             * @description Tenth percentile: four weeks in five end above it.
-             */
-            low: number;
-            /** Median */
-            median: number;
-            /**
-             * High
-             * @description Ninetieth percentile: four weeks in five end below it.
-             */
-            high: number;
-        };
-        /**
          * Match
          * @description One real-world game behind a fantasy week.
          *
@@ -920,6 +876,19 @@ export interface components {
              *     Written here, once, so a page and a terminal phrase a move alike.
              */
             readonly title: string;
+        };
+        /**
+         * Outlook
+         * @description The next few weeks for your roster, soonest first, each measured against the same usual week.
+         */
+        Outlook: {
+            /**
+             * Usual
+             * @description What your best lineup projects in a typical one of these weeks. None once none are left.
+             */
+            usual: number | null;
+            /** Weeks */
+            weeks: components["schemas"]["WeekAhead"][];
         };
         /**
          * PlayerCall
@@ -1147,11 +1116,6 @@ export interface components {
              * Format: date-time
              */
             answered_at: string;
-        };
-        /** Reply */
-        Reply: {
-            /** Answer */
-            answer: string;
         };
         /**
          * ScheduleRow
@@ -1533,7 +1497,6 @@ export interface components {
              * @default
              */
             window: string;
-            forecast: components["schemas"]["Forecast"] | null;
         };
         /**
          * Swap
@@ -1676,15 +1639,15 @@ export interface components {
              */
             points: number;
             /**
-             * Usual
-             * @description What your best lineup projects in a typical one of these weeks.
-             */
-            usual: number;
-            /**
              * Missing
              * @description Regular starters who will not play that week, and why: 'Josh Allen (bye)'.
              */
             missing: string[];
+            /**
+             * Short By
+             * @description How far the week falls below the usual one; negative where it is above.
+             */
+            short_by: number;
             /**
              * Short
              * @description Whether the week falls far enough below the usual to act on.
@@ -1702,11 +1665,6 @@ export interface components {
              * @default 0
              */
             gain: number;
-            /**
-             * Short By
-             * @description How far the week falls below the usual one; negative where it is above.
-             */
-            readonly short_by: number;
         };
     };
     responses: never;
@@ -2903,7 +2861,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WeekAhead"][];
+                    "application/json": components["schemas"]["Outlook"];
                 };
             };
             /** @description Bad Request */
@@ -3533,7 +3491,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Reply"];
+                    "application/json": components["schemas"]["Turn"][];
                 };
             };
             /** @description Bad Request */

@@ -35,6 +35,12 @@ function CallLine({ call }: { call: PlayerCall }) {
   );
 }
 
+/** `kept` with each call in `made` in place of any earlier one on the same player. */
+export function withCalls(kept: PlayerCall[], made: PlayerCall[]): PlayerCall[] {
+  const replaced = new Set(made.map((call) => call.player_id));
+  return [...kept.filter((call) => !replaced.has(call.player_id)), ...made];
+}
+
 /**
  * Who is still out there.
  *
@@ -86,9 +92,13 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
   });
   const calls = Object.fromEntries((kept.data ?? []).map((c) => [c.player_id, c]));
   const queryClient = useQueryClient();
+  // The judging answers with the calls it made, which go straight into the
+  // kept calls of every page read so far: reading them back is a request for
+  // what is already in hand.
   const judge = useMutation<PlayerCall[], Error, string[]>({
     mutationFn: leagueApi.judgeFreeAgents,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: callsKey }),
+    onSuccess: (made) =>
+      queryClient.setQueriesData<PlayerCall[]>({ queryKey: callsKey }, (kept) => kept && withCalls(kept, made)),
   });
 
   const total = page.data?.total ?? 0;

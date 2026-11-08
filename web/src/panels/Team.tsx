@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, type League, type Competition, type TradeIdea, type WeekAhead } from "@/lib/api";
+import { api, type League, type Competition, type TradeIdea, type Outlook } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { ListCard, ListRow } from "@/components/ui/list";
 import { percent, percentPoints, signed } from "@/lib/format";
@@ -66,23 +66,23 @@ export function TeamPanel({ competition, league }: { competition: Competition; l
  * others; one short enough to act on carries the pickup that fixes it.
  */
 function WeeksAhead({ competition, league }: { competition: Competition; league: League }) {
-  const weeks = useQuery<WeekAhead[], Error>({
+  const outlook = useQuery<Outlook, Error>({
     queryKey: keys.weeksAhead(competition.key, league.league_id),
     queryFn: api.league(competition.key, league.league_id).weeksAhead,
   });
 
-  const short = weeks.data?.filter((w) => w.short).length ?? 0;
-  // Every week is measured against the same usual one, so any row says it.
-  const usual = weeks.data?.[0]?.usual;
+  const weeks = outlook.data?.weeks;
+  const short = weeks?.filter((w) => w.short).length ?? 0;
+  const usual = outlook.data?.usual;
   return (
     <ListCard
       title="Weeks ahead"
-      count={short ? `${short} short` : usual !== undefined ? `usual week ${usual.toFixed(1)}` : undefined}
-      loading={weeks.isLoading}
-      error={weeks.error}
+      count={short ? `${short} short` : usual != null ? `usual week ${usual.toFixed(1)}` : undefined}
+      loading={outlook.isLoading}
+      error={outlook.error}
     >
-      {weeks.data?.length === 0 && <CardNote>No weeks left in the season to plan.</CardNote>}
-      {weeks.data?.map((week) => (
+      {weeks?.length === 0 && <CardNote>No weeks left in the season to plan.</CardNote>}
+      {weeks?.map((week) => (
         <ListRow key={week.week} className="flex-col items-stretch gap-1">
           <div className="flex items-baseline gap-3">
             <Label className="w-20 shrink-0">Week {week.week}</Label>

@@ -141,14 +141,15 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
               title="Your lineup"
               lineup={week.data.mine?.lineup ?? []}
               bench={week.data.mine?.bench ?? []}
-              swaps={week.data.actions ? [] : week.data.swaps}
+              swaps={week.data.swaps}
               onOpen={openPlayer}
             />
           )}
 
           {/* Shown beside the lineups when there is an opponent, since the
-              swaps then have no card of their own to live in. */}
-          {!week.data.actions && week.data.opponent && week.data.swaps.length > 0 && (
+              swaps then have no card of their own to live in. A competition
+              with a to-do list sends none: they are items on it. */}
+          {week.data.opponent && week.data.swaps.length > 0 && (
             <Card>
               <Swaps swaps={week.data.swaps} />
             </Card>

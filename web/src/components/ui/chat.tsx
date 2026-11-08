@@ -48,12 +48,8 @@ function Chat({
       // A read already under way would land without this turn and overwrite it.
       await queryClient.cancelQueries({ queryKey: turnsKey });
     },
-    onSuccess: (reply, message) =>
-      queryClient.setQueryData<Turn[]>(turnsKey, (turns = []) => [
-        ...turns,
-        { role: "you", text: message },
-        { role: "model", text: reply.answer },
-      ]),
+    // The server answers with the whole conversation, so the page shows what it holds.
+    onSuccess: (turns) => queryClient.setQueryData<Turn[]>(turnsKey, turns),
     onError: (error: Error, message) => (isExpired(error) ? onExpired(message) : setFailed({ question: message, error })),
   });
 
@@ -80,10 +76,12 @@ function Chat({
 
   // The box is under the conversation, so keeping it in view keeps the newest
   // turn in view too — in a drawer the answer otherwise lands below the fold.
+  // Only for a turn asked here: turns read back on opening are not news, and
+  // scrolling to them would carry a drawer past everything above the chat.
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => {
-    if (turns.length) form.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [turns.length, ask.isPending]);
+    if (!ask.isIdle) form.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [ask.isIdle, ask.status, ask.submittedAt]);
 
   function send(e: React.FormEvent) {
     e.preventDefault();
@@ -185,7 +183,10 @@ function Opening() {
  * Kept for the session per subject, so closing and reopening a "Why?" finds
  * the same conversation rather than starting a new one on the server — until
  * the server says it no longer holds it, when a fresh one is opened and the
- * question that went unasked is asked there.
+ * question that went unasked is asked there. For the session, not for the
+ * query cache's default five minutes: a thread unmounted longer than that was
+ * dropped, and the next opening started a blank conversation beside the one
+ * the server still held.
  */
 export function Thread({
   competition,
@@ -205,6 +206,7 @@ export function Thread({
     queryKey: threadKey,
     queryFn: () => api.league(competition, league).thread(subject),
     staleTime: Infinity,
+    gcTime: Infinity,
   });
 
   function reopen(question?: string) {
