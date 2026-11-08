@@ -97,11 +97,11 @@ class SleeperNFLSource(Protocol):
 
     def get_matchups(self, league_id: str, week: int) -> list[SleeperMatchup]: ...
 
-    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[SleeperMatchup]]: ...
+    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Batch[int, list[SleeperMatchup]]: ...
 
     def get_nfl_game_lines(
         self, season: str, weeks: list[int], positions: Collection[str]
-    ) -> dict[int, list[NFLGameLine]]: ...
+    ) -> Batch[int, list[NFLGameLine]]: ...
 
     def get_nfl_players(self) -> dict[str, PlayerMeta]: ...
 
@@ -261,17 +261,17 @@ class SleeperClient:
         url = f"{BASE_URL}/league/{league_id}/matchups/{week}"
         return _matchups(self._api.cached(f"matchups_{league_id}_{week}", url, MATCHUPS_TTL))
 
-    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[SleeperMatchup]]:
-        """Every requested week's matchups that loaded, fetched concurrently.
+    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Batch[int, list[SleeperMatchup]]:
+        """Every requested week's matchups, fetched concurrently, with why each that would not load did not.
 
         The season view needs all eighteen; asked one at a time they are the
-        whole wait on the page. A week that would not load is absent rather
+        whole wait on the page. A week that would not load is a failure rather
         than empty: an empty week is a bye, and a failed request is not one.
         """
         batch = self._weekly(
             weeks, lambda w: f"matchups_{league_id}_{w}", lambda w: f"{BASE_URL}/league/{league_id}/matchups/{w}"
         )
-        return {w: _matchups(raw) for w, raw in batch.values.items()}
+        return Batch(values={w: _matchups(raw) for w, raw in batch.values.items()}, failures=batch.failures)
 
     # ── player data ─────────────────────────────────────────────────
 
@@ -399,7 +399,7 @@ class SleeperClient:
 
     def get_nfl_game_lines(
         self, season: str, weeks: list[int], positions: Collection[str]
-    ) -> dict[int, list[NFLGameLine]]:
+    ) -> Batch[int, list[NFLGameLine]]:
         """Every line from each game in `weeks` by a player at one of `positions`, by week.
 
         The raw material for both a player's role — snaps, targets, carries —
@@ -407,13 +407,17 @@ class SleeperClient:
         publishes directly. Linemen and defensive players ride in the same
         feed, which is why a caller names the positions it scores.
 
-        A week that would not load is absent, not empty: a week with no line
+        A week that would not load is a failure, not empty: a week with no line
         for a player is a game he missed, and a failed request is not one.
         """
-        return {
-            week: [line for player_id, row in rows if (line := _nfl_line(week, player_id, row, positions))]
-            for week, rows in self._game_rows(NFL, season, weeks).values.items()
-        }
+        batch = self._game_rows(NFL, season, weeks)
+        return Batch(
+            values={
+                week: [line for player_id, row in rows if (line := _nfl_line(week, player_id, row, positions))]
+                for week, rows in batch.values.items()
+            },
+            failures=batch.failures,
+        )
 
     def _game_rows(self, sport: str, season: str, weeks: list[int]) -> Batch[int, list[tuple[str, dict[str, Any]]]]:
         """Each player's row from each game in `weeks`, with his player id, by week; the weeks fetched in parallel.

@@ -473,16 +473,18 @@ def test_a_season_of_matchups_comes_back_keyed_by_week(tmp_path: Path) -> None:
 
     weeks = client.get_matchups_bulk("L1", [1, 2, 3])
 
-    assert {week: matchups[0].matchup_id for week, matchups in weeks.items()} == {1: 1, 2: 2, 3: 3}
+    assert {week: matchups[0].matchup_id for week, matchups in weeks.values.items()} == {1: 1, 2: 2, 3: 3}
 
 
-def test_a_week_that_does_not_answer_is_absent_not_an_empty_week(tmp_path: Path) -> None:
+def test_a_week_that_does_not_answer_is_a_failure_not_an_empty_week(tmp_path: Path) -> None:
     """An empty week is a bye; a failed request is not one."""
     client, _ = _client({"/matchups/1": [{"roster_id": 1}]}, tmp_path)
 
     weeks = client.get_matchups_bulk("L1", [1, 2])
 
-    assert list(weeks) == [1]
+    assert list(weeks.values) == [1]
+    with pytest.raises(SleeperAPIError):
+        weeks.value(2)
 
 
 # ── basketball ──────────────────────────────────────────────────────────
@@ -573,7 +575,7 @@ NFL_LINES = [
 def test_game_lines_keep_fantasy_players_with_the_usage_behind_their_points(tmp_path: Path) -> None:
     client, _ = _client({"/stats/nfl/2026/2": NFL_LINES}, tmp_path)
 
-    lines = {line.player_id: line for line in client.get_nfl_game_lines("2026", [2], POSITIONS)[2]}
+    lines = {line.player_id: line for line in client.get_nfl_game_lines("2026", [2], POSITIONS).value(2)}
 
     # A team total, a linebacker and a row with no game are nobody's starter.
     assert set(lines) == {"wr1", "KC"}
@@ -583,11 +585,11 @@ def test_game_lines_keep_fantasy_players_with_the_usage_behind_their_points(tmp_
     assert wr.stats == {"off_snp": 50.0, "tm_off_snp": 60.0, "rec_tgt": 8.0, "pts_ppr": 14.5, "rec_yd": 88.0}
 
 
-def test_a_week_that_will_not_load_is_absent_rather_than_a_week_nobody_played(tmp_path: Path) -> None:
+def test_a_week_that_will_not_load_is_a_failure_rather_than_a_week_nobody_played(tmp_path: Path) -> None:
     """No line in a week that loaded is a game missed; a week that did not load says nothing about anybody."""
     client, _ = _client({"/stats/nfl/2026/2": NFL_LINES}, tmp_path)
 
     lines = client.get_nfl_game_lines("2026", [1, 2], POSITIONS)
 
-    assert list(lines) == [2]
-    assert {line.week for line in lines[2]} == {2}
+    assert list(lines.values) == [2] and list(lines.failures) == [1]
+    assert {line.week for line in lines.value(2)} == {2}

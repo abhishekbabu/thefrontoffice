@@ -11,7 +11,7 @@ from support.http import FakeResponse
 
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
-from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient, fetch_many
+from thefrontoffice.adapters.outbound.platforms.http import Batch, JsonApiClient, fetch_many
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
 from thefrontoffice.domain.errors import PlatformUnavailableError
@@ -301,3 +301,14 @@ def test_a_batch_names_each_failure_for_a_caller_that_cannot_tolerate_a_hole(tmp
 
     assert batch.values == {"good": {"n": 1}}
     assert isinstance(batch.failures["bad"], SleeperAPIError)
+
+
+def test_a_batch_hands_back_a_value_or_raises_why_it_is_missing() -> None:
+    """A caller asking for one key gets the failure the fetch recorded, rather than inferring one from absence."""
+    down = SleeperAPIError("week 2 would not load")
+    batch: Batch[int, str] = Batch(values={1: "loaded"}, failures={2: down})
+
+    assert batch.value(1) == "loaded"
+    with pytest.raises(SleeperAPIError) as raised:
+        batch.value(2)
+    assert raised.value is down

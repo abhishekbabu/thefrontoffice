@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, outcomes
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection
+from thefrontoffice.domain.errors import UnknownSettingError
 from thefrontoffice.domain.models import Outcomes, RangeSearch
 
 GRID: dict[str, tuple[float, ...]] = {
@@ -24,10 +25,12 @@ def settings(overrides: Mapping[str, float]) -> outcomes.RangeSettings:
     """The app's settings with `overrides` in place of the searched ones.
 
     Raises:
-        KeyError: a setting the search does not cover.
+        UnknownSettingError: a setting the search does not cover, which would
+            otherwise be a candidate no different from the app's own.
     """
     if unknown := set(overrides) - set(GRID):
-        raise KeyError(f"Not a searched setting: {', '.join(sorted(unknown))}")
+        raise UnknownSettingError(sorted(unknown))
+    # Named one by one so each keeps its field's type; `test_tuning.py` holds them to `GRID`.
     default = outcomes.DEFAULT
     return replace(
         default,

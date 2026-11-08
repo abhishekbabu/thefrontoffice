@@ -63,13 +63,20 @@ class FormSource(Protocol):
         ...
 
     def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
-        """Count a club's not-yet-played games inside a matchup window."""
+        """Count a club's not-yet-played games inside a matchup window.
+
+        Raises:
+            PlatformError: the schedule would not load.
+        """
         ...
 
     def get_remaining_games_bulk(
         self, team_abbrs: list[str], start_date: date, end_date: date, now: datetime | None = None
     ) -> dict[str, int]:
-        """One schedule load and one `now` for every club asked about."""
+        """One schedule load and one `now` for every club asked about.
+
+        Empty where the schedule would not load: games left unknown, never nought.
+        """
         ...
 
 
@@ -123,6 +130,9 @@ class SleeperNBAForm:
         Sleeper publishes a date and a status but no tip-off instant, so a game
         today counts only while its status still says it has not started, and a
         stale status on a past date cannot resurrect a played game.
+
+        Raises:
+            SleeperAPIError: the schedule would not load.
         """
         today = self._today(now)
         return sum(
@@ -134,11 +144,20 @@ class SleeperNBAForm:
     def get_remaining_games_bulk(
         self, team_abbrs: list[str], start_date: date, end_date: date, now: datetime | None = None
     ) -> dict[str, int]:
-        """One schedule load and one `now` for every club asked about."""
+        """One schedule load and one `now` for every club asked about.
+
+        Empty where the schedule would not load: games left are then unknown,
+        and a nought for every club would read as a week nobody plays.
+        """
         moment = now or datetime.now(tz=PACIFIC)
-        return {
-            abbr.upper(): self.get_remaining_games(abbr, start_date, end_date, now=moment) for abbr in set(team_abbrs)
-        }
+        try:
+            return {
+                abbr.upper(): self.get_remaining_games(abbr, start_date, end_date, now=moment)
+                for abbr in set(team_abbrs)
+            }
+        except SleeperAPIError as e:
+            logger.warning(f"Continuing without games left, the basketball schedule would not load: {e}")
+            return {}
 
     @staticmethod
     def _is_remaining(game: ScheduledGame, start: date, end: date, today: date) -> bool:
@@ -195,13 +214,10 @@ class SleeperNBAForm:
     def _team_schedule(self) -> dict[str, list[ScheduledGame]]:
         if self._schedule is None:
             by_team: dict[str, list[ScheduledGame]] = {}
-            try:
-                for game in self.client.get_nba_schedule(self._schedule_season()):
-                    for club in (game.home, game.away):
-                        if club:
-                            by_team.setdefault(club, []).append(game)
-            except SleeperAPIError as e:
-                logger.warning(f"Continuing without the basketball schedule: {e}")
+            for game in self.client.get_nba_schedule(self._schedule_season()):
+                for club in (game.home, game.away):
+                    if club:
+                        by_team.setdefault(club, []).append(game)
             self._schedule = by_team
         return self._schedule
 

@@ -50,6 +50,7 @@ from thefrontoffice.domain.errors import PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
     PLAYER_COLUMN,
+    POSITION_COLUMN,
     SLOT_COLUMN,
     STATUS_COLUMN,
     CompetitionContext,
@@ -450,7 +451,7 @@ class FPLProvider:
     def _market_columns(player: Player) -> dict[str, str]:
         return {
             PLAYER_COLUMN: player.name,
-            "Pos": player.position,
+            POSITION_COLUMN: player.position,
             "Club": player.team,
             "Price": as_millions(player.cost),
             "xPts": f"{player.expected_points:.1f}",

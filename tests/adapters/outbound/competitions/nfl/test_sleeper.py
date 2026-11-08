@@ -616,6 +616,16 @@ def test_a_played_week_for_tuning_is_known_only_from_the_games_before_it() -> No
     assert ("rb1", 30.0) in [(p.player_id, actual) for p, actual in played]
 
 
+def test_a_held_out_week_that_will_not_load_fails_rather_than_scoring_perfectly() -> None:
+    """Scored on no games at all, any settings have nothing to miss."""
+    client = _paired()
+    client.game_lines = [_line("rb1", 1, 9.0), _line("rb1", 2, 11.0), _line("rb1", 3, 30.0)]
+    client.unloaded_weeks = {3}
+
+    with pytest.raises(SleeperAPIError, match="week 3"):
+        nfl_provider(client).ranged_games("L1", [3], [{}])
+
+
 def test_each_candidate_ranges_the_same_played_games_under_its_own_settings() -> None:
     client = _paired()
     client.game_lines = [_line("rb1", 1, 9.0), _line("rb1", 2, 11.0), _line("rb1", 3, 30.0)]

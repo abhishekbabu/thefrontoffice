@@ -34,6 +34,7 @@ from thefrontoffice.domain.models import (
     FIT_COLUMN,
     NOT_APPLICABLE,
     PLAYER_COLUMN,
+    POSITION_COLUMN,
     SLOT_COLUMN,
     STATUS_COLUMN,
     PlayerCard,
@@ -203,7 +204,7 @@ def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = F
                 },
                 columns={
                     PLAYER_COLUMN: meta.name,
-                    "Pos": meta.position,
+                    POSITION_COLUMN: meta.position,
                     "Team": meta.team,
                     **({} if wire else {SLOT_COLUMN: "START" if player_id in starters else "BN"}),
                     "Proj": f"{projection.points:.1f}" if projection else "0.0",
@@ -403,7 +404,7 @@ def _game_log(
     # The same rule the averages are read by, so the log shows the games they count.
     games = {
         week: line
-        for week, lines in by_week.items()
+        for week, lines in by_week.values.items()
         for line in lines
         if line.player_id == player_id and evidence.took_the_field(line)
     }
@@ -428,7 +429,7 @@ def _game_log(
                 *(_box_score(line, keys) for _, keys in measures),
             ]
             rows.append(StatRow(label=f"W{week} {_fixture(club, line.opponent, fixture)}", values=values))
-        elif week == state.week or week not in by_week or not schedule:
+        elif week == state.week or week in by_week.failures or not schedule:
             # Not played yet, not loaded, or no schedule to tell a bye from a game missed.
             continue
         elif fixture is None:

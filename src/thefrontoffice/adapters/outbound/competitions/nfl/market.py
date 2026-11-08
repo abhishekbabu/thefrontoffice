@@ -78,17 +78,19 @@ def _with(
         return sum(model.mean(state, held, week) for week in weeks) / len(weeks)
 
     my_ids, their_ids = _tradeable(mine, state), _tradeable(theirs, state)
-    my_now, their_now = per_week(mine.player_ids), per_week(theirs.player_ids)
+    # Each lineup from who can start in it: a reserve or taxi player stays where he is.
+    my_held, their_held = active(mine), active(theirs)
+    my_now, their_now = per_week(my_held), per_week(their_held)
     # Losing a player never helps a lineup, so a swap can only help a side whose
     # lineup the incoming player improves on his own; that alone prunes most pairs.
-    wanted = [pid for pid in their_ids if per_week([*mine.player_ids, pid]) > my_now]
-    sought = [pid for pid in my_ids if per_week([*theirs.player_ids, pid]) > their_now]
+    wanted = [pid for pid in their_ids if per_week([*my_held, pid]) > my_now]
+    sought = [pid for pid in my_ids if per_week([*their_held, pid]) > their_now]
 
     options = []
     for give in sought:
         for get in wanted:
-            mine_after = [pid for pid in mine.player_ids if pid != give] + [get]
-            theirs_after = [pid for pid in theirs.player_ids if pid != get] + [give]
+            mine_after = [pid for pid in my_held if pid != give] + [get]
+            theirs_after = [pid for pid in their_held if pid != get] + [give]
             gain, their_gain = per_week(mine_after) - my_now, per_week(theirs_after) - their_now
             if gain <= 0 or their_gain < MIN_THEIR_GAIN or worth(give) < FAIR_SHARE * worth(get):
                 continue

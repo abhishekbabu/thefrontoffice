@@ -175,5 +175,10 @@ def test_an_unparseable_date_is_skipped_rather_than_counted() -> None:
     assert form.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
 
 
-def test_a_failed_schedule_reports_no_remaining_games_rather_than_failing() -> None:
-    assert _form(error=SleeperAPIError("down")).get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 0
+def test_a_failed_schedule_raises_for_one_club_and_leaves_every_club_unknown_in_bulk() -> None:
+    """Nought would read as a club with no games left; unknown is what a failed request knows."""
+    form = _form(error=SleeperAPIError("down"))
+
+    with pytest.raises(SleeperAPIError):
+        form.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW)
+    assert form.get_remaining_games_bulk(["DEN"], WINDOW_START, WINDOW_END, now=NOW) == {}

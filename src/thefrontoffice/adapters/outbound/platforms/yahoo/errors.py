@@ -36,8 +36,8 @@ class YahooAuthError(FrontOfficeError):
             "permission are refused, so this is about the app rather than the login. Yahoo "
             "reviews every application before granting access to this API, so creating the app "
             "and ticking Fantasy Sports → Read is necessary but not sufficient. Personal, "
-            "single-league use is an accepted category. Authorize again once approved. NFL and "
-            "FPL are unaffected."
+            "single-league use is an accepted category. Authorize again once approved. Leagues on "
+            "other platforms are unaffected."
         )
 
 

@@ -10,6 +10,8 @@ from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, NewsArticle, ScoreboardGame
+from thefrontoffice.adapters.outbound.platforms.http import Batch
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
@@ -24,6 +26,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     TrendingPlayer,
     WeeklyProjection,
 )
+from thefrontoffice.domain.errors import FrontOfficeError
 
 SLEEPER_USER_ID = "user-1"
 
@@ -53,7 +56,7 @@ class FakeSleeper:
     ) -> None:
         self.game_lines = game_lines if game_lines is not None else []
         self.unloaded_weeks: set[int] = set()
-        """Weeks whose bulk reads would not load: absent from what the readers return, as the client leaves them."""
+        """Weeks whose bulk reads would not load: each a failure in what the readers return, as the client records it."""
         self.last_season_lines: list[NFLGameLine] = []
         self.season_stats = season_stats if season_stats is not None else {}
         self.season_stats_error = season_stats_error
@@ -94,8 +97,21 @@ class FakeSleeper:
         self.trending_error = trending_error
         self.matchup_fetches = 0
 
-    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> dict[int, list[SleeperMatchup]]:
-        return {w: self.get_matchups(league_id, w) for w in weeks if w not in self.unloaded_weeks}
+    def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Batch[int, list[SleeperMatchup]]:
+        """Like the client's: a week that fails is recorded with why, and the read itself never raises."""
+        batch: Batch[int, list[SleeperMatchup]] = self._unloaded(weeks)
+        for week in weeks:
+            if week not in batch.failures:
+                try:
+                    batch.values[week] = self.get_matchups(league_id, week)
+                except FrontOfficeError as e:
+                    batch.failures[week] = e
+        return batch
+
+    def _unloaded[V](self, weeks: list[int]) -> Batch[int, V]:
+        return Batch(
+            failures={w: SleeperAPIError(f"week {w} would not load") for w in weeks if w in self.unloaded_weeks}
+        )
 
     def get_nfl_schedule(self, season: str) -> list[ScheduledGame]:
         if self.schedule_error:
@@ -109,9 +125,11 @@ class FakeSleeper:
 
     def get_nfl_game_lines(
         self, season: str, weeks: list[int], positions: Collection[str]
-    ) -> dict[int, list[NFLGameLine]]:
+    ) -> Batch[int, list[NFLGameLine]]:
         source = self.game_lines if season == self.get_nfl_state().season else self.last_season_lines
-        return {w: [line for line in source if line.week == w] for w in weeks if w not in self.unloaded_weeks}
+        batch: Batch[int, list[NFLGameLine]] = self._unloaded(weeks)
+        batch.values.update({w: [line for line in source if line.week == w] for w in weeks if w not in batch.failures})
+        return batch
 
     def get_season_stats(self, season: str) -> dict[str, SeasonStats]:
         if self.season_stats_error:

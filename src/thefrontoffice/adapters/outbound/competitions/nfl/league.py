@@ -22,6 +22,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     NFLSource,
     Projection,
     Team,
+    active,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
@@ -91,8 +92,8 @@ def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence
 
     rows: list[ScheduleRow] = []
     for week in weeks:
-        loaded = week in by_week
-        sides = opponent_of(by_week.get(week, []), state.roster.roster_id)
+        loaded = week not in by_week.failures
+        sides = opponent_of(by_week.values.get(week, []), state.roster.roster_id)
         opponent = by_roster.get(sides[1].roster_id) if sides else None
 
         playoff = _playoff_round(state, week)
@@ -311,12 +312,12 @@ def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | Non
     rosters = state.rosters
 
     by_week = client.get_matchups_bulk(league.league_id, remaining)
-    # A week the bulk read lost is asked for alone, which raises why: a season
-    # simulated without one week's games is a table nobody will finish in.
+    # A week that would not load raises why: a season simulated without one
+    # week's games is a table nobody will finish in.
     fixtures = [
         Fixture(week=week, home=str(home.roster_id), away=str(away.roster_id))
         for week in remaining
-        for home, away in pairings(by_week[week] if week in by_week else client.get_matchups(league.league_id, week))
+        for home, away in pairings(by_week.value(week))
     ]
 
     projections = {
@@ -324,7 +325,7 @@ def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | Non
     }
     miss_rate = _miss_rate(client, state)
     projected = {
-        (str(roster.roster_id), week): _expected_lineup(state, roster.player_ids, projections[week], miss_rate)
+        (str(roster.roster_id), week): _expected_lineup(state, active(roster), projections[week], miss_rate)
         for week in remaining
         for roster in rosters
     }
@@ -391,7 +392,7 @@ def _miss_rate(client: NFLSource, state: Week) -> float:
     played = weeks_played(state.week, state.is_regular_season)
     if not played:
         return DEFAULT_MISS_RATE
-    missed, chances = misses(season_lines(client.get_nfl_game_lines(state.season, played, FANTASY_POSITIONS)))
+    missed, chances = misses(season_lines(client.get_nfl_game_lines(state.season, played, FANTASY_POSITIONS).values))
     return missed / chances if chances >= MIN_MISS_CHANCES else DEFAULT_MISS_RATE
 
 
@@ -411,7 +412,7 @@ def _spread(client: NFLSource, league_id: str, week: int) -> float:
     played = list(range(1, week))
     if len(played) < MIN_WEEKS_FOR_SPREAD:
         return DEFAULT_SPREAD
-    by_week = client.get_matchups_bulk(league_id, played)
+    by_week = client.get_matchups_bulk(league_id, played).values
     weeks = len(by_week)
     if weeks < MIN_WEEKS_FOR_SPREAD:
         return DEFAULT_SPREAD

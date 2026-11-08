@@ -41,6 +41,12 @@ class Batch[K, V]:
     values: dict[K, V] = field(default_factory=dict)
     failures: dict[K, FrontOfficeError] = field(default_factory=dict)
 
+    def value(self, key: K) -> V:
+        """The value under `key`, raising why it would not load where it did not."""
+        if key in self.failures:
+            raise self.failures[key]
+        return self.values[key]
+
     def rekeyed[N](self, keys: Mapping[N, K]) -> Batch[N, V]:
         """The same batch under the caller's own keys — a week number rather than a cache key."""
         return Batch(
