@@ -34,8 +34,8 @@ from thefrontoffice.domain.models import Action, Stat, Urgency, urgency_rank
 STACKED = 3
 """Starters riding on one real game at which a bad afternoon there is most of a bad week."""
 
-Move = Literal["hole", "swap", "upgrade", "rise", "stack", "teammate", "bye", "deadline", "short"]
-"""What an item on the list is about: a starter who cannot play or an empty slot, a swap the bench
+Move = Literal["ir", "hole", "swap", "upgrade", "rise", "stack", "teammate", "bye", "deadline", "short"]
+"""What an item on the list is about: a player IR no longer takes, a starter who cannot play or an empty slot, a swap the bench
 allows, a free agent who outscores a starter, a role that grew, a stacked game, a teammate ahead of
 one of yours who may sit, next week's byes, the trade deadline, a week ahead left short."""
 
@@ -80,7 +80,8 @@ def build(
     week_games = games.get(state.week, [])
     kickoff = by_club(week_games)
 
-    items = _lineup(state, started, kickoff, free_agents)
+    items = _ir_locked(state, started)
+    items += _lineup(state, started, kickoff, free_agents)
     items += _upgrades(state, free_agents, started, {i.action.player_id for i in items})
     items += _breakouts(state, free_agents, {i.action.player_id for i in items})
     items += _same_game(state, week_games, started, {(i.action.player_id, i.action.replaces) for i in items})
@@ -88,6 +89,52 @@ def build(
     items += _next_week_byes(state, games.get(state.week + 1, []))
     items += _trade_deadline(state)
     return sorted(_with_drops(state, items, started), key=lambda i: urgency_rank(i.action.urgency))
+
+
+def _ir_locked(state: Week, started: set[str]) -> list[Item]:
+    """Each player held on IR whose designation the league's IR slot no longer takes.
+
+    Sleeper locks the whole roster while one sits there: no lineup change, no
+    pickup, until he is activated or released. Questionable is the usual way
+    in — a player returns to practice and his IR designation becomes a game
+    one. Activating him needs a roster spot, so the item names who to drop
+    when none is open, chosen as any pickup's drop is.
+    """
+    allows = state.league.ir_allows
+    open_spots = state.league.roster_spots - len(active(state.roster))
+    items = []
+    for player_id in state.roster.ir_ids:
+        meta = state.players.get(player_id)
+        if meta is None or meta.injury_status.upper() in allows:
+            continue
+        status = meta.injury_status.lower() or "cleared to play"
+        reason = (
+            f"{meta.name} is {status}, and this league's IR slot takes only {join(sorted(allows))}. "
+            "Sleeper refuses every lineup change and pickup until he leaves it."
+        )
+        drop = None
+        if open_spots > 0:
+            open_spots -= 1
+            reason += " You have a roster spot open for him."
+        else:
+            drop = drop_candidate(state, (p for p in state.bench if p.team not in started), set())
+            reason += f" {_drop_reason(state, drop)}" if drop else " Nobody on the bench can be released yet."
+        items.append(
+            Item(
+                "ir",
+                Action(
+                    kind="lineup",
+                    urgency="now",
+                    title=f"Move {meta.name} off IR" + (f", drop {drop.name}" if drop else ""),
+                    reason=reason,
+                    when="before any other move",
+                    player_id=player_id,
+                    drop=drop.player_id if drop else "",
+                    key=f"ir:{player_id}:{meta.injury_status.upper()}",
+                ),
+            )
+        )
+    return items
 
 
 def _lineup(
@@ -380,9 +427,11 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
     fourteen-point tight end on a one-week injury for a seven-point flier is
     not a to-do item.
     """
+    # A player coming off IR takes a spot first: until he does, nothing else can be added.
     open_spots = state.league.roster_spots - len(active(state.roster))
+    open_spots -= sum(1 for item in items if item.move == "ir" and not item.action.drop)
     named = {pid for item in items for pid in (item.action.player_id, item.action.replaces) if pid}
-    chosen: set[str] = set()
+    chosen = {item.action.drop for item in items if item.move == "ir" and item.action.drop}
     out = []
     for item in items:
         action = item.action

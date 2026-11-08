@@ -737,6 +737,24 @@ def test_roster_rows_mark_starters_and_bench() -> None:
     assert {r["Player"]: r["Slot"] for r in rows} == {"Star QB": "START", "Good RB": "BN"}
 
 
+def test_roster_rows_name_the_reserve_slot_a_player_is_held_in() -> None:
+    client = FakeSleeper(
+        projections=dict(DEFAULT_PROJECTIONS),
+        rosters=[
+            SleeperRoster(
+                roster_id=1,
+                owner_id=SLEEPER_USER_ID,
+                player_ids=["qb1", "rb1", "rb2"],
+                starter_ids=["qb1"],
+                reserve_ids=["rb1", "rb2"],
+                ir_ids=["rb1"],
+            )
+        ],
+    )
+    rows = [c.columns for c in nfl_provider(client).roster("L1")]
+    assert {r["Player"]: r["Slot"] for r in rows} == {"Star QB": "START", "Good RB": "IR", "Bad RB": "TAXI"}
+
+
 def test_roster_rows_say_who_is_ruled_out_rather_than_merely_listed() -> None:
     client = FakeSleeper(
         projections=dict(DEFAULT_PROJECTIONS),

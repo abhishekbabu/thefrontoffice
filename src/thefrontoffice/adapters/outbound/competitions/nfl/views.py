@@ -174,13 +174,26 @@ def is_signing(meta: PlayerInfo) -> bool:
     return meta.position in FANTASY_POSITIONS and meta.team != FREE_AGENT
 
 
-def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = False) -> list[PlayerCard]:
+def held(roster: Team) -> dict[str, str]:
+    """The slot each reserve player is held in, as Sleeper names it: IR, or TAXI."""
+    return {pid: "IR" if pid in roster.ir_ids else "TAXI" for pid in roster.reserve_ids}
+
+
+def cards(
+    state: Week,
+    player_ids: list[str],
+    starters: set[str],
+    wire: bool = False,
+    reserve: Mapping[str, str] | None = None,
+) -> list[PlayerCard]:
     """One table shape for every list of players this sport shows.
 
     The wire has no lineup to be in, so no slot; it has instead what each
     would add to your lineup — "how good is he" is only half the question
-    there, and "how good is he for me" is the other.
+    there, and "how good is he for me" is the other. `reserve` names the slot
+    of each player held in one (see `held`), who is neither started nor benched.
     """
+    reserve = reserve or {}
     rows = []
     for player_id in player_ids:
         meta = state.players.get(player_id)
@@ -206,7 +219,7 @@ def cards(state: Week, player_ids: list[str], starters: set[str], wire: bool = F
                     PLAYER_COLUMN: meta.name,
                     POSITION_COLUMN: meta.position,
                     "Team": meta.team,
-                    **({} if wire else {SLOT_COLUMN: "START" if player_id in starters else "BN"}),
+                    **({} if wire else {SLOT_COLUMN: _slot(player_id, starters, reserve)}),
                     "Proj": f"{projection.points:.1f}" if projection else "0.0",
                     **({FIT_COLUMN: fitted[1] if fitted else "—"} if wire else {}),
                     # Whose role just grew: the pickups a projection has
@@ -575,11 +588,18 @@ def spot(
     )
 
 
+def _slot(player_id: str, starters: set[str], reserve: Mapping[str, str]) -> str:
+    if player_id in reserve:
+        return reserve[player_id]
+    return "START" if player_id in starters else "BN"
+
+
 def reserved(row: Spot, roster: Team) -> Spot:
     """A bench row marked where he is in an injured-reserve or taxi slot, which costs no bench spot."""
-    if row.player_id not in roster.reserve_ids:
+    slot = held(roster).get(row.player_id)
+    if slot is None:
         return row
-    return row.model_copy(update={"detail": f"{row.detail} · reserve slot"})
+    return row.model_copy(update={"detail": f"{row.detail} · {'IR' if slot == 'IR' else 'taxi'} slot"})
 
 
 def _live_tone(scored: float) -> Tone:

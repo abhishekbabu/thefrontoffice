@@ -14,7 +14,8 @@ player. It runs on your own machine against NFL on
 
 ## Features
 
-- **To-do list**: starters out or on bye, empty slots, bench swaps, next week's
+- **To-do list**: a player on IR the slot no longer takes (which locks the
+  roster), starters out or on bye, empty slots, bench swaps, next week's
   byes, free agents whose role just grew, a regular on the injury report whose
   work could fall to one of your players, and the trade deadline. Each item
   names the fix, who to drop and the deadline.

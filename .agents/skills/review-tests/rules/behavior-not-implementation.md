@@ -11,7 +11,7 @@ tax on changing anything.
 ```python
 def test_projections_are_fetched() -> None:
     provider.build_context()
-    assert sleeper.get_projections_called == 1     # an internal call count
+    assert sleeper.get_projections_called == 1  # an internal call count
     assert yahoo.search.call_args[0][0] == "nba.l.1"
 ```
 

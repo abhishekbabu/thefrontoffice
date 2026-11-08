@@ -180,7 +180,9 @@ class SleeperNFLProvider:
     def roster(self, league_id: str) -> list[PlayerCard]:
         """The full roster, with the depth and experience a week view leaves out."""
         state = self._week(league_id)
-        return views.cards(state, views.lineup_order(state, state.roster), state.starter_ids)
+        return views.cards(
+            state, views.lineup_order(state, state.roster), state.starter_ids, reserve=views.held(state.roster)
+        )
 
     def teams(self, league_id: str) -> list[TeamRef]:
         """Everyone in the league, yours first. Records only, so no week is gathered for it."""
@@ -205,7 +207,9 @@ class SleeperNFLProvider:
         roster = next((r for r in state.rosters if str(r.roster_id) == team_id), None)
         if roster is None:
             raise TeamNotFoundError(f"roster {team_id}")
-        return views.cards(state, views.lineup_order(state, roster), set(roster.starter_ids))
+        return views.cards(
+            state, views.lineup_order(state, roster), set(roster.starter_ids), reserve=views.held(roster)
+        )
 
     def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
         """Everyone nobody in the league holds, best projection first.

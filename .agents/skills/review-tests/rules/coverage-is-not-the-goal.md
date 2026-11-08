@@ -12,17 +12,17 @@ which is worse than a gap: a gap is honest.
 
 ```python
 def test_build_context_runs() -> None:
-    provider.build_context()                  # no assertion at all
+    provider.build_context()  # no assertion at all
 
 
 def test_report_generation() -> None:
     report = engine.generate()
-    assert report is not None                 # a truthiness check on an object
+    assert report is not None  # a truthiness check on an object
 
 
 def test_every_error_class() -> None:
     for cls in (YahooAPIError, SleeperAPIError, FPLAPIError):
-        assert issubclass(cls, FrontOfficeError)   # tests the class statement
+        assert issubclass(cls, FrontOfficeError)  # tests the class statement
 ```
 
 ## Keep
