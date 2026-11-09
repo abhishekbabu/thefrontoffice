@@ -117,7 +117,7 @@ def test_a_finished_season_is_scored_per_game_not_only_as_a_total() -> None:
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_stats=HISTORY)
 
     table = _table(client)
-    assert table["Per game"][2] == "17.5"  # 210 points over 12 games
+    assert table["Per game"][2] == "17.50"  # 210 points over 12 games
     assert table["Games"][2] == "12"
 
 
@@ -133,7 +133,7 @@ def test_a_season_is_scored_in_the_leagues_own_currency() -> None:
     )
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_stats=HISTORY, league=league)
 
-    assert _table(client)["Total"][1] == "300.0"  # pts_std, not pts_ppr
+    assert _table(client)["Total"][1] == "300.00"  # pts_std, not pts_ppr
 
 
 def test_a_split_a_position_never_records_has_no_row_at_all() -> None:
@@ -189,7 +189,7 @@ def test_each_game_is_a_row_leading_with_the_points_it_scored_in_the_leagues_cur
     log = _log(client)
 
     assert log["__columns__"][0] == "Pts"
-    assert log["W1 @ MIA"][0] == "21.4"
+    assert log["W1 @ MIA"][0] == "21.40"
 
 
 def test_a_game_reads_its_snap_share_and_box_score() -> None:
@@ -309,7 +309,7 @@ def test_the_drawer_shows_what_the_projection_rests_on() -> None:
     assert stats["Carries a game"] == "16.0"
     assert stats["Targets a game"] == "3.0"
     assert stats["Target share"] == "100%"
-    assert stats["Points a game, last 2"] == "17.0"
+    assert stats["Points a game, last 2"] == "17.00"
 
 
 def test_the_drawer_shows_the_latest_news_about_the_player() -> None:
@@ -912,3 +912,16 @@ def test_a_move_can_name_only_yours_or_the_wires_before_their_kickoff() -> None:
     assert movable is not None
     assert "Waiver WR" in movable
     assert {"Star QB", "Good RB", "Bad RB"}.isdisjoint(movable)
+
+
+def test_every_projection_and_stat_line_is_asked_for_in_the_leagues_own_scoring() -> None:
+    rules = {"rec": 1.0, "fgm_40_49": 4.0}
+    client = league_client()
+    client.league = replace(client.league, scoring_rules=rules)
+    provider = nfl_provider(client)
+
+    provider.summary("L1")
+    provider.build_context("L1")
+    provider.player("L1", "qb1")
+
+    assert client.rules_asked and all(asked == rules for asked in client.rules_asked)

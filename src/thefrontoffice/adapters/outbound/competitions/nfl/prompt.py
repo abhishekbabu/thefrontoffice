@@ -183,7 +183,7 @@ def build(state: Week, tasks: list[Action], trending: Sequence[Trending] | None)
     evidence, news = state.evidence, state.news
     lineup_str = "".join(
         f"- {slot.slot}: {slot.player.name} ({slot.player.position}, {slot.player.team}) "
-        f"{slot.player.points:.1f} pts vs {slot.player.opponent or 'TBD'}\n"
+        f"{slot.player.points:.2f} pts vs {slot.player.opponent or 'TBD'}\n"
         + (f"  {behind}\n" if (behind := evidence.describe(slot.player)) else "")
         + news_lines(news, slot.player.player_id)
         if slot.player
@@ -203,9 +203,9 @@ def build(state: Week, tasks: list[Action], trending: Sequence[Trending] | None)
     current_points, best_points, on_bench = state.current_points, state.best_points, state.on_bench
     constraints = lineup_slots(
         state,
-        f"Current lineup projects {current_points:.1f} points.",
-        f"The best legal lineup projects {best_points:.1f}"
-        + (f", so {on_bench:.1f} points are sitting on the bench." if on_bench > 0 else "."),
+        f"Current lineup projects {current_points:.2f} points.",
+        f"The best legal lineup projects {best_points:.2f}"
+        + (f", so {on_bench:.2f} points are sitting on the bench." if on_bench > 0 else "."),
         "Bench players score nothing. A start/sit change costs nothing; an add costs a roster spot.",
     )
 
@@ -316,10 +316,10 @@ def headline(state: Week) -> list[Stat]:
     """
     if state.on_bench > 0:
         lineup = Stat(
-            label="Lineup", value=f"{state.current_points:.1f} proj · best {state.best_points:.1f}", tone="warning"
+            label="Lineup", value=f"{state.current_points:.2f} proj · best {state.best_points:.2f}", tone="warning"
         )
     else:
-        lineup = Stat(label="Lineup", value=f"{state.current_points:.1f} proj")
+        lineup = Stat(label="Lineup", value=f"{state.current_points:.2f} proj")
     return [lineup, *matchup(state)[1]]
 
 
@@ -353,7 +353,7 @@ def player_line(p: Projection, evidence: Evidence, news: PlayerNews, bullet: str
     opponent = f" vs {p.opponent}" if p.opponent else " (no game)"
     behind = evidence.describe(p)
     return (
-        f"{bullet}{p.name} ({p.position}, {p.team}){injury}{mark}{opponent}: {p.points:.1f} proj pts\n"
+        f"{bullet}{p.name} ({p.position}, {p.team}){injury}{mark}{opponent}: {p.points:.2f} proj pts\n"
         + (f"  {behind}\n" if behind else "")
         + news_lines(news, p.player_id)
     )
@@ -383,7 +383,7 @@ def _trending(state: Week, trending: Sequence[Trending] | None) -> str:
         if not name:
             continue
         proj = state.projections.get(item.player_id)
-        points = f"{proj.points:.1f} proj pts" if proj else "no projection"
+        points = f"{proj.points:.2f} proj pts" if proj else "no projection"
         lines.append(f"- {name}: added by {item.count:,} managers in {TRENDING_HOURS}h, {points}\n")
     return "".join(lines) or "- (none)\n"
 
@@ -393,7 +393,7 @@ def matchup(state: Week) -> tuple[str, list[Stat]]:
     roster = state.roster
     header = (
         f"LEAGUE: {state.league.name} ({state.league.total_rosters} teams)\n"
-        f"WEEK: {state.week}\nYOUR RECORD: {roster.record}, {roster.points_for:.1f} points for\n"
+        f"WEEK: {state.week}\nYOUR RECORD: {roster.record}, {roster.points_for:.2f} points for\n"
     )
     if state.matchup is None:
         return header + "No head-to-head matchup this week.\n", []
@@ -401,9 +401,9 @@ def matchup(state: Week) -> tuple[str, list[Stat]]:
     mine, theirs = state.matchup
     opponent = state.opponent
     name = (state.team_name(opponent) + f" ({opponent.record})") if opponent else "Opponent"
-    margin = round(mine.points - theirs.points, 1)
+    margin = round(mine.points - theirs.points, 2)
 
-    prose = header + f"OPPONENT: {name}\nLIVE SCORE: you {mine.points:.1f} - {theirs.points:.1f} them\n"
+    prose = header + f"OPPONENT: {name}\nLIVE SCORE: you {mine.points:.2f} - {theirs.points:.2f} them\n"
     stats = [
         Stat(label="Opponent", value=name),
         # Toned by who is ahead: the score is the verdict so far. No separate
@@ -412,7 +412,7 @@ def matchup(state: Week) -> tuple[str, list[Stat]]:
         # forecast that disagreed with the first.
         Stat(
             label="Live",
-            value=f"{mine.points:.1f} – {theirs.points:.1f}",
+            value=f"{mine.points:.2f} – {theirs.points:.2f}",
             tone="good" if margin > 0 else "warning" if margin < 0 else "neutral",
         ),
     ]

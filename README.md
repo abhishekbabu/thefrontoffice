@@ -128,7 +128,8 @@ on disk.
 - **Platforms.** Sleeper runs the NFL leagues and supplies stats for both NFL
   and NBA. FPL comes from its public API, NBA leagues from Yahoo, and news and
   injuries from ESPN. Every response is cached on disk, and transient failures
-  are retried.
+  are retried. Football projections and stat lines are priced by each league's
+  own scoring settings, as the Sleeper app prices them.
 - **The to-do list is the app's, not the model's.** It is computed from league
   state before any model is asked. A model can agree, overrule or suggest, but
   it can't add, drop or restate an item.

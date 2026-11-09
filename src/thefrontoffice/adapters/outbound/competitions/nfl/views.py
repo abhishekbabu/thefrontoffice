@@ -221,7 +221,7 @@ def cards(
                     POSITION_COLUMN: meta.position,
                     "Team": meta.team,
                     **({} if wire else {SLOT_COLUMN: _slot(player_id, starters, reserve)}),
-                    "Proj": f"{projection.points:.1f}" if projection else "0.0",
+                    "Proj": f"{projection.points:.2f}" if projection else "0.00",
                     **({FIT_COLUMN: fitted[1] if fitted else "—"} if wire else {}),
                     # Whose role just grew: the pickups a projection has
                     # not caught up with yet. Sorts by the size of the jump.
@@ -264,8 +264,8 @@ def fit(state: Week, projection: Projection) -> tuple[float, str] | None:
         return None
     gain, slot = upgrade
     if slot.player is None:
-        return gain, f"+{gain:.1f} at {slot.slot}, empty"
-    return (gain, f"+{gain:.1f} over {slot.player.name}") if gain > 0 else (gain, f"{gain:.1f} vs {slot.player.name}")
+        return gain, f"+{gain:.2f} at {slot.slot}, empty"
+    return (gain, f"+{gain:.2f} over {slot.player.name}") if gain > 0 else (gain, f"{gain:.2f} vs {slot.player.name}")
 
 
 def _role_and_matchup(projection: Projection, state: Week) -> StatGroup | None:
@@ -283,7 +283,7 @@ def _role_and_matchup(projection: Projection, state: Week) -> StatGroup | None:
             stats.append(Stat(label="Targets a game", value=f"{role.targets:.1f}"))
             if role.target_share is not None:
                 stats.append(Stat(label="Target share", value=f"{role.target_share:.0%}"))
-        stats.append(Stat(label=f"Points a game, {games}", value=f"{role.points:.1f}"))
+        stats.append(Stat(label=f"Points a game, {games}", value=f"{role.points:.2f}"))
     return StatGroup(title="Role and matchup", stats=stats) if stats else None
 
 
@@ -345,7 +345,7 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
                         _team_name(projection.opponent, state.players) if projection else "",
                     ),
                 ),
-                Stat(label="Projected", value=f"{projection.points:.1f}" if projection else "—"),
+                Stat(label="Projected", value=f"{projection.points:.2f}" if projection else "—"),
                 Stat(
                     label="Status",
                     value=injury or "active",
@@ -380,7 +380,7 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
         position=meta.position,
         team=(team := meta.team),
         team_name=_team_name(team, state.players),
-        headline=f"{projection.points:.1f}" if projection else "",
+        headline=f"{projection.points:.2f}" if projection else "",
         headline_label=_headline_label(projection, scheduled, state.week),
         note=meta.injury_notes or injury,
         tables=[
@@ -414,7 +414,9 @@ def _game_log(
     if not state.is_regular_season:
         return None
     weeks = list(range(1, state.week + 1))
-    by_week = client.get_nfl_game_lines(state.season, weeks, FANTASY_POSITIONS)
+    by_week = client.get_nfl_game_lines(
+        state.season, weeks, FANTASY_POSITIONS, state.league.scoring_format, state.league.scoring_rules
+    )
     # The same rule the averages are read by, so the log shows the games they count.
     games = {
         week: line
@@ -438,7 +440,7 @@ def _game_log(
         fixture = by_club(schedule.get(week, [])).get(club)
         if line:
             values = [
-                f"{line.stats.get(state.league.scoring_format, 0.0):.1f}",
+                f"{line.stats.get(state.league.scoring_format, 0.0):.2f}",
                 *([_snap_share(line)] if snaps else []),
                 *(_box_score(line, keys) for _, keys in measures),
             ]
@@ -496,7 +498,7 @@ def _season_table(client: NFLSource, player_id: str, state: Week) -> StatTable |
     by_season: dict[str, SeasonTotals | None] = {}
     for season in columns:
         try:
-            by_season[season] = client.get_season_stats(season).get(player_id)
+            by_season[season] = client.get_season_stats(season, scoring, state.league.scoring_rules).get(player_id)
         except PlatformError as e:
             logger.warning(f"Skipping {season} totals: {e}")
             by_season[season] = None
@@ -520,8 +522,8 @@ def _season_table(client: NFLSource, player_id: str, state: Week) -> StatTable |
         )
 
     rows = [
-        row("Per game", lambda st: f"{st.per_game(scoring):.1f}"),
-        row("Total", lambda st: f"{st.scored(scoring):.1f}"),
+        row("Per game", lambda st: f"{st.per_game(scoring):.2f}"),
+        row("Total", lambda st: f"{st.scored(scoring):.2f}"),
         row("Games", lambda st: str(st.games)),
         row("Position rank", lambda st: f"#{st.position_rank}" if st.position_rank else NOT_APPLICABLE),
     ]
@@ -549,7 +551,15 @@ def _recent_seasons(season: str) -> list[str]:
 
 def lineup_spot(slot: LineupSlot, scheduled: bool, live: Live | None = None) -> Spot:
     if slot.player is None:
-        return Spot(slot=slot.slot, player="—", detail="empty", value="0.0", tone="warning", scoring="projected")
+        return Spot(
+            slot=slot.slot,
+            player="—",
+            detail="empty",
+            value="0.00",
+            tone="warning",
+            scoring="projected",
+            projection="0.00",
+        )
     return spot(slot.player, scheduled, slot=slot.slot, live=live, projected=slot.points)
 
 
@@ -584,11 +594,11 @@ def spot(
         slot=slot,
         player=projection.name,
         detail=f"{detail} · {clock}" if clock else detail,
-        value=f"{scored:.1f} pts" if scored is not None else f"{points:.1f} proj",
+        value=f"{scored:.2f} pts" if scored is not None else f"{points:.2f} proj",
         tone=_live_tone(scored) if scored is not None else _spot_tone(projection, scheduled),
         scoring=_scoring(projection.team, live) if scored is not None else "projected",
-        scored=f"{scored:.1f}" if scored is not None else "",
-        projection=f"{points:.1f}",
+        scored=f"{scored:.2f}" if scored is not None else "",
+        projection=f"{points:.2f}",
     )
 
 
@@ -636,15 +646,15 @@ def _spot_tone(projection: Projection | None, scheduled: bool) -> Tone:
 def side_total(state: Week, live: Live) -> str:
     """The projection until the ball is rolling, then what is on the board beside it."""
     if not live.under_way:
-        return f"{state.current_points:.1f} proj"
+        return f"{state.current_points:.2f} proj"
     scored = sum(live.scored(slot.player.player_id, slot.player.team) or 0 for slot in state.lineup if slot.player)
-    return f"{scored:.1f} pts · {state.current_points:.1f} proj"
+    return f"{scored:.2f} pts · {state.current_points:.2f} proj"
 
 
 def _opponent_total(scored: float, starters: Sequence[Projection], live: Live) -> str:
     """The opponent's figure in the same words as yours: projected, then scored beside it."""
     projected = sum(p.points for p in starters)
-    return f"{scored:.1f} pts · {projected:.1f} proj" if live.under_way else f"{projected:.1f} proj"
+    return f"{scored:.2f} pts · {projected:.2f} proj" if live.under_way else f"{projected:.2f} proj"
 
 
 def opponent_side(state: Week, roster: Team, points: float, live: Live) -> Side:
@@ -666,7 +676,15 @@ def opponent_side(state: Week, roster: Team, points: float, live: Live) -> Side:
         lineup = [
             spot(by_id[pid], scheduled, slot=slot, live=live)
             if pid in by_id
-            else Spot(slot=slot, player="—", detail="empty", value="0.0", tone="warning", scoring="projected")
+            else Spot(
+                slot=slot,
+                player="—",
+                detail="empty",
+                value="0.00",
+                tone="warning",
+                scoring="projected",
+                projection="0.00",
+            )
             for slot, pid in zip(slots, roster.starter_ids, strict=True)
         ]
     else:

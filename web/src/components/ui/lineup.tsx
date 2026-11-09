@@ -113,7 +113,7 @@ function SpotList({ spots, empty, onOpen }: { spots: Spot[]; empty?: string; onO
 }
 
 /**
- * What he has scored beside what he was projected, in two fixed columns, so
+ * What he was projected, then what he has scored, in two fixed columns, so
  * the real number and the guess are never one figure read two ways. Before
  * kickoff the projection is the only number, and the points column says so
  * with a dash; once the game is on the points lead and the projection steps
@@ -124,7 +124,15 @@ function SpotScore({ spot }: { spot: Spot }) {
   const warn = spot.tone === "warning";
   return (
     <div className="flex shrink-0 items-start gap-3 text-right">
-      <div className="flex w-14 flex-col items-end gap-0.5">
+      <span
+        className={cn(
+          "w-14 font-mono text-[12px] tabular-nums",
+          played ? "text-muted-foreground" : warn ? "text-warn" : "text-foreground",
+        )}
+      >
+        {spot.projection}
+      </span>
+      <div className="flex w-16 flex-col items-end gap-0.5">
         <span
           className={cn(
             "font-mono text-[14px] font-semibold tabular-nums",
@@ -144,14 +152,6 @@ function SpotScore({ spot }: { spot: Spot }) {
           </span>
         )}
       </div>
-      <span
-        className={cn(
-          "w-12 font-mono text-[12px] tabular-nums",
-          played ? "text-muted-foreground" : warn ? "text-warn" : "text-foreground",
-        )}
-      >
-        {spot.projection}
-      </span>
     </div>
   );
 }
@@ -168,8 +168,8 @@ function ScoreHeads({ spots, children, className }: { spots: Spot[]; children?: 
   return (
     <Label as="div" className={cn("flex items-baseline gap-3 border-y border-border px-4 py-2", className)}>
       <span className="flex-1">{children}</span>
-      <span className="w-14 text-right">Pts</span>
-      <span className="w-12 text-right">Proj</span>
+      <span className="w-14 text-right">Proj</span>
+      <span className="w-16 text-right">Pts</span>
     </Label>
   );
 }

@@ -203,6 +203,11 @@ class LeagueRules(Protocol):
     @property
     def scoring_format(self) -> Scoring: ...
     @property
+    def scoring_rules(self) -> Mapping[str, float]:
+        """Points per unit of each stat, as the league set them; every line is priced by them."""
+        ...
+
+    @property
     def trade_deadline(self) -> int:
         """The last week trades are accepted; zero where the league set none."""
         ...
@@ -404,7 +409,12 @@ class NFLSource(Protocol):
         ...
 
     def get_nfl_game_lines(
-        self, season: str, weeks: list[int], positions: Collection[str]
+        self,
+        season: str,
+        weeks: list[int],
+        positions: Collection[str],
+        scoring: Scoring,
+        rules: Mapping[str, float],
     ) -> Weeks[Sequence[GameLine]]:
         """Every line from each game in `weeks` by a player at one of `positions`, by week.
 
@@ -420,14 +430,21 @@ class NFLSource(Protocol):
     def get_nfl_state(self) -> Phase: ...
 
     def get_projections(
-        self, season: str, week: int, scoring: Scoring, positions: Collection[str]
+        self,
+        season: str,
+        week: int,
+        scoring: Scoring,
+        positions: Collection[str],
+        rules: Mapping[str, float],
     ) -> Mapping[str, Projection]:
         """The week's projections for the players at `positions`, by player id."""
         ...
 
     def get_rosters(self, league_id: str) -> Sequence[Team]: ...
 
-    def get_season_stats(self, season: str) -> Mapping[str, SeasonTotals]: ...
+    def get_season_stats(self, season: str, scoring: Scoring, rules: Mapping[str, float]) -> Mapping[str, SeasonTotals]:
+        """A season's totals by player id, its points in `scoring` priced by the league's `rules`."""
+        ...
 
     def get_transactions(self, league_id: str, week: int) -> Sequence[LeagueMove]: ...
 

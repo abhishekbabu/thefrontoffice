@@ -135,7 +135,7 @@ def _headline(state: Week, standings: list[StandingRow]) -> list[Stat]:
     rank = next((row.rank for row in standings if row.is_mine), 0)
     return [
         *places.season(state.roster.record, rank, len(standings)),
-        Stat(label="Points for", value=f"{state.roster.points_for:.1f}"),
+        Stat(label="Points for", value=f"{state.roster.points_for:.2f}"),
     ]
 
 
@@ -144,7 +144,7 @@ def _result(sides: tuple[Matchup, Matchup] | None, week: int, current: int) -> s
     if week >= current or sides is None:
         return ""
     mine, theirs = sides
-    return f"{mine.points:.1f}-{theirs.points:.1f}"
+    return f"{mine.points:.2f}-{theirs.points:.2f}"
 
 
 def _outcome(sides: tuple[Matchup, Matchup] | None, week: int, current: int) -> Outcome | None:
@@ -163,7 +163,7 @@ def _standings(state: Week) -> list[StandingRow]:
             rank=i,
             name=state.team_name(r),
             record=r.record,
-            points=f"{r.points_for:.1f}",
+            points=f"{r.points_for:.2f}",
             team_id=str(r.roster_id),
             is_mine=r.roster_id == state.roster.roster_id,
         )
@@ -321,7 +321,8 @@ def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | Non
     ]
 
     projections = {
-        week: client.get_projections(state.season, week, league.scoring_format, FANTASY_POSITIONS) for week in remaining
+        week: client.get_projections(state.season, week, league.scoring_format, FANTASY_POSITIONS, league.scoring_rules)
+        for week in remaining
     }
     miss_rate = _miss_rate(client, state)
     projected = {
@@ -392,7 +393,13 @@ def _miss_rate(client: NFLSource, state: Week) -> float:
     played = weeks_played(state.week, state.is_regular_season)
     if not played:
         return DEFAULT_MISS_RATE
-    missed, chances = misses(season_lines(client.get_nfl_game_lines(state.season, played, FANTASY_POSITIONS).values))
+    missed, chances = misses(
+        season_lines(
+            client.get_nfl_game_lines(
+                state.season, played, FANTASY_POSITIONS, state.league.scoring_format, state.league.scoring_rules
+            ).values
+        )
+    )
     return missed / chances if chances >= MIN_MISS_CHANCES else DEFAULT_MISS_RATE
 
 

@@ -75,6 +75,9 @@ class SleeperLeague:
     """How many teams the regular season sends to the playoffs. Zero where unknown."""
     playoff_week_start: int = 0
     """The first playoff week; the regular season is every week before it. Zero where unknown."""
+    scoring_rules: dict[str, float] = field(default_factory=dict)
+    """Points per unit of each stat, as the league set them — what Sleeper's own app prices a line by.
+    Empty where unknown, and a line is then read at Sleeper's published figure for the format."""
     ir_allows: frozenset[str] = frozenset({"IR"})
     """The designations the league's injured-reserve slot takes, upper-cased. A player on IR whose
     designation is no longer among them locks the roster: Sleeper refuses every move until he leaves it."""
@@ -172,9 +175,9 @@ class GameProjection:
     stats: dict[str, float]
 
 
-# The stats worth keeping from a season row. Sleeper sends ~70 per player
-# across 8k players; the rest are kicking splits and defensive counting stats
-# that no fantasy page reads.
+# The stats a season row is shown by, and so the columns of the season table.
+# Every other stat a league could price is kept too (`_trim_season_stats`):
+# a kicker's field goals by distance are what his points are made of.
 SEASON_STAT_KEYS = (
     "gp",
     "pts_ppr",

@@ -48,7 +48,9 @@ def build(
     playing = {week: set(by_club(games)) for week, games in schedule.items()}
     held = active(state.roster)
     projections = {
-        week: client.get_projections(state.season, week, state.league.scoring_format, FANTASY_POSITIONS)
+        week: client.get_projections(
+            state.season, week, state.league.scoring_format, FANTASY_POSITIONS, state.league.scoring_rules
+        )
         for week in weeks
     }
 
@@ -130,12 +132,12 @@ def _fixed(
     gain, pick = max(gains, key=lambda pair: pair[0], default=(0.0, None))
     if pick is None or gain < MIN_GAIN:
         return row
-    fix = f"Pick up {pick.name} ({pick.position}, {pick.team}): {pick.points:.1f} projected in week {row.week}"
+    fix = f"Pick up {pick.name} ({pick.position}, {pick.team}): {pick.points:.2f} projected in week {row.week}"
     if len(held) >= state.league.roster_spots:
         # Never a regular, nor one who is only away for the week.
         drop = drop_candidate(state, (p for p in state.projected if p.player_id in held), keep)
         fix += f", drop {drop.name}" if drop else ""
-    return row.model_copy(update={"fix": fix, "gain": round(gain, 1)})
+    return row.model_copy(update={"fix": fix, "gain": round(gain, 2)})
 
 
 def to_do(ahead: Outlook, state: Week) -> Item | None:
@@ -150,7 +152,7 @@ def to_do(ahead: Outlook, state: Week) -> Item | None:
         return None
     without = f", without {join(week.missing)}" if week.missing else ""
     fix = (
-        f" {week.fix}, +{week.gain:.1f}."
+        f" {week.fix}, +{week.gain:.2f}."
         if week.fix
         else " No free agent at those positions adds two points; a trade may: see My team."
     )
@@ -160,7 +162,7 @@ def to_do(ahead: Outlook, state: Week) -> Item | None:
             kind="waiver" if week.fix else "trade",
             urgency="later",
             title=f"Week {week.week} is short",
-            reason=f"Your best lineup projects {week.points:.1f} against {ahead.usual:.1f} in a usual week{without}.{fix}",
+            reason=f"Your best lineup projects {week.points:.2f} against {ahead.usual:.2f} in a usual week{without}.{fix}",
             when=f"week {week.week}",
             key=f"short:{week.week}",
         ),

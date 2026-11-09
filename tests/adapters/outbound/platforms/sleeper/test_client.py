@@ -234,7 +234,7 @@ PROJECTION_PAYLOAD = [
 
 def test_projections_are_keyed_by_player_and_use_the_league_currency(tmp_path: Path) -> None:
     client, _ = _client({"projections/nfl": PROJECTION_PAYLOAD}, tmp_path)
-    proj = client.get_projections("2026", 1, "pts_ppr", POSITIONS)
+    proj = client.get_projections("2026", 1, "pts_ppr", POSITIONS, {})
     assert proj["1"].points == 22.4
     assert proj["1"].opponent == "MIA"
     assert proj["1"].name == "Star QB"
@@ -242,17 +242,17 @@ def test_projections_are_keyed_by_player_and_use_the_league_currency(tmp_path: P
 
 def test_a_different_scoring_format_reads_a_different_field(tmp_path: Path) -> None:
     client, _ = _client({"projections/nfl": PROJECTION_PAYLOAD}, tmp_path)
-    assert client.get_projections("2026", 1, "pts_std", POSITIONS)["1"].points == 18.1
+    assert client.get_projections("2026", 1, "pts_std", POSITIONS, {})["1"].points == 18.1
 
 
 def test_players_without_a_projection_are_omitted(tmp_path: Path) -> None:
     client, _ = _client({"projections/nfl": PROJECTION_PAYLOAD}, tmp_path)
-    assert "2" not in client.get_projections("2026", 1, "pts_ppr", POSITIONS)
+    assert "2" not in client.get_projections("2026", 1, "pts_ppr", POSITIONS, {})
 
 
 def test_projection_requests_cover_every_fantasy_position(tmp_path: Path) -> None:
     client, session = _client({"projections/nfl": []}, tmp_path)
-    client.get_projections("2026", 1, "pts_ppr", POSITIONS)
+    client.get_projections("2026", 1, "pts_ppr", POSITIONS, {})
     url = session.requests[0]
     for position in POSITIONS:
         assert f"position[]={position}" in url
@@ -260,8 +260,8 @@ def test_projection_requests_cover_every_fantasy_position(tmp_path: Path) -> Non
 
 def test_projections_for_other_positions_are_not_served_from_the_first_ask(tmp_path: Path) -> None:
     client, session = _client({"projections/nfl": []}, tmp_path)
-    client.get_projections("2026", 1, "pts_ppr", ("QB",))
-    client.get_projections("2026", 1, "pts_ppr", POSITIONS)
+    client.get_projections("2026", 1, "pts_ppr", ("QB",), {})
+    client.get_projections("2026", 1, "pts_ppr", POSITIONS, {})
     assert len(session.requests) == 2
 
 
@@ -273,7 +273,7 @@ def test_projections_are_asked_for_by_sport(tmp_path: Path) -> None:
     that read as though no game had been scheduled all season.
     """
     client, session = _client({"projections/nfl": []}, tmp_path)
-    client.get_projections("2026", 1, "pts_ppr", POSITIONS)
+    client.get_projections("2026", 1, "pts_ppr", POSITIONS, {})
     assert "/projections/nfl/2026/1" in session.requests[0]
 
 
@@ -286,12 +286,12 @@ def test_a_projection_carries_the_players_designation(tmp_path: Path) -> None:
         }
     ]
     client, _ = _client({"projections/nfl": payload}, tmp_path)
-    assert client.get_projections("2026", 1, "pts_ppr", POSITIONS)["1"].injury_status == "Questionable"
+    assert client.get_projections("2026", 1, "pts_ppr", POSITIONS, {})["1"].injury_status == "Questionable"
 
 
 def test_a_healthy_player_carries_no_designation(tmp_path: Path) -> None:
     client, _ = _client({"projections/nfl": PROJECTION_PAYLOAD}, tmp_path)
-    assert client.get_projections("2026", 1, "pts_ppr", POSITIONS)["1"].injury_status == ""
+    assert client.get_projections("2026", 1, "pts_ppr", POSITIONS, {})["1"].injury_status == ""
 
 
 # ── trending, stats, matchups ───────────────────────────────────────────
@@ -588,7 +588,7 @@ NFL_LINES = [
 def test_game_lines_keep_fantasy_players_with_the_usage_behind_their_points(tmp_path: Path) -> None:
     client, _ = _client({"/stats/nfl/2026/2": NFL_LINES}, tmp_path)
 
-    lines = {line.player_id: line for line in client.get_nfl_game_lines("2026", [2], POSITIONS).value(2)}
+    lines = {line.player_id: line for line in client.get_nfl_game_lines("2026", [2], POSITIONS, "pts_ppr", {}).value(2)}
 
     # A team total, a linebacker and a row with no game are nobody's starter.
     assert set(lines) == {"wr1", "KC"}
@@ -602,7 +602,64 @@ def test_a_week_that_will_not_load_is_a_failure_rather_than_a_week_nobody_played
     """No line in a week that loaded is a game missed; a week that did not load says nothing about anybody."""
     client, _ = _client({"/stats/nfl/2026/2": NFL_LINES}, tmp_path)
 
-    lines = client.get_nfl_game_lines("2026", [1, 2], POSITIONS)
+    lines = client.get_nfl_game_lines("2026", [1, 2], POSITIONS, "pts_ppr", {})
 
     assert list(lines.values) == [2] and list(lines.failures) == [1]
     assert {line.week for line in lines.value(2)} == {2}
+
+
+# ── priced by the league's own rules ───────────────────────────────────
+
+KICKER_RULES = {"fgm_40_49": 4.0, "fgm_50_59": 5.0, "fgmiss": -1.0, "xpm": 1.0}
+"""A league that pays field goals by distance; Sleeper's stock figure for the format does not."""
+
+
+def test_a_league_keeps_the_points_it_set_for_each_stat(tmp_path: Path) -> None:
+    client, _ = _client({"leagues/nfl": LEAGUE_PAYLOAD}, tmp_path)
+    assert client.get_leagues("42", "2026")[0].scoring_rules == {"rec": 1.0}
+
+
+def test_a_projection_is_priced_by_the_leagues_rules_not_sleepers_stock_figure(tmp_path: Path) -> None:
+    """A stat the league does not score — `fgm_50p`, which it splits into 50-59 and 60+ — counts nothing."""
+    kicker = {
+        "player_id": "k1",
+        "opponent": "MIA",
+        "player": {"first_name": "Kay", "last_name": "Kicker", "position": "K", "team": "BUF"},
+        "stats": {"pts_ppr": 9.77, "fgm_40_49": 0.6, "fgm_50p": 0.4, "xpm": 2.66},
+    }
+    client, _ = _client({"projections/nfl": [kicker]}, tmp_path)
+
+    projection = client.get_projections("2026", 1, "pts_ppr", POSITIONS, KICKER_RULES)["k1"]
+
+    assert projection.points == pytest.approx(0.6 * 4 + 2.66)
+    assert projection.stats["pts_ppr"] == projection.points
+
+
+def test_a_game_line_is_priced_by_the_leagues_rules_from_every_stat_its_row_carries(tmp_path: Path) -> None:
+    row = _nfl_row("k1", "K", pts_ppr=12.0, fgm_40_49=2, fgm_50_59=1, xpm=3)
+    client, _ = _client({"/stats/nfl/2026/2": [row]}, tmp_path)
+
+    [line] = client.get_nfl_game_lines("2026", [2], POSITIONS, "pts_ppr", KICKER_RULES).value(2)
+
+    assert line.stats["pts_ppr"] == 2 * 4 + 5 + 3
+
+
+SEASON_ROWS = {
+    "k1": {"gp": 17, "pts_ppr": 140.0, "fgm_40_49": 10, "fgm_50_59": 4, "fgmiss": 3, "xpm": 40, "rank_ppr": 9},
+    "lb1": {"gp": 17, "idp_tkl": 120},
+}
+
+
+def test_a_season_is_priced_by_the_leagues_rules_and_kept_without_what_no_league_scores(tmp_path: Path) -> None:
+    client, _ = _client({"stats/nfl/regular/2025": SEASON_ROWS}, tmp_path)
+
+    season = client.get_season_stats("2025", "pts_ppr", KICKER_RULES)
+
+    # A linebacker scores no fantasy points here, so he is not kept at all.
+    assert set(season) == {"k1"}
+    assert season["k1"].scored("pts_ppr") == 10 * 4 + 4 * 5 - 3 + 40
+
+
+def test_a_season_of_a_league_with_unknown_rules_reads_sleepers_own_figure(tmp_path: Path) -> None:
+    client, _ = _client({"stats/nfl/regular/2025": SEASON_ROWS}, tmp_path)
+    assert client.get_season_stats("2025", "pts_ppr", {})["k1"].scored("pts_ppr") == 140.0

@@ -37,8 +37,8 @@ def _lineup_stat(context: Any) -> Stat:
 
 
 def _figures(text: str) -> list[float]:
-    """Every one-decimal figure in a piece of text, in order: the numbers, not the words around them."""
-    return [float(x) for x in re.findall(r"\d+\.\d\b", text)]
+    """Every decimal figure in a piece of text, in order: the numbers, not the words around them."""
+    return [float(x) for x in re.findall(r"\d+\.\d+\b", text)]
 
 
 def test_prompt_names_the_scoring_format() -> None:
@@ -238,7 +238,7 @@ def test_the_bench_gap_matches_the_printed_figures() -> None:
             )
         ],
     )
-    assert _figures(nfl_provider(client).build_context("L1").constraints) == [26.1, 40.1, 14.0]
+    assert _figures(nfl_provider(client).build_context("L1").constraints) == [26.06, 40.14, 14.08]
 
 
 # ── headline figures ────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ def test_the_header_carries_the_matchup() -> None:
     labels = {s.label: s for s in nfl_provider(client).build_context("L1").headline}
 
     assert "Opponent" in labels
-    assert (labels["Live"].value, labels["Live"].tone) == ("88.5 – 71.0", "good")
+    assert (labels["Live"].value, labels["Live"].tone) == ("88.50 – 71.00", "good")
     assert "Margin" not in labels  # the same two numbers, subtracted
 
 
