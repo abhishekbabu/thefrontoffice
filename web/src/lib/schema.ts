@@ -1316,7 +1316,7 @@ export interface components {
             detail: string;
             /**
              * Value
-             * @description The forward-looking number, with its unit.
+             * @description The number the row turns on, with its unit: a projection, or once his game has kicked off, what he has scored.
              */
             value: string;
             /**
@@ -1325,6 +1325,23 @@ export interface components {
              * @enum {string}
              */
             tone: "neutral" | "good" | "warning";
+            /**
+             * Scoring
+             * @description Which kind of number `value` is: projected before his game, live while it is on, final after. None where the competition does not say.
+             */
+            scoring: ("projected" | "live" | "final") | null;
+            /**
+             * Scored
+             * @description What he has scored, bare — empty until his game kicks off. Shown beside `projection`.
+             * @default
+             */
+            scored: string;
+            /**
+             * Projection
+             * @description What he is projected, shown beside what he has scored on every row that says how it scores — the guess beside the answer, and before kickoff the only number there is.
+             * @default
+             */
+            projection: string;
         };
         /**
          * StandingRow
