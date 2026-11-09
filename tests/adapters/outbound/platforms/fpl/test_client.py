@@ -38,6 +38,7 @@ BOOTSTRAP = {
             "team": 1,
             "now_cost": 95,
             "ep_next": "6.4",
+            "ep_this": "5.1",
             "form": "5.2",
             "points_per_game": "5.0",
             "total_points": 40,
@@ -113,8 +114,21 @@ FIXTURES = [
         "team_h_difficulty": 4,
         "team_a_difficulty": 2,
         "kickoff_time": "2026-08-29T14:00:00Z",
+        "started": True,
+        "finished": False,
     },
     {"event": None, "team_h": 2, "team_a": 1, "team_h_difficulty": 3, "team_a_difficulty": 5, "kickoff_time": None},
+    {
+        "event": 3,
+        "team_h": 2,
+        "team_a": 1,
+        "team_h_difficulty": 3,
+        "team_a_difficulty": 3,
+        "kickoff_time": "2026-08-22T14:00:00Z",
+        "started": True,
+        "finished_provisional": True,
+        "finished": False,
+    },
 ]
 
 ROUTES = {
@@ -173,6 +187,7 @@ def test_players_carry_the_games_own_projection(client: FPLClient) -> None:
     assert saka.position == "MID"
     assert saka.team == "ARS"
     assert saka.expected_points == 6.4
+    assert saka.expected_this == 5.1
     assert saka.expected_goal_involvements == 3.5
     assert saka.full_name == "Bukayo Saka"
 
@@ -278,8 +293,8 @@ def test_history_returns_one_row_per_gameweek_played(client: FPLClient) -> None:
 def test_fixtures_resolve_both_clubs_and_both_difficulties(client: FPLClient) -> None:
     fixture = client.get_fixtures(3)[0]
     assert (fixture.home, fixture.away) == ("ARS", "MCI")
-    assert fixture.opponent_of("ARS") == Opponent(club="MCI", difficulty=4, home=True)
-    assert fixture.opponent_of("MCI") == Opponent(club="ARS", difficulty=2, home=False)
+    assert fixture.opponent_of("ARS") == Opponent(club="MCI", difficulty=4, home=True, started=True)
+    assert fixture.opponent_of("MCI") == Opponent(club="ARS", difficulty=2, home=False, started=True)
     assert fixture.opponent_of("LIV") is None
 
 
@@ -288,6 +303,12 @@ def test_a_fixture_without_a_gameweek_or_kickoff_is_kept(client: FPLClient) -> N
     unscheduled = client.get_fixtures(3)[1]
     assert unscheduled.event is None
     assert unscheduled.kickoff is None
+    assert not unscheduled.started and not unscheduled.finished
+
+
+def test_a_match_is_over_at_the_whistle_not_once_its_bonus_is_confirmed(client: FPLClient) -> None:
+    """The game confirms bonus days later; a match long over must not read as still being played."""
+    assert client.get_fixtures(3)[2].finished
 
 
 # ── the league beyond this gameweek ─────────────────────────────────────

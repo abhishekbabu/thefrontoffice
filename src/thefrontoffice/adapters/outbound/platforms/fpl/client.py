@@ -51,7 +51,9 @@ REQUEST_TIMEOUT_SECONDS = 30
 # TTLs from how quickly each endpoint actually moves. Prices change once a day
 # just after 01:30 UTC; a squad changes only when its manager acts.
 BOOTSTRAP_TTL = timedelta(hours=6)
-FIXTURES_TTL = timedelta(hours=6)
+# Short, because a fixture says whether its match has kicked off or finished, which is what
+# a lineup row reads to know whether its number is a guess, a live score or a final one.
+FIXTURES_TTL = timedelta(minutes=2)
 ENTRY_TTL = timedelta(minutes=10)
 HISTORY_TTL = timedelta(hours=1)
 # The only figure here that moves while somebody is watching it.
@@ -306,6 +308,7 @@ class FPLClient:
                 team=_club(short_names, e.get("team")),
                 cost=int(e.get("now_cost") or 0),
                 expected_points=_number(e.get("ep_next")),
+                expected_this=_number(e.get("ep_this")),
                 form=_number(e.get("form")),
                 points_per_game=_number(e.get("points_per_game")),
                 total_points=int(e.get("total_points") or 0),
@@ -558,6 +561,10 @@ class FPLClient:
                 home_difficulty=int(f.get("team_h_difficulty") or 0),
                 away_difficulty=int(f.get("team_a_difficulty") or 0),
                 kickoff=parse_utc(str(f["kickoff_time"])) if f.get("kickoff_time") else None,
+                started=bool(f.get("started")),
+                # Over once the whistle goes. `finished` waits for the bonus to be confirmed, which
+                # can take days, and a row reading live for a match two days gone is the worse error.
+                finished=bool(f.get("finished_provisional") or f.get("finished")),
             )
             for f in data or []
         ]

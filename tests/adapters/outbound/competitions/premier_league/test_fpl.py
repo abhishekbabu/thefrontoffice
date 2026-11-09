@@ -659,20 +659,70 @@ def test_a_triple_captain_scores_three_times() -> None:
 
 def test_the_weeks_total_counts_the_triple_captain_three_times() -> None:
     """P8 (12, captained) and P9 (1) have played; P10 has not kicked a ball."""
-    assert mine(provider(live=LIVE, squad=_triple_captain()).summary(H2H_LEAGUE)).points == "37 pts"
+    assert mine(provider(live=LIVE, squad=_triple_captain()).summary(H2H_LEAGUE)).points == "37 pts · 72.0 proj"
 
 
 def test_the_weeks_total_counts_the_captain_twice() -> None:
-    assert mine(provider(live=LIVE).summary(H2H_LEAGUE)).points == "25 pts"
+    assert mine(provider(live=LIVE).summary(H2H_LEAGUE)).points == "25 pts · 64.0 proj"
 
 
 def test_a_week_under_way_says_so_rather_than_naming_a_deadline() -> None:
     assert provider(live=LIVE).summary(H2H_LEAGUE).window == "Gameweek 4 · in progress"
 
 
-def test_before_a_ball_is_kicked_there_is_no_score() -> None:
+def test_before_a_ball_is_kicked_a_side_reads_its_projection_alone() -> None:
     """Zero reads as a bad week rather than a week that has not started."""
-    assert mine(provider().summary(H2H_LEAGUE)).points == ""
+    assert mine(provider().summary(H2H_LEAGUE)).points == "64.0 proj"
+
+
+def test_the_opponent_reads_the_games_total_beside_their_projection_once_under_way() -> None:
+    summary = provider(live=LIVE, fixtures=[_arsenal(started=True)]).summary(H2H_LEAGUE)
+
+    assert summary.opponent is not None
+    assert summary.opponent.points.startswith("52 pts · ")
+    assert summary.opponent.points.endswith(" proj")
+
+
+def _arsenal(*, started: bool = False, finished: bool = False) -> Fixture:
+    return Fixture(
+        event=4, home="ARS", away="LIV", home_difficulty=2, away_difficulty=4, started=started, finished=finished
+    )
+
+
+def test_a_row_sets_what_he_scored_beside_his_projection_for_this_gameweek() -> None:
+    """The captain's guess is doubled as his points are, so the two are the same kind of number."""
+    captain = _live_spots()["8"]
+
+    assert (captain.scoring, captain.scored, captain.projection) == ("live", "24", "16.0")
+
+
+def test_a_row_not_yet_kicked_off_is_projected_with_no_score() -> None:
+    waiting = _live_spots()["10"]
+
+    assert (waiting.scoring, waiting.scored, waiting.projection) == ("projected", "", "6.0")
+
+
+def test_once_his_club_kicks_off_a_nought_is_a_score_not_a_match_to_come() -> None:
+    lineup = mine(provider(live=LIVE, fixtures=[_arsenal(started=True)]).summary(H2H_LEAGUE)).lineup
+    unused = next(s for s in lineup if s.player_id == "10")
+
+    assert (unused.scoring, unused.scored, unused.value) == ("live", "0", "0 pts")
+
+
+def test_a_row_is_final_once_every_match_his_club_has_is_over() -> None:
+    side = mine(provider(live=LIVE, fixtures=[_arsenal(started=True, finished=True)]).summary(H2H_LEAGUE))
+    rows = {s.player_id: s for s in (*side.lineup, *side.bench)}
+
+    assert rows["8"].scoring == "final"
+    assert rows["15"].scoring == "projected", "MCI has no fixture this gameweek"
+
+
+def test_the_projection_is_this_gameweeks_not_the_next() -> None:
+    """`ep_next` is next week's guess once a deadline has passed; beside this week's points it misleads."""
+    catalog = {pid: replace(p, expected_this=p.expected_points / 2) for pid, p in SQUAD_PLAYERS.items()}
+    lineup = mine(provider(live=LIVE, players=catalog).summary(H2H_LEAGUE)).lineup
+
+    assert next(s for s in lineup if s.player_id == "10").projection == "3.0"
 
 
 def test_a_missing_live_feed_falls_back_to_projections() -> None:

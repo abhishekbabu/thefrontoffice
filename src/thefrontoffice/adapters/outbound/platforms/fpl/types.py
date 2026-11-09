@@ -96,6 +96,10 @@ class Player:
     expected_points: float
     """The game's own projection for the next gameweek (`ep_next`)."""
 
+    expected_this: float
+    """Its projection for the gameweek being played (`ep_this`): the guess to set beside what he has
+    scored, which `expected_points` is not once a deadline has passed — that one is next week's."""
+
     form: float
     points_per_game: float
     total_points: int
@@ -281,6 +285,11 @@ class Opponent:
     """The game's 1-5 rating of the match for the club facing this opponent."""
 
     home: bool
+    started: bool = False
+    """The match has kicked off: from here his row is about what he scored."""
+
+    finished: bool = False
+    """The match is over. Bonus can still be confirmed after, so his points may yet move by a point or two."""
 
 
 @dataclass(frozen=True)
@@ -295,13 +304,15 @@ class Fixture:
     home_difficulty: int
     away_difficulty: int
     kickoff: datetime | None = None
+    started: bool = False
+    finished: bool = False
 
     def opponent_of(self, team: str) -> Opponent | None:
         """Who `team` faces, at what difficulty, and whether they are at home."""
         if team == self.home:
-            return Opponent(club=self.away, difficulty=self.home_difficulty, home=True)
+            return Opponent(self.away, self.home_difficulty, True, self.started, self.finished)
         if team == self.away:
-            return Opponent(club=self.home, difficulty=self.away_difficulty, home=False)
+            return Opponent(self.home, self.away_difficulty, False, self.started, self.finished)
         return None
 
 
