@@ -93,7 +93,14 @@ function SpotList({ spots, empty, onOpen }: { spots: Spot[]; empty?: string; onO
             <Label className="w-16 shrink-0">{spot.slot}</Label>
           )}
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13.5px] font-medium">{spot.player}</div>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-[13.5px] font-medium">{spot.player}</span>
+              {spot.mark && (
+                <Badge variant="info" appearance="label" className="shrink-0">
+                  {spot.mark}
+                </Badge>
+              )}
+            </div>
             <div className="truncate font-mono text-[11px] text-muted-foreground">{spot.detail}</div>
           </div>
           {spot.scoring ? (

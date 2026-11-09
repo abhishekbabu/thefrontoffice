@@ -105,6 +105,13 @@ class Spot(BaseModel):
     player_id: str = Field(default="", description="Identifier this competition uses, for opening the player.")
     slot: str = Field(default="", description="Named place in the lineup, where the competition has them.")
     player: str
+    mark: str = Field(
+        default="",
+        description=(
+            "A role the row carries beyond its place, as the league abbreviates it — FPL's captain "
+            "'C' and vice-captain 'VC'. Shown as a chip beside the name; empty for most rows."
+        ),
+    )
     detail: str = Field(description="Position, club and opponent, as that competition words it.")
     value: str = Field(
         description="The number the row turns on, with its unit: a projection, or once his game has kicked off, what he has scored."

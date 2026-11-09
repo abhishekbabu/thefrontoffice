@@ -1310,6 +1310,12 @@ export interface components {
             /** Player */
             player: string;
             /**
+             * Mark
+             * @description A role the row carries beyond its place, as the league abbreviates it — FPL's captain 'C' and vice-captain 'VC'. Shown as a chip beside the name; empty for most rows.
+             * @default
+             */
+            mark: string;
+            /**
              * Detail
              * @description Position, club and opponent, as that competition words it.
              */

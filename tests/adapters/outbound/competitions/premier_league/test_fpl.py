@@ -306,7 +306,7 @@ def test_the_header_says_when_the_gameweek_locks() -> None:
 def test_the_summary_marks_the_captain() -> None:
     lineup = mine(provider().summary(LEAGUE_ID)).lineup
 
-    assert [spot.player for spot in lineup if spot.player.endswith("(C)")] == ["P8 (C)"]
+    assert [(spot.player, spot.mark) for spot in lineup if spot.mark == "C"] == [("P8", "C")]
 
 
 def test_the_summary_warns_on_a_doubtful_starter() -> None:
@@ -637,7 +637,7 @@ def test_a_player_yet_to_kick_a_ball_keeps_their_projection() -> None:
 
 def test_a_captain_scores_double() -> None:
     lineup = mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup
-    captain = next(s for s in lineup if "(C)" in s.player)
+    captain = next(s for s in lineup if s.mark == "C")
 
     assert captain.value == "24 pts"
 
@@ -652,7 +652,7 @@ def _triple_captain() -> Squad:
 
 def test_a_triple_captain_scores_three_times() -> None:
     lineup = mine(provider(live=LIVE, squad=_triple_captain()).summary(H2H_LEAGUE)).lineup
-    captain = next(s for s in lineup if "(C)" in s.player)
+    captain = next(s for s in lineup if s.mark == "C")
 
     assert captain.value == "36 pts"
 
@@ -875,10 +875,9 @@ def test_the_vice_captain_is_marked_as_well_as_the_captain() -> None:
     """The vice is the whole point when the captain does not play, so a squad
     that shows only the armband shows half the decision."""
     summary = provider().summary(H2H_LEAGUE)
-    marked = [s.player for s in mine(summary).lineup + mine(summary).bench if "(" in s.player]
+    marks = [s.mark for s in mine(summary).lineup + mine(summary).bench if s.mark]
 
-    assert any(p.endswith("(C)") for p in marked)
-    assert any(p.endswith("(V)") for p in marked)
+    assert sorted(marks) == ["C", "VC"]
 
 
 def test_the_opponents_armbands_are_marked_too() -> None:
@@ -886,7 +885,7 @@ def test_the_opponents_armbands_are_marked_too() -> None:
     opponent = provider().summary(H2H_LEAGUE).opponent
 
     assert opponent is not None
-    assert any("(C)" in s.player for s in opponent.lineup)
+    assert any(s.mark == "C" for s in opponent.lineup)
 
 
 def test_the_drawer_names_the_club_in_full_with_its_crest() -> None:
