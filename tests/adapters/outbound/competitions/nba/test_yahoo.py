@@ -557,3 +557,48 @@ def test_a_key_in_an_unexpected_shape_yields_no_link_rather_than_a_broken_one() 
 def test_nba_season_rolls_over_in_september(when: datetime, expected: int) -> None:
     """Basketball's season starts in the autumn and runs into the next calendar year."""
     assert YahooNBAProvider.season_year(when) == expected
+
+
+# ── the injured list ────────────────────────────────────────────────────
+
+
+def _il_roster(status: str) -> FakeYahoo:
+    return FakeYahoo(
+        roster=[
+            make_player("Starter", selected_position="PF"),
+            make_player("Back Again", key="p.9", selected_position="IL", status=status),
+        ]
+    )
+
+
+def test_a_player_the_il_slot_no_longer_takes_is_the_first_thing_to_do() -> None:
+    actions = nba_provider(_il_roster("")).summary("").actions
+
+    assert actions is not None
+    [item] = actions
+    assert (item.title, item.urgency, item.player_id, item.key) == (
+        "Move Back Again off IL",
+        "now",
+        "p.9",
+        "il:p.9:ACTIVE",
+    )
+    assert "cleared to play" in item.reason
+
+
+def test_a_player_still_injured_on_il_is_nothing_to_do() -> None:
+    """With nothing computed there is no list, rather than an empty one saying there is nothing to do."""
+    assert nba_provider(_il_roster("INJ")).summary("").actions is None
+
+
+def test_the_il_item_is_judged_and_the_model_told_adds_are_held() -> None:
+    context = nba_provider(_il_roster("GTD")).build_context()
+
+    assert [task.key for task in context.tasks] == ["il:p.9:GTD"]
+    assert "Back Again is listed GTD" in context.prompt
+
+
+def test_a_kept_move_can_name_only_your_roster_or_the_players_still_free() -> None:
+    """Someone else claiming a free agent since makes a kept add of him no move at all."""
+    context = nba_provider(FakeYahoo(stat_leaders={"PTS": [make_player("Waiver One")]})).build_context()
+
+    assert context.movable == frozenset({"Roster One", "Waiver One"})
