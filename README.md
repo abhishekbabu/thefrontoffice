@@ -18,7 +18,8 @@ player. It runs on your own machine against NFL on
   roster), starters out or on bye, empty slots, bench swaps, next week's
   byes, free agents whose role just grew, a regular on the injury report whose
   work could fall to one of your players, and the trade deadline. Each item
-  names the fix, who to drop and the deadline.
+  names the fix, who to drop and the deadline. NBA flags a player an IL slot
+  no longer takes, which holds every add on Yahoo.
 - **Win chance and playoff odds**: the week is simulated 10,000 times and the
   season 5,000 times, and every move shows what it does to both.
 - **Weeks ahead and trades**: the next four weeks as your roster stands, and
