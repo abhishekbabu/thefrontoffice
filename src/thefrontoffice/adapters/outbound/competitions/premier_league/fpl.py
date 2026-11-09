@@ -655,14 +655,14 @@ class FPLProvider:
         """
         flag = player.availability
         stat = live.get(player.id)
-        armband = " (C)" if pick.is_captain else " (V)" if pick.is_vice_captain else ""
         opponents = fixtures.get(player.team, [])
         scoring = _scoring(opponents, stat)
         points = None if scoring == "projected" else points_of(pick, stat or LiveStat(points=0, minutes=0))
         projected = projected_of(pick, player)
         return Spot(
             player_id=str(player.id),
-            player=player.name + armband,
+            player=player.name,
+            mark="C" if pick.is_captain else "VC" if pick.is_vice_captain else "",
             detail=f"{player.position} · {player.team} {_fixture_text(opponents)}" + (f" · {flag}" if flag else ""),
             value=f"{points} pts" if points is not None else f"{projected:.1f} xPts",
             tone=self._spot_tone(points, flag, blank=not opponents),
