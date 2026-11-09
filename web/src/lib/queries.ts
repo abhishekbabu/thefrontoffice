@@ -32,8 +32,8 @@ export const keys = {
   freeAgents: (competition: string, league: string) => [...inLeague(competition, league), "free-agents"] as const,
   freeAgentCalls: (competition: string, league: string) =>
     [...inLeague(competition, league), "free-agent-calls"] as const,
-  thread: (competition: string, league: string, kind: string, key: string) =>
-    [...inLeague(competition, league), "thread", kind, key] as const,
+  assistant: (competition: string, league: string, generation: number) =>
+    [...inLeague(competition, league), "assistant", generation] as const,
   turns: (chatId: string) => ["chat", chatId] as const,
 };
 

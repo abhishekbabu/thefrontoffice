@@ -1,8 +1,8 @@
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import type { Turn } from "@/lib/api";
-import { Thread } from "@/components/ui/chat";
+import type { Subject, Turn } from "@/lib/api";
+import { AssistantChat, type Asked } from "@/components/ui/chat";
 import { render, settle } from "@/test/render";
 
 const ASKED: Turn[] = [
@@ -11,20 +11,26 @@ const ASKED: Turn[] = [
 ];
 
 /**
- * A server holding one conversation per thread opened: `opened` counts the
- * threads, and each follow-up answers with every turn so far, as the API does.
+ * A server holding one conversation per assistant opened: `opened` counts
+ * them, `screens` records what each question was asked with, and each
+ * follow-up answers with every turn so far, as the API does. `expired` is a
+ * conversation it no longer holds.
  */
-function server(said: Turn[] = []) {
-  const state = { opened: 0, turns: [...said] };
+function server(said: Turn[] = [], expired?: string) {
+  const state = { opened: 0, turns: [...said], screens: [] as Subject[][] };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (path: string, init?: RequestInit) => {
-      if (path.endsWith("/threads")) {
+      if (path.endsWith("/assistant")) {
         state.opened += 1;
         return Response.json({ chat_id: `chat-${state.opened}` });
       }
+      if (expired && path.endsWith(`/${expired}`) && init?.method === "POST") {
+        return Response.json({ detail: "Gone.", code: "chat_expired", remedy: null }, { status: 404 });
+      }
       if (init?.method === "POST") {
-        const { message } = JSON.parse(String(init.body)) as { message: string };
+        const { message, on_screen } = JSON.parse(String(init.body)) as { message: string; on_screen: Subject[] };
+        state.screens.push(on_screen);
         state.turns.push({ role: "you", text: message }, { role: "model", text: `About: ${message}` });
       }
       return Response.json(state.turns);
@@ -38,7 +44,24 @@ function client(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } });
 }
 
-const thread = <Thread competition="nfl-sleeper" league="900" subject={{ kind: "task", key: "swap:a:b" }} placeholder="Ask" />;
+const WEEK: Subject = { kind: "page", key: "week" };
+const ITEM: Subject = { kind: "task", key: "swap:a:b" };
+
+function assistant(asked: Asked | null = null, onTaken = () => {}) {
+  return (
+    <AssistantChat
+      competition="nfl-sleeper"
+      league="900"
+      generation={0}
+      onScreen={[WEEK]}
+      asked={asked}
+      onTaken={onTaken}
+      placeholder="Ask"
+    />
+  );
+}
+
+const thread = assistant();
 
 /** The questions on screen, oldest first. */
 function questions(container: HTMLElement): (string | null)[] {
@@ -70,7 +93,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("a conversation about one thing", () => {
+describe("the assistant's conversation", () => {
   it("finds the same conversation when reopened long after it was closed", async () => {
     // Past the query cache's five-minute default, which dropped the id and
     // opened a blank conversation beside the one the server still held.
@@ -120,5 +143,37 @@ describe("a conversation about one thing", () => {
     await ask(container, "And next week?");
 
     expect(questions(container)).toEqual(["Why bench him?", "Elsewhere?", "And next week?"]);
+  });
+
+  it("sends each question with what is on screen", async () => {
+    const state = server();
+    const { container } = await render(thread, client());
+    await settle();
+
+    await ask(container, "Who starts?");
+
+    expect(state.screens).toEqual([[WEEK]]);
+  });
+
+  it("sends a question handed over with what it is about beside the page, once", async () => {
+    const state = server();
+    const taken = vi.fn();
+    await render(assistant({ message: "Why?", about: [ITEM, WEEK] }, taken), client());
+    await settle();
+
+    expect(state.screens).toEqual([[WEEK, ITEM]]);
+    expect(taken).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks a question the server's dropped conversation never took in a fresh one", async () => {
+    const state = server([], "chat-1");
+    const { container } = await render(thread, client());
+    await settle();
+
+    await ask(container, "Still there?");
+    await settle();
+
+    expect(state.opened).toBe(2);
+    expect(container.textContent).toContain("About: Still there?");
   });
 });

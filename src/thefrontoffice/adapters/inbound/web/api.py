@@ -89,7 +89,10 @@ DIST = PROJECT_ROOT / "web" / "dist"
 
 
 class ChatRequest(BaseModel):
+    """A question, and what was on screen when it was asked."""
+
     message: str = Field(min_length=1)
+    on_screen: list[Subject] = Field(default_factory=list, max_length=8)
 
 
 class SettingsUpdate(BaseModel):
@@ -131,14 +134,14 @@ class CallsRequest(BaseModel):
 
 
 class Thread(BaseModel):
-    """A conversation opened about one thing; asked through the chat endpoint."""
+    """A conversation opened on the server; asked through the chat endpoint."""
 
     chat_id: str
 
 
 MAX_CHATS = 64
 """Conversations held at once. Each carries its whole history, resent to the
-model every turn, so one person's week of reopened threads is bounded here
+model every turn, so one person's week of conversations is bounded here
 rather than by how long the process happens to run."""
 
 
@@ -455,16 +458,16 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         """
         return wiring.scout(*_open(competition)).latest(league_id)
 
-    @app.post("/api/{competition}/leagues/{league_id}/threads", response_model=Thread)
-    def thread(competition: str, league_id: str, subject: Subject) -> Thread:
-        """Open a conversation about one to-do item or one player.
+    @app.post("/api/{competition}/leagues/{league_id}/assistant", response_model=Thread)
+    def assistant(competition: str, league_id: str) -> Thread:
+        """Open the conversation that follows you around this league.
 
-        Seeded with that subject alone, so a question about Hall's row is
-        answered about Hall's row; the turns then go through the chat endpoint
-        like any other conversation.
+        Briefed on nothing yet: each question says what is on screen, and is
+        briefed on whatever of that it has not seen. The turns then go through
+        the chat endpoint like any other conversation.
         """
-        chat = wiring.ask(*_open(competition)).open(league_id, subject)
-        return Thread(chat_id=chats.remember(Conversation(chat)))
+        assistant = wiring.ask(*_open(competition)).assistant(league_id)
+        return Thread(chat_id=chats.remember(Conversation(assistant)))
 
     @app.post("/api/{competition}/leagues/{league_id}/free-agents/judge", response_model=list[PlayerCall])
     def judge_free_agents(competition: str, league_id: str, request: JudgeRequest) -> list[PlayerCall]:
@@ -494,13 +497,13 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
 
     @app.post("/api/chat/{chat_id}", response_model=list[Turn])
     def ask(chat_id: str, request: ChatRequest) -> list[Turn]:
-        """Ask the next question in a conversation a thread opened; every turn so far, the answer last.
+        """Ask the next question in an open conversation; every turn so far, the answer last.
 
         The whole conversation rather than the answer alone, so the client shows
         what the server holds instead of keeping a copy of its own in step.
         """
         conversation = chats.get(chat_id)
-        conversation.ask(request.message)
+        conversation.ask(request.message, request.on_screen)
         return conversation.turns
 
 

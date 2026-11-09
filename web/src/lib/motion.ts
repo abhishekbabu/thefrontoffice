@@ -38,6 +38,17 @@ export const slideOver: Variants = {
   gone: { x: "100%", transition: { ...glide, duration: 0.18 } },
 };
 
+/**
+ * A panel docked in a corner, opening out of the button that stands for it.
+ *
+ * Hidden rather than unmounted: what it holds — a conversation half read —
+ * should be exactly where it was when it opens again.
+ */
+export const dock: Variants = {
+  hidden: { opacity: 0, y: 12, scale: 0.98, transition: { duration: 0.12 }, transitionEnd: { display: "none" } },
+  shown: { display: "flex", opacity: 1, y: 0, scale: 1, transition: quick },
+};
+
 export const fade: Variants = {
   hidden: { opacity: 0 },
   shown: { opacity: 1, transition: quick },
