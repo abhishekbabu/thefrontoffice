@@ -5,6 +5,7 @@ is what the engine does with the model's answer — not how a context is built.
 """
 
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from support.ai import FakeAI
@@ -237,3 +238,61 @@ def test_a_week_that_will_not_load_shows_the_kept_moves_unchecked() -> None:
     latest = engine.latest("L1")
 
     assert latest is not None and [m.player for m in latest.answer.moves] == ["Jahan Dotson"]
+
+
+# ── whether a kept judgment is due a fresh one ─────────────────────────
+
+KEYED = [
+    Action(kind="lineup", urgency="now", title="Start A over B", reason="B is out.", key="swap:a:b"),
+    Action(kind="lineup", urgency="soon", title="Start C over D", reason="+2.5.", key="swap:c:d"),
+]
+JUDGED_AT = datetime(2026, 11, 7, 8, 0, tzinfo=UTC)
+
+
+def _due_after(hours: float, **now: Any) -> bool:
+    """Whether the judgment made at JUDGED_AT is due, `hours` later, once the week reads `now`."""
+    clock = [JUDGED_AT]
+    provider = ContextOnly(KEYED)
+    engine = ScoutEngine(
+        provider, key="nfl-sleeper", ai=FakeAI(report=_report()), answers=FakeAnswers(), clock=lambda: clock[0]
+    )
+    engine.report("L1")
+    provider.context = replace(provider.context, **now)
+    clock[0] = JUDGED_AT + timedelta(hours=hours)
+    latest = engine.latest("L1")
+    assert latest is not None
+    return latest.due
+
+
+def test_an_item_the_judgment_never_saw_makes_it_due_at_once() -> None:
+    added = Action(kind="waiver", urgency="soon", title="Add E", reason="Rising.", key="rise:e")
+    assert _due_after(0.1, tasks=[*KEYED, added], prompt="changed")
+
+
+def test_a_changed_week_is_due_only_once_the_judgment_is_half_a_day_old() -> None:
+    assert not _due_after(11, prompt="news ticked over")
+    assert _due_after(13, prompt="news ticked over")
+
+
+def test_a_week_exactly_as_judged_is_never_due() -> None:
+    assert not _due_after(48)
+
+
+def test_an_empty_list_is_never_due() -> None:
+    """Every game kicked off: there is nothing left to judge."""
+    assert not _due_after(48, tasks=[], prompt="all played")
+
+
+def test_an_item_dropping_off_the_list_alone_is_not_due() -> None:
+    assert not _due_after(1, tasks=KEYED[:1], prompt="one fewer")
+
+
+def test_a_week_that_will_not_load_is_not_due() -> None:
+    provider = Unreachable(KEYED)
+    engine = ScoutEngine(provider, key="nfl-sleeper", ai=FakeAI(report=_report()), answers=FakeAnswers())
+    engine.report("L1")
+    provider.down = True
+
+    latest = engine.latest("L1")
+
+    assert latest is not None and not latest.due

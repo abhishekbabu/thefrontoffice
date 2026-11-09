@@ -1046,6 +1046,19 @@ class Remembered[AnswerT: BaseModel](BaseModel):
     answered_at: datetime
 
 
+class Judgment(Remembered[ScoutReport]):
+    """A league's kept judgment of its week, as the week page reads it back."""
+
+    due: bool = Field(
+        default=False,
+        description=(
+            "Whether the week has moved on far enough to judge it again unasked: the to-do list holds "
+            "an item this judgment never saw, or what it was given has changed and it is over twelve "
+            "hours old. Never while the list is empty — there is nothing left to judge."
+        ),
+    )
+
+
 TradeCall = Literal["ACCEPT", "REJECT", "COUNTER"]
 
 

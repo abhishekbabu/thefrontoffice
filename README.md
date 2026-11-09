@@ -27,8 +27,10 @@ player. It runs on your own machine against NFL on
   he does to this week's chance, and any growing role ("snaps 34→76%").
 - **Player pages**: role and matchup, ESPN news, injury status and a game log.
 - **A model where you need it**: a verdict on each to-do item, a call on each
-  free agent, and a **Why?** chat under any row. Without a key, none of it is
-  shown.
+  free agent, and a **Why?** chat under any row. Opening the week judges it
+  again only when the list has an item the last judgment never saw, or the
+  week changed and the judgment is over 12 hours old. Without a key, none of
+  it is shown.
 - **Dismiss or snooze** any item. It comes back if its reason changes.
 - **Light and dark mode**, several palettes, and a terminal CLI.
 

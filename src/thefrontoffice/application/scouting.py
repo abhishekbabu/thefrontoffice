@@ -6,14 +6,17 @@ the whole prompt.
 """
 
 import logging
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 from thefrontoffice.application import briefing
-from thefrontoffice.application.answers import Answers, scope
+from thefrontoffice.application.answers import Answers, is_current, scope
 from thefrontoffice.application.formats import ScoutAnswer, VerdictAnswer
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
+    Judgment,
     Move,
     Remembered,
     ScoutReport,
@@ -28,7 +31,15 @@ logger = logging.getLogger(__name__)
 class ScoutEngine:
     """Turns any ContextProvider into a scouting report."""
 
-    def __init__(self, provider: ContextProvider, *, key: str, ai: AnalysisModel, answers: AnswerStore):
+    def __init__(
+        self,
+        provider: ContextProvider,
+        *,
+        key: str,
+        ai: AnalysisModel,
+        answers: AnswerStore,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ):
         """Every collaborator is a port, and every one is supplied.
 
         Deliberately no default: constructing one here would mean naming a
@@ -39,27 +50,35 @@ class ScoutEngine:
         self.provider = provider
         self.key = key
         self.ai = ai
-        self.answers = Answers(answers)
+        self.clock = clock
+        self.answers = Answers(answers, clock)
 
-    def latest(self, league_id: str) -> Remembered[ScoutReport] | None:
+    def latest(self, league_id: str) -> Judgment | None:
         """The last judgment of this league, without asking anything new, less the moves that have lapsed.
 
         A judgment is kept until the next is asked for, and the week moves on
         under it: a pickup for a game already played is no move at all, nor
         one a rule added since would have struck. Its moves are read back
         through the week as it stands now; its verdicts are each item's, and
-        marked stale where they are (`with_verdicts`).
+        marked stale where they are (`with_verdicts`). Whether it is due a
+        fresh one is read off the same week (`_due`).
         """
         kept = last_judgment(self.answers, self.key, league_id)
-        if kept is None or not kept.answer.moves:
-            return kept
+        if kept is None:
+            return None
+        judgment = Judgment.model_validate(kept.model_dump())
         try:
             context = self.provider.build_context(league_id)
         except FrontOfficeError as e:
-            logger.warning(f"{self.key}: showing the kept judgment's moves unchecked, the week would not load: {e}")
-            return kept
+            logger.warning(f"{self.key}: showing the kept judgment unchecked, the week would not load: {e}")
+            return judgment
         moves = self._worth_making(_still_open(kept.answer.moves, context.movable), context.worth)
-        return kept.model_copy(update={"answer": kept.answer.model_copy(update={"moves": moves})})
+        return judgment.model_copy(
+            update={
+                "answer": kept.answer.model_copy(update={"moves": moves}),
+                "due": _due(kept, context, self.clock()),
+            }
+        )
 
     def report(self, league_id: str) -> ScoutReport:
         """The judged report alone, with no conversation opened beside it.
@@ -154,6 +173,31 @@ class ScoutEngine:
         if len(kept) < count:
             logger.info(f"{self.key}: the model judged {len(kept)} of {count} to-do items")
         return kept
+
+
+REJUDGE_AFTER = timedelta(hours=12)
+"""How old a judgment of a week that has since changed may grow before it is asked again unprompted.
+
+Long enough that news ticking over through a day costs no call; short enough
+that Saturday's judgment is not what Sunday morning reads."""
+
+
+def _due(kept: Remembered[ScoutReport], context: CompetitionContext, now: datetime) -> bool:
+    """Whether the week has moved on far enough to judge it again without being asked.
+
+    An item the judgment never saw is a decision with no verdict, and a new
+    week is all such items. Short of that, an item's own wording changing is
+    already marked stale beside it, and only age makes it worth a call. A
+    week judged on exactly what it is now is never due: the call would
+    return the kept answer.
+    """
+    current = {task.key for task in context.tasks if task.key}
+    if not current:
+        return False
+    judged = {task.key for task in kept.answer.tasks if task.key}
+    if current - judged:
+        return True
+    return not is_current(kept, context.prompt) and now - kept.answered_at > REJUDGE_AFTER
 
 
 def _still_open(moves: list[Move], movable: frozenset[str] | None) -> list[Move]:
