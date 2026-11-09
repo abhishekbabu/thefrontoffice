@@ -119,6 +119,10 @@ class Roster:
             return None
         return sum(stat.points * pick.multiplier for pick, stat in counted)
 
+    def projected(self) -> float:
+        """What the gameweek being played was projected to score, counted as `scored` counts it."""
+        return sum(player.expected_this * pick.multiplier for pick, player in self.picked)
+
 
 def roster(squad: Squad, catalog: dict[int, Player]) -> Roster:
     """The picks joined to the players they name, in the order the manager set them."""
@@ -130,6 +134,11 @@ def roster(squad: Squad, catalog: dict[int, Player]) -> Roster:
 def points_of(pick: Pick, stat: LiveStat) -> int:
     """What one row scored as the manager sees it: multiplied for an armband, raw on the bench."""
     return stat.points * max(pick.multiplier, 1)
+
+
+def projected_of(pick: Pick, player: Player) -> float:
+    """What one row was projected for the gameweek being played, multiplied as `points_of` multiplies."""
+    return player.expected_this * max(pick.multiplier, 1)
 
 
 def fixtures_by_club(fixtures: list[Fixture], clubs: Iterable[str]) -> dict[str, list[Opponent]]:

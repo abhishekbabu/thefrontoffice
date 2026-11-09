@@ -46,6 +46,7 @@ def player(
         team=team,
         cost=cost,
         expected_points=points,
+        expected_this=points,
         form=points,
         points_per_game=points,
         total_points=int(points * 10),

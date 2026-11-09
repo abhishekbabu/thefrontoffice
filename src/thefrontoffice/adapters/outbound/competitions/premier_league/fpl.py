@@ -22,13 +22,13 @@ from thefrontoffice.adapters.outbound.competitions.premier_league import league,
 from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
     Roster,
     best_lineup,
-    effective_points,
     fixtures_by_club,
     free_transfers,
     lineup_changes,
     plays,
     points_of,
     points_with_captain,
+    projected_of,
     roster,
 )
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
@@ -61,6 +61,7 @@ from thefrontoffice.domain.models import (
     PlayerQuery,
     Side,
     Spot,
+    SpotScoring,
     Stat,
     StatGroup,
     StatRow,
@@ -495,9 +496,7 @@ class FPLProvider:
             mine=Side(
                 name=entry.name,
                 detail=f"GW{gameweek.id}",
-                # Empty until somebody has played rather than zero, which reads
-                # as a bad week instead of a week that has not started.
-                points=f"{scored} pts" if scored is not None else "",
+                points=_side_points(scored, mine, fixtures),
                 lineup=self._spots(mine, starting=True, fixtures=fixtures, live=live),
                 bench=self._spots(mine, starting=False, fixtures=fixtures, live=live),
             ),
@@ -623,7 +622,7 @@ class FPLProvider:
             detail=f"GW{gameweek}",
             # The game's own total rather than a sum of the rows: it already
             # accounts for auto-subs, which a squad list cannot show.
-            points=f"{match.opponent_points} pts",
+            points=_side_points(match.opponent_points, theirs, fixtures),
             lineup=self._spots(theirs, starting=True, fixtures=fixtures, live=live),
             bench=self._spots(theirs, starting=False, fixtures=fixtures, live=live),
         )
@@ -647,27 +646,29 @@ class FPLProvider:
         fixtures: dict[str, list[Opponent]],
         live: dict[int, LiveStat],
     ) -> Spot:
-        """One row of a lineup, showing what happened where anything has.
+        """One row: what he was projected for this gameweek, and once his match is on, what he has scored.
 
-        Once a gameweek is under way the scored total is the number somebody is
-        looking for, and a projection beside it is last week's guess about a
-        question already being answered. Before then, the projection is all
-        there is.
+        The projection is the gameweek's own (`ep_this`), multiplied as his points
+        are, so a captain's guess and a captain's score are the same kind of
+        number. Once his club has kicked off a nought is a nought, not a match
+        still to come.
         """
         flag = player.availability
         stat = live.get(player.id)
         armband = " (C)" if pick.is_captain else " (V)" if pick.is_vice_captain else ""
-        points = points_of(pick, stat) if stat is not None and stat.has_played else None
         opponents = fixtures.get(player.team, [])
+        scoring = _scoring(opponents, stat)
+        points = None if scoring == "projected" else points_of(pick, stat or LiveStat(points=0, minutes=0))
+        projected = projected_of(pick, player)
         return Spot(
             player_id=str(player.id),
             player=player.name + armband,
             detail=f"{player.position} · {player.team} {_fixture_text(opponents)}" + (f" · {flag}" if flag else ""),
-            # Points once they exist, the projection until then. A player whose
-            # match is on Sunday has not blanked, and showing them a nought
-            # says they have.
-            value=f"{points} pts" if points is not None else f"{effective_points(player):.1f} xPts",
+            value=f"{points} pts" if points is not None else f"{projected:.1f} xPts",
             tone=self._spot_tone(points, flag, blank=not opponents),
+            scoring=scoring,
+            scored="" if points is None else str(points),
+            projection=f"{projected:.1f}",
         )
 
     @staticmethod
@@ -721,6 +722,29 @@ class FPLProvider:
             allowance=free_transfers(self.client.get_history(entry_id), upcoming.id),
             fixtures=fixtures_by_club(self.client.get_fixtures(upcoming.id), (p.team for p in mine.players)),
         )
+
+
+def _scoring(opponents: list[Opponent], stat: LiveStat | None) -> SpotScoring:
+    """Final once every match his club has this gameweek is over, live from the first kickoff.
+
+    Minutes stand in for a kickoff where the fixtures were read before it: a
+    player on the pitch is in a match that has started, whatever the fixture
+    list last said.
+    """
+    if opponents and all(o.finished for o in opponents):
+        return "final"
+    if any(o.started for o in opponents) or (stat is not None and stat.has_played):
+        return "live"
+    return "projected"
+
+
+def _side_points(scored: int | None, squad: Roster, fixtures: dict[str, list[Opponent]]) -> str:
+    """A side's projection until one of its eleven has kicked off, then what it has scored beside it."""
+    projected = f"{squad.projected():.1f} proj"
+    kicked = any(o.started for player in squad.starters for o in fixtures.get(player.team, []))
+    if scored is None and not kicked:
+        return projected
+    return f"{scored or 0} pts · {projected}"
 
 
 def _tone(player: Player) -> Tone:
