@@ -335,32 +335,47 @@ def test_judging_for_an_unknown_competition_is_a_404(client: TestClient) -> None
 # ── conversations ───────────────────────────────────────────────────────
 
 
-def _opened(client: TestClient, key: str = ITEM.key) -> Any:
-    """A conversation opened about one to-do item, as the week's row opens it."""
-    return client.post("/api/premier-league/leagues/900/threads", json={"kind": "task", "key": key})
+def _opened(client: TestClient) -> str:
+    """The assistant's conversation in one league, as the page opens it."""
+    return client.post("/api/premier-league/leagues/900/assistant").json()["chat_id"]
 
 
-def test_a_thread_about_one_thing_opens_and_is_asked_through_the_chat() -> None:
+def test_the_assistant_is_asked_with_what_is_on_screen() -> None:
     chat = FakeChat(reply="Because he has no fixture.")
     client = _client(ai=FakeAI(chat=chat))
 
-    chat_id = _opened(client).json()["chat_id"]
-    body = client.post(f"/api/chat/{chat_id}", json={"message": "Why bench him?"}).json()
+    on_screen = [{"kind": "page", "key": "week"}, {"kind": "task", "key": ITEM.key}]
+    body = client.post(
+        f"/api/chat/{_opened(client)}", json={"message": "Why bench him?", "on_screen": on_screen}
+    ).json()
 
     assert body[-1] == {"role": "model", "text": "Because he has no fixture."}
-    assert ITEM.title in chat.sent[0]  # the first question carries the item it is about
+    assert ITEM.title in chat.sent[0]  # the item on screen rode with the question
 
 
-def test_a_thread_about_an_item_since_settled_says_so(client: TestClient) -> None:
+def test_a_question_about_an_item_since_settled_says_so(client: TestClient) -> None:
     from thefrontoffice.domain.errors import SubjectGoneError
 
-    assert _opened(client, key="gone").json()["code"] == SubjectGoneError.code
+    on_screen = [{"kind": "task", "key": "gone"}]
+    response = client.post(f"/api/chat/{_opened(client)}", json={"message": "Why?", "on_screen": on_screen})
+
+    assert response.json()["code"] == SubjectGoneError.code
 
 
-def test_a_thread_must_name_what_it_is_about(client: TestClient) -> None:
-    response = client.post("/api/premier-league/leagues/900/threads", json={"kind": "league", "key": "x"})
+def test_what_is_on_screen_must_be_something_a_question_can_be_asked_with(client: TestClient) -> None:
+    on_screen = [{"kind": "league", "key": "x"}]
+    response = client.post(f"/api/chat/{_opened(client)}", json={"message": "Hi", "on_screen": on_screen})
 
     assert response.status_code == 422
+
+
+def test_a_turn_keeps_the_question_not_the_briefing_that_rode_with_it() -> None:
+    client = _client(ai=FakeAI(chat=FakeChat(reply="Because.")))
+    chat_id = _opened(client)
+
+    body = client.post(f"/api/chat/{chat_id}", json={"message": "Why?", "on_screen": [{"kind": "page", "key": "week"}]})
+
+    assert [t["text"] for t in body.json() if t["role"] == "you"] == ["Why?"]
 
 
 @pytest.mark.parametrize("method", ["get", "post"])
@@ -375,7 +390,7 @@ def test_an_expired_conversation_says_so_with_a_code_the_page_can_act_on(client:
 def test_a_reopened_conversation_reads_back_what_was_said() -> None:
     """The server carries the conversation on, so a page reopened on it shows it rather than a blank."""
     client = _client(ai=FakeAI(chat=FakeChat(reply="Because he has no fixture.")))
-    chat_id = _opened(client).json()["chat_id"]
+    chat_id = _opened(client)
     client.post(f"/api/chat/{chat_id}", json={"message": "Why bench him?"})
 
     turns = client.get(f"/api/chat/{chat_id}").json()
@@ -389,7 +404,7 @@ def test_a_reopened_conversation_reads_back_what_was_said() -> None:
 def test_a_follow_up_answers_with_the_whole_conversation_as_the_server_holds_it() -> None:
     """The page shows what it is sent rather than appending a copy it must keep in step."""
     client = _client(ai=FakeAI(chat=FakeChat(reply="Because.")))
-    chat_id = _opened(client).json()["chat_id"]
+    chat_id = _opened(client)
     client.post(f"/api/chat/{chat_id}", json={"message": "Why?"})
 
     body = client.post(f"/api/chat/{chat_id}", json={"message": "Really?"}).json()
@@ -402,7 +417,7 @@ def test_the_server_holds_a_bounded_number_of_conversations_dropping_the_least_r
     """Each one carries its whole history; kept for as long as the process runs, they only grow."""
     fpl = entry(FakeProvider(), competition="premier-league", platform="fpl")
     client = TestClient(web.create_app(fake_wiring(fpl), max_chats=2))
-    first, second = (_opened(client).json()["chat_id"] for _ in range(2))
+    first, second = (_opened(client) for _ in range(2))
     client.get(f"/api/chat/{first}")  # read since, so the second is now the oldest
 
     _opened(client)
@@ -414,7 +429,7 @@ def test_the_server_holds_a_bounded_number_of_conversations_dropping_the_least_r
 def test_a_model_failure_is_a_bad_gateway_not_a_crash() -> None:
     client = _client(ai=FakeAI(chat=FakeChat(error=RuntimeError("quota exhausted"))))
 
-    response = client.post(f"/api/chat/{_opened(client).json()['chat_id']}", json={"message": "Why?"})
+    response = client.post(f"/api/chat/{_opened(client)}", json={"message": "Why?"})
 
     assert (response.status_code, response.json()["code"]) == (502, "ai_failed")
     assert "quota exhausted" not in response.json()["detail"]  # a vendor's repr belongs in the log
@@ -428,13 +443,13 @@ def test_a_follow_up_every_model_refused_says_why() -> None:
     error = AIQuotaError("Gemini, Groq")
     client = _client(ai=FakeAI(chat=FakeChat(error=error)))
 
-    response = client.post(f"/api/chat/{_opened(client).json()['chat_id']}", json={"message": "Why?"})
+    response = client.post(f"/api/chat/{_opened(client)}", json={"message": "Why?"})
 
     assert response.json()["code"] == error.code
 
 
 def test_an_empty_follow_up_is_rejected(client: TestClient) -> None:
-    chat_id = _opened(client).json()["chat_id"]
+    chat_id = _opened(client)
 
     response = client.post(f"/api/chat/{chat_id}", json={"message": ""})
 

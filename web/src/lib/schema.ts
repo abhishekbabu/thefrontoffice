@@ -391,7 +391,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/threads": {
+    "/api/{competition}/leagues/{league_id}/assistant": {
         parameters: {
             query?: never;
             header?: never;
@@ -401,14 +401,14 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Thread
-         * @description Open a conversation about one to-do item or one player.
+         * Assistant
+         * @description Open the conversation that follows you around this league.
          *
-         *     Seeded with that subject alone, so a question about Hall's row is
-         *     answered about Hall's row; the turns then go through the chat endpoint
-         *     like any other conversation.
+         *     Briefed on nothing yet: each question says what is on screen, and is
+         *     briefed on whatever of that it has not seen. The turns then go through
+         *     the chat endpoint like any other conversation.
          */
-        post: operations["thread"];
+        post: operations["assistant"];
         delete?: never;
         options?: never;
         head?: never;
@@ -475,7 +475,7 @@ export interface paths {
         put?: never;
         /**
          * Ask
-         * @description Ask the next question in a conversation a thread opened; every turn so far, the answer last.
+         * @description Ask the next question in an open conversation; every turn so far, the answer last.
          *
          *     The whole conversation rather than the answer alone, so the client shows
          *     what the server holds instead of keeping a copy of its own in step.
@@ -632,10 +632,15 @@ export interface components {
             ai: boolean;
             limits: components["schemas"]["Limits"];
         };
-        /** ChatRequest */
+        /**
+         * ChatRequest
+         * @description A question, and what was on screen when it was asked.
+         */
         ChatRequest: {
             /** Message */
             message: string;
+            /** On Screen */
+            on_screen?: components["schemas"]["Subject"][];
         };
         /**
          * Competition
@@ -1486,20 +1491,20 @@ export interface components {
         };
         /**
          * Subject
-         * @description What a conversation is about: one to-do item, by its key, or one player.
+         * @description Something on screen a question is asked with: one to-do item, by its key, one player, or one page.
          *
-         *     A question is asked of something on screen. Naming the thing is what lets
-         *     the conversation be seeded with that thing and not the whole week.
+         *     Naming the thing is what lets the conversation be briefed on that thing
+         *     and not the whole league.
          */
         Subject: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "task" | "player";
+            kind: "task" | "player" | "page";
             /**
              * Key
-             * @description The to-do item's key, or the player's id.
+             * @description The to-do item's key, the player's id, or one of ('week', 'league', 'team', 'free-agents').
              */
             key: string;
         };
@@ -1593,7 +1598,7 @@ export interface components {
         };
         /**
          * Thread
-         * @description A conversation opened about one thing; asked through the chat endpoint.
+         * @description A conversation opened on the server; asked through the chat endpoint.
          */
         Thread: {
             /** Chat Id */
@@ -3183,7 +3188,7 @@ export interface operations {
             };
         };
     };
-    thread: {
+    assistant: {
         parameters: {
             query?: never;
             header?: never;
@@ -3193,11 +3198,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Subject"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

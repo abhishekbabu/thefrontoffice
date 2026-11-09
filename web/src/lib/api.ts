@@ -146,7 +146,8 @@ export function leagueApi(competition: string, league: string) {
       post<Ok<"judge_free_agents">>(`${base}/free-agents/judge`, { player_ids: playerIds }),
     scout: () => post<Ok<"scout">>(`${base}/scout`, {}),
     judgment: () => request<Ok<"judgment">>(`${base}/judgment`),
-    thread: (subject: Subject) => post<Ok<"thread">>(`${base}/threads`, subject),
+    /** Open the assistant's conversation in this league; asked through `api.ask`. */
+    assistant: () => post<Ok<"assistant">>(`${base}/assistant`, {}),
   };
 }
 
@@ -157,8 +158,9 @@ export const api = {
   league: leagueApi,
   /** What has been said in a conversation: the server keeps it, so a reopened chat shows it. */
   turns: (chatId: string) => request<Ok<"turns">>(`/api/chat/${segment(chatId)}`),
-  /** Ask the next question; answered with every turn so far, the answer last. */
-  ask: (chatId: string, message: string) => post<Ok<"ask">>(`/api/chat/${segment(chatId)}`, { message }),
+  /** Ask the next question with what is on screen; answered with every turn so far, the answer last. */
+  ask: (chatId: string, message: string, onScreen: Subject[] = []) =>
+    post<Ok<"ask">>(`/api/chat/${segment(chatId)}`, { message, on_screen: onScreen }),
   settings: () => request<Ok<"read_settings">>("/api/settings"),
   saveSettings: (values: Record<string, string>) => put<Ok<"save_settings">>("/api/settings", { values }),
   /** Start a platform's login, named as a remedy names it: `yahoo`. */

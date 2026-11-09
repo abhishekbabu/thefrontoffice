@@ -8,9 +8,9 @@ import { IconButton } from "@/components/ui/icon-button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { QueryState } from "@/components/ui/state";
 import { SlideOver } from "@/components/ui/dialog";
-import { Thread } from "@/components/ui/chat";
+import { useShown } from "@/lib/screen";
 import { api, type Competition, type League, type PlayerDetail, type StatTable } from "@/lib/api";
-import { keys, useCapabilities } from "@/lib/queries";
+import { keys } from "@/lib/queries";
 import { toneText } from "@/lib/tone";
 import { Badge } from "@/components/ui/badge";
 import { StatList } from "@/components/ui/stat";
@@ -211,13 +211,16 @@ function PlayerPanel({
   if (playerId) last.current = playerId;
   const shown = playerId ?? last.current;
 
-  const ai = useCapabilities().data?.ai ?? false;
-
   const player = useQuery<PlayerDetail, Error>({
     queryKey: keys.player(competition, league, shown),
     queryFn: () => api.league(competition, league).player(shown),
     enabled: Boolean(shown),
   });
+  // On screen while open, so a question to the assistant docked over the
+  // drawer is about him.
+  useShown(
+    playerId && player.data ? { subject: { kind: "player", key: player.data.player_id }, label: player.data.name } : null,
+  );
 
   return (
     <SlideOver
@@ -269,7 +272,8 @@ function PlayerPanel({
       <QueryState query={player} lines={4} />
 
       {player.data && (
-        <m.div variants={list} initial="hidden" animate="shown" className="flex flex-col gap-5 px-5 py-4">
+        // Room at the foot for the assistant's button, which sits over the drawer.
+        <m.div variants={list} initial="hidden" animate="shown" className="flex flex-col gap-5 px-5 pt-4 pb-20">
           {player.data.tables.map((table) => (
             <m.section key={table.title} variants={listItem}>
               <Label as="h3" className="mb-1.5 block">
@@ -295,20 +299,6 @@ function PlayerPanel({
         </m.div>
       )}
 
-      {/* Last, under everything it can be asked about. Keyed by player, so
-          opening someone else starts their conversation, not his. */}
-      {ai && player.data && (
-        <div className="px-5 pb-6">
-          <Thread
-            key={player.data.player_id}
-            competition={competition}
-            league={league}
-            subject={{ kind: "player", key: player.data.player_id }}
-            title={`Ask about ${player.data.name}`}
-            placeholder="Form, role, whether to start"
-          />
-        </div>
-      )}
     </SlideOver>
   );
 }

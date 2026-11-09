@@ -18,6 +18,14 @@ export const VIEWS = ["week", "league", "team", "free-agents"] as const;
  */
 export type View = (typeof VIEWS)[number];
 
+/** What each view is called: in the rail, and where the assistant says what it can see. */
+export const VIEW_LABELS: Record<View, string> = {
+  week: "This week",
+  league: "League",
+  team: "My team",
+  "free-agents": "Free agents",
+};
+
 /** What a competition opens on, and what an unrecognized view falls back to. */
 export const DEFAULT_VIEW: View = "week";
 

@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Moon, Settings, Sun, Trophy } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
 import { api, type League, type Competition } from "@/lib/api";
-import { keys } from "@/lib/queries";
-import { DEFAULT_VIEW, LANDING, SETTINGS, VIEWS, type View, href, parse } from "@/lib/route";
+import { keys, useCapabilities } from "@/lib/queries";
+import { DEFAULT_VIEW, LANDING, SETTINGS, VIEWS, VIEW_LABELS, type View, href, parse } from "@/lib/route";
 import { useTheme } from "@/lib/useTheme";
 import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -15,6 +15,7 @@ import { Empty, Loading } from "@/components/ui/state";
 import { ErrorNote } from "@/components/ui/error-note";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
+import { Assistant } from "@/components/ui/assistant";
 
 // Each page loads when it is first opened rather than in the first download:
 // the entry bundle is what every visit waits on, and it was carrying all six.
@@ -28,15 +29,14 @@ const Landing = lazy(() => import("@/panels/Landing").then((m) => ({ default: m.
 type PanelProps = { competition: Competition; league: League };
 
 /**
- * Every view in one table: what the rail calls it and what renders it.
- * `Record<View, …>` makes a missing entry a type error rather than a view that
- * silently never renders.
+ * Every view in one table: what renders it. `Record<View, …>` makes a missing
+ * entry a type error rather than a view that silently never renders.
  */
-const PANELS: Record<View, { label: string; Panel: (props: PanelProps) => React.ReactNode }> = {
-  week: { label: "This week", Panel: ScoutPanel },
-  league: { label: "League", Panel: LeaguePanel },
-  team: { label: "My team", Panel: TeamPanel },
-  "free-agents": { label: "Free agents", Panel: FreeAgentsPanel },
+const PANELS: Record<View, (props: PanelProps) => React.ReactNode> = {
+  week: ScoutPanel,
+  league: LeaguePanel,
+  team: TeamPanel,
+  "free-agents": FreeAgentsPanel,
 };
 
 export default function App() {
@@ -74,6 +74,7 @@ export default function App() {
       : undefined;
 
   const view = route.page === "competition" ? route.view : DEFAULT_VIEW;
+  const ai = useCapabilities().data?.ai ?? false;
 
   // Make the address say what is on screen.
   //
@@ -122,7 +123,7 @@ export default function App() {
     // the panel keeps the report it already fetched, and the previous
     // competition's analysis renders under the new league's name — a stale FPL
     // report headed "Huge Euge RR FF", with FPL's figures in the strip.
-    const { Panel } = PANELS[view];
+    const Panel = PANELS[view];
     return (
       <m.div key={`${active.key}:${league.league_id}:${view}`} variants={rise} initial="hidden" animate="shown">
         <Panel competition={active} league={league} />
@@ -174,7 +175,7 @@ export default function App() {
           <Group label="View">
             {VIEWS.map((v) => (
               <RailLink key={v} to={href(active.key, league.league_id, v)} active={v === view}>
-                {PANELS[v].label}
+                {VIEW_LABELS[v]}
               </RailLink>
             ))}
           </Group>
@@ -228,6 +229,10 @@ export default function App() {
           </m.div>
         </AnimatePresence>
       </main>
+
+      {/* Beside every page rather than on one, and only where there is a model
+          to ask: without one, nothing that needs it is offered. */}
+      {ai && <Assistant route={route} competition={active} league={league} />}
     </div>
   );
 }

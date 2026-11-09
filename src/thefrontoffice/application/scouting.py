@@ -72,7 +72,7 @@ class ScoutEngine:
         except FrontOfficeError as e:
             logger.warning(f"{self.key}: showing the kept judgment unchecked, the week would not load: {e}")
             return judgment
-        moves = self._worth_making(_still_open(kept.answer.moves, context.movable), context.worth)
+        moves = standing_moves(kept.answer.moves, context, self.key)
         return judgment.model_copy(
             update={
                 "answer": kept.answer.model_copy(update={"moves": moves}),
@@ -128,33 +128,13 @@ class ScoutEngine:
         return ScoutReport(
             situation=answer.situation,
             focus=answer.focus,
-            moves=self._worth_making([Move.model_validate(move.model_dump()) for move in answer.moves], context.worth),
+            moves=_worth_making(
+                [Move.model_validate(move.model_dump()) for move in answer.moves], context.worth, self.key
+            ),
             strategy=answer.strategy,
             tasks=judged,
             headline=context.headline,
         )
-
-    def _worth_making(self, moves: list[Move], worth: dict[str, float]) -> list[Move]:
-        """The model's moves, less any add worth less a game over the season than the player it drops.
-
-        The same rule the to-do list holds its own pickups to. A model reading
-        this week's projections sees a player on bye as nothing and cuts him
-        for a one-week body; a prompt can say not to, and this makes sure.
-        Where either player's worth is unknown the move stands — there is
-        nothing to weigh it by.
-        """
-        by_name = {_name(name): value for name, value in worth.items()}
-        kept = []
-        for move in moves:
-            added, dropped = by_name.get(_name(move.player)), by_name.get(_name(move.replaces))
-            if move.action == "ADD" and added is not None and dropped is not None and dropped > added:
-                logger.info(
-                    f"{self.key}: dropping a suggested add of {move.player} ({added:.1f} a game) "
-                    f"for {move.replaces} ({dropped:.1f} a game)"
-                )
-                continue
-            kept.append(move)
-        return kept
 
     def _verdicts(self, verdicts: list[VerdictAnswer], count: int) -> dict[str, TaskVerdict]:
         """The model's verdicts keyed by task, keeping only ones that name a real task once.
@@ -198,6 +178,34 @@ def _due(kept: Remembered[ScoutReport], context: CompetitionContext, now: dateti
     if current - judged:
         return True
     return not is_current(kept, context.prompt) and now - kept.answered_at > REJUDGE_AFTER
+
+
+def standing_moves(moves: list[Move], context: CompetitionContext, key: str) -> list[Move]:
+    """A kept judgment's moves that still stand against the week as it is now, as the week's page shows them."""
+    return _worth_making(_still_open(moves, context.movable), context.worth, key)
+
+
+def _worth_making(moves: list[Move], worth: dict[str, float], key: str) -> list[Move]:
+    """The model's moves, less any add worth less a game over the season than the player it drops.
+
+    The same rule the to-do list holds its own pickups to. A model reading
+    this week's projections sees a player on bye as nothing and cuts him
+    for a one-week body; a prompt can say not to, and this makes sure.
+    Where either player's worth is unknown the move stands — there is
+    nothing to weigh it by.
+    """
+    by_name = {_name(name): value for name, value in worth.items()}
+    kept = []
+    for move in moves:
+        added, dropped = by_name.get(_name(move.player)), by_name.get(_name(move.replaces))
+        if move.action == "ADD" and added is not None and dropped is not None and dropped > added:
+            logger.info(
+                f"{key}: dropping a suggested add of {move.player} ({added:.1f} a game) "
+                f"for {move.replaces} ({dropped:.1f} a game)"
+            )
+            continue
+        kept.append(move)
+    return kept
 
 
 def _still_open(moves: list[Move], movable: frozenset[str] | None) -> list[Move]:
