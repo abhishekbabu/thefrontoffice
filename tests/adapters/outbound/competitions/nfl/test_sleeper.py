@@ -922,5 +922,6 @@ def test_every_projection_and_stat_line_is_asked_for_in_the_leagues_own_scoring(
 
     provider.summary("L1")
     provider.build_context("L1")
+    provider.player("L1", "qb1")
 
     assert client.rules_asked and all(asked == rules for asked in client.rules_asked)

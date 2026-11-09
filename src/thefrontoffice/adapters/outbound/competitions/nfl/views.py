@@ -498,7 +498,7 @@ def _season_table(client: NFLSource, player_id: str, state: Week) -> StatTable |
     by_season: dict[str, SeasonTotals | None] = {}
     for season in columns:
         try:
-            by_season[season] = client.get_season_stats(season).get(player_id)
+            by_season[season] = client.get_season_stats(season, scoring, state.league.scoring_rules).get(player_id)
         except PlatformError as e:
             logger.warning(f"Skipping {season} totals: {e}")
             by_season[season] = None

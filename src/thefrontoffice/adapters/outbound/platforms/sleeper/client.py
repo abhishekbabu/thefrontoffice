@@ -125,7 +125,9 @@ class SleeperNFLSource(Protocol):
 
     def get_rosters(self, league_id: str) -> list[SleeperRoster]: ...
 
-    def get_season_stats(self, season: str) -> dict[str, SeasonStats]: ...
+    def get_season_stats(
+        self, season: str, scoring: ScoringFormat, rules: Mapping[str, float]
+    ) -> dict[str, SeasonStats]: ...
 
     def get_transactions(self, league_id: str, week: int) -> list[Transaction]: ...
 
@@ -164,6 +166,9 @@ def league_points(stats: Mapping[str, float], rules: Mapping[str, float]) -> flo
     """
     return round(sum(value * rules[key] for key, value in stats.items() if key in rules), 2)
 
+
+UNPRICED_PREFIXES = ("idp_", "pos_rank_", "rank_")
+"""Season stats no league here prices: defensive players' counting stats, and Sleeper's own ranks."""
 
 IR_SETTINGS = {
     "reserve_allow_out": "OUT",
@@ -339,15 +344,16 @@ class SleeperClient:
         )
         return {pid: PlayerMeta(**row) for pid, row in (stored or {}).items()}
 
-    def get_season_stats(self, season: str) -> dict[str, SeasonStats]:
-        """A whole NFL season's production, keyed by player_id.
+    def get_season_stats(
+        self, season: str, scoring: ScoringFormat, rules: Mapping[str, float]
+    ) -> dict[str, SeasonStats]:
+        """A whole NFL season's production, keyed by player_id, its points in `scoring` priced by the league's `rules`.
 
-        Trimmed before caching for the same reason the catalog is: the raw
-        response is ~1.9MB of mostly kicking and defensive splits, and none of
-        it is read back.
+        Trimmed before caching, to the players who scored any fantasy points
+        and the stats a league could price — about 0.8MB of the raw 1.4MB.
         """
         stored = self._api.cached(
-            f"season_stats_{NFL}_{season}",
+            f"season_stats_priced_{NFL}_{season}",
             f"{BASE_URL}/stats/{NFL}/regular/{season}",
             SEASON_STATS_TTL,
             timeout=CATALOG_TIMEOUT_SECONDS,
@@ -358,7 +364,8 @@ class SleeperClient:
                 player_id=pid,
                 season=season,
                 games=int(row.get("gp") or 0),
-                points={fmt: float(row.get(fmt) or 0.0) for fmt in SCORING_FORMATS},
+                points={str(fmt): float(row.get(fmt) or 0.0) for fmt in SCORING_FORMATS}
+                | ({str(scoring): league_points(_numbers(row), rules)} if rules else {}),
                 position_rank=int(row.get("pos_rank_ppr") or 0),
                 splits={k: float(v) for k, v in row.items() if k in SPLIT_KEYS},
             )
@@ -650,11 +657,19 @@ def _trim_catalog(raw: Any) -> dict[str, dict[str, Any]]:
 
 
 def _trim_season_stats(raw: Any) -> dict[str, dict[str, Any]]:
-    """A season's rows cut to `SEASON_STAT_KEYS`."""
+    """A season's rows cut to players who scored fantasy points, and to the stats a league could price.
+
+    Defensive players' counting stats and Sleeper's own ranks go: no fantasy
+    league here scores the one, and the other is read as `pos_rank_ppr` alone.
+    """
     return {
-        str(pid): {k: v for k, v in row.items() if k in SEASON_STAT_KEYS}
+        str(pid): {
+            k: v
+            for k, v in row.items()
+            if isinstance(v, int | float) and (k in SEASON_STAT_KEYS or not k.startswith(UNPRICED_PREFIXES))
+        }
         for pid, row in (raw or {}).items()
-        if isinstance(row, dict)
+        if isinstance(row, dict) and row.get("gp") and any(row.get(fmt) for fmt in SCORING_FORMATS)
     }
 
 

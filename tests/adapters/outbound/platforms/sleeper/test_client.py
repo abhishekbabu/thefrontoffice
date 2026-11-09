@@ -642,3 +642,24 @@ def test_a_game_line_is_priced_by_the_leagues_rules_from_every_stat_its_row_carr
     [line] = client.get_nfl_game_lines("2026", [2], POSITIONS, "pts_ppr", KICKER_RULES).value(2)
 
     assert line.stats["pts_ppr"] == 2 * 4 + 5 + 3
+
+
+SEASON_ROWS = {
+    "k1": {"gp": 17, "pts_ppr": 140.0, "fgm_40_49": 10, "fgm_50_59": 4, "fgmiss": 3, "xpm": 40, "rank_ppr": 9},
+    "lb1": {"gp": 17, "idp_tkl": 120},
+}
+
+
+def test_a_season_is_priced_by_the_leagues_rules_and_kept_without_what_no_league_scores(tmp_path: Path) -> None:
+    client, _ = _client({"stats/nfl/regular/2025": SEASON_ROWS}, tmp_path)
+
+    season = client.get_season_stats("2025", "pts_ppr", KICKER_RULES)
+
+    # A linebacker scores no fantasy points here, so he is not kept at all.
+    assert set(season) == {"k1"}
+    assert season["k1"].scored("pts_ppr") == 10 * 4 + 4 * 5 - 3 + 40
+
+
+def test_a_season_of_a_league_with_unknown_rules_reads_sleepers_own_figure(tmp_path: Path) -> None:
+    client, _ = _client({"stats/nfl/regular/2025": SEASON_ROWS}, tmp_path)
+    assert client.get_season_stats("2025", "pts_ppr", {})["k1"].scored("pts_ppr") == 140.0

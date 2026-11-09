@@ -140,7 +140,10 @@ class FakeSleeper:
         batch.values.update({w: [line for line in source if line.week == w] for w in weeks if w not in batch.failures})
         return batch
 
-    def get_season_stats(self, season: str) -> dict[str, SeasonStats]:
+    def get_season_stats(
+        self, season: str, scoring: ScoringFormat, rules: Mapping[str, float]
+    ) -> dict[str, SeasonStats]:
+        self.rules_asked.append(dict(rules))
         if self.season_stats_error:
             raise self.season_stats_error
         return self.season_stats.get(season, {})

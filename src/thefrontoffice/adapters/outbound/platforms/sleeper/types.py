@@ -175,9 +175,9 @@ class GameProjection:
     stats: dict[str, float]
 
 
-# The stats worth keeping from a season row. Sleeper sends ~70 per player
-# across 8k players; the rest are kicking splits and defensive counting stats
-# that no fantasy page reads.
+# The stats a season row is shown by, and so the columns of the season table.
+# Every other stat a league could price is kept too (`_trim_season_stats`):
+# a kicker's field goals by distance are what his points are made of.
 SEASON_STAT_KEYS = (
     "gp",
     "pts_ppr",
