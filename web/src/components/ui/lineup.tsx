@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CardNote } from "@/components/ui/state";
@@ -95,7 +96,9 @@ function SpotList({ spots, empty, onOpen }: { spots: Spot[]; empty?: string; onO
             <div className="truncate text-[13.5px] font-medium">{spot.player}</div>
             <div className="truncate font-mono text-[11px] text-muted-foreground">{spot.detail}</div>
           </div>
-          {spot.tone === "warning" ? (
+          {spot.scoring ? (
+            <SpotScore spot={spot} />
+          ) : spot.tone === "warning" ? (
             <Badge variant="warn" appearance="pill" className="tabular-nums">
               {spot.value}
             </Badge>
@@ -106,6 +109,68 @@ function SpotList({ spots, empty, onOpen }: { spots: Spot[]; empty?: string; onO
         );
       })}
     </div>
+  );
+}
+
+/**
+ * What he has scored beside what he was projected, in two fixed columns, so
+ * the real number and the guess are never one figure read two ways. Before
+ * kickoff the projection is the only number, and the points column says so
+ * with a dash; once the game is on the points lead and the projection steps
+ * back. Live and final are said in words, not left to a color.
+ */
+function SpotScore({ spot }: { spot: Spot }) {
+  const played = spot.scoring !== "projected";
+  const warn = spot.tone === "warning";
+  return (
+    <div className="flex shrink-0 items-start gap-3 text-right">
+      <div className="flex w-14 flex-col items-end gap-0.5">
+        <span
+          className={cn(
+            "font-mono text-[14px] font-semibold tabular-nums",
+            !played ? "text-muted-foreground/50" : warn ? "text-warn" : "text-foreground",
+          )}
+        >
+          {played ? spot.scored : "—"}
+        </span>
+        {played && (
+          <span
+            className={cn(
+              "font-mono text-[9.5px] uppercase tracking-wider",
+              spot.scoring === "live" ? "text-ok" : "text-muted-foreground",
+            )}
+          >
+            {spot.scoring === "live" ? "● live" : "final"}
+          </span>
+        )}
+      </div>
+      <span
+        className={cn(
+          "w-12 font-mono text-[12px] tabular-nums",
+          played ? "text-muted-foreground" : warn ? "text-warn" : "text-foreground",
+        )}
+      >
+        {spot.projection}
+      </span>
+    </div>
+  );
+}
+
+/** The two score columns' names, set over rows that carry them, flush with `SpotScore`. */
+function ScoreHeads({ spots, children, className }: { spots: Spot[]; children?: ReactNode; className?: string }) {
+  if (!spots.some((spot) => spot.scoring)) {
+    return children ? (
+      <Label as="div" className={cn("border-y border-border px-4 py-2", className)}>
+        {children}
+      </Label>
+    ) : null;
+  }
+  return (
+    <Label as="div" className={cn("flex items-baseline gap-3 border-y border-border px-4 py-2", className)}>
+      <span className="flex-1">{children}</span>
+      <span className="w-14 text-right">Pts</span>
+      <span className="w-12 text-right">Proj</span>
+    </Label>
   );
 }
 
@@ -130,12 +195,11 @@ export function SideCard({ side, label, onOpen }: { side: Side | null; label: st
         </span>
         <span className="normal-case tracking-normal">{[side.detail, side.points].filter(Boolean).join(" · ")}</span>
       </CardHeader>
+      <ScoreHeads spots={side.lineup} className="border-t-0" />
       <SpotList spots={side.lineup} onOpen={onOpen} />
       {side.bench.length > 0 && (
         <>
-          <Label as="div" className="border-y border-border px-4 py-2">
-            Bench
-          </Label>
+          <ScoreHeads spots={side.bench}>Bench</ScoreHeads>
           <SpotList spots={side.bench} onOpen={onOpen} />
         </>
       )}

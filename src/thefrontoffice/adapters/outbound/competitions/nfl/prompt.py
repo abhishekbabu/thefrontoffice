@@ -316,10 +316,10 @@ def headline(state: Week) -> list[Stat]:
     """
     if state.on_bench > 0:
         lineup = Stat(
-            label="Lineup", value=f"{state.current_points:.1f} · best {state.best_points:.1f}", tone="warning"
+            label="Lineup", value=f"{state.current_points:.1f} proj · best {state.best_points:.1f}", tone="warning"
         )
     else:
-        lineup = Stat(label="Lineup", value=f"{state.current_points:.1f}")
+        lineup = Stat(label="Lineup", value=f"{state.current_points:.1f} proj")
     return [lineup, *matchup(state)[1]]
 
 

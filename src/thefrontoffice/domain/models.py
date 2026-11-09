@@ -91,6 +91,9 @@ class Stat(BaseModel):
     )
 
 
+SpotScoring = Literal["projected", "live", "final"]
+
+
 class Spot(BaseModel):
     """One place in a lineup, or one player on a bench.
 
@@ -103,8 +106,28 @@ class Spot(BaseModel):
     slot: str = Field(default="", description="Named place in the lineup, where the competition has them.")
     player: str
     detail: str = Field(description="Position, club and opponent, as that competition words it.")
-    value: str = Field(description="The forward-looking number, with its unit.")
+    value: str = Field(
+        description="The number the row turns on, with its unit: a projection, or once his game has kicked off, what he has scored."
+    )
     tone: Tone = "neutral"
+    scoring: SpotScoring | None = Field(
+        default=None,
+        description=(
+            "Which kind of number `value` is: projected before his game, live while it is on, final "
+            "after. None where the competition does not say."
+        ),
+    )
+    scored: str = Field(
+        default="",
+        description="What he has scored, bare — empty until his game kicks off. Shown beside `projection`.",
+    )
+    projection: str = Field(
+        default="",
+        description=(
+            "What he is projected, shown beside what he has scored on every row that says how it "
+            "scores — the guess beside the answer, and before kickoff the only number there is."
+        ),
+    )
 
 
 class Side(BaseModel):

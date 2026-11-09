@@ -33,6 +33,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     WeeklyProjection,
 )
 from thefrontoffice.domain.errors import PlayerNotFoundError
+from thefrontoffice.domain.models import Spot
 
 # ── the summary, before any report ──────────────────────────────────────
 
@@ -120,7 +121,7 @@ def test_the_week_shows_the_team_you_are_playing() -> None:
     assert summary.opponent is not None
     assert [spot.player for spot in summary.opponent.lineup] == ["Waiver WR"]
     assert [spot.player for spot in summary.opponent.bench] == ["Bad RB"]
-    assert summary.opponent.points == "96.1"
+    assert summary.opponent.points == "14.0 proj"  # nothing kicked off: the projection, as yours
 
 
 def test_a_week_with_no_fixture_shows_no_opponent() -> None:
@@ -303,7 +304,7 @@ def test_a_player_whose_game_has_not_kicked_off_keeps_their_projection() -> None
 
 
 def test_the_side_total_switches_from_projected_to_scored() -> None:
-    assert mine(nfl_provider(_live_client({"qb1": 24.5, "rb2": 3.0})).summary("L1")).points == "27.5 pts"
+    assert mine(nfl_provider(_live_client({"qb1": 24.5, "rb2": 3.0})).summary("L1")).points == "27.5 pts · 26.0 proj"
 
 
 def test_before_kickoff_the_side_total_is_still_a_projection() -> None:
@@ -344,8 +345,26 @@ def test_a_game_the_scoreboard_has_under_way_shows_his_points_and_its_clock() ->
     assert "7:30 - 3rd" in qb.detail
 
 
+def _qb(provider: SleeperNFLProvider) -> Spot:
+    return next(spot for spot in mine(provider.summary("L1")).lineup if spot.player == "Star QB")
+
+
+def test_a_row_says_whether_its_number_is_projected_live_or_final_and_keeps_the_projection() -> None:
+    live = _qb(_underway(scoreboard=UNDERWAY))
+    final = _qb(_underway(scoreboard=[replace(UNDERWAY[0], state="post")]))
+
+    assert (live.scoring, live.projection) == ("live", "22.0")
+    assert (final.scoring, final.value, final.projection) == ("final", "6.5 pts", "22.0")
+
+
+def test_a_row_before_kickoff_is_a_projection_and_says_so() -> None:
+    qb = _qb(nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)))
+
+    assert (qb.scoring, qb.value, qb.projection) == ("projected", "22.0 proj", "22.0")
+
+
 def test_the_side_total_counts_a_game_under_way() -> None:
-    assert mine(_underway(scoreboard=UNDERWAY).summary("L1")).points == "7.5 pts"
+    assert mine(_underway(scoreboard=UNDERWAY).summary("L1")).points == "7.5 pts · 26.0 proj"
 
 
 def test_the_forecast_leaves_as_much_of_a_game_as_its_clock_does() -> None:

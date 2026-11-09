@@ -41,6 +41,7 @@ from thefrontoffice.domain.models import (
     PlayerDetail,
     Side,
     Spot,
+    SpotScoring,
     Stat,
     StatGroup,
     StatRow,
@@ -548,7 +549,7 @@ def _recent_seasons(season: str) -> list[str]:
 
 def lineup_spot(slot: LineupSlot, scheduled: bool, live: Live | None = None) -> Spot:
     if slot.player is None:
-        return Spot(slot=slot.slot, player="—", detail="empty", value="0.0", tone="warning")
+        return Spot(slot=slot.slot, player="—", detail="empty", value="0.0", tone="warning", scoring="projected")
     return spot(slot.player, scheduled, slot=slot.slot, live=live, projected=slot.points)
 
 
@@ -583,9 +584,18 @@ def spot(
         slot=slot,
         player=projection.name,
         detail=f"{detail} · {clock}" if clock else detail,
-        value=f"{scored:.1f} pts" if scored is not None else f"{points:.1f}",
+        value=f"{scored:.1f} pts" if scored is not None else f"{points:.1f} proj",
         tone=_live_tone(scored) if scored is not None else _spot_tone(projection, scheduled),
+        scoring=_scoring(projection.team, live) if scored is not None else "projected",
+        scored=f"{scored:.1f}" if scored is not None else "",
+        projection=f"{points:.1f}",
     )
+
+
+def _scoring(team: str, live: Live | None) -> SpotScoring:
+    """Live while his game is on, final once it is over. Where the scoreboard would not load, a game
+    that has kicked off reads as live: saying a game is over that is not is the worse mistake."""
+    return "final" if live is not None and team in live.final else "live"
 
 
 def _slot(player_id: str, starters: set[str], reserve: Mapping[str, str]) -> str:
@@ -624,11 +634,17 @@ def _spot_tone(projection: Projection | None, scheduled: bool) -> Tone:
 
 
 def side_total(state: Week, live: Live) -> str:
-    """The projection until the ball is rolling, then what is on the board."""
+    """The projection until the ball is rolling, then what is on the board beside it."""
     if not live.under_way:
         return f"{state.current_points:.1f} proj"
     scored = sum(live.scored(slot.player.player_id, slot.player.team) or 0 for slot in state.lineup if slot.player)
-    return f"{scored:.1f} pts"
+    return f"{scored:.1f} pts · {state.current_points:.1f} proj"
+
+
+def _opponent_total(scored: float, starters: Sequence[Projection], live: Live) -> str:
+    """The opponent's figure in the same words as yours: projected, then scored beside it."""
+    projected = sum(p.points for p in starters)
+    return f"{scored:.1f} pts · {projected:.1f} proj" if live.under_way else f"{projected:.1f} proj"
 
 
 def opponent_side(state: Week, roster: Team, points: float, live: Live) -> Side:
@@ -650,7 +666,7 @@ def opponent_side(state: Week, roster: Team, points: float, live: Live) -> Side:
         lineup = [
             spot(by_id[pid], scheduled, slot=slot, live=live)
             if pid in by_id
-            else Spot(slot=slot, player="—", detail="empty", value="0.0", tone="warning")
+            else Spot(slot=slot, player="—", detail="empty", value="0.0", tone="warning", scoring="projected")
             for slot, pid in zip(slots, roster.starter_ids, strict=True)
         ]
     else:
@@ -661,7 +677,7 @@ def opponent_side(state: Week, roster: Team, points: float, live: Live) -> Side:
     return Side(
         name=state.team_name(roster),
         detail=roster.record,
-        points=f"{points:.1f}",
+        points=_opponent_total(points, [by_id[pid] for pid in roster.starter_ids if pid in by_id], live),
         lineup=lineup,
         bench=[spot(p, scheduled, live=live) for p in projected if p.player_id not in starting],
     )
