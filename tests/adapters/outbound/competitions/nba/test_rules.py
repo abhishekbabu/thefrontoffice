@@ -10,6 +10,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     THREES,
     TURNOVERS,
     line,
+    stranded,
 )
 
 
@@ -52,3 +53,24 @@ def test_threes_are_tagged_so_the_count_cannot_run_into_the_tag() -> None:
     """ "5" + "3pm" renders as "53pm", which reads as fifty-three."""
     assert THREES.tagged(5.0) == "5.0tpm"
     assert FIELD_GOALS.tagged(0.5) == "FG50.0%"
+
+
+@pytest.mark.parametrize(
+    ("slot", "status", "expected"),
+    [
+        ("IL", "", True),
+        ("IL", "GTD", True),
+        ("IL", "O", True),
+        ("IL", "INJ", False),
+        ("IL", "OFS", False),
+        ("IL+", "", True),
+        ("IL+", "O", False),
+        ("IL+", "GTD", False),
+        ("IL+", "DTD", False),
+        ("BN", "", False),
+        ("IL", "SUSP", False),
+    ],
+)
+def test_an_injured_slot_refuses_only_what_yahoos_rules_say_it_refuses(slot: str, status: str, expected: bool) -> None:
+    """A status the rules never mention is not flagged: a false "move him" costs more than a late one."""
+    assert stranded(slot, status) is expected

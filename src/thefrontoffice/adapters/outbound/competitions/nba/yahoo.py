@@ -23,6 +23,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     SCOUTED,
     Category,
     ruled_out,
+    stranded,
 )
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
@@ -40,6 +41,7 @@ from thefrontoffice.domain.models import (
     POSITION_COLUMN,
     SLOT_COLUMN,
     STATUS_COLUMN,
+    Action,
     CompetitionContext,
     LeagueSchedule,
     PlayerCard,
@@ -169,10 +171,14 @@ class YahooNBAProvider:
     def summary(self, league_id: str) -> Summary:
         """The header, without the free-agent pool or the model: the add budget.
 
-        A category league has no lineup to set, so there is no side to show.
+        A category league has no lineup to set, so there is no side to show. The one
+        to-do item it computes is a player an injured slot no longer takes; with none,
+        there is no list, rather than an empty one claiming there is nothing to do.
         """
-        my_team = self._yahoo(league_id).get_user_team()
-        return Summary(headline=_adds(my_team.adds_used, self.max_weekly_adds))
+        yahoo = self._yahoo(league_id)
+        my_team = yahoo.get_user_team()
+        stuck = _off_il(yahoo.roster(my_team.team_key))
+        return Summary(headline=_adds(my_team.adds_used, self.max_weekly_adds), actions=stuck or None)
 
     def schedule(self, league_id: str) -> LeagueSchedule:
         """The league table, which is the only one of these Yahoo gives cheaply.
@@ -221,7 +227,8 @@ class YahooNBAProvider:
         )
 
         schedule_context = prompt.schedule(week, remaining_games, projected=projections is not None)
-        trans_context = prompt.transactions(used_adds, limit)
+        stuck = _off_il(rostered)
+        trans_context = prompt.transactions(used_adds, limit) + "".join(f"\n- {item.reason}" for item in stuck)
         return CompetitionContext(
             prompt=prompt.scout(
                 roster="".join(roster_lines.values()),
@@ -237,6 +244,9 @@ class YahooNBAProvider:
             roster_lines=roster_lines,
             candidate_lines=fa_lines,
             headline=_adds(used_adds, limit),
+            tasks=stuck,
+            # A kept judgment's add of somebody another manager has since claimed is no move at all.
+            movable=frozenset(p.name for p in (*rostered, *free_agents)),
         )
 
     # ── trades ──────────────────────────────────────────────────────
@@ -467,6 +477,34 @@ def _key_numbers(key: str, *kinds: str) -> list[str]:
     if len(parts) != 1 + 2 * len(kinds) or tuple(parts[1::2]) != kinds:
         return []
     return parts[2::2]
+
+
+def _off_il(roster: list[YahooPlayer]) -> list[Action]:
+    """Each player held in an injured slot his status no longer qualifies him for.
+
+    Yahoo holds every add while one sits there, so it comes before any other
+    move. Activating him needs an active roster spot, which may mean a drop.
+    """
+    items = []
+    for player in roster:
+        if not stranded(player.slot, player.status):
+            continue
+        status = f"listed {player.status}" if player.status else "cleared to play"
+        items.append(
+            Action(
+                kind="lineup",
+                urgency="now",
+                title=f"Move {player.name} off {player.slot}",
+                reason=(
+                    f"{player.name} is {status}, which Yahoo's {player.slot} slot does not take, and Yahoo "
+                    "holds every add until he leaves it. Activating him needs an open roster spot."
+                ),
+                when="before any other move",
+                player_id=player.player_key,
+                key=f"il:{player.player_key}:{player.status.upper() or 'ACTIVE'}",
+            )
+        )
+    return items
 
 
 def _adds(used: int, limit: int) -> list[Stat]:
