@@ -53,9 +53,10 @@ class Forecasts:
         self.client = client
         self._previous: dict[str, evidence.Evidence] = {}
 
-    def last_season(self, season: str, scoring: str) -> evidence.Evidence:
+    def last_season(self, season: str, league: LeagueRules) -> evidence.Evidence:
         """Last season's games, for the shape of each position's spread. Without the weeks that will not load."""
-        key = f"{season}:{scoring}"
+        scoring = league.scoring_format
+        key = f"{season}:{league.league_id}"
         if key not in self._previous:
             try:
                 previous = str(int(season) - 1)
@@ -64,7 +65,9 @@ class Forecasts:
                 lines = []
             else:
                 lines = evidence.season_lines(
-                    self.client.get_nfl_game_lines(previous, list(range(1, SEASON_WEEKS + 1)), FANTASY_POSITIONS).values
+                    self.client.get_nfl_game_lines(
+                        previous, list(range(1, SEASON_WEEKS + 1)), FANTASY_POSITIONS, scoring, league.scoring_rules
+                    ).values
                 )
             self._previous[key] = evidence.gather(lines, scoring)
         return self._previous[key]
@@ -109,7 +112,7 @@ class Forecasts:
         status = {club: game.status for club, game in by_club(scoreboard.games(state).get(state.week, [])).items()}
         board = scoreboard.board(state)
         live = scoreboard.live(state)
-        spread = outcomes.spreads(state.evidence, pool_from=self.last_season(state.season, state.league.scoring_format))
+        spread = outcomes.spreads(state.evidence, pool_from=self.last_season(state.season, state.league))
 
         def outcome(player: Projection) -> Outcomes:
             return outcomes.outcomes(
@@ -137,13 +140,17 @@ class Forecasts:
                 at all, any settings would look perfect.
         """
         season = league.season
-        lines = self.client.get_nfl_game_lines(season, list(range(1, week + 1)), FANTASY_POSITIONS)
+        lines = self.client.get_nfl_game_lines(
+            season, list(range(1, week + 1)), FANTASY_POSITIONS, league.scoring_format, league.scoring_rules
+        )
         that_week = evidence.gather(lines.value(week), league.scoring_format)
         before = evidence.gather(
             [line for w, played in lines.values.items() if w < week for line in played], league.scoring_format
         )
-        last = self.last_season(season, league.scoring_format)
-        projections = self.client.get_projections(season, week, league.scoring_format, FANTASY_POSITIONS)
+        last = self.last_season(season, league)
+        projections = self.client.get_projections(
+            season, week, league.scoring_format, FANTASY_POSITIONS, league.scoring_rules
+        )
         played = [
             (projections[pid], games[0])
             for pid, games in that_week.games.items()
@@ -161,14 +168,20 @@ class Forecasts:
         be the answer leaking into the question.
         """
         season = league.season
-        projections = self.client.get_projections(season, week, league.scoring_format, FANTASY_POSITIONS)
+        projections = self.client.get_projections(
+            season, week, league.scoring_format, FANTASY_POSITIONS, league.scoring_rules
+        )
         players = self.client.get_nfl_players()
         earlier = list(range(1, week))
-        lines = evidence.season_lines(self.client.get_nfl_game_lines(season, earlier, FANTASY_POSITIONS).values)
+        lines = evidence.season_lines(
+            self.client.get_nfl_game_lines(
+                season, earlier, FANTASY_POSITIONS, league.scoring_format, league.scoring_rules
+            ).values
+        )
         spread = outcomes.spreads(
             evidence.gather(lines, league.scoring_format),
             settings,
-            pool_from=self.last_season(season, league.scoring_format),
+            pool_from=self.last_season(season, league),
         )
 
         def side(entry: Matchup) -> tuple[Outcomes, ...]:

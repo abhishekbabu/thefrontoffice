@@ -75,6 +75,9 @@ class SleeperLeague:
     """How many teams the regular season sends to the playoffs. Zero where unknown."""
     playoff_week_start: int = 0
     """The first playoff week; the regular season is every week before it. Zero where unknown."""
+    scoring_rules: dict[str, float] = field(default_factory=dict)
+    """Points per unit of each stat, as the league set them — what Sleeper's own app prices a line by.
+    Empty where unknown, and a line is then read at Sleeper's published figure for the format."""
     ir_allows: frozenset[str] = frozenset({"IR"})
     """The designations the league's injured-reserve slot takes, upper-cased. A player on IR whose
     designation is no longer among them locks the roster: Sleeper refuses every move until he leaves it."""

@@ -194,7 +194,7 @@ class SleeperNFLProvider:
             TeamRef(
                 team_id=str(r.roster_id),
                 name=team_name(names, r),
-                detail=f"{r.record} · {r.points_for:.1f} pts",
+                detail=f"{r.record} · {r.points_for:.2f} pts",
                 is_mine=r.roster_id == mine.roster_id,
             )
             for r in rosters
@@ -347,7 +347,9 @@ class SleeperNFLProvider:
         catalog = self.client.get_nfl_players()
         designations = self._designations(catalog)
         players = injuries.catalog(catalog, designations, lambda meta, status: replace(meta, injury_status=status))
-        published = self.client.get_projections(season, week, league.scoring_format, FANTASY_POSITIONS)
+        published = self.client.get_projections(
+            season, week, league.scoring_format, FANTASY_POSITIONS, league.scoring_rules
+        )
         projections = {pid: counted(p) for pid, p in injuries.reported(published, designations).items()}
         projected = projections_for(roster.player_ids, projections, players)
         # Nobody starts from an injured-reserve or taxi slot without a move first.
@@ -356,11 +358,11 @@ class SleeperNFLProvider:
         slots = league.starting_slots
         lineup = current_lineup(slots, roster.starter_ids, projected)
         best = optimal_lineup(slots, startable)
-        current_points = round(lineup_points(lineup), 1)
-        best_points = round(lineup_points(best), 1)
+        current_points = round(lineup_points(lineup), 2)
+        best_points = round(lineup_points(best), 2)
 
         return Week(
-            evidence=self._evidence(season, week, league.scoring_format, phase.is_regular_season, players),
+            evidence=self._evidence(season, week, league, phase.is_regular_season, players),
             news=self._news(catalog),
             is_regular_season=phase.is_regular_season,
             league=league,
@@ -378,7 +380,7 @@ class SleeperNFLProvider:
             changes=lineup_changes(slots, roster.starter_ids, startable),
             current_points=current_points,
             best_points=best_points,
-            on_bench=round(best_points - current_points, 1),
+            on_bench=round(best_points - current_points, 2),
         )
 
     def _matchups(self, league_id: str, week: int) -> list[SleeperMatchup]:
@@ -404,13 +406,16 @@ class SleeperNFLProvider:
         ]
 
     def _evidence(
-        self, season: str, week: int, scoring: str, is_regular_season: bool, players: Mapping[str, PlayerMeta]
+        self, season: str, week: int, league: SleeperLeague, is_regular_season: bool, players: Mapping[str, PlayerMeta]
     ) -> evidence.Evidence:
         """Roles and matchups from every week finished so far that loads."""
         played = weeks_played(week, is_regular_season)
         if not played:
             return evidence.Evidence()
-        lines = evidence.season_lines(self.client.get_nfl_game_lines(season, played, FANTASY_POSITIONS).values)
+        scoring = league.scoring_format
+        lines = evidence.season_lines(
+            self.client.get_nfl_game_lines(season, played, FANTASY_POSITIONS, scoring, league.scoring_rules).values
+        )
         out = {pid for pid, meta in players.items() if ruled_out(meta.injury_status)}
         return evidence.gather(lines, scoring, out)
 

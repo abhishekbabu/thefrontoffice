@@ -177,7 +177,7 @@ def _lineup(
 
         if change is not None:
             moved.update({change.start.player_id, *([player.player_id] if player else [])})
-            reason = f"{why}. {change.start.name} projects {change.start.points:.1f}.{_caveat(change.start)}"
+            reason = f"{why}. {change.start.name} projects {change.start.points:.2f}.{_caveat(change.start)}"
             # Only the player coming in: the one going out is not playing, and
             # his matchup is beside the point.
             hole = _hole(slot.slot, player)
@@ -203,7 +203,7 @@ def _lineup(
                     title=f"Pick up {pick.name}{replaces}",
                     reason=(
                         f"{why}, and nobody on your bench can play {slot.slot}. {pick.name} is the best "
-                        f"projected {pick.position} available, at {pick.points:.1f}."
+                        f"projected {pick.position} available, at {pick.points:.2f}."
                     ),
                     player_id=pick.player_id,
                     replaces=player.player_id if player else "",
@@ -215,7 +215,7 @@ def _lineup(
 
     for change in open_changes:
         if change.start.player_id not in moved and not (change.bench and change.bench.player_id in moved):
-            reason = f"+{change.gain:.1f} proj pts.{_caveat(change.start)}"
+            reason = f"+{change.gain:.2f} proj pts.{_caveat(change.start)}"
             both = [change.start, *([change.bench] if change.bench else [])]
             items.append(
                 Item("swap", _swap(change, "soon", reason, kickoff, _evidence(state, both), key=_swap_key(change)))
@@ -348,7 +348,7 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
                     if streamed
                     else f"Pick up {player.name} to start over {starter.name}",
                     reason=(
-                        f"{player.name} projects {player.points:.1f}, {gain:.1f} more than {starter.name} "
+                        f"{player.name} projects {player.points:.2f}, {gain:.2f} more than {starter.name} "
                         f"at {slot.slot} this week.{_caveat(player)}"
                         + (f" Drop {starter.name}: a lineup starts one {player.position}." if streamed else "")
                     ),
@@ -400,7 +400,7 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
                     urgency="soon",
                     title=f"Pick up {player.name} while his role grows",
                     reason=(
-                        f"{player.name}'s {trend.describe()}. He projects {player.points:.1f} at {player.position}, "
+                        f"{player.name}'s {trend.describe()}. He projects {player.points:.2f} at {player.position}, "
                         "and a projection is slow to read a role that has just changed."
                     ),
                     player_id=player.player_id,
@@ -492,9 +492,9 @@ def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> 
 def _drop_reason(state: Week, player: Projection) -> str:
     played = average(state.evidence, player.player_id)
     if played is not None:
-        worth = f"{played:.1f} a game this season, {player.points:.1f} projected this week"
+        worth = f"{played:.2f} a game this season, {player.points:.2f} projected this week"
     else:
-        worth = f"{player.points:.1f} projected this week, with too few games to judge him on more"
+        worth = f"{player.points:.2f} projected this week, with too few games to judge him on more"
     return f"Drop {player.name}, the least on your bench: {worth}."
 
 
@@ -543,8 +543,8 @@ def _same_game(
                     title=f"{len(stacked)} starters ride on {away} at {home}",
                     reason=(
                         f"{join([p.name for p in stacked])} all play in it, so one bad game there takes "
-                        f"them all down together. Starting {swap.name} ({swap.points:.1f}) for {out.name} "
-                        f"({out.points:.1f}) spreads the risk: worth it when you are ahead, and often not when "
+                        f"them all down together. Starting {swap.name} ({swap.points:.2f}) for {out.name} "
+                        f"({out.points:.2f}) spreads the risk: worth it when you are ahead, and often not when "
                         "you are behind, where you need that game to go well."
                     ),
                     player_id=swap.player_id,
@@ -613,13 +613,13 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
             title = f"Check whether {join([o.name for o in doubt])} plays before setting {mine.name}"
             outcome = (
                 f"If {'he sits' if len(doubt) == 1 else 'they sit'}, more of the work at {mine.position} falls to "
-                f"{mine.name}, who projects {mine.points:.1f} as things stand. {mine.team} names its inactives "
+                f"{mine.name}, who projects {mine.points:.2f} as things stand. {mine.team} names its inactives "
                 "about 90 minutes before kickoff."
             )
         else:
             title = f"More work for {mine.name} with {join([o.name for o in out])} out"
             outcome = (
-                f"Sleeper projects {mine.name} at {mine.points:.1f}; whether that already counts the extra work is "
+                f"Sleeper projects {mine.name} at {mine.points:.2f}; whether that already counts the extra work is "
                 "not something the projection says."
             )
         game = kickoff.get(mine.team)

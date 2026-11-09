@@ -11,7 +11,7 @@ effectively forever, trending for an hour.
 """
 
 import logging
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import asdict
 from datetime import timedelta
 from typing import Any, Protocol
@@ -100,7 +100,12 @@ class SleeperNFLSource(Protocol):
     def get_matchups_bulk(self, league_id: str, weeks: list[int]) -> Batch[int, list[SleeperMatchup]]: ...
 
     def get_nfl_game_lines(
-        self, season: str, weeks: list[int], positions: Collection[str]
+        self,
+        season: str,
+        weeks: list[int],
+        positions: Collection[str],
+        scoring: ScoringFormat,
+        rules: Mapping[str, float],
     ) -> Batch[int, list[NFLGameLine]]: ...
 
     def get_nfl_players(self) -> dict[str, PlayerMeta]: ...
@@ -110,7 +115,12 @@ class SleeperNFLSource(Protocol):
     def get_nfl_state(self) -> SeasonState: ...
 
     def get_projections(
-        self, season: str, week: int, scoring: ScoringFormat, positions: Collection[str]
+        self,
+        season: str,
+        week: int,
+        scoring: ScoringFormat,
+        positions: Collection[str],
+        rules: Mapping[str, float],
     ) -> dict[str, WeeklyProjection]: ...
 
     def get_rosters(self, league_id: str) -> list[SleeperRoster]: ...
@@ -142,6 +152,17 @@ class SleeperProjectionSource(Protocol):
     def get_nba_projections(self, season: str, week: int) -> list[GameProjection]: ...
 
     def get_nba_state(self) -> SeasonState: ...
+
+
+def league_points(stats: Mapping[str, float], rules: Mapping[str, float]) -> float:
+    """A stat line priced by a league's own rules: each stat times its points, as Sleeper's app adds it up.
+
+    Sleeper publishes a line's points only in its three stock formats, which
+    price a kicker's field goals and a defense's points allowed their own way;
+    a league that set its own reads differently in its app. A stat the league
+    does not score counts nothing.
+    """
+    return round(sum(value * rules[key] for key, value in stats.items() if key in rules), 2)
 
 
 IR_SETTINGS = {
@@ -221,6 +242,7 @@ class SleeperClient:
             playoff_teams=int((data.get("settings") or {}).get("playoff_teams") or 0),
             playoff_week_start=int((data.get("settings") or {}).get("playoff_week_start") or 0),
             ir_allows=SleeperClient.ir_allows(data.get("settings") or {}),
+            scoring_rules={str(k): float(v) for k, v in settings_blob.items() if isinstance(v, int | float)},
         )
 
     @staticmethod
@@ -416,7 +438,12 @@ class SleeperClient:
         return logs
 
     def get_nfl_game_lines(
-        self, season: str, weeks: list[int], positions: Collection[str]
+        self,
+        season: str,
+        weeks: list[int],
+        positions: Collection[str],
+        scoring: ScoringFormat,
+        rules: Mapping[str, float],
     ) -> Batch[int, list[NFLGameLine]]:
         """Every line from each game in `weeks` by a player at one of `positions`, by week.
 
@@ -427,11 +454,17 @@ class SleeperClient:
 
         A week that would not load is a failure, not empty: a week with no line
         for a player is a game he missed, and a failed request is not one.
+        Each line's points in `scoring` are the league's, priced by its `rules`
+        (`league_points`) as Sleeper's own app prices them.
         """
         batch = self._game_rows(NFL, season, weeks)
         return Batch(
             values={
-                week: [line for player_id, row in rows if (line := _nfl_line(week, player_id, row, positions))]
+                week: [
+                    line
+                    for player_id, row in rows
+                    if (line := _nfl_line(week, player_id, row, positions, scoring, rules))
+                ]
                 for week, rows in batch.values.items()
             },
             failures=batch.failures,
@@ -495,12 +528,21 @@ class SleeperClient:
         ]
 
     def get_projections(
-        self, season: str, week: int, scoring: ScoringFormat, positions: Collection[str]
+        self,
+        season: str,
+        week: int,
+        scoring: ScoringFormat,
+        positions: Collection[str],
+        rules: Mapping[str, float],
     ) -> dict[str, WeeklyProjection]:
         """Weekly projections for the players at `positions`, keyed by player_id.
 
         This is the forward-looking number the whole football report rests on:
         start/sit and waiver value are both "who will score most this week".
+        Each is priced by the league's own `rules` (`league_points`), as its
+        app shows them: Sleeper's stock figure for the format prices a kicker's
+        field goals its own way, 9.77 for one the league's app shows at 7.78.
+        Only a league whose rules are unknown falls back to the stock figure.
         """
         # The sport segment is required, and its absence is not an error: the
         # path without it answers 200 with an empty list, so every projection
@@ -518,6 +560,8 @@ class SleeperClient:
             points = stats.get(scoring)
             if points is None:
                 continue
+            if rules:
+                points = league_points(_numbers(stats), rules)
             player_id = str(row.get("player_id") or "")
             projections[player_id] = WeeklyProjection(
                 player_id=player_id,
@@ -527,7 +571,7 @@ class SleeperClient:
                 opponent=str(row.get("opponent") or ""),
                 points=float(points),
                 injury_status=str(player.get("injury_status") or ""),
-                stats={k: float(v) for k, v in stats.items() if isinstance(v, int | float)},
+                stats=_numbers(stats) | {scoring: float(points)},
             )
         return projections
 
@@ -619,8 +663,19 @@ def _full_name(player: dict[str, Any]) -> str:
     return " ".join(filter(None, [player.get("first_name"), player.get("last_name")]))
 
 
-def _nfl_line(week: int, player_id: str, row: dict[str, Any], positions: Collection[str]) -> NFLGameLine | None:
-    """A player's line from one game; None for a position nobody scores or a row with no game behind it."""
+def _nfl_line(
+    week: int,
+    player_id: str,
+    row: dict[str, Any],
+    positions: Collection[str],
+    scoring: ScoringFormat,
+    rules: Mapping[str, float],
+) -> NFLGameLine | None:
+    """A player's line from one game; None for a position nobody scores or a row with no game behind it.
+
+    Its points in `scoring` are the league's own (`league_points`), from every stat the row carries
+    rather than the few a line keeps: a kicker's field goals by distance are priced, then let go.
+    A league whose rules are unknown keeps Sleeper's stock figure."""
     position = str((row.get("player") or {}).get("position") or "")
     opponent = str(row.get("opponent") or "")
     if position not in positions or not opponent:
@@ -632,8 +687,13 @@ def _nfl_line(week: int, player_id: str, row: dict[str, Any], positions: Collect
         team=str(row.get("team") or ""),
         opponent=opponent,
         position=position,
-        stats={k: float(v) for k in NFL_LINE_KEYS if (v := stats.get(k)) is not None},
+        stats={k: float(v) for k in NFL_LINE_KEYS if (v := stats.get(k)) is not None}
+        | ({scoring: league_points(_numbers(stats), rules)} if rules else {}),
     )
+
+
+def _numbers(stats: dict[str, Any]) -> dict[str, float]:
+    return {str(k): float(v) for k, v in stats.items() if isinstance(v, int | float)}
 
 
 def _matchups(data: Any) -> list[SleeperMatchup]:

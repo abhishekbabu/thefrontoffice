@@ -5,7 +5,7 @@ it a schedule, both rosters and a matchup. Everything a test does not set is
 the same every time, so a test states only what its rule turns on.
 """
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
@@ -16,6 +16,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
     ScheduledGame,
+    ScoringFormat,
     SeasonState,
     SeasonStats,
     SleeperLeague,
@@ -61,6 +62,8 @@ class FakeSleeper:
         self.season_stats = season_stats if season_stats is not None else {}
         self.season_stats_error = season_stats_error
         self.season_schedule = season_schedule if season_schedule is not None else []
+        self.rules_asked: list[dict[str, float]] = []
+        """The scoring rules every projection and stat line was asked for with, in order."""
         self.matchups_error: Exception | None = None
         self.players_catalog: dict[str, PlayerMeta] | None = None
         self.schedule_error = schedule_error
@@ -124,8 +127,14 @@ class FakeSleeper:
         return self.transactions.get(week, [])
 
     def get_nfl_game_lines(
-        self, season: str, weeks: list[int], positions: Collection[str]
+        self,
+        season: str,
+        weeks: list[int],
+        positions: Collection[str],
+        scoring: ScoringFormat,
+        rules: Mapping[str, float],
     ) -> Batch[int, list[NFLGameLine]]:
+        self.rules_asked.append(dict(rules))
         source = self.game_lines if season == self.get_nfl_state().season else self.last_season_lines
         batch: Batch[int, list[NFLGameLine]] = self._unloaded(weeks)
         batch.values.update({w: [line for line in source if line.week == w] for w in weeks if w not in batch.failures})
@@ -178,8 +187,9 @@ class FakeSleeper:
         }
 
     def get_projections(
-        self, season: str, week: int, scoring: str, positions: Collection[str]
+        self, season: str, week: int, scoring: ScoringFormat, positions: Collection[str], rules: Mapping[str, float]
     ) -> dict[str, WeeklyProjection]:
+        self.rules_asked.append(dict(rules))
         return self.weekly_projections.get(week, self.projections)
 
     # Signature mirrors the real client exactly, defaults included: a fake that

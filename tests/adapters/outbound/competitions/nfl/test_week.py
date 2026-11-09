@@ -121,7 +121,7 @@ def test_the_week_shows_the_team_you_are_playing() -> None:
     assert summary.opponent is not None
     assert [spot.player for spot in summary.opponent.lineup] == ["Waiver WR"]
     assert [spot.player for spot in summary.opponent.bench] == ["Bad RB"]
-    assert summary.opponent.points == "14.0 proj"  # nothing kicked off: the projection, as yours
+    assert summary.opponent.points == "14.00 proj"  # nothing kicked off: the projection, as yours
 
 
 def test_a_week_with_no_fixture_shows_no_opponent() -> None:
@@ -137,7 +137,7 @@ def test_a_player_carries_their_week_and_their_depth() -> None:
     labels = {stat.label: stat.value for group in detail.groups for stat in group.stats}
 
     assert detail.name == "Star QB"
-    assert detail.headline == "22.0"
+    assert detail.headline == "22.00"
     assert detail.headline_label == "projected for week 3"
     # In full, because a drawer has the room a table column does not.
     assert labels["Opponent"] == "vs Miami Dolphins"
@@ -282,7 +282,7 @@ def test_a_player_whose_game_has_started_shows_what_they_scored() -> None:
     summary = nfl_provider(_live_client({"qb1": 24.5, "rb2": 3.0})).summary("L1")
 
     values = {spot.player: spot.value for spot in mine(summary).lineup}
-    assert values["Star QB"] == "24.5 pts"
+    assert values["Star QB"] == "24.50 pts"
 
 
 def test_a_haul_and_a_blank_are_toned_apart() -> None:
@@ -304,7 +304,9 @@ def test_a_player_whose_game_has_not_kicked_off_keeps_their_projection() -> None
 
 
 def test_the_side_total_switches_from_projected_to_scored() -> None:
-    assert mine(nfl_provider(_live_client({"qb1": 24.5, "rb2": 3.0})).summary("L1")).points == "27.5 pts · 26.0 proj"
+    assert (
+        mine(nfl_provider(_live_client({"qb1": 24.50, "rb2": 3.00})).summary("L1")).points == "27.50 pts · 26.00 proj"
+    )
 
 
 def test_before_kickoff_the_side_total_is_still_a_projection() -> None:
@@ -341,7 +343,7 @@ def _underway(**espn: Any) -> SleeperNFLProvider:
 def test_a_game_the_scoreboard_has_under_way_shows_his_points_and_its_clock() -> None:
     qb = next(spot for spot in mine(_underway(scoreboard=UNDERWAY).summary("L1")).lineup if spot.player == "Star QB")
 
-    assert qb.value == "6.5 pts"
+    assert qb.value == "6.50 pts"
     assert "7:30 - 3rd" in qb.detail
 
 
@@ -353,18 +355,18 @@ def test_a_row_says_whether_its_number_is_projected_live_or_final_and_keeps_the_
     live = _qb(_underway(scoreboard=UNDERWAY))
     final = _qb(_underway(scoreboard=[replace(UNDERWAY[0], state="post")]))
 
-    assert (live.scoring, live.projection) == ("live", "22.0")
-    assert (final.scoring, final.value, final.projection) == ("final", "6.5 pts", "22.0")
+    assert (live.scoring, live.projection) == ("live", "22.00")
+    assert (final.scoring, final.value, final.projection) == ("final", "6.50 pts", "22.00")
 
 
 def test_a_row_before_kickoff_is_a_projection_and_says_so() -> None:
     qb = _qb(nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)))
 
-    assert (qb.scoring, qb.value, qb.projection) == ("projected", "22.0 proj", "22.0")
+    assert (qb.scoring, qb.value, qb.projection) == ("projected", "22.00 proj", "22.00")
 
 
 def test_the_side_total_counts_a_game_under_way() -> None:
-    assert mine(_underway(scoreboard=UNDERWAY).summary("L1")).points == "7.5 pts · 26.0 proj"
+    assert mine(_underway(scoreboard=UNDERWAY).summary("L1")).points == "7.50 pts · 26.00 proj"
 
 
 def test_the_forecast_leaves_as_much_of_a_game_as_its_clock_does() -> None:

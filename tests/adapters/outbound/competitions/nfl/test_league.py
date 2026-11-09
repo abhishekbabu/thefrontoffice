@@ -21,7 +21,7 @@ def test_the_leagues_header_is_the_season_so_far() -> None:
         for stat in nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).schedule("L1").headline
     }
 
-    assert (season["Record"], season["Points for"], season["Place"]) == ("2-1", "250.5", "1st of 1")
+    assert (season["Record"], season["Points for"], season["Place"]) == ("2-1", "250.50", "1st of 1")
 
 
 def test_the_season_spans_every_regular_season_week() -> None:
@@ -46,7 +46,7 @@ def test_a_future_week_has_no_score() -> None:
 def test_a_played_week_carries_its_score_and_whether_it_was_won() -> None:
     season = nfl_provider(at_week(5)).schedule("L1").season
 
-    assert season[0].result == "88.5-96.1"
+    assert season[0].result == "88.50-96.10"
     assert season[0].outcome == "lost"  # 88.5 against more
 
 
@@ -57,7 +57,7 @@ def test_a_week_whose_matchups_would_not_load_is_not_read_as_a_bye() -> None:
     season = nfl_provider(client).schedule("L1").season
 
     assert (season[1].detail, season[1].opponent, season[1].result) == ("unavailable", "", "")
-    assert season[0].result == "88.5-96.1"
+    assert season[0].result == "88.50-96.10"
 
 
 def test_a_week_with_nobody_to_play_is_a_bye() -> None:

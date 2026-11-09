@@ -79,7 +79,7 @@ class Role:
         if self.position in TARGET_POSITIONS:
             share = f" ({self.target_share:.0%} share)" if self.target_share is not None else ""
             parts.append(f"{self.targets:.1f} targets{share}")
-        parts.append(f"{self.points:.1f} pts")
+        parts.append(f"{self.points:.2f} pts")
         games = "last game" if self.games == 1 else f"last {self.games} games"
         return f"{games}: {', '.join(parts)}"
 
@@ -159,7 +159,7 @@ class Matchup:
             rank = "the fewest"
         else:
             rank = f"{ordinal(self.rank)}-most"
-        return f"vs {self.opponent}, {rank} to {noun} ({self.allowed:.1f} a game)"
+        return f"vs {self.opponent}, {rank} to {noun} ({self.allowed:.2f} a game)"
 
 
 @dataclass(frozen=True)

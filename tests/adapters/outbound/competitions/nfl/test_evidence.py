@@ -55,7 +55,7 @@ def test_a_kicker_or_a_defense_is_not_given_a_snap_share() -> None:
     role = gather(lines, SCORING).roles["k"]
 
     assert role.snap_share is None
-    assert role.describe() == "last 2 games: 9.0 pts"
+    assert role.describe() == "last 2 games: 9.00 pts"
 
 
 def test_a_kicker_counts_only_the_games_he_played() -> None:
