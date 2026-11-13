@@ -850,9 +850,14 @@ class TradeOption:
     points: float
     """Your starters' projected points a week, with the trade less without it."""
     their_points: float
-    """The same for theirs: a trade that leaves them worse off is not one they will take."""
+    """The same for theirs, across every week left: what a manager still chasing a place weighs."""
     scoring: tuple[TeamWeek, ...]
     """Both teams' scoring in each week the trade changes, replacing their rows in the season."""
+    playoff_points: float | None = None
+    """Your starters' projected points a playoff week, with the trade less without it; None where
+    the playoff weeks are not projected yet."""
+    pickup: str = ""
+    """The free agent who fills the roster spot a two-for-one frees, where one helps."""
 
 
 @dataclass(frozen=True)
@@ -864,7 +869,7 @@ class TradeMarket:
 
 
 class TradeIdea(BaseModel):
-    """A trade worth offering, priced in what it does to the playoff race."""
+    """A trade worth offering, priced in what it does to the playoff race and to the playoffs themselves."""
 
     team_id: str
     team: str = Field(description="The manager to offer it to.")
@@ -873,8 +878,20 @@ class TradeIdea(BaseModel):
     playoffs: float = Field(description="Your chance of a playoff place with the trade made.")
     playoffs_change: float = Field(description="That chance less your chance without it.")
     their_playoffs_change: float = Field(description="The same for the other side: what you would hand a rival.")
-    points: float = Field(description="Your starters' projected points a week, with the trade less without it.")
-    their_points: float = Field(description="The same for theirs, which is the case for them saying yes.")
+    points: float = Field(
+        description="Your starters' projected points a week over the regular season left, with the trade less without it."
+    )
+    their_points: float = Field(
+        description="The same for theirs over every week left, which is the case for them saying yes."
+    )
+    playoff_points: float | None = Field(
+        default=None, description="Your starters' projected points a playoff week, with the trade less without it."
+    )
+    their_playoffs: float = Field(
+        default=0.0,
+        description="Their chance of a playoff place before the trade: out of it, they have only worth to weigh.",
+    )
+    pickup: str = Field(default="", description="The free agent added to the roster spot a two-for-one frees.")
 
 
 class CalibrationBucket(BaseModel):

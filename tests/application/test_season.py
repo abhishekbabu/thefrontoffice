@@ -5,6 +5,8 @@ must conclude — a team already through, one already out, a tiebreak —
 without any sport's data.
 """
 
+from dataclasses import replace
+
 from support.simulation import FEW, odds_split
 
 from thefrontoffice.application.season import (
@@ -151,28 +153,39 @@ RACE = _season(
 )
 
 
-def _trade(team: str, mine: float, theirs: float, name: str = "X") -> TradeOption:
+def _trade(
+    team: str,
+    mine: float,
+    theirs: float,
+    name: str = "X",
+    *,
+    season: SeasonInput = RACE,
+    playoff: float | None = None,
+    get: str = "Y",
+) -> TradeOption:
     """A trade with `team` that moves your mean to `mine` and theirs to `theirs` in every week."""
-    weeks = {f.week for f in RACE.fixtures}
+    weeks = {f.week for f in season.fixtures}
     return TradeOption(
         team_id=team,
         giving=(name,),
-        receiving=("Y",),
+        receiving=(get,),
         points=mine - 100,
         their_points=theirs - 100,
         scoring=tuple(TeamWeek(t, w, mean, 20.0) for t, mean in (("a", mine), (team, theirs)) for w in weeks),
+        playoff_points=playoff,
     )
 
 
 class _Market:
-    def __init__(self, *options: TradeOption) -> None:
+    def __init__(self, *options: TradeOption, season: SeasonInput = RACE) -> None:
         self.options = options
+        self.season = season
 
     def season_input(self, league_id: str) -> SeasonInput | None:
-        return RACE
+        return self.season
 
     def trade_market(self, league_id: str) -> TradeMarket | None:
-        return TradeMarket(season=RACE, options=self.options)
+        return TradeMarket(season=self.season, options=self.options)
 
 
 def test_a_trade_that_makes_you_stronger_raises_your_playoff_chance() -> None:
@@ -188,7 +201,7 @@ def test_a_trade_that_changes_nothing_is_not_offered() -> None:
 def test_trades_are_ranked_on_the_playoff_chance_not_on_points() -> None:
     """More points for you can be worth less, when the trade makes a team you are racing as strong as it makes you."""
     rival = _trade("b", mine=110, theirs=110, name="to the rival")
-    other = _trade("c", mine=108, theirs=100, name="elsewhere")
+    other = _trade("c", mine=108, theirs=101, name="elsewhere")
 
     ideas = MarketEngine(_Market(rival, other)).trades("L1")
 
@@ -203,3 +216,72 @@ def test_what_a_trade_hands_the_other_side_is_counted() -> None:
 
 def test_no_market_is_no_trades() -> None:
     assert MarketEngine(_Over()).trades("L1") == []
+
+
+# Two of the three can still reach the one place; "d" has lost every game and cannot.
+OUT = _season(
+    [_team("a", 5), _team("b", 5), _team("d", 0, losses=10)],
+    [Fixture(10, "a", "b"), Fixture(11, "a", "d"), Fixture(11, "b", "d")],
+    {"a": 100, "b": 100, "d": 100},
+    spots=1,
+)
+
+
+def test_a_trade_that_does_nothing_for_a_contenders_lineup_is_not_offered() -> None:
+    """A manager still chasing a place wants his starters better for it."""
+    assert MarketEngine(_Market(_trade("b", mine=115, theirs=100), season=OUT)).trades("L1") == []
+
+
+def test_a_team_out_of_the_race_is_offered_a_trade_on_worth_alone() -> None:
+    """With no place left to chase, his lineup is nothing to him; what he gets back is."""
+    [idea] = MarketEngine(_Market(_trade("d", mine=115, theirs=100), season=OUT)).trades("L1")
+
+    assert idea.team == "D" and idea.their_playoffs < 0.05
+
+
+# You have nine wins to everyone else's two: the place is yours whatever you do.
+SAFE_SEASON = _season(
+    [_team("a", 9), _team("b", 2), _team("c", 2)],
+    [Fixture(10, "a", "b"), Fixture(11, "a", "c")],
+    {"a": 100, "b": 100, "c": 100},
+    spots=1,
+)
+
+
+def test_a_team_already_safe_is_offered_what_helps_its_playoff_lineup() -> None:
+    """The table cannot move for it, so the regular season's points say nothing about December."""
+    now = _trade("b", mine=110, theirs=101, name="for now", season=SAFE_SEASON, playoff=1.0, get="now")
+    later = _trade("c", mine=102, theirs=101, name="for December", season=SAFE_SEASON, playoff=6.0, get="later")
+
+    ideas = MarketEngine(_Market(now, later, season=SAFE_SEASON)).trades("L1")
+
+    assert [i.giving for i in ideas] == [["for December"], ["for now"]]
+    assert ideas[0].playoff_points == 6.0
+
+
+def test_a_team_on_the_bubble_is_offered_its_playoff_chance_before_its_december() -> None:
+    """A better December lineup is no use to a team that does not get there."""
+    december = _trade("b", mine=100, theirs=101, name="for December", playoff=6.0, get="later")
+    now = _trade("c", mine=110, theirs=101, name="for now", playoff=1.0, get="now")
+
+    ideas = MarketEngine(_Market(december, now)).trades("L1")
+
+    assert [i.giving for i in ideas] == [["for now"], ["for December"]]
+
+
+def test_two_offers_for_the_same_player_are_one_idea() -> None:
+    """Who goes with him is a detail; the second crowds a different trade off the list."""
+    first = _trade("b", mine=115, theirs=101, name="one")
+    second = _trade("b", mine=114, theirs=101, name="other")
+
+    ideas = MarketEngine(_Market(first, second)).trades("L1")
+
+    assert [i.giving for i in ideas] == [["one"]]
+
+
+def test_a_trade_names_the_free_agent_for_the_spot_it_frees() -> None:
+    option = replace(_trade("b", mine=115, theirs=101), pickup="Wire RB (RB)")
+
+    [idea] = MarketEngine(_Market(option)).trades("L1")
+
+    assert idea.pickup == "Wire RB (RB)"

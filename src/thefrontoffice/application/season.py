@@ -34,8 +34,27 @@ SEASONS = 5_000
 
 TRADES_SHOWN = 5
 
+TRADES_TRIED = 12
+"""Trades played out against the season, the best by points first, since each costs a simulation."""
+
+TRADES_PER_TEAM = 3
+"""So one manager's roster cannot fill the whole list with variations on a deal."""
+
 MIN_TRADE_CHANGE = 0.005
 """Half a point of playoff chance: less than that is a trade that changes nothing worth asking for."""
+
+MIN_THEIR_GAIN = 0.5
+"""Points a week their starters must gain: the least that reads as a reason for them to say yes."""
+
+OUT_OF_IT = 0.05
+"""Their playoff chance below which a manager has no lineup left to improve, only what he gives and gets to weigh."""
+
+SAFE = 0.8
+"""Your playoff chance above which a trade is for the playoffs themselves, which the table's
+simulation never reaches: from there a few points of chance are worth less than a better lineup in December."""
+
+MIN_PLAYOFF_GAIN = 1.0
+"""Projected points a playoff week: less than that is a trade not worth the asking."""
 
 
 def simulate_season(season: SeasonInput, simulations: int = SEASONS) -> PlayoffOdds:
@@ -133,13 +152,19 @@ class SeasonEngine:
 
 
 class MarketEngine:
-    """The trades worth offering, priced against the playoff race."""
+    """The trades worth offering, priced against the playoff race and the playoffs after it."""
 
     def __init__(self, provider: TradeMarketProvider):
         self.provider = provider
 
     def trades(self, league_id: str) -> list[TradeIdea]:
-        """The trades that most raise your playoff chance, best first; none past the deadline.
+        """The trades that would do most for you, best first; none past the deadline.
+
+        A manager will take a trade near even in worth if it helps his
+        starters, or if he has no playoff place left to chase. Which do most
+        for you depends on where you stand: a team on the bubble needs its
+        playoff chance, and a team already safe needs its lineup in the
+        playoff weeks, which the season's simulation never plays.
 
         Every trade is played out over the same seasons as the league without
         it — one seed, the same draws in the same order — so the difference is
@@ -148,12 +173,50 @@ class MarketEngine:
         market = self.provider.trade_market(league_id)
         if market is None or not market.season.spots or not market.options:
             return []
-        logger.info(f"Pricing {len(market.options)} trades against the playoff race")
         before = simulate_season(market.season)
+        chances = {t.team_id: t.playoffs for t in before.teams}
+        safe = before.playoffs >= SAFE
+
+        def for_you(option: TradeOption | TradeIdea) -> float:
+            if safe and option.playoff_points is not None:
+                return option.playoff_points
+            return option.points
+
+        acceptable = [
+            option
+            for option in market.options
+            if option.their_points >= MIN_THEIR_GAIN or chances.get(option.team_id, 0.0) < OUT_OF_IT
+        ]
+        tried = sorted(_per_team(acceptable, for_you), key=lambda option: -for_you(option))[:TRADES_TRIED]
+        logger.info(f"Pricing {len(tried)} of {len(market.options)} trades against the playoff race")
         names = {t.team_id: t.name for t in market.season.teams}
-        ideas = [_priced(market.season, before, option, names) for option in market.options]
-        worth = [idea for idea in ideas if idea.playoffs_change >= MIN_TRADE_CHANGE]
-        return sorted(worth, key=lambda idea: (-idea.playoffs_change, -idea.points))[:TRADES_SHOWN]
+        ideas = [_priced(market.season, before, option, names) for option in tried]
+        worth = [idea for idea in ideas if _worth_offering(idea)]
+        if safe:
+            return sorted(worth, key=lambda idea: (-for_you(idea), -idea.playoffs_change))[:TRADES_SHOWN]
+        return sorted(worth, key=lambda idea: (-idea.playoffs_change, -for_you(idea)))[:TRADES_SHOWN]
+
+
+def _per_team(options: list[TradeOption], key: Callable[[TradeOption], float]) -> list[TradeOption]:
+    """The best few with each team, and only the best way to get each of their players.
+
+    Two offers for the same player that differ only in who goes with him are
+    one idea, and the second crowds out a different one.
+    """
+    best: dict[tuple[str, tuple[str, ...]], TradeOption] = {}
+    for option in sorted(options, key=lambda o: -key(o)):
+        best.setdefault((option.team_id, option.receiving), option)
+    kept: list[TradeOption] = []
+    for team in dict.fromkeys(option.team_id for option in best.values()):
+        kept += [o for o in best.values() if o.team_id == team][:TRADES_PER_TEAM]
+    return kept
+
+
+def _worth_offering(idea: TradeIdea) -> bool:
+    """It raises your playoff chance, or it makes your playoff lineup better without costing you that chance."""
+    if idea.playoffs_change >= MIN_TRADE_CHANGE:
+        return True
+    return (idea.playoff_points or 0.0) >= MIN_PLAYOFF_GAIN and idea.playoffs_change > -MIN_TRADE_CHANGE
 
 
 def _priced(season: SeasonInput, before: PlayoffOdds, option: TradeOption, names: dict[str, str]) -> TradeIdea:
@@ -172,6 +235,9 @@ def _priced(season: SeasonInput, before: PlayoffOdds, option: TradeOption, names
         their_playoffs_change=chance(after) - chance(before),
         points=option.points,
         their_points=option.their_points,
+        playoff_points=option.playoff_points,
+        their_playoffs=chance(before),
+        pickup=option.pickup,
     )
 
 
