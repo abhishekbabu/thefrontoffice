@@ -23,7 +23,12 @@ player. It runs on your own machine against NFL on
 - **Win chance and playoff odds**: the week is simulated 10,000 times and the
   season 5,000 times, and every move shows what it does to both.
 - **Weeks ahead and trades**: the next four weeks as your roster stands, and
-  one-for-one trades that help both sides, ranked by your playoff chance.
+  trades near even in worth, one for one or two of yours for one of theirs.
+  Each says what it does to your playoff chance and to your lineup in the
+  playoff weeks, and why the other manager might say yes: his starters
+  improve, or he's out of the race. A team on the bubble sees the trades that
+  raise its chance first; a team already safe sees the ones that help it in
+  the playoffs.
 - **Free agents**: ranked by projection, with how each fits your lineup, what
   he does to this week's chance, and any growing role ("snaps 34→76%").
 - **Player pages**: role and matchup, ESPN news, injury status and a game log.

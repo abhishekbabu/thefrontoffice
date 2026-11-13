@@ -1606,7 +1606,7 @@ export interface components {
         };
         /**
          * TradeIdea
-         * @description A trade worth offering, priced in what it does to the playoff race.
+         * @description A trade worth offering, priced in what it does to the playoff race and to the playoffs themselves.
          */
         TradeIdea: {
             /** Team Id */
@@ -1637,14 +1637,31 @@ export interface components {
             their_playoffs_change: number;
             /**
              * Points
-             * @description Your starters' projected points a week, with the trade less without it.
+             * @description Your starters' projected points a week over the regular season left, with the trade less without it.
              */
             points: number;
             /**
              * Their Points
-             * @description The same for theirs, which is the case for them saying yes.
+             * @description The same for theirs over every week left, which is the case for them saying yes.
              */
             their_points: number;
+            /**
+             * Playoff Points
+             * @description Your starters' projected points a playoff week, with the trade less without it.
+             */
+            playoff_points: number | null;
+            /**
+             * Their Playoffs
+             * @description Their chance of a playoff place before the trade: out of it, they have only worth to weigh.
+             * @default 0
+             */
+            their_playoffs: number;
+            /**
+             * Pickup
+             * @description The free agent added to the roster spot a two-for-one frees.
+             * @default
+             */
+            pickup: string;
         };
         /**
          * Turn

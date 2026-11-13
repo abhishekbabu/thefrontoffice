@@ -109,12 +109,17 @@ function WeeksAhead({ competition, league }: { competition: Competition; league:
 }
 
 /**
- * The trades that would most raise your playoff chance, and help the other side's starters too.
+ * The trades that would do most for you, with who to offer each to and why he might say yes.
  *
  * Beside the weeks ahead because a trade is a roster move like a pickup, and
  * often the fix for a short week no free agent closes. Fetched apart from the
  * squad: each one is a season played out thousands of times, which is seconds
  * the roster should not wait on.
+ *
+ * Two figures for you, because a trade does two things: what it does to your
+ * playoff chance, and what it does to your lineup once you are there. The
+ * badge is the second where the playoff weeks are projected, since a team that
+ * is in needs December more than another point of chance.
  */
 function Trades({ competition, league }: { competition: Competition; league: League }) {
   const trades = useQuery<TradeIdea[], Error>({
@@ -136,19 +141,36 @@ function Trades({ competition, league }: { competition: Competition; league: Lea
         <ListRow key={`${idea.team_id}-${idea.giving.join()}-${idea.receiving.join()}`}>
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="truncate">
-              Give {idea.giving.join(", ")} for {idea.receiving.join(", ")}
+              Give {idea.giving.join(" and ")} for {idea.receiving.join(", ")}
             </span>
             <span className="truncate font-mono text-[11px] text-muted-foreground">
-              with {idea.team} · your starters {signed(idea.points)} a week, theirs {signed(idea.their_points)}
-              {" · "}their playoffs {percentPoints(idea.their_playoffs_change)}
+              with {idea.team} ({theirCase(idea)}) · your playoffs {percentPoints(idea.playoffs_change)}, to{" "}
+              {percent(idea.playoffs)}
+              {idea.playoff_points != null && <> · rest of season {signed(idea.points)} a week</>}
             </span>
+            {idea.pickup && (
+              <span className="truncate font-mono text-[11px] text-muted-foreground">
+                frees a spot: add {idea.pickup}
+              </span>
+            )}
           </span>
-          {/* The figure the list is ranked on, said in words as well as tinted. */}
+          {/* The figure that matters most, said in words as well as tinted. */}
           <Badge variant="ok" appearance="pill" className="shrink-0 tabular-nums">
-            {percentPoints(idea.playoffs_change)} · {percent(idea.playoffs)} playoffs
+            {idea.playoff_points != null
+              ? `${signed(idea.playoff_points)} a playoff week`
+              : `${signed(idea.points)} a week`}
           </Badge>
         </ListRow>
       ))}
     </ListCard>
   );
+}
+
+/**
+ * Why the other manager might say yes: out of the race he weighs only worth,
+ * and in it, his starters.
+ */
+export function theirCase(idea: TradeIdea): string {
+  if (idea.their_playoffs < 0.05) return `out of the race, ${percent(idea.their_playoffs)}`;
+  return `their starters ${signed(idea.their_points)} a week`;
 }

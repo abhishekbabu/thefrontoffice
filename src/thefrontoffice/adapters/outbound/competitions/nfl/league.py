@@ -86,7 +86,7 @@ def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence
     Eighteen matchup fetches, run concurrently and cached — asked one at a
     time they are the whole wait on the page.
     """
-    weeks = list(range(1, _last_week(state) + 1))
+    weeks = list(range(1, last_week(state) + 1))
     by_week = client.get_matchups_bulk(state.league.league_id, weeks)
     by_roster = {r.roster_id: r for r in state.rosters}
 
@@ -116,7 +116,7 @@ def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence
     return rows
 
 
-def _last_week(state: Week) -> int:
+def last_week(state: Week) -> int:
     """The league's final week: the end of its playoffs, or the NFL's last where it names none."""
     start, teams = state.league.playoff_week_start, state.league.playoff_teams
     if not start or not teams:
