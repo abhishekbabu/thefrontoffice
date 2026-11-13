@@ -120,6 +120,9 @@ function WeeksAhead({ competition, league }: { competition: Competition; league:
  * playoff chance, and what it does to your lineup once you are there. The
  * badge is the second where the playoff weeks are projected, since a team that
  * is in needs December more than another point of chance.
+ *
+ * Under each, the players whose own games price them off their projection,
+ * and why: a trade resting on a role that just changed should say so.
  */
 function Trades({ competition, league }: { competition: Competition; league: League }) {
   const trades = useQuery<TradeIdea[], Error>({
@@ -153,6 +156,12 @@ function Trades({ competition, league }: { competition: Competition; league: Lea
                 frees a spot: add {idea.pickup}
               </span>
             )}
+            {/* Why a price is not the projection: wrapped, since the reason is the point. */}
+            {idea.form.map((line) => (
+              <span key={line.label} className="text-[11px] leading-snug text-muted-foreground">
+                <span className="text-foreground/80">{line.label}</span> {line.value}
+              </span>
+            ))}
           </span>
           {/* The figure that matters most, said in words as well as tinted. */}
           <Badge variant="ok" appearance="pill" className="shrink-0 tabular-nums">

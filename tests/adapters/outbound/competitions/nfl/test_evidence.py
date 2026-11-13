@@ -176,7 +176,7 @@ def _snaps(pid: str, *shares: float, position: str = "WR") -> list[NFLGameLine]:
 def test_a_jump_held_for_his_last_two_games_is_a_growing_role() -> None:
     trend = gather(_snaps("wr", 0.3, 0.35, 0.4, 0.8, 0.8), SCORING).trends["wr"]
 
-    assert (trend.measure, trend.week) == ("snaps", 5)
+    assert (trend.measure, trend.week, trend.games) == ("snaps", 5, 2)
     assert trend.before == pytest.approx(0.35) and trend.now == pytest.approx(0.8)
 
 
@@ -203,7 +203,8 @@ def _starter_missed_the_latest_week() -> list[NFLGameLine]:
 def test_a_jump_in_the_game_a_regular_teammate_missed_counts_while_he_is_ruled_out() -> None:
     trend = gather(_starter_missed_the_latest_week(), SCORING, out={"starter"}).trends["wr"]
 
-    assert (trend.measure, trend.week) == ("snaps", 4)
+    # One game in the role: the one the starter missed.
+    assert (trend.measure, trend.week, trend.games) == ("snaps", 4, 1)
 
 
 def test_a_jump_in_the_game_a_teammate_missed_is_no_role_once_he_is_back() -> None:

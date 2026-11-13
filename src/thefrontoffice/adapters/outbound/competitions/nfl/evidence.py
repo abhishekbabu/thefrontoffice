@@ -102,6 +102,8 @@ class Trend:
     week: int
     rise: float
     """How big a jump this is against the smallest that counts: 1 is just enough, 2 twice that."""
+    games: int = 1
+    """His games in the new role, the latest of them: two where it held, one where a teammate's absence made it."""
 
     def describe(self) -> str:
         """'snaps 38% → 71% in week 6'."""
@@ -303,7 +305,9 @@ def _trends(lines: Sequence[GameLine], out: Collection[str]) -> dict[str, Trend]
             average = sum(baseline) / len(baseline)
             rise = (min(game[measure] for game in now) - average) / step
             if rise >= 1 and (best is None or rise > best.rise):
-                best = Trend(measure=measure, before=average, now=now[-1][measure], week=latest, rise=rise)
+                best = Trend(
+                    measure=measure, before=average, now=now[-1][measure], week=latest, rise=rise, games=len(recent)
+                )
         return best
 
     def vacated(line: GameLine, earlier: Sequence[GameLine]) -> bool:

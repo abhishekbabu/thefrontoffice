@@ -858,6 +858,8 @@ class TradeOption:
     the playoff weeks are not projected yet."""
     pickup: str = ""
     """The free agent who fills the roster spot a two-for-one frees, where one helps."""
+    form: tuple[Stat, ...] = ()
+    """The players in it whose own games move their price off their projection, and why."""
 
 
 @dataclass(frozen=True)
@@ -892,6 +894,10 @@ class TradeIdea(BaseModel):
         description="Their chance of a playoff place before the trade: out of it, they have only worth to weigh.",
     )
     pickup: str = Field(default="", description="The free agent added to the roster spot a two-for-one frees.")
+    form: list[Stat] = Field(
+        default_factory=list,
+        description="The players in it whose own games move their price off their projection, and why.",
+    )
 
 
 class CalibrationBucket(BaseModel):

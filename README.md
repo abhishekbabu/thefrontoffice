@@ -28,7 +28,10 @@ player. It runs on your own machine against NFL on
   playoff weeks, and why the other manager might say yes: his starters
   improve, or he's out of the race. A team on the bubble sees the trades that
   raise its chance first; a team already safe sees the ones that help it in
-  the playoffs.
+  the playoffs. Players are priced by their own games as well as their
+  projection: halfway toward what they've scored since a role change, or
+  otherwise in recent games and the season, and never more than 30% off the
+  projection. Each trade lists the players this moves, and why.
 - **Free agents**: ranked by projection, with how each fits your lineup, what
   he does to this week's chance, and any growing role ("snaps 34→76%").
 - **Player pages**: role and matchup, ESPN news, injury status and a game log.
