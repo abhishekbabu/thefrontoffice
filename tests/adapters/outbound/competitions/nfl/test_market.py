@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
+from support.nfl import SLEEPER_USER_ID, FakeSleeper, game_line, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, SleeperMatchup, SleeperRoster
 from thefrontoffice.domain.models import TradeMarket, TradeOption
@@ -214,3 +214,36 @@ def test_a_league_whose_playoffs_are_one_round_still_prices_them() -> None:
     best, *_ = _market(_client(playoff_teams=2)).options
 
     assert best.playoff_points is not None
+
+
+# ── form ────────────────────────────────────────────────────────────────
+
+
+def _hot(client: FakeSleeper, pid: str, points: float) -> FakeSleeper:
+    """He has scored `points` in every game this season, whatever he is projected."""
+    client.game_lines = [
+        game_line(pid, week, off_snp=50, tm_off_snp=60, rec_tgt=8, pts_ppr=points) for week in range(1, client.week)
+    ]
+    return client
+
+
+def _top_wr(market: TradeMarket) -> TradeOption:
+    return next(o for o in market.options if o.receiving == ("Top WR (WR)",))
+
+
+def test_a_player_scoring_past_his_projection_is_priced_by_his_games_and_says_so() -> None:
+    plain, hot = _top_wr(_market(_client())), _top_wr(_market(_hot(_client(), "wr1", 24.0)))
+
+    assert hot.points > plain.points
+    [line] = hot.form
+    assert line.label == "Top WR" and "projected 14.0" in line.value
+    assert not plain.form
+
+
+def test_the_season_a_trade_is_measured_against_is_priced_by_form_too() -> None:
+    """A league priced by projection and a trade by form would credit the trade with the difference."""
+
+    def theirs(market: TradeMarket) -> float:
+        return next(row.mean for row in market.season.scoring if (row.team_id, row.week) == ("2", 8))
+
+    assert theirs(_market(_hot(_client(), "wr1", 24.0))) > theirs(_market(_client()))

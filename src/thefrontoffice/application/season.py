@@ -238,6 +238,7 @@ def _priced(season: SeasonInput, before: PlayoffOdds, option: TradeOption, names
         playoff_points=option.playoff_points,
         their_playoffs=chance(before),
         pickup=option.pickup,
+        form=list(option.form),
     )
 
 

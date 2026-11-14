@@ -18,6 +18,11 @@ starter, the deal a deadline is made of. The roster spot it frees is named,
 with the free agent who would help your lineup most in it, but not counted in
 the trade's worth: a spot is one a drop could open anyway, so crediting the
 pickup to the trade would price a waiver move as if only the trade allowed it.
+
+Every player is priced at his projection bent by his form (`form.py`), for
+the season the trades are measured against as much as for the trades: a
+league priced one way and a trade another would credit the trade with the
+difference.
 """
 
 import logging
@@ -25,6 +30,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from itertools import combinations
 
+from thefrontoffice.adapters.outbound.competitions.nfl import form
 from thefrontoffice.adapters.outbound.competitions.nfl.league import SeasonModel, last_week, season_model
 from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Projection, Team, active
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, STREAMED
@@ -68,12 +74,14 @@ def build(client: NFLSource, state: Week, seed: int) -> TradeMarket | None:
         return None
 
     model, weeks = _with_playoffs(client, state, model, regular)
+    found = form.forms(state.evidence, model.projections, weeks.every)
+    model = _formed(model, state, found)
     worth = _over_the_wire(model, weeks.every)
     pickup = _pickup(model, state, weeks)
     options: list[TradeOption] = []
     for theirs in model.rosters:
         if theirs.roster_id != mine.roster_id:
-            options += _with(model, state, weeks, worth, pickup, mine, theirs)
+            options += _with(model, state, weeks, worth, pickup, found, mine, theirs)
     logger.info(f"Found {len(options)} trades near even in worth that help your lineup")
     return TradeMarket(season=model.season, options=tuple(options))
 
@@ -95,12 +103,26 @@ def _with_playoffs(
     return model, _Weeks(regular=regular, playoffs=list(playoffs))
 
 
+def _formed(model: SeasonModel, state: Week, found: Mapping[str, form.Form]) -> SeasonModel:
+    """The model with every player priced by his form, and the season's rows rescored to match."""
+    if not found:
+        return model
+    model = replace(model, projections=form.bent(model.projections, found))
+    rosters = {str(roster.roster_id): active(roster) for roster in model.rosters}
+    scoring = tuple(
+        replace(row, mean=model.mean(state, rosters[row.team_id], row.week)) if row.team_id in rosters else row
+        for row in model.season.scoring
+    )
+    return replace(model, season=replace(model.season, scoring=scoring))
+
+
 def _with(
     model: SeasonModel,
     state: Week,
     weeks: _Weeks,
     worth: Callable[[str], float],
     pickup: Callable[[list[str], int], str],
+    found: Mapping[str, form.Form],
     mine: Team,
     theirs: Team,
 ) -> list[TradeOption]:
@@ -120,6 +142,7 @@ def _with(
     # what you get improves it on its own; that alone prunes most of theirs.
     wanted = [pid for pid in their_ids if per_week([*my_held, pid], weeks.every) > my_now]
 
+    names = {pid: meta.name for pid in [*my_ids, *wanted] if (meta := state.players.get(pid))}
     options = []
     for get in wanted:
         for give in _offers(my_ids, worth, worth(get)):
@@ -136,6 +159,7 @@ def _with(
                     their_points=per_week(theirs_after, weeks.every) - their_now,
                     playoff_points=per_week(mine_after, weeks.playoffs) - my_playoffs if weeks.playoffs else None,
                     pickup=_label(added, state) if (added := pickup(mine_after, len(give) - 1)) else "",
+                    form=form.said(found, [*give, get], names),
                     scoring=tuple(
                         TeamWeek(
                             team_id=str(roster.roster_id),

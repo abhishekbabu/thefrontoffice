@@ -15,6 +15,7 @@ const idea = (their_playoffs: number, their_points: number): TradeIdea => ({
   playoff_points: 3,
   their_playoffs,
   pickup: "",
+  form: [],
 });
 
 describe("why the other manager might take a trade", () => {

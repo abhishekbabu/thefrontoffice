@@ -1662,6 +1662,11 @@ export interface components {
              * @default
              */
             pickup: string;
+            /**
+             * Form
+             * @description The players in it whose own games move their price off their projection, and why.
+             */
+            form: components["schemas"]["Stat"][];
         };
         /**
          * Turn

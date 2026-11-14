@@ -18,6 +18,7 @@ from thefrontoffice.application.season import (
 from thefrontoffice.domain.models import (
     Fixture,
     SeasonInput,
+    Stat,
     TeamRecord,
     TeamWeek,
     TradeMarket,
@@ -285,3 +286,12 @@ def test_a_trade_names_the_free_agent_for_the_spot_it_frees() -> None:
     [idea] = MarketEngine(_Market(option)).trades("L1")
 
     assert idea.pickup == "Wire RB (RB)"
+
+
+def test_a_trade_carries_why_its_players_are_priced_off_their_projections() -> None:
+    line = Stat(label="Lead Back", value="priced 16.0 a week, projected 12.4: snaps 32→77% in week 9")
+    option = replace(_trade("b", mine=115, theirs=101), form=(line,))
+
+    [idea] = MarketEngine(_Market(option)).trades("L1")
+
+    assert idea.form == [line]
