@@ -145,6 +145,13 @@ class Side(BaseModel):
     points: str = Field(default="", description="What they have scored, or are projected to.")
     lineup: list[Spot] = Field(default_factory=list)
     bench: list[Spot] = Field(default_factory=list)
+    reserve: list[Spot] = Field(
+        default_factory=list,
+        description=(
+            "Players held in a slot that costs no roster spot and cannot start, such as injured reserve "
+            "or taxi, each row's `slot` naming which. Empty where the league has none."
+        ),
+    )
 
 
 PAGE_SIZE = 50

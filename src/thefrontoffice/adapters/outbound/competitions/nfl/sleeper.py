@@ -514,8 +514,11 @@ class SleeperNFLProvider:
 
     def _summary(self, state: Week, to_do: list[Action] | None) -> Summary:
         live = self.scoreboard.live(state)
-        # The bench as the page shows it, reserve slots included and marked.
-        sitting = sorted(state.sitting, key=lambda p: -p.points)
+        # The bench as the page shows it, best projected first, with the reserve slots apart.
+        bench, reserve = views.sitting(
+            [views.spot(p, state.scheduled, live=live) for p in sorted(state.sitting, key=lambda p: -p.points)],
+            state.roster,
+        )
         # No fixture notes: a bye is on the player's own row, and on the to-do
         # list when it costs a starter, so a list of clubs would say it twice.
         return Summary(
@@ -528,7 +531,8 @@ class SleeperNFLProvider:
                     views.released(views.lineup_spot(slot, state.scheduled, live), state.roster)
                     for slot in state.lineup
                 ],
-                bench=[views.reserved(views.spot(p, state.scheduled, live=live), state.roster) for p in sitting],
+                bench=bench,
+                reserve=reserve,
             ),
             opponent=self._opponent(state, live),
             actions=to_do,

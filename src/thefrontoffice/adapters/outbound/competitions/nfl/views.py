@@ -24,7 +24,12 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     fielded,
     let_go,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, listed, ruled_out
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
+    FANTASY_POSITIONS,
+    RULED_OUT_SHORT,
+    listed,
+    ruled_out,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,
     Week,
@@ -314,7 +319,7 @@ def _versus(projection: Projection | None, scheduled: bool, unscheduled: str, op
     if projection and ruled_out(projection.injury_status):
         # Sleeper projects nobody it has ruled out, which reads as no game
         # though his club plays: say why he is not playing instead.
-        return projection.injury_status.lower()
+        return RULED_OUT_SHORT[projection.injury_status.upper()]
     return "no game" if scheduled else unscheduled
 
 
@@ -616,12 +621,21 @@ def _slot(player_id: str, starters: set[str], reserve: Mapping[str, str]) -> str
     return "START" if player_id in starters else "BN"
 
 
-def reserved(row: Spot, roster: Team) -> Spot:
-    """A bench row marked where he is in an injured-reserve or taxi slot, which costs no bench spot."""
-    slot = held(roster).get(row.player_id)
-    if slot is None:
-        return row
-    return row.model_copy(update={"detail": f"{row.detail} · {'IR' if slot == 'IR' else 'taxi'} slot"})
+def sitting(rows: Sequence[Spot], roster: Team) -> tuple[list[Spot], list[Spot]]:
+    """Everyone not starting, parted into the bench and the reserve slots, which cost no roster spot.
+
+    A reserve row names its slot where a starter's names his, so who is in
+    injured reserve reads at a glance; and his zero is no warning, since a
+    player held there was never going to play.
+    """
+    slots = held(roster)
+    bench = [row for row in rows if row.player_id not in slots]
+    reserve = [
+        row.model_copy(update={"slot": "IR" if slots[row.player_id] == "IR" else "Taxi", "tone": "neutral"})
+        for row in rows
+        if row.player_id in slots
+    ]
+    return bench, reserve
 
 
 def released(row: Spot, team: Team) -> Spot:
@@ -705,10 +719,19 @@ def opponent_side(state: Week, roster: Team, points: float, live: Live) -> Side:
         # labelled QB is worse than a row carrying no label at all.
         logger.warning(f"Roster {roster.roster_id} starts {len(roster.starter_ids)} into {len(slots)} slots")
         lineup = [released(spot(p, scheduled, live=live), roster) for p in projected if p.player_id in starting]
+    bench, reserve = sitting(
+        [
+            spot(p, scheduled, live=live)
+            for p in sorted(projected, key=lambda p: -p.points)
+            if p.player_id not in starting
+        ],
+        roster,
+    )
     return Side(
         name=state.team_name(roster),
         detail=roster.record,
         points=_opponent_total(points, [by_id[pid] for pid in roster.starter_ids if pid in by_id], live),
         lineup=lineup,
-        bench=[spot(p, scheduled, live=live) for p in projected if p.player_id not in starting],
+        bench=bench,
+        reserve=reserve,
     )

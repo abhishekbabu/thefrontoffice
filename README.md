@@ -72,7 +72,8 @@ NFL moves to the next week once every game of the current one is final,
 without waiting a day or two for Sleeper to catch up, and counts the finished
 week's results in the standings until Sleeper records them. A starter you drop
 or trade after his game stays in that week's lineup, marked as no longer on
-your roster.
+your roster. Each team's injured-reserve and taxi slots sit apart from its
+bench, under **Reserve**, each player beside the slot he holds.
 
 | | |
 | --- | --- |

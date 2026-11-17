@@ -18,12 +18,14 @@ export function LineupCard({
   title,
   lineup,
   bench,
+  reserve = [],
   swaps,
   onOpen,
 }: {
   title: string;
   lineup: Spot[];
   bench: Spot[];
+  reserve?: Spot[];
   swaps: Swap[];
   onOpen?: (id: string) => void;
 }) {
@@ -42,6 +44,14 @@ export function LineupCard({
             Bench
           </Label>
           <SpotList spots={bench} empty="Nobody on the bench." onOpen={onOpen} />
+          {reserve.length > 0 && (
+            <>
+              <Label as="div" className="border-y border-border px-4 py-2">
+                Reserve
+              </Label>
+              <SpotList spots={reserve} onOpen={onOpen} />
+            </>
+          )}
         </div>
       </div>
 
@@ -208,6 +218,14 @@ export function SideCard({ side, label, onOpen }: { side: Side | null; label: st
         <>
           <ScoreHeads spots={side.bench}>Bench</ScoreHeads>
           <SpotList spots={side.bench} onOpen={onOpen} />
+        </>
+      )}
+      {/* Apart from the bench: these cost no roster spot and cannot start, and
+          each row names its slot where a starter's does. */}
+      {side.reserve.length > 0 && (
+        <>
+          <ScoreHeads spots={side.reserve}>Reserve</ScoreHeads>
+          <SpotList spots={side.reserve} onOpen={onOpen} />
         </>
       )}
     </Card>

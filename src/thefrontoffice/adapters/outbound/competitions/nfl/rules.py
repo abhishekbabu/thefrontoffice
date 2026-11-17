@@ -39,6 +39,17 @@ A long ruling (IR, PUP, a suspension) is in every projection already; these
 are the ones that move work between teammates on the day."""
 
 
+RULED_OUT_SHORT = {
+    "OUT": "out",
+    "IR": "on IR",
+    "PUP": "on PUP",
+    "SUS": "suspended",
+    "NA": "inactive",
+    "DNR": "no team",
+}
+"""The same designations, short enough to stand where a row names his opponent."""
+
+
 def ruled_out(status: str) -> bool:
     """Whether a designation means he will not play this week."""
     return status.upper() in RULED_OUT
