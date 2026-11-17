@@ -13,6 +13,10 @@ the season engine plays out for your playoff chance, and the playoff weeks
 themselves, which no simulation of the table reaches. A team already safe
 trades for those.
 
+What you get must start for you, in most of those weeks: a lineup's worth
+counts a backup's cover for a starter's missed weeks, and that cover alone
+would trade a receiver for a quarterback who never plays.
+
 Two for one where one alone is not enough: depth given up for a better
 starter, the deal a deadline is made of. The roster spot it frees is named,
 with the free agent who would help your lineup most in it, but not counted in
@@ -34,7 +38,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl import form
 from thefrontoffice.adapters.outbound.competitions.nfl.league import SeasonModel, last_week, season_model
 from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Projection, Team, active
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, STREAMED
-from thefrontoffice.adapters.outbound.competitions.nfl.week import Scoreboard, Week
+from thefrontoffice.adapters.outbound.competitions.nfl.week import Scoreboard, Week, lineup_for
 from thefrontoffice.domain.models import TeamWeek, TradeMarket, TradeOption
 
 logger = logging.getLogger(__name__)
@@ -143,7 +147,15 @@ def _with(
     my_regular, my_playoffs = per_week(my_held, weeks.regular), per_week(my_held, weeks.playoffs)
     # Losing a player never helps a lineup, so a trade can only help you if
     # what you get improves it on its own; that alone prunes most of theirs.
-    wanted = [pid for pid in their_ids if per_week([*my_held, pid], weeks.every) > my_now]
+    # He must also start for you: the lineup's worth counts a backup's cover
+    # for the weeks a starter misses, but cover is no reason to trade a player
+    # away. Giving players only opens slots, so one who starts beside your
+    # whole roster starts after any trade.
+    wanted = [
+        pid
+        for pid in their_ids
+        if per_week([*my_held, pid], weeks.every) > my_now and _starts(model, state, [*my_held, pid], pid, weeks.every)
+    ]
 
     names = {pid: meta.name for pid in [*my_ids, *wanted] if (meta := state.players.get(pid))}
     options = []
@@ -176,6 +188,22 @@ def _with(
                 )
             )
     return sorted(options, key=lambda option: -(option.playoff_points or option.points))
+
+
+def _starts(model: SeasonModel, state: Week, held: list[str], player_id: str, weeks: Sequence[int]) -> bool:
+    """Whether he is in the best lineup these players make in most of these weeks.
+
+    Most, not any: a quarterback who starts only in your starter's bye week is a backup.
+    A superflex slot starts a second quarterback, so there he counts.
+    """
+    started = sum(
+        any(
+            slot.player and slot.player.player_id == player_id
+            for slot in lineup_for(state, held, model.projections[week])
+        )
+        for week in weeks
+    )
+    return 2 * started > len(weeks)
 
 
 def _cached(model: SeasonModel, state: Week) -> Callable[[frozenset[str], int], float]:
