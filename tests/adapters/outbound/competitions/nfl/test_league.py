@@ -184,7 +184,12 @@ def test_a_trade_names_both_managers_and_the_budget_it_moved() -> None:
     [row] = nfl_provider(league_client(transactions={3: [trade]})).schedule("L1").activity
 
     assert row.who == "Me ↔ Roster 2"
-    assert row.budget == ["$5 from Me to Roster 2"]  # a zero transfer is no transfer
+    # What each side got, in the order they are named; a zero transfer is no transfer.
+    assert row.detail == "+Star QB · +$5 FAAB"
+    assert {(m.player, m.manager) for m in row.moves if m.change == "added"} == {
+        ("Star QB", "Me"),
+        ("$5 FAAB", "Roster 2"),
+    }
 
 
 def test_the_table_carries_points_against_budget_left_and_waiver_order() -> None:

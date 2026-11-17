@@ -633,7 +633,7 @@ export interface components {
         ActivityMove: {
             /**
              * Player Id
-             * @description Identifier this platform uses for the player, so his page opens.
+             * @description Identifier this platform uses for the player, so his page opens; empty for FAAB a trade moved.
              */
             player_id: string;
             /** Player */
@@ -705,11 +705,6 @@ export interface components {
              * @default
              */
             bid: string;
-            /**
-             * Budget
-             * @description Waiver budget a trade moved, each already formatted: '$5 from A to B'.
-             */
-            budget: string[];
         };
         /**
          * CallsRequest

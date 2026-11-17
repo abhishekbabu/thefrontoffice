@@ -18,12 +18,12 @@ const schedule: LeagueSchedule = {
       when: "16 Nov",
       who: "Rival ↔ Me",
       what: "Trade",
-      detail: "+Star QB, -Bad RB, $5 FAAB",
+      detail: "+Star QB, $5 FAAB · +Bad RB",
       is_mine: false,
       bid: "",
-      budget: ["$5 from Me to Rival"],
       moves: [
         { player_id: "qb1", player: "Star QB", position: "QB", team: "BUF", change: "added", manager: "Rival" },
+        { player_id: "", player: "$5 FAAB", position: "", team: "", change: "added", manager: "Rival" },
         { player_id: "rb2", player: "Bad RB", position: "RB", team: "MIA", change: "added", manager: "Me" },
         { player_id: "rb2", player: "Bad RB", position: "RB", team: "MIA", change: "dropped", manager: "Rival" },
         { player_id: "qb1", player: "Star QB", position: "QB", team: "BUF", change: "dropped", manager: "Me" },
@@ -67,7 +67,7 @@ describe("League activity", () => {
 
     const dialog = document.querySelector("[role=dialog]")!;
     expect(dialog.getAttribute("aria-label")).toBe("Trade by Rival ↔ Me");
-    expect(dialog.textContent).toContain("$5 from Me to Rival");
+    expect(dialog.textContent).toMatch(/To Rival.*Star QB.*\$5 FAAB/);
     expect(dialog.textContent).toContain("To Rival");
     expect(dialog.textContent).toContain("To Me");
     expect(dialog.textContent).toContain("QB · BUF");
@@ -91,7 +91,6 @@ describe("sections", () => {
       detail: "",
       is_mine: true,
       bid: "$14",
-      budget: [],
       moves: [
         { player_id: "wr9", player: "Waiver WR", position: "WR", team: "NYJ", change: "added", manager: "Me" },
         { player_id: "rb1", player: "Good RB", position: "RB", team: "BUF", change: "dropped", manager: "Me" },

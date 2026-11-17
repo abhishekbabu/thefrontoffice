@@ -1111,7 +1111,9 @@ class Match(BaseModel):
 class ActivityMove(BaseModel):
     """One player a league move moved: who, and which way, for which team."""
 
-    player_id: str = Field(description="Identifier this platform uses for the player, so his page opens.")
+    player_id: str = Field(
+        description="Identifier this platform uses for the player, so his page opens; empty for FAAB a trade moved."
+    )
     player: str
     position: str = ""
     team: str = Field(default="", description="His real-world club.")
@@ -1132,10 +1134,6 @@ class ActivityRow(BaseModel):
         default_factory=list, description="Each player it moved, for the move's own page. Empty where unknown."
     )
     bid: str = Field(default="", description="What a waiver claim was won with, already formatted; empty for none.")
-    budget: list[str] = Field(
-        default_factory=list,
-        description="Waiver budget a trade moved, each already formatted: '$5 from A to B'.",
-    )
 
 
 class LeagueSchedule(BaseModel):
