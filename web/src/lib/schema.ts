@@ -1272,6 +1272,17 @@ export interface components {
              * @description Comparisons across periods, which a list of groups cannot show.
              */
             tables: components["schemas"]["StatTable"][];
+            /**
+             * Moves
+             * @description Each league move he was part of, oldest first, as the league's activity shows it.
+             */
+            moves: components["schemas"]["ActivityRow"][];
+            /**
+             * Moves Tab
+             * @description Which tab his moves sit in, by name; empty for the first.
+             * @default
+             */
+            moves_tab: string;
         };
         /**
          * PlayerPage

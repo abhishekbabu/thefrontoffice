@@ -9,7 +9,7 @@ import { ExternalLink } from "@/components/ui/external-link";
 import { QueryState } from "@/components/ui/state";
 import { SlideOver } from "@/components/ui/dialog";
 import { useShown } from "@/lib/screen";
-import { api, type Competition, type League, type PlayerDetail, type Stat, type StatTable } from "@/lib/api";
+import { api, type Competition, type League, type ActivityRow, type PlayerDetail, type Stat, type StatTable } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { toneText } from "@/lib/tone";
@@ -19,6 +19,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { LABEL, Label } from "@/components/ui/label";
 import { Tabs } from "@/components/ui/tabs";
+import { MoveDrawer, MoveRow } from "@/components/ui/move";
+import { ListCard } from "@/components/ui/list";
 
 /**
  * The one figure this player is judged on, beside their name.
@@ -217,11 +219,14 @@ function PlayerPanel({
   league,
   playerId,
   onClose,
+  onPick,
 }: {
   competition: string;
   league: string;
   playerId: string | null;
   onClose: () => void;
+  /** Open another player in this drawer: one picked from a move on his history. */
+  onPick: (id: string) => void;
 }) {
   // Held so the panel still has someone to show on the way out. Reading
   // `playerId` directly would blank the contents for the length of the slide.
@@ -241,13 +246,19 @@ function PlayerPanel({
   const detail = player.data;
   const tabOf = (section: { tab: string }) => section.tab || detail?.tabs[0] || "";
   const filled = detail ? detail.groups.filter((group) => group.stats.length > 0) : [];
+  const movesTab = detail ? detail.moves_tab || detail.tabs[0] || "" : "";
   const present = (detail?.tabs ?? []).filter(
-    (t) => filled.some((g) => tabOf(g) === t) || detail?.tables.some((x) => tabOf(x) === t),
+    (t) =>
+      filled.some((g) => tabOf(g) === t) ||
+      detail?.tables.some((x) => tabOf(x) === t) ||
+      (t === movesTab && (detail?.moves.length ?? 0) > 0),
   );
   const current = present.includes(tab) ? tab : present[0];
   const shownHere = (section: { tab: string }) => present.length <= 1 || tabOf(section) === current;
   const tables = (detail?.tables ?? []).filter(shownHere);
   const groups = filled.filter(shownHere);
+  const moves = detail && shownHere({ tab: movesTab }) ? detail.moves : [];
+  const [move, setMove] = useState<ActivityRow | null>(null);
 
   // On screen while open, so a question to the assistant docked over the
   // drawer is about him.
@@ -256,6 +267,7 @@ function PlayerPanel({
   );
 
   return (
+    <>
     <SlideOver
       open={Boolean(playerId)}
       onClose={onClose}
@@ -367,10 +379,31 @@ function PlayerPanel({
               )}
             </m.section>
           ))}
+          {moves.length > 0 && (
+            <m.section variants={listItem}>
+              {/* The league's own rows: one opens the move as Activity does. */}
+              <ListCard title="Moves" count={`${moves.length}`}>
+                {moves.map((row, i) => (
+                  <MoveRow key={`${row.when}-${i}`} move={row} onOpen={setMove} />
+                ))}
+              </ListCard>
+            </m.section>
+          )}
         </m.div>
       )}
 
     </SlideOver>
+    <MoveDrawer
+      move={move}
+      competition={competition}
+      league={league}
+      onClose={() => setMove(null)}
+      onOpenPlayer={(id) => {
+        setMove(null);
+        onPick(id);
+      }}
+    />
+    </>
   );
 }
 
@@ -395,6 +428,7 @@ export function usePlayerDrawer(competition: Competition, league: League) {
         league={league.league_id}
         playerId={playerId}
         onClose={() => setPlayerId(null)}
+        onPick={setPlayerId}
       />
     ),
   };

@@ -4,28 +4,13 @@ import type { Competition, League, PlayerComparison, PlayerDetail } from "@/lib/
 import { keys } from "@/lib/queries";
 import { ComparePanel } from "@/panels/Compare";
 import { offlineClient, render, settle } from "@/test/render";
+import { playerDetail } from "@/test/players";
 
 const competition = { key: "nfl-sleeper", searches_players: false } as Competition;
 const league = { league_id: "C1", name: "Sunday Money", detail: "", url: "" } as League;
 
-const header = (id: string, name: string, owner = ""): PlayerDetail => ({
-  player_id: id,
-  name,
-  position: "WR",
-  team: "DAL",
-  team_name: "",
-  team_logo_url: "",
-  headline: "18.2",
-  headline_label: "",
-  note: "",
-  url: "",
-  image_url: "",
-  tone: "neutral",
-  owner,
-  tabs: [],
-  groups: [],
-  tables: [],
-});
+const header = (id: string, name: string, owner = ""): PlayerDetail =>
+  playerDetail({ player_id: id, name, owner, headline: "18.2" });
 
 describe("Compare", () => {
   it("lays the compared players side by side, a row per measure, and drops one on request", async () => {

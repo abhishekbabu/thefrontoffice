@@ -24,7 +24,8 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Free agents**: ranked by projection and fit, with Sleeper's trending adds
   and an IR stash list.
 - **Player pages**: tabs for this week, the game log, past seasons, league
-  history (draft pick, adds, drops, trades and who made them) and linked news.
+  history (draft pick, then each add, drop and trade, opening in full as in
+  Activity) and linked news.
 - **Compare**: up to four players side by side, added from any player page,
   a move in Activity, or by name.
 - **League**: the table with PF, PA, FAAB left and waiver order, every roster,

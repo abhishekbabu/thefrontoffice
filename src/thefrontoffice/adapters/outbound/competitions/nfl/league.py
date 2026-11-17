@@ -283,13 +283,13 @@ def _activity(client: NFLSource, state: Week) -> list[ActivityRow]:
         except PlatformError as e:
             logger.warning(f"Skipping week {week} activity: {e}")
             continue
-        dated.extend(_activity_rows(transactions, state, by_roster))
+        dated.extend(activity_rows(transactions, state, by_roster))
     # Sorted on the instant, not on the string that renders it: "Sep 3" sorts
     # before "Sep 21" alphabetically and after it in time.
     return [row for _, row in sorted(dated, key=lambda pair: pair[0], reverse=True)]
 
 
-def _activity_rows(
+def activity_rows(
     transactions: Sequence[LeagueMove], state: Week, by_roster: Mapping[int, Team]
 ) -> list[tuple[int, ActivityRow]]:
     rows: list[tuple[int, ActivityRow]] = []

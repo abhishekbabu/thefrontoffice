@@ -2,8 +2,10 @@ import { act } from "react";
 import { describe, expect, it } from "vitest";
 import type { ActivityRow, Competition, League, LeagueSchedule, PlayerDetail } from "@/lib/api";
 import { keys } from "@/lib/queries";
-import { LeaguePanel, sections } from "@/panels/LeaguePanel";
+import { LeaguePanel } from "@/panels/LeaguePanel";
+import { sections } from "@/components/ui/move";
 import { offlineClient, render, settle } from "@/test/render";
+import { playerDetail } from "@/test/players";
 
 const competition = { key: "nfl-sleeper", finds_trades: true } as Competition;
 const league = { league_id: "L1", name: "Sunday Money", detail: "", url: "" } as League;
@@ -32,24 +34,7 @@ const schedule: LeagueSchedule = {
   ],
 };
 
-const STAR_QB: PlayerDetail = {
-  player_id: "qb1",
-  name: "Star QB",
-  position: "QB",
-  team: "BUF",
-  team_name: "",
-  team_logo_url: "",
-  headline: "",
-  headline_label: "",
-  note: "",
-  url: "",
-  image_url: "",
-  tone: "neutral",
-  owner: "",
-  tabs: [],
-  groups: [],
-  tables: [],
-};
+const STAR_QB: PlayerDetail = playerDetail({ player_id: "qb1", name: "Star QB", position: "QB", team: "BUF" });
 
 describe("League activity", () => {
   it("opens a trade in full, by who got whom", async () => {
