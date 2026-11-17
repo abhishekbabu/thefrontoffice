@@ -170,7 +170,8 @@ on disk.
   own scoring settings, as the Sleeper app prices them.
 - **The to-do list is the app's, not the model's.** It is computed from league
   state before any model is asked. A model can agree, overrule or suggest, but
-  it can't add, drop or restate an item.
+  it can't add, drop or restate an item: a suggestion about a player an item
+  already moves isn't shown.
 - **Answers are typed.** Every model answer is a Pydantic model, never parsed
   prose. Answers are kept per input, so asking again with nothing changed
   makes no call.

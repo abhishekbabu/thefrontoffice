@@ -1228,6 +1228,9 @@ class CompetitionContext:
     """What each player the prompt names is worth a game over the season, keyed by name as the
     prompt writes it — what a suggested add is weighed against the player it would drop. A
     position filled week to week by matchup is left out, since a season says nothing about it."""
+    listed: frozenset[str] = frozenset()
+    """Every player a to-do item already turns on, by name as the prompt writes it. A model's
+    move about one of them is that item said a second time, and is not shown beside it."""
     movable: frozenset[str] | None = None
     """Every player a move could still name this week, by name: yours, and those nobody holds,
     whose game has not kicked off. A kept judgment's moves are read back through it, so a
