@@ -19,6 +19,7 @@ export function LineupCard({
   lineup,
   bench,
   reserve = [],
+  openSpots = 0,
   swaps,
   onOpen,
 }: {
@@ -26,6 +27,7 @@ export function LineupCard({
   lineup: Spot[];
   bench: Spot[];
   reserve?: Spot[];
+  openSpots?: number;
   swaps: Swap[];
   onOpen?: (id: string) => void;
 }) {
@@ -41,9 +43,12 @@ export function LineupCard({
         <SpotList spots={lineup} onOpen={onOpen} />
         <div className="border-t border-border md:border-l md:border-t-0">
           <Label as="div" className="border-b border-border px-4 py-2">
-            Bench
+            {benchTitle(openSpots)}
           </Label>
-          <SpotList spots={bench} empty="Nobody on the bench." onOpen={onOpen} />
+          {(bench.length > 0 || openSpots === 0) && (
+            <SpotList spots={bench} empty="Nobody on the bench." onOpen={onOpen} />
+          )}
+          <OpenSpots count={openSpots} />
           {reserve.length > 0 && (
             <>
               <Label as="div" className="border-y border-border px-4 py-2">
@@ -75,6 +80,30 @@ export function Swaps({ swaps, className }: { swaps: Swap[]; className?: string 
           <span className="font-medium">{swap.start}</span>
           <span className="text-muted-foreground">for {swap.out || "an empty place"}</span>
           <span className="ml-auto font-mono text-[12px] text-ok">{swap.gain}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** "Bench", or "Bench · 1 open" where the roster has room nobody is in. */
+function benchTitle(open: number) {
+  return open > 0 ? `Bench · ${open} open` : "Bench";
+}
+
+/**
+ * A roster spot nobody holds, as a row of its own at the foot of the bench:
+ * room to add a player without dropping one. Drawn dashed and said in words,
+ * so it reads as a place rather than as a player with no name.
+ */
+function OpenSpots({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <div className="flex flex-col gap-1.5 px-4 py-2">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="rounded-md border border-dashed border-border px-3 py-1.5">
+          <div className="text-[13px] font-medium text-muted-foreground">Open roster spot</div>
+          <div className="font-mono text-[11px] text-muted-foreground">room to add without a drop</div>
         </div>
       ))}
     </div>
@@ -214,10 +243,11 @@ export function SideCard({ side, label, onOpen }: { side: Side | null; label: st
       </CardHeader>
       <ScoreHeads spots={side.lineup} className="border-t-0" />
       <SpotList spots={side.lineup} onOpen={onOpen} />
-      {side.bench.length > 0 && (
+      {(side.bench.length > 0 || side.open_spots > 0) && (
         <>
-          <ScoreHeads spots={side.bench}>Bench</ScoreHeads>
-          <SpotList spots={side.bench} onOpen={onOpen} />
+          <ScoreHeads spots={side.bench}>{benchTitle(side.open_spots)}</ScoreHeads>
+          {side.bench.length > 0 && <SpotList spots={side.bench} onOpen={onOpen} />}
+          <OpenSpots count={side.open_spots} />
         </>
       )}
       {/* Apart from the bench: these cost no roster spot and cannot start, and

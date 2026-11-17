@@ -25,7 +25,14 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     eligible_positions,
     fits,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, PlayerInfo, Projection, active, by_club
+from thefrontoffice.adapters.outbound.competitions.nfl.model import (
+    Game,
+    PlayerInfo,
+    Projection,
+    active,
+    by_club,
+    open_spots,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, THIS_WEEK, listed, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
@@ -101,7 +108,7 @@ def _ir_locked(state: Week, started: set[str]) -> list[Item]:
     when none is open, chosen as any pickup's drop is.
     """
     allows = state.league.ir_allows
-    open_spots = state.league.roster_spots - len(active(state.roster))
+    room = open_spots(state.league, state.roster)
     items = []
     for player_id in state.roster.ir_ids:
         meta = state.players.get(player_id)
@@ -113,8 +120,8 @@ def _ir_locked(state: Week, started: set[str]) -> list[Item]:
             "Sleeper refuses every lineup change and pickup until he leaves it."
         )
         drop = None
-        if open_spots > 0:
-            open_spots -= 1
+        if room > 0:
+            room -= 1
             reason += " You have a roster spot open for him."
         else:
             drop = drop_candidate(state, (p for p in state.bench if p.team not in started), set())
@@ -428,8 +435,8 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
     not a to-do item.
     """
     # A player coming off IR takes a spot first: until he does, nothing else can be added.
-    open_spots = state.league.roster_spots - len(active(state.roster))
-    open_spots -= sum(1 for item in items if item.move == "ir" and not item.action.drop)
+    room = open_spots(state.league, state.roster)
+    room -= sum(1 for item in items if item.move == "ir" and not item.action.drop)
     named = {pid for item in items for pid in (item.action.player_id, item.action.replaces) if pid}
     chosen = {item.action.drop for item in items if item.move == "ir" and item.action.drop}
     out = []
@@ -443,8 +450,8 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
             chosen.add(action.drop)
             out.append(item)
             continue
-        if open_spots > 0:
-            open_spots -= 1
+        if room > 0:
+            room -= 1
             out.append(_reworded(item, reason=f"{action.reason} You have a roster spot open for him."))
             continue
         drop = drop_candidate(state, (p for p in state.bench if p.team not in started), named | chosen)

@@ -30,6 +30,7 @@ describe("SideCard", () => {
       lineup: [spot("Starter")],
       bench: [spot("Backup")],
       reserve: [{ ...spot("Hurt"), slot: "IR" }],
+      open_spots: 0,
     };
     const { container } = await render(<SideCard side={side} label="Opponent" />);
     const text = container.textContent ?? "";
@@ -37,5 +38,24 @@ describe("SideCard", () => {
     expect(text.indexOf("Bench")).toBeLessThan(text.indexOf("Backup"));
     expect(text.indexOf("Backup")).toBeLessThan(text.indexOf("Reserve"));
     expect(text).toContain("IRHurt");
+  });
+});
+
+describe("open roster spots", () => {
+  it("draws each spot nobody holds at the foot of the bench, and counts them in its heading", async () => {
+    const side = { name: "Mine", detail: "", points: "", lineup: [spot("Starter")], bench: [spot("Backup")], reserve: [], open_spots: 2 };
+    const { container } = await render(<SideCard side={side} label="You" />);
+    const text = container.textContent ?? "";
+
+    expect(text).toContain("Bench · 2 open");
+    expect(text.split("Open roster spot")).toHaveLength(3);
+    expect(text.indexOf("Backup")).toBeLessThan(text.indexOf("Open roster spot"));
+  });
+
+  it("shows the room even when nobody sits on the bench", async () => {
+    const { container } = await render(<LineupCard title="You" lineup={[spot("Starter")]} bench={[]} openSpots={1} swaps={[]} />);
+
+    expect(container.textContent).toContain("Open roster spot");
+    expect(container.textContent).not.toContain("Nobody on the bench.");
   });
 });
