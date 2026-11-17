@@ -17,7 +17,7 @@ import { ExternalLink } from "@/components/ui/external-link";
 import { rise } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { Tabs } from "@/components/ui/tabs";
-import { MoveDrawer, MoveRow } from "@/components/ui/move";
+import { MoveDrawer, MoveRow, backTo } from "@/components/ui/move";
 import { LeagueHeader } from "@/components/ui/page-header";
 
 /**
@@ -249,7 +249,11 @@ function Activity({ competition, league, rows }: { competition: Competition; lea
         competition={competition.key}
         league={league.league_id}
         onClose={() => setOpen(null)}
-        onOpenPlayer={openPlayer}
+        onOpenPlayer={(id) => {
+          const from = open!;
+          setOpen(null);
+          openPlayer(id, backTo(from, () => setOpen(from)));
+        }}
       />
       {drawer}
     </>

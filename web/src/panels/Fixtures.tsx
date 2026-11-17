@@ -64,14 +64,24 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
         label={open ? `${open.away} at ${open.home}` : "Game"}
         className="max-w-lg border-l border-border"
       >
-        {open && <GameDetail game={open} onClose={() => setOpen(null)} onOpen={openPlayer} />}
+        {open && (
+          <GameDetail
+            game={open}
+            onClose={() => setOpen(null)}
+            onOpen={(id) => {
+              const from = open;
+              setOpen(null);
+              openPlayer(id, { label: `${from.away} at ${from.home}`, onBack: () => setOpen(from) });
+            }}
+          />
+        )}
       </SlideOver>
       {drawer}
     </>
   );
 }
 
-/** Who you and your opponent have in one game; a player opens over it, and closing him returns here. */
+/** Who you and your opponent have in one game; a player opens in its place, with the way back to it. */
 function GameDetail({ game, onClose, onOpen }: { game: Match; onClose: () => void; onOpen: (id: string) => void }) {
   return (
     <>

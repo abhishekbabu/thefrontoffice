@@ -6,7 +6,7 @@ import { href } from "@/lib/route";
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { ListCard, ListRow } from "@/components/ui/list";
-import { SlideOver, SlideOverHeader } from "@/components/ui/dialog";
+import { SlideOver, SlideOverHeader, type Back } from "@/components/ui/dialog";
 
 /**
  * One league move on one line: when, who, what, and "+A, -B". Read the same in
@@ -35,13 +35,17 @@ export function MoveDrawer({
   move,
   competition,
   league,
+  back,
   onClose,
   onOpenPlayer,
 }: {
   move: ActivityRow | null;
   competition: string;
   league: string;
+  /** The drawer this one replaced, where there was one. */
+  back?: Back;
   onClose: () => void;
+  /** Swap to a player; the caller makes this move what his drawer goes back to. */
   onOpenPlayer: (id: string) => void;
 }) {
   const compared = useCompared(competition, league);
@@ -56,6 +60,7 @@ export function MoveDrawer({
       {move && (
         <MoveDetail
           move={move}
+          back={back}
           onClose={onClose}
           onOpen={onOpenPlayer}
           onCompare={() => {
@@ -71,11 +76,13 @@ export function MoveDrawer({
 
 function MoveDetail({
   move,
+  back,
   onClose,
   onOpen,
   onCompare,
 }: {
   move: ActivityRow;
+  back?: Back;
   onClose: () => void;
   onOpen: (id: string) => void;
   onCompare: () => void;
@@ -86,6 +93,7 @@ function MoveDetail({
       <SlideOverHeader
         title={`${move.what} · ${move.who}`}
         meta={[move.when, move.bid && `won for ${move.bid}`].filter(Boolean).join(" · ")}
+        back={back}
         onClose={onClose}
       >
         {players > 1 && (
@@ -140,4 +148,9 @@ export function sections(move: ActivityRow): { title: string; moves: ActivityRow
     { title: "Added", moves: move.moves.filter((m) => m.change === "added") },
     { title: "Dropped", moves: move.moves.filter((m) => m.change === "dropped") },
   ].filter((section) => section.moves.length > 0);
+}
+
+/** What a player opened from `move` goes back to: the move, reopened by `reopen`. */
+export function backTo(move: ActivityRow, reopen: () => void): Back {
+  return { label: `${move.what} · ${move.who}`, onBack: reopen };
 }
