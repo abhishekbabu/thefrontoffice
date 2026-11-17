@@ -574,15 +574,19 @@ def is_free(host: str, port: int) -> bool:
     a browser keeps those open for a minute after the last one stopped. Then
     knocked on, since that option lets a bind share a port with a listener on
     every address. Windows is left the plain bind, where the option would let
-    the probe take a port somebody holds.
+    the probe take a port somebody holds, and where a closed port answers a
+    knock slowly enough to read as taken.
     """
+    shared = sys.platform != "win32"
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        if sys.platform != "win32":
+        if shared:
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind((host, port))
         except OSError:
             return False
+    if not shared:
+        return True
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as knock:
         knock.settimeout(0.2)
         return knock.connect_ex((host, port)) != 0

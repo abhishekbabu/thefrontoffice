@@ -1043,6 +1043,8 @@ def test_a_taken_port_moves_the_server_up_to_a_free_one(taken: int) -> None:
 def test_a_port_left_with_only_closing_connections_is_free() -> None:
     """The browser's last connections to a stopped server must not push the next one up a port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        # As uvicorn binds; the connections it accepts inherit the option.
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((web.HOST, 0))
         server.listen()
         port = server.getsockname()[1]
