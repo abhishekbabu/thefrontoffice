@@ -26,14 +26,18 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Team,
     active,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.outcomes import UNDER_WAY
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
+    Scoreboard,
     Week,
     day,
+    left_in,
     lineup_for,
     moment,
     opponent_of,
     pairings,
+    projections_for,
     week_dates,
     weeks_played,
 )
@@ -343,6 +347,9 @@ class SeasonModel:
     spread: float
     miss_rate: float
     """The chance a regular starter misses any one week."""
+    live: bool = False
+    """Whether this week's rows are its score so far and what each lineup has left, rather than a
+    projection: a roster changed now changes only the weeks after it."""
 
     def mean(self, state: Week, player_ids: Iterable[str], week: int) -> float:
         """What a roster of these players is expected to score in `week`: its best lineup, less what
@@ -350,16 +357,16 @@ class SeasonModel:
         return _expected_lineup(state, player_ids, self.projections[week], self.miss_rate) * self.scale
 
 
-def season_input(client: NFLSource, state: Week, seed: int) -> SeasonInput | None:
+def season_input(client: NFLSource, state: Week, seed: int, scoreboard: Scoreboard | None = None) -> SeasonInput | None:
     """The regular season from this week to its last, ready to simulate.
 
     None in the playoffs, or where the league says nothing about them.
     """
-    model = season_model(client, state, seed)
+    model = season_model(client, state, seed, scoreboard)
     return model.season if model else None
 
 
-def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | None:
+def season_model(client: NFLSource, state: Week, seed: int, scoreboard: Scoreboard | None = None) -> SeasonModel | None:
     """The regular season from this week to its last, with what it was built from.
 
     Each team's mean for a week is the best lineup its roster projects that
@@ -369,6 +376,11 @@ def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | Non
     projections run short of what managers score and the points already
     banked are real points. The spread is the league's own: how far teams
     have scored from their averages so far.
+
+    Once this week is under way, with `scoreboard`, every team's week is what
+    it has scored plus what its set lineup has left to play, its range
+    narrowing as its games run out: so every team's chance, not only yours,
+    counts the week as it is going.
     """
     league = state.league
     if not league.playoff_teams or not league.playoff_week_start or state.week >= league.playoff_week_start:
@@ -398,6 +410,7 @@ def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | Non
     scale = _scale(rosters, projected, state.week)
     spread = _spread(client, league.league_id, state.week)
     strength_error = _strength_error(rosters, projected, scale, spread, state.week)
+    so_far = _so_far(state, scoreboard) if scoreboard else {}
     season = SeasonInput(
         teams=tuple(
             TeamRecord(
@@ -412,7 +425,9 @@ def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | Non
         ),
         fixtures=tuple(fixtures),
         scoring=tuple(
-            TeamWeek(team_id=team, week=week, mean=points * scale, spread=spread)
+            _going(team, so_far[team], scale, spread)
+            if week == state.week and team in so_far
+            else TeamWeek(team_id=team, week=week, mean=points * scale, spread=spread)
             for (team, week), points in projected.items()
         ),
         spots=league.playoff_teams,
@@ -422,7 +437,73 @@ def season_model(client: NFLSource, state: Week, seed: int) -> SeasonModel | Non
         seed=seed,
     )
     return SeasonModel(
-        season=season, rosters=rosters, projections=projections, scale=scale, spread=spread, miss_rate=miss_rate
+        season=season,
+        rosters=rosters,
+        projections=projections,
+        scale=scale,
+        spread=spread,
+        miss_rate=miss_rate,
+        live=bool(so_far),
+    )
+
+
+@dataclass(frozen=True)
+class SoFar:
+    """One team's week while it is being played."""
+
+    week: int
+    scored: float
+    """Points on the board, as the platform has them."""
+    left: float
+    """What its starters are projected to add in what is left of their games."""
+    full: float
+    """What its starters were projected for the whole week."""
+
+
+def _so_far(state: Week, scoreboard: Scoreboard) -> dict[str, SoFar]:
+    """Each team's week once its games are under way; none before the first kickoff.
+
+    Before then the set lineup is no better a guess than the best one, which
+    a manager has days left to set.
+    """
+    live = scoreboard.live(state)
+    if not live.under_way:
+        return {}
+    board = scoreboard.board(state)
+
+    def left(club: str) -> float:
+        if club in board:
+            return left_in(board[club])
+        return UNDER_WAY if club in live.started else 1.0
+
+    scored = {entry.roster_id: entry.points for entry in state.matchups}
+    so_far: dict[str, SoFar] = {}
+    for roster in state.rosters:
+        if roster.roster_id not in scored:
+            continue
+        starters = projections_for([pid for pid in roster.starter_ids if pid], state.projections, state.players)
+        so_far[str(roster.roster_id)] = SoFar(
+            week=state.week,
+            scored=scored[roster.roster_id],
+            left=sum(p.points * left(p.team) for p in starters),
+            full=sum(p.points for p in starters),
+        )
+    return so_far
+
+
+def _going(team: str, so_far: SoFar, scale: float, spread: float) -> TeamWeek:
+    """A week under way as the season plays it: the points banked, and the rest around its projection.
+
+    What is left is rescaled as a whole week would be; what is banked is real.
+    The range shrinks with the square root of the share left, as a sum of
+    independent plays does, to none once its games are over.
+    """
+    share = so_far.left / so_far.full if so_far.full else 0.0
+    return TeamWeek(
+        team_id=team,
+        week=so_far.week,
+        mean=so_far.scored + so_far.left * scale,
+        spread=spread * math.sqrt(share),
     )
 
 

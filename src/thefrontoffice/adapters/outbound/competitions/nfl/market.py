@@ -34,7 +34,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl import form
 from thefrontoffice.adapters.outbound.competitions.nfl.league import SeasonModel, last_week, season_model
 from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Projection, Team, active
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, STREAMED
-from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
+from thefrontoffice.adapters.outbound.competitions.nfl.week import Scoreboard, Week
 from thefrontoffice.domain.models import TeamWeek, TradeMarket, TradeOption
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class _Weeks:
         return self.regular + self.playoffs
 
 
-def build(client: NFLSource, state: Week, seed: int) -> TradeMarket | None:
+def build(client: NFLSource, state: Week, seed: int, scoreboard: Scoreboard | None = None) -> TradeMarket | None:
     """The season, and every trade near even in worth that improves your lineup; None once trading is over.
 
     A trade lands after the league's review, so it changes the weeks after
@@ -65,7 +65,7 @@ def build(client: NFLSource, state: Week, seed: int) -> TradeMarket | None:
     deadline = state.league.trade_deadline
     if deadline and state.week > deadline:
         return None
-    model = season_model(client, state, seed)
+    model = season_model(client, state, seed, scoreboard)
     if model is None:
         return None
     mine = next((r for r in model.rosters if r.roster_id == state.roster.roster_id), None)
@@ -110,7 +110,10 @@ def _formed(model: SeasonModel, state: Week, found: Mapping[str, form.Form]) -> 
     model = replace(model, projections=form.bent(model.projections, found))
     rosters = {str(roster.roster_id): active(roster) for roster in model.rosters}
     scoring = tuple(
-        replace(row, mean=model.mean(state, rosters[row.team_id], row.week)) if row.team_id in rosters else row
+        replace(row, mean=model.mean(state, rosters[row.team_id], row.week))
+        # A week under way is its score so far, which no form changes.
+        if row.team_id in rosters and not (model.live and row.week == state.week)
+        else row
         for row in model.season.scoring
     )
     return replace(model, season=replace(model.season, scoring=scoring))
