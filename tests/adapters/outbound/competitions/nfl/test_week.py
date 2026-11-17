@@ -395,15 +395,32 @@ def test_without_the_scoreboard_the_schedule_stands() -> None:
     assert mine(summary).points.endswith("proj")
 
 
-def test_a_bench_player_in_a_reserve_slot_is_marked_as_such() -> None:
-    """He takes no bench spot, which a row reading like every other bench row hides."""
+def test_a_player_in_a_reserve_slot_sits_apart_from_the_bench_under_its_slot() -> None:
+    client = _live_client({})
+    client.rosters = [replace(client.rosters[0], reserve_ids=["rb1"], ir_ids=["rb1"])]
+    side = mine(nfl_provider(client).summary("L1"))
 
-    def bench_detail(reserve: list[str]) -> str:
-        client = _live_client({})
-        client.rosters = [replace(client.rosters[0], reserve_ids=reserve)]
-        return next(s.detail for s in mine(nfl_provider(client).summary("L1")).bench if s.player_id == "rb1")
+    assert "rb1" not in {s.player_id for s in side.bench}
+    assert [(s.player_id, s.slot) for s in side.reserve] == [("rb1", "IR")]
 
-    assert bench_detail(["rb1"]) != bench_detail([])
+
+def test_the_opponents_reserve_slots_sit_apart_from_their_bench_too() -> None:
+    """Nothing else tells his bench from his injured reserve: both project nothing."""
+    client = FakeSleeper(
+        projections=DEFAULT_PROJECTIONS,
+        rosters=[
+            SleeperRoster(roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1"], starter_ids=["qb1"]),
+            SleeperRoster(
+                roster_id=2, owner_id="them", player_ids=["rb2", "wr9", "rb1"], starter_ids=["wr9"], reserve_ids=["rb2"]
+            ),
+        ],
+        matchups=[SleeperMatchup(roster_id=1, matchup_id=7), SleeperMatchup(roster_id=2, matchup_id=7)],
+    )
+    opponent = nfl_provider(client).summary("L1").opponent
+
+    assert opponent is not None
+    assert [s.player_id for s in opponent.bench] == ["rb1"]
+    assert [(s.player_id, s.slot) for s in opponent.reserve] == [("rb2", "Taxi")]
 
 
 # ── who is not playing, and why ─────────────────────────────────────────

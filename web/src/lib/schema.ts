@@ -1395,6 +1395,11 @@ export interface components {
             lineup: components["schemas"]["Spot"][];
             /** Bench */
             bench: components["schemas"]["Spot"][];
+            /**
+             * Reserve
+             * @description Players held in a slot that costs no roster spot and cannot start, such as injured reserve or taxi, each row's `slot` naming which. Empty where the league has none.
+             */
+            reserve: components["schemas"]["Spot"][];
         };
         /**
          * Spot
