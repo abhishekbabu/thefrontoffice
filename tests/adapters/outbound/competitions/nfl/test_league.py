@@ -67,6 +67,26 @@ def test_a_week_with_nobody_to_play_is_a_bye() -> None:
     assert nfl_provider(client).schedule("L1").season[0].detail == "bye"
 
 
+def test_the_week_being_played_shows_the_score_so_far_from_the_week_pages_own_matchup() -> None:
+    """The season list reads it where the week page does, so the two never show different scores."""
+    client = league_client()
+    # The season's bulk read is a fetch of its own: here it fails for this week, and the score still shows.
+    client.unloaded_weeks = {3}
+
+    row = next(row for row in nfl_provider(client).schedule("L1").season if row.is_current)
+
+    assert (row.result, row.outcome) == ("88.50-96.10", None)
+
+
+def test_the_week_being_played_has_no_score_before_anybody_has_scored() -> None:
+    client = league_client()
+    client.matchups = [replace(side, points=0.0) for side in client.matchups]
+
+    row = next(row for row in nfl_provider(client).schedule("L1").season if row.is_current)
+
+    assert row.result == ""
+
+
 def test_the_current_week_is_marked() -> None:
     season = nfl_provider(league_client()).schedule("L1").season
     assert [row.label for row in season if row.is_current] == ["Week 3"]

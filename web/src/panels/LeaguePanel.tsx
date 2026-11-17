@@ -221,7 +221,7 @@ function Season({ rows }: { rows: LeagueSchedule["season"] }) {
               in color alone is state a colorblind reader cannot see. */}
           {row.result && (
             <Badge variant={row.outcome ? OUTCOME[row.outcome].variant : "muted"} appearance="pill" className="tabular-nums">
-              {row.outcome && OUTCOME[row.outcome].letter} {row.result}
+              {row.outcome ? OUTCOME[row.outcome].letter : row.is_current && "live"} {row.result}
             </Badge>
           )}
         </ListRow>
