@@ -67,10 +67,12 @@ being played. FPL pages through its gameweeks the same way: one played shows
 the fifteen picked for it and what each scored; one to come, the squad as it
 stands against that gameweek's fixtures, projected for the next gameweek only,
 since FPL projects no further. NBA pages through its matchup weeks too, each
-with its category board: both figures in every category and who leads it,
-fewer turnovers winning turnovers. The week being played and those to come
-show both rosters as they stand, the injured list under **Reserve**. A week
-played shows no roster, since Yahoo sets a basketball lineup day by day.
+with its category board: every category the league's settings score, both
+figures and who leads it, each won the way the league says (fewer turnovers,
+usually). The week being played and those to come show both rosters as they
+stand, the injured list under **Reserve**. A week played shows no roster, since
+Yahoo sets a basketball lineup day by day. Its fixtures are the real games
+inside the week's dates, from Sleeper's schedule, with yours marked.
 
 NFL moves to the next week once every game of the current one is final,
 without waiting a day or two for Sleeper to catch up, and counts the finished

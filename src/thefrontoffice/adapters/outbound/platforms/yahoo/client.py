@@ -27,6 +27,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Pairing,
     PlayerStat,
     PlayerStatus,
+    StatCategory,
     TeamStanding,
     Timeframe,
     YahooLeague,
@@ -50,6 +51,8 @@ SEARCH_TTL = timedelta(hours=6)
 # The hour the SDK's own store kept them for, when it fetched them.
 TEAMS_TTL = timedelta(hours=1)
 ROSTER_TTL = timedelta(hours=1)
+# A league's scoring is set before the season and almost never changes during it.
+SETTINGS_TTL = timedelta(hours=12)
 
 
 def translate(error: Exception) -> FrontOfficeError:
@@ -159,6 +162,10 @@ class YahooSource(Protocol):
         """Every team in the league."""
         ...
 
+    def stat_categories(self) -> list[StatCategory]:
+        """The categories the league scores, in the order its settings list them."""
+        ...
+
 
 class YahooClient:
     """Reads one Yahoo league.
@@ -262,6 +269,18 @@ class YahooClient:
         """Every team in the league."""
         raw = self._cache.cached(f"teams_{self.league.league_key}", TEAMS_TTL, lambda: self._fetch("teams"))
         return readable("team list", lambda: team_list(parse(raw)["fantasy_content"]["league"]))
+
+    def stat_categories(self) -> list[StatCategory]:
+        """The categories the league scores, in the order its settings list them.
+
+        Display-only stats (FGM/A beside FG%) are left out: they score nothing.
+
+        Raises:
+            YahooAuthError: the app is not authorized for Fantasy Sports.
+            YahooAPIError: Yahoo could not be reached, or answered unreadably.
+        """
+        raw = self._cache.cached(f"settings_{self.league.league_key}", SETTINGS_TTL, lambda: self._fetch("settings"))
+        return readable("league settings", lambda: category_list(parse(raw)["fantasy_content"]["league"]))
 
     def get_user_team(self) -> YahooTeam:
         """Identify the team owned by the current user.
@@ -427,6 +446,20 @@ def find_matchup(scoreboard: Any, team_key: str) -> Pairing | None:
             mine, opponent = sides if keys[0] == team_key else sides[::-1]
             return Pairing(_day(_value(matchup, "week_start")), _day(_value(matchup, "week_end")), mine, opponent)
     return None
+
+
+def category_list(league: Any) -> list[StatCategory]:
+    """The scored categories under a league's `settings`; sort order 0 is Yahoo's "lower wins"."""
+    stats = _node(league, "settings", "stat_categories", "stats")
+    return [
+        StatCategory(
+            stat_id=_text(stat, "stat_id"),
+            name=_text(stat, "display_name"),
+            fewer_wins=_text(stat, "sort_order") == "0",
+        )
+        for stat in _items(stats, "stat")
+        if _text(stat, "is_only_display_stat") != "1"
+    ]
 
 
 def _side(data: Any) -> MatchupSide:

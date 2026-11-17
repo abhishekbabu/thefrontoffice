@@ -29,7 +29,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooTeam
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.domain.errors import LeagueNotFoundError, NotFoundError, PlayerNotFoundError, TeamNotFoundError
@@ -612,7 +612,8 @@ def test_the_week_being_played_shows_its_categories_and_both_rosters() -> None:
     yahoo = FakeYahoo(roster=[make_player("Mine One", selected_position="PG")])
     summary = nba_provider(yahoo).summary("")
 
-    assert [(line.name, line.lead) for line in summary.categories] == [("BLK", "theirs")]
+    assert len(summary.categories) == len(CATEGORIES)  # every category the league scores, recorded or not
+    assert [(line.name, line.lead) for line in summary.categories if line.lead] == [("BLK", "theirs")]
     assert summary.mine is not None and summary.opponent is not None
     assert [s.player for s in summary.mine.lineup] == ["Mine One"]
     assert [s.player for s in summary.opponent.lineup] == ["Their Team One"]
@@ -637,7 +638,7 @@ def test_a_week_played_shows_its_categories_but_no_roster() -> None:
     week = nba_provider(yahoo).week_of("", 3)
 
     assert yahoo.pairings == [3]
-    assert [line.lead for line in week.categories] == ["mine"]
+    assert [line.lead for line in week.categories if line.lead] == ["mine"]
     assert week.actions is None
     assert week.mine is not None and week.mine.lineup == []
     assert week.weeks is not None and (week.weeks.week, week.weeks.current) == (3, 5)
@@ -677,5 +678,17 @@ def test_between_seasons_there_is_no_week_to_open() -> None:
         provider.week_of("", 1)
 
 
-def test_yahoo_publishes_no_real_games_for_a_week() -> None:
-    assert nba_provider(FakeYahoo()).games_of("", 5) == []
+def test_a_weeks_real_games_are_those_inside_its_dates_marked_where_you_have_players() -> None:
+    slate = [
+        ScheduledGame(week=0, date="2026-02-08", home="LAL", away="BOS"),  # the day before the week
+        ScheduledGame(week=0, date="2026-02-10", home="LAL", away="GSW", status="complete"),
+        ScheduledGame(week=0, date="2026-02-11", home="NYK", away="MIA"),
+    ]
+    games = nba_provider(FakeYahoo(), nba=FakeNBA(slate=slate)).games_of("", 5)
+
+    assert [(g.away, g.home, g.tone) for g in games] == [("GSW", "LAL", "good"), ("MIA", "NYK", "neutral")]
+    assert "final" in games[0].detail
+
+
+def test_a_week_with_no_matchup_has_no_dates_to_list_games_by() -> None:
+    assert nba_provider(FakeYahoo(matchup_dates=None)).games_of("", 5) == []

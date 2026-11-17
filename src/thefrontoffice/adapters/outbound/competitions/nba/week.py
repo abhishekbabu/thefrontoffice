@@ -9,32 +9,39 @@ played reads the same way as one that has finished.
 from collections.abc import Mapping, Sequence
 from typing import Literal
 
-from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, INJURED_SLOTS, Category, ruled_out
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
-from thefrontoffice.domain.models import CategoryLine, Side, Spot, Stat, Tone
+from thefrontoffice.adapters.outbound.competitions.dates import parse_day, weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, ruled_out
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooPlayer
+from thefrontoffice.domain.models import CategoryLine, Match, Side, Spot, Stat, Tone
 
 BENCH = "BN"
 """Yahoo's slot for a player on the roster but not in the day's lineup."""
 
 
-def categories(mine: Mapping[str, str], theirs: Mapping[str, str]) -> list[CategoryLine]:
-    """One line per category the scoreboard carries, in the order the league is read."""
+def categories(
+    scored: Sequence[StatCategory], mine: Mapping[str, str], theirs: Mapping[str, str]
+) -> list[CategoryLine]:
+    """One line per category the league scores, in its settings' order, each side's figure by stat id.
+
+    The league's own list rather than the nine this app prices players by: a
+    league scoring double-doubles shows them, and one without free throws does not.
+    """
     return [
         CategoryLine(
-            name=category.label,
-            mine=mine.get(category.yahoo_stat, ""),
-            theirs=theirs.get(category.yahoo_stat, ""),
-            lead=_lead(category, mine.get(category.yahoo_stat, ""), theirs.get(category.yahoo_stat, "")),
+            name=category.name,
+            mine=mine.get(category.stat_id, ""),
+            theirs=theirs.get(category.stat_id, ""),
+            lead=_lead(category, mine.get(category.stat_id, ""), theirs.get(category.stat_id, "")),
         )
-        for category in CATEGORIES
-        if category.yahoo_stat in mine or category.yahoo_stat in theirs
+        for category in scored
     ]
 
 
 Lead = Literal["mine", "theirs", "even"]
 
 
-def _lead(category: Category, mine: str, theirs: str) -> Lead | None:
+def _lead(category: StatCategory, mine: str, theirs: str) -> Lead | None:
     """Who is ahead, or None where either figure is not a number yet: a week to come prints a dash."""
     try:
         ours, other = float(mine), float(theirs)
@@ -93,4 +100,24 @@ def _spot(player: YahooPlayer) -> Spot:
         detail=f"{player.position} · {player.team}",
         value=player.status,
         tone="warning" if ruled_out(player.status) else "neutral",
+    )
+
+
+STATUS = {"in_game": "live", "complete": "final"}
+"""Sleeper's game status, in the word a fixture row shows; a game still to come shows none."""
+
+
+def match(game: ScheduledGame, clubs: set[str]) -> Match:
+    """One real game, marked where a club you hold a player from is in it.
+
+    Sleeper publishes the day and a status, and no score.
+    """
+    day = parse_day(game.date)
+    yours = bool({game.home.upper(), game.away.upper()} & clubs)
+    return Match(
+        label=weekday_day_month(day) if day else game.date,
+        home=game.home,
+        away=game.away,
+        detail=" · ".join(part for part in (STATUS.get(game.status, ""), "you have players" if yours else "") if part),
+        tone="good" if yours else "neutral",
     )

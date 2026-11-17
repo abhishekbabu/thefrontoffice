@@ -214,13 +214,26 @@ class YahooNBAProvider:
         return self._board(yahoo, league, my_team, week, roster)
 
     def games_of(self, league_id: str, week: int) -> list[Match]:
-        """No real games: Yahoo publishes no NBA schedule through this SDK, as `schedule` says.
+        """The real games inside a matchup week, from Sleeper's schedule, marked where you have players.
+
+        Yahoo publishes no NBA schedule through this SDK, but it does date each
+        matchup week, and Sleeper's schedule fills those dates. A week your
+        team has no matchup in carries no dates on Yahoo's scoreboard, so it
+        lists no games.
 
         Raises:
             NotFoundError: the season has no such week.
+            PlatformError: the schedule would not load.
         """
-        self._within(self._league(league_id), week)
-        return []
+        league = self._league(league_id)
+        self._within(league, week)
+        yahoo = self._yahoo_for(league)
+        team = yahoo.get_user_team()
+        found = yahoo.pairing(team.team_key, week)
+        if found is None:
+            return []
+        clubs = {p.team.upper() for p in yahoo.roster(team.team_key)}
+        return [nba_week.match(game, clubs) for game in self.nba.games_between(found.start, found.end)]
 
     def _within(self, league: YahooLeague, week: int) -> int:
         """The week being played, once `week` is known to be one of the season's.
@@ -246,7 +259,7 @@ class YahooNBAProvider:
         found = yahoo.pairing(team.team_key, week)
         if found is None:
             return Summary(window=f"Week {week}", weeks=weeks)
-        lines = nba_week.categories(found.mine.stats, found.opponent.stats)
+        lines = nba_week.categories(yahoo.stat_categories(), found.mine.stats, found.opponent.stats)
         score = nba_week.score(lines)
         records = {t.team_key: t.standing.record for t in yahoo.teams() if t.standing}
         theirs = yahoo.roster(found.opponent.team_key) if roster is not None else None
