@@ -49,6 +49,12 @@ player. It runs on your own machine against NFL on
 
 NFL has the deepest analysis. FPL and NBA share the week, team and league pages.
 
+NFL moves to the next week once every game of the current one is final,
+without waiting a day or two for Sleeper to catch up, and counts the finished
+week's results in the standings until Sleeper records them. A starter you drop
+or trade after his game stays in that week's lineup, marked as no longer on
+your roster.
+
 | | |
 | --- | --- |
 | ![My team](docs/screenshots/team-dark.png) | ![Free agents](docs/screenshots/free-agents-dark.png) |

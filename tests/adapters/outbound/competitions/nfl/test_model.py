@@ -17,6 +17,14 @@ def test_a_player_in_reserve_or_taxi_takes_no_spot_on_the_roster() -> None:
     assert model.active(team) == ["a", "c"]
 
 
+def test_a_starter_no_longer_on_the_roster_is_let_go_and_still_fielded() -> None:
+    """An empty slot is nobody, let go or otherwise."""
+    team = SleeperRoster(roster_id=1, owner_id="me", player_ids=["a", "b"], starter_ids=["a", "", "x"])
+
+    assert model.let_go(team) == ["x"]
+    assert model.fielded(team) == ["a", "b", "x"]
+
+
 def test_each_club_finds_its_game_from_either_side_and_a_club_on_bye_none() -> None:
     game = ScheduledGame(week=4, date="2026-10-04", home="MIA", away="NYJ")
 

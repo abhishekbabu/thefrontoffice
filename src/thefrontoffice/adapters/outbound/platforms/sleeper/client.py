@@ -246,6 +246,7 @@ class SleeperClient:
             trade_deadline=int((data.get("settings") or {}).get("trade_deadline") or 0),
             playoff_teams=int((data.get("settings") or {}).get("playoff_teams") or 0),
             playoff_week_start=int((data.get("settings") or {}).get("playoff_week_start") or 0),
+            median_game=bool((data.get("settings") or {}).get("league_average_match")),
             ir_allows=SleeperClient.ir_allows(data.get("settings") or {}),
             scoring_rules={str(k): float(v) for k, v in settings_blob.items() if isinstance(v, int | float)},
         )

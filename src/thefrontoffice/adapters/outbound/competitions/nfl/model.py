@@ -189,6 +189,21 @@ def active(team: Team) -> list[str]:
     return [pid for pid in team.player_ids if pid not in team.reserve_ids]
 
 
+def let_go(team: Team) -> list[str]:
+    """Who the team started this week but no longer holds: dropped or traded once his game was played.
+
+    The week's lineup keeps him and his points, so leaving him out would read
+    as an empty slot in a week the team actually filled.
+    """
+    held = set(team.player_ids)
+    return [pid for pid in team.starter_ids if pid and pid not in held]
+
+
+def fielded(team: Team) -> list[str]:
+    """Everyone who plays for the team this week: its roster, and the starters it has since let go."""
+    return [*team.player_ids, *let_go(team)]
+
+
 class LeagueRules(Protocol):
     """The league itself: its size, how it scores, its lineup, and its season's shape."""
 
