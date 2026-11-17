@@ -159,7 +159,7 @@ function Row({
           </Badge>
         )}
         {setting.shadowed && (
-          <Tooltip label="This is exported in your shell, which pydantic reads ahead of .env — saving here will not change the running value.">
+          <Tooltip label="Set in your shell, which overrides .env. Saving here won't change it.">
             <Badge variant="warn" appearance="status">
               shell wins
             </Badge>

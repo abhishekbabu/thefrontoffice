@@ -73,12 +73,12 @@ export function Swaps({ swaps, className }: { swaps: Swap[]; className?: string 
   return (
     <div className={className}>
       <Label as="div" className="px-4 pb-1 pt-3">
-        Changes the projections imply
+        Projected swaps
       </Label>
       {swaps.map((swap) => (
         <div key={swap.start} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-4 py-2 text-[13px]">
           <span className="font-medium">{swap.start}</span>
-          <span className="text-muted-foreground">for {swap.out || "an empty place"}</span>
+          <span className="text-muted-foreground">for {swap.out || "empty slot"}</span>
           <span className="ml-auto font-mono text-[12px] text-ok">{swap.gain}</span>
         </div>
       ))}
@@ -103,7 +103,6 @@ function OpenSpots({ count }: { count: number }) {
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="rounded-md border border-dashed border-border px-3 py-1.5">
           <div className="text-[13px] font-medium text-muted-foreground">Open roster spot</div>
-          <div className="font-mono text-[11px] text-muted-foreground">room to add without a drop</div>
         </div>
       ))}
     </div>

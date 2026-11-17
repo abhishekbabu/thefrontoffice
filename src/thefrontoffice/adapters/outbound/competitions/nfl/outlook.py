@@ -132,7 +132,7 @@ def _fixed(
     gain, pick = max(gains, key=lambda pair: pair[0], default=(0.0, None))
     if pick is None or gain < MIN_GAIN:
         return row
-    fix = f"Pick up {pick.name} ({pick.position}, {pick.team}): {pick.points:.2f} projected in week {row.week}"
+    fix = f"Pick up {pick.name} ({pick.position}, {pick.team}), {pick.points:.2f} proj"
     if len(held) >= state.league.roster_spots:
         # Never a regular, nor one who is only away for the week.
         drop = drop_candidate(state, (p for p in state.projected if p.player_id in held), keep)
@@ -151,18 +151,14 @@ def to_do(ahead: Outlook, state: Week) -> Item | None:
     if week is None or ahead.usual is None:
         return None
     without = f", without {join(week.missing)}" if week.missing else ""
-    fix = (
-        f" {week.fix}, +{week.gain:.2f}."
-        if week.fix
-        else " No free agent at those positions adds two points; a trade may: see My team."
-    )
+    fix = f" {week.fix}, +{week.gain:.2f}." if week.fix else " No free agent fixes it; look at a trade."
     return Item(
         "short",
         Action(
             kind="waiver" if week.fix else "trade",
             urgency="later",
             title=f"Week {week.week} is short",
-            reason=f"Your best lineup projects {week.points:.2f} against {ahead.usual:.2f} in a usual week{without}.{fix}",
+            reason=f"Best lineup projects {week.points:.2f} vs {ahead.usual:.2f} usual{without}.{fix}",
             when=f"week {week.week}",
             key=f"short:{week.week}",
         ),

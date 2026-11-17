@@ -446,8 +446,8 @@ def test_nothing_published_yet_reads_differently_from_not_featuring() -> None:
     scheduled = FakeSleeper(projections={"rb1": proj("rb1", "Good RB", "RB", 18.0)})
     benched = nfl_provider(scheduled).player("L1", "qb1")
 
-    assert "not published yet" in unpublished.headline_label
-    assert "Not projected to feature" in benched.headline_label
+    assert "not out yet" in unpublished.headline_label
+    assert "Not projected" in benched.headline_label
 
 
 # ── the way across to the platform ──────────────────────────────────────

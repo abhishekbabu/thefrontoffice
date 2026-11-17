@@ -30,7 +30,7 @@ export function SchedulePanel({ competition, league }: { competition: Competitio
       <StatStrip stats={schedule.data?.headline ?? []} />
       <QueryState query={schedule} lines={6} />
       {schedule.data && schedule.data.season.length === 0 && (
-        <Empty title="No season to show" detail="This league plays no head-to-head schedule." />
+        <Empty title="No head-to-head schedule" />
       )}
       {schedule.data && schedule.data.season.length > 0 && (
         <div className="p-5">

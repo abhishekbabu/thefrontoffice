@@ -77,8 +77,8 @@ export function ActionList({
       {count === 0 ? (
         <CardNote>
           {hidden.length
-            ? "Nothing left to do — the rest is hidden below."
-            : "Nothing to do — your lineup is set for the week."}
+            ? "Nothing left. The rest is hidden below."
+            : "Nothing to do."}
         </CardNote>
       ) : (
         <ol className="flex flex-col">
@@ -99,7 +99,7 @@ export function ActionList({
               >
                 {action.mark.resurfaced && (
                   <Label as="div" className="mb-1.5">
-                    back — changed since you dismissed it
+                    back: changed since dismissed
                   </Label>
                 )}
                 {action.verdict && <VerdictLine verdict={action.verdict} stale={action.stale} />}
@@ -144,13 +144,13 @@ function Decide({
   return (
     <span className="flex flex-wrap items-center gap-1">
       <IconButton
-        label="Dismiss — hide it until it changes"
+        label="Dismiss until it changes"
         icon={<EyeOff />}
         disabled={busy}
         onClick={() => onDecide({ key: action.key, decision: "dismiss", fingerprint: action.fingerprint })}
       />
       <IconButton
-        label={choosing ? "Keep it on the list" : "Snooze"}
+        label={choosing ? "Cancel" : "Snooze"}
         icon={<AlarmClock />}
         disabled={busy}
         aria-expanded={choosing}
@@ -203,7 +203,7 @@ function Hidden({
             </span>
             {onDecide && (
               <IconButton
-                label="Put it back on the list"
+                label="Restore"
                 icon={<Undo2 />}
                 disabled={busy}
                 onClick={() => onDecide({ key: action.key, decision: "restore" })}

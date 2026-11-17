@@ -255,8 +255,8 @@ def _headline_label(projection: Projection | None, scheduled: bool, week: int) -
     if projection:
         return f"projected for week {week}"
     if not scheduled:
-        return f"Week {week} projections are not published yet"
-    return f"Not projected to feature in week {week}"
+        return f"Week {week} projections not out yet"
+    return f"Not projected in week {week}"
 
 
 def fit(state: Week, projection: Projection) -> tuple[float, str] | None:
@@ -660,7 +660,7 @@ def released(row: Spot, team: Team) -> Spot:
     return row.model_copy(update={"detail": f"{row.detail} · {GONE}"})
 
 
-GONE = "no longer on roster"
+GONE = "off roster"
 """Said of a starter dropped or traded after his game: he played for the team this week, and holds no spot on it."""
 
 

@@ -52,7 +52,7 @@ class TeamNotFoundError(FrontOfficeError):
     """The configured account does not own a team in this league, or no team has that identifier."""
 
     def __init__(self, league_name: str) -> None:
-        super().__init__(f"Could not identify your team in {league_name}. Are you a manager in this league?")
+        super().__init__(f"No team of yours in {league_name}.")
         self.league_name = league_name
 
 
@@ -83,10 +83,7 @@ class PlatformUnavailableError(PlatformError):
     code = "platform_unavailable"
 
     def __init__(self, detail: str) -> None:
-        super().__init__(
-            f"{self.platform} is not responding right now ({detail}). That is on {self.platform}'s side, "
-            "not this app's; it usually passes within a few minutes."
-        )
+        super().__init__(f"{self.platform} is not responding ({detail}). Usually clears in a few minutes.")
 
 
 class UnknownCompetitionError(FrontOfficeError):
@@ -130,10 +127,7 @@ class PlayerNotFoundError(FrontOfficeError):
 
     def __init__(self, names: list[str]) -> None:
         joined = ", ".join(names)
-        super().__init__(
-            f"Could not find {'these players' if len(names) > 1 else 'this player'} in the league: {joined}. "
-            "Check the spelling, or use the full name as the platform shows it."
-        )
+        super().__init__(f"Not in the league: {joined}. Use the full name as the platform shows it.")
         self.names = names
 
 
@@ -141,7 +135,7 @@ class TradeParseError(FrontOfficeError):
     """The trade description could not be parsed into two sides."""
 
     def __init__(self, text: str) -> None:
-        super().__init__(f"Could not parse the trade from {text!r}. Use the form: 'Give <players>, Get <players>'.")
+        super().__init__(f"Could not parse {text!r}. Use 'Give <players>, Get <players>'.")
         self.text = text
 
 
@@ -156,7 +150,7 @@ class SubjectGoneError(FrontOfficeError):
     code = "subject_gone"
 
     def __init__(self) -> None:
-        super().__init__("That item is no longer on the list — the week has changed since this page loaded.")
+        super().__init__("That item is no longer on the list. Reload.")
 
 
 class ItemDecisionError(FrontOfficeError):
@@ -202,7 +196,7 @@ class AIUnavailableError(FrontOfficeError):
     def __init__(self, keys: Sequence[str] = ()) -> None:
         *rest, last = keys or [""]
         named = f" — {', '.join(rest)} or {last}" if rest else f" — {last}" if last else ""
-        super().__init__(f"Analysis is unavailable because no model key is set{named}.")
+        super().__init__(f"No model key set{named}.")
         self.keys = list(keys)
         """The settings any one of which would turn analysis on, as the providers name them."""
 
@@ -228,7 +222,7 @@ class AIQuotaError(FrontOfficeError):
     code = "ai_quota"
 
     def __init__(self, provider: str, retry_after: float | None = None, detail: str = "") -> None:
-        super().__init__(detail or f"The {provider} API quota is exhausted. Analysis will work again once it resets.")
+        super().__init__(detail or f"{provider} API quota exhausted. Try again once it resets.")
         self.provider = provider
         self.retry_after = retry_after
         """Seconds until the provider says to try again, where it says at all."""
@@ -244,7 +238,7 @@ class AIResponseError(FrontOfficeError):
     code = "ai_failed"
 
     def __init__(self, detail: str = "") -> None:
-        super().__init__(detail or "The model did not return a usable answer. Try again.")
+        super().__init__(detail or "The model returned no usable answer. Try again.")
 
 
 class ChatExpiredError(FrontOfficeError):
@@ -253,7 +247,7 @@ class ChatExpiredError(FrontOfficeError):
     code = "chat_expired"
 
     def __init__(self) -> None:
-        super().__init__("That conversation has expired — the server no longer holds it.")
+        super().__init__("Conversation expired.")
 
 
 class PortInUseError(FrontOfficeError):

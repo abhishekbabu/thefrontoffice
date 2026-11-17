@@ -102,7 +102,7 @@ function LoginButton({ label, platform }: { label: string; platform: string }) {
       </Button>
       {running && (
         <p className="max-w-[60ch] text-[12.5px] text-muted-foreground">
-          A tab has opened. Accept the certificate warning if one appears, then approve the app.
+          Approve the app in the new tab. Accept any certificate warning.
         </p>
       )}
       {status === "failed" && (

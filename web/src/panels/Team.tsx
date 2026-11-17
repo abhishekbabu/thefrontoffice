@@ -43,7 +43,7 @@ export function TeamPanel({ competition, league }: { competition: Competition; l
 
             <RosterTable
               players={roster.data}
-              empty={{ title: "No players yet", detail: "This roster is empty for the current season." }}
+              empty={{ title: "No players yet" }}
               onOpen={openPlayer}
               sort={sort}
               onSort={onSort}
@@ -80,7 +80,7 @@ function WeeksAhead({ competition, league }: { competition: Competition; league:
       loading={outlook.isLoading}
       error={outlook.error}
     >
-      {weeks?.length === 0 && <CardNote>No weeks left in the season to plan.</CardNote>}
+      {weeks?.length === 0 && <CardNote>No weeks left.</CardNote>}
       {weeks?.map((week) => (
         <ListRow key={week.week} className="flex-col items-stretch gap-1">
           <div className="flex items-baseline gap-3">

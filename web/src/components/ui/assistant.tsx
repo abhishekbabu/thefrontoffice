@@ -88,7 +88,7 @@ export function Assistant({ route, competition, league }: { route: Route; compet
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {!target ? (
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              Open one of your leagues, then ask about anything on it.
+              Open a league to ask about it.
             </p>
           ) : (
             started && (
@@ -103,7 +103,7 @@ export function Assistant({ route, competition, league }: { route: Route; compet
                 placeholder="Ask about this page"
                 empty={
                   <p className="text-[13px] leading-relaxed text-muted-foreground">
-                    Ask about anything on screen: the week, the table, your roster, the wire, or a player you have open.
+                    Ask about anything on screen.
                   </p>
                 }
               />
@@ -125,7 +125,7 @@ function Context({ shown }: { shown: Shown[] }) {
   return (
     <p className="flex items-center gap-1.5 border-b border-border/45 px-4 py-1.5 font-mono text-[11px] text-muted-foreground">
       <Eye className="size-3 shrink-0" aria-hidden />
-      <span className="truncate">{shown.length ? shown.map((s) => s.label).join(" · ") : "Nothing of a league"}</span>
+      <span className="truncate">{shown.length ? shown.map((s) => s.label).join(" · ") : "No league open"}</span>
     </p>
   );
 }
