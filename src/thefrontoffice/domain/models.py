@@ -438,6 +438,11 @@ class PlayerDetail(BaseModel):
         default_factory=list,
         description="Comparisons across periods, which a list of groups cannot show.",
     )
+    moves: list[ActivityRow] = Field(
+        default_factory=list,
+        description="Each league move he was part of, oldest first, as the league's activity shows it.",
+    )
+    moves_tab: str = Field(default="", description="Which tab his moves sit in, by name; empty for the first.")
 
 
 MAX_COMPARED = 4

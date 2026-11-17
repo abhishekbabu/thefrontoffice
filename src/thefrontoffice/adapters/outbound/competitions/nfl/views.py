@@ -387,7 +387,7 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
         )
     )
 
-    groups.append(StatGroup(title="Moves", tab=HISTORY_TAB, stats=history.history(client, state, player_id)))
+    groups.append(StatGroup(title="Draft", tab=HISTORY_TAB, stats=history.drafted(client, state, player_id)))
     if headlines := state.news.stats(player_id, limit=NEWS_IN_DRAWER):
         groups.append(StatGroup(title="News", tab=NEWS_TAB, stats=headlines))
 
@@ -395,6 +395,8 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
         player_id=player_id,
         name=meta.name,
         owner=history.owner(state, player_id),
+        moves=history.moves(client, state, player_id),
+        moves_tab=HISTORY_TAB,
         tabs=[WEEK_TAB, GAME_LOG_TAB, SEASONS_TAB, HISTORY_TAB, NEWS_TAB],
         position=meta.position,
         team=(team := meta.team),

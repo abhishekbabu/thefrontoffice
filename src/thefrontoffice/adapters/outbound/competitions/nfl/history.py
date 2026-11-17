@@ -9,10 +9,11 @@ mistake it was.
 import logging
 from collections.abc import Mapping
 
+from thefrontoffice.adapters.outbound.competitions.nfl.league import activity_rows
 from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueMove, NFLSource, Team
-from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, moment
+from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.domain.errors import PlatformError
-from thefrontoffice.domain.models import Stat
+from thefrontoffice.domain.models import ActivityRow, Stat
 
 logger = logging.getLogger(__name__)
 
@@ -26,26 +27,24 @@ def owner(state: Week, player_id: str) -> str:
     return state.team_name(holder) if holder else FREE_AGENT
 
 
-def history(client: NFLSource, state: Week, player_id: str) -> list[Stat]:
-    """His draft pick, then each move this season, oldest first, each with the team that made it.
+def moves(client: NFLSource, state: Week, player_id: str) -> list[ActivityRow]:
+    """Each move this season he was part of, oldest first, as the league's activity shows it.
 
-    A week whose moves would not load is left out rather than failing the
-    drawer, and the draft likewise: the rest of the record is still true.
+    The same rows, so one opens the same drawer from his page as from the
+    league's. A week whose moves would not load is left out rather than
+    failing the drawer: the rest of the record is still true.
     """
     by_roster = {team.roster_id: team for team in state.rosters}
-    lines = _drafted(client, state, player_id, by_roster)
-    weeks = list(range(1, state.week + 1))
-    moves = client.get_transactions_bulk(state.league.league_id, weeks)
-    for week, error in moves.failures.items():
+    batch = client.get_transactions_bulk(state.league.league_id, list(range(1, state.week + 1)))
+    for week, error in batch.failures.items():
         logger.warning(f"Leaving week {week} out of a player's history: {error}")
-    dated = sorted(
-        ((t.when, week, t) for week, ts in moves.values.items() for t in ts if _involves(t, player_id)),
-        key=lambda entry: entry[0],
-    )
-    for when, week, move in dated:
-        label = " · ".join(part for part in (f"Week {week}", moment(when)) if part)
-        lines.append(Stat(label=label, value=_said(move, player_id, state, by_roster)))
-    return lines
+    involved = [t for ts in batch.values.values() for t in ts if _involves(t, player_id)]
+    return [row for _, row in sorted(activity_rows(involved, state, by_roster), key=lambda pair: pair[0])]
+
+
+def drafted(client: NFLSource, state: Week, player_id: str) -> list[Stat]:
+    """Where the league's draft took him, "Undrafted", or nothing where the league has no draft."""
+    return _drafted(client, state, player_id, {team.roster_id: team for team in state.rosters})
 
 
 def _drafted(client: NFLSource, state: Week, player_id: str, by_roster: Mapping[int, Team]) -> list[Stat]:
@@ -72,21 +71,6 @@ def _drafted(client: NFLSource, state: Week, player_id: str, by_roster: Mapping[
 
 def _involves(move: LeagueMove, player_id: str) -> bool:
     return player_id in move.adds or player_id in move.drops
-
-
-def _said(move: LeagueMove, player_id: str, state: Week, by_roster: Mapping[int, Team]) -> str:
-    """One move as it happened to him: who took him, who let him go."""
-    to = _team(move.adds[player_id], state, by_roster) if player_id in move.adds else ""
-    left = _team(move.drops[player_id], state, by_roster) if player_id in move.drops else ""
-    if move.kind == "trade":
-        return f"Traded from {left} to {to}" if left and to else f"Traded to {to or left}"
-    if to:
-        bid = f" for ${move.bid}" if move.bid else ""
-        how = {"waiver": f"Claimed off waivers{bid}", "free_agent": "Added as a free agent"}.get(
-            move.kind, "Moved by the commissioner"
-        )
-        return f"{how} by {to}"
-    return f"Dropped by {left}"
 
 
 def _team(roster_id: int, state: Week, by_roster: Mapping[int, Team]) -> str:

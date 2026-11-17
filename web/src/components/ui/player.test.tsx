@@ -3,27 +3,19 @@ import type { Capabilities, Competition, League, PlayerDetail } from "@/lib/api"
 import { keys } from "@/lib/queries";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { offlineClient, press, render, settle } from "@/test/render";
+import { playerDetail } from "@/test/players";
 
 const NFL = { key: "nfl-sleeper" } as Competition;
 const LEAGUE = { league_id: "900" } as League;
-const ALLEN: PlayerDetail = {
+const ALLEN: PlayerDetail = playerDetail({
   player_id: "17",
   name: "Josh Allen",
   position: "QB",
   team: "BUF",
   team_name: "Buffalo Bills",
-  team_logo_url: "",
   headline: "24.1",
   headline_label: "proj pts",
-  note: "",
-  url: "",
-  image_url: "",
-  tone: "neutral",
-  owner: "",
-  tabs: [],
-  groups: [],
-  tables: [],
-};
+});
 
 function Roster() {
   const { openPlayer, drawer } = usePlayerDrawer(NFL, LEAGUE);
@@ -86,5 +78,44 @@ describe("the player drawer", () => {
     await settle();
     expect(dialog.textContent).toContain("Round 1");
     expect(dialog.textContent).not.toContain("Projected");
+  });
+
+  it("opens a move on his history the way Activity does", async () => {
+    const traded = playerDetail({
+      ...ALLEN,
+      tabs: ["This week", "History"],
+      moves_tab: "History",
+      groups: [{ title: "Week 11", tab: "", note: "", stats: [{ label: "Projected", value: "24.1", tone: "neutral", url: "" }] }],
+      moves: [
+        {
+          when: "19 Sep",
+          who: "Rival ↔ Me",
+          what: "Trade",
+          detail: "+Josh Allen · +Bad RB",
+          is_mine: true,
+          bid: "",
+          moves: [
+            { player_id: "17", player: "Josh Allen", position: "QB", team: "BUF", change: "added", manager: "Me" },
+            { player_id: "rb2", player: "Bad RB", position: "RB", team: "MIA", change: "added", manager: "Rival" },
+          ],
+        },
+      ],
+    });
+    const client = offlineClient();
+    client.setQueryData<Capabilities>(keys.capabilities, { ai: false, limits: { judged: 10 } });
+    client.setQueryData(keys.player(NFL.key, LEAGUE.league_id, ALLEN.player_id), traded);
+    const { container } = await render(<Roster />, client);
+
+    container.querySelector("button")!.click();
+    await settle();
+    const drawer = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    drawer.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1]!.click();
+    await settle();
+    const row = [...drawer.querySelectorAll<HTMLElement>("[role=button]")].find((el) => el.textContent?.includes("Trade"))!;
+    row.click();
+    await settle();
+
+    const move = document.querySelector("[aria-label='Trade by Rival ↔ Me']");
+    expect(move?.textContent).toContain("To Rival");
   });
 });
