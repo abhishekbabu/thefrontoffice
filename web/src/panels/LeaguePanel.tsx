@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { m } from "motion/react";
-import { GitCompareArrows, X } from "lucide-react";
+import { GitCompareArrows } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { href } from "@/lib/route";
@@ -22,7 +22,7 @@ import { rise } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { Tabs } from "@/components/ui/tabs";
 import { LeagueHeader } from "@/components/ui/page-header";
-import { SlideOver } from "@/components/ui/dialog";
+import { SlideOver, SlideOverHeader } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 
 /**
@@ -303,15 +303,11 @@ function MoveDetail({
   const players = new Set(move.moves.map((m) => m.player_id).filter(Boolean)).size;
   return (
     <>
-      <div className="sticky top-0 z-10 flex items-start gap-4 border-b border-border bg-popover px-5 py-4">
-        <div className="min-w-0 flex-1">
-          <h2 className="font-display text-[20px] font-semibold leading-tight tracking-tight">
-            {move.what} · {move.who}
-          </h2>
-          <p className="mt-0.5 font-mono text-[12px] text-muted-foreground">
-            {[move.when, move.bid && `won for ${move.bid}`].filter(Boolean).join(" · ")}
-          </p>
-        </div>
+      <SlideOverHeader
+        title={`${move.what} · ${move.who}`}
+        meta={[move.when, move.bid && `won for ${move.bid}`].filter(Boolean).join(" · ")}
+        onClose={onClose}
+      >
         {players > 1 && (
           <IconButton
             label={players > MAX_COMPARED ? `Compare the first ${MAX_COMPARED}` : "Compare these players"}
@@ -319,8 +315,7 @@ function MoveDetail({
             onClick={onCompare}
           />
         )}
-        <IconButton label="Close" side="left" icon={<X />} onClick={onClose} />
-      </div>
+      </SlideOverHeader>
       <div className="flex flex-col gap-4 p-5">
         {sections(move).map(({ title, moves }) => (
           <ListCard key={title} title={title} count={`${moves.length}`}>

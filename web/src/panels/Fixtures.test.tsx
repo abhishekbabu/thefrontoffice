@@ -13,6 +13,8 @@ const game = (extra: Partial<Match> = {}): Match => ({
   home_score: null,
   away_score: null,
   kickoff: null,
+  yours: [],
+  theirs: [],
   ...extra,
 });
 
@@ -33,5 +35,16 @@ describe("Games", () => {
     const { container } = await render(<Games rows={[game({ kickoff: iso })]} />);
     expect(container.textContent).toContain(kickoff(iso));
     expect(kickoff(iso)).toContain(new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }));
+  });
+
+  it("opens a game only where somebody's players are in it", async () => {
+    const opened: Match[] = [];
+    const mine = game({ home: "DAL", yours: [{ player_id: "1", name: "Lamb", detail: "WR · starting" }] });
+    const { container } = await render(<Games rows={[mine, game()]} onOpen={(g) => opened.push(g)} />);
+
+    const rows = [...container.querySelectorAll<HTMLElement>("[role=button]")];
+    expect(rows).toHaveLength(1);
+    rows[0]!.click();
+    expect(opened.map((g) => g.home)).toEqual(["DAL"]);
   });
 });

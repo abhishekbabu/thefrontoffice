@@ -430,3 +430,12 @@ def test_in_a_league_whose_regulars_never_miss_a_backup_adds_nothing() -> None:
     without = _mine_against_theirs(_every_regular_plays_every_week(_with_backup_qb(_with_playoffs(7), False)))
 
     assert with_backup == pytest.approx(without)
+
+
+def test_a_game_lists_your_players_in_it_starters_first_and_your_opponents() -> None:
+    matches = nfl_provider(at_week(2)).schedule("L1").matches  # BUF at MIA
+    game = next(m for m in matches if m.yours)
+
+    assert [(p.player_id, p.detail.split(" · ")[1]) for p in game.yours] == [("qb1", "starting"), ("rb1", "bench")]
+    assert all(p.player_id == "rb2" for p in game.theirs)
+    assert all(not m.yours and not m.theirs for m in matches if m.tone == "neutral")

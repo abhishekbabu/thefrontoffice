@@ -13,7 +13,7 @@ from thefrontoffice.adapters.outbound.competitions.dates import parse_day, weekd
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, ruled_out
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooPlayer
-from thefrontoffice.domain.models import CategoryLine, Match, Side, Spot, Stat, Tone
+from thefrontoffice.domain.models import CategoryLine, Match, PlayerRef, Side, Spot, Stat, Tone
 
 BENCH = "BN"
 """Yahoo's slot for a player on the roster but not in the day's lineup."""
@@ -107,17 +107,23 @@ STATUS = {"in_game": "live", "complete": "final"}
 """Sleeper's game status, in the word a fixture row shows; a game still to come shows none."""
 
 
-def match(game: ScheduledGame, clubs: set[str]) -> Match:
-    """One real game, marked where a club you hold a player from is in it.
+def match(game: ScheduledGame, roster: Sequence[YahooPlayer]) -> Match:
+    """One real game, with your players in it.
 
     Sleeper publishes the day and a status, and no score.
     """
     day = parse_day(game.date)
-    yours = bool({game.home.upper(), game.away.upper()} & clubs)
+    clubs = {game.home.upper(), game.away.upper()}
+    yours = [
+        PlayerRef(player_id=p.player_key, name=p.name, detail=f"{p.position} · {p.slot or 'bench'}")
+        for p in roster
+        if p.team.upper() in clubs
+    ]
     return Match(
         label=weekday_day_month(day) if day else game.date,
         home=game.home,
         away=game.away,
         detail=" · ".join(part for part in (STATUS.get(game.status, ""), "yours" if yours else "") if part),
         tone="good" if yours else "neutral",
+        yours=yours,
     )

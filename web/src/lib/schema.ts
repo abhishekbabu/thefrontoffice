@@ -1036,6 +1036,16 @@ export interface components {
              * @description When it starts, in UTC, for the page to show in the viewer's own zone.
              */
             kickoff: string | null;
+            /**
+             * Yours
+             * @description Your players in this game, starters first. Empty where you have none.
+             */
+            yours: components["schemas"]["PlayerRef"][];
+            /**
+             * Theirs
+             * @description Your opponent's players in this game, starters first; empty where none.
+             */
+            theirs: components["schemas"]["PlayerRef"][];
         };
         /**
          * Move

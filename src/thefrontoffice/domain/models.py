@@ -1127,6 +1127,12 @@ class Match(BaseModel):
     kickoff: datetime | None = Field(
         default=None, description="When it starts, in UTC, for the page to show in the viewer's own zone."
     )
+    yours: list[PlayerRef] = Field(
+        default_factory=list, description="Your players in this game, starters first. Empty where you have none."
+    )
+    theirs: list[PlayerRef] = Field(
+        default_factory=list, description="Your opponent's players in this game, starters first; empty where none."
+    )
 
 
 class ActivityMove(BaseModel):

@@ -26,6 +26,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Projection,
     Team,
     active,
+    fielded,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.outcomes import UNDER_WAY
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS
@@ -51,6 +52,7 @@ from thefrontoffice.domain.models import (
     LeagueSchedule,
     Match,
     Outcome,
+    PlayerRef,
     ScheduleRow,
     SeasonInput,
     StandingRow,
@@ -225,12 +227,15 @@ def matches(state: Week, games: Sequence[Game], board: Mapping[str, ScoreboardGa
     The whole slate rather than only the clubs you hold: which of them matters
     changes with every waiver, and it is one cached request either way.
     """
-    mine = {p.team for p in state.projected}
+    mine = _by_club(state, state.roster)
+    rivals = _by_club(state, state.opponent) if state.opponent else {}
     rows = []
     for game in games:
         espn = board.get(game.home)
         played = espn if espn and espn.state != "pre" else None
-        yours = bool({game.home, game.away} & mine)
+        clubs = (game.home, game.away)
+        players = [p for club in clubs for p in mine.get(club, [])]
+        yours = bool(players)
         rows.append(
             Match(
                 label=day(game.date),
@@ -241,10 +246,27 @@ def matches(state: Week, games: Sequence[Game], board: Mapping[str, ScoreboardGa
                 home_score=played.home_score if played else None,
                 away_score=played.away_score if played else None,
                 kickoff=espn.kickoff if espn else None,
+                yours=players,
+                theirs=[p for club in clubs for p in rivals.get(club, [])],
             )
         )
     # A game ESPN gave no time for goes after those it did, in the schedule's order.
     return sorted(rows, key=lambda m: m.kickoff or LATER)
+
+
+def _by_club(state: Week, team: Team) -> dict[str, list[PlayerRef]]:
+    """A team's players by their NFL club, starters first, each saying where he sits."""
+    starting, held = set(team.starter_ids), set(team.reserve_ids)
+    by_club: dict[str, list[PlayerRef]] = {}
+    for pid in sorted(fielded(team), key=lambda pid: pid not in starting):
+        meta = state.players.get(pid)
+        if meta is None:
+            continue
+        where = "starting" if pid in starting else "reserve" if pid in held else "bench"
+        by_club.setdefault(meta.team, []).append(
+            PlayerRef(player_id=pid, name=meta.name, detail=f"{meta.position} · {where}")
+        )
+    return by_club
 
 
 def _activity(client: NFLSource, state: Week) -> list[ActivityRow]:
