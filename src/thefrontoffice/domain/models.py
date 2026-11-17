@@ -1028,6 +1028,8 @@ class Match(BaseModel):
     away: str
     detail: str = Field(default="", description="Difficulty, status, or whatever that competition reads off a fixture.")
     tone: Tone = "neutral"
+    home_score: int | None = Field(default=None, description="Points on the board once it has kicked off.")
+    away_score: int | None = None
 
 
 class ActivityMove(BaseModel):

@@ -56,14 +56,16 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
   );
 }
 
-function Games({ rows }: { rows: Match[] }) {
+export function Games({ rows }: { rows: Match[] }) {
   return (
     <ListCard title="Fixtures" count={`${rows.length} games`}>
       {rows.map((row, i) => (
         <ListRow key={`${row.home}-${row.away}-${i}`}>
           <span className="w-36 shrink-0 font-mono text-[11px] text-muted-foreground">{row.label}</span>
           <span className="min-w-0 flex-1 font-mono text-[12.5px]">
-            {row.away} <span className="text-muted-foreground">at</span> {row.home}
+            <Side club={row.away} score={row.away_score} other={row.home_score} />{" "}
+            <span className="text-muted-foreground">at</span>{" "}
+            <Side club={row.home} score={row.home_score} other={row.away_score} />
           </span>
           {row.detail && (
             <span className={cn("shrink-0 font-mono text-[11px]", toneText(row.tone, "text-muted-foreground"))}>
@@ -73,5 +75,16 @@ function Games({ rows }: { rows: Match[] }) {
         </ListRow>
       ))}
     </ListCard>
+  );
+}
+
+/** A club, and its score once the game has kicked off; the side ahead in weight, which reads without color. */
+function Side({ club, score, other }: { club: string; score?: number | null; other?: number | null }) {
+  if (score == null) return <>{club}</>;
+  const ahead = other != null && score > other;
+  return (
+    <span className={cn(ahead && "font-semibold")}>
+      {club} <span className="tabular-nums">{score}</span>
+    </span>
   );
 }

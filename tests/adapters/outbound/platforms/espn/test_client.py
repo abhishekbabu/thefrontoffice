@@ -90,13 +90,22 @@ def test_an_unreadable_club_list_is_an_error_not_an_empty_league(tmp_path: Path)
 # ── the scoreboard ──────────────────────────────────────────────────────
 
 
-def _event(home: str, away: str, state: str, period: int = 0, clock: float = 0.0, label: str = "") -> dict[str, Any]:
+def _event(
+    home: str,
+    away: str,
+    state: str,
+    period: int = 0,
+    clock: float = 0.0,
+    label: str = "",
+    score: tuple[str, str] | None = None,
+) -> dict[str, Any]:
+    scored = ({"score": score[0]}, {"score": score[1]}) if score else ({}, {})
     return {
         "competitions": [
             {
                 "competitors": [
-                    {"homeAway": "home", "team": {"abbreviation": home}},
-                    {"homeAway": "away", "team": {"abbreviation": away}},
+                    {"homeAway": "home", "team": {"abbreviation": home}, **scored[0]},
+                    {"homeAway": "away", "team": {"abbreviation": away}, **scored[1]},
                 ]
             }
         ],
@@ -105,10 +114,16 @@ def _event(home: str, away: str, state: str, period: int = 0, clock: float = 0.0
 
 
 def test_the_scoreboard_says_where_each_game_is(tmp_path: Path) -> None:
-    board = {"events": [_event("DET", "GB", "in", 3, 782.0, "13:02 - 3rd"), {"competitions": []}]}
+    board = {
+        "events": [
+            _event("DET", "GB", "in", 3, 782.0, "13:02 - 3rd", score=("17", "10")),
+            _event("NYJ", "NE", "pre", label="Sun 1:00 PM"),
+            {"competitions": []},
+        ]
+    }
     client, session = _client({"/scoreboard": board}, tmp_path)
 
-    [game] = client.get_scoreboard(NFL, "2026", 7)
+    game, before = client.get_scoreboard(NFL, "2026", 7)
 
     assert (game.home, game.away, game.state, game.period, game.clock, game.label) == (
         "DET",
@@ -118,6 +133,9 @@ def test_the_scoreboard_says_where_each_game_is(tmp_path: Path) -> None:
         782.0,
         "13:02 - 3rd",
     )
+    assert (game.home_score, game.away_score) == (17, 10)
+    # ESPN sends no score before kickoff.
+    assert (before.home_score, before.away_score) == (0, 0)
     assert any("week=7" in url for url in session.requests)
 
 

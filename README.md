@@ -52,7 +52,7 @@ team and league pages.
 
 The pages are **Matchup** (the week, its lineups and to-do list), **Schedule**
 (your season week by week, with the trade deadline marked), **Fixtures** (the
-real games, yours highlighted), **My team** (the squad and the weeks ahead),
+real games, yours highlighted, each with its score once it kicks off), **My team** (the squad and the weeks ahead),
 **Trades** (where a competition finds them, under the deadline), **Free agents**
 and **League** (the table, every roster, and recent activity; an activity row
 opens the move in full, by who got whom).

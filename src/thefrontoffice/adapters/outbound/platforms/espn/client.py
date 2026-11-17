@@ -136,6 +136,8 @@ def _game(event: Any) -> ScoreboardGame | None:
     try:
         competition = event["competitions"][0]
         sides = {c["homeAway"]: str(c["team"]["abbreviation"]) for c in competition["competitors"]}
+        # A string on the wire, and absent before kickoff.
+        scores = {c["homeAway"]: int(c.get("score") or 0) for c in competition["competitors"]}
         status = event.get("status") or {}
         return ScoreboardGame(
             home=sides["home"],
@@ -144,6 +146,8 @@ def _game(event: Any) -> ScoreboardGame | None:
             period=int(status.get("period") or 0),
             clock=float(status.get("clock") or 0.0),
             label=str((status.get("type") or {}).get("shortDetail") or ""),
+            home_score=scores["home"],
+            away_score=scores["away"],
         )
     except KeyError, IndexError, TypeError, ValueError:
         logger.debug(f"Skipping an unreadable ESPN scoreboard event: {str(event)[:200]}")

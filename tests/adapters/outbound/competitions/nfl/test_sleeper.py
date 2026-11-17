@@ -1150,11 +1150,23 @@ def test_a_weeks_games_say_where_each_stands_and_which_you_have_players_in() -> 
     client = _week_five()
     client.season_schedule = [*WEEK_5, ScheduledGame(week=5, date="2026-10-11", home="NYJ", away="NE")]
     espn = FakeESPN()
-    espn.weekly_scoreboards = {5: [ScoreboardGame("BUF", "MIA", "post", label="Final")]}
+    espn.weekly_scoreboards = {
+        5: [
+            ScoreboardGame("BUF", "MIA", "post", label="Final", home_score=27, away_score=20),
+            ScoreboardGame("NYJ", "NE", "pre", label="Sun 1:00 PM"),
+        ]
+    }
 
-    games = {(g.home, g.away): (g.detail, g.tone) for g in nfl_provider(client, espn).games_of("L1", 5)}
+    games = {
+        (g.home, g.away): (g.detail, g.tone, g.home_score, g.away_score)
+        for g in nfl_provider(client, espn).games_of("L1", 5)
+    }
 
-    assert games == {("BUF", "MIA"): ("Final · you have players", "good"), ("NYJ", "NE"): ("", "neutral")}
+    # A game yet to kick off has no score rather than a nil-nil one.
+    assert games == {
+        ("BUF", "MIA"): ("Final · you have players", "good", 27, 20),
+        ("NYJ", "NE"): ("", "neutral", None, None),
+    }
 
 
 def test_a_week_of_games_outside_the_season_is_refused() -> None:

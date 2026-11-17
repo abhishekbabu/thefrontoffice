@@ -956,6 +956,13 @@ export interface components {
              * @enum {string}
              */
             tone: "neutral" | "good" | "warning";
+            /**
+             * Home Score
+             * @description Points on the board once it has kicked off.
+             */
+            home_score: number | null;
+            /** Away Score */
+            away_score: number | null;
         };
         /**
          * Move
