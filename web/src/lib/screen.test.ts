@@ -5,10 +5,10 @@ const GIBBS: Shown = { subject: { kind: "player", key: "9509" }, label: "Jahmyr 
 
 describe("onScreen", () => {
   it("puts the page in view first", () => {
-    const shown = onScreen({ page: "competition", competition: "nfl-sleeper", leagueId: "1", view: "team" }, [GIBBS]);
+    const shown = onScreen({ page: "competition", competition: "nfl-sleeper", leagueId: "1", view: "rosters" }, [GIBBS]);
 
     expect(shown.map((s) => s.subject)).toEqual([
-      { kind: "page", key: "team" },
+      { kind: "page", key: "rosters" },
       { kind: "player", key: "9509" },
     ]);
   });

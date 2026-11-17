@@ -22,7 +22,8 @@ import { Assistant } from "@/components/ui/assistant";
 const ScoutPanel = lazy(() => import("@/panels/Scout").then((m) => ({ default: m.ScoutPanel })));
 const LeaguePanel = lazy(() => import("@/panels/LeaguePanel").then((m) => ({ default: m.LeaguePanel })));
 const FreeAgentsPanel = lazy(() => import("@/panels/FreeAgents").then((m) => ({ default: m.FreeAgentsPanel })));
-const TeamPanel = lazy(() => import("@/panels/Team").then((m) => ({ default: m.TeamPanel })));
+const RostersPanel = lazy(() => import("@/panels/Rosters").then((m) => ({ default: m.RostersPanel })));
+const ActivityPanel = lazy(() => import("@/panels/Activity").then((m) => ({ default: m.ActivityPanel })));
 const SchedulePanel = lazy(() => import("@/panels/Schedule").then((m) => ({ default: m.SchedulePanel })));
 const FixturesPanel = lazy(() => import("@/panels/Fixtures").then((m) => ({ default: m.FixturesPanel })));
 const ComparePanel = lazy(() => import("@/panels/Compare").then((m) => ({ default: m.ComparePanel })));
@@ -40,9 +41,10 @@ const PANELS: Record<View, (props: PanelProps) => React.ReactNode> = {
   matchup: ScoutPanel,
   schedule: SchedulePanel,
   fixtures: FixturesPanel,
-  team: TeamPanel,
+  rosters: RostersPanel,
   trades: TradesPanel,
   "free-agents": FreeAgentsPanel,
+  activity: ActivityPanel,
   league: LeaguePanel,
   compare: ComparePanel,
 };

@@ -371,8 +371,13 @@ class OutlookProvider(Protocol):
     capability arrives per competition.
     """
 
-    def weeks_ahead(self, league_id: str) -> Outlook:
-        """The next few weeks, soonest first; none once the season has no weeks left."""
+    def weeks_ahead(self, league_id: str, team_id: str = "") -> Outlook:
+        """The next few weeks of one roster, yours where `team_id` is empty, soonest first;
+        none once the season has no weeks left.
+
+        Raises:
+            TeamNotFoundError: no team in the league has that id.
+        """
         ...
 
 

@@ -138,11 +138,11 @@ async function main() {
         await shoot(`${name}-free-agents`);
       }
       if (wanted("team")) {
-        await go("team");
+        await go("rosters");
         await shoot(`${name}-team`);
       }
       if (wanted("player")) {
-        await go("team");
+        await go("rosters");
         await page.waitForTimeout(500);
         // Open the first row, which is the whole point of the table being one.
         const row = page.locator("tbody tr").first();

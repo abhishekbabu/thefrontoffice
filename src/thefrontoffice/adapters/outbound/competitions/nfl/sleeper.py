@@ -50,6 +50,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Phase,
     PlayerInfo,
     Projection,
+    Team,
     Trending,
     active,
     fielded,
@@ -232,12 +233,22 @@ class SleeperNFLProvider:
     def roster_of(self, league_id: str, team_id: str) -> list[PlayerCard]:
         """Somebody else's squad, in the same columns as your own."""
         state = self._week(league_id)
-        roster = next((r for r in state.rosters if str(r.roster_id) == team_id), None)
-        if roster is None:
-            raise TeamNotFoundError(f"roster {team_id}")
+        roster = self._team(state, team_id)
         return views.cards(
             state, views.lineup_order(state, roster), set(roster.starter_ids), reserve=views.held(roster)
         )
+
+    @staticmethod
+    def _team(state: Week, team_id: str) -> Team:
+        """The league's team with that id.
+
+        Raises:
+            TeamNotFoundError: none has it.
+        """
+        roster = next((r for r in state.rosters if str(r.roster_id) == team_id), None)
+        if roster is None:
+            raise TeamNotFoundError(f"roster {team_id}")
+        return roster
 
     def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
         """Everyone nobody in the league holds, best projection first.
@@ -696,9 +707,11 @@ class SleeperNFLProvider:
             self.client, state, seed=self._season_seed(league_id, state), scoreboard=self.scoreboard
         )
 
-    def weeks_ahead(self, league_id: str) -> Outlook:
-        """The next few weeks as your roster stands, with a pickup for any that byes and injuries leave short."""
+    def weeks_ahead(self, league_id: str, team_id: str = "") -> Outlook:
+        """The next few weeks as a roster stands, yours by default, with a pickup for any that byes and injuries leave short."""
         state = self._week(league_id)
+        if team_id:
+            state = replace(state, roster=self._team(state, team_id))
         return outlook.build(self.client, state, self.scoreboard.schedule(state.season), self._signable(state))
 
     def trade_market(self, league_id: str) -> TradeMarket | None:

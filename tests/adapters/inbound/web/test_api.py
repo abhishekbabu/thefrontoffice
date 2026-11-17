@@ -927,7 +927,7 @@ def test_trades_are_priced_in_playoff_chance() -> None:
 
 
 class _OutlookProvider(_SummaryProvider):
-    def weeks_ahead(self, league_id: str) -> Outlook:
+    def weeks_ahead(self, league_id: str, team_id: str = "") -> Outlook:
         from thefrontoffice.domain.models import WeekAhead
 
         week = WeekAhead(
