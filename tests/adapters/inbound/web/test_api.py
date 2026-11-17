@@ -1040,6 +1040,24 @@ def test_a_taken_port_moves_the_server_up_to_a_free_one(taken: int) -> None:
     assert web.is_free(web.HOST, port)
 
 
+def test_a_port_left_with_only_closing_connections_is_free() -> None:
+    """The browser's last connections to a stopped server must not push the next one up a port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        # As uvicorn binds; the connections it accepts inherit the option.
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((web.HOST, 0))
+        server.listen()
+        port = server.getsockname()[1]
+        client = socket.create_connection((web.HOST, port))
+        accepted, _ = server.accept()
+        # The server's side closes first, as a stopped server's does, and lingers.
+        accepted.close()
+    try:
+        assert web.is_free(web.HOST, port)
+    finally:
+        client.close()
+
+
 def test_a_free_port_is_kept_as_configured(taken: int) -> None:
     free = web.free_port(web.HOST, taken)
     assert web.free_port(web.HOST, free) == free
