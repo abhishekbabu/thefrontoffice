@@ -145,6 +145,13 @@ class Side(BaseModel):
     points: str = Field(default="", description="What they have scored, or are projected to.")
     lineup: list[Spot] = Field(default_factory=list)
     bench: list[Spot] = Field(default_factory=list)
+    open_spots: int = Field(
+        default=0,
+        description=(
+            "Roster spots the team holds nobody in, outside its reserve: room to add a player "
+            "without dropping one. 0 where the roster is full or the league does not say."
+        ),
+    )
     reserve: list[Spot] = Field(
         default_factory=list,
         description=(

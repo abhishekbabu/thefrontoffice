@@ -404,6 +404,28 @@ def test_a_player_in_a_reserve_slot_sits_apart_from_the_bench_under_its_slot() -
     assert [(s.player_id, s.slot) for s in side.reserve] == [("rb1", "IR")]
 
 
+def test_each_side_says_how_many_roster_spots_it_holds_nobody_in() -> None:
+    """Eleven spots outside reserve; a player in IR takes none of them."""
+    client = FakeSleeper(
+        projections=DEFAULT_PROJECTIONS,
+        rosters=[
+            SleeperRoster(
+                roster_id=1,
+                owner_id=SLEEPER_USER_ID,
+                player_ids=["qb1", "rb1"],
+                starter_ids=["qb1"],
+                reserve_ids=["rb1"],
+            ),
+            SleeperRoster(roster_id=2, owner_id="them", player_ids=["rb2", "wr9"], starter_ids=["wr9"]),
+        ],
+        matchups=[SleeperMatchup(roster_id=1, matchup_id=7), SleeperMatchup(roster_id=2, matchup_id=7)],
+    )
+    summary = nfl_provider(client).summary("L1")
+
+    assert summary.opponent is not None
+    assert (mine(summary).open_spots, summary.opponent.open_spots) == (10, 9)
+
+
 def test_the_opponents_reserve_slots_sit_apart_from_their_bench_too() -> None:
     """Nothing else tells his bench from his injured reserve: both project nothing."""
     client = FakeSleeper(

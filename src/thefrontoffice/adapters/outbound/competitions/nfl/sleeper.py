@@ -53,6 +53,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     active,
     fielded,
     let_go,
+    open_spots,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     FANTASY_POSITIONS,
@@ -533,6 +534,7 @@ class SleeperNFLProvider:
                 ],
                 bench=bench,
                 reserve=reserve,
+                open_spots=open_spots(state.league, state.roster),
             ),
             opponent=self._opponent(state, live),
             actions=to_do,

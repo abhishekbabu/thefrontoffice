@@ -23,6 +23,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     by_club,
     fielded,
     let_go,
+    open_spots,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     FANTASY_POSITIONS,
@@ -729,6 +730,7 @@ def opponent_side(state: Week, roster: Team, points: float, live: Live) -> Side:
     )
     return Side(
         name=state.team_name(roster),
+        open_spots=open_spots(state.league, roster),
         detail=roster.record,
         points=_opponent_total(points, [by_id[pid] for pid in roster.starter_ids if pid in by_id], live),
         lineup=lineup,

@@ -184,6 +184,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
               lineup={shown.data.mine?.lineup ?? []}
               bench={shown.data.mine?.bench ?? []}
               reserve={shown.data.mine?.reserve ?? []}
+              openSpots={shown.data.mine?.open_spots ?? 0}
               swaps={shown.data.swaps}
               onOpen={openPlayer}
             />

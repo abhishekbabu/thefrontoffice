@@ -1422,6 +1422,12 @@ export interface components {
             /** Bench */
             bench: components["schemas"]["Spot"][];
             /**
+             * Open Spots
+             * @description Roster spots the team holds nobody in, outside its reserve: room to add a player without dropping one. 0 where the roster is full or the league does not say.
+             * @default 0
+             */
+            open_spots: number;
+            /**
              * Reserve
              * @description Players held in a slot that costs no roster spot and cannot start, such as injured reserve or taxi, each row's `slot` naming which. Empty where the league has none.
              */

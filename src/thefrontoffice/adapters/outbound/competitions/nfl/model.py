@@ -189,6 +189,11 @@ def active(team: Team) -> list[str]:
     return [pid for pid in team.player_ids if pid not in team.reserve_ids]
 
 
+def open_spots(league: LeagueRules, team: Team) -> int:
+    """Roster spots the team holds nobody in: the league's, less everyone outside reserve and taxi."""
+    return max(0, league.roster_spots - len(active(team)))
+
+
 def let_go(team: Team) -> list[str]:
     """Who the team started this week but no longer holds: dropped or traded once his game was played.
 
