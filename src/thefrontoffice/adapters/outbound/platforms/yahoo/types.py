@@ -68,6 +68,10 @@ class YahooLeague:
     current_week: int | None = None
     """None between seasons, when there is no week to read."""
 
+    start_week: int | None = None
+    end_week: int | None = None
+    """The season's first and last matchup weeks, playoffs included; None where Yahoo sent neither."""
+
 
 @dataclass(frozen=True)
 class YahooPlayer:
@@ -115,6 +119,16 @@ class YahooTeam:
 
     standing: TeamStanding | None = None
     """None where Yahoo sent no standings with the team."""
+
+
+@dataclass(frozen=True)
+class Pairing:
+    """One week's head-to-head as the scoreboard has it: its dates, and each side's categories."""
+
+    start: date
+    end: date
+    mine: MatchupSide
+    opponent: MatchupSide
 
 
 @dataclass(frozen=True)

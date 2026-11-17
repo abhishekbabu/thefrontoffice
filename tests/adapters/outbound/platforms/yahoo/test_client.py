@@ -395,6 +395,14 @@ def test_no_matchup_this_week_is_an_answer_not_a_failure(tmp_path: Path) -> None
     assert client.get_matchup("t1") is None
 
 
+def test_any_week_of_the_season_is_read_from_that_weeks_scoreboard(tmp_path: Path) -> None:
+    client, ctx = _client(tmp_path, answers={"scoreboard;week=2": scoreboard_xml(start="2026-01-19")})
+    found = client.pairing("t1", 2)
+
+    assert found is not None
+    assert (found.start, found.mine.stats, found.opponent.name) == (date(2026, 1, 19), {"18": "12"}, "Theirs")
+
+
 def test_between_seasons_there_is_no_week_to_ask_about(tmp_path: Path) -> None:
     client, ctx = _client(tmp_path, league=replace(LEAGUE, current_week=None))
 

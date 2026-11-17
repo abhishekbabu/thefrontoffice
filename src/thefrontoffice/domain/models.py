@@ -579,6 +579,21 @@ class WeekRange(BaseModel):
     """The league's final week, its playoffs included."""
 
 
+class CategoryLine(BaseModel):
+    """One scoring category of a category league's week: each side's figure, and who leads it."""
+
+    name: str = Field(description="The category as the league abbreviates it: 'PTS', 'FG%'.")
+    mine: str = Field(description="Your side's figure, as the league prints it; empty before any is recorded.")
+    theirs: str = Field(description="The other side's figure, the same way.")
+    lead: Literal["mine", "theirs", "even"] | None = Field(
+        default=None,
+        description=(
+            "Who is ahead in it, with the category's own direction read in (fewer turnovers wins). "
+            "None where there is nothing yet to compare."
+        ),
+    )
+
+
 class Summary(BaseModel):
     """Where a team stands, with no analysis in it.
 
@@ -619,6 +634,14 @@ class Summary(BaseModel):
         description=(
             "When this week actually is, already formatted — 'Week 1 · Sep 11-15', "
             "'GW 2 · deadline Sat 22 Aug 10:30'. A week with no dates on it is a number."
+        ),
+    )
+
+    categories: list[CategoryLine] = Field(
+        default_factory=list,
+        description=(
+            "A category league's head-to-head, one line per category, in the league's order. "
+            "Empty in a points league, and in a week with no opponent."
         ),
     )
 

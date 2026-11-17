@@ -724,6 +724,32 @@ export interface components {
             limits: components["schemas"]["Limits"];
         };
         /**
+         * CategoryLine
+         * @description One scoring category of a category league's week: each side's figure, and who leads it.
+         */
+        CategoryLine: {
+            /**
+             * Name
+             * @description The category as the league abbreviates it: 'PTS', 'FG%'.
+             */
+            name: string;
+            /**
+             * Mine
+             * @description Your side's figure, as the league prints it; empty before any is recorded.
+             */
+            mine: string;
+            /**
+             * Theirs
+             * @description The other side's figure, the same way.
+             */
+            theirs: string;
+            /**
+             * Lead
+             * @description Who is ahead in it, with the category's own direction read in (fewer turnovers wins). None where there is nothing yet to compare.
+             */
+            lead: ("mine" | "theirs" | "even") | null;
+        };
+        /**
          * ChatRequest
          * @description A question, and what was on screen when it was asked.
          */
@@ -1644,6 +1670,11 @@ export interface components {
              * @default
              */
             window: string;
+            /**
+             * Categories
+             * @description A category league's head-to-head, one line per category, in the league's order. Empty in a points league, and in a week with no opponent.
+             */
+            categories: components["schemas"]["CategoryLine"][];
             /** @description Where this week sits in the season, for paging to another. None in a competition that shows only the week being played. */
             weeks: components["schemas"]["WeekRange"] | null;
         };
