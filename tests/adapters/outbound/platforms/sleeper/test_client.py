@@ -464,6 +464,7 @@ TRANSACTIONS = [
         "adds": {"111": 1},
         "drops": {"222": 1},
         "status_updated": 1787026012872,
+        "settings": {"waiver_bid": 14},
     },
     # A failed claim is not something that happened.
     {"type": "waiver", "status": "failed", "roster_ids": [2], "adds": {"333": 2}, "drops": None},
@@ -479,6 +480,7 @@ def test_only_completed_transactions_are_reported(tmp_path: Path) -> None:
     assert moves[0].adds == {"111": 1}
     assert moves[0].drops == {"222": 1}
     assert moves[0].when == 1787026012872
+    assert moves[0].bid == 14
 
 
 def test_a_null_drops_field_reads_as_nothing_dropped(tmp_path: Path) -> None:

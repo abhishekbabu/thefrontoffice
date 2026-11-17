@@ -11,6 +11,7 @@ import math
 import statistics
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 from thefrontoffice.adapters.outbound.competitions import places
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import SNAP_POSITIONS, misses, season_lines
@@ -38,6 +39,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
 )
 from thefrontoffice.domain.errors import PlatformError
 from thefrontoffice.domain.models import (
+    ActivityMove,
     ActivityRow,
     Fixture,
     LeagueSchedule,
@@ -76,7 +78,7 @@ def build(client: NFLSource, state: Week, schedule: Mapping[int, Sequence[Game]]
         headline=_headline(state, standings),
         season=_season_rows(client, state, schedule),
         standings=standings,
-        matches=_matches(state, schedule),
+        matches=matches(state, schedule.get(state.week, []), {}),
         activity=_activity(client, state),
     )
 
@@ -113,6 +115,7 @@ def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence
                 opponent=state.names.get(opponent.owner_id, "") if opponent else "",
                 detail=playoff or (opponent.record if opponent else "bye" if loaded else UNLOADED),
                 result=_result(sides, week, state.week),
+                marks=["Trade deadline"] if week == state.league.trade_deadline else [],
                 outcome=_outcome(sides, week, state.week),
                 is_current=week == state.week,
                 playoffs=bool(playoff),
@@ -146,7 +149,24 @@ def _headline(state: Week, standings: list[StandingRow]) -> list[Stat]:
     return [
         *places.season(state.roster.record, rank, len(standings)),
         Stat(label="Points for", value=f"{state.roster.points_for:.2f}"),
+        *deadline(state),
     ]
+
+
+def deadline(state: Week) -> list[Stat]:
+    """The league's trade deadline against the week being played; none where the league set none.
+
+    Warned once it is this week or next, because that is when a trade still
+    has to be found, offered and accepted in time.
+    """
+    last = state.league.trade_deadline
+    if not last:
+        return []
+    weeks = last - state.week
+    if weeks < 0:
+        return [Stat(label="Trade deadline", value=f"Week {last} · passed")]
+    when = "this week" if weeks == 0 else "next week" if weeks == 1 else f"in {weeks} weeks"
+    return [Stat(label="Trade deadline", value=f"Week {last} · {when}", tone="warning" if weeks <= 1 else "neutral")]
 
 
 def _result(sides: tuple[Matchup, Matchup] | None, week: int, current: int) -> str:
@@ -186,13 +206,12 @@ def _standings(state: Week) -> list[StandingRow]:
     ]
 
 
-def _matches(state: Week, schedule: Mapping[int, Sequence[Game]]) -> list[Match]:
-    """The real games this fantasy week is made of.
+def matches(state: Week, games: Sequence[Game], where: Mapping[str, str]) -> list[Match]:
+    """The real games a fantasy week is made of, each with where it stands in `where`, by club: 'Final', 'Q3 4:12'.
 
     The whole slate rather than only the clubs you hold: which of them matters
     changes with every waiver, and it is one cached request either way.
     """
-    games = schedule.get(state.week, [])
     mine = {p.team for p in state.projected}
     return [
         Match(
@@ -201,7 +220,11 @@ def _matches(state: Week, schedule: Mapping[int, Sequence[Game]]) -> list[Match]
             away=game.away,
             # Whether you have anyone in it, which is the only thing that makes
             # one game on a Sunday slate different from another.
-            detail="you have players" if {game.home, game.away} & mine else "",
+            detail=" · ".join(
+                part
+                for part in (where.get(game.home, ""), "you have players" if {game.home, game.away} & mine else "")
+                if part
+            ),
             tone="good" if {game.home, game.away} & mine else "neutral",
         )
         for game in games
@@ -235,6 +258,9 @@ def _activity_rows(
     for t in transactions:
         roster = by_roster.get(t.roster_ids[0]) if t.roster_ids else None
         moved = [f"+{_name_of(pid, state)}" for pid in t.adds] + [f"-{_name_of(pid, state)}" for pid in t.drops]
+        moves = [_move(pid, "added", by_roster.get(rid), state) for pid, rid in t.adds.items()] + [
+            _move(pid, "dropped", by_roster.get(rid), state) for pid, rid in t.drops.items()
+        ]
         rows.append(
             (
                 t.when,
@@ -244,10 +270,25 @@ def _activity_rows(
                     what=TRANSACTION_LABELS.get(t.kind, t.kind),
                     detail=", ".join(moved),
                     is_mine=bool(roster) and roster.roster_id == state.roster.roster_id,
+                    moves=moves,
+                    bid=f"${t.bid}" if t.bid else "",
                 ),
             )
         )
     return rows
+
+
+def _move(player_id: str, change: Literal["added", "dropped"], team: Team | None, state: Week) -> ActivityMove:
+    """One player a move moved, as his own row reads him: a player the catalog has never heard of keeps his id."""
+    meta = state.players.get(player_id)
+    return ActivityMove(
+        player_id=player_id,
+        player=meta.name if meta else player_id,
+        position=meta.position if meta else "",
+        team=meta.team if meta else "",
+        change=change,
+        manager=state.team_name(team) if team else "",
+    )
 
 
 def _name_of(player_id: str, state: Week) -> str:

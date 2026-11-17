@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
 import { Sparkles } from "lucide-react";
 import {
   api,
@@ -24,7 +23,7 @@ import { LineupCard, SideCard, Swaps } from "@/components/ui/lineup";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
-import { WeekStepper, useSwipe } from "@/components/ui/week-stepper";
+import { WeekStepper, useWeekParam } from "@/components/ui/week-stepper";
 
 /**
  * Judge again on arrival where the server says the week has moved on from the
@@ -68,10 +67,9 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
   const week = useQuery<Summary, Error>({ queryKey: summaryKey, queryFn: leagueApi.summary });
 
   // The week being played is the summary's; any other is asked for by number.
-  const [params, setParams] = useSearchParams();
-  const range = competition.browses_weeks ? week.data?.weeks : undefined;
-  const asked = Number(params.get("week")) || null;
-  const browsing = range && asked && asked !== range.current && asked >= range.first && asked <= range.last ? asked : null;
+  const { browsing, shown: onWeek, step, swipe } = useWeekParam(
+    competition.browses_weeks ? (week.data?.weeks ?? undefined) : undefined,
+  );
   const other = useQuery<Summary, Error>({
     queryKey: keys.weekOf(competition.key, league.league_id, browsing),
     queryFn: () => leagueApi.weekOf(browsing!),
@@ -80,12 +78,6 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
     placeholderData: keepPreviousData,
   });
   const shown = browsing === null ? week : other;
-  const step = (to: number) => setParams(range && to !== range.current ? { week: String(to) } : {});
-  const onWeek = range ? { ...range, week: browsing ?? range.current } : undefined;
-  const swipe = useSwipe(
-    () => onWeek && onWeek.week < onWeek.last && step(onWeek.week + 1),
-    () => onWeek && onWeek.week > onWeek.first && step(onWeek.week - 1),
-  );
 
   // The last judgment, read without asking the model anything: judging is a
   // click, and a reload should not throw the answer away.

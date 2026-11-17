@@ -16,6 +16,7 @@ from thefrontoffice.domain.models import (
     CompetitionContext,
     ItemState,
     LeagueSchedule,
+    Match,
     MatchupInput,
     Outcomes,
     Outlook,
@@ -387,6 +388,14 @@ class WeekBrowsingProvider(Protocol):
 
         Carries no to-do list: what to do is only ever about the week being
         played, which `WeekProvider.summary` answers.
+
+        Raises:
+            NotFoundError: the season has no such week.
+        """
+        ...
+
+    def games_of(self, league_id: str, week: int) -> list[Match]:
+        """The real games a week of the season is made of, the week being played included.
 
         Raises:
             NotFoundError: the season has no such week.

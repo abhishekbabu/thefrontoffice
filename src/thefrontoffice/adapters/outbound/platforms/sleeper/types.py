@@ -267,6 +267,8 @@ class Transaction:
     drops: dict[str, int]
     when: int = 0
     """Epoch milliseconds, which is a number until somebody formats it."""
+    bid: int = 0
+    """The waiver budget a claim was won with; nought for one that spent none."""
 
 
 # The nine-category box score, as Sleeper keys it. Absent means zero: no key

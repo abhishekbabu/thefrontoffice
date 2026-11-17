@@ -529,6 +529,7 @@ class SleeperClient:
                 adds={str(k): int(v) for k, v in (t.get("adds") or {}).items()},
                 drops={str(k): int(v) for k, v in (t.get("drops") or {}).items()},
                 when=int(t.get("status_updated") or 0),
+                bid=int((t.get("settings") or {}).get("waiver_bid") or 0),
             )
             for t in (data or [])
             # A failed waiver claim is not something that happened.

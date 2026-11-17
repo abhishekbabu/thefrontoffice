@@ -56,6 +56,7 @@ from thefrontoffice.domain.models import (
     ItemMark,
     Judgment,
     LeagueSchedule,
+    Match,
     Outlook,
     PlayerCall,
     PlayerCard,
@@ -399,6 +400,12 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         """
         provider = wiring.registry.find(competition).open_as(WeekBrowsingProvider, "browsing other weeks")
         return provider.week_of(league_id, week)
+
+    @app.get("/api/{competition}/leagues/{league_id}/weeks/{week}/games", response_model=list[Match])
+    def games_of(competition: str, league_id: str, week: int) -> list[Match]:
+        """The real games of any week of the season, the week being played included."""
+        provider = wiring.registry.find(competition).open_as(WeekBrowsingProvider, "browsing other weeks")
+        return provider.games_of(league_id, week)
 
     @app.post("/api/{competition}/leagues/{league_id}/items", response_model=ItemMark)
     def decide(competition: str, league_id: str, decision: ItemDecision) -> ItemMark:

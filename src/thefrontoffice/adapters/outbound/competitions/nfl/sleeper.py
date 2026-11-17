@@ -95,6 +95,7 @@ from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
     LeagueSchedule,
+    Match,
     MatchupInput,
     Outcomes,
     Outlook,
@@ -488,6 +489,14 @@ class SleeperNFLProvider:
     def week_of(self, league_id: str, week: int) -> Summary:
         """Any week of the season as it was played or as it projects: both lineups, and no to-do list."""
         return self._summary(self._week(league_id, week), None)
+
+    def games_of(self, league_id: str, week: int) -> list[Match]:
+        """The real games of any week of the season, each with where it stands and whether you have anyone in it."""
+        state = self._week(league_id)
+        if not 1 <= week <= max(season_end(state.league), state.week):
+            raise NotFoundError(f"week {week} of the {state.season} season")
+        games = self.scoreboard.schedule(state.season).get(week, [])
+        return league.matches(state, games, self.scoreboard.where(state.season, week))
 
     def _summary(self, state: Week, to_do: list[Action] | None) -> Summary:
         live = self.scoreboard.live(state)

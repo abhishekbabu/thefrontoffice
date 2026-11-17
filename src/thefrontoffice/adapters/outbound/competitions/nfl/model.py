@@ -342,6 +342,11 @@ class LeagueMove(Protocol):
         """Epoch milliseconds."""
         ...
 
+    @property
+    def bid(self) -> int:
+        """The waiver budget spent on it; nought for none."""
+        ...
+
 
 class Matchup(Protocol):
     """One team's side of a week's head-to-head: who it plays, what it has scored, and the lineup it set."""

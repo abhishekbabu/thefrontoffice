@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Undo2 } from "lucide-react";
 import type { WeekRange } from "@/lib/api";
 import { IconButton } from "@/components/ui/icon-button";
@@ -93,4 +94,26 @@ export function useSwipe(onNext: () => void, onPrevious: () => void) {
       else onPrevious();
     },
   };
+}
+
+/**
+ * Which week a page shows, named in its address as `?week=7`, against the season's `range`.
+ *
+ * The week being played leaves the parameter off, so its address is the page's
+ * own. A week outside the season is the week being played: an address
+ * somebody trimmed is not an error worth a page. Stepping pushes a history
+ * entry, so Back returns through the weeks visited.
+ */
+export function useWeekParam(range: WeekRange | undefined) {
+  const [params, setParams] = useSearchParams();
+  const asked = Number(params.get("week")) || null;
+  const browsing =
+    range && asked !== null && asked !== range.current && asked >= range.first && asked <= range.last ? asked : null;
+  const step = (to: number) => setParams(range && to !== range.current ? { week: String(to) } : {});
+  const shown = range ? { ...range, week: browsing ?? range.current } : undefined;
+  const swipe = useSwipe(
+    () => shown && shown.week < shown.last && step(shown.week + 1),
+    () => shown && shown.week > shown.first && step(shown.week - 1),
+  );
+  return { browsing, shown, step, swipe };
 }

@@ -37,6 +37,7 @@ from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
     LeagueSchedule,
+    Match,
     MatchupInput,
     Outlook,
     PlayerCall,
@@ -958,6 +959,9 @@ class _BrowsingProvider(_SummaryProvider):
 
         return Summary(window=f"Week {week}", weeks=WeekRange(week=week, current=10, first=1, last=16))
 
+    def games_of(self, league_id: str, week: int) -> list[Match]:
+        return [Match(label=f"Week {week}", home="BUF", away="MIA", detail="Final")]
+
 
 def test_another_week_comes_back_with_where_it_sits_in_the_season() -> None:
     from thefrontoffice.domain.models import Summary
@@ -970,6 +974,14 @@ def test_another_week_comes_back_with_where_it_sits_in_the_season() -> None:
         10,
         None,
     )
+
+
+def test_a_weeks_real_games_come_back_by_number() -> None:
+    from thefrontoffice.domain.models import Summary
+
+    [game] = _client(_BrowsingProvider(Summary())).get("/api/nfl-sleeper/leagues/L1/weeks/4/games").json()
+
+    assert (game["label"], game["detail"]) == ("Week 4", "Final")
 
 
 def test_a_competition_that_cannot_browse_weeks_refuses_as_it_does_trades(client: TestClient) -> None:
