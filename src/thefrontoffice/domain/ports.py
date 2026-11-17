@@ -25,6 +25,7 @@ from thefrontoffice.domain.models import (
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    PlayerRef,
     RangeSearch,
     Remembered,
     SeasonInput,
@@ -400,6 +401,15 @@ class WeekBrowsingProvider(Protocol):
         Raises:
             NotFoundError: the season has no such week.
         """
+        ...
+
+
+@runtime_checkable
+class PlayerSearchProvider(Protocol):
+    """A competition whose players can be found by name, rostered or not: who a comparison adds."""
+
+    def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
+        """Players whose name holds `text`, best known first; none where nobody matches."""
         ...
 
 

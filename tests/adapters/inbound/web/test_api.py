@@ -42,8 +42,10 @@ from thefrontoffice.domain.models import (
     Outlook,
     PlayerCall,
     PlayerCard,
+    PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    PlayerRef,
     Remembered,
     SeasonInput,
     Summary,
@@ -1067,3 +1069,36 @@ def test_no_free_port_in_range_is_an_error_naming_the_setting(taken: int) -> Non
     with pytest.raises(PortInUseError, match="PORT") as raised:
         web.free_port(web.HOST, taken, tries=1)
     assert (raised.value.first, raised.value.last) == (taken, taken)
+
+
+# ── comparing players ───────────────────────────────────────────────────
+
+
+class _Comparable(FakeProvider):
+    """A competition whose every player can be opened and found by name."""
+
+    def player(self, league_id: str, player_id: str) -> PlayerDetail:
+        return PlayerDetail(player_id=player_id, name=f"Player {player_id}", position="WR", team="DAL")
+
+    def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
+        return [PlayerRef(player_id="7", name=f"Found {text}")]
+
+
+def test_players_compare_side_by_side_in_the_order_asked() -> None:
+    body = _client(_Comparable()).get("/api/nfl/leagues/900/compare?ids=2&ids=1").json()
+
+    assert [p["player_id"] for p in body["players"]] == ["2", "1"]
+    assert body["table"]["columns"] == ["Player 2", "Player 1"]
+
+
+def test_more_than_four_players_is_refused() -> None:
+    response = _client(_Comparable()).get("/api/nfl/leagues/900/compare?" + "&".join(f"ids={i}" for i in range(5)))
+
+    assert response.status_code == 422
+
+
+def test_players_are_found_by_name_where_the_competition_can() -> None:
+    assert _client(_Comparable()).get("/api/nfl/leagues/900/players?search=lamb").json() == [
+        {"player_id": "7", "name": "Found lamb", "detail": ""}
+    ]
+    assert _client().get("/api/nfl/leagues/900/players?search=lamb").status_code != 200

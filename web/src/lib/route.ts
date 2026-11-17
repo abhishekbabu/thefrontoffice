@@ -10,7 +10,7 @@
 import { matchPath } from "react-router-dom";
 
 /** Every view a competition has, in the order the rail lists them. */
-export const VIEWS = ["matchup", "schedule", "fixtures", "team", "trades", "free-agents", "league"] as const;
+export const VIEWS = ["matchup", "schedule", "fixtures", "team", "trades", "free-agents", "league", "compare"] as const;
 
 /**
  * One vocabulary rather than two: the id in the code is the word in the URL,
@@ -27,6 +27,7 @@ export const VIEW_LABELS: Record<View, string> = {
   trades: "Trades",
   "free-agents": "Free agents",
   league: "League",
+  compare: "Compare",
 };
 
 /**

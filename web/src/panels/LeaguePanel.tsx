@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { m } from "motion/react";
-import { X } from "lucide-react";
+import { GitCompareArrows, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { MAX_COMPARED, useCompared } from "@/lib/compare";
+import { href } from "@/lib/route";
 import { api, type ActivityRow, type Competition, type League, type LeagueSchedule, type TeamRef } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { StatStrip } from "@/components/ui/stat";
@@ -239,6 +242,13 @@ function Standings({
 function Activity({ competition, league, rows }: { competition: Competition; league: League; rows: ActivityRow[] }) {
   const [open, setOpen] = useState<ActivityRow | null>(null);
   const { openPlayer, drawer } = usePlayerDrawer(competition, league);
+  const compared = useCompared(competition.key, league.league_id);
+  const navigate = useNavigate();
+  /** The move's players, side by side on the Compare page. */
+  const compare = (move: ActivityRow) => {
+    compared.set(move.moves.map((m) => m.player_id).filter(Boolean));
+    navigate(href(competition.key, league.league_id, "compare"));
+  };
   return (
     <>
       <ListCard title="Recent activity" count={`${rows.length} moves`}>
@@ -268,6 +278,7 @@ function Activity({ competition, league, rows }: { competition: Competition; lea
           <MoveDetail
             move={open}
             onClose={() => setOpen(null)}
+            onCompare={() => compare(open)}
             // The move stays open under the player, so closing him returns to it.
             onOpen={openPlayer}
           />
@@ -278,7 +289,18 @@ function Activity({ competition, league, rows }: { competition: Competition; lea
   );
 }
 
-function MoveDetail({ move, onClose, onOpen }: { move: ActivityRow; onClose: () => void; onOpen: (id: string) => void }) {
+function MoveDetail({
+  move,
+  onClose,
+  onOpen,
+  onCompare,
+}: {
+  move: ActivityRow;
+  onClose: () => void;
+  onOpen: (id: string) => void;
+  onCompare: () => void;
+}) {
+  const players = new Set(move.moves.map((m) => m.player_id).filter(Boolean)).size;
   return (
     <>
       <div className="sticky top-0 z-10 flex items-start gap-4 border-b border-border bg-popover px-5 py-4">
@@ -290,6 +312,13 @@ function MoveDetail({ move, onClose, onOpen }: { move: ActivityRow; onClose: () 
             {[move.when, move.bid && `won for ${move.bid}`].filter(Boolean).join(" · ")}
           </p>
         </div>
+        {players > 1 && (
+          <IconButton
+            label={players > MAX_COMPARED ? `Compare the first ${MAX_COMPARED}` : "Compare these players"}
+            icon={<GitCompareArrows />}
+            onClick={onCompare}
+          />
+        )}
         <IconButton label="Close" side="left" icon={<X />} onClick={onClose} />
       </div>
       <div className="flex flex-col gap-4 p-5">

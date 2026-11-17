@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { X } from "lucide-react";
+import { GitCompareArrows, X } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
 import { fade, list, listItem, portrait } from "@/lib/motion";
 import { useLoadedImage } from "@/lib/useLoadedImage";
@@ -11,6 +11,7 @@ import { SlideOver } from "@/components/ui/dialog";
 import { useShown } from "@/lib/screen";
 import { api, type Competition, type League, type PlayerDetail, type Stat, type StatTable } from "@/lib/api";
 import { keys } from "@/lib/queries";
+import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { toneText } from "@/lib/tone";
 import { Badge } from "@/components/ui/badge";
 import { Linked, StatList } from "@/components/ui/stat";
@@ -228,6 +229,7 @@ function PlayerPanel({
   if (playerId) last.current = playerId;
   const shown = playerId ?? last.current;
 
+  const compared = useCompared(competition, league);
   const player = useQuery<PlayerDetail, Error>({
     queryKey: keys.player(competition, league, shown),
     queryFn: () => api.league(competition, league).player(shown),
@@ -299,6 +301,21 @@ function PlayerPanel({
         </div>
 
         <div className="flex shrink-0 items-center">
+          {player.data && (
+            <IconButton
+              label={
+                compared.has(shown)
+                  ? "Remove from compare"
+                  : compared.full
+                    ? `Compare holds ${MAX_COMPARED}`
+                    : "Add to compare"
+              }
+              icon={<GitCompareArrows />}
+              aria-pressed={compared.has(shown)}
+              disabled={!compared.has(shown) && compared.full}
+              onClick={() => (compared.has(shown) ? compared.remove(shown) : compared.add(shown))}
+            />
+          )}
           {player.data?.url && (
             <ExternalLink href={player.data.url} label={`Open ${player.data.name} on the platform`} />
           )}

@@ -37,6 +37,7 @@ from thefrontoffice.adapters.inbound import presenting
 from thefrontoffice.adapters.inbound.conversation import Conversation, Turn
 from thefrontoffice.adapters.inbound.remedies import ErrorBody
 from thefrontoffice.adapters.inbound.web import data
+from thefrontoffice.application import comparing
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import CompetitionEntry, Wiring
 from thefrontoffice.config.env_file import SettingsGroup
@@ -52,6 +53,7 @@ from thefrontoffice.domain.errors import (
     PortInUseError,
 )
 from thefrontoffice.domain.models import (
+    MAX_COMPARED,
     ItemDecision,
     ItemMark,
     Judgment,
@@ -60,10 +62,12 @@ from thefrontoffice.domain.models import (
     Outlook,
     PlayerCall,
     PlayerCard,
+    PlayerComparison,
     PlayerDetail,
     PlayerOrder,
     PlayerPage,
     PlayerQuery,
+    PlayerRef,
     ScoutReport,
     Subject,
     Summary,
@@ -75,6 +79,7 @@ from thefrontoffice.domain.ports import (
     CompetitionProvider,
     LeagueRef,
     OutlookProvider,
+    PlayerSearchProvider,
     TradeMarketProvider,
     WeekBrowsingProvider,
     WireProvider,
@@ -378,6 +383,20 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
     def player(competition: str, league_id: str, player_id: str) -> PlayerDetail:
         """Everything worth knowing about one player, when someone asks."""
         return _provider(competition).player(league_id, player_id)
+
+    @app.get("/api/{competition}/leagues/{league_id}/compare", response_model=PlayerComparison)
+    def compare(competition: str, league_id: str, ids: Annotated[list[str], Query()]) -> PlayerComparison:
+        """Up to four players side by side, from what each one's drawer shows."""
+        if not 1 <= len(ids) <= MAX_COMPARED:
+            raise InvalidRequestError([f"Compare 1 to {MAX_COMPARED} players."])
+        provider = _provider(competition)
+        return comparing.comparison([provider.player(league_id, player_id) for player_id in ids])
+
+    @app.get("/api/{competition}/leagues/{league_id}/players", response_model=list[PlayerRef])
+    def search_players(competition: str, league_id: str, search: str = "") -> list[PlayerRef]:
+        """Players whose name holds `search`, rostered or not, for a comparison to add."""
+        provider = wiring.registry.find(competition).open_as(PlayerSearchProvider, "finding players by name")
+        return provider.search_players(league_id, search)
 
     @app.get("/api/{competition}/leagues/{league_id}/summary", response_model=Summary)
     def summary(competition: str, league_id: str) -> Summary:

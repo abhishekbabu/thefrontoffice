@@ -9,7 +9,13 @@ from pydantic import BaseModel
 
 from thefrontoffice.adapters.inbound.remedies import ErrorBody
 from thefrontoffice.bootstrap import CompetitionEntry
-from thefrontoffice.domain.ports import OutlookProvider, TradeMarketProvider, WeekBrowsingProvider, WireProvider
+from thefrontoffice.domain.ports import (
+    OutlookProvider,
+    PlayerSearchProvider,
+    TradeMarketProvider,
+    WeekBrowsingProvider,
+    WireProvider,
+)
 
 
 class Competition(BaseModel):
@@ -42,6 +48,9 @@ class Competition(BaseModel):
     finds_trades: bool
     """Whether the trades worth offering can be found."""
 
+    searches_players: bool
+    """Whether any player can be found by name, rostered or not: who a comparison adds."""
+
     configured: bool
     """Whether the credentials this competition needs are set."""
 
@@ -70,6 +79,7 @@ def competition(entry: CompetitionEntry) -> Competition:
         plans_weeks=entry.can(OutlookProvider),
         browses_weeks=entry.can(WeekBrowsingProvider),
         finds_trades=entry.can(TradeMarketProvider),
+        searches_players=entry.can(PlayerSearchProvider),
         configured=entry.is_configured(),
         requires=entry.requires,
         blocked=ErrorBody.of(blocker) if blocker else None,

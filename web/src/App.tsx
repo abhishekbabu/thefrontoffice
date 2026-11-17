@@ -25,6 +25,7 @@ const FreeAgentsPanel = lazy(() => import("@/panels/FreeAgents").then((m) => ({ 
 const TeamPanel = lazy(() => import("@/panels/Team").then((m) => ({ default: m.TeamPanel })));
 const SchedulePanel = lazy(() => import("@/panels/Schedule").then((m) => ({ default: m.SchedulePanel })));
 const FixturesPanel = lazy(() => import("@/panels/Fixtures").then((m) => ({ default: m.FixturesPanel })));
+const ComparePanel = lazy(() => import("@/panels/Compare").then((m) => ({ default: m.ComparePanel })));
 const TradesPanel = lazy(() => import("@/panels/Trades").then((m) => ({ default: m.TradesPanel })));
 const SettingsPanel = lazy(() => import("@/panels/Settings").then((m) => ({ default: m.SettingsPanel })));
 const Landing = lazy(() => import("@/panels/Landing").then((m) => ({ default: m.Landing })));
@@ -43,6 +44,7 @@ const PANELS: Record<View, (props: PanelProps) => React.ReactNode> = {
   trades: TradesPanel,
   "free-agents": FreeAgentsPanel,
   league: LeaguePanel,
+  compare: ComparePanel,
 };
 
 export default function App() {
