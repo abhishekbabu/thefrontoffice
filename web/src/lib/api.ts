@@ -25,6 +25,7 @@ export type ItemMark = Schemas["ItemMark"];
 export type League = Schemas["LeagueRef"];
 export type LeagueSchedule = Schemas["LeagueSchedule"];
 export type LoginState = Schemas["LoginState"];
+export type Match = Schemas["Match"];
 export type Move = Schemas["Move"];
 export type Outlook = Schemas["Outlook"];
 export type Judgment = Schemas["Judgment"];
@@ -135,6 +136,8 @@ export function leagueApi(competition: string, league: string) {
     summary: () => request<Ok<"summary">>(`${base}/summary`),
     /** Another week of the season, as played or as it projects; the week being played is `summary`. */
     weekOf: (week: number) => request<Ok<"week_of">>(`${base}/weeks/${week}`),
+    /** The real games of any week of the season, the week being played included. */
+    gamesOf: (week: number) => request<Ok<"games_of">>(`${base}/weeks/${week}/games`),
     schedule: () => request<Ok<"schedule">>(`${base}/schedule`),
     weeksAhead: () => request<Ok<"weeks_ahead">>(`${base}/weeks-ahead`),
     trades: () => request<Ok<"trades">>(`${base}/trades`),

@@ -162,3 +162,26 @@ def test_a_page_priced_to_no_effect_still_has_its_column() -> None:
 
 def test_a_page_never_priced_has_no_chance_column() -> None:
     assert presenting.WIN_COLUMN not in _wire(_Wire("a", priced=False)).players[0].columns
+
+
+def test_your_row_in_the_table_reads_the_chance_the_header_does() -> None:
+    """The header weighs this week by its forecast; your row is the same chance, so it reads the same."""
+    schedule = LeagueSchedule(
+        standings=[
+            StandingRow(rank=1, name="Me", team_id="me", is_mine=True),
+            StandingRow(rank=2, name="Them", team_id="them"),
+        ]
+    )
+    odds = PlayoffOdds(
+        spots=1,
+        teams=[TeamOdds(team_id="me", name="Me", playoffs=0.88), TeamOdds(team_id="them", name="Them", playoffs=0.4)],
+        playoffs=0.88,
+        with_win=0.96,
+        with_loss=0.79,
+        simulations=1,
+    )
+
+    attached = presenting.season(SeasonView(schedule=schedule, odds=odds, win=0.99))
+    header = {s.label: s.value for s in attached.headline}["Playoffs"]
+
+    assert [row.playoffs for row in attached.standings] == [header, "40%"]

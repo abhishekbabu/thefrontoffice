@@ -10,7 +10,7 @@
 import { matchPath } from "react-router-dom";
 
 /** Every view a competition has, in the order the rail lists them. */
-export const VIEWS = ["matchup", "league", "team", "free-agents"] as const;
+export const VIEWS = ["matchup", "schedule", "fixtures", "team", "trades", "free-agents", "league"] as const;
 
 /**
  * One vocabulary rather than two: the id in the code is the word in the URL,
@@ -21,10 +21,21 @@ export type View = (typeof VIEWS)[number];
 /** What each view is called: in the rail, and where the assistant says what it can see. */
 export const VIEW_LABELS: Record<View, string> = {
   matchup: "Matchup",
-  league: "League",
+  schedule: "Schedule",
+  fixtures: "Fixtures",
   team: "My team",
+  trades: "Trades",
   "free-agents": "Free agents",
+  league: "League",
 };
+
+/**
+ * Whether a competition offers a view at all: only one that finds trades has a
+ * Trades page. The rest every competition has, if only to say it is empty.
+ */
+export function offers(competition: { finds_trades: boolean }, view: View): boolean {
+  return view !== "trades" || competition.finds_trades;
+}
 
 /** What a competition opens on, and what an unrecognized view falls back to. */
 export const DEFAULT_VIEW: View = "matchup";

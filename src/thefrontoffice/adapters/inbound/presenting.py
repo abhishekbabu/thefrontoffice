@@ -71,12 +71,16 @@ def season(view: SeasonView) -> LeagueSchedule:
     schedule = view.schedule
     if view.odds is None:
         return schedule
+    chance = chance_now(view.odds, view.win)
+    # Your own row is the header's figure: only your matchup has a forecast to weigh it by,
+    # and one chance shown twice must read the same twice.
     by_team = {t.team_id: t.playoffs for t in view.odds.teams}
     rows = [
-        row.model_copy(update={"playoffs": f"{by_team[row.team_id]:.0%}"}) if row.team_id in by_team else row
+        row.model_copy(update={"playoffs": f"{chance if row.is_mine else by_team[row.team_id]:.0%}"})
+        if row.team_id in by_team
+        else row
         for row in schedule.standings
     ]
-    chance = chance_now(view.odds, view.win)
     headline = [*schedule.headline, Stat(label="Playoffs", value=f"{chance:.0%}", tone=_playoff_tone(chance))]
     return schedule.model_copy(update={"standings": rows, "headline": headline})
 

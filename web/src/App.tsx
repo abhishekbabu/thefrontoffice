@@ -5,7 +5,7 @@ import { Moon, Settings, Sun, Trophy } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
 import { api, type League, type Competition } from "@/lib/api";
 import { keys, useCapabilities } from "@/lib/queries";
-import { DEFAULT_VIEW, LANDING, SETTINGS, VIEWS, VIEW_LABELS, type View, href, parse } from "@/lib/route";
+import { DEFAULT_VIEW, LANDING, SETTINGS, VIEWS, VIEW_LABELS, type View, href, offers, parse } from "@/lib/route";
 import { useTheme } from "@/lib/useTheme";
 import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -23,6 +23,9 @@ const ScoutPanel = lazy(() => import("@/panels/Scout").then((m) => ({ default: m
 const LeaguePanel = lazy(() => import("@/panels/LeaguePanel").then((m) => ({ default: m.LeaguePanel })));
 const FreeAgentsPanel = lazy(() => import("@/panels/FreeAgents").then((m) => ({ default: m.FreeAgentsPanel })));
 const TeamPanel = lazy(() => import("@/panels/Team").then((m) => ({ default: m.TeamPanel })));
+const SchedulePanel = lazy(() => import("@/panels/Schedule").then((m) => ({ default: m.SchedulePanel })));
+const FixturesPanel = lazy(() => import("@/panels/Fixtures").then((m) => ({ default: m.FixturesPanel })));
+const TradesPanel = lazy(() => import("@/panels/Trades").then((m) => ({ default: m.TradesPanel })));
 const SettingsPanel = lazy(() => import("@/panels/Settings").then((m) => ({ default: m.SettingsPanel })));
 const Landing = lazy(() => import("@/panels/Landing").then((m) => ({ default: m.Landing })));
 
@@ -34,9 +37,12 @@ type PanelProps = { competition: Competition; league: League };
  */
 const PANELS: Record<View, (props: PanelProps) => React.ReactNode> = {
   matchup: ScoutPanel,
-  league: LeaguePanel,
+  schedule: SchedulePanel,
+  fixtures: FixturesPanel,
   team: TeamPanel,
+  trades: TradesPanel,
   "free-agents": FreeAgentsPanel,
+  league: LeaguePanel,
 };
 
 export default function App() {
@@ -73,7 +79,8 @@ export default function App() {
       ? ((leagues.data ?? []).find((l) => l.league_id === route.leagueId) ?? leagues.data?.[0])
       : undefined;
 
-  const view = route.page === "competition" ? route.view : DEFAULT_VIEW;
+  // A view this competition does not offer is its default: the effect below then corrects the address.
+  const view = route.page === "competition" && (!active || offers(active, route.view)) ? route.view : DEFAULT_VIEW;
   const ai = useCapabilities().data?.ai ?? false;
 
   // Make the address say what is on screen.
@@ -173,7 +180,7 @@ export default function App() {
             to yet would render as a control that does nothing. */}
         {active && league && (
           <Group label="View">
-            {VIEWS.map((v) => (
+            {VIEWS.filter((v) => offers(active, v)).map((v) => (
               <RailLink key={v} to={href(active.key, league.league_id, v)} active={v === view}>
                 {VIEW_LABELS[v]}
               </RailLink>

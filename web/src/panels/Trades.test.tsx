@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TradeIdea } from "@/lib/api";
-import { theirCase } from "@/panels/Team";
+import { theirCase } from "@/panels/Trades";
 
 const idea = (their_playoffs: number, their_points: number): TradeIdea => ({
   team_id: "2",

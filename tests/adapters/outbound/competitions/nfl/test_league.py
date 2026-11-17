@@ -87,6 +87,39 @@ def test_the_week_being_played_has_no_score_before_anybody_has_scored() -> None:
     assert row.result == ""
 
 
+@pytest.mark.parametrize(
+    ("deadline", "said", "tone"),
+    [
+        (6, "Week 6 · in 3 weeks", "neutral"),
+        (4, "Week 4 · next week", "warning"),
+        (3, "Week 3 · this week", "warning"),
+        (2, "Week 2 · passed", "neutral"),
+    ],
+)
+def test_the_trade_deadline_is_said_against_the_week_being_played(deadline: int, said: str, tone: str) -> None:
+    client = league_client()
+    client.league = replace(client.league, trade_deadline=deadline)
+
+    [stat] = [s for s in nfl_provider(client).schedule("L1").headline if s.label == "Trade deadline"]
+
+    assert (stat.value, stat.tone) == (said, tone)
+
+
+def test_a_league_with_no_trade_deadline_says_nothing_of_one() -> None:
+    headline = nfl_provider(league_client()).schedule("L1").headline
+
+    assert "Trade deadline" not in {stat.label for stat in headline}
+
+
+def test_the_deadlines_week_is_marked_in_the_season() -> None:
+    client = league_client()
+    client.league = replace(client.league, trade_deadline=11)
+
+    marked = [row.label for row in nfl_provider(client).schedule("L1").season if "Trade deadline" in row.marks]
+
+    assert marked == ["Week 11"]
+
+
 def test_the_current_week_is_marked() -> None:
     season = nfl_provider(league_client()).schedule("L1").season
     assert [row.label for row in season if row.is_current] == ["Week 3"]
@@ -142,6 +175,25 @@ def test_activity_names_players_rather_than_identifiers() -> None:
 
     assert activity[0].detail == "+Star QB, -Good RB"
     assert activity[0].is_mine
+
+
+def test_a_move_carries_each_player_it_moved_and_whose_roster_took_him() -> None:
+    trade = Transaction(kind="trade", roster_ids=[1, 2], adds={"qb1": 1, "rb2": 2}, drops={"rb2": 1, "qb1": 2}, when=1)
+    claim = Transaction(kind="waiver", roster_ids=[1], adds={"wr9": 1}, drops={}, when=2, bid=14)
+    client = league_client(transactions={3: [trade, claim]})
+
+    by_kind = {row.what: row for row in nfl_provider(client).schedule("L1").activity}
+
+    traded = {(m.player, m.change, m.manager) for m in by_kind["Trade"].moves}
+    assert traded == {
+        ("Star QB", "added", "Me"),
+        ("Bad RB", "added", "Roster 2"),
+        ("Bad RB", "dropped", "Me"),
+        ("Star QB", "dropped", "Roster 2"),
+    }
+    [claimed] = by_kind["Waiver"].moves
+    assert (claimed.player_id, claimed.position, claimed.team, by_kind["Waiver"].bid) == ("wr9", "WR", "NYJ", "$14")
+    assert by_kind["Trade"].bid == ""
 
 
 def test_a_failed_activity_fetch_leaves_the_rest_of_the_page() -> None:

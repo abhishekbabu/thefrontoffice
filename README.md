@@ -47,7 +47,15 @@ player. It runs on your own machine against NFL on
 - **Dismiss or snooze** any item. It comes back if its reason changes.
 - **Light and dark mode**, several palettes, and a terminal CLI.
 
-NFL has the deepest analysis. FPL and NBA share the matchup, team and league pages.
+NFL has the deepest analysis. FPL and NBA share the matchup, schedule, fixtures,
+team and league pages.
+
+The pages are **Matchup** (the week, its lineups and to-do list), **Schedule**
+(your season week by week, with the trade deadline marked), **Fixtures** (the
+real games, yours highlighted), **My team** (the squad and the weeks ahead),
+**Trades** (where a competition finds them, under the deadline), **Free agents**
+and **League** (the table, every roster, and recent activity; an activity row
+opens the move in full, by who got whom).
 
 On NFL the matchup page pages through the season: the arrows beside the week,
 the ← and → keys, or a sideways swipe. A week played shows the lineups that

@@ -1,16 +1,9 @@
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { m } from "motion/react";
-import {
-  api,
-  type Competition,
-  type League,
-  type LeagueSchedule,
-  type ScheduleRow,
-  type TeamRef,
-} from "@/lib/api";
+import { X } from "lucide-react";
+import { api, type ActivityRow, type Competition, type League, type LeagueSchedule, type TeamRef } from "@/lib/api";
 import { keys } from "@/lib/queries";
-import { toneText, type Variant } from "@/lib/tone";
 import { StatStrip } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -23,23 +16,21 @@ import { ExternalLink } from "@/components/ui/external-link";
 import { rise } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { LeagueHeader } from "@/components/ui/page-header";
-import { Label } from "@/components/ui/label";
+import { SlideOver } from "@/components/ui/dialog";
+import { IconButton } from "@/components/ui/icon-button";
 
 /**
- * The league beyond this week.
+ * The rest of the league: the table, everybody's rosters, and what they have done.
  *
- * Questions that are all "how is the season going" rather than "what do I
- * do about Sunday", which is what the week view is for. They are tabs rather
- * than four cards down one page because they are read one at a time — you come
- * here to check the table, or to see what you missed, not both.
+ * Everyone else, where Schedule and Fixtures are your own season and its real
+ * games. Tabs rather than three cards down one page because they are read one
+ * at a time — you come here to check the table, or to see what you missed.
  */
-type TabId = "season" | "standings" | "rosters" | "matches" | "activity";
+type TabId = "standings" | "rosters" | "activity";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "season", label: "Season" },
   { id: "standings", label: "Table" },
   { id: "rosters", label: "Rosters" },
-  { id: "matches", label: "Fixtures" },
   { id: "activity", label: "Activity" },
 ];
 
@@ -62,7 +53,7 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
   const available = TABS.filter((tab) =>
     tab.id === "rosters" ? (teams.data?.length ?? 0) > 0 : (schedule.data?.[tab.id]?.length ?? 0) > 0,
   );
-  const [tab, setTab] = useState<TabId>("season");
+  const [tab, setTab] = useState<TabId>("standings");
   const [team, setTeam] = useState<string | null>(null);
   const current = available.find((t) => t.id === tab)?.id ?? available[0]?.id;
 
@@ -95,22 +86,20 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
 
       {schedule.data && !current && (
         <Empty
-          title="Nothing beyond this week"
-          detail="This platform publishes no season, table or fixture list through its API."
+          title="Nothing about the league"
+          detail="This platform publishes no table, rosters or activity through its API."
         />
       )}
 
       {schedule.data && current && (
         <m.div key={current} variants={rise} initial="hidden" animate="shown" className="p-5">
-          {current === "season" && <Season rows={schedule.data.season} />}
           {current === "standings" && (
             <Standings rows={schedule.data.standings} onOpen={(id) => { setTeam(id); setTab("rosters"); }} />
           )}
           {current === "rosters" && (
             <Rosters competition={competition} league={league} teams={teams.data ?? []} team={team} onPick={setTeam} />
           )}
-          {current === "matches" && <Matches rows={schedule.data.matches} />}
-          {current === "activity" && <Activity rows={schedule.data.activity} />}
+          {current === "activity" && <Activity competition={competition} league={league} rows={schedule.data.activity} />}
         </m.div>
       )}
     </>
@@ -185,52 +174,6 @@ function Rosters({
   );
 }
 
-const OUTCOME: Record<NonNullable<ScheduleRow["outcome"]>, { letter: string; variant: Variant }> = {
-  won: { letter: "W", variant: "ok" },
-  lost: { letter: "L", variant: "fail" },
-  drawn: { letter: "D", variant: "muted" },
-};
-
-function Season({ rows }: { rows: LeagueSchedule["season"] }) {
-  return (
-    <ListCard title="Your season" count={`${rows.length} weeks`}>
-      {rows.map((row, i) => (
-        <Fragment key={row.label}>
-          {/* The bracket is a different competition from the weeks before it, so it reads as one. */}
-          {row.playoffs && !rows[i - 1]?.playoffs && (
-            <Label as="div" className="border-t border-border bg-muted px-4 py-1.5">
-              Playoffs
-            </Label>
-          )}
-        <ListRow current={row.is_current}>
-          <Label className="w-24 shrink-0">{row.label}</Label>
-          <span className="w-32 shrink-0 font-mono text-[11px] text-muted-foreground">{row.date}</span>
-          <span className="min-w-0 flex-1 truncate">
-            {row.opponent || <span className="text-muted-foreground">{row.detail || "—"}</span>}
-          </span>
-          {/* Said, not only shaded — the tint is reinforcement. */}
-          {row.is_current && (
-            <Badge variant="muted" appearance="label" className="shrink-0">
-              this week
-            </Badge>
-          )}
-          {row.opponent && row.detail && (
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{row.detail}</span>
-          )}
-          {/* Won and lost are carried by the letter as well as the color: state
-              in color alone is state a colorblind reader cannot see. */}
-          {row.result && (
-            <Badge variant={row.outcome ? OUTCOME[row.outcome].variant : "muted"} appearance="pill" className="tabular-nums">
-              {row.outcome ? OUTCOME[row.outcome].letter : row.is_current && "live"} {row.result}
-            </Badge>
-          )}
-        </ListRow>
-        </Fragment>
-      ))}
-    </ListCard>
-  );
-}
-
 function Standings({
   rows,
   onOpen,
@@ -277,39 +220,110 @@ function Standings({
   );
 }
 
-function Matches({ rows }: { rows: LeagueSchedule["matches"] }) {
+/**
+ * What the league did lately, newest first; a row opens the move in full.
+ *
+ * The row says it in one line — "+A, -B" — which is all a scan needs. The
+ * move itself names each player and whose roster took or lost him, which a
+ * trade needs, and any bid behind a claim. A player there opens his page.
+ */
+function Activity({ competition, league, rows }: { competition: Competition; league: League; rows: ActivityRow[] }) {
+  const [open, setOpen] = useState<ActivityRow | null>(null);
+  const { openPlayer, drawer } = usePlayerDrawer(competition, league);
   return (
-    <ListCard title="This week's fixtures" count={`${rows.length} matches`}>
-      {rows.map((row, i) => (
-        <ListRow key={`${row.home}-${row.away}-${i}`}>
-          <span className="w-36 shrink-0 font-mono text-[11px] text-muted-foreground">{row.label}</span>
-          <span className="min-w-0 flex-1 font-mono text-[12.5px]">
-            {row.away} <span className="text-muted-foreground">at</span> {row.home}
-          </span>
-          {row.detail && (
-            <span className={cn("shrink-0 font-mono text-[11px]", toneText(row.tone, "text-muted-foreground"))}>
-              {row.detail}
-            </span>
-          )}
-        </ListRow>
-      ))}
-    </ListCard>
+    <>
+      <ListCard title="Recent activity" count={`${rows.length} moves`}>
+        {rows.map((row, i) => (
+          <ListRow
+            key={`${row.when}-${i}`}
+            current={row.is_mine}
+            onClick={row.moves.length ? () => setOpen(row) : undefined}
+          >
+            <span className="w-16 shrink-0 font-mono text-[11px] text-muted-foreground">{row.when}</span>
+            <span className="w-32 shrink-0 truncate">{row.who}</span>
+            <Badge variant="muted" appearance="label" className="shrink-0">
+              {row.what}
+            </Badge>
+            <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">{row.detail}</span>
+            {row.bid && <span className="shrink-0 font-mono text-[11px] tabular-nums">{row.bid}</span>}
+          </ListRow>
+        ))}
+      </ListCard>
+      <SlideOver
+        open={open !== null}
+        onClose={() => setOpen(null)}
+        label={open ? `${open.what} by ${open.who}` : "Move"}
+        className="max-w-lg border-l border-border"
+      >
+        {open && (
+          <MoveDetail
+            move={open}
+            onClose={() => setOpen(null)}
+            onOpen={(id) => {
+              setOpen(null);
+              openPlayer(id);
+            }}
+          />
+        )}
+      </SlideOver>
+      {drawer}
+    </>
   );
 }
 
-function Activity({ rows }: { rows: LeagueSchedule["activity"] }) {
+function MoveDetail({ move, onClose, onOpen }: { move: ActivityRow; onClose: () => void; onOpen: (id: string) => void }) {
   return (
-    <ListCard title="Recent activity" count={`${rows.length} moves`}>
-      {rows.map((row, i) => (
-        <ListRow key={`${row.when}-${i}`} current={row.is_mine}>
-          <span className="w-16 shrink-0 font-mono text-[11px] text-muted-foreground">{row.when}</span>
-          <span className="w-32 shrink-0 truncate">{row.who}</span>
-          <Badge variant="muted" appearance="label" className="shrink-0">
-            {row.what}
-          </Badge>
-          <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">{row.detail}</span>
-        </ListRow>
-      ))}
-    </ListCard>
+    <>
+      <div className="sticky top-0 z-10 flex items-start gap-4 border-b border-border bg-popover px-5 py-4">
+        <div className="min-w-0 flex-1">
+          <h2 className="font-display text-[20px] font-semibold leading-tight tracking-tight">
+            {move.what} · {move.who}
+          </h2>
+          <p className="mt-0.5 font-mono text-[12px] text-muted-foreground">
+            {[move.when, move.bid && `won for ${move.bid}`].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+        <IconButton label="Close" side="left" icon={<X />} onClick={onClose} />
+      </div>
+      <div className="flex flex-col gap-4 p-5">
+        {sections(move).map(({ title, moves }) => (
+          <ListCard key={title} title={title} count={`${moves.length}`}>
+            {moves.map((m) => (
+              <ListRow key={`${m.change}-${m.player_id}`} onClick={() => onOpen(m.player_id)}>
+                {/* Said, not only colored: which way he went is the whole row. */}
+                <Badge variant={m.change === "added" ? "ok" : "fail"} appearance="label" className="shrink-0">
+                  {m.change === "added" ? "+" : "−"}
+                </Badge>
+                <span className="min-w-0 flex-1 truncate">{m.player}</span>
+                <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                  {[m.position, m.team].filter(Boolean).join(" · ")}
+                </span>
+              </ListRow>
+            ))}
+          </ListCard>
+        ))}
+      </div>
+    </>
   );
+}
+
+/**
+ * A move's players in the sections that make it readable.
+ *
+ * A trade reads by who got whom — one section per manager, holding the players
+ * his roster took — since "added" and "dropped" each mix both sides. Anything
+ * one manager did alone reads as what he added and what he let go.
+ */
+export function sections(move: ActivityRow): { title: string; moves: ActivityRow["moves"] }[] {
+  const managers = [...new Set(move.moves.filter((m) => m.change === "added").map((m) => m.manager))];
+  if (managers.length > 1) {
+    return managers.map((manager) => ({
+      title: `To ${manager}`,
+      moves: move.moves.filter((m) => m.change === "added" && m.manager === manager),
+    }));
+  }
+  return [
+    { title: "Added", moves: move.moves.filter((m) => m.change === "added") },
+    { title: "Dropped", moves: move.moves.filter((m) => m.change === "dropped") },
+  ].filter((section) => section.moves.length > 0);
 }

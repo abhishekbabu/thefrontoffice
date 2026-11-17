@@ -219,6 +219,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/{competition}/leagues/{league_id}/weeks/{week}/games": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Games Of
+         * @description The real games of any week of the season, the week being played included.
+         */
+        get: operations["games_of"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/{competition}/leagues/{league_id}/items": {
         parameters: {
             query?: never;
@@ -607,6 +627,41 @@ export interface components {
             readonly fingerprint: string;
         };
         /**
+         * ActivityMove
+         * @description One player a league move moved: who, and which way, for which team.
+         */
+        ActivityMove: {
+            /**
+             * Player Id
+             * @description Identifier this platform uses for the player, so his page opens.
+             */
+            player_id: string;
+            /** Player */
+            player: string;
+            /**
+             * Position
+             * @default
+             */
+            position: string;
+            /**
+             * Team
+             * @description His real-world club.
+             * @default
+             */
+            team: string;
+            /**
+             * Change
+             * @enum {string}
+             */
+            change: "added" | "dropped";
+            /**
+             * Manager
+             * @description Whose roster gained or lost him: two in a trade.
+             * @default
+             */
+            manager: string;
+        };
+        /**
          * ActivityRow
          * @description One thing somebody in the league did.
          */
@@ -639,6 +694,17 @@ export interface components {
              * @default false
              */
             is_mine: boolean;
+            /**
+             * Moves
+             * @description Each player it moved, for the move's own page. Empty where unknown.
+             */
+            moves: components["schemas"]["ActivityMove"][];
+            /**
+             * Bid
+             * @description What a waiver claim was won with, already formatted; empty for none.
+             * @default
+             */
+            bid: string;
         };
         /**
          * CallsRequest
@@ -1203,6 +1269,11 @@ export interface components {
              */
             is_current: boolean;
             /**
+             * Marks
+             * @description What else falls in the week, in the league's words: 'Trade deadline'. Empty for most.
+             */
+            marks: string[];
+            /**
              * Playoffs
              * @default false
              */
@@ -1531,7 +1602,7 @@ export interface components {
             kind: "task" | "player" | "page";
             /**
              * Key
-             * @description The to-do item's key, the player's id, or one of ('matchup', 'league', 'team', 'free-agents').
+             * @description The to-do item's key, the player's id, or one of ('matchup', 'schedule', 'fixtures', 'team', 'trades', 'free-agents', 'league').
              */
             key: string;
         };
@@ -2561,6 +2632,84 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Summary"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    games_of: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition: string;
+                league_id: string;
+                week: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"][];
                 };
             };
             /** @description Bad Request */

@@ -979,6 +979,10 @@ class ScheduleRow(BaseModel):
     )
     is_current: bool = False
     """The week in progress, so a long table can say where you are in it."""
+    marks: list[str] = Field(
+        default_factory=list,
+        description="What else falls in the week, in the league's words: 'Trade deadline'. Empty for most.",
+    )
     playoffs: bool = False
     """A bracket week rather than the regular season, so the two can be read apart."""
 
@@ -1026,6 +1030,17 @@ class Match(BaseModel):
     tone: Tone = "neutral"
 
 
+class ActivityMove(BaseModel):
+    """One player a league move moved: who, and which way, for which team."""
+
+    player_id: str = Field(description="Identifier this platform uses for the player, so his page opens.")
+    player: str
+    position: str = ""
+    team: str = Field(default="", description="His real-world club.")
+    change: Literal["added", "dropped"]
+    manager: str = Field(default="", description="Whose roster gained or lost him: two in a trade.")
+
+
 class ActivityRow(BaseModel):
     """One thing somebody in the league did."""
 
@@ -1035,6 +1050,10 @@ class ActivityRow(BaseModel):
     detail: str = Field(default="", description="The players involved.")
     is_mine: bool = False
     """Your own move, so it can be found among everyone else's."""
+    moves: list[ActivityMove] = Field(
+        default_factory=list, description="Each player it moved, for the move's own page. Empty where unknown."
+    )
+    bid: str = Field(default="", description="What a waiver claim was won with, already formatted; empty for none.")
 
 
 class LeagueSchedule(BaseModel):
@@ -1075,7 +1094,7 @@ class ScoutReport(BaseModel):
     )
 
 
-PAGES = ("matchup", "league", "team", "free-agents")
+PAGES = ("matchup", "schedule", "fixtures", "team", "trades", "free-agents", "league")
 """The pages of a league, by the name each has in its address."""
 
 

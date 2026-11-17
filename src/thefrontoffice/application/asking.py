@@ -46,7 +46,9 @@ ACTIVITY_SHOWN = 15
 
 PAGE_NAMES = {
     "matchup": "the matchup — lineup, opponent and to-do list",
-    "league": "the league — standings, season and activity",
+    "schedule": "their season — week by week, and the trade deadline",
+    "fixtures": "the real games of the week",
+    "league": "the league — standings, rosters and activity",
     "team": "their roster",
     "free-agents": "the free agents",
 }
@@ -169,7 +171,7 @@ class AskEngine:
             return f"the {page} page", ""
         if page == "matchup":
             facts = self._week_text(league_id)
-        elif page == "league":
+        elif page in ("league", "schedule", "fixtures"):
             facts = _schedule_text(self.provider.schedule(league_id))
         elif page == "team":
             # The table, and what each row rests on — role, matchup, news —
