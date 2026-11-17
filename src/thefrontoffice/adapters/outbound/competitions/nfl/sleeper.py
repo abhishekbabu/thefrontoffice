@@ -378,7 +378,7 @@ class SleeperNFLProvider:
             # regular season ends; a name there is not who you will play.
             matchups = []
         if week < current:
-            rosters = as_played(rosters, matchups)
+            rosters = as_played(self._records_before(league_id, week, rosters, league), matchups)
         rosters = with_lineups(rosters, matchups)
 
         catalog = self.client.get_nfl_players()
@@ -428,6 +428,20 @@ class SleeperNFLProvider:
             best_points=best_points,
             on_bench=round(best_points - current_points, 2),
         )
+
+    def _records_before(
+        self, league_id: str, week: int, rosters: list[SleeperRoster], league: SleeperLeague
+    ) -> list[SleeperRoster]:
+        """The records as they stood going into `week`; today's where a week before it will not load.
+
+        A count missing a week would be the record of no moment at all; today's
+        is at least one the team really had.
+        """
+        before = self.client.get_matchups_bulk(league_id, list(range(1, week)))
+        if before.failures:
+            logger.warning(f"Showing today's records on week {week}: weeks {sorted(before.failures)} would not load")
+            return rosters
+        return as_of(rosters, before.values, league)
 
     def _matchups(self, league_id: str, week: int) -> list[SleeperMatchup]:
         """The week's head-to-heads; none where they will not load, which leaves the week without an opponent."""
@@ -670,10 +684,35 @@ def banked(
     A playoff week is never counted: the records are the regular season's.
     """
     per_week = 2 if league.median_game else 1
-    if (league.playoff_week_start and week >= league.playoff_week_start) or any(
-        r.wins + r.losses + r.ties >= week * per_week for r in rosters
-    ):
+    if _in_playoffs(week, league) or any(r.wins + r.losses + r.ties >= week * per_week for r in rosters):
         return list(rosters)
+    return _counted(rosters, matchups, league)
+
+
+def as_of(
+    rosters: Sequence[SleeperRoster], by_week: Mapping[int, Sequence[SleeperMatchup]], league: SleeperLeague
+) -> list[SleeperRoster]:
+    """The records as they stood going into a week: each of `by_week`'s results counted from none.
+
+    What a week browsed back to is read against — its place in the table, the
+    record beside each lineup — rather than the record the season has reached
+    since. A playoff week is never counted, as in `banked`.
+    """
+    counted = [replace(r, wins=0, losses=0, ties=0, points_for=0.0) for r in rosters]
+    for week, matchups in sorted(by_week.items()):
+        if not _in_playoffs(week, league):
+            counted = _counted(counted, matchups, league)
+    return counted
+
+
+def _in_playoffs(week: int, league: SleeperLeague) -> bool:
+    return bool(league.playoff_week_start) and week >= league.playoff_week_start
+
+
+def _counted(
+    rosters: Sequence[SleeperRoster], matchups: Sequence[SleeperMatchup], league: SleeperLeague
+) -> list[SleeperRoster]:
+    """Each record with one week's result added: its head-to-head, and its median game where the league plays one."""
     sides = {mine.roster_id: (mine, theirs) for a, b in pairings(matchups) for mine, theirs in ((a, b), (b, a))}
     scores = [entry.points for entry in matchups]
     middle = statistics.median(scores) if league.median_game and scores else None
