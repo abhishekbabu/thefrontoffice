@@ -37,6 +37,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     week_dates,
     weeks_played,
 )
+from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
 from thefrontoffice.domain.errors import PlatformError
 from thefrontoffice.domain.models import (
     ActivityMove,
@@ -206,29 +207,37 @@ def _standings(state: Week) -> list[StandingRow]:
     ]
 
 
-def matches(state: Week, games: Sequence[Game], where: Mapping[str, str]) -> list[Match]:
-    """The real games a fantasy week is made of, each with where it stands in `where`, by club: 'Final', 'Q3 4:12'.
+def matches(state: Week, games: Sequence[Game], played: Mapping[str, ScoreboardGame]) -> list[Match]:
+    """The real games a fantasy week is made of, each kicked-off one with its score and where it stands, by club.
 
     The whole slate rather than only the clubs you hold: which of them matters
     changes with every waiver, and it is one cached request either way.
     """
     mine = {p.team for p in state.projected}
-    return [
-        Match(
-            label=day(game.date),
-            home=game.home,
-            away=game.away,
-            # Whether you have anyone in it, which is the only thing that makes
-            # one game on a Sunday slate different from another.
-            detail=" · ".join(
-                part
-                for part in (where.get(game.home, ""), "you have players" if {game.home, game.away} & mine else "")
-                if part
-            ),
-            tone="good" if {game.home, game.away} & mine else "neutral",
+    rows = []
+    for game in games:
+        board = played.get(game.home)
+        rows.append(
+            Match(
+                label=day(game.date),
+                home=game.home,
+                away=game.away,
+                # Whether you have anyone in it, which is the only thing that makes
+                # one game on a Sunday slate different from another.
+                detail=" · ".join(
+                    part
+                    for part in (
+                        board.label if board else "",
+                        "you have players" if {game.home, game.away} & mine else "",
+                    )
+                    if part
+                ),
+                tone="good" if {game.home, game.away} & mine else "neutral",
+                home_score=board.home_score if board else None,
+                away_score=board.away_score if board else None,
+            )
         )
-        for game in games
-    ]
+    return rows
 
 
 def _activity(client: NFLSource, state: Week) -> list[ActivityRow]:

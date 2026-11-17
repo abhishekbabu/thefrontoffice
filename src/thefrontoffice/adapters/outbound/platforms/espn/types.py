@@ -25,7 +25,7 @@ class NewsArticle:
 
 @dataclass(frozen=True)
 class ScoreboardGame:
-    """One game as ESPN's scoreboard has it right now: who, which period, and the clock.
+    """One game as ESPN's scoreboard has it right now: who, the score, which period, and the clock.
 
     As ESPN reports it, for any sport it covers: how long a period is, and so
     how much of a game is left, is the sport's question, not the platform's.
@@ -41,6 +41,9 @@ class ScoreboardGame:
     """Seconds left in the period."""
     label: str = ""
     """How ESPN shows it: 'Q3 13:02', 'Halftime', 'Final'."""
+    home_score: int = 0
+    away_score: int = 0
+    """Points on the board; nought for each side before kickoff."""
 
 
 @dataclass(frozen=True)

@@ -421,11 +421,9 @@ class Scoreboard:
             board[game.home].state == "post" if game.home in board else game.status == COMPLETE for game in games
         )
 
-    def where(self, season: str, week: int) -> dict[str, str]:
-        """Where each club's game of a week stands, as ESPN shows it — 'Final', 'Q3 13:02' — once it has kicked off."""
-        return {
-            club: game.label for club, game in self._board(season, week).items() if game.state != "pre" and game.label
-        }
+    def played(self, season: str, week: int) -> dict[str, ScoreboardGame]:
+        """Each club's game of a week that has kicked off, as ESPN has it: the score, and 'Final' or 'Q3 13:02'."""
+        return {club: game for club, game in self._board(season, week).items() if game.state != "pre"}
 
     def _board(self, season: str, week: int) -> dict[str, ScoreboardGame]:
         if (season, week) not in self._boards:
