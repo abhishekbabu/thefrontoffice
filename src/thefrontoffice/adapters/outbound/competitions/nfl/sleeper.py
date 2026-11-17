@@ -511,7 +511,7 @@ class SleeperNFLProvider:
         if not 1 <= week <= max(season_end(state.league), state.week):
             raise NotFoundError(f"week {week} of the {state.season} season")
         games = self.scoreboard.schedule(state.season).get(week, [])
-        return league.matches(state, games, self.scoreboard.played(state.season, week))
+        return league.matches(state, games, self.scoreboard.week_board(state.season, week))
 
     def _summary(self, state: Week, to_do: list[Action] | None) -> Summary:
         live = self.scoreboard.live(state)

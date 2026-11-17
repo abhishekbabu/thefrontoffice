@@ -11,6 +11,7 @@ import math
 import statistics
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Literal
 
 from thefrontoffice.adapters.outbound.competitions import places
@@ -211,8 +212,12 @@ def _standings(state: Week) -> list[StandingRow]:
     ]
 
 
-def matches(state: Week, games: Sequence[Game], played: Mapping[str, ScoreboardGame]) -> list[Match]:
-    """The real games a fantasy week is made of, each kicked-off one with its score and where it stands, by club.
+LATER = datetime.max.replace(tzinfo=UTC)
+"""Where a game with no known start sorts: after every one with one."""
+
+
+def matches(state: Week, games: Sequence[Game], board: Mapping[str, ScoreboardGame]) -> list[Match]:
+    """The real games a fantasy week is made of, in kickoff order, each kicked-off one with its score.
 
     The whole slate rather than only the clubs you hold: which of them matters
     changes with every waiver, and it is one cached request either way.
@@ -220,28 +225,23 @@ def matches(state: Week, games: Sequence[Game], played: Mapping[str, ScoreboardG
     mine = {p.team for p in state.projected}
     rows = []
     for game in games:
-        board = played.get(game.home)
+        espn = board.get(game.home)
+        played = espn if espn and espn.state != "pre" else None
+        yours = bool({game.home, game.away} & mine)
         rows.append(
             Match(
                 label=day(game.date),
                 home=game.home,
                 away=game.away,
-                # Whether you have anyone in it, which is the only thing that makes
-                # one game on a Sunday slate different from another.
-                detail=" · ".join(
-                    part
-                    for part in (
-                        board.label if board else "",
-                        "you have players" if {game.home, game.away} & mine else "",
-                    )
-                    if part
-                ),
-                tone="good" if {game.home, game.away} & mine else "neutral",
-                home_score=board.home_score if board else None,
-                away_score=board.away_score if board else None,
+                detail=" · ".join(part for part in (played.label if played else "", "yours" if yours else "") if part),
+                tone="good" if yours else "neutral",
+                home_score=played.home_score if played else None,
+                away_score=played.away_score if played else None,
+                kickoff=espn.kickoff if espn else None,
             )
         )
-    return rows
+    # A game ESPN gave no time for goes after those it did, in the schedule's order.
+    return sorted(rows, key=lambda m: m.kickoff or LATER)
 
 
 def _activity(client: NFLSource, state: Week) -> list[ActivityRow]:

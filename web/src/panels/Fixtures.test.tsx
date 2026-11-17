@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Match } from "@/lib/api";
 import { Games } from "@/panels/Fixtures";
+import { kickoff } from "@/lib/format";
 import { render } from "@/test/render";
 
 const game = (extra: Partial<Match> = {}): Match => ({
@@ -11,6 +12,7 @@ const game = (extra: Partial<Match> = {}): Match => ({
   tone: "neutral",
   home_score: null,
   away_score: null,
+  kickoff: null,
   ...extra,
 });
 
@@ -24,5 +26,12 @@ describe("Games", () => {
     const { container } = await render(<Games rows={[game()]} />);
     expect(container.textContent).toContain("MIA at BUF");
     expect(container.textContent).not.toMatch(/\d+ at/);
+  });
+
+  it("shows the start time where there is one, in the viewer's zone, and the day otherwise", async () => {
+    const iso = "2026-11-22T18:00:00Z";
+    const { container } = await render(<Games rows={[game({ kickoff: iso })]} />);
+    expect(container.textContent).toContain(kickoff(iso));
+    expect(kickoff(iso)).toContain(new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }));
   });
 });

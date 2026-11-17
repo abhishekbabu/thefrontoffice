@@ -122,7 +122,12 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
     <>
       {/* The week is what this page is about, so it belongs in the header
           rather than a row down among the figures. */}
-      <LeagueHeader league={league} meta={[shown.data?.window, league.detail].filter(Boolean).join(" · ")}>
+      <LeagueHeader
+        league={league}
+        meta={[shown.data?.weeks ? undated(shown.data.window) : shown.data?.window, league.detail]
+          .filter(Boolean)
+          .join(" · ")}
+      >
         {onWeek && <WeekStepper range={onWeek} onStep={step} />}
       </LeagueHeader>
       <StatStrip stats={shown.data?.headline ?? []} />
@@ -277,4 +282,9 @@ export function Categories({ lines, theirs }: { lines: CategoryLine[]; theirs: s
       })}
     </Card>
   );
+}
+
+/** A window without its leading "Week 11" or "GW 11": the stepper beside it already says which. */
+export function undated(window: string): string {
+  return window.replace(/^(Week|GW) \d+( · )?/, "");
 }

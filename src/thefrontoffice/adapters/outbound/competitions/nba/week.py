@@ -118,6 +118,6 @@ def match(game: ScheduledGame, clubs: set[str]) -> Match:
         label=weekday_day_month(day) if day else game.date,
         home=game.home,
         away=game.away,
-        detail=" · ".join(part for part in (STATUS.get(game.status, ""), "you have players" if yours else "") if part),
+        detail=" · ".join(part for part in (STATUS.get(game.status, ""), "yours" if yours else "") if part),
         tone="good" if yours else "neutral",
     )

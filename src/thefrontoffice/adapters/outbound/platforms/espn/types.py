@@ -44,6 +44,8 @@ class ScoreboardGame:
     home_score: int = 0
     away_score: int = 0
     """Points on the board; nought for each side before kickoff."""
+    kickoff: datetime | None = None
+    """When it starts, in UTC; None where ESPN gave no time."""
 
 
 @dataclass(frozen=True)

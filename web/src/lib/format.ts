@@ -31,3 +31,11 @@ export function moment(iso: string, now: Date = new Date()): string {
     ? time
     : `${when.toLocaleDateString([], { weekday: "short" })} ${time}`;
 }
+
+/** "Sun 23 Nov, 1:00 PM" in the viewer's own zone. */
+export function kickoff(iso: string): string {
+  const when = new Date(iso);
+  const day = when.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  const time = when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${day}, ${time}`;
+}
