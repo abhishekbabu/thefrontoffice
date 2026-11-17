@@ -72,8 +72,8 @@ def season(view: SeasonView) -> LeagueSchedule:
     if view.odds is None:
         return schedule
     chance = chance_now(view.odds, view.win)
-    # Your own row is the header's figure: only your matchup has a forecast to weigh it by,
-    # and one chance shown twice must read the same twice.
+    # Your own row is the header's figure: every team's week is played as it is going, but
+    # only yours has a forecast of its own lineups, and one chance shown twice must read the same twice.
     by_team = {t.team_id: t.playoffs for t in view.odds.teams}
     rows = [
         row.model_copy(update={"playoffs": f"{chance if row.is_mine else by_team[row.team_id]:.0%}"})

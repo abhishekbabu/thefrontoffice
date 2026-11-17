@@ -21,7 +21,9 @@ player. It runs on your own machine against NFL on
   names the fix, who to drop and the deadline. NBA flags a player an IL slot
   no longer takes, which holds every add on Yahoo.
 - **Win chance and playoff odds**: the week is simulated 10,000 times and the
-  season 5,000 times, and every move shows what it does to both.
+  season 5,000 times, and every move shows what it does to both. Once a week's
+  games kick off, every team's week in the season is its score so far plus
+  what its lineup has left, so the whole table moves with Sunday.
 - **Weeks ahead and trades**: the next four weeks as your roster stands, and
   trades near even in worth, one for one or two of yours for one of theirs.
   Each says what it does to your playoff chance and to your lineup in the

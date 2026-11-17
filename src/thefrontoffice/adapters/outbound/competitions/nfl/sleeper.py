@@ -640,7 +640,9 @@ class SleeperNFLProvider:
     def season_input(self, league_id: str) -> SeasonInput | None:
         """The rest of the regular season, ready to simulate to the playoffs."""
         state = self._week(league_id)
-        return league.season_input(self.client, state, seed=self._season_seed(league_id, state))
+        return league.season_input(
+            self.client, state, seed=self._season_seed(league_id, state), scoreboard=self.scoreboard
+        )
 
     def weeks_ahead(self, league_id: str) -> Outlook:
         """The next few weeks as your roster stands, with a pickup for any that byes and injuries leave short."""
@@ -650,7 +652,7 @@ class SleeperNFLProvider:
     def trade_market(self, league_id: str) -> TradeMarket | None:
         """The rest of the season, with the one-for-one trades that would help both lineups."""
         state = self._week(league_id)
-        return market.build(self.client, state, seed=self._season_seed(league_id, state))
+        return market.build(self.client, state, seed=self._season_seed(league_id, state), scoreboard=self.scoreboard)
 
 
 # ── the week's teams ────────────────────────────────────────────────────

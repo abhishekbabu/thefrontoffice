@@ -6,8 +6,19 @@ Covers `nfl/league.py`: the season, the table, the real games, the activity.
 from dataclasses import replace
 
 import pytest
-from support.nfl import DEFAULT_PROJECTIONS, FakeSleeper, at_week, game_line, league_client, nfl_provider, proj
+from support.nfl import (
+    DEFAULT_PROJECTIONS,
+    FakeESPN,
+    FakeSleeper,
+    at_week,
+    game_line,
+    league_client,
+    nfl_provider,
+    proj,
+    sched,
+)
 
+from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import SleeperMatchup, Transaction
 
@@ -272,6 +283,52 @@ def test_a_player_in_a_reserve_slot_adds_nothing_to_his_teams_expected_score() -
     reserved = means(["qb1", "rb1"], ["rb1"])
     assert reserved == means(["qb1"], [])
     assert reserved != means(["qb1", "rb1"], [])
+
+
+def _under_way(espn_game: ScoreboardGame, second_club: str = "BUF") -> tuple[FakeSleeper, FakeESPN]:
+    """Week 7 being played: my QB's game is `espn_game`, and their back plays for `second_club`."""
+    client = _with_playoffs(7)
+    client.projections = {**DEFAULT_PROJECTIONS, "rb2": proj("rb2", "Bad RB", "RB", 4.0, team=second_club)}
+    client.season_schedule = [sched(7, "2026-10-25", "BUF", "MIA"), sched(7, "2026-10-26", "NYJ", "NE")]
+    client.weekly_matchups = {
+        7: [
+            SleeperMatchup(roster_id=1, matchup_id=1, points=30.0, starters=["qb1"], players_points={"qb1": 30.0}),
+            SleeperMatchup(roster_id=2, matchup_id=1, points=2.0, starters=["rb2"], players_points={"rb2": 2.0}),
+        ]
+    }
+    espn = FakeESPN()
+    espn.weekly_scoreboards = {7: [espn_game, ScoreboardGame("NYJ", "NE", "pre")]}
+    return client, espn
+
+
+def _week(client: FakeSleeper, espn: FakeESPN, week: int) -> dict[str, tuple[float, float]]:
+    season = nfl_provider(client, espn).season_input("L1")
+    assert season is not None
+    return {t.team_id: (t.mean, t.spread) for t in season.scoring if t.week == week}
+
+
+def test_a_week_whose_games_are_all_but_over_is_simulated_at_its_score() -> None:
+    """Every team's chance counts the week as it is going, not only yours."""
+    client, espn = _under_way(ScoreboardGame("BUF", "MIA", "in", period=4, clock=0.0))
+
+    assert _week(client, espn, 7) == {"1": (30.0, 0.0), "2": (2.0, 0.0)}
+
+
+def test_a_week_under_way_keeps_its_range_for_the_games_still_to_play() -> None:
+    client, espn = _under_way(ScoreboardGame("BUF", "MIA", "in", period=4, clock=0.0), second_club="NYJ")
+    this_week = _week(client, espn, 7)
+
+    assert this_week["1"] == (30.0, 0.0)
+    mean, spread = this_week["2"]
+    assert mean > 2.0 and spread > 0.0  # his game is still to kick off
+    # The weeks after it are projected as before.
+    assert _week(client, espn, 8) == _week(*_under_way(ScoreboardGame("BUF", "MIA", "pre")), 8)
+
+
+def test_a_week_yet_to_kick_off_is_projected_from_each_best_lineup() -> None:
+    client, espn = _under_way(ScoreboardGame("BUF", "MIA", "pre"))
+
+    assert _week(client, espn, 7) == _week(_with_playoffs(7), FakeESPN(), 7)
 
 
 def test_a_week_of_the_season_left_that_will_not_load_fails_the_simulation_with_why() -> None:
