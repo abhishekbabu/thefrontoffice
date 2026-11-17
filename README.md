@@ -3,10 +3,8 @@
 [![CI](https://github.com/abhishekbabu/thefrontoffice/actions/workflows/ci.yml/badge.svg)](https://github.com/abhishekbabu/thefrontoffice/actions/workflows/ci.yml)
 
 An AI general manager for your fantasy teams. It reads your live league, real
-stats and the fixtures ahead, and turns them into a to-do list for the week.
-With a model key, it also judges each item and answers questions about any
-player. It runs on your own machine against NFL on
-[Sleeper](https://sleeper.com), the
+stats and the schedule, and turns them into a to-do list for the week. It runs
+on your machine against NFL on [Sleeper](https://sleeper.com), the
 [Premier League](https://fantasy.premierleague.com) and NBA on
 [Yahoo](https://sports.yahoo.com/fantasy).
 
@@ -14,83 +12,29 @@ player. It runs on your own machine against NFL on
 
 ## Features
 
-- **To-do list**: a player on IR the slot no longer takes (which locks the
-  roster), starters out or on bye, empty slots, bench swaps, next week's
-  byes, free agents whose role just grew, a regular on the injury report whose
-  work could fall to one of your players, and the trade deadline. Each item
-  names the fix, who to drop and the deadline. NBA flags a player an IL slot
-  no longer takes, which holds every add on Yahoo.
+- **To-do list**: starters out or on bye, empty slots, bench swaps, IR moves,
+  pickups with a growing role, and the trade deadline. Each item names the fix
+  and who to drop.
 - **Win chance and playoff odds**: the week is simulated 10,000 times and the
-  season 5,000 times, and every move shows what it does to both. Once a week's
-  games kick off, every team's week in the season is its score so far plus
-  what its lineup has left, so the whole table moves with Sunday.
-- **Weeks ahead and trades**: the next four weeks as your roster stands, and
-  trades near even in worth, one for one or two of yours for one of theirs.
-  A trade must bring in a player who starts for you in most of the weeks it
-  changes, so a backup quarterback behind yours is never one (a superflex
-  starts him). Each says what it does to your playoff chance and to your lineup in the
-  playoff weeks, and why the other manager might say yes: his starters
-  improve, or he's out of the race. A team on the bubble sees the trades that
-  raise its chance first; a team already safe sees the ones that help it in
-  the playoffs. Players are priced by their own games as well as their
-  projection: halfway toward what they've scored since a role change, or
-  otherwise in recent games and the season, and never more than 30% off the
-  projection. Each trade lists the players this moves, and why.
-- **Free agents**: Sleeper's trending adds and the IR stash list beside the
-  whole pool, ranked by projection, with how each fits your lineup, what
-  he does to this week's chance, and any growing role ("snaps 34→76%").
-- **Player pages**: tabs for the week (role, matchup, injury status), the game
-  log, past seasons, his moves in the league (draft pick, adds, drops, trades,
-  and who made each) and ESPN news. NFL also shows whose roster he's on.
-  Every headline in the app links to its article.
-- **A model where you need it**: a verdict on each to-do item, a call on each
-  free agent, and an assistant docked beside every page. Opening the week
-  judges it again only when the list has an item the last judgment never saw,
-  or the week changed and the judgment is over 12 hours old. Without a key,
-  none of it is shown.
-- **The assistant**: one conversation per league that follows you from page
-  to page. Each question carries what's on screen, the page plus any player
-  drawer open over it, and the model is briefed on each the first time it
-  appears. **Why?** on a to-do item asks it about that item.
-- **Dismiss or snooze** any item. It comes back if its reason changes.
+  season 5,000. Every move shows what it does to both, live on Sundays.
+- **Every week of the season**: page back to see what was played and forward to
+  see the projected lineups. FPL gameweeks and NBA category weeks work the same way.
+- **Trades**: near-even offers that start for you, ranked by what they do to
+  your playoff odds, each with why the other manager might accept.
+- **Free agents**: ranked by projection and fit, with Sleeper's trending adds
+  and an IR stash list.
+- **Player pages**: tabs for this week, the game log, past seasons, league
+  history (draft pick, adds, drops, trades and who made them) and linked news.
+- **Compare**: up to four players side by side, added from any player page,
+  a move in Activity, or by name.
+- **League**: the table with PF, PA, FAAB left and waiver order, every roster,
+  and recent activity.
+- **AI, if you add a key**: a verdict on each to-do item and free agent, and an
+  assistant that sees whatever's on screen.
 - **Light and dark mode**, several palettes, and a terminal CLI.
 
 NFL has the deepest analysis. FPL and NBA share the matchup, schedule, fixtures,
 team and league pages.
-
-The pages are **Matchup** (the week, its lineups and to-do list), **Schedule**
-(your season week by week, with the trade deadline marked), **Fixtures** (the
-real games, yours highlighted, each with its score once it kicks off), **My team** (the squad and the weeks ahead),
-**Trades** (where a competition finds them, under the deadline), **Free agents**
-**Compare** (up to four players side by side, added from any player's page,
-from a move in Activity, or by name) and **League** (the table with record, PF,
-PA, FAAB left and waiver order; every roster; and recent activity, where a
-trade reads as what each side got, FAAB included, and a row opens the move in
-full).
-
-On NFL the matchup page pages through the season: the arrows beside the week,
-the ← and → keys, or a sideways swipe. A week played shows the lineups that
-played it, its final score, and each record as it stood going into it; a week
-to come, each roster's best projected lineup. The to-do list stays on the week
-being played. FPL pages through its gameweeks the same way: one played shows
-the fifteen picked for it and what each scored; one to come, the squad as it
-stands against that gameweek's fixtures, projected for the next gameweek only,
-since FPL projects no further. NBA pages through its matchup weeks too, each
-with its category board: every category the league's settings score, both
-figures and who leads it, each won the way the league says (fewer turnovers,
-usually). The week being played and those to come show both rosters as they
-stand, the injured list under **Reserve**. A week played shows no roster, since
-Yahoo sets a basketball lineup day by day. Its fixtures are the real games
-inside the week's dates, from Sleeper's schedule, with yours marked.
-
-NFL moves to the next week once every game of the current one is final,
-without waiting a day or two for Sleeper to catch up, and counts the finished
-week's results in the standings until Sleeper records them. A starter you drop
-or trade after his game stays in that week's lineup, marked as no longer on
-your roster. Each team's injured-reserve and taxi slots sit apart from its
-bench, under **Reserve**. A roster spot
-nobody holds shows at the foot of the bench as an open spot, room to add
-without a drop.
 
 | | |
 | --- | --- |

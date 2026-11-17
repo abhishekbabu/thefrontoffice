@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@/test/render";
-import { Categories, useJudgeWhenDue } from "@/panels/Scout";
+import { Categories, undated, useJudgeWhenDue } from "@/panels/Scout";
 
 function Judging({ due, scope, judge }: { due: boolean; scope: string; judge: { mutate: () => void; isPending: boolean } }) {
   useJudgeWhenDue(due, scope, judge);
@@ -55,5 +55,13 @@ describe("Categories", () => {
     expect(rows.find((r) => r.startsWith("PTS"))).toMatch(/You$/);
     expect(rows.find((r) => r.startsWith("BLK"))).toMatch(/Them$/);
     expect(rows.find((r) => r.startsWith("TO"))).toMatch(/—$/);
+  });
+});
+
+describe("undated", () => {
+  it("drops the week the stepper already shows, however the competition words it", () => {
+    expect(undated("Week 11 · 19-23 Nov")).toBe("19-23 Nov");
+    expect(undated("Gameweek 10 · in progress")).toBe("in progress");
+    expect(undated("GW 2 · deadline Sat")).toBe("deadline Sat");
   });
 });
