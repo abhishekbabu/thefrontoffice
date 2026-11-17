@@ -2,7 +2,9 @@ import { useEffect, useRef } from "react";
 import type * as React from "react";
 import { AnimatePresence, m } from "motion/react";
 import { fade, slideOver } from "@/lib/motion";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { IconButton } from "@/components/ui/icon-button";
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select, [tabindex]:not([tabindex="-1"])';
 
@@ -116,5 +118,32 @@ function Panel({
     >
       {children}
     </m.aside>
+  );
+}
+
+/**
+ * A slide-over's pinned top: what it is about, a line under that, its own
+ * controls, and the way out. Shared by every drawer that is not a player's.
+ */
+export function SlideOverHeader({
+  title,
+  meta,
+  onClose,
+  children,
+}: {
+  title: React.ReactNode;
+  meta?: React.ReactNode;
+  onClose: () => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="sticky top-0 z-10 flex items-start gap-4 border-b border-border bg-popover px-5 py-4">
+      <div className="min-w-0 flex-1">
+        <h2 className="font-display text-[20px] font-semibold leading-tight tracking-tight">{title}</h2>
+        {meta && <p className="mt-0.5 font-mono text-[12px] text-muted-foreground">{meta}</p>}
+      </div>
+      {children}
+      <IconButton label="Close" side="left" icon={<X />} onClick={onClose} />
+    </div>
   );
 }

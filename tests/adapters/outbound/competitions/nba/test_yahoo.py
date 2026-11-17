@@ -688,6 +688,8 @@ def test_a_weeks_real_games_are_those_inside_its_dates_marked_where_you_have_pla
 
     assert [(g.away, g.home, g.tone) for g in games] == [("GSW", "LAL", "good"), ("MIA", "NYK", "neutral")]
     assert "final" in games[0].detail
+    assert [p.name for p in games[0].yours] == ["Roster One"]  # an LAL forward
+    assert games[1].yours == []
 
 
 def test_a_week_with_no_matchup_has_no_dates_to_list_games_by() -> None:

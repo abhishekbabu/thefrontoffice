@@ -232,8 +232,8 @@ class YahooNBAProvider:
         found = yahoo.pairing(team.team_key, week)
         if found is None:
             return []
-        clubs = {p.team.upper() for p in yahoo.roster(team.team_key)}
-        return [nba_week.match(game, clubs) for game in self.nba.games_between(found.start, found.end)]
+        roster = yahoo.roster(team.team_key)
+        return [nba_week.match(game, roster) for game in self.nba.games_between(found.start, found.end)]
 
     def _within(self, league: YahooLeague, week: int) -> int:
         """The week being played, once `week` is known to be one of the season's.
