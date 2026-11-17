@@ -24,6 +24,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Matchup,
     MatchupSide,
+    Pairing,
     PlayerStat,
     PlayerStatus,
     TeamStanding,
@@ -123,6 +124,15 @@ class YahooSource(Protocol):
         self, stats: Mapping[str, str], per_stat: int = 10, sort_type: Timeframe = Timeframe.LAST_WEEK
     ) -> dict[str, list[YahooPlayer]]:
         """Top available players for each Yahoo stat id in `stats`, keyed as `stats` keys them."""
+        ...
+
+    def pairing(self, team_key: str, week: int) -> Pairing | None:
+        """The team's head-to-head in any week of the season, or None where it plays nobody that week.
+
+        Raises:
+            YahooAuthError: the app is not authorized for Fantasy Sports.
+            YahooAPIError: Yahoo could not be reached, or answered unreadably.
+        """
         ...
 
     def get_matchup(self, team_key: str) -> Matchup | None:
@@ -283,16 +293,26 @@ class YahooClient:
             YahooAPIError: Yahoo could not be reached, or answered unreadably.
         """
         week = self.league.current_week
-        if not week:
-            return None
-        scoreboard = call(self._retry, lambda: self._scoreboard(week))
-        found = readable("scoreboard", lambda: find_matchup(scoreboard, team_key))
+        found = self.pairing(team_key, week) if week else None
         if found is None:
             return None
-        start, end, mine, opponent = found
         return Matchup(
-            start=start, end=end, mine=mine, opponent=opponent, opponent_roster=self.roster(opponent.team_key)
+            start=found.start,
+            end=found.end,
+            mine=found.mine,
+            opponent=found.opponent,
+            opponent_roster=self.roster(found.opponent.team_key),
         )
+
+    def pairing(self, team_key: str, week: int) -> Pairing | None:
+        """The team's head-to-head in any week of the season, or None where it plays nobody that week.
+
+        Raises:
+            YahooAuthError: the app is not authorized for Fantasy Sports.
+            YahooAPIError: Yahoo could not be reached, or answered unreadably.
+        """
+        scoreboard = call(self._retry, lambda: self._scoreboard(week))
+        return readable("scoreboard", lambda: find_matchup(scoreboard, team_key))
 
     def _scoreboard(self, week: int) -> Any:
         """The week's scoreboard, as fresh as `SCOREBOARD_TTL_SECONDS` allows.
@@ -397,7 +417,7 @@ def _standing(data: Any) -> TeamStanding:
     )
 
 
-def find_matchup(scoreboard: Any, team_key: str) -> tuple[date, date, MatchupSide, MatchupSide] | None:
+def find_matchup(scoreboard: Any, team_key: str) -> Pairing | None:
     """The week's dates and both sides of the team's matchup, its own first; None where it plays nobody."""
     matchups = scoreboard["fantasy_content"]["league"]["scoreboard"]["matchups"]
     for matchup in _items(matchups, "matchup"):
@@ -405,7 +425,7 @@ def find_matchup(scoreboard: Any, team_key: str) -> tuple[date, date, MatchupSid
         keys = [side.team_key for side in sides]
         if team_key in keys and len(sides) == 2:
             mine, opponent = sides if keys[0] == team_key else sides[::-1]
-            return _day(_value(matchup, "week_start")), _day(_value(matchup, "week_end")), mine, opponent
+            return Pairing(_day(_value(matchup, "week_start")), _day(_value(matchup, "week_end")), mine, opponent)
     return None
 
 
@@ -432,10 +452,17 @@ def league_list(games: Any) -> list[YahooLeague]:
 
 
 def _league(data: Any) -> YahooLeague:
-    week = _value(data, "current_week")
     return YahooLeague(
         league_key=_text(data, "league_key"),
         name=_text(data, "name"),
         league_type=_text(data, "league_type"),
-        current_week=int(week) if week not in (None, "") else None,
+        current_week=_week(data, "current_week"),
+        start_week=_week(data, "start_week"),
+        end_week=_week(data, "end_week"),
     )
+
+
+def _week(data: Any, name: str) -> int | None:
+    """A week number the league carries, or None where it carries none."""
+    week = _value(data, name)
+    return int(week) if week not in (None, "") else None

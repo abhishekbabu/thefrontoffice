@@ -3,6 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { Sparkles } from "lucide-react";
 import {
   api,
+  type CategoryLine,
   type Competition,
   type ItemDecision,
   type ItemMark,
@@ -24,6 +25,8 @@ import { usePlayerDrawer } from "@/components/ui/player";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
 import { WeekStepper, useWeekParam } from "@/components/ui/week-stepper";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 /**
  * Judge again on arrival where the server says the week has moved on from the
@@ -166,6 +169,10 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
             />
           )}
 
+          {shown.data.categories.length > 0 && (
+            <Categories lines={shown.data.categories} theirs={shown.data.opponent?.name ?? "Them"} />
+          )}
+
           {shown.data.opponent ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <SideCard side={shown.data.mine} label="You" onOpen={openPlayer} />
@@ -221,5 +228,52 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       )}
       {drawer}
     </>
+  );
+}
+
+const LEAD: Record<NonNullable<CategoryLine["lead"]>, { word: string; tone: string }> = {
+  mine: { word: "You", tone: "text-ok" },
+  theirs: { word: "Them", tone: "text-warn" },
+  even: { word: "Level", tone: "text-muted-foreground" },
+};
+
+/**
+ * A category week, read across: each category, both figures, and who leads it.
+ *
+ * The leader is said in words as well as weight and color, since a category
+ * week is won by the count of those words.
+ */
+export function Categories({ lines, theirs }: { lines: CategoryLine[]; theirs: string }) {
+  return (
+    <Card>
+      <CardHeader>
+        <span>Categories</span>
+        <span>{lines.length} scored</span>
+      </CardHeader>
+      <Label as="div" className="flex items-baseline gap-3 border-b border-border px-4 py-2">
+        <span className="w-16 shrink-0">Cat</span>
+        <span className="w-20 text-right">You</span>
+        <span className="w-20 truncate text-right">{theirs}</span>
+        <span className="flex-1 text-right">Leads</span>
+      </Label>
+      {lines.map((line) => {
+        const lead = line.lead ? LEAD[line.lead] : null;
+        return (
+          <div
+            key={line.name}
+            className="flex items-baseline gap-3 border-b border-border/45 px-4 py-2 font-mono text-[12.5px] tabular-nums last:border-b-0"
+          >
+            <Label className="w-16 shrink-0">{line.name}</Label>
+            <span className={cn("w-20 text-right", line.lead === "mine" && "font-semibold")}>{line.mine || "—"}</span>
+            <span className={cn("w-20 text-right", line.lead === "theirs" && "font-semibold")}>
+              {line.theirs || "—"}
+            </span>
+            <span className={cn("flex-1 text-right text-[11px]", lead?.tone ?? "text-muted-foreground")}>
+              {lead?.word ?? "—"}
+            </span>
+          </div>
+        );
+      })}
+    </Card>
   );
 }

@@ -4,6 +4,7 @@ Mostly the context it builds, which is where league rules (add budget, IL
 slots, matchup context) actually get encoded.
 """
 
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -25,13 +26,13 @@ from support.stores import FakeAnswers
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, PlayerStats, SleeperNBAForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
-from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
+from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooTeam
 from thefrontoffice.application.scouting import ScoutEngine
-from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import LeagueNotFoundError, NotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat
 
 
@@ -602,3 +603,79 @@ def test_a_kept_move_can_name_only_your_roster_or_the_players_still_free() -> No
     context = nba_provider(FakeYahoo(stat_leaders={"PTS": [make_player("Waiver One")]})).build_context()
 
     assert context.movable == frozenset({"Roster One", "Waiver One"})
+
+
+# ── the week, and paging through the season ─────────────────────────────
+
+
+def test_the_week_being_played_shows_its_categories_and_both_rosters() -> None:
+    yahoo = FakeYahoo(roster=[make_player("Mine One", selected_position="PG")])
+    summary = nba_provider(yahoo).summary("")
+
+    assert [(line.name, line.lead) for line in summary.categories] == [("BLK", "theirs")]
+    assert summary.mine is not None and summary.opponent is not None
+    assert [s.player for s in summary.mine.lineup] == ["Mine One"]
+    assert [s.player for s in summary.opponent.lineup] == ["Their Team One"]
+    assert (summary.mine.detail, summary.opponent.detail) == ("4-2-1", "5-1")
+    labels = {stat.label: stat.value for stat in summary.headline}
+    assert labels["Adds left"] == "3 of 3"
+    assert labels["Categories"] == "0-1-0"
+    assert summary.weeks is not None and summary.weeks.week == summary.weeks.current == 5
+
+
+def test_the_week_spans_the_season_the_league_carries() -> None:
+    league = replace(yahoo_league(), start_week=1, end_week=21)
+    weeks = nba_provider(FakeYahoo(), league=league).summary("").weeks
+
+    assert weeks is not None and (weeks.first, weeks.last) == (1, 21)
+
+
+def test_a_week_played_shows_its_categories_but_no_roster() -> None:
+    """Yahoo sets a basketball lineup day by day: today's roster did not play week 3."""
+    yahoo = FakeYahoo()
+    yahoo.week_stats[3] = ({BLOCKS.yahoo_stat: "30"}, {BLOCKS.yahoo_stat: "21"})
+    week = nba_provider(yahoo).week_of("", 3)
+
+    assert yahoo.pairings == [3]
+    assert [line.lead for line in week.categories] == ["mine"]
+    assert week.actions is None
+    assert week.mine is not None and week.mine.lineup == []
+    assert week.weeks is not None and (week.weeks.week, week.weeks.current) == (3, 5)
+
+
+def test_a_week_to_come_shows_both_rosters_as_they_stand() -> None:
+    yahoo = FakeYahoo(roster=[make_player("Mine One", selected_position="PG")])
+    yahoo.week_stats[6] = ({BLOCKS.yahoo_stat: "-"}, {BLOCKS.yahoo_stat: "-"})
+    week = nba_provider(yahoo, league=replace(yahoo_league(), end_week=21)).week_of("", 6)
+
+    assert week.mine is not None and [s.player for s in week.mine.lineup] == ["Mine One"]
+    assert week.mine.points == ""  # nothing recorded yet: no 0-0-0
+    assert [stat.label for stat in week.headline] == []
+
+
+def test_a_week_with_no_opponent_is_just_its_place_in_the_season() -> None:
+    week = nba_provider(FakeYahoo(matchup_dates=None)).week_of("", 2)
+
+    assert (week.opponent, week.categories, week.window) == (None, [], "Week 2")
+
+
+@pytest.mark.parametrize("week", [0, 6])
+def test_a_week_outside_the_season_is_not_found(week: int) -> None:
+    provider = nba_provider(FakeYahoo())
+
+    with pytest.raises(NotFoundError):
+        provider.week_of("", week)
+    with pytest.raises(NotFoundError):
+        provider.games_of("", week)
+
+
+def test_between_seasons_there_is_no_week_to_open() -> None:
+    provider = nba_provider(FakeYahoo(), league=replace(yahoo_league(), current_week=None))
+
+    assert provider.summary("").weeks is None
+    with pytest.raises(NotFoundError):
+        provider.week_of("", 1)
+
+
+def test_yahoo_publishes_no_real_games_for_a_week() -> None:
+    assert nba_provider(FakeYahoo()).games_of("", 5) == []

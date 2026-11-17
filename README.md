@@ -66,7 +66,11 @@ to come, each roster's best projected lineup. The to-do list stays on the week
 being played. FPL pages through its gameweeks the same way: one played shows
 the fifteen picked for it and what each scored; one to come, the squad as it
 stands against that gameweek's fixtures, projected for the next gameweek only,
-since FPL projects no further.
+since FPL projects no further. NBA pages through its matchup weeks too, each
+with its category board: both figures in every category and who leads it,
+fewer turnovers winning turnovers. The week being played and those to come
+show both rosters as they stand, the injured list under **Reserve**. A week
+played shows no roster, since Yahoo sets a basketball lineup day by day.
 
 NFL moves to the next week once every game of the current one is final,
 without waiting a day or two for Sleeper to catch up, and counts the finished
