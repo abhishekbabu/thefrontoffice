@@ -220,7 +220,9 @@ export default function App() {
         </div>
       </nav>
 
-      <main className="min-w-0 overflow-y-auto">
+      {/* Room at the foot of every page for the assistant's button, which floats
+          over the bottom right: the last row scrolls clear of it. */}
+      <main className="min-w-0 overflow-y-auto pb-20">
         {/* One presence around the whole column, keyed on the page. Settings is
             a place you go and come back from, so it earns the same in-and-out
             transition as every other view. */}
