@@ -293,19 +293,13 @@ function MoveDetail({ move, onClose, onOpen }: { move: ActivityRow; onClose: () 
         <IconButton label="Close" side="left" icon={<X />} onClick={onClose} />
       </div>
       <div className="flex flex-col gap-4 p-5">
-        {move.budget.length > 0 && (
-          <ListCard title="FAAB" count={`${move.budget.length}`}>
-            {move.budget.map((line) => (
-              <ListRow key={line}>
-                <span className="font-mono text-[12.5px]">{line}</span>
-              </ListRow>
-            ))}
-          </ListCard>
-        )}
         {sections(move).map(({ title, moves }) => (
           <ListCard key={title} title={title} count={`${moves.length}`}>
             {moves.map((m) => (
-              <ListRow key={`${m.change}-${m.player_id}`} onClick={() => onOpen(m.player_id)}>
+              <ListRow
+                key={`${m.change}-${m.player_id || m.player}`}
+                onClick={m.player_id ? () => onOpen(m.player_id) : undefined}
+              >
                 {/* Said, not only colored: which way he went is the whole row. */}
                 <Badge variant={m.change === "added" ? "ok" : "fail"} appearance="label" className="shrink-0">
                   {m.change === "added" ? "+" : "−"}

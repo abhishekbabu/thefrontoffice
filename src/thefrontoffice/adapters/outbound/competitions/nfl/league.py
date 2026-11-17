@@ -273,23 +273,32 @@ def _activity_rows(
     rows: list[tuple[int, ActivityRow]] = []
     for t in transactions:
         roster = by_roster.get(t.roster_ids[0]) if t.roster_ids else None
-        moved = (
-            [f"+{_name_of(pid, state)}" for pid in t.adds]
-            + [f"-{_name_of(pid, state)}" for pid in t.drops]
-            + [f"${amount} FAAB" for _, _, amount in t.budget if amount]
-        )
-        moves = [_move(pid, "added", by_roster.get(rid), state) for pid, rid in t.adds.items()] + [
-            _move(pid, "dropped", by_roster.get(rid), state) for pid, rid in t.drops.items()
-        ]
-        # A trade is between managers: every one of them is who made it.
         teams = [by_roster[rid] for rid in t.roster_ids if rid in by_roster]
-        who = (
-            " ↔ ".join(state.team_name(team) for team in teams)
-            if t.kind == "trade" and len(teams) > 1
-            else state.names.get(roster.owner_id, "")
-            if roster
-            else ""
-        )
+        # The FAAB a trade moved reads as one more thing its receiver got.
+        faab = [
+            ActivityMove(
+                player_id="", player=f"${amount} FAAB", change="added", manager=_team_of(rid, state, by_roster)
+            )
+            for _, rid, amount in t.budget
+            if amount
+        ]
+        moves = [
+            *(_move(pid, "added", by_roster.get(rid), state) for pid, rid in t.adds.items()),
+            *faab,
+            *(_move(pid, "dropped", by_roster.get(rid), state) for pid, rid in t.drops.items()),
+        ]
+        if t.kind == "trade" and len(teams) > 1:
+            # What each side got, in the order the managers are named: what each gave up is the other's.
+            names = [state.team_name(team) for team in teams]
+            who = " ↔ ".join(names)
+            detail = " · ".join(
+                "+" + ", ".join(m.player for m in moves if m.change == "added" and m.manager == name) for name in names
+            )
+        else:
+            who = state.names.get(roster.owner_id, "") if roster else ""
+            detail = ", ".join(
+                [f"+{_name_of(pid, state)}" for pid in t.adds] + [f"-{_name_of(pid, state)}" for pid in t.drops]
+            )
         rows.append(
             (
                 t.when,
@@ -297,15 +306,10 @@ def _activity_rows(
                     when=moment(t.when),
                     who=who,
                     what=TRANSACTION_LABELS.get(t.kind, t.kind),
-                    detail=", ".join(moved),
-                    is_mine=bool(roster) and roster.roster_id == state.roster.roster_id,
+                    detail=detail,
+                    is_mine=any(team.roster_id == state.roster.roster_id for team in teams),
                     moves=moves,
                     bid=f"${t.bid}" if t.bid else "",
-                    budget=[
-                        f"${amount} from {_team_of(sender, state, by_roster)} to {_team_of(receiver, state, by_roster)}"
-                        for sender, receiver, amount in t.budget
-                        if amount
-                    ],
                 ),
             )
         )
