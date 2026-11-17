@@ -186,6 +186,20 @@ def test_a_move_naming_a_player_of_unknown_worth_stands() -> None:
     assert _moves_kept(answer, {}) == ["New Orleans Saints"]
 
 
+def test_a_move_about_a_player_the_to_do_list_already_moves_is_not_suggested_again() -> None:
+    """The list's own pickup, suggested back as an add, reads as a second thing to do."""
+    provider = ContextOnly(TASKS)
+    provider.context.listed = frozenset({"Jahan Dotson"})
+    answer = _suggesting(("Jahan Dotson (WR, ATL)", "Germie Bernard"), ("Adonai Mitchell", "Germie Bernard"))
+    engine = ScoutEngine(provider, key="nfl-sleeper", ai=FakeAI(report=answer), answers=FakeAnswers())
+
+    assert [m.player for m in engine.report("L1").moves] == ["Adonai Mitchell"]
+
+
+def test_a_kept_move_the_to_do_list_has_since_taken_up_is_not_shown() -> None:
+    assert _judged_then(SUGGESTED, {}, listed=frozenset({"Jahan Dotson"})) == []
+
+
 def _judged_then(answer: ScoutAnswer, judged_on: dict[str, float], **now: Any) -> list[str]:
     """The kept judgment's moves as the page reads them back once the week has moved on to `now`."""
     provider = ContextOnly(TASKS)

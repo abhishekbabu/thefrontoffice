@@ -245,6 +245,7 @@ class YahooNBAProvider:
             candidate_lines=fa_lines,
             headline=_adds(used_adds, limit),
             tasks=stuck,
+            listed=frozenset(p.name for p in rostered if p.player_key in {item.player_id for item in stuck}),
             # A kept judgment's add of somebody another manager has since claimed is no move at all.
             movable=frozenset(p.name for p in (*rostered, *free_agents)),
         )

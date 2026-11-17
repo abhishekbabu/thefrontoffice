@@ -129,7 +129,9 @@ class ScoutEngine:
             situation=answer.situation,
             focus=answer.focus,
             moves=_worth_making(
-                [Move.model_validate(move.model_dump()) for move in answer.moves], context.worth, self.key
+                _unlisted([Move.model_validate(move.model_dump()) for move in answer.moves], context.listed),
+                context.worth,
+                self.key,
             ),
             strategy=answer.strategy,
             tasks=judged,
@@ -182,7 +184,7 @@ def _due(kept: Remembered[ScoutReport], context: CompetitionContext, now: dateti
 
 def standing_moves(moves: list[Move], context: CompetitionContext, key: str) -> list[Move]:
     """A kept judgment's moves that still stand against the week as it is now, as the week's page shows them."""
-    return _worth_making(_still_open(moves, context.movable), context.worth, key)
+    return _worth_making(_unlisted(_still_open(moves, context.movable), context.listed), context.worth, key)
 
 
 def _worth_making(moves: list[Move], worth: dict[str, float], key: str) -> list[Move]:
@@ -206,6 +208,17 @@ def _worth_making(moves: list[Move], worth: dict[str, float], key: str) -> list[
             continue
         kept.append(move)
     return kept
+
+
+def _unlisted(moves: list[Move], listed: frozenset[str]) -> list[Move]:
+    """The moves about a player no to-do item already turns on.
+
+    The prompt asks the model for moves beyond the list, and it suggests the
+    list's own pickups anyway: the same add shown twice, once as an item and
+    once as a suggestion, reads as two things to do.
+    """
+    names = {_name(name) for name in listed}
+    return [m for m in moves if _name(m.player) not in names]
 
 
 def _still_open(moves: list[Move], movable: frozenset[str] | None) -> list[Move]:

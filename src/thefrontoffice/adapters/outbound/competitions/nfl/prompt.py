@@ -230,6 +230,7 @@ def build(state: Week, tasks: list[Action], trending: Sequence[Trending] | None)
         candidate_lines=available_lines,
         headline=headline(state),
         tasks=tasks,
+        listed=frozenset(meta.name for task in tasks if (meta := state.players.get(task.player_id))),
         worth=_worth(state),
     )
 

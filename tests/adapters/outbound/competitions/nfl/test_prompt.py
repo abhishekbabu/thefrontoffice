@@ -66,6 +66,15 @@ def test_a_player_in_a_reserve_slot_is_marked_wherever_the_model_reads_your_rost
     assert prompt.RESERVE_MARK not in context.roster_lines["Bad RB"]
 
 
+def test_the_context_names_each_player_the_to_do_list_already_moves() -> None:
+    """Good RB fills the empty RB slot as an item: a model's move about him would be that item again."""
+    ctx = _context()
+    named = {task.player_id for task in ctx.tasks if task.player_id}
+
+    assert "rb1" in named
+    assert "Good RB" in ctx.listed
+
+
 def test_rostered_players_are_never_offered_as_waiver_adds() -> None:
     ctx = _context()
     assert "Good RB" not in ctx.candidate_lines
