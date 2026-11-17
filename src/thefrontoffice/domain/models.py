@@ -440,6 +440,27 @@ class PlayerDetail(BaseModel):
     )
 
 
+MAX_COMPARED = 4
+"""The most players one comparison holds: past four, the columns stop fitting a screen."""
+
+
+class PlayerComparison(BaseModel):
+    """Players side by side: who each is, and the figures they share on one grid."""
+
+    players: list[PlayerDetail] = Field(
+        description="Each player's header, in the order asked: name, club, the one figure, owner. No groups or tables."
+    )
+    table: StatTable = Field(description="A row per measure, a column per player, in the order of `players`.")
+
+
+class PlayerRef(BaseModel):
+    """A player found by name, enough to tell him from another and to open him."""
+
+    player_id: str
+    name: str
+    detail: str = Field(default="", description="Position, club and owner: 'WR · DAL · Rival'.")
+
+
 class Swap(BaseModel):
     """A change the numbers already imply, before anyone has judged them."""
 

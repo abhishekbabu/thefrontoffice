@@ -21,10 +21,11 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from thefrontoffice.adapters.outbound.competitions import paging
-from thefrontoffice.adapters.outbound.competitions.names import NameIndex
+from thefrontoffice.adapters.outbound.competitions.names import NameIndex, normalize_name
 from thefrontoffice.adapters.outbound.competitions.nfl import (
     actions,
     evidence,
+    history,
     injuries,
     league,
     market,
@@ -105,6 +106,7 @@ from thefrontoffice.domain.models import (
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    PlayerRef,
     RangeSearch,
     SeasonInput,
     Side,
@@ -269,6 +271,27 @@ class SleeperNFLProvider:
                 for card in ranked
             ]
         return paging.page(ranked, query).model_copy(update={"views": [TRENDING, INJURED]})
+
+    def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
+        """Anyone on an NFL roster at a fantasy position whose name holds `text`, the best projected first."""
+        state = self._week(league_id)
+        wanted = normalize_name(text)
+        if not wanted:
+            return []
+        found = [
+            (pid, meta)
+            for pid, meta in state.players.items()
+            if views.is_signing(meta) and wanted in normalize_name(meta.name)
+        ]
+        found.sort(key=lambda row: -(state.projections[row[0]].points if row[0] in state.projections else 0.0))
+        return [
+            PlayerRef(
+                player_id=pid,
+                name=meta.name,
+                detail=" · ".join(part for part in (meta.position, meta.team, history.owner(state, pid)) if part),
+            )
+            for pid, meta in found[:limit]
+        ]
 
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
         """One player: the week, what makes the projection, and who they are."""

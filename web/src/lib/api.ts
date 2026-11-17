@@ -32,6 +32,8 @@ export type Judgment = Schemas["Judgment"];
 export type PlayerCall = Schemas["PlayerCall"];
 export type PlayerCard = Schemas["PlayerCard"];
 export type PlayerDetail = Schemas["PlayerDetail"];
+export type PlayerComparison = Schemas["PlayerComparison"];
+export type PlayerRef = Schemas["PlayerRef"];
 export type PlayerOrder = NonNullable<operations["roster"]["parameters"]["query"]>;
 export type PlayerPage = Schemas["PlayerPage"];
 export type Remedy = Schemas["Remedy"];
@@ -134,6 +136,9 @@ export function leagueApi(competition: string, league: string) {
   return {
     roster: (order: PlayerOrder = {}) => request<Ok<"roster">>(withQuery(`${base}/roster`, order)),
     player: (id: string) => request<Ok<"player">>(`${base}/players/${segment(id)}`),
+    compare: (ids: string[]) =>
+      request<Ok<"compare">>(`${base}/compare?${ids.map((id) => `ids=${encodeURIComponent(id)}`).join("&")}`),
+    searchPlayers: (search: string) => request<Ok<"search_players">>(withQuery(`${base}/players`, { search })),
     summary: () => request<Ok<"summary">>(`${base}/summary`),
     /** Another week of the season, as played or as it projects; the week being played is `summary`. */
     weekOf: (week: number) => request<Ok<"week_of">>(`${base}/weeks/${week}`),

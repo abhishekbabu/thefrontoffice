@@ -87,3 +87,14 @@ def test_the_drawer_is_tabbed_and_each_headline_links_its_article() -> None:
     assert detail.tabs[0] == "This week"
     assert {g.tab for g in detail.groups} <= {"", *detail.tabs}
     assert {t.tab for t in detail.tables} <= set(detail.tabs)
+
+
+def test_a_player_is_found_by_part_of_his_name_with_position_club_and_owner() -> None:
+    found = nfl_provider(league_client()).search_players("L1", "star")
+
+    assert [ref.player_id for ref in found] == ["qb1"]
+    assert found[0].detail.endswith("Me")
+
+
+def test_an_empty_search_finds_nobody() -> None:
+    assert nfl_provider(league_client()).search_players("L1", "  ") == []

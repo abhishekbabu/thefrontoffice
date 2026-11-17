@@ -10,6 +10,7 @@ import { act, type ReactNode } from "react";
 import { afterEach } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { LazyMotion, MotionGlobalConfig } from "motion/react";
 import features from "@/lib/motion-features";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -47,9 +48,11 @@ export async function render(ui: ReactNode, client: QueryClient = offlineClient(
   const root: Root = createRoot(container);
   const wrap = (node: ReactNode) => (
     <QueryClientProvider client={client}>
-      <LazyMotion features={features}>
-        <TooltipProvider>{node}</TooltipProvider>
-      </LazyMotion>
+      <MemoryRouter>
+        <LazyMotion features={features}>
+          <TooltipProvider>{node}</TooltipProvider>
+        </LazyMotion>
+      </MemoryRouter>
     </QueryClientProvider>
   );
   const unmount = async () => {

@@ -62,9 +62,11 @@ The pages are **Matchup** (the week, its lineups and to-do list), **Schedule**
 (your season week by week, with the trade deadline marked), **Fixtures** (the
 real games, yours highlighted, each with its score once it kicks off), **My team** (the squad and the weeks ahead),
 **Trades** (where a competition finds them, under the deadline), **Free agents**
-and **League** (the table with record, PF, PA, FAAB left and waiver order;
-every roster; and recent activity, where a trade reads as what each side got,
-FAAB included, and a row opens the move in full).
+**Compare** (up to four players side by side, added from any player's page,
+from a move in Activity, or by name) and **League** (the table with record, PF,
+PA, FAAB left and waiver order; every roster; and recent activity, where a
+trade reads as what each side got, FAAB included, and a row opens the move in
+full).
 
 On NFL the matchup page pages through the season: the arrows beside the week,
 the ← and → keys, or a sideways swipe. A week played shows the lineups that

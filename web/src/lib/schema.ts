@@ -170,6 +170,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/{competition}/leagues/{league_id}/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compare
+         * @description Up to four players side by side, from what each one's drawer shows.
+         */
+        get: operations["compare"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/{competition}/leagues/{league_id}/players": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Players
+         * @description Players whose name holds `search`, rostered or not, for a comparison to add.
+         */
+        get: operations["search_players"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/{competition}/leagues/{league_id}/summary": {
         parameters: {
             query?: never;
@@ -784,6 +824,8 @@ export interface components {
             browses_weeks: boolean;
             /** Finds Trades */
             finds_trades: boolean;
+            /** Searches Players */
+            searches_players: boolean;
             /** Configured */
             configured: boolean;
             /** Requires */
@@ -1122,6 +1164,19 @@ export interface components {
             };
         };
         /**
+         * PlayerComparison
+         * @description Players side by side: who each is, and the figures they share on one grid.
+         */
+        PlayerComparison: {
+            /**
+             * Players
+             * @description Each player's header, in the order asked: name, club, the one figure, owner. No groups or tables.
+             */
+            players: components["schemas"]["PlayerDetail"][];
+            /** @description A row per measure, a column per player, in the order of `players`. */
+            table: components["schemas"]["StatTable"];
+        };
+        /**
          * PlayerDetail
          * @description Everything worth knowing about one player, on demand.
          *
@@ -1242,6 +1297,22 @@ export interface components {
              * @description Other lists of the pool the competition offers, by name: 'Trending', 'IR'. Empty where none.
              */
             views: string[];
+        };
+        /**
+         * PlayerRef
+         * @description A player found by name, enough to tell him from another and to open him.
+         */
+        PlayerRef: {
+            /** Player Id */
+            player_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Detail
+             * @description Position, club and owner: 'WR · DAL · Rival'.
+             * @default
+             */
+            detail: string;
         };
         /**
          * Remedy
@@ -2583,6 +2654,164 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlayerDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    compare: {
+        parameters: {
+            query: {
+                ids: string[];
+            };
+            header?: never;
+            path: {
+                competition: string;
+                league_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerComparison"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    search_players: {
+        parameters: {
+            query?: {
+                search?: string;
+            };
+            header?: never;
+            path: {
+                competition: string;
+                league_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerRef"][];
                 };
             };
             /** @description Bad Request */
