@@ -705,6 +705,11 @@ export interface components {
              * @default
              */
             bid: string;
+            /**
+             * Budget
+             * @description Waiver budget a trade moved, each already formatted: '$5 from A to B'.
+             */
+            budget: string[];
         };
         /**
          * CallsRequest
@@ -1551,6 +1556,24 @@ export interface components {
              * @default
              */
             playoffs: string;
+            /**
+             * Points Against
+             * @description Points scored against, formatted; empty where none.
+             * @default
+             */
+            points_against: string;
+            /**
+             * Waiver Budget
+             * @description Waiver budget left, formatted: '$73'. Empty where none.
+             * @default
+             */
+            waiver_budget: string;
+            /**
+             * Waiver Order
+             * @description Place in the waiver order: '3'. Empty where none.
+             * @default
+             */
+            waiver_order: string;
             /**
              * Is Mine
              * @default false

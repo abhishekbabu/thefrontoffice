@@ -181,6 +181,15 @@ class Team(Protocol):
     @property
     def points_for(self) -> float: ...
     @property
+    def points_against(self) -> float: ...
+    @property
+    def waiver_budget_used(self) -> int: ...
+    @property
+    def waiver_position(self) -> int:
+        """Place in the waiver order; nought where the platform gives none."""
+        ...
+
+    @property
     def record(self) -> str: ...
 
 
@@ -236,6 +245,11 @@ class LeagueRules(Protocol):
     def playoff_teams(self) -> int: ...
     @property
     def playoff_week_start(self) -> int: ...
+    @property
+    def waiver_budget(self) -> int:
+        """Each team's FAAB for the season; nought where the league uses none."""
+        ...
+
     @property
     def draft_id(self) -> str:
         """The league's draft this season; empty where it has none."""
@@ -355,6 +369,11 @@ class LeagueMove(Protocol):
     @property
     def bid(self) -> int:
         """The waiver budget spent on it; nought for none."""
+        ...
+
+    @property
+    def budget(self) -> Sequence[tuple[int, int, int]]:
+        """Waiver budget a trade moved: (sender roster, receiver roster, amount)."""
         ...
 
 

@@ -205,6 +205,9 @@ def _standings(state: Week) -> list[StandingRow]:
             name=state.team_name(r),
             record=r.record,
             points=f"{r.points_for:.2f}",
+            points_against=f"{r.points_against:.2f}",
+            waiver_budget=f"${state.league.waiver_budget - r.waiver_budget_used}" if state.league.waiver_budget else "",
+            waiver_order=str(r.waiver_position) if r.waiver_position else "",
             team_id=str(r.roster_id),
             is_mine=r.roster_id == state.roster.roster_id,
         )
@@ -270,21 +273,39 @@ def _activity_rows(
     rows: list[tuple[int, ActivityRow]] = []
     for t in transactions:
         roster = by_roster.get(t.roster_ids[0]) if t.roster_ids else None
-        moved = [f"+{_name_of(pid, state)}" for pid in t.adds] + [f"-{_name_of(pid, state)}" for pid in t.drops]
+        moved = (
+            [f"+{_name_of(pid, state)}" for pid in t.adds]
+            + [f"-{_name_of(pid, state)}" for pid in t.drops]
+            + [f"${amount} FAAB" for _, _, amount in t.budget if amount]
+        )
         moves = [_move(pid, "added", by_roster.get(rid), state) for pid, rid in t.adds.items()] + [
             _move(pid, "dropped", by_roster.get(rid), state) for pid, rid in t.drops.items()
         ]
+        # A trade is between managers: every one of them is who made it.
+        teams = [by_roster[rid] for rid in t.roster_ids if rid in by_roster]
+        who = (
+            " ↔ ".join(state.team_name(team) for team in teams)
+            if t.kind == "trade" and len(teams) > 1
+            else state.names.get(roster.owner_id, "")
+            if roster
+            else ""
+        )
         rows.append(
             (
                 t.when,
                 ActivityRow(
                     when=moment(t.when),
-                    who=state.names.get(roster.owner_id, "") if roster else "",
+                    who=who,
                     what=TRANSACTION_LABELS.get(t.kind, t.kind),
                     detail=", ".join(moved),
                     is_mine=bool(roster) and roster.roster_id == state.roster.roster_id,
                     moves=moves,
                     bid=f"${t.bid}" if t.bid else "",
+                    budget=[
+                        f"${amount} from {_team_of(sender, state, by_roster)} to {_team_of(receiver, state, by_roster)}"
+                        for sender, receiver, amount in t.budget
+                        if amount
+                    ],
                 ),
             )
         )
@@ -302,6 +323,11 @@ def _move(player_id: str, change: Literal["added", "dropped"], team: Team | None
         change=change,
         manager=state.team_name(team) if team else "",
     )
+
+
+def _team_of(roster_id: int, state: Week, by_roster: Mapping[int, Team]) -> str:
+    team = by_roster.get(roster_id)
+    return state.team_name(team) if team else f"Roster {roster_id}"
 
 
 def _name_of(player_id: str, state: Week) -> str:
