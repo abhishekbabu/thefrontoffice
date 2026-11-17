@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Undo2 } from "lucide-react";
 import type { WeekRange } from "@/lib/api";
 import { IconButton } from "@/components/ui/icon-button";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 /**
@@ -26,23 +27,35 @@ export function WeekStepper({ range, onStep }: { range: WeekRange; onStep: (week
         onClick={() => onStep(week - 1)}
         disabled={week <= first}
       />
-      <span className="min-w-16 text-center font-mono text-[12px] tabular-nums" aria-live="polite">
-        Week {week}
-      </span>
+      {/* The week and where it stands, stacked in a column of fixed width, so
+          the arrows stay put whichever week is shown and whatever is said under it. */}
+      <div className="flex w-24 flex-col items-center gap-0.5">
+        <span className="font-mono text-[12px] tabular-nums" aria-live="polite">
+          Week {week}
+        </span>
+        {/* Said, not only implied by the controls: which week this is relative to now. */}
+        {week === current ? (
+          <Badge variant="muted" appearance="label" className="h-4 px-1.5 text-[9.5px]">
+            this week
+          </Badge>
+        ) : (
+          <Button
+            variant="ghost"
+            aria-label={`Back to this week (week ${current})`}
+            onClick={() => onStep(current)}
+            className="h-4 gap-1 px-1.5 font-mono text-[9.5px] text-muted-foreground"
+          >
+            <Undo2 className="size-2.5" />
+            week {current}
+          </Button>
+        )}
+      </div>
       <IconButton
         label={`Week ${week + 1}`}
         icon={<ChevronRight />}
         onClick={() => onStep(week + 1)}
         disabled={week >= last}
       />
-      {/* Said, not only implied by the controls: which week this is relative to now. */}
-      {week === current ? (
-        <Badge variant="muted" appearance="label">
-          this week
-        </Badge>
-      ) : (
-        <IconButton label={`Back to this week (week ${current})`} icon={<Undo2 />} onClick={() => onStep(current)} />
-      )}
     </div>
   );
 }

@@ -401,7 +401,7 @@ def test_a_player_in_a_reserve_slot_sits_apart_from_the_bench_under_its_slot() -
     side = mine(nfl_provider(client).summary("L1"))
 
     assert "rb1" not in {s.player_id for s in side.bench}
-    assert [(s.player_id, s.slot) for s in side.reserve] == [("rb1", "IR")]
+    assert [(s.player_id, s.slot) for s in side.reserve] == [("rb1", "")]  # lined up with the bench
 
 
 def test_each_side_says_how_many_roster_spots_it_holds_nobody_in() -> None:
@@ -442,7 +442,8 @@ def test_the_opponents_reserve_slots_sit_apart_from_their_bench_too() -> None:
 
     assert opponent is not None
     assert [s.player_id for s in opponent.bench] == ["rb1"]
-    assert [(s.player_id, s.slot) for s in opponent.reserve] == [("rb2", "Taxi")]
+    [taxi] = opponent.reserve
+    assert taxi.player_id == "rb2" and taxi.detail.endswith("taxi")
 
 
 # ── who is not playing, and why ─────────────────────────────────────────

@@ -63,7 +63,7 @@ def test_a_roster_is_parted_as_yahoo_slots_it() -> None:
 
     assert [(s.slot, s.player) for s in side.lineup] == [("PG", "Starter")]
     assert [(s.slot, s.player) for s in side.bench] == [("", "Sitter")]
-    assert [(s.slot, s.player, s.tone) for s in side.reserve] == [("IL", "Hurt", "neutral")]
+    assert [(s.slot, s.player, s.tone) for s in side.reserve] == [("", "Hurt", "neutral")]
 
 
 def test_a_starter_ruled_out_warns_on_his_row() -> None:
