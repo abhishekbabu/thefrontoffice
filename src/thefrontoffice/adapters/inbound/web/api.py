@@ -464,14 +464,14 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         return presenting.season(wiring.week(*_open(competition)).season(league_id))
 
     @app.get("/api/{competition}/leagues/{league_id}/weeks-ahead", response_model=Outlook)
-    def weeks_ahead(competition: str, league_id: str) -> Outlook:
-        """The next few weeks as your roster stands, and a pickup for any that comes up short.
+    def weeks_ahead(competition: str, league_id: str, team: str = "") -> Outlook:
+        """The next few weeks as a roster stands, yours by default, and a pickup for any that comes up short.
 
         Offered only where a competition can project them, as trades are, so
         one that cannot refuses rather than answering with no weeks.
         """
         provider = wiring.registry.find(competition).open_as(OutlookProvider, "planning the weeks ahead")
-        return provider.weeks_ahead(league_id)
+        return provider.weeks_ahead(league_id, team)
 
     @app.get("/api/{competition}/leagues/{league_id}/trades", response_model=list[TradeIdea])
     def trades(competition: str, league_id: str) -> list[TradeIdea]:

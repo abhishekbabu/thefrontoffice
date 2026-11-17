@@ -145,7 +145,7 @@ export function leagueApi(competition: string, league: string) {
     /** The real games of any week of the season, the week being played included. */
     gamesOf: (week: number) => request<Ok<"games_of">>(`${base}/weeks/${week}/games`),
     schedule: () => request<Ok<"schedule">>(`${base}/schedule`),
-    weeksAhead: () => request<Ok<"weeks_ahead">>(`${base}/weeks-ahead`),
+    weeksAhead: (team = "") => request<Ok<"weeks_ahead">>(withQuery(`${base}/weeks-ahead`, { team })),
     trades: () => request<Ok<"trades">>(`${base}/trades`),
     teams: () => request<Ok<"teams">>(`${base}/teams`),
     teamRoster: (team: string, order: PlayerOrder = {}) =>

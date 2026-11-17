@@ -29,7 +29,8 @@ export const keys = {
   teams: (competition: string, league: string) => [...inLeague(competition, league), "teams"] as const,
   teamRoster: (competition: string, league: string, team: string | undefined) =>
     [...inLeague(competition, league), "team-roster", team] as const,
-  weeksAhead: (competition: string, league: string) => [...inLeague(competition, league), "weeks-ahead"] as const,
+  weeksAhead: (competition: string, league: string, team = "") =>
+    [...inLeague(competition, league), "weeks-ahead", team] as const,
   trades: (competition: string, league: string) => [...inLeague(competition, league), "trades"] as const,
   compare: (competition: string, league: string, ids: string[]) =>
     [...inLeague(competition, league), "compare", ids.join(",")] as const,

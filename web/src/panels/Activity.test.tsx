@@ -2,7 +2,7 @@ import { act } from "react";
 import { describe, expect, it } from "vitest";
 import type { ActivityRow, Competition, League, LeagueSchedule, PlayerDetail } from "@/lib/api";
 import { keys } from "@/lib/queries";
-import { LeaguePanel } from "@/panels/LeaguePanel";
+import { ActivityPanel } from "@/panels/Activity";
 import { sections } from "@/components/ui/move";
 import { offlineClient, render, settle } from "@/test/render";
 import { playerDetail } from "@/test/players";
@@ -42,7 +42,7 @@ describe("League activity", () => {
     client.setQueryData(keys.schedule(competition.key, league.league_id), schedule);
     client.setQueryData(keys.teams(competition.key, league.league_id), []);
     client.setQueryData(keys.player(competition.key, league.league_id, "qb1"), STAR_QB);
-    const { container } = await render(<LeaguePanel competition={competition} league={league} />, client);
+    const { container } = await render(<ActivityPanel competition={competition} league={league} />, client);
 
     const row = [...container.querySelectorAll<HTMLElement>("[role=button]")].find((el) =>
       el.textContent?.includes("Star QB"),

@@ -2,9 +2,11 @@
 
 from dataclasses import replace
 
+import pytest
 from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, ScheduledGame, SleeperRoster
+from thefrontoffice.domain.errors import TeamNotFoundError
 from thefrontoffice.domain.models import Outlook, WeekAhead
 
 MINE = {
@@ -181,3 +183,19 @@ def test_a_short_week_further_out_stays_on_my_team() -> None:
     actions = nfl_provider(client).summary("L1").actions or []
 
     assert not [a for a in actions if a.key.startswith("short:")]
+
+
+def test_any_teams_weeks_ahead_read_its_own_roster() -> None:
+    """A rival holding only the wideout off BUF is short nobody on Buffalo's bye."""
+    client = _client()
+    mine = client.rosters[0]
+    client.rosters = [mine, replace(mine, roster_id=2, owner_id="them", player_ids=["wr8"], starter_ids=["wr8"])]
+    theirs = {w.week: w for w in nfl_provider(client).weeks_ahead("L1", "2").weeks}
+
+    assert not any("Star QB (bye)" in w.missing for w in theirs.values())
+    assert any("Star QB (bye)" in w.missing for w in _weeks(client).values())
+
+
+def test_a_team_the_league_does_not_have_is_not_found() -> None:
+    with pytest.raises(TeamNotFoundError):
+        nfl_provider(_client()).weeks_ahead("L1", "99")

@@ -396,7 +396,7 @@ export interface paths {
         };
         /**
          * Weeks Ahead
-         * @description The next few weeks as your roster stands, and a pickup for any that comes up short.
+         * @description The next few weeks as a roster stands, yours by default, and a pickup for any that comes up short.
          *
          *     Offered only where a competition can project them, as trades are, so
          *     one that cannot refuses rather than answering with no weeks.
@@ -3538,7 +3538,9 @@ export interface operations {
     };
     weeks_ahead: {
         parameters: {
-            query?: never;
+            query?: {
+                team?: string;
+            };
             header?: never;
             path: {
                 competition: string;
