@@ -8,6 +8,7 @@ import { RosterTable, toOrder } from "@/components/ui/roster-table";
 import type { SortState } from "@/components/ui/data-table";
 import { Busy, QueryState } from "@/components/ui/state";
 import { ToggleChip } from "@/components/ui/toggle";
+import { Tabs } from "@/components/ui/tabs";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { Input } from "@/components/ui/input";
 import { Verdict } from "@/components/ui/verdict";
@@ -57,12 +58,13 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
   const [position, setPosition] = useState("");
   const [sort, setSort] = useState<SortState | null>(null);
   const [offset, setOffset] = useState(0);
+  const [view, setView] = useState("");
 
   const leagueApi = api.league(competition.key, league.league_id);
   const page = useQuery<PlayerPage, Error>({
-    queryKey: [...keys.freeAgents(competition.key, league.league_id), search, position, sort, offset],
+    queryKey: [...keys.freeAgents(competition.key, league.league_id), search, position, sort, offset, view],
     // No limit asked for: a page is the server's size, which it says on the page.
-    queryFn: () => leagueApi.freeAgents({ offset, search, position, ...toOrder(sort) }),
+    queryFn: () => leagueApi.freeAgents({ offset, search, position, view, ...toOrder(sort) }),
     // Keeps the table on screen while the next page loads, so paging does not
     // blink the page out and back.
     placeholderData: keepPreviousData,
@@ -116,7 +118,16 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
         <div className="flex flex-col gap-4 p-5">
           <Card>
             <CardHeader>
-              <span>Available</span>
+              {page.data.views.length > 0 ? (
+                <Tabs
+                  tabs={[{ id: "", label: "All" }, ...page.data.views.map((v) => ({ id: v, label: v }))]}
+                  current={view}
+                  onPick={reset(setView)}
+                  className="-my-1 normal-case tracking-normal"
+                />
+              ) : (
+                <span>Available</span>
+              )}
               <span className="flex items-center gap-2">
                 {judge.isPending && <Busy>judging…</Busy>}
                 {/* The first rows on screen: the sort has already put the ones
@@ -182,10 +193,8 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
             <RosterTable
               players={page.data.players}
               empty={{
-                title: filtered ? "Nothing matches" : "Nobody available",
-                detail: filtered
-                  ? "Try a different position, or clear the search."
-                  : "Every player in this league is on a roster.",
+                title: filtered ? "Nothing matches" : view ? `No ${view} free agents` : "Nobody available",
+                detail: filtered ? "Try another position, or clear the search." : "",
               }}
               sort={sort}
               onSort={reset(setSort)}

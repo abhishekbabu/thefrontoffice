@@ -220,6 +220,9 @@ class PlayerQuery(PlayerOrder):
     limit: int = Field(default=PAGE_SIZE, ge=1, le=MAX_PAGE)
     position: str = Field(default="", description="Keep only this position. Empty keeps all.")
     search: str = Field(default="", description="Substring match across a row's own values.")
+    view: str = Field(
+        default="", description="One of the page's `views` to list instead of the whole pool. Empty is the pool."
+    )
 
 
 class PlayerPage(BaseModel):
@@ -232,6 +235,10 @@ class PlayerPage(BaseModel):
     positions: list[str] = Field(
         default_factory=list,
         description="Every position in the unfiltered pool, so a filter can be offered without guessing.",
+    )
+    views: list[str] = Field(
+        default_factory=list,
+        description="Other lists of the pool the competition offers, by name: 'Trending', 'IR'. Empty where none.",
     )
 
 

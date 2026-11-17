@@ -131,6 +131,16 @@ PORTRAIT_URL = "https://sleepercdn.com/content/nfl/players/{player_id}.jpg"
 TEAM_LOGO_URL = "https://sleepercdn.com/images/team_logos/nfl/{team}.png"
 
 
+TRENDING, INJURED = "Trending", "IR"
+"""The free-agent lists beside the whole pool, as Sleeper's app offers them."""
+
+TRENDING_HOURS, TRENDING_LIMIT = 24, 50
+"""Sleeper's trending window and how many of its most-added players to read."""
+
+ADDS_COLUMN = "Adds"
+"""How many leagues added a trending player in the window."""
+
+
 class SleeperNFLProvider:
     """CompetitionProvider for Sleeper points-league football."""
 
@@ -244,8 +254,21 @@ class SleeperNFLProvider:
         # Ranked on the projection, and among the unprojected on depth chart —
         # a starter with no projection yet is worth more than a fourth-stringer.
         available.sort(key=lambda row: (-(row[0].points if row[0] else 0.0), row[2].depth_chart_order or 99))
-        ranked = views.cards(state, [pid for _, pid, _ in available], starters=set(), wire=True)
-        return paging.page(ranked, query)
+        ids = [pid for _, pid, _ in available]
+        adds: dict[str, int] = {}
+        if query.view == TRENDING:
+            # Sleeper's own trending adds, most added first, as its app lists them.
+            adds = {t.player_id: t.count for t in self.client.get_trending("add", TRENDING_HOURS, TRENDING_LIMIT)}
+            ids = sorted((pid for pid in ids if pid in adds), key=lambda pid: -adds[pid])
+        elif query.view == INJURED:
+            ids = [pid for pid in ids if state.players[pid].injury_status.upper() == "IR"]
+        ranked = views.cards(state, ids, starters=set(), wire=True)
+        if adds:
+            ranked = [
+                card.model_copy(update={"columns": {**card.columns, ADDS_COLUMN: str(adds[card.player_id])}})
+                for card in ranked
+            ]
+        return paging.page(ranked, query).model_copy(update={"views": [TRENDING, INJURED]})
 
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
         """One player: the week, what makes the projection, and who they are."""
