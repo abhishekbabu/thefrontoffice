@@ -26,13 +26,14 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Chip,
     ChipPlay,
     Fixture,
+    GameweekResult,
     LiveStat,
     Pick,
     Player,
     Squad,
 )
-from thefrontoffice.domain.errors import PlayerNotFoundError, TeamNotFoundError
-from thefrontoffice.domain.models import PlayerQuery, Spot
+from thefrontoffice.domain.errors import NotFoundError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.models import PlayerQuery, Spot, Summary
 
 # ── configuration ───────────────────────────────────────────────────────
 
@@ -900,3 +901,84 @@ def test_a_club_that_will_not_load_falls_back_to_the_abbreviation() -> None:
     detail = provider(clubs_error=FPLAPIError("down")).player(LEAGUE_ID, "1")
     assert detail.team_name == detail.team
     assert detail.team_logo_url == ""
+
+
+# ── other gameweeks ─────────────────────────────────────────────────────
+
+
+def _stats(summary: Summary) -> dict[str, str]:
+    return {stat.label: stat.value for stat in summary.headline}
+
+
+def test_the_gameweek_being_played_says_where_it_sits_in_the_season() -> None:
+    weeks = provider().summary("900").weeks
+
+    assert weeks is not None
+    assert (weeks.week, weeks.current, weeks.first, weeks.last) == (4, 4, 1, 38)
+
+
+def test_a_gameweek_played_reads_the_squad_picked_for_it_and_what_fpl_credited() -> None:
+    fake = FakeFPL(history=[GameweekResult(event=2, points=63, transfers_made=0, transfers_cost=0)])
+    summary = FPLProvider(ENTRY_ID, client=fake).week_of("900", 2)
+
+    assert fake.squad_requests == [2]
+    assert _stats(summary) == {"Points": "63", "Average": "50"}
+    assert mine(summary).points == "63 pts"
+    assert summary.window == "Gameweek 2 · final"
+    assert summary.opponent is None  # a classic league has no tie
+    assert summary.actions is None and summary.swaps == []
+    assert summary.weeks is not None and (summary.weeks.week, summary.weeks.current) == (2, 4)
+
+
+def test_a_head_to_head_gameweek_played_reads_as_its_final_score() -> None:
+    summary = provider().week_of("950", 2)
+
+    assert _stats(summary)["Final"] == "40 – 52"
+    assert summary.opponent is not None and summary.opponent.points == "52 pts"
+
+
+def test_the_next_gameweek_is_the_squad_held_now_at_fpls_projection_for_it() -> None:
+    fake = FakeFPL()
+    summary = FPLProvider(ENTRY_ID, client=fake).week_of("900", 5)
+
+    assert fake.squad_requests == [4]  # its picks are not published until the deadline passes
+    assert list(_stats(summary)) == ["Deadline"]
+    assert all(spot.value.endswith("xPts") for spot in mine(summary).lineup)
+    assert mine(summary).points.endswith("proj")
+
+
+def test_a_gameweek_further_out_has_no_projection_rather_than_the_next_ones() -> None:
+    summary = provider().week_of("900", 8)
+
+    assert {spot.value for spot in mine(summary).lineup} == {"—"}
+    assert mine(summary).points == ""
+
+
+def test_a_gameweek_outside_the_season_is_refused() -> None:
+    with pytest.raises(NotFoundError):
+        provider().week_of("900", 39)
+    with pytest.raises(NotFoundError):
+        provider().games_of("900", 0)
+
+
+def test_a_gameweeks_matches_carry_their_score_once_kicked_off() -> None:
+    fake = FakeFPL(
+        fixtures=[
+            Fixture(
+                event=3,
+                home="ARS",
+                away="LIV",
+                home_difficulty=2,
+                away_difficulty=4,
+                started=True,
+                home_score=2,
+                away_score=1,
+            ),
+            Fixture(event=3, home="TOT", away="CHE", home_difficulty=3, away_difficulty=3),
+        ]
+    )
+    games = {
+        (m.home, m.away): (m.home_score, m.away_score) for m in FPLProvider(ENTRY_ID, client=fake).games_of("900", 3)
+    }
+
+    assert games == {("ARS", "LIV"): (2, 1), ("TOT", "CHE"): (None, None)}

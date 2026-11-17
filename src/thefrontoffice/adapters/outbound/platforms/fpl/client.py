@@ -565,6 +565,9 @@ class FPLClient:
                 # Over once the whistle goes. `finished` waits for the bonus to be confirmed, which
                 # can take days, and a row reading live for a match two days gone is the worse error.
                 finished=bool(f.get("finished_provisional") or f.get("finished")),
+                # Null until kickoff.
+                home_score=int(f.get("team_h_score") or 0),
+                away_score=int(f.get("team_a_score") or 0),
             )
             for f in data or []
         ]

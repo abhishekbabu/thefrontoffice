@@ -306,6 +306,9 @@ class Fixture:
     kickoff: datetime | None = None
     started: bool = False
     finished: bool = False
+    home_score: int = 0
+    away_score: int = 0
+    """Goals so far; nought before kickoff."""
 
     def opponent_of(self, team: str) -> Opponent | None:
         """Who `team` faces, at what difficulty, and whether they are at home."""

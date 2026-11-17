@@ -132,7 +132,7 @@ def test_a_competition_says_what_it_can_do() -> None:
     flags = {c["key"]: (c["judges_wire"], c["plans_weeks"], c["finds_trades"], c["browses_weeks"]) for c in body}
 
     assert flags["nfl-sleeper"] == (True, True, True, True)
-    assert flags["premier-league-fpl"] == (False, False, False, False)
+    assert flags["premier-league-fpl"] == (False, False, False, True)
 
 
 # ── leagues and rosters ─────────────────────────────────────────────────

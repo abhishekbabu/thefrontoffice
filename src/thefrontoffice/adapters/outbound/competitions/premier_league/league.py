@@ -30,11 +30,11 @@ def build(client: FPLSource, league: MiniLeague | None, entry_id: int, playing: 
     the same whether or not this id names a league with fixtures to read.
     """
     if league is None:
-        return LeagueSchedule(matches=_matches(client, playing))
+        return LeagueSchedule(matches=matches(client, playing))
     return LeagueSchedule(
         season=_season_rows(client, league, entry_id, playing),
         standings=_standings(client, league, entry_id),
-        matches=_matches(client, playing),
+        matches=matches(client, playing),
     )
 
 
@@ -113,8 +113,8 @@ def _standings(client: FPLSource, league: MiniLeague, entry_id: int) -> list[Sta
     ]
 
 
-def _matches(client: FPLSource, gameweek: int) -> list[Match]:
-    """The real matches the gameweek is made of, with both difficulties.
+def matches(client: FPLSource, gameweek: int) -> list[Match]:
+    """The real matches a gameweek is made of, with both difficulties, and the score once each kicks off.
 
     Difficulty is per side, so it is carried per side: a fixture is easy
     for one of these clubs and hard for the other, and one number for the
@@ -128,6 +128,8 @@ def _matches(client: FPLSource, gameweek: int) -> list[Match]:
             away=f.away,
             detail=f"FDR {f.home_difficulty} / {f.away_difficulty}",
             tone="warning" if max(f.home_difficulty, f.away_difficulty) >= HARD_FIXTURE else "neutral",
+            home_score=f.home_score if f.started else None,
+            away_score=f.away_score if f.started else None,
         )
         for f in sorted(fixtures, key=lambda f: (f.kickoff is None, f.kickoff))
     ]
