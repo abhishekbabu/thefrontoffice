@@ -247,3 +247,34 @@ def test_the_season_a_trade_is_measured_against_is_priced_by_form_too() -> None:
         return next(row.mean for row in market.season.scoring if (row.team_id, row.week) == ("2", 8))
 
     assert theirs(_market(_hot(_client(), "wr1", 24.0))) > theirs(_market(_client()))
+
+
+# ── who starts ──────────────────────────────────────────────────────────
+
+
+def _backup_qb_on_offer(roster_positions: list[str] | None = None) -> FakeSleeper:
+    """You start one quarterback every week and have receivers to spare; they hold one who would sit behind yours."""
+    client = _client()
+    _add(client, "wr4", "Bench WR", "WR", 9.5)
+    _add(client, "wr5", "Last WR", "WR", 9.0)
+    _add(client, "qb7", "Backup QB", "QB", 11.0)
+    client.rosters[0] = replace(client.rosters[0], player_ids=["qb1", "rb1", "k2", "wr1", "wr2", "wr3", "wr4", "wr5"])
+    client.rosters[1] = replace(client.rosters[1], player_ids=["qb2", "qb7", "k1"])
+    if roster_positions is not None:
+        client.league = replace(client.league, roster_positions=roster_positions)
+    return client
+
+
+def _for_the_backup(client: FakeSleeper) -> list[TradeOption]:
+    return [o for o in _market(client).options if o.receiving == ("Backup QB (QB)",)]
+
+
+def test_a_player_who_would_sit_on_your_bench_is_not_traded_for() -> None:
+    """Cover for the weeks your quarterback misses is not worth a receiver: the trade must bring in a starter."""
+    assert not _for_the_backup(_backup_qb_on_offer())
+
+
+def test_a_second_quarterback_is_traded_for_where_a_superflex_starts_him() -> None:
+    superflex = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX", "K", "DEF", "BN", "BN"]
+
+    assert _for_the_backup(_backup_qb_on_offer(superflex))

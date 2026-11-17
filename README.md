@@ -26,7 +26,9 @@ player. It runs on your own machine against NFL on
   what its lineup has left, so the whole table moves with Sunday.
 - **Weeks ahead and trades**: the next four weeks as your roster stands, and
   trades near even in worth, one for one or two of yours for one of theirs.
-  Each says what it does to your playoff chance and to your lineup in the
+  A trade must bring in a player who starts for you in most of the weeks it
+  changes, so a backup quarterback behind yours is never one (a superflex
+  starts him). Each says what it does to your playoff chance and to your lineup in the
   playoff weeks, and why the other manager might say yes: his starters
   improve, or he's out of the race. A team on the bubble sees the trades that
   raise its chance first; a team already safe sees the ones that help it in
