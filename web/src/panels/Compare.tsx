@@ -5,14 +5,13 @@ import { api, type Competition, type League, type PlayerComparison, type PlayerR
 import { keys } from "@/lib/queries";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { Card, CardHeader } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { ListRow } from "@/components/ui/list";
 import { Empty, QueryState } from "@/components/ui/state";
 import { Table, Td, Th } from "@/components/ui/table";
 import { LeagueHeader } from "@/components/ui/page-header";
-import { usePlayerDrawer } from "@/components/ui/player";
+import { Chips, Portrait, usePlayerDrawer } from "@/components/ui/player";
 import { cn } from "@/lib/utils";
 
 /**
@@ -84,7 +83,8 @@ function Grid({
             {players.map((p) => (
               <Th key={p.player_id} className="min-w-40 normal-case tracking-normal">
                 <div className="flex items-start justify-between gap-2">
-                  <button type="button" onClick={() => onOpen(p.player_id)} className="min-w-0 text-left">
+                  <Portrait src={p.image_url} className="size-14" />
+                  <button type="button" onClick={() => onOpen(p.player_id)} className="min-w-0 flex-1 text-left">
                     <div className="truncate font-sans text-[13.5px] font-semibold text-foreground">{p.name}</div>
                     <div className="font-mono text-[11px] text-muted-foreground">
                       {[p.position, p.team].filter(Boolean).join(" · ")}
@@ -97,11 +97,7 @@ function Grid({
                   </button>
                   <IconButton label={`Remove ${p.name}`} icon={<X />} onClick={() => onRemove(p.player_id)} />
                 </div>
-                {p.owner && (
-                  <Badge variant="muted" appearance="label" className="mt-1">
-                    {p.owner}
-                  </Badge>
-                )}
+                <Chips detail={p} className="mt-1" />
               </Th>
             ))}
           </tr>

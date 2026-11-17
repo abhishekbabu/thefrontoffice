@@ -1230,3 +1230,15 @@ def test_the_wire_lists_free_agents_on_ir_on_their_own() -> None:
     page = nfl_provider(client).free_agents("L1", PlayerQuery(view="IR"))
 
     assert [c.player_id for c in page.players] == [hurt]
+
+
+def test_a_player_carries_this_seasons_position_rank_and_none_before_he_plays() -> None:
+    played = {**HISTORY, "2026": {"qb1": _stats("qb1", "2026", games=10, ppr=250.0, rank=3)}}
+
+    assert (
+        nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS, season_stats=played)).player("L1", "qb1").rank
+        == "QB3"
+    )
+    assert (
+        nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS, season_stats=HISTORY)).player("L1", "qb1").rank == ""
+    )

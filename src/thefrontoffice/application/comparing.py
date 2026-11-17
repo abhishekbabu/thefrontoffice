@@ -19,6 +19,7 @@ ABSENT = "—"
 """A cell for a measure a player has no figure for."""
 
 OWNER = "Owner"
+RANK = "Position rank"
 
 
 def comparison(details: list[PlayerDetail]) -> PlayerComparison:
@@ -46,6 +47,8 @@ def _figures(detail: PlayerDetail) -> dict[str, str]:
     """
     first = detail.tabs[0] if detail.tabs else ""
     figures: dict[str, str] = {OWNER: detail.owner} if detail.owner else {}
+    if detail.rank:
+        figures[RANK] = detail.rank
     for group in detail.groups:
         if (group.tab or first) != first:
             continue

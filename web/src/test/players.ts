@@ -15,6 +15,7 @@ export function playerDetail(extra: Partial<PlayerDetail> = {}): PlayerDetail {
     url: "",
     image_url: "",
     tone: "neutral",
+    rank: "",
     owner: "",
     tabs: [],
     groups: [],
