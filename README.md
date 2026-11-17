@@ -60,7 +60,10 @@ opens the move in full, by who got whom).
 On NFL the matchup page pages through the season: the arrows beside the week,
 the ← and → keys, or a sideways swipe. A week played shows the lineups that
 played it and its final score; a week to come, each roster's best projected
-lineup. The to-do list stays on the week being played.
+lineup. The to-do list stays on the week being played. FPL pages through its
+gameweeks the same way: one played shows the fifteen picked for it and what
+each scored; one to come, the squad as it stands against that gameweek's
+fixtures, projected for the next gameweek only, since FPL projects no further.
 
 NFL moves to the next week once every game of the current one is final,
 without waiting a day or two for Sleeper to catch up, and counts the finished
