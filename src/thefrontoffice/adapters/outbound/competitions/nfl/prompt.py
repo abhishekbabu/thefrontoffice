@@ -314,7 +314,9 @@ def headline(state: Week) -> list[Stat]:
     and the week is already in the page's title. Only points left on the
     bench warns: it is the one figure here that is a decision still open.
     """
-    if state.on_bench > 0:
+    # Points left on the bench are a decision only in the week being played: one played is
+    # settled, and one to come is already shown at its best.
+    if state.on_bench > 0 and not (state.is_past or state.is_future):
         lineup = Stat(
             label="Lineup", value=f"{state.current_points:.2f} proj · best {state.best_points:.2f}", tone="warning"
         )
@@ -404,6 +406,9 @@ def matchup(state: Week) -> tuple[str, list[Stat]]:
     margin = round(mine.points - theirs.points, 2)
 
     prose = header + f"OPPONENT: {name}\nLIVE SCORE: you {mine.points:.2f} - {theirs.points:.2f} them\n"
+    if state.is_future:
+        # Nobody has scored in a week still to come: a score here is 0-0, not a result.
+        return prose, [Stat(label="Opponent", value=name)]
     stats = [
         Stat(label="Opponent", value=name),
         # Toned by who is ahead: the score is the verdict so far. No separate
@@ -411,7 +416,7 @@ def matchup(state: Week) -> tuple[str, list[Stat]]:
         # read next to the simulated "Likely margin" it looked like a second
         # forecast that disagreed with the first.
         Stat(
-            label="Live",
+            label="Final" if state.is_past else "Live",
             value=f"{mine.points:.2f} – {theirs.points:.2f}",
             tone="good" if margin > 0 else "warning" if margin < 0 else "neutral",
         ),

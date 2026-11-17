@@ -128,9 +128,10 @@ def test_competitions_include_the_unconfigured_ones() -> None:
 
 def test_a_competition_says_what_it_can_do() -> None:
     body = TestClient(web.create_app(fake_wiring(registry=REGISTRY.entries))).get("/api/competitions").json()
-    flags = {c["key"]: (c["judges_wire"], c["plans_weeks"], c["finds_trades"]) for c in body}
+    flags = {c["key"]: (c["judges_wire"], c["plans_weeks"], c["finds_trades"], c["browses_weeks"]) for c in body}
 
-    assert flags["nfl-sleeper"] == (True, True, True) and flags["premier-league-fpl"] == (False, False, False)
+    assert flags["nfl-sleeper"] == (True, True, True, True)
+    assert flags["premier-league-fpl"] == (False, False, False, False)
 
 
 # ── leagues and rosters ─────────────────────────────────────────────────
@@ -344,7 +345,7 @@ def test_the_assistant_is_asked_with_what_is_on_screen() -> None:
     chat = FakeChat(reply="Because he has no fixture.")
     client = _client(ai=FakeAI(chat=chat))
 
-    on_screen = [{"kind": "page", "key": "week"}, {"kind": "task", "key": ITEM.key}]
+    on_screen = [{"kind": "page", "key": "matchup"}, {"kind": "task", "key": ITEM.key}]
     body = client.post(
         f"/api/chat/{_opened(client)}", json={"message": "Why bench him?", "on_screen": on_screen}
     ).json()
@@ -373,7 +374,9 @@ def test_a_turn_keeps_the_question_not_the_briefing_that_rode_with_it() -> None:
     client = _client(ai=FakeAI(chat=FakeChat(reply="Because.")))
     chat_id = _opened(client)
 
-    body = client.post(f"/api/chat/{chat_id}", json={"message": "Why?", "on_screen": [{"kind": "page", "key": "week"}]})
+    body = client.post(
+        f"/api/chat/{chat_id}", json={"message": "Why?", "on_screen": [{"kind": "page", "key": "matchup"}]}
+    )
 
     assert [t["text"] for t in body.json() if t["role"] == "you"] == ["Why?"]
 
@@ -945,6 +948,32 @@ def test_the_weeks_ahead_come_back_with_their_fixes() -> None:
 def test_a_competition_that_cannot_look_ahead_refuses_as_it_does_trades(client: TestClient) -> None:
     """Only offered where it can be, so asking anyway is refused rather than answered with no weeks."""
     response = client.get("/api/nfl-sleeper/leagues/L1/weeks-ahead")
+
+    assert (response.status_code, response.json()["code"]) == (400, "unsupported")
+
+
+class _BrowsingProvider(_SummaryProvider):
+    def week_of(self, league_id: str, week: int) -> Summary:
+        from thefrontoffice.domain.models import WeekRange
+
+        return Summary(window=f"Week {week}", weeks=WeekRange(week=week, current=10, first=1, last=16))
+
+
+def test_another_week_comes_back_with_where_it_sits_in_the_season() -> None:
+    from thefrontoffice.domain.models import Summary
+
+    body = _client(_BrowsingProvider(Summary())).get("/api/nfl-sleeper/leagues/L1/weeks/4").json()
+
+    assert (body["window"], body["weeks"]["week"], body["weeks"]["current"], body["actions"]) == (
+        "Week 4",
+        4,
+        10,
+        None,
+    )
+
+
+def test_a_competition_that_cannot_browse_weeks_refuses_as_it_does_trades(client: TestClient) -> None:
+    response = client.get("/api/nfl-sleeper/leagues/L1/weeks/4")
 
     assert (response.status_code, response.json()["code"]) == (400, "unsupported")
 

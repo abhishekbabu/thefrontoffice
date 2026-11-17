@@ -18,6 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import lineup_poin
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Game,
     LeagueMove,
+    LeagueRules,
     Matchup,
     NFLSource,
     Projection,
@@ -122,7 +123,12 @@ def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence
 
 def last_week(state: Week) -> int:
     """The league's final week: the end of its playoffs, or the NFL's last where it names none."""
-    start, teams = state.league.playoff_week_start, state.league.playoff_teams
+    return season_end(state.league)
+
+
+def season_end(rules: LeagueRules) -> int:
+    """The final week of a league's season, before any week of it has been gathered."""
+    start, teams = rules.playoff_week_start, rules.playoff_teams
     if not start or not teams:
         return SEASON_WEEKS
     return min(SEASON_WEEKS, start + math.ceil(math.log2(teams)) - 1)

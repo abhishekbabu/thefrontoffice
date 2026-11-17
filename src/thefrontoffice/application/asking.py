@@ -45,7 +45,7 @@ ACTIVITY_SHOWN = 15
 """League moves a briefing lists, most recent first."""
 
 PAGE_NAMES = {
-    "week": "the week — lineup, matchup and to-do list",
+    "matchup": "the matchup — lineup, opponent and to-do list",
     "league": "the league — standings, season and activity",
     "team": "their roster",
     "free-agents": "the free agents",
@@ -167,7 +167,7 @@ class AskEngine:
             # A page with no league facts behind it. Saying which it is still
             # tells the model where the manager is looking.
             return f"the {page} page", ""
-        if page == "week":
+        if page == "matchup":
             facts = self._week_text(league_id)
         elif page == "league":
             facts = _schedule_text(self.provider.schedule(league_id))

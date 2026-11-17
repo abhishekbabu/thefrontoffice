@@ -375,6 +375,26 @@ class OutlookProvider(Protocol):
 
 
 @runtime_checkable
+class WeekBrowsingProvider(Protocol):
+    """A competition whose other weeks can be opened: one played, as it finished; one to come, as it projects.
+
+    Separate from WeekProvider for the reason OutlookProvider is: the capability
+    arrives per competition, and one without it shows only the week being played.
+    """
+
+    def week_of(self, league_id: str, week: int) -> Summary:
+        """Any week of the season, in the same shape as the week being played.
+
+        Carries no to-do list: what to do is only ever about the week being
+        played, which `WeekProvider.summary` answers.
+
+        Raises:
+            NotFoundError: the season has no such week.
+        """
+        ...
+
+
+@runtime_checkable
 class SeasonProvider(Protocol):
     """A competition whose regular season can be simulated to its end.
 

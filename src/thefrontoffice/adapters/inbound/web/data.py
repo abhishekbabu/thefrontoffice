@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from thefrontoffice.adapters.inbound.remedies import ErrorBody
 from thefrontoffice.bootstrap import CompetitionEntry
-from thefrontoffice.domain.ports import OutlookProvider, TradeMarketProvider, WireProvider
+from thefrontoffice.domain.ports import OutlookProvider, TradeMarketProvider, WeekBrowsingProvider, WireProvider
 
 
 class Competition(BaseModel):
@@ -35,6 +35,9 @@ class Competition(BaseModel):
 
     plans_weeks: bool
     """Whether its coming weeks can be projected."""
+
+    browses_weeks: bool
+    """Whether weeks other than the one being played can be opened."""
 
     finds_trades: bool
     """Whether the trades worth offering can be found."""
@@ -65,6 +68,7 @@ def competition(entry: CompetitionEntry) -> Competition:
         name=entry.name,
         judges_wire=entry.can(WireProvider),
         plans_weeks=entry.can(OutlookProvider),
+        browses_weeks=entry.can(WeekBrowsingProvider),
         finds_trades=entry.can(TradeMarketProvider),
         configured=entry.is_configured(),
         requires=entry.requires,

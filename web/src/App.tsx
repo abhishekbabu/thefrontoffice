@@ -33,7 +33,7 @@ type PanelProps = { competition: Competition; league: League };
  * entry a type error rather than a view that silently never renders.
  */
 const PANELS: Record<View, (props: PanelProps) => React.ReactNode> = {
-  week: ScoutPanel,
+  matchup: ScoutPanel,
   league: LeaguePanel,
   team: TeamPanel,
   "free-agents": FreeAgentsPanel,

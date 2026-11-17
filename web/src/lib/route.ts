@@ -10,24 +10,24 @@
 import { matchPath } from "react-router-dom";
 
 /** Every view a competition has, in the order the rail lists them. */
-export const VIEWS = ["week", "league", "team", "free-agents"] as const;
+export const VIEWS = ["matchup", "league", "team", "free-agents"] as const;
 
 /**
  * One vocabulary rather than two: the id in the code is the word in the URL,
- * so there is no table mapping "scout" to "week" for somebody to get wrong.
+ * so there is no table mapping "scout" to "matchup" for somebody to get wrong.
  */
 export type View = (typeof VIEWS)[number];
 
 /** What each view is called: in the rail, and where the assistant says what it can see. */
 export const VIEW_LABELS: Record<View, string> = {
-  week: "This week",
+  matchup: "Matchup",
   league: "League",
   team: "My team",
   "free-agents": "Free agents",
 };
 
 /** What a competition opens on, and what an unrecognized view falls back to. */
-export const DEFAULT_VIEW: View = "week";
+export const DEFAULT_VIEW: View = "matchup";
 
 /**
  * Where the address points.

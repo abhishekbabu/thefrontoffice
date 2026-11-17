@@ -37,8 +37,8 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperMatchup,
     SleeperRoster,
 )
-from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
-from thefrontoffice.domain.models import PlayerQuery
+from thefrontoffice.domain.errors import LeagueNotFoundError, NotFoundError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.models import PlayerQuery, Summary
 
 # ── leagues ─────────────────────────────────────────────────────────────
 
@@ -1069,3 +1069,78 @@ def test_the_roster_table_lists_a_starter_let_go_as_starting() -> None:
     cards = {card.player_id: card.columns["Slot"] for card in nfl_provider(_let_go()).roster("L1")}
 
     assert cards == {"qb1": "START", "rb1": "START", "rb2": "BN"}
+
+
+# ── other weeks of the season ───────────────────────────────────────────
+
+WEEK_5 = [ScheduledGame(week=5, date="2026-10-08", home="BUF", away="MIA", status="pre_game")]
+
+
+def _week_five() -> FakeSleeper:
+    """Week 5 being played. In week 2 you held Waiver WR and started him, and have dropped him since."""
+    client = _week_three()
+    client.week = 5
+    client.season_schedule = [*WEEK_5]
+    client.league = replace(client.league, playoff_teams=4, playoff_week_start=14)
+    client.weekly_matchups = {
+        2: [
+            SleeperMatchup(
+                roster_id=1,
+                matchup_id=1,
+                points=101.0,
+                starters=["qb1", "rb1", "", "wr9"],
+                players=["qb1", "rb1", "wr9"],
+                players_points={"wr9": 12.0},
+            ),
+            SleeperMatchup(roster_id=2, matchup_id=1, points=99.0, starters=["rb2"], players=["rb2"]),
+        ],
+        # Sleeper copies a roster's standing lineup into weeks to come: here, the worse back.
+        7: [
+            SleeperMatchup(roster_id=1, matchup_id=1, starters=["qb1", "rb2"]),
+            SleeperMatchup(roster_id=2, matchup_id=1, starters=["wr9"]),
+        ],
+    }
+    return client
+
+
+def _headline(summary: Summary) -> dict[str, str]:
+    return {stat.label: stat.value for stat in summary.headline}
+
+
+def test_the_week_being_played_says_where_it_sits_in_the_season() -> None:
+    weeks = nfl_provider(_week_five()).summary("L1").weeks
+
+    assert weeks is not None
+    assert (weeks.week, weeks.current, weeks.first, weeks.last) == (5, 5, 1, 15)
+
+
+def test_a_week_played_shows_the_roster_that_played_it_and_its_final_score() -> None:
+    summary = nfl_provider(_week_five()).week_of("L1", 2)
+    lineup = mine(summary).lineup
+
+    assert [spot.player for spot in lineup[:4]] == ["Star QB", "Good RB", "—", "Waiver WR"]
+    assert all(GONE not in spot.detail for spot in lineup)  # he was on the roster that week
+    assert _headline(summary)["Final"] == "101.00 – 99.00"
+    assert summary.actions is None
+    assert summary.weeks is not None and (summary.weeks.week, summary.weeks.current) == (2, 5)
+
+
+def test_a_week_to_come_starts_each_rosters_best_lineup_rather_than_sleepers_copy() -> None:
+    summary = nfl_provider(_week_five()).week_of("L1", 7)
+
+    assert [spot.player for spot in mine(summary).lineup[:3]] == ["Star QB", "Good RB", "Bad RB"]
+    assert "Live" not in _headline(summary) and "Final" not in _headline(summary)
+    assert summary.window.startswith("Week 7")
+
+
+def test_a_playoff_week_to_come_names_no_opponent() -> None:
+    """Sleeper fills the bracket with placeholder pairings until the regular season is over."""
+    client = _week_five()
+    client.weekly_matchups[14] = client.weekly_matchups[7]
+
+    assert nfl_provider(client).week_of("L1", 14).opponent is None
+
+
+def test_a_week_outside_the_season_is_refused() -> None:
+    with pytest.raises(NotFoundError):
+        nfl_provider(_week_five()).week_of("L1", 16)

@@ -75,6 +75,7 @@ from thefrontoffice.domain.ports import (
     LeagueRef,
     OutlookProvider,
     TradeMarketProvider,
+    WeekBrowsingProvider,
     WireProvider,
 )
 
@@ -386,6 +387,18 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         manager decided about them — dismissed, snoozed, or back since.
         """
         return presenting.week(wiring.week(*_open(competition)).week(league_id))
+
+    @app.get("/api/{competition}/leagues/{league_id}/weeks/{week}", response_model=Summary)
+    def week_of(competition: str, league_id: str, week: int) -> Summary:
+        """Another week of the season: one played as it finished, one to come as the rosters project.
+
+        The week being played is the summary's, with its to-do list and its
+        forecast; this answers the rest, with neither. Offered only where a
+        competition can, so one that cannot refuses rather than answering
+        with the week being played.
+        """
+        provider = wiring.registry.find(competition).open_as(WeekBrowsingProvider, "browsing other weeks")
+        return provider.week_of(league_id, week)
 
     @app.post("/api/{competition}/leagues/{league_id}/items", response_model=ItemMark)
     def decide(competition: str, league_id: str, decision: ItemDecision) -> ItemMark:

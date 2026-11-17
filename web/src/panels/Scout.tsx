@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { Sparkles } from "lucide-react";
 import {
   api,
@@ -23,6 +24,7 @@ import { LineupCard, SideCard, Swaps } from "@/components/ui/lineup";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
+import { WeekStepper, useSwipe } from "@/components/ui/week-stepper";
 
 /**
  * Judge again on arrival where the server says the week has moved on from the
@@ -41,7 +43,7 @@ export function useJudgeWhenDue(due: boolean, scope: string, judge: { mutate: ()
 }
 
 /**
- * The week: where you stand, what you are fielding, and who against.
+ * The matchup: where you stand, what you are fielding, and who against — this week, or any other.
  *
  * Complete without a model: everything is read or computed from league state,
  * so the page is whole the moment it opens. Where a model is configured it
@@ -50,6 +52,11 @@ export function useJudgeWhenDue(due: boolean, scope: string, judge: { mutate: ()
  * its own to be read beside this one. The last judgment shows on load, from
  * where it was kept, and is asked again only once the week has moved on
  * from it — the server's `due`, never merely a reload.
+ *
+ * Another week opens from the stepper, the arrow keys or a swipe, and is named
+ * in the address (`?week=7`) so it can be linked and Back returns from it. It
+ * shows that week's lineups and score and no to-do list, which is only ever
+ * about the week being played.
  */
 export function ScoutPanel({ competition, league }: { competition: Competition; league: League }) {
   const { openPlayer, drawer } = usePlayerDrawer(competition, league);
@@ -59,6 +66,26 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
 
   const summaryKey = keys.summary(competition.key, league.league_id);
   const week = useQuery<Summary, Error>({ queryKey: summaryKey, queryFn: leagueApi.summary });
+
+  // The week being played is the summary's; any other is asked for by number.
+  const [params, setParams] = useSearchParams();
+  const range = competition.browses_weeks ? week.data?.weeks : undefined;
+  const asked = Number(params.get("week")) || null;
+  const browsing = range && asked && asked !== range.current && asked >= range.first && asked <= range.last ? asked : null;
+  const other = useQuery<Summary, Error>({
+    queryKey: keys.weekOf(competition.key, league.league_id, browsing),
+    queryFn: () => leagueApi.weekOf(browsing!),
+    enabled: browsing !== null,
+    // The last week stays up while the next loads, rather than the page blanking on every step.
+    placeholderData: keepPreviousData,
+  });
+  const shown = browsing === null ? week : other;
+  const step = (to: number) => setParams(range && to !== range.current ? { week: String(to) } : {});
+  const onWeek = range ? { ...range, week: browsing ?? range.current } : undefined;
+  const swipe = useSwipe(
+    () => onWeek && onWeek.week < onWeek.last && step(onWeek.week + 1),
+    () => onWeek && onWeek.week > onWeek.first && step(onWeek.week - 1),
+  );
 
   // The last judgment, read without asking the model anything: judging is a
   // click, and a reload should not throw the answer away.
@@ -100,18 +127,20 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
     <>
       {/* The week is what this page is about, so it belongs in the header
           rather than a row down among the figures. */}
-      <LeagueHeader league={league} meta={[week.data?.window, league.detail].filter(Boolean).join(" · ")} />
-      <StatStrip stats={week.data?.headline ?? []} />
+      <LeagueHeader league={league} meta={[shown.data?.window, league.detail].filter(Boolean).join(" · ")}>
+        {onWeek && <WeekStepper range={onWeek} onStep={step} />}
+      </LeagueHeader>
+      <StatStrip stats={shown.data?.headline ?? []} />
 
-      <QueryState query={week} lines={4} />
+      <QueryState query={shown} lines={4} />
 
-      {week.data && (
-        <div className="flex flex-col gap-4 p-5">
+      {shown.data && (
+        <div className="flex touch-pan-y flex-col gap-4 p-5" {...swipe}>
           {judge.isError && <ErrorNote error={judge.error} className="m-0" />}
           {decide.isError && <ErrorNote error={decide.error} className="m-0" />}
-          {week.data.actions && (
+          {shown.data.actions && (
             <ActionList
-              actions={week.data.actions}
+              actions={shown.data.actions}
               suggested={report?.moves}
               onOpen={openPlayer}
               onDecide={(decision) => decide.mutate(decision)}
@@ -145,17 +174,17 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
             />
           )}
 
-          {week.data.opponent ? (
+          {shown.data.opponent ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <SideCard side={week.data.mine} label="You" onOpen={openPlayer} />
-              <SideCard side={week.data.opponent} label="Opponent" onOpen={openPlayer} />
+              <SideCard side={shown.data.mine} label="You" onOpen={openPlayer} />
+              <SideCard side={shown.data.opponent} label="Opponent" onOpen={openPlayer} />
             </div>
           ) : (
             <LineupCard
               title="Your lineup"
-              lineup={week.data.mine?.lineup ?? []}
-              bench={week.data.mine?.bench ?? []}
-              swaps={week.data.swaps}
+              lineup={shown.data.mine?.lineup ?? []}
+              bench={shown.data.mine?.bench ?? []}
+              swaps={shown.data.swaps}
               onOpen={openPlayer}
             />
           )}
@@ -163,34 +192,34 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
           {/* Shown beside the lineups when there is an opponent, since the
               swaps then have no card of their own to live in. A competition
               with a to-do list sends none: they are items on it. */}
-          {week.data.opponent && week.data.swaps.length > 0 && (
+          {shown.data.opponent && shown.data.swaps.length > 0 && (
             <Card>
-              <Swaps swaps={week.data.swaps} />
+              <Swaps swaps={shown.data.swaps} />
             </Card>
           )}
 
-          {week.data.boosts && week.data.boosts.stats.length > 0 && (
+          {shown.data.boosts && shown.data.boosts.stats.length > 0 && (
             <Card>
               <CardHeader>
-                <span>{week.data.boosts.title}</span>
-                {week.data.boosts.note && <span>{week.data.boosts.note}</span>}
+                <span>{shown.data.boosts.title}</span>
+                {shown.data.boosts.note && <span>{shown.data.boosts.note}</span>}
               </CardHeader>
-              <StatGrid stats={week.data.boosts.stats} />
+              <StatGrid stats={shown.data.boosts.stats} />
             </Card>
           )}
 
           {/* Only what a row cannot say for itself: a blank or a double gameweek
               changes what a whole club's players are worth. */}
-          {week.data.fixtures.length > 0 && (
+          {shown.data.fixtures.length > 0 && (
             <Card>
               <CardHeader>
                 <span>Watch out for</span>
               </CardHeader>
-              <StatList stats={week.data.fixtures} className="px-4 py-1" />
+              <StatList stats={shown.data.fixtures} className="px-4 py-1" />
             </Card>
           )}
 
-          {!week.data.opponent && (
+          {!shown.data.opponent && (
             <Badge variant="muted" appearance="label">
               No head-to-head fixture this week
             </Badge>

@@ -194,6 +194,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/{competition}/leagues/{league_id}/weeks/{week}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Week Of
+         * @description Another week of the season: one played as it finished, one to come as the rosters project.
+         *
+         *     The week being played is the summary's, with its to-do list and its
+         *     forecast; this answers the rest, with neither. Offered only where a
+         *     competition can, so one that cannot refuses rather than answering
+         *     with the week being played.
+         */
+        get: operations["week_of"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/{competition}/leagues/{league_id}/items": {
         parameters: {
             query?: never;
@@ -663,6 +688,8 @@ export interface components {
             judges_wire: boolean;
             /** Plans Weeks */
             plans_weeks: boolean;
+            /** Browses Weeks */
+            browses_weeks: boolean;
             /** Finds Trades */
             finds_trades: boolean;
             /** Configured */
@@ -1504,7 +1531,7 @@ export interface components {
             kind: "task" | "player" | "page";
             /**
              * Key
-             * @description The to-do item's key, the player's id, or one of ('week', 'league', 'team', 'free-agents').
+             * @description The to-do item's key, the player's id, or one of ('matchup', 'league', 'team', 'free-agents').
              */
             key: string;
         };
@@ -1534,6 +1561,8 @@ export interface components {
              * @default
              */
             window: string;
+            /** @description Where this week sits in the season, for paging to another. None in a competition that shows only the week being played. */
+            weeks: components["schemas"]["WeekRange"] | null;
         };
         /**
          * Swap
@@ -1724,6 +1753,20 @@ export interface components {
              * @default 0
              */
             gain: number;
+        };
+        /**
+         * WeekRange
+         * @description Which week a page shows, the week being played, and how far either way the season can be browsed.
+         */
+        WeekRange: {
+            /** Week */
+            week: number;
+            /** Current */
+            current: number;
+            /** First */
+            first: number;
+            /** Last */
+            last: number;
         };
     };
     responses: never;
@@ -2428,6 +2471,84 @@ export interface operations {
             path: {
                 competition: string;
                 league_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Summary"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    week_of: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition: string;
+                league_id: string;
+                week: number;
             };
             cookie?: never;
         };

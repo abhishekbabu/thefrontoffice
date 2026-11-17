@@ -43,6 +43,7 @@ export type Spot = Schemas["Spot"];
 export type Stat = Schemas["Stat"];
 export type StatTable = Schemas["StatTable"];
 export type Subject = Schemas["Subject"];
+export type WeekRange = Schemas["WeekRange"];
 export type Summary = Schemas["Summary"];
 export type Swap = Schemas["Swap"];
 export type TaskVerdict = Schemas["TaskVerdict"];
@@ -132,6 +133,8 @@ export function leagueApi(competition: string, league: string) {
     roster: (order: PlayerOrder = {}) => request<Ok<"roster">>(withQuery(`${base}/roster`, order)),
     player: (id: string) => request<Ok<"player">>(`${base}/players/${segment(id)}`),
     summary: () => request<Ok<"summary">>(`${base}/summary`),
+    /** Another week of the season, as played or as it projects; the week being played is `summary`. */
+    weekOf: (week: number) => request<Ok<"week_of">>(`${base}/weeks/${week}`),
     schedule: () => request<Ok<"schedule">>(`${base}/schedule`),
     weeksAhead: () => request<Ok<"weeks_ahead">>(`${base}/weeks-ahead`),
     trades: () => request<Ok<"trades">>(`${base}/trades`),
