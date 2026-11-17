@@ -419,6 +419,10 @@ class PlayerDetail(BaseModel):
         ),
     )
     tone: Tone = "neutral"
+    rank: str = Field(
+        default="",
+        description="Where he ranks at his position this season: 'WR12'. Empty before he has played.",
+    )
     owner: str = Field(
         default="",
         description=(

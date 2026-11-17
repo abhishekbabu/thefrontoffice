@@ -63,3 +63,11 @@ def test_headlines_are_not_compared_and_headers_carry_no_drawer() -> None:
 def test_one_to_four_players_compare(count: int) -> None:
     with pytest.raises(InvalidRequestError):
         comparison([_player(f"P{i}", "1") for i in range(count)])
+
+
+def test_position_rank_sits_with_the_owner_at_the_top() -> None:
+    lamb = _player("Lamb", "18.2", owner="Rival").model_copy(update={"rank": "WR4"})
+    compared = comparison([lamb, _player("Nacua", "17.9")])
+
+    assert [row.label for row in compared.table.rows][:2] == ["Owner", "Position rank"]
+    assert compared.table.rows[1].values == ["WR4", ABSENT]

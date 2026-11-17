@@ -1255,6 +1255,12 @@ export interface components {
              */
             tone: "neutral" | "good" | "warning";
             /**
+             * Rank
+             * @description Where he ranks at his position this season: 'WR12'. Empty before he has played.
+             * @default
+             */
+            rank: string;
+            /**
              * Owner
              * @description Whose roster he is on in this league — a team's name, or 'Free agent'. Empty where the league has no such thing, as in FPL, where any number of managers can hold one player.
              * @default

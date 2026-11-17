@@ -176,6 +176,25 @@ function TeamLine({ detail }: { detail: PlayerDetail }) {
   );
 }
 
+/** Whose roster he is on, and where he ranks at his position: the two facts every header of him carries. */
+export function Chips({ detail, className }: { detail: PlayerDetail; className?: string }) {
+  if (!detail.owner && !detail.rank) return null;
+  return (
+    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+      {detail.rank && (
+        <Badge variant="info" appearance="label" className="tabular-nums">
+          {detail.rank}
+        </Badge>
+      )}
+      {detail.owner && (
+        <Badge variant="muted" appearance="label">
+          {detail.owner}
+        </Badge>
+      )}
+    </div>
+  );
+}
+
 /**
  * A player's face, where the platform has one.
  *
@@ -183,7 +202,7 @@ function TeamLine({ detail }: { detail: PlayerDetail }) {
  * the rest, and a photo frame that appears and is then taken away reads as
  * something breaking rather than as a photo that does not exist.
  */
-function Portrait({ src }: { src: string }) {
+export function Portrait({ src, className }: { src: string; className?: string }) {
   const loaded = useLoadedImage(src);
   return (
     <AnimatePresence initial={false}>
@@ -200,7 +219,7 @@ function Portrait({ src }: { src: string }) {
               a square is white margin. 96px is as large as the smaller of the
               two stays sharp at 2x, so this is the size the sources actually
               support rather than the size that would look boldest. */}
-          <img src={src} alt="" aria-hidden className="size-24 max-w-none bg-photo object-cover" />
+          <img src={src} alt="" aria-hidden className={cn("size-24 max-w-none bg-photo object-cover", className)} />
         </m.div>
       )}
     </AnimatePresence>
@@ -292,11 +311,7 @@ function PlayerPanel({
                 {player.data.name}
               </h2>
               <TeamLine detail={player.data} />
-              {player.data.owner && (
-                <Badge variant="muted" appearance="label" className="mt-1.5">
-                  {player.data.owner}
-                </Badge>
-              )}
+              <Chips detail={player.data} className="mt-1.5" />
               <Headline detail={player.data} />
               {player.data.note && (
                 <Badge variant="warn" appearance="status" className="mt-2">

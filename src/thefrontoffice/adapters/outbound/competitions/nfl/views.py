@@ -324,6 +324,8 @@ def _versus(projection: Projection | None, scheduled: bool, unscheduled: str, op
     return "no game" if scheduled else unscheduled
 
 
+POSITION_RANK = "Position rank"
+
 WEEK_TAB, GAME_LOG_TAB, SEASONS_TAB, HISTORY_TAB, NEWS_TAB = "This week", "Game log", "Seasons", "History", "News"
 """The drawer's tabs, in order: a group or table with no tab of its own sits in the first."""
 
@@ -391,6 +393,8 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
     if headlines := state.news.stats(player_id, limit=NEWS_IN_DRAWER):
         groups.append(StatGroup(title="News", tab=NEWS_TAB, stats=headlines))
 
+    seasons = _season_table(client, player_id, state)
+    tables = [t for t in (_game_log(client, player_id, meta, state, schedule), seasons) if t]
     return PlayerDetail(
         player_id=player_id,
         name=meta.name,
@@ -404,14 +408,8 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
         headline=f"{projection.points:.2f}" if projection else "",
         headline_label=_headline_label(projection, scheduled, state.week),
         note=meta.injury_notes or injury,
-        tables=[
-            table
-            for table in (
-                _game_log(client, player_id, meta, state, schedule),
-                _season_table(client, player_id, state),
-            )
-            if table
-        ],
+        tables=tables,
+        rank=_rank(meta.position, seasons),
         tone="warning" if injury else "neutral",
         groups=groups,
     )
@@ -546,7 +544,7 @@ def _season_table(client: NFLSource, player_id: str, state: Week) -> StatTable |
         row("Per game", lambda st: f"{st.per_game(scoring):.2f}"),
         row("Total", lambda st: f"{st.scored(scoring):.2f}"),
         row("Games", lambda st: str(st.games)),
-        row("Position rank", lambda st: f"#{st.position_rank}" if st.position_rank else NOT_APPLICABLE),
+        row(POSITION_RANK, lambda st: f"#{st.position_rank}" if st.position_rank else NOT_APPLICABLE),
     ]
     # Only the splits somebody actually records: a running back has no
     # completion percentage, and a whole row of N/A is a row of nothing.
@@ -555,6 +553,13 @@ def _season_table(client: NFLSource, player_id: str, state: Week) -> StatTable |
             rows.append(row(label, lambda st, k=key: _split_value(k, st.splits.get(k))))
 
     return StatTable(title="By season", tab=SEASONS_TAB, columns=columns, rows=rows)
+
+
+def _rank(position: str, seasons: StatTable | None) -> str:
+    """'WR12': this season's position rank, read off the by-season table's first column."""
+    row = next((r for r in seasons.rows if r.label == POSITION_RANK), None) if seasons else None
+    value = row.values[0] if row and row.values else NOT_APPLICABLE
+    return "" if value == NOT_APPLICABLE else f"{position}{value.lstrip('#')}"
 
 
 def _recent_seasons(season: str) -> list[str]:
