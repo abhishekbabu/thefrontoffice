@@ -284,7 +284,7 @@ export function Categories({ lines, theirs }: { lines: CategoryLine[]; theirs: s
   );
 }
 
-/** A window without its leading "Week 11" or "GW 11": the stepper beside it already says which. */
+/** A window without its leading "Week 11", "GW 11" or "Gameweek 11": the stepper already says which. */
 export function undated(window: string): string {
-  return window.replace(/^(Week|GW) \d+( · )?/, "");
+  return window.replace(/^(Week|GW|Gameweek) \d+( · )?/, "");
 }
