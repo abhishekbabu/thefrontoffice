@@ -130,6 +130,15 @@ def test_a_league_carries_its_trade_deadline(tmp_path: Path) -> None:
     assert client.get_leagues("42", "2026")[0].trade_deadline == 11
 
 
+def test_a_league_says_whether_it_also_plays_its_median(tmp_path: Path) -> None:
+    payload = [{**LEAGUE_PAYLOAD[0], "settings": {"league_average_match": 1}}]
+    client, _ = _client({"leagues/nfl": payload}, tmp_path)
+    assert client.get_leagues("42", "2026")[0].median_game
+
+    plain, _ = _client({"leagues/nfl": LEAGUE_PAYLOAD}, tmp_path / "plain")
+    assert not plain.get_leagues("42", "2026")[0].median_game
+
+
 def test_a_league_with_no_trade_deadline_reads_as_week_zero(tmp_path: Path) -> None:
     client, _ = _client({"leagues/nfl": LEAGUE_PAYLOAD}, tmp_path)
     assert client.get_leagues("42", "2026")[0].trade_deadline == 0

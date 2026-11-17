@@ -15,6 +15,7 @@ the trades), `prompt.py` (what a model reads).
 """
 
 import logging
+import statistics
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -49,13 +50,21 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Projection,
     Trending,
     active,
+    fielded,
+    let_go,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, ruled_out, scoring_label
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
+    FANTASY_POSITIONS,
+    SEASON_WEEKS,
+    ruled_out,
+    scoring_label,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,
     Scoreboard,
     Week,
     counted,
+    pairings,
     projections_for,
     team_name,
     week_dates,
@@ -98,6 +107,7 @@ from thefrontoffice.domain.models import (
     TeamRef,
     TradeMarket,
     TradeProposal,
+    outcome,
 )
 from thefrontoffice.domain.ports import LeagueRef
 
@@ -341,7 +351,12 @@ class SleeperNFLProvider:
         week, season = self._current_week(phase), phase.season
         league = self._league(league_id, season)
         matchups = self._matchups(league_id, week)
-        rosters = self._rosters(league_id, matchups)
+        rosters = self.client.get_rosters(league_id)
+        if self._played_out(phase, week):
+            rosters = banked(rosters, matchups, week, league)
+            week += 1
+            matchups = self._matchups(league_id, week)
+        rosters = with_lineups(rosters, matchups)
         roster = self._mine(rosters, league_id)
 
         catalog = self.client.get_nfl_players()
@@ -351,9 +366,9 @@ class SleeperNFLProvider:
             season, week, league.scoring_format, FANTASY_POSITIONS, league.scoring_rules
         )
         projections = {pid: counted(p) for pid, p in injuries.reported(published, designations).items()}
-        projected = projections_for(roster.player_ids, projections, players)
+        projected = projections_for(fielded(roster), projections, players)
         # Nobody starts from an injured-reserve or taxi slot without a move first.
-        startable = projections_for(active(roster), projections, players)
+        startable = projections_for([*active(roster), *let_go(roster)], projections, players)
 
         slots = league.starting_slots
         lineup = current_lineup(slots, roster.starter_ids, projected)
@@ -391,19 +406,14 @@ class SleeperNFLProvider:
             logger.warning(f"Continuing without the week's matchups, so its opponent, live score and lineups: {e}")
             return []
 
-    def _rosters(self, league_id: str, matchups: Sequence[SleeperMatchup]) -> list[SleeperRoster]:
-        """Every team, each starting the lineup it set for this week.
+    def _played_out(self, phase: Phase, week: int) -> bool:
+        """Whether the week Sleeper calls current has nothing left to play.
 
-        A roster's own `starters` lags: Sleeper can keep serving the lineup as
-        it stood days after the manager changed it, while the week's matchup
-        already carries the new one. So the lineup is read from there, and
-        from the roster only for a team with no matchup this week.
+        Sleeper moves on a day or two after the last game — once Monday night is
+        over, the week a manager is setting is the next one, and a page still on
+        the finished week answers a question nobody can act on.
         """
-        lineups = {entry.roster_id: entry.starters for entry in matchups if entry.starters}
-        return [
-            replace(roster, starter_ids=list(lineups[roster.roster_id])) if roster.roster_id in lineups else roster
-            for roster in self.client.get_rosters(league_id)
-        ]
+        return phase.is_regular_season and week < SEASON_WEEKS and self.scoreboard.over(phase.season, week)
 
     def _evidence(
         self, season: str, week: int, league: SleeperLeague, is_regular_season: bool, players: Mapping[str, PlayerMeta]
@@ -454,7 +464,10 @@ class SleeperNFLProvider:
                 name="Your lineup",
                 detail=state.roster.record,
                 points=views.side_total(state, live),
-                lineup=[views.lineup_spot(slot, state.scheduled, live) for slot in state.lineup],
+                lineup=[
+                    views.released(views.lineup_spot(slot, state.scheduled, live), state.roster)
+                    for slot in state.lineup
+                ],
                 bench=[views.reserved(views.spot(p, state.scheduled, live=live), state.roster) for p in sitting],
             ),
             opponent=self._opponent(state, live),
@@ -572,3 +585,63 @@ class SleeperNFLProvider:
         """The rest of the season, with the one-for-one trades that would help both lineups."""
         state = self._week(league_id)
         return market.build(self.client, state, seed=self._season_seed(league_id, state))
+
+
+# ── the week's teams ────────────────────────────────────────────────────
+
+
+def with_lineups(rosters: Sequence[SleeperRoster], matchups: Sequence[SleeperMatchup]) -> list[SleeperRoster]:
+    """Every team, each starting the lineup it set for this week.
+
+    A roster's own `starters` lags: Sleeper can keep serving the lineup as
+    it stood days after the manager changed it, while the week's matchup
+    already carries the new one. So the lineup is read from there, and
+    from the roster only for a team with no matchup this week.
+    """
+    lineups = {entry.roster_id: entry.starters for entry in matchups if entry.starters}
+    return [
+        replace(roster, starter_ids=list(lineups[roster.roster_id])) if roster.roster_id in lineups else roster
+        for roster in rosters
+    ]
+
+
+def banked(
+    rosters: Sequence[SleeperRoster], matchups: Sequence[SleeperMatchup], week: int, league: SleeperLeague
+) -> list[SleeperRoster]:
+    """The records with a finished week counted, where Sleeper has not counted it yet.
+
+    Sleeper settles a week's results a day or so after its last game, and the
+    page moves on before then: without this the table, and every simulation
+    standing on it, would lose a week of wins. Whether Sleeper has counted it is
+    read off the records themselves — a week each, two in a league that also
+    plays its median — since they arrive in the same response that would carry it.
+    A playoff week is never counted: the records are the regular season's.
+    """
+    per_week = 2 if league.median_game else 1
+    if (league.playoff_week_start and week >= league.playoff_week_start) or any(
+        r.wins + r.losses + r.ties >= week * per_week for r in rosters
+    ):
+        return list(rosters)
+    sides = {mine.roster_id: (mine, theirs) for a, b in pairings(matchups) for mine, theirs in ((a, b), (b, a))}
+    scores = [entry.points for entry in matchups]
+    middle = statistics.median(scores) if league.median_game and scores else None
+    counted: list[SleeperRoster] = []
+    for roster in rosters:
+        side = sides.get(roster.roster_id)
+        if side is None:
+            counted.append(roster)
+            continue
+        mine, theirs = side
+        results = [outcome(mine.points, theirs.points)]
+        if middle is not None:
+            results.append(outcome(mine.points, middle))
+        counted.append(
+            replace(
+                roster,
+                wins=roster.wins + results.count("won"),
+                losses=roster.losses + results.count("lost"),
+                ties=roster.ties + results.count("drawn"),
+                points_for=round(roster.points_for + mine.points, 2),
+            )
+        )
+    return counted

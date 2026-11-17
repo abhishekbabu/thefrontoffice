@@ -21,6 +21,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot, optimal_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
+    COMPLETE,
     Game,
     GameNow,
     LeagueRules,
@@ -348,7 +349,7 @@ class Scoreboard:
         self.client = client
         self.espn = espn
         self._schedules: dict[str, dict[int, list[Game]]] = {}
-        self._boards: dict[int, dict[str, ScoreboardGame]] = {}
+        self._boards: dict[tuple[str, int], dict[str, ScoreboardGame]] = {}
         self._games: dict[tuple[str, int], dict[int, list[Game]]] = {}
 
     def schedule(self, season: str) -> Mapping[int, Sequence[Game]]:
@@ -392,21 +393,37 @@ class Scoreboard:
 
     def board(self, state: Week) -> dict[str, ScoreboardGame]:
         """This week's games as they stand, keyed by each of the two clubs in Sleeper's abbreviations."""
-        if state.week not in self._boards:
+        return self._board(state.season, state.week)
+
+    def over(self, season: str, week: int) -> bool:
+        """Whether every game of a week has been played: nothing left in it can change a result.
+
+        Each game is read off the live scoreboard where it answers, and off the
+        season's file where it does not — which lags, so a week reads as still
+        on rather than as over before it is.
+        """
+        games = self.schedule(season).get(week, [])
+        board = self._board(season, week)
+        return bool(games) and all(
+            board[game.home].state == "post" if game.home in board else game.status == COMPLETE for game in games
+        )
+
+    def _board(self, season: str, week: int) -> dict[str, ScoreboardGame]:
+        if (season, week) not in self._boards:
             try:
-                board = self.espn.get_scoreboard(espn.NFL, state.season, state.week)
+                board = self.espn.get_scoreboard(espn.NFL, season, week)
             except ESPNAPIError as e:
                 # The schedule's own status is stale, not wrong about a game long finished.
                 logger.warning(f"Continuing without the live scoreboard: {e}")
                 board = []
             by_pair = {(game.home, game.away): game for game in board}
-            self._boards[state.week] = {
+            self._boards[season, week] = {
                 club: by_pair[pair]
-                for game in self.schedule(state.season).get(state.week, [])
+                for game in self.schedule(season).get(week, [])
                 if (pair := (espn_club(game.home), espn_club(game.away))) in by_pair
                 for club in (game.home, game.away)
             }
-        return self._boards[state.week]
+        return self._boards[season, week]
 
     def live(self, state: Week) -> Live:
         """What has actually been scored, whose clubs have kicked off, and where their games are."""

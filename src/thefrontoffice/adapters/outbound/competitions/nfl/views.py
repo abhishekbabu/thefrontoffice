@@ -21,6 +21,8 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Team,
     active,
     by_club,
+    fielded,
+    let_go,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, listed, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
@@ -156,7 +158,7 @@ BLANK_POINTS = 5.0
 
 def lineup_order(state: Week, roster: Team) -> list[str]:
     """Read as a lineup: the starters slot by slot, then the bench best projected first, then reserve."""
-    starters = [pid for pid in roster.starter_ids if pid in roster.player_ids]
+    starters = [pid for pid in roster.starter_ids if pid]
     bench = [pid for pid in active(roster) if pid not in starters]
     bench.sort(key=lambda pid: -(state.projections[pid].points if pid in state.projections else 0.0))
     return starters + bench + [pid for pid in roster.player_ids if pid in roster.reserve_ids]
@@ -622,6 +624,17 @@ def reserved(row: Spot, roster: Team) -> Spot:
     return row.model_copy(update={"detail": f"{row.detail} · {'IR' if slot == 'IR' else 'taxi'} slot"})
 
 
+def released(row: Spot, team: Team) -> Spot:
+    """A lineup row marked where the team has since let him go: his points this week still count."""
+    if row.player_id not in let_go(team):
+        return row
+    return row.model_copy(update={"detail": f"{row.detail} · {GONE}"})
+
+
+GONE = "no longer on roster"
+"""Said of a starter dropped or traded after his game: he played for the team this week, and holds no spot on it."""
+
+
 def _live_tone(scored: float) -> Tone:
     """A game already played answers its own question: a doubt about
     somebody who has been on the field is no longer a doubt."""
@@ -667,14 +680,14 @@ def opponent_side(state: Week, roster: Team, points: float, live: Live) -> Side:
     which is the only thing that makes the two columns rows.
     """
     scheduled = state.scheduled
-    projected = projections_for(roster.player_ids, state.projections, state.players)
+    projected = projections_for(fielded(roster), state.projections, state.players)
     starting = set(roster.starter_ids)
     by_id = {p.player_id: p for p in projected}
 
     slots = state.league.starting_slots
     if len(roster.starter_ids) == len(slots):
         lineup = [
-            spot(by_id[pid], scheduled, slot=slot, live=live)
+            released(spot(by_id[pid], scheduled, slot=slot, live=live), roster)
             if pid in by_id
             else Spot(
                 slot=slot,
@@ -691,7 +704,7 @@ def opponent_side(state: Week, roster: Team, points: float, live: Live) -> Side:
         # Off-length means the positions cannot be trusted, and a WR
         # labelled QB is worse than a row carrying no label at all.
         logger.warning(f"Roster {roster.roster_id} starts {len(roster.starter_ids)} into {len(slots)} slots")
-        lineup = [spot(p, scheduled, live=live) for p in projected if p.player_id in starting]
+        lineup = [released(spot(p, scheduled, live=live), roster) for p in projected if p.player_id in starting]
     return Side(
         name=state.team_name(roster),
         detail=roster.record,

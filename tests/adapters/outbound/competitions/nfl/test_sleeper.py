@@ -25,6 +25,8 @@ from support.nfl import (
 from support.summary import mine
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
+from thefrontoffice.adapters.outbound.competitions.nfl.views import GONE
+from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
@@ -925,3 +927,145 @@ def test_every_projection_and_stat_line_is_asked_for_in_the_leagues_own_scoring(
     provider.player("L1", "qb1")
 
     assert client.rules_asked and all(asked == rules for asked in client.rules_asked)
+
+
+# ── which week, and who played in it ────────────────────────────────────
+
+WEEK_3 = [
+    ScheduledGame(week=3, date="2026-09-24", home="BUF", away="MIA", status="complete"),
+    ScheduledGame(week=3, date="2026-09-28", home="NE", away="NYJ", status="complete"),
+]
+WEEK_4 = [ScheduledGame(week=4, date="2026-10-01", home="BUF", away="NE", status="pre_game")]
+
+
+def _week_three(wins: int = 1, losses: int = 1, points_for: float = 200.0) -> FakeSleeper:
+    """Week 3 of a two-team league, Sleeper still calling it current: you beat them 120 to 95."""
+    client = FakeSleeper(
+        projections=DEFAULT_PROJECTIONS,
+        season_schedule=[*WEEK_3, *WEEK_4],
+        rosters=[
+            SleeperRoster(
+                roster_id=1,
+                owner_id=SLEEPER_USER_ID,
+                player_ids=["qb1", "rb1", "rb2"],
+                starter_ids=["qb1", "rb1"],
+                wins=wins,
+                losses=losses,
+                points_for=points_for,
+            ),
+            SleeperRoster(
+                roster_id=2, owner_id="them", player_ids=["wr9"], starter_ids=["wr9"], wins=2, points_for=210.0
+            ),
+        ],
+    )
+    client.weekly_matchups = {
+        3: [
+            SleeperMatchup(roster_id=1, matchup_id=1, points=120.0, starters=["qb1", "rb1"]),
+            SleeperMatchup(roster_id=2, matchup_id=1, points=95.0, starters=["wr9"]),
+        ],
+        4: [
+            SleeperMatchup(roster_id=1, matchup_id=1, starters=["qb1", "rb2"]),
+            SleeperMatchup(roster_id=2, matchup_id=1, starters=["wr9"]),
+        ],
+    }
+    return client
+
+
+def test_once_every_game_of_the_week_is_over_the_page_moves_to_the_week_being_set() -> None:
+    summary = nfl_provider(_week_three()).summary("L1")
+
+    assert summary.window.startswith("Week 4")
+    assert [spot.player for spot in mine(summary).lineup[:2]] == ["Star QB", "Bad RB"]
+
+
+def test_a_week_with_a_game_still_to_play_is_still_the_week() -> None:
+    client = _week_three()
+    client.season_schedule = [WEEK_3[0], replace(WEEK_3[1], status="pre_game"), *WEEK_4]
+
+    assert nfl_provider(client).summary("L1").window.startswith("Week 3")
+
+
+def test_the_live_scoreboard_ends_the_week_before_the_schedule_file_catches_up() -> None:
+    client = _week_three()
+    client.season_schedule = [replace(game, status="in_game") for game in WEEK_3] + WEEK_4
+    espn = FakeESPN()
+    espn.weekly_scoreboards = {3: [ScoreboardGame("BUF", "MIA", "post"), ScoreboardGame("NE", "NYJ", "post")]}
+
+    assert nfl_provider(client, espn).summary("L1").window.startswith("Week 4")
+
+
+def test_the_last_week_of_the_season_never_moves_past_it() -> None:
+    client = _week_three()
+    client.week = 18
+    client.season_schedule = [replace(game, week=18) for game in WEEK_3]
+
+    assert nfl_provider(client).summary("L1").window.startswith("Week 18")
+
+
+def test_a_finished_week_counts_in_the_record_before_sleeper_settles_it() -> None:
+    provider = nfl_provider(_week_three())
+
+    standings = {row.team_id: (row.record, row.points) for row in provider.schedule("L1").standings}
+
+    assert standings == {"1": ("2-1", "320.00"), "2": ("2-1", "305.00")}
+
+
+def test_a_week_sleeper_has_already_counted_is_not_counted_twice() -> None:
+    summary = nfl_provider(_week_three(wins=2, losses=1, points_for=320.0)).summary("L1")
+
+    assert mine(summary).detail == "2-1"
+
+
+def test_a_league_that_plays_its_median_counts_a_second_game_for_the_top_half() -> None:
+    client = _week_three(wins=2, losses=2)
+    client.league = replace(client.league, median_game=True)
+
+    assert mine(nfl_provider(client).summary("L1")).detail == "4-2"
+
+
+def test_a_playoff_week_leaves_the_regular_seasons_record_alone() -> None:
+    client = _week_three()
+    client.league = replace(client.league, playoff_teams=2, playoff_week_start=3)
+
+    assert mine(nfl_provider(client).summary("L1")).detail == "1-1"
+
+
+def _let_go() -> FakeSleeper:
+    """Mid-week: Good RB scored 15.5 for you, then was dropped; Waiver WR scored for them, then was traded away."""
+    client = _week_three()
+    client.season_schedule = [WEEK_3[0], replace(WEEK_3[1], status="pre_game"), *WEEK_4]
+    client.rosters = [
+        replace(client.rosters[0], player_ids=["qb1", "rb2"]),
+        replace(client.rosters[1], player_ids=[]),
+    ]
+    client.weekly_matchups[3] = [
+        SleeperMatchup(roster_id=1, matchup_id=1, points=37.5, starters=["qb1", "rb1"], players_points={"rb1": 15.5}),
+        SleeperMatchup(roster_id=2, matchup_id=1, points=9.0, starters=["wr9"], players_points={"wr9": 9.0}),
+    ]
+    return client
+
+
+def test_a_starter_let_go_after_his_game_keeps_his_slot_and_says_he_is_gone() -> None:
+    rows = {spot.player: spot.detail for spot in mine(nfl_provider(_let_go()).summary("L1")).lineup}
+
+    assert GONE in rows["Good RB"]
+    assert GONE not in rows["Star QB"]
+
+
+def test_the_opponents_starter_let_go_after_his_game_keeps_his_slot_too() -> None:
+    opponent = nfl_provider(_let_go()).summary("L1").opponent
+
+    assert opponent is not None
+    assert [(spot.player, GONE in spot.detail) for spot in opponent.lineup] == [("Waiver WR", True)]
+
+
+def test_a_starter_let_go_still_counts_toward_the_weeks_projection() -> None:
+    points = mine(nfl_provider(_let_go()).summary("L1")).points
+
+    assert points.endswith("40.00 proj")  # Star QB's 22 and Good RB's 18
+
+
+def test_the_roster_table_lists_a_starter_let_go_as_starting() -> None:
+    cards = {card.player_id: card.columns["Slot"] for card in nfl_provider(_let_go()).roster("L1")}
+
+    assert cards == {"qb1": "START", "rb1": "START", "rb2": "BN"}

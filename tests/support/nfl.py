@@ -96,6 +96,8 @@ class FakeSleeper:
         self.weekly_projections: dict[int, dict[str, WeeklyProjection]] = {}
         """Projections for particular weeks, where a test needs them to differ; `projections` otherwise."""
         self.matchups = matchups or []
+        self.weekly_matchups: dict[int, list[SleeperMatchup]] = {}
+        """Matchups for particular weeks, where a test needs them to differ; `matchups` otherwise."""
         self.trending = trending or []
         self.trending_error = trending_error
         self.matchup_fetches = 0
@@ -170,7 +172,7 @@ class FakeSleeper:
         self.matchup_fetches += 1
         if self.matchups_error:
             raise self.matchups_error
-        return self.matchups
+        return self.weekly_matchups.get(week, self.matchups)
 
     def get_nfl_players(self) -> dict[str, PlayerMeta]:
         if self.players_catalog is not None:
@@ -223,6 +225,8 @@ class FakeESPN:
         self.error = error
         self.scoreboard = scoreboard or []
         self.scoreboard_error = scoreboard_error
+        self.weekly_scoreboards: dict[int, list[ScoreboardGame]] = {}
+        """Scoreboards for particular weeks, where a test needs them to differ; `scoreboard` otherwise."""
         self.asked: list[str] = []
 
     def get_team_news(self, league: str, clubs: list[str]) -> dict[str, list[NewsArticle]]:
@@ -239,7 +243,7 @@ class FakeESPN:
     def get_scoreboard(self, league: str, season: str, week: int) -> list[ScoreboardGame]:
         if self.scoreboard_error:
             raise self.scoreboard_error
-        return self.scoreboard
+        return self.weekly_scoreboards.get(week, self.scoreboard)
 
 
 def nfl_provider(client: FakeSleeper, espn: FakeESPN | None = None) -> SleeperNFLProvider:

@@ -20,7 +20,7 @@ from support.nfl import (
 from support.summary import mine
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
-from thefrontoffice.adapters.outbound.competitions.nfl.week import left_in, opponent_of, pairings
+from thefrontoffice.adapters.outbound.competitions.nfl.week import Scoreboard, left_in, opponent_of, pairings
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
@@ -330,7 +330,11 @@ def test_a_missing_scoreboard_falls_back_to_projections() -> None:
 # Sleeper's schedule is cached for hours, so a game kicking off now still reads
 # as not started there; ESPN's scoreboard is what says it has.
 
-STALE = [ScheduledGame(week=3, date="2026-09-24", home="BUF", away="MIA", status="pre_game")]
+STALE = [
+    ScheduledGame(week=3, date="2026-09-24", home="BUF", away="MIA", status="pre_game"),
+    # Monday night, still to play: the week goes on after BUF's game is over.
+    ScheduledGame(week=3, date="2026-09-28", home="NE", away="NYJ", status="pre_game"),
+]
 UNDERWAY = [ScoreboardGame("BUF", "MIA", "in", period=3, clock=450.0, label="7:30 - 3rd")]
 
 
@@ -490,3 +494,15 @@ def test_each_team_is_paired_against_the_other_side() -> None:
     assert found is not None
     assert (found[0].points, found[1].points) == (95.5, 80.0)
     assert opponent_of(week, 9) is None
+
+
+def test_a_week_with_no_games_on_the_schedule_is_never_over() -> None:
+    """Preseason, or a schedule that would not load: nothing played is not everything played."""
+    assert not Scoreboard(FakeSleeper(), FakeESPN()).over("2026", 3)
+
+
+def test_where_the_scoreboard_will_not_load_the_schedule_file_settles_the_week() -> None:
+    client = FakeSleeper(season_schedule=[replace(game, status="complete") for game in STALE])
+    espn = FakeESPN(scoreboard_error=ESPNAPIError("down"))
+
+    assert Scoreboard(client, espn).over("2026", 3)
