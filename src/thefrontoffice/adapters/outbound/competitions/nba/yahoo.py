@@ -456,7 +456,7 @@ class YahooNBAProvider:
             position=player.position,
             team=player.team,
             headline=points if points != NO_FIGURE else "",
-            headline_label="points a game over the last 15" if points != NO_FIGURE else "No recent form on record",
+            headline_label="pts/game, last 15" if points != NO_FIGURE else "No recent form",
             note=player.status,
             tone="warning" if player.status else "neutral",
             groups=[
@@ -608,11 +608,8 @@ def _off_il(roster: list[YahooPlayer]) -> list[Action]:
                 kind="lineup",
                 urgency="now",
                 title=f"Move {player.name} off {player.slot}",
-                reason=(
-                    f"{player.name} is {status}, which Yahoo's {player.slot} slot does not take, and Yahoo "
-                    "holds every add until he leaves it. Activating him needs an open roster spot."
-                ),
-                when="before any other move",
+                reason=f"{player.name} is {status}. Adds locked until he leaves {player.slot}; needs an open roster spot.",
+                when="first",
                 player_id=player.player_key,
                 key=f"il:{player.player_key}:{player.status.upper() or 'ACTIVE'}",
             )

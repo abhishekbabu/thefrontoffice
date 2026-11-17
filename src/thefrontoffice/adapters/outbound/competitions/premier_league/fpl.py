@@ -158,7 +158,7 @@ class FPLProvider:
         """
         current = self.client.current_gameweek()
         if current is None:
-            raise FPLAPIError("The season has not started, so no squad has been picked yet.")
+            raise FPLAPIError("Season not started; no squad yet.")
         return current
 
     def _roster(self, entry_id: int, gameweek: int) -> Roster:
@@ -648,7 +648,7 @@ class FPLProvider:
         if played is not None:
             return Stat(label=label, value=f"played GW{played}")
         if live is None:
-            return Stat(label=label, value="gone unplayed", tone="warning")
+            return Stat(label=label, value="expired", tone="warning")
         if live.covers(gameweek):
             return Stat(label=label, value="available", tone="good")
         return Stat(label=label, value=f"from GW{live.start_event}")
@@ -801,7 +801,7 @@ class FPLProvider:
         notable = []
         for club, opponents in fixtures.items():
             if not opponents:
-                notable.append(Stat(label=club, value="no fixture — these players score nothing", tone="warning"))
+                notable.append(Stat(label=club, value="blank gameweek", tone="warning"))
             elif len(opponents) > 1:
                 notable.append(Stat(label=club, value=f"double gameweek — {_fixture_text(opponents)}", tone="good"))
         return notable

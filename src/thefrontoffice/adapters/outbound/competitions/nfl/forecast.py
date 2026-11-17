@@ -244,7 +244,7 @@ def starts(
             moves.append(
                 LineupMove(
                     key=f"{candidate.player_id}>",
-                    title=f"Start {candidate.name} in your empty slot",
+                    title=f"Start {candidate.name} in empty slot",
                     out=(),
                     into=(outcome(candidate),),
                 )

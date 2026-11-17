@@ -855,7 +855,7 @@ def test_a_chip_whose_windows_have_all_closed_is_still_listed() -> None:
     worth more than a row quietly missing."""
     gone = _chips(provider(chips=[Chip(name="freehit", start_event=1, stop_event=2)], upcoming=30))
 
-    assert gone["Free Hit"] == "gone unplayed"
+    assert gone["Free Hit"] == "expired"
 
 
 def test_one_row_per_chip_rather_than_one_per_window() -> None:

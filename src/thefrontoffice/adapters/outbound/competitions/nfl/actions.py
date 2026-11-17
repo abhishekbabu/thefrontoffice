@@ -115,17 +115,14 @@ def _ir_locked(state: Week, started: set[str]) -> list[Item]:
         if meta is None or meta.injury_status.upper() in allows:
             continue
         status = meta.injury_status.lower() or "cleared to play"
-        reason = (
-            f"{meta.name} is {status}, and this league's IR slot takes only {join(sorted(allows))}. "
-            "Sleeper refuses every lineup change and pickup until he leaves it."
-        )
+        reason = f"{meta.name} is {status}. Roster locked until he leaves IR."
         drop = None
         if room > 0:
             room -= 1
-            reason += " You have a roster spot open for him."
+            reason += " Open roster spot."
         else:
             drop = drop_candidate(state, (p for p in state.bench if p.team not in started), set())
-            reason += f" {_drop_reason(state, drop)}" if drop else " Nobody on the bench can be released yet."
+            reason += f" {_drop_reason(state, drop)}" if drop else " No bench player can be dropped yet."
         items.append(
             Item(
                 "ir",
@@ -134,7 +131,7 @@ def _ir_locked(state: Week, started: set[str]) -> list[Item]:
                     urgency="now",
                     title=f"Move {meta.name} off IR" + (f", drop {drop.name}" if drop else ""),
                     reason=reason,
-                    when="before any other move",
+                    when="first",
                     player_id=player_id,
                     drop=drop.player_id if drop else "",
                     key=f"ir:{player_id}:{meta.injury_status.upper()}",
@@ -167,7 +164,7 @@ def _lineup(
         if player is not None and player.team in started:
             continue
         if player is None:
-            why = f"Your {slot.slot} slot is empty"
+            why = f"{slot.slot} empty"
             change = next((c for c in filling if c.start.player_id not in moved), None)
         else:
             why = _cannot_play(player, state.scheduled)
@@ -209,8 +206,8 @@ def _lineup(
                     urgency="now",
                     title=f"Pick up {pick.name}{replaces}",
                     reason=(
-                        f"{why}, and nobody on your bench can play {slot.slot}. {pick.name} is the best "
-                        f"projected {pick.position} available, at {pick.points:.2f}."
+                        f"{why}, no bench cover. {pick.name} projects {pick.points:.2f}, "
+                        f"best {pick.position} available."
                     ),
                     player_id=pick.player_id,
                     replaces=player.player_id if player else "",
@@ -259,7 +256,7 @@ def _caveat(player: Projection) -> str:
     """The doubt hanging over the player a move starts, so it is weighed, not missed."""
     if not listed(player.injury_status):
         return ""
-    return f" {player.name} is listed {player.injury_status.lower()} — check his status before his game."
+    return f" {player.name} is {player.injury_status.lower()}."
 
 
 def _evidence(state: Week, players: Sequence[Projection]) -> list[Stat]:
@@ -355,9 +352,8 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
                     if streamed
                     else f"Pick up {player.name} to start over {starter.name}",
                     reason=(
-                        f"{player.name} projects {player.points:.2f}, {gain:.2f} more than {starter.name} "
-                        f"at {slot.slot} this week.{_caveat(player)}"
-                        + (f" Drop {starter.name}: a lineup starts one {player.position}." if streamed else "")
+                        f"{player.name} projects {player.points:.2f}, +{gain:.2f} over {starter.name} "
+                        f"at {slot.slot}.{_caveat(player)}"
                     ),
                     player_id=player.player_id,
                     replaces=starter.player_id,
@@ -405,10 +401,9 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
                 Action(
                     kind="waiver",
                     urgency="soon",
-                    title=f"Pick up {player.name} while his role grows",
+                    title=f"Pick up {player.name}: role growing",
                     reason=(
-                        f"{player.name}'s {trend.describe()}. He projects {player.points:.2f} at {player.position}, "
-                        "and a projection is slow to read a role that has just changed."
+                        f"{trend.describe().capitalize()}. Projects {player.points:.2f}; projections lag a role change."
                     ),
                     player_id=player.player_id,
                     evidence=_evidence(state, [player]),
@@ -452,17 +447,13 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
             continue
         if room > 0:
             room -= 1
-            out.append(_reworded(item, reason=f"{action.reason} You have a roster spot open for him."))
+            out.append(_reworded(item, reason=f"{action.reason} Open roster spot."))
             continue
         drop = drop_candidate(state, (p for p in state.bench if p.team not in started), named | chosen)
         if item.move == "rise" and not _worth_a_spot(state, action.player_id, drop):
             continue
         if drop is None:
-            out.append(
-                _reworded(
-                    item, reason=f"{action.reason} Your roster is full and nobody on the bench can be released yet."
-                )
-            )
+            out.append(_reworded(item, reason=f"{action.reason} Roster full; no bench player can be dropped yet."))
             continue
         chosen.add(drop.player_id)
         out.append(
@@ -498,11 +489,8 @@ def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> 
 
 def _drop_reason(state: Week, player: Projection) -> str:
     played = average(state.evidence, player.player_id)
-    if played is not None:
-        worth = f"{played:.2f} a game this season, {player.points:.2f} projected this week"
-    else:
-        worth = f"{player.points:.2f} projected this week, with too few games to judge him on more"
-    return f"Drop {player.name}, the least on your bench: {worth}."
+    per_game = f"{played:.2f}/game, " if played is not None else ""
+    return f"Drop {player.name} ({per_game}{player.points:.2f} proj), weakest on bench."
 
 
 def _same_game(
@@ -547,12 +535,10 @@ def _same_game(
                 Action(
                     kind="lineup",
                     urgency="later",
-                    title=f"{len(stacked)} starters ride on {away} at {home}",
+                    title=f"{len(stacked)} starters in {away} @ {home}",
                     reason=(
-                        f"{join([p.name for p in stacked])} all play in it, so one bad game there takes "
-                        f"them all down together. Starting {swap.name} ({swap.points:.2f}) for {out.name} "
-                        f"({out.points:.2f}) spreads the risk: worth it when you are ahead, and often not when "
-                        "you are behind, where you need that game to go well."
+                        f"{join([p.name for p in stacked])}. Start {swap.name} ({swap.points:.2f}) over "
+                        f"{out.name} ({out.points:.2f}) to cut the risk if you're favored; keep the stack if not."
                     ),
                     player_id=swap.player_id,
                     replaces=out.player_id,
@@ -617,18 +603,14 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
             [f"{other.name} ({other.injury_status.lower()}, {share:.0%} of snaps)" for other, share in regulars]
         )
         if doubt:
-            title = f"Check whether {join([o.name for o in doubt])} plays before setting {mine.name}"
+            title = f"Check {join([o.name for o in doubt])} before setting {mine.name}"
             outcome = (
-                f"If {'he sits' if len(doubt) == 1 else 'they sit'}, more of the work at {mine.position} falls to "
-                f"{mine.name}, who projects {mine.points:.2f} as things stand. {mine.team} names its inactives "
-                "about 90 minutes before kickoff."
+                f"If {'he sits' if len(doubt) == 1 else 'they sit'}, {mine.name} ({mine.points:.2f} proj) "
+                "gets more work. Inactives are out ~90 min before kickoff."
             )
         else:
             title = f"More work for {mine.name} with {join([o.name for o in out])} out"
-            outcome = (
-                f"Sleeper projects {mine.name} at {mine.points:.2f}; whether that already counts the extra work is "
-                "not something the projection says."
-            )
+            outcome = f"{mine.name} projects {mine.points:.2f}, which may not count the extra work."
         game = kickoff.get(mine.team)
         items.append(
             Item(
@@ -637,8 +619,7 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
                     kind="lineup",
                     urgency="soon",
                     title=title,
-                    reason=f"{described} {'is' if len(regulars) == 1 else 'are'} a regular at {mine.position} "
-                    f"for {mine.team}. {outcome}",
+                    reason=f"{described}. {outcome}",
                     when=f"before kickoff, {day(game.date)}" if game and game.date else "",
                     player_id=mine.player_id,
                     evidence=_evidence(state, [mine]) + _news(state, [other for other, _ in regulars]),
@@ -684,10 +665,7 @@ def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Item]:
         if len(cover) >= len(out):
             continue
         names = join([p.name for p in out])
-        verb = "is" if len(out) == 1 else "are"
-        behind = (
-            f"only {join([p.name for p in cover])} can step in" if cover else f"nobody on your bench plays {position}"
-        )
+        behind = f"only {join([p.name for p in cover])} behind" if cover else f"no bench {position}"
         items.append(
             Item(
                 "bye",
@@ -695,7 +673,7 @@ def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Item]:
                     kind="waiver",
                     urgency="later",
                     title=f"Find a {position} for week {week}",
-                    reason=f"{names} {verb} on bye, and {behind}.",
+                    reason=f"{names} on bye; {behind}.",
                     when=f"week {week}",
                     player_id=out[0].player_id,
                     key=f"bye:{week}:{position}",
@@ -718,10 +696,7 @@ def _trade_deadline(state: Week) -> list[Item]:
                 kind="trade",
                 urgency="soon" if final else "later",
                 title="Make any trades this week" if final else "Line up any trades now",
-                reason=(
-                    f"The league's trade deadline is week {deadline}"
-                    + (", so this is the last week to deal." if final else ", next week.")
-                ),
+                reason=f"Trade deadline: week {deadline}" + (" (this week)." if final else " (next week)."),
                 when=f"week {deadline}",
                 key=f"deadline:{deadline}",
             ),

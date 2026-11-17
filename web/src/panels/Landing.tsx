@@ -138,7 +138,7 @@ export function Landing({
             .filter((s) => !s.configured)
             .map((s) => s.label)
             .join(" and ")}{" "}
-          {competitions.filter((s) => !s.configured).length === 1 ? "is" : "are"} not configured — add
+          {competitions.filter((s) => !s.configured).length === 1 ? "is" : "are"} not configured. Add
           credentials in Settings.
         </p>
       )}

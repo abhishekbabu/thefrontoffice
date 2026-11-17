@@ -124,7 +124,7 @@ def _rate(evidence: Evidence, player_id: str) -> tuple[float, str] | None:
         return None
     rate = RECENT_WEIGHT * role.points + (1 - RECENT_WEIGHT) * season
     games_back = "last game" if role.games == 1 else f"last {role.games}"
-    return rate, f"{role.points:.1f} pts a game in his {games_back}, {season:.1f} this season"
+    return rate, f"{role.points:.1f}/game {games_back}, {season:.1f} season"
 
 
 def bent(

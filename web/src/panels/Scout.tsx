@@ -227,7 +227,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
 
           {!shown.data.opponent && (
             <Badge variant="muted" appearance="label">
-              No head-to-head fixture this week
+              No opponent this week
             </Badge>
           )}
         </div>

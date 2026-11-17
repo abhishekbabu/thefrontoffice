@@ -36,13 +36,8 @@ class YahooAuthError(AccessNotApprovedError):
 
     def __init__(self) -> None:
         super().__init__(
-            "Yahoo refused the Fantasy Sports API for this application. The token is valid — "
-            "an invalid one returns 401, not 403 — and even endpoints needing no user "
-            "permission are refused, so this is about the app rather than the login. Yahoo "
-            "reviews every application before granting access to this API, so creating the app "
-            "and ticking Fantasy Sports → Read is necessary but not sufficient. Personal, "
-            "single-league use is an accepted category. Authorize again once approved. Leagues on "
-            "other platforms are unaffected."
+            "Yahoo refused this app Fantasy Sports API access (403 with a valid token). Yahoo must "
+            "approve the app; ticking Fantasy Sports → Read is not enough. Authorize again once approved."
         )
 
 
@@ -57,6 +52,4 @@ class YahooLoginRequiredError(LoginRequiredError):
     login = "yahoo"
 
     def __init__(self, detail: str = "") -> None:
-        super().__init__(
-            detail or "Yahoo is not authorized on this machine yet. Authorizing caches a token and is done once."
-        )
+        super().__init__(detail or "Yahoo is not authorized on this machine yet.")

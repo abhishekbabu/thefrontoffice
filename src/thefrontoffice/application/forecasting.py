@@ -188,10 +188,7 @@ def _odds_row(move: LineupMove, forecast: Forecast) -> Action:
         urgency="soon",
         key=f"odds:{move.key}",
         title=move.title,
-        reason=(
-            f"The best single change for your chance of winning: +{gain:.1%}. The projections would not make "
-            "it — the spread of his outcomes is what suits where this matchup stands."
-        ),
+        reason=f"Best single move for win odds: +{gain:.1%}. Projections alone wouldn't make it; his range fits this matchup.",
         player_id=move.into[0].player_id if move.into else "",
         replaces=move.out[0] if move.out else "",
         win_change=gain,

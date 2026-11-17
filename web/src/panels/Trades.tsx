@@ -65,7 +65,7 @@ function TradeIdeas({ competition, league }: { competition: Competition; league:
       error={trades.error}
     >
       {trades.data?.length === 0 && (
-        <CardNote>No trade worth offering right now.</CardNote>
+        <CardNote>No trades worth offering.</CardNote>
       )}
       {trades.data?.map((idea) => (
         <ListRow key={`${idea.team_id}-${idea.giving.join()}-${idea.receiving.join()}`}>
