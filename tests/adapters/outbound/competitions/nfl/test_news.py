@@ -17,13 +17,16 @@ PLAYERS = {
 }
 
 
-def _article(headline: str, days_ago: float = 1, athletes: tuple[str, ...] = (), summary: str = "") -> NewsArticle:
+def _article(
+    headline: str, days_ago: float = 1, athletes: tuple[str, ...] = (), summary: str = "", url: str = ""
+) -> NewsArticle:
     return NewsArticle(
         article_id=headline,
         published=NOW - timedelta(days=days_ago),
         headline=headline,
         summary=summary,
         athletes=list(athletes),
+        url=url,
     )
 
 
@@ -97,3 +100,11 @@ def test_the_drawer_lines_are_dated_and_carry_the_headline() -> None:
     [line] = joined.stats("hall")
     assert line.value == "Breece Hall returns"
     assert line.label == "Thu 22 Oct"
+
+
+def test_each_headline_links_the_article_it_is_from() -> None:
+    url = "https://www.espn.com/nfl/story/_/id/1"
+    joined = attach({"NYJ": [_article("Breece Hall returns", days_ago=0, url=url)]}, PLAYERS, NOW)
+
+    [line] = joined.stats("hall")
+    assert line.url == url

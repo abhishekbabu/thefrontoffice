@@ -15,6 +15,7 @@ import { usePlayerDrawer } from "@/components/ui/player";
 import { ExternalLink } from "@/components/ui/external-link";
 import { rise } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { Tabs } from "@/components/ui/tabs";
 import { LeagueHeader } from "@/components/ui/page-header";
 import { SlideOver } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
@@ -61,22 +62,7 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
     <>
       <LeagueHeader league={league}>
         {available.length > 1 && (
-          <div className="flex items-center gap-1" role="tablist">
-            {available.map((t) => (
-              <button
-                key={t.id}
-                role="tab"
-                aria-selected={t.id === current}
-                onClick={() => setTab(t.id)}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors",
-                  t.id === current ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-muted",
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <Tabs tabs={available} current={current} onPick={setTab} />
         )}
       </LeagueHeader>
       {/* The season in figures, here rather than on the week: how it is going, not what Sunday needs. */}

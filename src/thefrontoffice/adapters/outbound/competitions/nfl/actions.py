@@ -652,7 +652,7 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
 def _news(state: Week, players: Sequence[Projection | PlayerInfo]) -> list[Stat]:
     """Each player's latest headlines."""
     return [
-        Stat(label=player.name, value=f"News, {dated(a)}: {a.headline}")
+        Stat(label=player.name, value=f"News, {dated(a)}: {a.headline}", url=a.url)
         for player in players
         for a in state.news.latest(player.player_id)
     ]

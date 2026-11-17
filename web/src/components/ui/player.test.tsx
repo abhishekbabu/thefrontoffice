@@ -19,6 +19,8 @@ const ALLEN: PlayerDetail = {
   url: "",
   image_url: "",
   tone: "neutral",
+  owner: "",
+  tabs: [],
   groups: [],
   tables: [],
 };
@@ -52,5 +54,37 @@ describe("the player drawer", () => {
     await press(dialog!, "Escape");
     await settle(400);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("shows one tab at a time, offers only tabs with something in them, and names his owner", async () => {
+    const tabbed: PlayerDetail = {
+      ...ALLEN,
+      owner: "Rival",
+      tabs: ["This week", "History", "News"],
+      groups: [
+        { title: "Week 11", tab: "", note: "", stats: [{ label: "Projected", value: "24.1", tone: "neutral", url: "" }] },
+        { title: "Moves", tab: "History", note: "", stats: [{ label: "Draft", value: "Round 1", tone: "neutral", url: "" }] },
+        { title: "Latest news", tab: "News", note: "", stats: [] },
+      ],
+    };
+    const client = offlineClient();
+    client.setQueryData<Capabilities>(keys.capabilities, { ai: false, limits: { judged: 10 } });
+    client.setQueryData(keys.player(NFL.key, LEAGUE.league_id, ALLEN.player_id), tabbed);
+    const { container } = await render(<Roster />, client);
+
+    container.querySelector("button")!.click();
+    await settle();
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const tabs = [...dialog.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
+
+    expect(tabs).toEqual(["This week", "History"]);
+    expect(dialog.textContent).toContain("Rival");
+    expect(dialog.textContent).toContain("Projected");
+    expect(dialog.textContent).not.toContain("Round 1");
+
+    dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1]!.click();
+    await settle();
+    expect(dialog.textContent).toContain("Round 1");
+    expect(dialog.textContent).not.toContain("Projected");
   });
 });

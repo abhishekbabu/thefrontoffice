@@ -29,6 +29,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SEASON_STAT_KEYS,
     SPLIT_KEYS,
     TEAM_ROW_PREFIX,
+    DraftPick,
     GameProjection,
     NBAGameLog,
     NFLGameLine,
@@ -80,6 +81,7 @@ SEASON_SCHEDULE_TTL = timedelta(hours=12)
 # A finished game's line never changes; only the newest week is still moving.
 GAME_ROWS_TTL = timedelta(hours=3)
 TRANSACTIONS_TTL = timedelta(minutes=15)
+DRAFT_TTL = timedelta(days=1)  # a finished draft never changes
 
 
 class SleeperNFLSource(Protocol):
@@ -130,6 +132,10 @@ class SleeperNFLSource(Protocol):
     ) -> dict[str, SeasonStats]: ...
 
     def get_transactions(self, league_id: str, week: int) -> list[Transaction]: ...
+
+    def get_transactions_bulk(self, league_id: str, weeks: list[int]) -> Batch[int, list[Transaction]]: ...
+
+    def get_draft_picks(self, draft_id: str) -> list[DraftPick]: ...
 
     def get_trending(self, kind: str = "add", lookback_hours: int = 24, limit: int = 25) -> list[TrendingPlayer]: ...
 
@@ -248,6 +254,7 @@ class SleeperClient:
             playoff_week_start=int((data.get("settings") or {}).get("playoff_week_start") or 0),
             median_game=bool((data.get("settings") or {}).get("league_average_match")),
             ir_allows=SleeperClient.ir_allows(data.get("settings") or {}),
+            draft_id=str(data.get("draft_id") or ""),
             scoring_rules={str(k): float(v) for k, v in settings_blob.items() if isinstance(v, int | float)},
         )
 
@@ -522,18 +529,30 @@ class SleeperClient:
             f"{BASE_URL}/league/{league_id}/transactions/{week}",
             TRANSACTIONS_TTL,
         )
+        return transactions(data)
+
+    def get_transactions_bulk(self, league_id: str, weeks: list[int]) -> Batch[int, list[Transaction]]:
+        """Several weeks of moves, one cached GET per week in parallel; a week that would not load is a failure."""
+        raw = self._weekly(
+            weeks,
+            lambda w: f"transactions_{league_id}_{w}",
+            lambda w: f"{BASE_URL}/league/{league_id}/transactions/{w}",
+            TRANSACTIONS_TTL,
+        )
+        return Batch(values={w: transactions(data) for w, data in raw.values.items()}, failures=raw.failures)
+
+    def get_draft_picks(self, draft_id: str) -> list[DraftPick]:
+        """Every pick of a draft, in the order made; none for a draft not yet held."""
+        data = self._api.cached(f"draft_picks_{draft_id}", f"{BASE_URL}/draft/{draft_id}/picks", DRAFT_TTL)
         return [
-            Transaction(
-                kind=str(t.get("type") or ""),
-                roster_ids=[int(r) for r in (t.get("roster_ids") or [])],
-                adds={str(k): int(v) for k, v in (t.get("adds") or {}).items()},
-                drops={str(k): int(v) for k, v in (t.get("drops") or {}).items()},
-                when=int(t.get("status_updated") or 0),
-                bid=int((t.get("settings") or {}).get("waiver_bid") or 0),
+            DraftPick(
+                player_id=str(p.get("player_id") or ""),
+                roster_id=int(p.get("roster_id") or 0),
+                round=int(p.get("round") or 0),
+                pick_no=int(p.get("pick_no") or 0),
             )
-            for t in (data or [])
-            # A failed waiver claim is not something that happened.
-            if isinstance(t, dict) and t.get("status") == "complete"
+            for p in (data or [])
+            if isinstance(p, dict) and p.get("player_id")
         ]
 
     def get_projections(
@@ -728,4 +747,20 @@ def _matchups(data: Any) -> list[SleeperMatchup]:
         )
         for entry in data or []
         if isinstance(entry, dict)
+    ]
+
+
+def transactions(data: Any) -> list[Transaction]:
+    """A week's completed moves out of Sleeper's list; a failed waiver claim is not something that happened."""
+    return [
+        Transaction(
+            kind=str(t.get("type") or ""),
+            roster_ids=[int(r) for r in (t.get("roster_ids") or [])],
+            adds={str(k): int(v) for k, v in (t.get("adds") or {}).items()},
+            drops={str(k): int(v) for k, v in (t.get("drops") or {}).items()},
+            when=int(t.get("status_updated") or 0),
+            bid=int((t.get("settings") or {}).get("waiver_bid") or 0),
+        )
+        for t in (data or [])
+        if isinstance(t, dict) and t.get("status") == "complete"
     ]

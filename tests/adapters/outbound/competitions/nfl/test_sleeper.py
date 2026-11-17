@@ -324,7 +324,7 @@ def test_the_drawer_shows_the_latest_news_about_the_player() -> None:
         "L1", "rb1"
     )
 
-    [group] = [g for g in detail.groups if g.title == "Latest news"]
+    [group] = [g for g in detail.groups if g.tab == "News"]
     assert [s.value for s in group.stats] == [article.headline]
 
 

@@ -80,6 +80,8 @@ class SleeperLeague:
     Empty where unknown, and a line is then read at Sleeper's published figure for the format."""
     median_game: bool = False
     """Whether each week also plays the league's median: a second win or loss, for finishing in the top half."""
+    draft_id: str = ""
+    """The league's draft for this season; empty where it has none."""
     ir_allows: frozenset[str] = frozenset({"IR"})
     """The designations the league's injured-reserve slot takes, upper-cased. A player on IR whose
     designation is no longer among them locks the roster: Sleeper refuses every move until he leaves it."""
@@ -269,6 +271,17 @@ class Transaction:
     """Epoch milliseconds, which is a number until somebody formats it."""
     bid: int = 0
     """The waiver budget a claim was won with; nought for one that spent none."""
+
+
+@dataclass(frozen=True)
+class DraftPick:
+    """One pick of a league's draft: who was taken, by which roster, and where."""
+
+    player_id: str
+    roster_id: int
+    round: int
+    pick_no: int
+    """Overall, counted from 1."""
 
 
 # The nine-category box score, as Sleeper keys it. Absent means zero: no key

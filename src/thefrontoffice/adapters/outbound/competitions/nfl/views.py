@@ -8,7 +8,7 @@ and the provider is the place a week is gathered, not drawn.
 import logging
 from collections.abc import Callable, Mapping, Sequence
 
-from thefrontoffice.adapters.outbound.competitions.nfl import evidence
+from thefrontoffice.adapters.outbound.competitions.nfl import evidence, history
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, best_upgrade
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     FREE_AGENT,
@@ -324,6 +324,13 @@ def _versus(projection: Projection | None, scheduled: bool, unscheduled: str, op
     return "no game" if scheduled else unscheduled
 
 
+WEEK_TAB, GAME_LOG_TAB, SEASONS_TAB, HISTORY_TAB, NEWS_TAB = "This week", "Game log", "Seasons", "History", "News"
+"""The drawer's tabs, in order: a group or table with no tab of its own sits in the first."""
+
+NEWS_IN_DRAWER = 10
+"""Headlines the drawer's news tab lists: the window's worth, which is rarely more."""
+
+
 def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int, Sequence[Game]]) -> PlayerDetail:
     """One player: the week, what makes the projection, and who they are.
 
@@ -367,8 +374,6 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
         groups.append(StatGroup(title="Projected line", stats=_projection_lines(projection.stats)))
     if projection and (context := _role_and_matchup(projection, state)):
         groups.append(context)
-    if headlines := state.news.stats(player_id):
-        groups.append(StatGroup(title="Latest news", stats=headlines))
     groups.append(
         StatGroup(
             title="Player",
@@ -382,9 +387,15 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
         )
     )
 
+    groups.append(StatGroup(title="Moves", tab=HISTORY_TAB, stats=history.history(client, state, player_id)))
+    if headlines := state.news.stats(player_id, limit=NEWS_IN_DRAWER):
+        groups.append(StatGroup(title="News", tab=NEWS_TAB, stats=headlines))
+
     return PlayerDetail(
         player_id=player_id,
         name=meta.name,
+        owner=history.owner(state, player_id),
+        tabs=[WEEK_TAB, GAME_LOG_TAB, SEASONS_TAB, HISTORY_TAB, NEWS_TAB],
         position=meta.position,
         team=(team := meta.team),
         team_name=_team_name(team, state.players),
@@ -462,7 +473,7 @@ def _game_log(
             opponent = fixture.away if fixture.home == club else fixture.home
             label = f"W{week} {_fixture(club, opponent, fixture)} · DNP"
             rows.append(StatRow(label=label, values=[NOT_APPLICABLE] * len(columns)))
-    return StatTable(title="Game log", columns=columns, rows=rows)
+    return StatTable(title="Game log", tab=GAME_LOG_TAB, columns=columns, rows=rows)
 
 
 def _fixture(club: str, opponent: str, fixture: Game | None) -> str:
@@ -541,7 +552,7 @@ def _season_table(client: NFLSource, player_id: str, state: Week) -> StatTable |
         if any(stats and stats.splits.get(key) for stats in by_season.values()):
             rows.append(row(label, lambda st, k=key: _split_value(k, st.splits.get(k))))
 
-    return StatTable(title="By season", columns=columns, rows=rows)
+    return StatTable(title="By season", tab=SEASONS_TAB, columns=columns, rows=rows)
 
 
 def _recent_seasons(season: str) -> list[str]:

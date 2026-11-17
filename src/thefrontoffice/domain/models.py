@@ -89,6 +89,10 @@ class Stat(BaseModel):
             "points left on the bench, an expiring allowance — and 'good' for headroom worth spending."
         ),
     )
+    url: str = Field(
+        default="",
+        description="Where the figure comes from, to open: the article a headline is from. Empty for most.",
+    )
 
 
 SpotScoring = Literal["projected", "live", "final"]
@@ -301,6 +305,10 @@ class StatGroup(BaseModel):
     title: str
     stats: list[Stat] = Field(default_factory=list)
     note: str = Field(default="", description="What the heading says about the group as a whole: '2 available'.")
+    tab: str = Field(
+        default="",
+        description="Which of a player drawer's tabs it sits in, by the tab's name; empty for the first.",
+    )
 
 
 NOT_APPLICABLE = "N/A"
@@ -335,6 +343,10 @@ class StatTable(BaseModel):
     """
 
     title: str
+    tab: str = Field(
+        default="",
+        description="Which of a player drawer's tabs it sits in, by the tab's name; empty for the first.",
+    )
     columns: list[str] = Field(
         description=(
             "Column headings, the subject first: periods newest first, ['2026/27', '2025/26'], "
@@ -400,6 +412,20 @@ class PlayerDetail(BaseModel):
         ),
     )
     tone: Tone = "neutral"
+    owner: str = Field(
+        default="",
+        description=(
+            "Whose roster he is on in this league — a team's name, or 'Free agent'. Empty where "
+            "the league has no such thing, as in FPL, where any number of managers can hold one player."
+        ),
+    )
+    tabs: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The drawer's tabs in the order shown, by the names its groups and tables carry. "
+            "Empty is one page of everything, in the order sent."
+        ),
+    )
     groups: list[StatGroup] = Field(default_factory=list)
     tables: list[StatTable] = Field(
         default_factory=list,
