@@ -177,6 +177,34 @@ def test_activity_is_newest_first_on_the_instant_not_the_label() -> None:
     assert [row.what for row in activity] == ["Trade", "Waiver"]
 
 
+def test_a_trade_names_both_managers_and_the_budget_it_moved() -> None:
+    trade = Transaction(
+        kind="trade", roster_ids=[1, 2], adds={"qb1": 1}, drops={"qb1": 2}, when=1, budget=[(1, 2, 5), (2, 1, 0)]
+    )
+    [row] = nfl_provider(league_client(transactions={3: [trade]})).schedule("L1").activity
+
+    assert row.who == "Me ↔ Roster 2"
+    assert row.budget == ["$5 from Me to Roster 2"]  # a zero transfer is no transfer
+
+
+def test_the_table_carries_points_against_budget_left_and_waiver_order() -> None:
+    client = league_client()
+    client.league = replace(client.league, waiver_budget=100)
+    client.rosters = [
+        replace(client.rosters[0], points_against=812.5, waiver_budget_used=27, waiver_position=3),
+        client.rosters[1],
+    ]
+    mine = next(row for row in nfl_provider(client).schedule("L1").standings if row.is_mine)
+
+    assert (mine.points_against, mine.waiver_budget, mine.waiver_order) == ("812.50", "$73", "3")
+
+
+def test_a_league_without_faab_shows_no_budget() -> None:
+    rows = nfl_provider(league_client()).schedule("L1").standings
+
+    assert all(row.waiver_budget == "" for row in rows)
+
+
 def test_activity_names_players_rather_than_identifiers() -> None:
     client = league_client(
         transactions={3: [Transaction(kind="waiver", roster_ids=[1], adds={"qb1": 1}, drops={"rb1": 1}, when=1)]}

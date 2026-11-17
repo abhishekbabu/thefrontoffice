@@ -1,6 +1,6 @@
 import { act } from "react";
 import { describe, expect, it } from "vitest";
-import type { ActivityRow, Competition, League, LeagueSchedule } from "@/lib/api";
+import type { ActivityRow, Competition, League, LeagueSchedule, PlayerDetail } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { LeaguePanel, sections } from "@/panels/LeaguePanel";
 import { offlineClient, render, settle } from "@/test/render";
@@ -16,11 +16,12 @@ const schedule: LeagueSchedule = {
   activity: [
     {
       when: "16 Nov",
-      who: "Rival",
+      who: "Rival ↔ Me",
       what: "Trade",
-      detail: "+Star QB, -Bad RB",
+      detail: "+Star QB, -Bad RB, $5 FAAB",
       is_mine: false,
       bid: "",
+      budget: ["$5 from Me to Rival"],
       moves: [
         { player_id: "qb1", player: "Star QB", position: "QB", team: "BUF", change: "added", manager: "Rival" },
         { player_id: "rb2", player: "Bad RB", position: "RB", team: "MIA", change: "added", manager: "Me" },
@@ -31,11 +32,31 @@ const schedule: LeagueSchedule = {
   ],
 };
 
+const STAR_QB: PlayerDetail = {
+  player_id: "qb1",
+  name: "Star QB",
+  position: "QB",
+  team: "BUF",
+  team_name: "",
+  team_logo_url: "",
+  headline: "",
+  headline_label: "",
+  note: "",
+  url: "",
+  image_url: "",
+  tone: "neutral",
+  owner: "",
+  tabs: [],
+  groups: [],
+  tables: [],
+};
+
 describe("League activity", () => {
   it("opens a trade in full, by who got whom", async () => {
     const client = offlineClient();
     client.setQueryData(keys.schedule(competition.key, league.league_id), schedule);
     client.setQueryData(keys.teams(competition.key, league.league_id), []);
+    client.setQueryData(keys.player(competition.key, league.league_id, "qb1"), STAR_QB);
     const { container } = await render(<LeaguePanel competition={competition} league={league} />, client);
 
     const row = [...container.querySelectorAll<HTMLElement>("[role=button]")].find((el) =>
@@ -45,10 +66,19 @@ describe("League activity", () => {
     await settle();
 
     const dialog = document.querySelector("[role=dialog]")!;
-    expect(dialog.getAttribute("aria-label")).toBe("Trade by Rival");
+    expect(dialog.getAttribute("aria-label")).toBe("Trade by Rival ↔ Me");
+    expect(dialog.textContent).toContain("$5 from Me to Rival");
     expect(dialog.textContent).toContain("To Rival");
     expect(dialog.textContent).toContain("To Me");
     expect(dialog.textContent).toContain("QB · BUF");
+
+    // A player opened from the move stacks over it: the move is still there under him.
+    const player = [...dialog.querySelectorAll<HTMLElement>("[role=button]")].find((el) =>
+      el.textContent?.includes("Star QB"),
+    )!;
+    await act(async () => player.click());
+    await settle();
+    expect(document.querySelector("[aria-label='Trade by Rival ↔ Me']")).not.toBeNull();
   });
 });
 
@@ -61,6 +91,7 @@ describe("sections", () => {
       detail: "",
       is_mine: true,
       bid: "$14",
+      budget: [],
       moves: [
         { player_id: "wr9", player: "Waiver WR", position: "WR", team: "NYJ", change: "added", manager: "Me" },
         { player_id: "rb1", player: "Good RB", position: "RB", team: "BUF", change: "dropped", manager: "Me" },

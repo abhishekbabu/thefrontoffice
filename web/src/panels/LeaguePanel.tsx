@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ListCard, ListRow } from "@/components/ui/list";
 import { ToggleChip } from "@/components/ui/toggle";
+import { Table, Td, Th } from "@/components/ui/table";
+import { clickable } from "@/lib/clickable";
 import { Empty, QueryState } from "@/components/ui/state";
 import { RosterTable, useSortedRoster } from "@/components/ui/roster-table";
 import { usePlayerDrawer } from "@/components/ui/player";
@@ -167,42 +169,63 @@ function Standings({
   rows: LeagueSchedule["standings"];
   onOpen: (teamId: string) => void;
 }) {
+  // Only the columns this league fills: FPL has no waiver budget, and a league
+  // that is not simulated has no playoff chance.
+  const has = (key: "record" | "points_against" | "waiver_budget" | "waiver_order" | "playoffs") =>
+    rows.some((row) => row[key]);
   return (
-    <ListCard title="Table" count={`${rows.length} teams`}>
-      {rows.map((row) => (
-        <ListRow
-          key={`${row.rank}-${row.name}`}
-          current={row.is_mine}
-          // A table is a list of teams, so a row is the obvious way in to one.
-          onClick={row.team_id ? () => onOpen(row.team_id) : undefined}
-        >
-          <span className="w-6 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">
-            {row.rank}
-          </span>
-          <span className={cn("min-w-0 flex-1 truncate", row.is_mine && "font-semibold")}>{row.name}</span>
-          {row.is_mine && (
-            <Badge variant="muted" appearance="label" className="shrink-0">
-              you
-            </Badge>
-          )}
-          {row.detail && (
-            <span className="hidden shrink-0 truncate font-mono text-[11px] text-muted-foreground sm:block">
-              {row.detail}
-            </span>
-          )}
-          {row.record && <span className="shrink-0 font-mono text-[11.5px] tabular-nums">{row.record}</span>}
-          <span className="w-28 shrink-0 text-right font-mono text-[12px] tabular-nums">{row.points}</span>
-          {/* Labelled in the cell rather than by a header the table does not
-              have; on a phone the word is left to screen readers. */}
-          {row.playoffs && (
-            <span className="shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground sm:w-28">
-              {row.playoffs}
-              <span className="sr-only sm:not-sr-only"> playoffs</span>
-            </span>
-          )}
-        </ListRow>
-      ))}
-    </ListCard>
+    <Card>
+      <CardHeader>
+        <span>Table</span>
+        <span>{rows.length} teams</span>
+      </CardHeader>
+      <Table>
+        <thead>
+          <tr>
+            <Th className="w-8 text-right">#</Th>
+            <Th>Team</Th>
+            {has("record") && <Th className="text-right">Record</Th>}
+            <Th className="text-right">{has("points_against") ? "PF" : "Pts"}</Th>
+            {has("points_against") && <Th className="text-right">PA</Th>}
+            {has("waiver_budget") && <Th className="text-right">FAAB</Th>}
+            {has("waiver_order") && <Th className="text-right">Waiver</Th>}
+            {has("playoffs") && <Th className="text-right">Playoffs</Th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              key={`${row.rank}-${row.name}`}
+              {...clickable(row.team_id ? () => onOpen(row.team_id) : undefined)}
+              className={cn(row.team_id && "cursor-pointer hover:bg-muted", row.is_mine && "bg-muted/60")}
+            >
+              <Td className="text-right font-mono text-muted-foreground">{row.rank}</Td>
+              <Td>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className={cn("truncate", row.is_mine && "font-semibold")}>{row.name}</span>
+                  {row.is_mine && (
+                    <Badge variant="muted" appearance="label" className="shrink-0">
+                      you
+                    </Badge>
+                  )}
+                  {row.detail && (
+                    <span className="hidden truncate font-mono text-[11px] text-muted-foreground sm:block">
+                      {row.detail}
+                    </span>
+                  )}
+                </span>
+              </Td>
+              {has("record") && <Td className="text-right font-mono">{row.record}</Td>}
+              <Td className="text-right font-mono">{row.points}</Td>
+              {has("points_against") && <Td className="text-right font-mono">{row.points_against}</Td>}
+              {has("waiver_budget") && <Td className="text-right font-mono">{row.waiver_budget}</Td>}
+              {has("waiver_order") && <Td className="text-right font-mono">{row.waiver_order}</Td>}
+              {has("playoffs") && <Td className="text-right font-mono text-muted-foreground">{row.playoffs}</Td>}
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </Card>
   );
 }
 
@@ -226,7 +249,7 @@ function Activity({ competition, league, rows }: { competition: Competition; lea
             onClick={row.moves.length ? () => setOpen(row) : undefined}
           >
             <span className="w-16 shrink-0 font-mono text-[11px] text-muted-foreground">{row.when}</span>
-            <span className="w-32 shrink-0 truncate">{row.who}</span>
+            <span className="w-48 shrink-0 truncate">{row.who}</span>
             <Badge variant="muted" appearance="label" className="shrink-0">
               {row.what}
             </Badge>
@@ -245,10 +268,8 @@ function Activity({ competition, league, rows }: { competition: Competition; lea
           <MoveDetail
             move={open}
             onClose={() => setOpen(null)}
-            onOpen={(id) => {
-              setOpen(null);
-              openPlayer(id);
-            }}
+            // The move stays open under the player, so closing him returns to it.
+            onOpen={openPlayer}
           />
         )}
       </SlideOver>
@@ -272,6 +293,15 @@ function MoveDetail({ move, onClose, onOpen }: { move: ActivityRow; onClose: () 
         <IconButton label="Close" side="left" icon={<X />} onClick={onClose} />
       </div>
       <div className="flex flex-col gap-4 p-5">
+        {move.budget.length > 0 && (
+          <ListCard title="FAAB" count={`${move.budget.length}`}>
+            {move.budget.map((line) => (
+              <ListRow key={line}>
+                <span className="font-mono text-[12.5px]">{line}</span>
+              </ListRow>
+            ))}
+          </ListCard>
+        )}
         {sections(move).map(({ title, moves }) => (
           <ListCard key={title} title={title} count={`${moves.length}`}>
             {moves.map((m) => (

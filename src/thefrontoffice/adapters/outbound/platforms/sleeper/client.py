@@ -255,6 +255,7 @@ class SleeperClient:
             median_game=bool((data.get("settings") or {}).get("league_average_match")),
             ir_allows=SleeperClient.ir_allows(data.get("settings") or {}),
             draft_id=str(data.get("draft_id") or ""),
+            waiver_budget=int((data.get("settings") or {}).get("waiver_budget") or 0),
             scoring_rules={str(k): float(v) for k, v in settings_blob.items() if isinstance(v, int | float)},
         )
 
@@ -300,6 +301,10 @@ class SleeperClient:
                     losses=int(record.get("losses", 0)),
                     ties=int(record.get("ties", 0)),
                     points_for=float(record.get("fpts", 0)) + float(record.get("fpts_decimal", 0)) / 100,
+                    points_against=float(record.get("fpts_against", 0) or 0)
+                    + float(record.get("fpts_against_decimal", 0) or 0) / 100,
+                    waiver_budget_used=int(record.get("waiver_budget_used", 0) or 0),
+                    waiver_position=int(record.get("waiver_position", 0) or 0),
                 )
             )
         return rosters
@@ -760,6 +765,11 @@ def transactions(data: Any) -> list[Transaction]:
             drops={str(k): int(v) for k, v in (t.get("drops") or {}).items()},
             when=int(t.get("status_updated") or 0),
             bid=int((t.get("settings") or {}).get("waiver_bid") or 0),
+            budget=[
+                (int(b.get("sender") or 0), int(b.get("receiver") or 0), int(b.get("amount") or 0))
+                for b in (t.get("waiver_budget") or [])
+                if isinstance(b, dict)
+            ],
         )
         for t in (data or [])
         if isinstance(t, dict) and t.get("status") == "complete"

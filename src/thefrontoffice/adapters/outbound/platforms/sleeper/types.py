@@ -80,6 +80,8 @@ class SleeperLeague:
     Empty where unknown, and a line is then read at Sleeper's published figure for the format."""
     median_game: bool = False
     """Whether each week also plays the league's median: a second win or loss, for finishing in the top half."""
+    waiver_budget: int = 0
+    """Each team's FAAB for the season; nought where the league uses none."""
     draft_id: str = ""
     """The league's draft for this season; empty where it has none."""
     ir_allows: frozenset[str] = frozenset({"IR"})
@@ -111,6 +113,10 @@ class SleeperRoster:
     losses: int = 0
     ties: int = 0
     points_for: float = 0.0
+    points_against: float = 0.0
+    waiver_budget_used: int = 0
+    waiver_position: int = 0
+    """Place in the waiver order; nought where Sleeper gives none."""
 
     @property
     def record(self) -> str:
@@ -271,6 +277,8 @@ class Transaction:
     """Epoch milliseconds, which is a number until somebody formats it."""
     bid: int = 0
     """The waiver budget a claim was won with; nought for one that spent none."""
+    budget: list[tuple[int, int, int]] = field(default_factory=list)
+    """Waiver budget a trade moved: (sender roster, receiver roster, amount)."""
 
 
 @dataclass(frozen=True)
