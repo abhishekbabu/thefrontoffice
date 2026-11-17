@@ -36,6 +36,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperLeague,
     SleeperMatchup,
     SleeperRoster,
+    TrendingPlayer,
 )
 from thefrontoffice.domain.errors import LeagueNotFoundError, NotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery, Summary
@@ -1207,3 +1208,25 @@ def test_a_weeks_games_run_in_kickoff_order_each_with_its_start() -> None:
 def test_a_week_of_games_outside_the_season_is_refused() -> None:
     with pytest.raises(NotFoundError):
         nfl_provider(_week_five()).games_of("L1", 0)
+
+
+def test_the_wire_offers_sleepers_trending_adds_most_added_first_with_their_count() -> None:
+    client = FakeSleeper(
+        projections=DEFAULT_PROJECTIONS, trending=[TrendingPlayer("qb1", 900), TrendingPlayer("wr9", 120)]
+    )
+    page = nfl_provider(client).free_agents("L1", PlayerQuery(view="Trending"))
+
+    assert page.views == ["Trending", "IR"]
+    # Star QB trends, but he is on a roster: nobody's to add.
+    assert [(c.player_id, c.columns["Adds"]) for c in page.players] == [("wr9", "120")]
+
+
+def test_the_wire_lists_free_agents_on_ir_on_their_own() -> None:
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    catalog = client.get_nfl_players()
+    hurt = next(pid for pid, meta in catalog.items() if pid not in {"qb1", "rb1"} and meta.position == "WR")
+    client.players_catalog = {**catalog, hurt: replace(catalog[hurt], injury_status="IR")}
+
+    page = nfl_provider(client).free_agents("L1", PlayerQuery(view="IR"))
+
+    assert [c.player_id for c in page.players] == [hurt]

@@ -1242,6 +1242,11 @@ export interface components {
              * @description Every position in the unfiltered pool, so a filter can be offered without guessing.
              */
             positions: string[];
+            /**
+             * Views
+             * @description Other lists of the pool the competition offers, by name: 'Trending', 'IR'. Empty where none.
+             */
+            views: string[];
         };
         /**
          * Remedy
@@ -2967,6 +2972,8 @@ export interface operations {
                 position?: string;
                 /** @description Substring match across a row's own values. */
                 search?: string;
+                /** @description One of the page's `views` to list instead of the whole pool. Empty is the pool. */
+                view?: string;
             };
             header?: never;
             path: {
