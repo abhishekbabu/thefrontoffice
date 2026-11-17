@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api, type Competition, type League, type LeagueSchedule, type Match, type Summary } from "@/lib/api";
 import { keys } from "@/lib/queries";
+import { kickoff } from "@/lib/format";
 import { toneText } from "@/lib/tone";
 import { cn } from "@/lib/utils";
 import { ListCard, ListRow } from "@/components/ui/list";
@@ -42,7 +43,7 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
   const rows = browses ? games.data : schedule.data?.matches;
   return (
     <>
-      <LeagueHeader league={league} meta={shown ? `Week ${shown.week} · ${league.detail}` : undefined}>
+      <LeagueHeader league={league}>
         {shown && <WeekStepper range={shown} onStep={step} />}
       </LeagueHeader>
       <QueryState query={browses ? (shown ? games : summary) : schedule} lines={6} />
@@ -61,7 +62,9 @@ export function Games({ rows }: { rows: Match[] }) {
     <ListCard title="Fixtures" count={`${rows.length} games`}>
       {rows.map((row, i) => (
         <ListRow key={`${row.home}-${row.away}-${i}`}>
-          <span className="w-36 shrink-0 font-mono text-[11px] text-muted-foreground">{row.label}</span>
+          <span className="w-36 shrink-0 font-mono text-[11px] text-muted-foreground">
+            {row.kickoff ? kickoff(row.kickoff) : row.label}
+          </span>
           <span className="min-w-0 flex-1 font-mono text-[12.5px]">
             <Side club={row.away} score={row.away_score} other={row.home_score} />{" "}
             <span className="text-muted-foreground">at</span>{" "}

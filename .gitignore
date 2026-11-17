@@ -47,3 +47,6 @@ web/node_modules/
 web/dist/
 *.tsbuildinfo
 .coverage
+
+# Agent worktrees
+.claude/worktrees/

@@ -26,4 +26,9 @@ describe("Season", () => {
     expect(rows.find((r) => r.includes("Week 11"))).toContain("Trade deadline");
     expect(rows.find((r) => r.includes("Week 10"))).toContain("live 119.24-103.90");
   });
+
+  it("puts the opponent's record in a chip beside their name", async () => {
+    const { container } = await render(<Season rows={[row("Week 3", { opponent: "Rival", detail: "4-6" })]} />);
+    expect(container.textContent).toContain("Rival4-6");
+  });
 });

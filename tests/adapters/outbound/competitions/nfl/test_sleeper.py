@@ -6,7 +6,7 @@ modules beside this one.
 """
 
 from dataclasses import replace
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -315,7 +315,6 @@ def test_the_drawer_shows_what_the_projection_rests_on() -> None:
 
 
 def test_the_drawer_shows_the_latest_news_about_the_player() -> None:
-    from datetime import datetime
 
     from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 
@@ -1186,9 +1185,23 @@ def test_a_weeks_games_say_where_each_stands_and_which_you_have_players_in() -> 
 
     # A game yet to kick off has no score rather than a nil-nil one.
     assert games == {
-        ("BUF", "MIA"): ("Final · you have players", "good", 27, 20),
+        ("BUF", "MIA"): ("Final · yours", "good", 27, 20),
         ("NYJ", "NE"): ("", "neutral", None, None),
     }
+
+
+def test_a_weeks_games_run_in_kickoff_order_each_with_its_start() -> None:
+    client = _week_five()
+    client.season_schedule = [*WEEK_5, ScheduledGame(week=5, date="2026-10-11", home="NYJ", away="NE")]
+    espn = FakeESPN()
+    early, late = datetime(2026, 10, 11, 17, tzinfo=UTC), datetime(2026, 10, 12, 0, 20, tzinfo=UTC)
+    espn.weekly_scoreboards = {
+        5: [ScoreboardGame("BUF", "MIA", "pre", kickoff=late), ScoreboardGame("NYJ", "NE", "pre", kickoff=early)]
+    }
+
+    games = nfl_provider(client, espn).games_of("L1", 5)
+
+    assert [(g.home, g.kickoff) for g in games] == [("NYJ", early), ("BUF", late)]
 
 
 def test_a_week_of_games_outside_the_season_is_refused() -> None:

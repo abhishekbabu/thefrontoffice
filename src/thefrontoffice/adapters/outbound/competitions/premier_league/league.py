@@ -130,6 +130,7 @@ def matches(client: FPLSource, gameweek: int) -> list[Match]:
             tone="warning" if max(f.home_difficulty, f.away_difficulty) >= HARD_FIXTURE else "neutral",
             home_score=f.home_score if f.started else None,
             away_score=f.away_score if f.started else None,
+            kickoff=f.kickoff,
         )
         for f in sorted(fixtures, key=lambda f: (f.kickoff is None, f.kickoff))
     ]

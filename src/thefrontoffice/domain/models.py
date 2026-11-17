@@ -1067,6 +1067,9 @@ class Match(BaseModel):
     tone: Tone = "neutral"
     home_score: int | None = Field(default=None, description="Points on the board once it has kicked off.")
     away_score: int | None = None
+    kickoff: datetime | None = Field(
+        default=None, description="When it starts, in UTC, for the page to show in the viewer's own zone."
+    )
 
 
 class ActivityMove(BaseModel):

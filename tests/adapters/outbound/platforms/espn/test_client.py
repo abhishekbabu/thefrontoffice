@@ -98,9 +98,11 @@ def _event(
     clock: float = 0.0,
     label: str = "",
     score: tuple[str, str] | None = None,
+    date: str = "",
 ) -> dict[str, Any]:
     scored = ({"score": score[0]}, {"score": score[1]}) if score else ({}, {})
     return {
+        **({"date": date} if date else {}),
         "competitions": [
             {
                 "competitors": [
@@ -117,7 +119,7 @@ def test_the_scoreboard_says_where_each_game_is(tmp_path: Path) -> None:
     board = {
         "events": [
             _event("DET", "GB", "in", 3, 782.0, "13:02 - 3rd", score=("17", "10")),
-            _event("NYJ", "NE", "pre", label="Sun 1:00 PM"),
+            _event("NYJ", "NE", "pre", label="Sun 1:00 PM", date="2026-10-25T17:00Z"),
             {"competitions": []},
         ]
     }
@@ -136,6 +138,8 @@ def test_the_scoreboard_says_where_each_game_is(tmp_path: Path) -> None:
     assert (game.home_score, game.away_score) == (17, 10)
     # ESPN sends no score before kickoff.
     assert (before.home_score, before.away_score) == (0, 0)
+    assert before.kickoff == datetime(2026, 10, 25, 17, tzinfo=UTC)
+    assert game.kickoff is None  # ESPN gave no time
     assert any("week=7" in url for url in session.requests)
 
 

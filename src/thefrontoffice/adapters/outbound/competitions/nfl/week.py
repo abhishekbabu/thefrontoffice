@@ -419,6 +419,10 @@ class Scoreboard:
         """Each club's game of a week that has kicked off, as ESPN has it: the score, and 'Final' or 'Q3 13:02'."""
         return {club: game for club, game in self._board(season, week).items() if game.state != "pre"}
 
+    def week_board(self, season: str, week: int) -> dict[str, ScoreboardGame]:
+        """Each club's game of a week as ESPN has it, kicked off or not: its start time, and its score once it has one."""
+        return self._board(season, week)
+
     def _board(self, season: str, week: int) -> dict[str, ScoreboardGame]:
         if (season, week) not in self._boards:
             try:

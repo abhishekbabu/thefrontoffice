@@ -148,6 +148,7 @@ def _game(event: Any) -> ScoreboardGame | None:
             label=str((status.get("type") or {}).get("shortDetail") or ""),
             home_score=scores["home"],
             away_score=scores["away"],
+            kickoff=parse_utc(str(event["date"])) if event.get("date") else None,
         )
     except KeyError, IndexError, TypeError, ValueError:
         logger.debug(f"Skipping an unreadable ESPN scoreboard event: {str(event)[:200]}")

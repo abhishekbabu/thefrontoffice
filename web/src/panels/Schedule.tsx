@@ -61,8 +61,19 @@ export function Season({ rows }: { rows: ScheduleRow[] }) {
           <ListRow current={row.is_current}>
             <Label className="w-24 shrink-0">{row.label}</Label>
             <span className="w-32 shrink-0 font-mono text-[11px] text-muted-foreground">{row.date}</span>
-            <span className="min-w-0 flex-1 truncate">
-              {row.opponent || <span className="text-muted-foreground">{row.detail || "—"}</span>}
+            <span className="flex min-w-0 flex-1 items-center gap-2">
+              {row.opponent ? (
+                <>
+                  <span className="truncate">{row.opponent}</span>
+                  {row.detail && (
+                    <Badge variant="muted" appearance="label" className="shrink-0 tabular-nums">
+                      {row.detail}
+                    </Badge>
+                  )}
+                </>
+              ) : (
+                <span className="text-muted-foreground">{row.detail || "—"}</span>
+              )}
             </span>
             {/* Said, not only shaded — the tint is reinforcement. */}
             {row.is_current && (
@@ -75,9 +86,6 @@ export function Season({ rows }: { rows: ScheduleRow[] }) {
                 {mark}
               </Badge>
             ))}
-            {row.opponent && row.detail && (
-              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{row.detail}</span>
-            )}
             {/* Won and lost are carried by the letter as well as the color: state
                 in color alone is state a colorblind reader cannot see. */}
             {row.result && (

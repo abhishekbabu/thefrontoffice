@@ -989,6 +989,11 @@ export interface components {
             home_score: number | null;
             /** Away Score */
             away_score: number | null;
+            /**
+             * Kickoff
+             * @description When it starts, in UTC, for the page to show in the viewer's own zone.
+             */
+            kickoff: string | null;
         };
         /**
          * Move
