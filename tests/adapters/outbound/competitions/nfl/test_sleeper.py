@@ -1125,6 +1125,28 @@ def test_a_week_played_shows_the_roster_that_played_it_and_its_final_score() -> 
     assert summary.weeks is not None and (summary.weeks.week, summary.weeks.current) == (2, 5)
 
 
+def test_a_week_played_reads_each_record_as_it_stood_going_into_it() -> None:
+    """Week 3 comes after one week counted, which you won, not the 1-1 you are now."""
+    client = _week_five()
+    client.weekly_matchups[1] = []  # nobody played week 1
+    client.weekly_matchups[3] = [
+        SleeperMatchup(roster_id=1, matchup_id=1, points=90.0, starters=["qb1"], players=["qb1", "rb1"]),
+        SleeperMatchup(roster_id=2, matchup_id=1, points=95.0, starters=["rb2"], players=["rb2"]),
+    ]
+
+    summary = nfl_provider(client).week_of("L1", 3)
+
+    assert mine(summary).detail == "1-0"
+    assert summary.opponent is not None and summary.opponent.detail.startswith("0-1")
+
+
+def test_a_week_played_keeps_todays_records_when_a_week_before_it_will_not_load() -> None:
+    client = _week_five()
+    client.unloaded_weeks = {1}
+
+    assert mine(nfl_provider(client).week_of("L1", 3)).detail == "1-1"
+
+
 def test_a_week_to_come_starts_each_rosters_best_lineup_rather_than_sleepers_copy() -> None:
     summary = nfl_provider(_week_five()).week_of("L1", 7)
 
