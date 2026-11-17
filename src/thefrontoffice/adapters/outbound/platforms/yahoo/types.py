@@ -122,6 +122,18 @@ class YahooTeam:
 
 
 @dataclass(frozen=True)
+class StatCategory:
+    """One category the league scores, as its settings name it."""
+
+    stat_id: str
+    name: str
+    """What Yahoo displays it as: 'PTS', 'FG%'."""
+
+    fewer_wins: bool = False
+    """Won by the side with less of it: turnovers, in most leagues."""
+
+
+@dataclass(frozen=True)
 class Pairing:
     """One week's head-to-head as the scoreboard has it: its dates, and each side's categories."""
 

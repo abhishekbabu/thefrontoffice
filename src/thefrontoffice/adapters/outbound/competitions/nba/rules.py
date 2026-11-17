@@ -29,9 +29,6 @@ class Category:
     attempts: str = ""
     """Sleeper's attempts key, which makes this a percentage."""
 
-    fewer_wins: bool = False
-    """Won by the side with less of it: turnovers."""
-
     @property
     def is_percentage(self) -> bool:
         return bool(self.attempts)
@@ -67,7 +64,7 @@ BLOCKS = Category("BLK", "18", "blk", "b")
 THREES = Category("3PTM", "10", "tpm", "tpm")
 FIELD_GOALS = Category("FG%", "5", "fgm", "FG", attempts="fga")
 FREE_THROWS = Category("FT%", "8", "ftm", "FT", attempts="fta")
-TURNOVERS = Category("TO", "19", "to", "to", fewer_wins=True)
+TURNOVERS = Category("TO", "19", "to", "to")
 
 CATEGORIES = (POINTS, REBOUNDS, ASSISTS, STEALS, BLOCKS, THREES, FIELD_GOALS, FREE_THROWS, TURNOVERS)
 """What a nine-category league is scored on, in the order it is read."""

@@ -131,6 +131,13 @@ def test_games_outside_the_matchup_window_are_not_counted() -> None:
     assert form.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
 
 
+def test_a_windows_games_are_listed_once_each_in_date_order() -> None:
+    """A game is filed under both its clubs: listed under each, it would show twice."""
+    form = _form(schedule=[_sched("2026-02-14"), _sched("2026-02-08"), _sched("2026-02-12")])
+
+    assert [g.date for g in form.games_between(WINDOW_START, WINDOW_END)] == ["2026-02-12", "2026-02-14"]
+
+
 def test_a_game_already_in_the_past_is_not_remaining() -> None:
     form = _form(schedule=[_sched("2026-02-09"), _sched("2026-02-14")])
 

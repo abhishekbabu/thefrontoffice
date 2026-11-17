@@ -403,6 +403,30 @@ def test_any_week_of_the_season_is_read_from_that_weeks_scoreboard(tmp_path: Pat
     assert (found.start, found.mine.stats, found.opponent.name) == (date(2026, 1, 19), {"18": "12"}, "Theirs")
 
 
+def _stat_xml(stat_id: str, name: str, sort_order: str, display_only: bool = False) -> str:
+    only = "<is_only_display_stat>1</is_only_display_stat>" if display_only else ""
+    return (
+        f"<stat><stat_id>{stat_id}</stat_id><display_name>{name}</display_name>"
+        f"<sort_order>{sort_order}</sort_order>{only}</stat>"
+    )
+
+
+def test_the_league_scores_the_categories_its_settings_list(tmp_path: Path) -> None:
+    stats = (
+        _stat_xml("9004003", "FGM/A", "1", display_only=True) + _stat_xml("5", "FG%", "1") + _stat_xml("19", "TO", "0")
+    )
+    settings = (
+        "<fantasy_content><league><settings><stat_categories><stats>"
+        f"{stats}</stats></stat_categories></settings></league></fantasy_content>"
+    )
+    client, _ = _client(tmp_path, answers={"settings": settings})
+
+    assert [(c.stat_id, c.name, c.fewer_wins) for c in client.stat_categories()] == [
+        ("5", "FG%", False),
+        ("19", "TO", True),
+    ]
+
+
 def test_between_seasons_there_is_no_week_to_ask_about(tmp_path: Path) -> None:
     client, ctx = _client(tmp_path, league=replace(LEAGUE, current_week=None))
 

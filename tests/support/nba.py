@@ -5,13 +5,14 @@ from datetime import date, datetime
 from typing import Any
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
-from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS
+from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, TURNOVERS
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame, SeasonState
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Matchup,
     MatchupSide,
     Pairing,
+    StatCategory,
     TeamStanding,
     Timeframe,
     YahooLeague,
@@ -122,6 +123,10 @@ class FakeYahoo:
             opponent_roster=[make_player("Their Star", position="C")],
         )
 
+    def stat_categories(self) -> list[StatCategory]:
+        """The nine categories, turnovers won by fewer, as a standard league's settings list them."""
+        return [StatCategory(c.yahoo_stat, c.label, fewer_wins=c is TURNOVERS) for c in CATEGORIES]
+
     def pairing(self, team_key: str, week: int) -> Pairing | None:
         """Any week against Their Team, with the categories this was built with for it; 12 blocks to 17 otherwise."""
         self.pairings.append(week)
@@ -227,9 +232,18 @@ class FakeSleeperNBA:
 class FakeNBA:
     """Stands in for SleeperNBAForm."""
 
-    def __init__(self, stats: dict[str, Any] | None = None, games: dict[str, int] | None = None) -> None:
+    def __init__(
+        self,
+        stats: dict[str, Any] | None = None,
+        games: dict[str, int] | None = None,
+        slate: list[ScheduledGame] | None = None,
+    ) -> None:
         self.stats = stats or {}
         self.games = games or {}
+        self.slate = slate or []
+
+    def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
+        return [g for g in self.slate if start_date.isoformat() <= g.date <= end_date.isoformat()]
 
     def get_player_stats(self, full_name: str) -> Any:
         return self.stats.get(full_name)

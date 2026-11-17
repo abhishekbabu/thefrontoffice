@@ -79,6 +79,14 @@ class FormSource(Protocol):
         """
         ...
 
+    def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
+        """Every real game dated inside a matchup window, in date order.
+
+        Raises:
+            PlatformError: the schedule would not load.
+        """
+        ...
+
 
 class SleeperNBAForm:
     """Recent form and remaining games for basketball.
@@ -158,6 +166,16 @@ class SleeperNBAForm:
         except SleeperAPIError as e:
             logger.warning(f"Continuing without games left, the basketball schedule would not load: {e}")
             return {}
+
+    def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
+        """Every real game dated inside a matchup window, in date order, each once.
+
+        Raises:
+            SleeperAPIError: the schedule would not load.
+        """
+        games = {id(g): g for club in self._team_schedule().values() for g in club}.values()
+        inside = [g for g in games if (day := parse_day(g.date)) is not None and start_date <= day <= end_date]
+        return sorted(inside, key=lambda g: (g.date, g.away, g.home))
 
     @staticmethod
     def _is_remaining(game: ScheduledGame, start: date, end: date, today: date) -> bool:
