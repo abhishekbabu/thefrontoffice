@@ -625,14 +625,17 @@ def _slot(player_id: str, starters: set[str], reserve: Mapping[str, str]) -> str
 def sitting(rows: Sequence[Spot], roster: Team) -> tuple[list[Spot], list[Spot]]:
     """Everyone not starting, parted into the bench and the reserve slots, which cost no roster spot.
 
-    A reserve row names its slot where a starter's names his, so who is in
-    injured reserve reads at a glance; and his zero is no warning, since a
-    player held there was never going to play.
+    A reserve row lines up with the bench's: the section says where he is, and
+    an injured player's row already says "on IR". A taxi player's says nothing
+    of the kind, so it says taxi. His zero is no warning, since a player held
+    there was never going to play.
     """
     slots = held(roster)
     bench = [row for row in rows if row.player_id not in slots]
     reserve = [
-        row.model_copy(update={"slot": "IR" if slots[row.player_id] == "IR" else "Taxi", "tone": "neutral"})
+        row.model_copy(
+            update={"detail": row.detail if slots[row.player_id] == "IR" else f"{row.detail} · taxi", "tone": "neutral"}
+        )
         for row in rows
         if row.player_id in slots
     ]

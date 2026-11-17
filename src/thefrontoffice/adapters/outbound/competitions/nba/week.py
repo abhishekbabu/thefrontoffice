@@ -87,7 +87,7 @@ def side(name: str, detail: str, points: str, roster: Sequence[YahooPlayer] | No
         lineup=[_spot(p) for p in rows if p.slot not in INJURED_SLOTS and p.slot != BENCH],
         bench=[_spot(p).model_copy(update={"slot": ""}) for p in rows if p.slot == BENCH],
         # A player on the injured list was never going to play: no warning on his row.
-        reserve=[_spot(p).model_copy(update={"tone": "neutral"}) for p in rows if p.slot in INJURED_SLOTS],
+        reserve=[_spot(p).model_copy(update={"slot": "", "tone": "neutral"}) for p in rows if p.slot in INJURED_SLOTS],
     )
 
 

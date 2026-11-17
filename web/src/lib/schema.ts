@@ -1429,7 +1429,7 @@ export interface components {
             open_spots: number;
             /**
              * Reserve
-             * @description Players held in a slot that costs no roster spot and cannot start, such as injured reserve or taxi, each row's `slot` naming which. Empty where the league has none.
+             * @description Players held in a slot that costs no roster spot and cannot start, such as injured reserve or taxi, in rows shaped like the bench's. Empty where the league has none.
              */
             reserve: components["schemas"]["Spot"][];
         };

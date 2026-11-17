@@ -22,14 +22,14 @@ describe("LineupCard", () => {
 });
 
 describe("SideCard", () => {
-  it("keeps the reserve slots apart from the bench, each naming its slot", async () => {
+  it("keeps the reserve slots apart from the bench", async () => {
     const side = {
       name: "Rival",
       detail: "",
       points: "",
       lineup: [spot("Starter")],
       bench: [spot("Backup")],
-      reserve: [{ ...spot("Hurt"), slot: "IR" }],
+      reserve: [spot("Hurt")],
       open_spots: 0,
     };
     const { container } = await render(<SideCard side={side} label="Opponent" />);
@@ -37,7 +37,7 @@ describe("SideCard", () => {
 
     expect(text.indexOf("Bench")).toBeLessThan(text.indexOf("Backup"));
     expect(text.indexOf("Backup")).toBeLessThan(text.indexOf("Reserve"));
-    expect(text).toContain("IRHurt");
+    expect(text.indexOf("Reserve")).toBeLessThan(text.indexOf("Hurt"));
   });
 });
 

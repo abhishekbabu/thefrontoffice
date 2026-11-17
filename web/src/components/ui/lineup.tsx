@@ -250,8 +250,7 @@ export function SideCard({ side, label, onOpen }: { side: Side | null; label: st
           <OpenSpots count={side.open_spots} />
         </>
       )}
-      {/* Apart from the bench: these cost no roster spot and cannot start, and
-          each row names its slot where a starter's does. */}
+      {/* Apart from the bench: these cost no roster spot and cannot start. */}
       {side.reserve.length > 0 && (
         <>
           <ScoreHeads spots={side.reserve}>Reserve</ScoreHeads>
