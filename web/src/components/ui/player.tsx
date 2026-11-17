@@ -9,14 +9,15 @@ import { ExternalLink } from "@/components/ui/external-link";
 import { QueryState } from "@/components/ui/state";
 import { SlideOver } from "@/components/ui/dialog";
 import { useShown } from "@/lib/screen";
-import { api, type Competition, type League, type PlayerDetail, type StatTable } from "@/lib/api";
+import { api, type Competition, type League, type PlayerDetail, type Stat, type StatTable } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { toneText } from "@/lib/tone";
 import { Badge } from "@/components/ui/badge";
-import { StatList } from "@/components/ui/stat";
+import { Linked, StatList } from "@/components/ui/stat";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { LABEL, Label } from "@/components/ui/label";
+import { Tabs } from "@/components/ui/tabs";
 
 /**
  * The one figure this player is judged on, beside their name.
@@ -111,6 +112,22 @@ function TableOfStats({ table }: { table: StatTable }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Articles, each its headline linked and its date under it: prose, so not set as a figure. */
+function Headlines({ stats }: { stats: Stat[] }) {
+  return (
+    <ul className="flex flex-col">
+      {stats.map((stat) => (
+        <li key={stat.url} className="border-b border-border/45 py-2 last:border-b-0">
+          <Linked url={stat.url}>
+            <span className="text-[13.5px] leading-snug">{stat.value}</span>
+          </Linked>
+          <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">{stat.label}</div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -216,6 +233,20 @@ function PlayerPanel({
     queryFn: () => api.league(competition, league).player(shown),
     enabled: Boolean(shown),
   });
+  // Each section in its tab: one with none of its own sits in the first. A
+  // tab with nothing in it is not offered, and with one tab there is no bar.
+  const [tab, setTab] = useState("");
+  const detail = player.data;
+  const tabOf = (section: { tab: string }) => section.tab || detail?.tabs[0] || "";
+  const filled = detail ? detail.groups.filter((group) => group.stats.length > 0) : [];
+  const present = (detail?.tabs ?? []).filter(
+    (t) => filled.some((g) => tabOf(g) === t) || detail?.tables.some((x) => tabOf(x) === t),
+  );
+  const current = present.includes(tab) ? tab : present[0];
+  const shownHere = (section: { tab: string }) => present.length <= 1 || tabOf(section) === current;
+  const tables = (detail?.tables ?? []).filter(shownHere);
+  const groups = filled.filter(shownHere);
+
   // On screen while open, so a question to the assistant docked over the
   // drawer is about him.
   useShown(
@@ -236,7 +267,8 @@ function PlayerPanel({
           the name and the one figure they are judged on are exactly what
           you stop being able to see, and they are what every row below is
           about. */}
-      <div className="sticky top-0 z-10 flex items-start gap-4 border-b border-border bg-popover px-5 py-4">
+      <div className="sticky top-0 z-10 border-b border-border bg-popover">
+      <div className="flex items-start gap-4 px-5 py-4">
         {player.data && <Portrait src={player.data.image_url} />}
 
         <div className="min-w-0 flex-1 pt-0.5">
@@ -246,6 +278,11 @@ function PlayerPanel({
                 {player.data.name}
               </h2>
               <TeamLine detail={player.data} />
+              {player.data.owner && (
+                <Badge variant="muted" appearance="label" className="mt-1.5">
+                  {player.data.owner}
+                </Badge>
+              )}
               <Headline detail={player.data} />
               {player.data.note && (
                 <Badge variant="warn" appearance="status" className="mt-2">
@@ -268,13 +305,28 @@ function PlayerPanel({
           <IconButton label="Close" side="left" icon={<X />} onClick={onClose} />
         </div>
       </div>
+      {present.length > 1 && (
+        <Tabs
+          tabs={present.map((t) => ({ id: t, label: t }))}
+          current={current}
+          onPick={setTab}
+          className="px-5 pb-2"
+        />
+      )}
+      </div>
 
       <QueryState query={player} lines={4} />
 
       {player.data && (
         // Room at the foot for the assistant's button, which sits over the drawer.
-        <m.div variants={list} initial="hidden" animate="shown" className="flex flex-col gap-5 px-5 pt-4 pb-20">
-          {player.data.tables.map((table) => (
+        <m.div
+          key={`${player.data.player_id}-${current}`}
+          variants={list}
+          initial="hidden"
+          animate="shown"
+          className="flex flex-col gap-5 px-5 pt-4 pb-20"
+        >
+          {tables.map((table) => (
             <m.section key={table.title} variants={listItem}>
               <Label as="h3" className="mb-1.5 block">
                 {table.title}
@@ -286,14 +338,16 @@ function PlayerPanel({
           {/* A group with nothing in it is a heading that says nothing —
               a kicker has no passing line, and "Projected line" over empty
               space reads as a figure that failed to arrive. */}
-          {player.data.groups
-            .filter((group) => group.stats.length > 0)
-            .map((group) => (
+          {groups.map((group) => (
             <m.section key={group.title} variants={listItem}>
               <Label as="h3" className="mb-1 block">
                 {group.title}
               </Label>
-              <StatList stats={group.stats} />
+              {group.stats.every((stat) => stat.url) ? (
+                <Headlines stats={group.stats} />
+              ) : (
+                <StatList stats={group.stats} />
+              )}
             </m.section>
           ))}
         </m.div>

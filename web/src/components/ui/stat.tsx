@@ -1,3 +1,4 @@
+import type * as React from "react";
 import { cn } from "@/lib/utils";
 import { toneText } from "@/lib/tone";
 import type { Stat } from "@/lib/api";
@@ -73,9 +74,27 @@ export function StatList({ stats, className }: { stats: Stat[]; className?: stri
           className="flex items-baseline justify-between gap-3 border-b border-border/45 py-1.5 last:border-b-0"
         >
           <dt className="text-[13px] text-muted-foreground">{stat.label}</dt>
-          <dd className={cn("text-right font-mono text-[13px] tabular-nums", toneText(stat.tone))}>{stat.value}</dd>
+          <dd className={cn("text-right font-mono text-[13px] tabular-nums", toneText(stat.tone))}>
+            <Linked url={stat.url}>{stat.value}</Linked>
+          </dd>
         </div>
       ))}
     </dl>
+  );
+}
+
+/** `children`, linked to `url` in a new tab where there is one: a headline opens its article. */
+export function Linked({ url, children }: { url?: string; children: React.ReactNode }) {
+  if (!url) return <>{children}</>;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="underline decoration-border underline-offset-2 hover:text-foreground hover:decoration-foreground"
+    >
+      {children}
+    </a>
   );
 }

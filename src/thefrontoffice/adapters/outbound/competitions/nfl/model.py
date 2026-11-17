@@ -237,6 +237,11 @@ class LeagueRules(Protocol):
     @property
     def playoff_week_start(self) -> int: ...
     @property
+    def draft_id(self) -> str:
+        """The league's draft this season; empty where it has none."""
+        ...
+
+    @property
     def ir_allows(self) -> frozenset[str]:
         """The designations the injured-reserve slot takes, upper-cased."""
         ...
@@ -350,6 +355,21 @@ class LeagueMove(Protocol):
     @property
     def bid(self) -> int:
         """The waiver budget spent on it; nought for none."""
+        ...
+
+
+class Pick(Protocol):
+    """One pick of the league's draft."""
+
+    @property
+    def player_id(self) -> str: ...
+    @property
+    def roster_id(self) -> int: ...
+    @property
+    def round(self) -> int: ...
+    @property
+    def pick_no(self) -> int:
+        """Overall, counted from 1."""
         ...
 
 
@@ -472,5 +492,13 @@ class NFLSource(Protocol):
         ...
 
     def get_transactions(self, league_id: str, week: int) -> Sequence[LeagueMove]: ...
+
+    def get_transactions_bulk(self, league_id: str, weeks: list[int]) -> Weeks[Sequence[LeagueMove]]:
+        """Each of `weeks`: its completed moves, or why it would not load."""
+        ...
+
+    def get_draft_picks(self, draft_id: str) -> Sequence[Pick]:
+        """Every pick of a draft, in the order made; none for a draft not yet held."""
+        ...
 
     def get_trending(self, kind: str = "add", lookback_hours: int = 24, limit: int = 25) -> Sequence[Trending]: ...

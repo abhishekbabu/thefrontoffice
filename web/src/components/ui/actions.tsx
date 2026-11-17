@@ -15,6 +15,7 @@ import { decisionTone, toneText, type Variant } from "@/lib/tone";
 import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
+import { Linked } from "@/components/ui/stat";
 
 /** Said in words as well as color, so the order survives without the hue. */
 const URGENCY: Record<Urgency, { label: string; variant: Variant }> = {
@@ -263,7 +264,8 @@ function Row({
                     )}
                   />
                   <span>
-                    <span className="font-medium text-foreground">{line.label}</span> {line.value}
+                    <span className="font-medium text-foreground">{line.label}</span>{" "}
+                    <Linked url={line.url}>{line.value}</Linked>
                   </span>
                 </li>
               ))}

@@ -43,8 +43,8 @@ class PlayerNews:
         return self.by_player.get(player_id, [])[:limit]
 
     def stats(self, player_id: str, limit: int = 3) -> list[Stat]:
-        """The newest few, each labelled with the day it was published."""
-        return [Stat(label=dated(a), value=a.headline) for a in self.latest(player_id, limit)]
+        """The newest few, each labelled with the day it was published and linked to the article."""
+        return [Stat(label=dated(a), value=a.headline, url=a.url) for a in self.latest(player_id, limit)]
 
 
 def dated(article: NewsArticle) -> str:

@@ -36,7 +36,10 @@ player. It runs on your own machine against NFL on
   projection. Each trade lists the players this moves, and why.
 - **Free agents**: ranked by projection, with how each fits your lineup, what
   he does to this week's chance, and any growing role ("snaps 34→76%").
-- **Player pages**: role and matchup, ESPN news, injury status and a game log.
+- **Player pages**: tabs for the week (role, matchup, injury status), the game
+  log, past seasons, his moves in the league (draft pick, adds, drops, trades,
+  and who made each) and ESPN news. NFL also shows whose roster he's on.
+  Every headline in the app links to its article.
 - **A model where you need it**: a verdict on each to-do item, a call on each
   free agent, and an assistant docked beside every page. Opening the week
   judges it again only when the list has an item the last judgment never saw,

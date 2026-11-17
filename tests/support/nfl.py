@@ -13,6 +13,7 @@ from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, 
 from thefrontoffice.adapters.outbound.platforms.http import Batch
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
+    DraftPick,
     NFLGameLine,
     PlayerMeta,
     ScheduledGame,
@@ -68,6 +69,7 @@ class FakeSleeper:
         self.players_catalog: dict[str, PlayerMeta] | None = None
         self.schedule_error = schedule_error
         self.transactions = transactions if transactions is not None else {}
+        self.draft_picks: list[DraftPick] = []
         self.transactions_error = transactions_error
         self.league = league or SleeperLeague(
             league_id="L1",
@@ -127,6 +129,20 @@ class FakeSleeper:
         if self.transactions_error:
             raise self.transactions_error
         return self.transactions.get(week, [])
+
+    def get_transactions_bulk(self, league_id: str, weeks: list[int]) -> Batch[int, list[Transaction]]:
+        """Like the client's: a week that fails is recorded with why, and the read itself never raises."""
+        batch: Batch[int, list[Transaction]] = self._unloaded(weeks)
+        for week in weeks:
+            if week not in batch.failures:
+                try:
+                    batch.values[week] = self.get_transactions(league_id, week)
+                except FrontOfficeError as e:
+                    batch.failures[week] = e
+        return batch
+
+    def get_draft_picks(self, draft_id: str) -> list[DraftPick]:
+        return self.draft_picks if draft_id else []
 
     def get_nfl_game_lines(
         self,

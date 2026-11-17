@@ -1184,6 +1184,17 @@ export interface components {
              * @enum {string}
              */
             tone: "neutral" | "good" | "warning";
+            /**
+             * Owner
+             * @description Whose roster he is on in this league — a team's name, or 'Free agent'. Empty where the league has no such thing, as in FPL, where any number of managers can hold one player.
+             * @default
+             */
+            owner: string;
+            /**
+             * Tabs
+             * @description The drawer's tabs in the order shown, by the names its groups and tables carry. Empty is one page of everything, in the order sent.
+             */
+            tabs: string[];
             /** Groups */
             groups: components["schemas"]["StatGroup"][];
             /**
@@ -1566,6 +1577,12 @@ export interface components {
              * @enum {string}
              */
             tone: "neutral" | "good" | "warning";
+            /**
+             * Url
+             * @description Where the figure comes from, to open: the article a headline is from. Empty for most.
+             * @default
+             */
+            url: string;
         };
         /**
          * StatGroup
@@ -1585,6 +1602,12 @@ export interface components {
              * @default
              */
             note: string;
+            /**
+             * Tab
+             * @description Which of a player drawer's tabs it sits in, by the tab's name; empty for the first.
+             * @default
+             */
+            tab: string;
         };
         /**
          * StatRow
@@ -1617,6 +1640,12 @@ export interface components {
         StatTable: {
             /** Title */
             title: string;
+            /**
+             * Tab
+             * @description Which of a player drawer's tabs it sits in, by the tab's name; empty for the first.
+             * @default
+             */
+            tab: string;
             /**
              * Columns
              * @description Column headings, the subject first: periods newest first, ['2026/27', '2025/26'], or measures, ['Pts', 'Snaps', 'Car'].
