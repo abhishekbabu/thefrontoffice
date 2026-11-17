@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import cached_property
 
-from thefrontoffice.adapters.outbound.competitions.dates import day_month, parse_day, weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.dates import day_month, parse_day, span, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot, optimal_lineup
@@ -236,13 +236,7 @@ def week_dates(games: Sequence[Game]) -> str:
     of it and a range is what somebody checks against their own calendar.
     """
     days = sorted({d for d in (parse_day(g.date) for g in games) if d})
-    if not days:
-        return ""
-    if days[0] == days[-1]:
-        return day_month(days[0])
-    if days[0].month == days[-1].month:
-        return f"{days[0].day}-{day_month(days[-1])}"
-    return f"{day_month(days[0])} - {day_month(days[-1])}"
+    return span(days[0], days[-1]) if days else ""
 
 
 def moment(epoch_ms: int) -> str:

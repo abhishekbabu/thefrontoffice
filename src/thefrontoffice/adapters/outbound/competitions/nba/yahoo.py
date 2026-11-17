@@ -10,8 +10,10 @@ from collections.abc import Callable
 from datetime import date, datetime
 
 from thefrontoffice.adapters.outbound.competitions import paging, places
+from thefrontoffice.adapters.outbound.competitions.dates import span
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
+from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
 from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, FormSource, PlayerStats
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
@@ -33,6 +35,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague, 
 from thefrontoffice.domain.errors import (
     FrontOfficeError,
     LeagueNotFoundError,
+    NotFoundError,
     PlayerNotFoundError,
     TeamNotFoundError,
 )
@@ -44,6 +47,7 @@ from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
     LeagueSchedule,
+    Match,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
@@ -54,6 +58,7 @@ from thefrontoffice.domain.models import (
     Summary,
     TeamRef,
     TradeProposal,
+    WeekRange,
 )
 from thefrontoffice.domain.ports import LeagueRef
 
@@ -153,6 +158,16 @@ class YahooNBAProvider:
             for lg in self._leagues()
         ]
 
+    def _league(self, league_id: str) -> YahooLeague:
+        """The league `league_id` names, or the first when it names none."""
+        leagues = self._leagues()
+        if not league_id:
+            return leagues[0]
+        for lg in leagues:
+            if lg.league_key == league_id:
+                return lg
+        raise LeagueNotFoundError(f"Yahoo league {league_id} is not one of yours")
+
     def _yahoo(self, league_id: str) -> YahooSource:
         """A reader for `league_id`, or for the first league when it names none.
 
@@ -160,25 +175,99 @@ class YahooNBAProvider:
         itself between leagues answered each request from whichever league the
         previous one had asked for.
         """
-        leagues = self._leagues()
-        if not league_id:
-            return self._yahoo_for(leagues[0])
-        for lg in leagues:
-            if lg.league_key == league_id:
-                return self._yahoo_for(lg)
-        raise LeagueNotFoundError(f"Yahoo league {league_id} is not one of yours")
+        return self._yahoo_for(self._league(league_id))
 
     def summary(self, league_id: str) -> Summary:
-        """The header, without the free-agent pool or the model: the add budget.
+        """The week being played: the add budget, the category score, both rosters, and the to-do list.
 
-        A category league has no lineup to set, so there is no side to show. The one
-        to-do item it computes is a player an injured slot no longer takes; with none,
-        there is no list, rather than an empty one claiming there is nothing to do.
+        The one to-do item it computes is a player an injured slot no longer takes;
+        with none, there is no list, rather than an empty one claiming there is nothing to do.
         """
-        yahoo = self._yahoo(league_id)
+        league = self._league(league_id)
+        yahoo = self._yahoo_for(league)
         my_team = yahoo.get_user_team()
-        stuck = _off_il(yahoo.roster(my_team.team_key))
-        return Summary(headline=_adds(my_team.adds_used, self.max_weekly_adds), actions=stuck or None)
+        roster = yahoo.roster(my_team.team_key)
+        stuck = _off_il(roster)
+        week = league.current_week
+        board = self._board(yahoo, league, my_team, week, roster) if week else Summary()
+        return board.model_copy(
+            update={
+                "headline": [*_adds(my_team.adds_used, self.max_weekly_adds), *board.headline],
+                "actions": stuck or None,
+            }
+        )
+
+    def week_of(self, league_id: str, week: int) -> Summary:
+        """Any week of the season: its categories as they finished or stand, and no to-do list.
+
+        A week to come shows both rosters as they stand today, against that
+        week's opponent; a week played shows none (`week.side` says why).
+
+        Raises:
+            NotFoundError: the season has no such week.
+        """
+        league = self._league(league_id)
+        current = self._within(league, week)
+        yahoo = self._yahoo_for(league)
+        my_team = yahoo.get_user_team()
+        roster = yahoo.roster(my_team.team_key) if week >= current else None
+        return self._board(yahoo, league, my_team, week, roster)
+
+    def games_of(self, league_id: str, week: int) -> list[Match]:
+        """No real games: Yahoo publishes no NBA schedule through this SDK, as `schedule` says.
+
+        Raises:
+            NotFoundError: the season has no such week.
+        """
+        self._within(self._league(league_id), week)
+        return []
+
+    def _within(self, league: YahooLeague, week: int) -> int:
+        """The week being played, once `week` is known to be one of the season's.
+
+        Raises:
+            NotFoundError: between seasons, or a week outside this one.
+        """
+        current = league.current_week
+        if not current or not _first(league) <= week <= _last(league, current):
+            raise NotFoundError(f"week {week} of the {league.name} season")
+        return current
+
+    def _board(
+        self, yahoo: YahooSource, league: YahooLeague, team: YahooTeam, week: int, roster: list[YahooPlayer] | None
+    ) -> Summary:
+        """One week's head-to-head, and where it sits in the season.
+
+        `roster` is yours where rosters are shown, and None where they are not;
+        the opponent's is read alongside it.
+        """
+        current = league.current_week or week
+        weeks = WeekRange(week=week, current=current, first=_first(league), last=_last(league, current))
+        found = yahoo.pairing(team.team_key, week)
+        if found is None:
+            return Summary(window=f"Week {week}", weeks=weeks)
+        lines = nba_week.categories(found.mine.stats, found.opponent.stats)
+        score = nba_week.score(lines)
+        records = {t.team_key: t.standing.record for t in yahoo.teams() if t.standing}
+        theirs = yahoo.roster(found.opponent.team_key) if roster is not None else None
+        return Summary(
+            headline=[nba_week.headline(score)] if score else [],
+            mine=nba_week.side(
+                found.mine.name,
+                records.get(found.mine.team_key, ""),
+                nba_week.written(score) if score else "",
+                roster,
+            ),
+            opponent=nba_week.side(
+                found.opponent.name,
+                records.get(found.opponent.team_key, ""),
+                nba_week.written((score[1], score[0], score[2])) if score else "",
+                theirs,
+            ),
+            categories=lines,
+            window=f"Week {week} · {span(found.start, found.end)}",
+            weeks=weeks,
+        )
 
     def schedule(self, league_id: str) -> LeagueSchedule:
         """The league table, which is the only one of these Yahoo gives cheaply.
@@ -437,6 +526,16 @@ def _rank_free_agents(yahoo: YahooSource) -> tuple[list[YahooPlayer], dict[str, 
     players = [player_by_key[key] for key, _ in ranked]
     annotations = {key: f"[Top in: {', '.join(cats)}]" for key, cats in ranked}
     return players, annotations
+
+
+def _first(league: YahooLeague) -> int:
+    """The season's first matchup week."""
+    return league.start_week or 1
+
+
+def _last(league: YahooLeague, current: int) -> int:
+    """The season's last matchup week, and never before the week being played."""
+    return max(league.end_week or current, current)
 
 
 def _standings(teams: list[YahooTeam]) -> list[StandingRow]:

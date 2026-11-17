@@ -11,6 +11,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog,
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Matchup,
     MatchupSide,
+    Pairing,
     TeamStanding,
     Timeframe,
     YahooLeague,
@@ -86,6 +87,9 @@ class FakeYahoo:
         self.matchup_fetches = 0
         self.league_teams = teams if teams is not None else DEFAULT_TEAMS
         self.available = available if available is not None else [make_player("Waiver One")]
+        self.week_stats: dict[int, tuple[dict[str, str], dict[str, str]]] = {}
+        """Each side's categories by week, by Yahoo stat id: mine, then theirs."""
+        self.pairings: list[int] = []
 
     def get_user_team(self) -> YahooTeam:
         return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
@@ -116,6 +120,20 @@ class FakeYahoo:
             mine=MatchupSide(team_key="t.1", name="My Team", points="4", stats={BLOCKS.yahoo_stat: "12"}),
             opponent=MatchupSide(team_key="t.2", name="Their Team", points="5", stats={BLOCKS.yahoo_stat: "17"}),
             opponent_roster=[make_player("Their Star", position="C")],
+        )
+
+    def pairing(self, team_key: str, week: int) -> Pairing | None:
+        """Any week against Their Team, with the categories this was built with for it; 12 blocks to 17 otherwise."""
+        self.pairings.append(week)
+        if self.matchup_dates is None:
+            return None
+        start, end = self.matchup_dates
+        mine, theirs = self.week_stats.get(week, ({BLOCKS.yahoo_stat: "12"}, {BLOCKS.yahoo_stat: "17"}))
+        return Pairing(
+            start=start,
+            end=end,
+            mine=MatchupSide(team_key="t.1", name="My Team", points="", stats=mine),
+            opponent=MatchupSide(team_key="t.2", name="Their Team", points="", stats=theirs),
         )
 
     def fetch_top_by_stat(
@@ -230,10 +248,11 @@ def nba_provider(
     *,
     nba: FormSource | None = None,
     sleeper: FakeSleeperProjections | None = None,
+    league: YahooLeague | None = None,
 ) -> YahooNBAProvider:
     """The NBA provider over these stand-ins, as bootstrap would wire it over the real clients."""
     return YahooNBAProvider(
-        auth=FakeYahooAuth(),
+        auth=FakeYahooAuth([league] if league else None),
         yahoo_for=lambda _: yahoo or FakeYahoo(),
         nba=nba or FakeNBA(),
         sleeper=sleeper or FakeSleeperProjections(),

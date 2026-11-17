@@ -30,6 +30,15 @@ def day_month(when: date) -> str:
     return f"{when.day} {MONTHS[when.month - 1]}"
 
 
+def span(first: date, last: date) -> str:
+    """'19-23 Nov', '30 Nov - 6 Dec', or one day: a stretch of days as somebody checks it against a calendar."""
+    if first == last:
+        return day_month(first)
+    if first.month == last.month:
+        return f"{first.day}-{day_month(last)}"
+    return f"{day_month(first)} - {day_month(last)}"
+
+
 def weekday_day_month(when: date) -> str:
     """'Sun 13 Sep'. The weekday is what somebody checks a fixture against."""
     return f"{WEEKDAYS[when.weekday()]} {day_month(when)}"
