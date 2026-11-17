@@ -117,6 +117,19 @@ class Week:
     news: PlayerNews = field(default_factory=PlayerNews)
     """Recent articles about each player. Empty wherever the feeds would not load."""
 
+    current: int = 0
+    """The week being played, where this one is another opened beside it; nought where this is that week."""
+
+    @property
+    def is_past(self) -> bool:
+        """A week already played, opened to look back on: its lineups are the ones that played it."""
+        return self.current > 0 and self.week < self.current
+
+    @property
+    def is_future(self) -> bool:
+        """A week still to come, opened to look ahead: nobody has set its lineup, so it is the best one."""
+        return 0 < self.current < self.week
+
     @property
     def scheduled(self) -> bool:
         """Whether the league has published fixtures at all.

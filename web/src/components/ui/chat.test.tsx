@@ -44,7 +44,7 @@ function client(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } });
 }
 
-const WEEK: Subject = { kind: "page", key: "week" };
+const WEEK: Subject = { kind: "page", key: "matchup" };
 const ITEM: Subject = { kind: "task", key: "swap:a:b" };
 
 function assistant(asked: Asked | null = null, onTaken = () => {}) {

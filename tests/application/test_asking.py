@@ -49,7 +49,7 @@ HALL = PlayerDetail(
     groups=[StatGroup(title="Role and matchup", stats=[Stat(label="Snap share, last 3", value="57%")])],
 )
 
-WEEK = Subject(kind="page", key="week")
+WEEK = Subject(kind="page", key="matchup")
 TEAM = Subject(kind="page", key="team")
 WIRE = Subject(kind="page", key="free-agents")
 LEAGUE = Subject(kind="page", key="league")

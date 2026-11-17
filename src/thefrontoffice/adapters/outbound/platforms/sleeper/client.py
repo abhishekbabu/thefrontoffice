@@ -723,6 +723,7 @@ def _matchups(data: Any) -> list[SleeperMatchup]:
             players_points={
                 str(pid): float(scored or 0) for pid, scored in (entry.get("players_points") or {}).items()
             },
+            players=[str(p) for p in entry.get("players") or []],
         )
         for entry in data or []
         if isinstance(entry, dict)

@@ -36,6 +36,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.forecast import Forecasts, seed
+from thefrontoffice.adapters.outbound.competitions.nfl.league import season_end
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     current_lineup,
     lineup_changes,
@@ -85,11 +86,13 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
 )
 from thefrontoffice.domain.errors import (
     LeagueNotFoundError,
+    NotFoundError,
     PlatformError,
     PlayerNotFoundError,
     TeamNotFoundError,
 )
 from thefrontoffice.domain.models import (
+    Action,
     CompetitionContext,
     LeagueSchedule,
     MatchupInput,
@@ -107,6 +110,7 @@ from thefrontoffice.domain.models import (
     TeamRef,
     TradeMarket,
     TradeProposal,
+    WeekRange,
     outcome,
 )
 from thefrontoffice.domain.ports import LeagueRef
@@ -142,7 +146,7 @@ class SleeperNFLProvider:
         self._user_id: str | None = None
         # One request's week, kept for that request: the summary and the
         # forecast beside it both need it, and gathering it is most of the wait.
-        self._weeks: dict[str, Week] = {}
+        self._weeks: dict[tuple[str, int | None], Week] = {}
 
     # ── leagues ─────────────────────────────────────────────────────
 
@@ -334,30 +338,47 @@ class SleeperNFLProvider:
         """The week the report is about; the opener while still in preseason."""
         return max(1, phase.week if phase.is_regular_season else 1)
 
-    def _week(self, league_id: str) -> Week:
-        """The week, gathered once per provider — which is once per request."""
-        if league_id not in self._weeks:
-            self._weeks[league_id] = self._gather_week(league_id)
-        return self._weeks[league_id]
+    def _week(self, league_id: str, browse: int | None = None) -> Week:
+        """The week being played, or the one `browse` names, gathered once per provider — which is once per request."""
+        key = (league_id, browse)
+        if key not in self._weeks:
+            self._weeks[key] = self._gather_week(league_id, browse)
+        return self._weeks[key]
 
-    def _gather_week(self, league_id: str) -> Week:
+    def _gather_week(self, league_id: str, browse: int | None = None) -> Week:
         """Everything both the header and the prompt are derived from.
 
         Gathered once because the two would otherwise fetch the same
         projections and re-run the same lineup solve, and could then disagree
         about the totals by a rounding.
+
+        With `browse`, another week of the season: one played with the rosters
+        and lineups that played it, one to come with each roster's best lineup
+        on that week's projections. Neither carries the evidence or the news,
+        which only the week being played's to-do list and prompt read.
         """
         phase = self.client.get_nfl_state()
-        week, season = self._current_week(phase), phase.season
+        current, season = self._current_week(phase), phase.season
         league = self._league(league_id, season)
-        matchups = self._matchups(league_id, week)
+        matchups = self._matchups(league_id, current)
         rosters = self.client.get_rosters(league_id)
-        if self._played_out(phase, week):
-            rosters = banked(rosters, matchups, week, league)
-            week += 1
+        if self._played_out(phase, current):
+            rosters = banked(rosters, matchups, current, league)
+            current += 1
+            matchups = self._matchups(league_id, current)
+
+        week = current if browse is None else browse
+        if browse is not None and not 1 <= browse <= max(season_end(league), current):
+            raise NotFoundError(f"week {week} of the {season} season")
+        if week != current:
             matchups = self._matchups(league_id, week)
+        if week > current and league.playoff_week_start and week >= league.playoff_week_start:
+            # Sleeper fills the bracket weeks with placeholder pairings until the
+            # regular season ends; a name there is not who you will play.
+            matchups = []
+        if week < current:
+            rosters = as_played(rosters, matchups)
         rosters = with_lineups(rosters, matchups)
-        roster = self._mine(rosters, league_id)
 
         catalog = self.client.get_nfl_players()
         designations = self._designations(catalog)
@@ -366,6 +387,12 @@ class SleeperNFLProvider:
             season, week, league.scoring_format, FANTASY_POSITIONS, league.scoring_rules
         )
         projections = {pid: counted(p) for pid, p in injuries.reported(published, designations).items()}
+        if week > current:
+            # Sleeper copies a roster's standing lineup into weeks to come, a dropped
+            # player and all: what a week ahead holds is the best each roster can field.
+            rosters = best_lineups(rosters, league.starting_slots, projections, players)
+        roster = self._mine(rosters, league_id)
+        browsing = week != current
         projected = projections_for(fielded(roster), projections, players)
         # Nobody starts from an injured-reserve or taxi slot without a move first.
         startable = projections_for([*active(roster), *let_go(roster)], projections, players)
@@ -377,8 +404,11 @@ class SleeperNFLProvider:
         best_points = round(lineup_points(best), 2)
 
         return Week(
-            evidence=self._evidence(season, week, league, phase.is_regular_season, players),
-            news=self._news(catalog),
+            evidence=evidence.Evidence()
+            if browsing
+            else self._evidence(season, week, league, phase.is_regular_season, players),
+            news=news.PlayerNews() if browsing else self._news(catalog),
+            current=current if browsing else 0,
             is_regular_season=phase.is_regular_season,
             league=league,
             roster=roster,
@@ -453,6 +483,13 @@ class SleeperNFLProvider:
     def summary(self, league_id: str) -> Summary:
         """The week as it stands: both lineups and the to-do list, which carries the swaps. No model."""
         state = self._week(league_id)
+        return self._summary(state, [item.action for item in self._with_short_week(state, self._tasks(state))])
+
+    def week_of(self, league_id: str, week: int) -> Summary:
+        """Any week of the season as it was played or as it projects: both lineups, and no to-do list."""
+        return self._summary(self._week(league_id, week), None)
+
+    def _summary(self, state: Week, to_do: list[Action] | None) -> Summary:
         live = self.scoreboard.live(state)
         # The bench as the page shows it, reserve slots included and marked.
         sitting = sorted(state.sitting, key=lambda p: -p.points)
@@ -471,8 +508,14 @@ class SleeperNFLProvider:
                 bench=[views.reserved(views.spot(p, state.scheduled, live=live), state.roster) for p in sitting],
             ),
             opponent=self._opponent(state, live),
-            actions=[item.action for item in self._with_short_week(state, self._tasks(state))],
+            actions=to_do,
             window=self._window(state, self.scoreboard.games(state)),
+            weeks=WeekRange(
+                week=state.week,
+                current=state.current or state.week,
+                first=1,
+                last=max(season_end(state.league), state.current or state.week),
+            ),
         )
 
     def _tasks(self, state: Week) -> list[actions.Item]:
@@ -645,3 +688,41 @@ def banked(
             )
         )
     return counted
+
+
+def as_played(rosters: Sequence[SleeperRoster], matchups: Sequence[SleeperMatchup]) -> list[SleeperRoster]:
+    """Every team holding who it held that week, which its matchup keeps after a drop or a trade.
+
+    A team the week's matchups do not name keeps the roster it holds now.
+    """
+    held = {entry.roster_id: entry.players for entry in matchups if entry.players}
+    return [
+        replace(
+            roster,
+            player_ids=list(held[roster.roster_id]),
+            reserve_ids=[pid for pid in roster.reserve_ids if pid in held[roster.roster_id]],
+            ir_ids=[pid for pid in roster.ir_ids if pid in held[roster.roster_id]],
+        )
+        if roster.roster_id in held
+        else roster
+        for roster in rosters
+    ]
+
+
+def best_lineups(
+    rosters: Sequence[SleeperRoster],
+    slots: list[str],
+    projections: Mapping[str, Projection],
+    players: Mapping[str, PlayerInfo],
+) -> list[SleeperRoster]:
+    """Every team starting the best lineup its roster makes on these projections, slot by slot."""
+    return [
+        replace(
+            roster,
+            starter_ids=[
+                slot.player.player_id if slot.player else ""
+                for slot in optimal_lineup(slots, projections_for(active(roster), projections, players))
+            ],
+        )
+        for roster in rosters
+    ]

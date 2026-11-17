@@ -150,6 +150,8 @@ class SleeperMatchup:
     """Positionally aligned with the league's starting slots; an empty slot is an empty string."""
     players_points: dict[str, float] = field(default_factory=dict)
     """What each of the team's players has scored this week."""
+    players: list[str] = field(default_factory=list)
+    """Who the team held that week, which a finished week keeps after a drop or trade; empty where unknown."""
 
 
 @dataclass(frozen=True)

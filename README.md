@@ -10,7 +10,7 @@ player. It runs on your own machine against NFL on
 [Premier League](https://fantasy.premierleague.com) and NBA on
 [Yahoo](https://sports.yahoo.com/fantasy).
 
-![This week](docs/screenshots/week-dark.png)
+![Matchup](docs/screenshots/week-dark.png)
 
 ## Features
 
@@ -47,7 +47,12 @@ player. It runs on your own machine against NFL on
 - **Dismiss or snooze** any item. It comes back if its reason changes.
 - **Light and dark mode**, several palettes, and a terminal CLI.
 
-NFL has the deepest analysis. FPL and NBA share the week, team and league pages.
+NFL has the deepest analysis. FPL and NBA share the matchup, team and league pages.
+
+On NFL the matchup page pages through the season: the arrows beside the week,
+the ← and → keys, or a sideways swipe. A week played shows the lineups that
+played it and its final score; a week to come, each roster's best projected
+lineup. The to-do list stays on the week being played.
 
 NFL moves to the next week once every game of the current one is final,
 without waiting a day or two for Sleeper to catch up, and counts the finished

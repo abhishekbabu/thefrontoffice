@@ -19,6 +19,8 @@ export const keys = {
   login: (platform: string) => ["login", platform] as const,
   leagues: (competition: string) => ["leagues", competition] as const,
   summary: (competition: string, league: string) => [...inLeague(competition, league), "summary"] as const,
+  weekOf: (competition: string, league: string, week: number | null) =>
+    [...inLeague(competition, league), "week-of", week] as const,
   judgment: (competition: string, league: string) => [...inLeague(competition, league), "judgment"] as const,
   roster: (competition: string, league: string) => [...inLeague(competition, league), "roster"] as const,
   schedule: (competition: string, league: string) => [...inLeague(competition, league), "schedule"] as const,

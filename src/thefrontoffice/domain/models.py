@@ -561,6 +561,17 @@ class ItemDecision(BaseModel):
         return self
 
 
+class WeekRange(BaseModel):
+    """Which week a page shows, the week being played, and how far either way the season can be browsed."""
+
+    week: int
+    current: int
+    """The week being played, or the next to be once the last is over: the one the to-do list is about."""
+    first: int
+    last: int
+    """The league's final week, its playoffs included."""
+
+
 class Summary(BaseModel):
     """Where a team stands, with no analysis in it.
 
@@ -601,6 +612,14 @@ class Summary(BaseModel):
         description=(
             "When this week actually is, already formatted — 'Week 1 · Sep 11-15', "
             "'GW 2 · deadline Sat 22 Aug 10:30'. A week with no dates on it is a number."
+        ),
+    )
+
+    weeks: WeekRange | None = Field(
+        default=None,
+        description=(
+            "Where this week sits in the season, for paging to another. "
+            "None in a competition that shows only the week being played."
         ),
     )
 
@@ -1056,7 +1075,7 @@ class ScoutReport(BaseModel):
     )
 
 
-PAGES = ("week", "league", "team", "free-agents")
+PAGES = ("matchup", "league", "team", "free-agents")
 """The pages of a league, by the name each has in its address."""
 
 
