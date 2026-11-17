@@ -57,12 +57,18 @@ describe("League activity", () => {
     expect(dialog.textContent).toContain("To Me");
     expect(dialog.textContent).toContain("QB · BUF");
 
-    // A player opened from the move stacks over it: the move is still there under him.
+    // A player opened from the move takes its place, with the way back to it.
     const player = [...dialog.querySelectorAll<HTMLElement>("[role=button]")].find((el) =>
       el.textContent?.includes("Star QB"),
     )!;
     await act(async () => player.click());
-    await settle();
+    await settle(400);
+    expect(document.querySelector("[aria-label='Trade by Rival ↔ Me']")).toBeNull();
+    const back = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
+      b.textContent?.includes("Trade · Rival ↔ Me"),
+    )!;
+    await act(async () => back.click());
+    await settle(400);
     expect(document.querySelector("[aria-label='Trade by Rival ↔ Me']")).not.toBeNull();
   });
 });

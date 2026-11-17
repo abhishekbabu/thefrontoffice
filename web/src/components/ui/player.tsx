@@ -7,7 +7,7 @@ import { useLoadedImage } from "@/lib/useLoadedImage";
 import { IconButton } from "@/components/ui/icon-button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { QueryState } from "@/components/ui/state";
-import { SlideOver } from "@/components/ui/dialog";
+import { BackLink, SlideOver, type Back } from "@/components/ui/dialog";
 import { useShown } from "@/lib/screen";
 import { api, type Competition, type League, type ActivityRow, type PlayerDetail, type Stat, type StatTable } from "@/lib/api";
 import { keys } from "@/lib/queries";
@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { LABEL, Label } from "@/components/ui/label";
 import { Tabs } from "@/components/ui/tabs";
-import { MoveDrawer, MoveRow } from "@/components/ui/move";
+import { MoveDrawer, MoveRow, backTo } from "@/components/ui/move";
 import { ListCard } from "@/components/ui/list";
 
 /**
@@ -237,15 +237,17 @@ function PlayerPanel({
   competition,
   league,
   playerId,
+  back,
   onClose,
   onPick,
 }: {
   competition: string;
   league: string;
   playerId: string | null;
+  back?: Back;
   onClose: () => void;
   /** Open another player in this drawer: one picked from a move on his history. */
-  onPick: (id: string) => void;
+  onPick: (id: string, back?: Back) => void;
 }) {
   // Held so the panel still has someone to show on the way out. Reading
   // `playerId` directly would blank the contents for the length of the slide.
@@ -288,7 +290,8 @@ function PlayerPanel({
   return (
     <>
     <SlideOver
-      open={Boolean(playerId)}
+      // Out of the way while one of his moves is open: one drawer at a time.
+      open={Boolean(playerId) && move === null}
       onClose={onClose}
       label={player.data?.name ?? "Player"}
       // Wide enough that a season table fits without scrolling inside
@@ -301,6 +304,11 @@ function PlayerPanel({
           you stop being able to see, and they are what every row below is
           about. */}
       <div className="sticky top-0 z-10 border-b border-border bg-popover">
+      {back && (
+        <div className="px-5 pt-3">
+          <BackLink back={back} />
+        </div>
+      )}
       <div className="flex items-start gap-4 px-5 py-4">
         {player.data && <Portrait src={player.data.image_url} />}
 
@@ -412,10 +420,15 @@ function PlayerPanel({
       move={move}
       competition={competition}
       league={league}
-      onClose={() => setMove(null)}
-      onOpenPlayer={(id) => {
+      back={player.data ? { label: player.data.name, onBack: () => setMove(null) } : undefined}
+      onClose={() => {
         setMove(null);
-        onPick(id);
+        onClose();
+      }}
+      onOpenPlayer={(id) => {
+        const from = move!;
+        setMove(null);
+        onPick(id, backTo(from, () => setMove(from)));
       }}
     />
     </>
@@ -434,16 +447,26 @@ function PlayerPanel({
  * Returns the opener to hand to a table's `onOpen`, and the drawer to render.
  */
 export function usePlayerDrawer(competition: Competition, league: League) {
-  const [playerId, setPlayerId] = useState<string | null>(null);
+  const [open, setOpen] = useState<{ id: string; back?: Back } | null>(null);
   return {
-    openPlayer: setPlayerId,
+    /** Open a player; `back` is the drawer he replaced, which his own offers to return to. */
+    openPlayer: (id: string, back?: Back) => setOpen({ id, back }),
     drawer: (
       <PlayerPanel
         competition={competition.key}
         league={league.league_id}
-        playerId={playerId}
-        onClose={() => setPlayerId(null)}
-        onPick={setPlayerId}
+        playerId={open?.id ?? null}
+        back={
+          open?.back && {
+            label: open.back.label,
+            onBack: () => {
+              setOpen(null);
+              open.back!.onBack();
+            },
+          }
+        }
+        onClose={() => setOpen(null)}
+        onPick={(id, back) => setOpen({ id, back })}
       />
     ),
   };
