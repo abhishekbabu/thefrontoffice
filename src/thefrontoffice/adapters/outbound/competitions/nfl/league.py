@@ -93,7 +93,11 @@ def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence
     rows: list[ScheduleRow] = []
     for week in weeks:
         loaded = week not in by_week.failures
-        sides = opponent_of(by_week.values.get(week, []), state.roster.roster_id)
+        # The week being played is read from the matchups the week page reads, so the two
+        # cannot show different scores for it: the bulk read is a separate fetch, cached apart.
+        sides = (
+            state.matchup if week == state.week else opponent_of(by_week.values.get(week, []), state.roster.roster_id)
+        )
         opponent = by_roster.get(sides[1].roster_id) if sides else None
 
         playoff = _playoff_round(state, week)
@@ -140,10 +144,15 @@ def _headline(state: Week, standings: list[StandingRow]) -> list[Stat]:
 
 
 def _result(sides: tuple[Matchup, Matchup] | None, week: int, current: int) -> str:
-    """The score, and only once there is one. A future week is not 0-0."""
-    if week >= current or sides is None:
+    """The score, and only once there is one: final for a week played, so far for the week being played.
+
+    A future week is not 0-0, and nor is the week being played before anybody has scored.
+    """
+    if week > current or sides is None:
         return ""
     mine, theirs = sides
+    if week == current and not (mine.points or theirs.points):
+        return ""
     return f"{mine.points:.2f}-{theirs.points:.2f}"
 
 

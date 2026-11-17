@@ -1161,13 +1161,13 @@ export interface components {
             detail: string;
             /**
              * Result
-             * @description The score once it is played, and nothing before that.
+             * @description The score once it is played, the score so far while it is, and nothing before that.
              * @default
              */
             result: string;
             /**
              * Outcome
-             * @description How it ended, once it has; None before.
+             * @description How it ended, once it has; None before, and while it is being played.
              */
             outcome: ("won" | "lost" | "drawn") | null;
             /**

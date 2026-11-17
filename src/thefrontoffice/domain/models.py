@@ -951,8 +951,13 @@ class ScheduleRow(BaseModel):
     date: str = Field(default="", description="When it is played, in the reader's words: 'Sep 14', 'Sat 13 Sep'.")
     opponent: str = Field(default="", description="Who you play. Empty on a bye, which is not an opponent named 'bye'.")
     detail: str = Field(default="", description="Their record, or however the league identifies them.")
-    result: str = Field(default="", description="The score once it is played, and nothing before that.")
-    outcome: Outcome | None = Field(default=None, description="How it ended, once it has; None before.")
+    result: str = Field(
+        default="",
+        description="The score once it is played, the score so far while it is, and nothing before that.",
+    )
+    outcome: Outcome | None = Field(
+        default=None, description="How it ended, once it has; None before, and while it is being played."
+    )
     is_current: bool = False
     """The week in progress, so a long table can say where you are in it."""
     playoffs: bool = False
