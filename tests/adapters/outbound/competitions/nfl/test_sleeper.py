@@ -6,7 +6,7 @@ modules beside this one.
 """
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
@@ -311,9 +311,12 @@ def test_the_drawer_shows_what_the_projection_rests_on() -> None:
     ]
     detail = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS, game_lines=lines)).player("L1", "rb1")
 
-    [group] = [g for g in detail.groups if g.title == "Role and matchup"]
+    [group] = [g for g in detail.groups if g.title.startswith("Week")]
     stats = {stat.label: stat.value for stat in group.stats}
-    assert stats["Matchup"].startswith("vs MIA, the most to RBs")
+    # Who he plays and what that defense allows, on one row.
+    assert stats["Opponent"].startswith("vs ")
+    assert "· the most to RBs" in stats["Opponent"]
+    assert "Matchup" not in stats
     assert stats["Snap share, last 2"] == "75%"
     assert stats["Carries a game"] == "16.0"
     assert stats["Targets a game"] == "3.0"
@@ -350,10 +353,59 @@ def test_every_club_is_asked_for_by_espns_abbreviation() -> None:
     assert "WAS" not in espn.asked and "FA" not in espn.asked
 
 
-def test_with_nothing_played_the_drawer_has_no_role_section() -> None:
+def test_with_nothing_played_the_drawer_has_no_role_and_no_matchup() -> None:
     detail = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).player("L1", "rb1")
 
-    assert "Role and matchup" not in [g.title for g in detail.groups]
+    [week] = [g for g in detail.groups if g.title.startswith("Week")]
+    assert [s.label for s in week.stats] == ["Opponent"]
+    assert "·" not in week.stats[0].value
+
+
+def test_the_drawer_says_the_projection_once_and_a_healthy_player_has_no_status() -> None:
+    detail = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).player("L1", "rb1")
+
+    labels = {s.label for g in detail.groups for s in g.stats}
+    assert detail.headline == "18.00"
+    assert "Projected" not in labels
+    assert "Status" not in labels
+    assert "Injury" not in [g.title for g in detail.groups]
+
+
+def test_a_designated_player_shows_sleepers_status_where_espn_has_no_row() -> None:
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    catalog = client.get_nfl_players()
+    client.players_catalog = {**catalog, "rb1": replace(catalog["rb1"], injury_status="Questionable")}
+
+    [group] = [g for g in nfl_provider(client).player("L1", "rb1").groups if g.title == "Injury"]
+
+    assert {s.label: s.value for s in group.stats}["Status"] == "Questionable"
+
+
+def test_the_drawer_shows_espns_injury_with_its_return_week() -> None:
+    from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
+
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=SEASON_SCHEDULE)
+    catalog = client.get_nfl_players()
+    client.players_catalog = {**catalog, "rb1": replace(catalog["rb1"], espn_id="42")}
+    report = InjuryReport(
+        name="Someone Else",
+        club="XXX",
+        status="Out",
+        updated=datetime.now(UTC),
+        athlete_id="42",
+        returns=date(2026, 9, 15),
+        injury="Ankle",
+        comment="Good RB (ankle) won't play.",
+        url="https://espn.example/rb1",
+    )
+
+    detail = nfl_provider(client, FakeESPN(injuries=[report])).player("L1", "rb1")
+
+    [group] = [g for g in detail.groups if g.title == "Injury"]
+    stats = {s.label: s for s in group.stats}
+    assert stats["Status"].value == "Out"
+    assert stats["Back"].value == "~15 Sep · wk 2"
+    assert any(s.url == "https://espn.example/rb1" for s in group.stats)
 
 
 def test_a_team_defense_offers_no_portrait_to_fail_on() -> None:
@@ -1293,6 +1345,37 @@ def test_the_wire_lists_free_agents_on_ir_on_their_own() -> None:
     page = nfl_provider(client).free_agents("L1", PlayerQuery(view="IR"))
 
     assert [c.player_id for c in page.players] == [hurt]
+    assert page.players[0].columns["Back"] == "—"
+    assert "Back" not in page.players[0].values
+
+
+def test_the_ir_list_puts_the_soonest_back_first_and_unknown_returns_last() -> None:
+    from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
+
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=SEASON_SCHEDULE)
+    late, soon, unknown = "ir1", "ir2", "ir3"
+    client.players_catalog = {
+        **client.get_nfl_players(),
+        **{
+            pid: PlayerMeta(player_id=pid, name=pid, position="WR", team="KC", injury_status="IR", espn_id=pid)
+            for pid in (late, soon, unknown)
+        },
+    }
+    reports = [
+        InjuryReport(
+            name=pid, club="", status="Injured Reserve", updated=datetime.now(UTC), athlete_id=pid, returns=back
+        )
+        for pid, back in ((late, date(2027, 1, 3)), (soon, date(2026, 9, 15)))
+    ]
+
+    page = nfl_provider(client, FakeESPN(injuries=reports)).free_agents("L1", PlayerQuery(view="IR"))
+
+    assert [c.player_id for c in page.players] == [soon, late, unknown]
+    assert [c.columns["Back"] for c in page.players] == ["wk 2", "3 Jan", "—"]
+    by_back = nfl_provider(client, FakeESPN(injuries=reports)).free_agents(
+        "L1", PlayerQuery(view="IR", sort="Back", descending=True)
+    )
+    assert [c.player_id for c in by_back.players] == [late, soon, unknown]
 
 
 def test_a_player_carries_this_seasons_position_rank_and_none_before_he_plays() -> None:

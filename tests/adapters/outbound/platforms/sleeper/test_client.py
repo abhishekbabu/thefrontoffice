@@ -217,6 +217,16 @@ def test_a_player_on_no_roster_is_filed_as_a_free_agent(tmp_path: Path) -> None:
     assert client.get_nfl_players()["1"].team == "FA"
 
 
+def test_a_player_keeps_espns_id_as_text_and_none_reads_as_empty(tmp_path: Path) -> None:
+    """Sleeper sends the id as a number, or null for most of the catalog."""
+    raw = {"1": {"full_name": "A", "espn_id": 4038524}, "2": {"full_name": "B", "espn_id": None}}
+    client, _ = _client({"players/nfl": raw}, tmp_path)
+
+    players = client.get_nfl_players()
+
+    assert (players["1"].espn_id, players["2"].espn_id) == ("4038524", "")
+
+
 def test_catalog_skips_malformed_entries(tmp_path: Path) -> None:
     client, _ = _client({"players/nfl": {"1": "not a dict"}}, tmp_path)
     assert client.get_nfl_players() == {}

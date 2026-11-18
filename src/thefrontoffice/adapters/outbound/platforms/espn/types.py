@@ -1,7 +1,7 @@
 """What we keep from ESPN: its news feeds, its live scoreboard, and its injury report."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 
 NFL = "football/nfl"
 """ESPN's path for a league: the sport, then the league within it."""
@@ -59,3 +59,13 @@ class InjuryReport:
     """ESPN's own: 'Out', 'Doubtful', 'Questionable', 'Injured Reserve', or 'Active' once cleared."""
     updated: datetime
     """Aware UTC."""
+    athlete_id: str = ""
+    """ESPN's own id for him, read off his player-card link; empty where ESPN gave none."""
+    returns: date | None = None
+    """ESPN's estimated return: a day, not an instant. None where it gives none."""
+    injury: str = ""
+    """What and where, in ESPN's words: 'Right elbow, surgery'. Empty where unspecified."""
+    comment: str = ""
+    """The latest one-line update, as ESPN's report carries it."""
+    url: str = ""
+    """His news page on ESPN, where the update comes from; empty where ESPN gave none."""

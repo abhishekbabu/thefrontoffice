@@ -154,6 +154,10 @@ class Matchup:
 
     def describe(self) -> str:
         """'vs MIA, 4th-most to RBs (24.1 a game)'."""
+        return f"vs {self.opponent}, {self.allowed_to()}"
+
+    def allowed_to(self) -> str:
+        """'4th-most to RBs (24.1 a game)': the defense's record, for a line that already says who it is."""
         noun = "defenses" if self.position == "DEF" else f"{self.position}s"
         if self.rank == 1:
             rank = "the most"
@@ -161,7 +165,7 @@ class Matchup:
             rank = "the fewest"
         else:
             rank = f"{ordinal(self.rank)}-most"
-        return f"vs {self.opponent}, {rank} to {noun} ({self.allowed:.2f} a game)"
+        return f"{rank} to {noun} ({self.allowed:.2f} a game)"
 
 
 @dataclass(frozen=True)

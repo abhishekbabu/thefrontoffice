@@ -28,10 +28,12 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Free agents**: ranked by projection and fit, with rest-of-season points
   (next week through the last regular-season week, byes as zero; this week
   alone once none is left), snap and target share over the last 3 games, a
-  role-jump trend, Sleeper's trending adds and an IR stash list.
+  role-jump trend, Sleeper's trending adds and an IR stash list, soonest back
+  first by ESPN's estimated return.
 - **Player pages**: tabs for this week, the game log, past seasons, league
   history (draft pick, then each add, drop and trade, opening in full as in
-  Activity) and linked news.
+  Activity) and linked news. An injured NFL player shows ESPN's injury, its
+  estimated return week and the latest update.
 - **Compare**: up to four players side by side, added from any player page,
   a move in Activity, or by name.
 - **Rosters**: any team's squad and weeks ahead, yours by default.
@@ -137,7 +139,8 @@ on disk.
 
 - **Platforms.** Sleeper runs the NFL leagues and supplies stats for both NFL
   and NBA. FPL comes from its public API, NBA leagues from Yahoo, and news and
-  injuries from ESPN. Every response is cached on disk, and transient failures
+  injuries from ESPN (joined to Sleeper by ESPN's id where Sleeper carries it,
+  else by full name within a club). Every response is cached on disk, and transient failures
   are retried. Football projections and stat lines are priced by each league's
   own scoring settings, as the Sleeper app prices them.
 - **The to-do list is the app's, not the model's.** It is computed from league

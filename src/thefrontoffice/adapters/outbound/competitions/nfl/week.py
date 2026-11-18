@@ -19,6 +19,7 @@ from functools import cached_property
 from thefrontoffice.adapters.outbound.competitions.dates import day_month, parse_day, span, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
+from thefrontoffice.adapters.outbound.competitions.nfl.injuries import PlayerInjuries
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot, optimal_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     COMPLETE,
@@ -116,6 +117,9 @@ class Week:
 
     news: PlayerNews = field(default_factory=PlayerNews)
     """Recent articles about each player. Empty wherever the feeds would not load."""
+
+    injuries: PlayerInjuries = field(default_factory=PlayerInjuries)
+    """Each player's row on ESPN's injury report. Empty wherever it would not load."""
 
     current: int = 0
     """The week being played, where this one is another opened beside it; nought where this is that week."""

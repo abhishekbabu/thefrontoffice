@@ -41,6 +41,8 @@ class PlayerMeta:
     number: int = 0
     injury_body_part: str = ""
     injury_notes: str = ""
+    espn_id: str = ""
+    """ESPN's id for him, where Sleeper carries it: the one identifier the two share."""
 
 
 @dataclass(frozen=True)

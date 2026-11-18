@@ -1,6 +1,6 @@
 """Tests for ESPN's news feeds: `platforms/espn/client.py`."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -186,3 +186,38 @@ def test_an_unreadable_injury_report_is_an_error_not_a_healthy_league(tmp_path: 
 
     with pytest.raises(ESPNAPIError):
         client.get_injuries(NFL)
+
+
+MINSHEW = {
+    "status": "Injured Reserve",
+    "date": "2026-11-18T04:40Z",
+    "shortComment": "Minshew (elbow) underwent UCL reconstructive surgery Monday.",
+    "athlete": {
+        "displayName": "Gardner Minshew II",
+        "team": {"abbreviation": "ARI"},
+        "links": [
+            {"rel": ["playercard", "desktop", "athlete"], "href": "https://www.espn.com/nfl/player/_/id/4038524/g"},
+            {"rel": ["news", "sportscenter", "app", "athlete"], "href": "sportscenter://x-callback-url/news"},
+            {"rel": ["news", "desktop", "athlete"], "href": "https://www.espn.com/nfl/player/news/_/id/4038524/g"},
+        ],
+    },
+    "details": {"type": "Elbow", "location": "Arm", "detail": "Surgery", "side": "Right", "returnDate": "2027-02-15"},
+}
+
+
+def test_an_injury_row_carries_espns_athlete_id_its_return_and_the_latest_word(tmp_path: Path) -> None:
+    unspecified = {
+        **_injury("Breece Hall", "NYJ", "Questionable"),
+        "details": {"type": "Knee", "detail": "Not Specified", "side": "Not Specified", "returnDate": "never"},
+    }
+    client, _ = _client({"/injuries": {"injuries": [{"injuries": [MINSHEW, unspecified]}]}}, tmp_path)
+
+    minshew, hall = client.get_injuries(NFL)
+
+    assert minshew.athlete_id == "4038524"
+    assert minshew.returns == date(2027, 2, 15)
+    assert minshew.injury == "Right elbow, surgery"
+    assert minshew.comment.startswith("Minshew (elbow)")
+    assert minshew.url == "https://www.espn.com/nfl/player/news/_/id/4038524/g"
+    # Whatever ESPN leaves unspecified, or dates unreadably, reads as nothing.
+    assert (hall.athlete_id, hall.returns, hall.injury, hall.url) == ("", None, "Knee", "")
