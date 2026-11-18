@@ -1,33 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, type Competition, type League, type LeagueSchedule, type TradeIdea } from "@/lib/api";
+import { api, type Competition, type League, type TradeIdea, type Trades } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { ListCard, ListRow } from "@/components/ui/list";
 import { percent, percentPoints, signed } from "@/lib/format";
 import { CardNote } from "@/components/ui/state";
-import { StatStrip } from "@/components/ui/stat";
 import { keys } from "@/lib/queries";
 import { LeagueHeader } from "@/components/ui/page-header";
 
-/** The deadline's label in the league's headline, which this page shows on its own. */
-const DEADLINE = "Trade deadline";
-
 /**
- * The trades worth offering, under the league's trade deadline.
- *
- * The deadline is the league schedule's own figure — the one the Schedule
- * page's header and its marked week show — read from the same cached answer,
- * so the three cannot say different weeks.
+ * Half a point — of playoff chance, or of starters' points a week — below
+ * which a change is noise ("+0.0 pts, to 99%") and goes unsaid.
  */
+export const NOTICEABLE = 0.5;
+
+/** The trades worth offering. The deadline is the Matchup to-do's and the Schedule's to say. */
 export function TradesPanel({ competition, league }: { competition: Competition; league: League }) {
-  const schedule = useQuery<LeagueSchedule, Error>({
-    queryKey: keys.schedule(competition.key, league.league_id),
-    queryFn: api.league(competition.key, league.league_id).schedule,
-  });
-  const deadline = (schedule.data?.headline ?? []).filter((stat) => stat.label === DEADLINE);
   return (
     <>
       <LeagueHeader league={league} />
-      <StatStrip stats={deadline} />
       <div className="flex flex-col gap-4 p-5">
         <TradeIdeas competition={competition} league={league} />
       </div>
@@ -49,34 +39,34 @@ export function TradesPanel({ competition, league }: { competition: Competition;
  * is in needs December more than another point of chance.
  *
  * Under each, the players whose own games price them off their projection,
- * and why: a trade resting on a role that just changed should say so.
+ * and why: a trade resting on a role that just changed should say so. The
+ * server says each once, and a pickup most trades share once, under the list.
  */
 function TradeIdeas({ competition, league }: { competition: Competition; league: League }) {
-  const trades = useQuery<TradeIdea[], Error>({
+  const trades = useQuery<Trades, Error>({
     queryKey: keys.trades(competition.key, league.league_id),
     queryFn: api.league(competition.key, league.league_id).trades,
   });
 
+  const ideas = trades.data?.ideas;
   return (
     <ListCard
       title="Trades worth offering"
-      count={trades.data ? `${trades.data.length} found` : undefined}
+      count={ideas ? `${ideas.length} found` : undefined}
       loading={trades.isLoading}
       error={trades.error}
     >
-      {trades.data?.length === 0 && (
+      {ideas?.length === 0 && (
         <CardNote>No trades worth offering.</CardNote>
       )}
-      {trades.data?.map((idea) => (
+      {ideas?.map((idea) => (
         <ListRow key={`${idea.team_id}-${idea.giving.join()}-${idea.receiving.join()}`}>
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="truncate">
               Give {idea.giving.join(" and ")} for {idea.receiving.join(", ")}
             </span>
             <span className="truncate font-mono text-[11px] text-muted-foreground">
-              with {idea.team} ({theirCase(idea)}) · your playoffs {percentPoints(idea.playoffs_change)}, to{" "}
-              {percent(idea.playoffs)}
-              {idea.playoff_points != null && <> · rest of season {signed(idea.points)} a week</>}
+              {[`with ${idea.team} (${theirCase(idea)})`, ...changes(idea)].join(" · ")}
             </span>
             {idea.pickup && (
               <span className="truncate font-mono text-[11px] text-muted-foreground">
@@ -98,6 +88,7 @@ function TradeIdeas({ competition, league }: { competition: Competition; league:
           </Badge>
         </ListRow>
       ))}
+      {trades.data?.pickup && <CardNote>Two-for-ones free a spot: add {trades.data.pickup}</CardNote>}
     </ListCard>
   );
 }
@@ -109,4 +100,19 @@ function TradeIdeas({ competition, league }: { competition: Competition; league:
 export function theirCase(idea: TradeIdea): string {
   if (idea.their_playoffs < 0.05) return `out of the race, ${percent(idea.their_playoffs)}`;
   return `their starters ${signed(idea.their_points)} a week`;
+}
+
+/**
+ * What a trade does to your playoff chance, and to the regular season where
+ * the badge is the playoffs' — each only where it moves by a noticeable amount.
+ */
+export function changes(idea: TradeIdea): string[] {
+  const said: string[] = [];
+  if (Math.abs(idea.playoffs_change * 100) >= NOTICEABLE) {
+    said.push(`your playoffs ${percentPoints(idea.playoffs_change)}, to ${percent(idea.playoffs)}`);
+  }
+  if (idea.playoff_points != null && Math.abs(idea.points) >= NOTICEABLE) {
+    said.push(`rest of season ${signed(idea.points)} a week`);
+  }
+  return said;
 }

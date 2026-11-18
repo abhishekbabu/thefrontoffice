@@ -53,6 +53,7 @@ export type Swap = Schemas["Swap"];
 export type TaskVerdict = Schemas["TaskVerdict"];
 export type TeamRef = Schemas["TeamRef"];
 export type TradeIdea = Schemas["TradeIdea"];
+export type Trades = Schemas["Trades"];
 export type Turn = Schemas["Turn"];
 export type Urgency = Action["urgency"];
 

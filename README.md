@@ -20,7 +20,8 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Every week of the season**: page back to see what was played and forward to
   see the projected lineups. FPL gameweeks and NBA category weeks work the same way.
 - **Trades**: near-even offers that start for you, ranked by what they do to
-  your playoff odds, each with why the other manager might accept.
+  your playoff odds, each with why the other manager might accept. A pickup
+  most trades share, and each player's pricing note, is said once.
 - **Free agents**: ranked by projection and fit, with Sleeper's trending adds
   and an IR stash list.
 - **Player pages**: tabs for this week, the game log, past seasons, league
