@@ -709,6 +709,50 @@ def test_a_roster_with_a_spot_open_drops_nobody() -> None:
     assert action.drop == ""
 
 
+# A starting back at NYJ with his handcuff on the bench, and a quarterback ruled out with nobody behind him.
+STARTING_RB = proj("rb", "Christian Starter", "RB", 15.0, team="NYJ", opp="NE")
+HANDCUFF = proj("rb3", "Kaelon Backup", "RB", 3.0, team="NYJ", opp="NE")
+FREE_QB = proj("qb9", "Free QB", "QB", 14.0, team="KC", opp="LV")
+
+
+def _cuffed(*bench: WeeklyProjection, depth: int = 2) -> Action:
+    """A full roster needing a quarterback, with the handcuff `depth` on the NYJ chart behind the starter."""
+    league = replace(LEAGUE, roster_positions=["QB", "RB", "WR", "FLEX"] + ["BN"] * (1 + len(bench)))
+    client = _client(
+        [_ruled_out(QB), STARTING_RB, WR, FLEX, HANDCUFF, *bench, FREE_QB],
+        ["qb", "rb", "wr", "te"],
+        ["rb3", *(p.player_id for p in bench)],
+        league=league,
+        game_lines=_scored(HANDCUFF, 2.0, 2.0) + [line for p in bench for line in _scored(p, 4.0, 5.0)],
+    )
+    catalog = client.players_catalog or {}
+    catalog["rb"] = replace(catalog["rb"], depth_chart_order=1)
+    catalog["rb3"] = replace(catalog["rb3"], depth_chart_order=depth)
+    [action] = [a for a in _actions(client) if a.kind == "waiver"]
+    return action
+
+
+def test_a_handcuff_is_dropped_after_every_ordinary_bench_player() -> None:
+    """He scores least, but he is the starter's insurance: the weaker-looking ordinary player goes first."""
+    action = _cuffed(WEAK)
+
+    assert action.drop == WEAK.player_id
+
+
+def test_a_back_his_club_lists_nowhere_is_dropped_on_his_figures() -> None:
+    action = _cuffed(WEAK, depth=0)
+
+    assert action.drop == HANDCUFF.player_id
+    assert "handcuff" not in action.reason
+
+
+def test_a_handcuff_left_as_the_only_drop_says_whose_he_is() -> None:
+    action = _cuffed()
+
+    assert action.drop == HANDCUFF.player_id
+    assert "handcuff" in action.reason and "Starter" in action.reason
+
+
 def _with_breakout(projected: float) -> list[Action]:
     rising = proj("wr9", "Rising Receiver", "WR", projected, team="KC", opp="LV")
     client = _client(

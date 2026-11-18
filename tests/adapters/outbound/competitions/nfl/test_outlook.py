@@ -86,6 +86,17 @@ def test_a_full_roster_names_who_to_drop_and_it_is_never_a_regular_away_for_the_
     assert not any(name in week.fix for name in ("Star QB", "Good RB", "Steady WR"))
 
 
+def test_a_handcuff_named_as_the_drop_says_whose_he_is() -> None:
+    client = _client()
+    catalog = client.players_catalog or {}
+    catalog["rb1"] = replace(catalog["rb1"], depth_chart_order=1)
+    catalog["rb2"] = replace(catalog["rb2"], depth_chart_order=2)
+
+    fix = _weeks(client)[BYE_WEEK].fix
+
+    assert "Bad RB" in fix and "handcuff" in fix
+
+
 def test_a_roster_with_room_drops_nobody() -> None:
     week = _weeks(_client(roster_positions=["QB", "RB", "WR", "BN", "BN", "BN"]))[BYE_WEEK]
 
