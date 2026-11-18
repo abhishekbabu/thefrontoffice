@@ -15,7 +15,9 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **To-do list**: starters out or on bye, empty slots, bench swaps, IR moves,
   pickups with a growing role, and the trade deadline. Each item names the fix
   and who to drop: the weakest bench player by recent form and projection
-  together, never one the best lineup starts or one just on bye. An empty IR
+  together, never one the best lineup starts or one just on bye. A handcuff
+  (the back next on the depth chart behind a running back you start) goes only
+  once nobody ordinary is left, and the drop says whose he is. An empty IR
   slot gets the best free agent on IR who is back before the playoffs (ESPN's
   estimate), projects 25+ points from then, and rates within a point a game of
   that weakest bench player, with the spot his claim takes until he moves to IR.

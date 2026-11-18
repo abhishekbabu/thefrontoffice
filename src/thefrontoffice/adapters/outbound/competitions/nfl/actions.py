@@ -24,6 +24,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
     average,
     season_average,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.handcuffs import handcuffs
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupChange,
     best_upgrade,
@@ -40,6 +41,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, THIS_WEEK, listed, ruled_out
+from thefrontoffice.adapters.outbound.competitions.nfl.teammates import surname
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.domain.models import Action, Stat, Urgency, urgency_rank
 
@@ -528,14 +530,21 @@ def worth(state: Week, player: Projection) -> float | None:
     return FORM_WEIGHT * recent + (1 - FORM_WEIGHT) * ahead
 
 
+def cuffed(state: Week) -> dict[str, PlayerInfo]:
+    """Each of your backs held as a handcuff, mapped to the starter he backs up (see `handcuffs`)."""
+    starting = state.starter_ids | {slot.player.player_id for slot in state.best if slot.player}
+    return handcuffs(state.players, state.roster.player_ids, starting)
+
+
 def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> Projection | None:
     """The player it costs least to lose, by his `worth`: never one kept, one the best lineup starts, nor one whose role is growing.
 
     A player whose role is growing is the one a to-do list would tell you to
     pick up, so he is never the one to let go. Nor is one the best lineup
-    would start this week. A player with nothing to go on — no recent games,
-    and no game this week — is the last resort rather than the first: an
-    unknown is not a weak player.
+    would start this week. A handcuff comes after every ordinary player: his
+    worth is the week his starter misses, which no figure here shows. A player
+    with nothing to go on — no recent games, and no game this week — is the
+    last resort: an unknown is not a weak player.
     """
     starting = {slot.player.player_id for slot in state.best if slot.player}
     candidates = [
@@ -543,16 +552,27 @@ def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> 
         for p in among
         if p.player_id not in keep and p.player_id not in state.evidence.trends and p.player_id not in starting
     ]
+    cuffs = cuffed(state) if candidates else {}
 
-    def weakest(player: Projection) -> tuple[bool, float, float]:
+    def weakest(player: Projection) -> tuple[int, float, float]:
         value = worth(state, player)
-        return value is None, value or 0.0, player.points
+        rank = 2 if value is None else 1 if player.player_id in cuffs else 0
+        return rank, value or 0.0, player.points
 
     return min(candidates, key=weakest, default=None)
 
 
+def handcuff_note(state: Week, player: Projection) -> str:
+    """'handcuff to McCaffrey' where he is one; empty where he is not."""
+    starter = cuffed(state).get(player.player_id)
+    return f"handcuff to {surname(starter.name)}" if starter else ""
+
+
 def drop_reason(state: Week, player: Projection) -> str:
-    """'Drop X (4.90/game, 6.60 proj), weakest on bench': the figures his worth was read from."""
+    """'Drop X (4.90/game, 6.60 proj), weakest on bench': the figures his worth was read from.
+
+    A handcuff says so instead, since he is only the pick once nobody else is left.
+    """
     figures = []
     if (recent := form(state, player)) is not None:
         figures.append(f"{recent:.2f}/game")
@@ -561,7 +581,8 @@ def drop_reason(state: Week, player: Projection) -> str:
     elif (played := average(state.evidence, player.player_id)) is not None:
         figures.append(f"{played:.2f} season")
     shown = f" ({', '.join(figures)})" if figures else ""
-    return f"Drop {player.name}{shown}, weakest on bench."
+    why = handcuff_note(state, player) or "weakest on bench"
+    return f"Drop {player.name}{shown}, {why}."
 
 
 def _same_game(
