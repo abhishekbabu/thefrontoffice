@@ -7,7 +7,7 @@ from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, ScheduledGame, SleeperRoster
 from thefrontoffice.domain.errors import TeamNotFoundError
-from thefrontoffice.domain.models import Outlook, WeekAhead
+from thefrontoffice.domain.models import Outlook, PlayerQuery, WeekAhead
 
 MINE = {
     "qb1": proj("qb1", "Star QB", "QB", 22.0),
@@ -199,3 +199,42 @@ def test_any_teams_weeks_ahead_read_its_own_roster() -> None:
 def test_a_team_the_league_does_not_have_is_not_found() -> None:
     with pytest.raises(TeamNotFoundError):
         nfl_provider(_client()).weeks_ahead("L1", "99")
+
+
+# ── the rest of the season ──────────────────────────────────────────────
+
+
+def _rest(client: FakeSleeper, playoff_week_start: int) -> dict[str, float]:
+    client.league = replace(client.league, playoff_week_start=playoff_week_start)
+    page = nfl_provider(client).free_agents("L1", PlayerQuery())
+    return {card.player_id: card.values["ROS"] for card in page.players if "ROS" in card.values}
+
+
+def test_the_rest_of_the_season_sums_the_weeks_after_this_one_up_to_the_playoffs() -> None:
+    """Weeks 4 to 6 with the playoffs from 7: three weeks of each, this week (3) left to Proj."""
+    client = _client()
+    client.weekly_projections[3] = {"rb9": replace(WIRE["rb9"], points=99.0)}
+
+    assert _rest(client, playoff_week_start=7)["rb9"] == 3 * WIRE["rb9"].points
+
+
+def test_a_week_he_is_not_projected_in_adds_nothing_to_the_rest_of_his_season() -> None:
+    """Spare RB byes in week 5: one week of three is nought, not his average."""
+    client = _client()
+    client.weekly_projections[BYE_WEEK] = {"qb9": WIRE["qb9"]}
+
+    assert _rest(client, playoff_week_start=7)["rb9"] == 2 * WIRE["rb9"].points
+
+
+def test_the_last_regular_season_week_is_the_rest_of_the_season_on_its_own() -> None:
+    client = _client()
+    client.weekly_projections[4] = {"rb9": replace(WIRE["rb9"], points=99.0)}
+
+    assert _rest(client, playoff_week_start=4)["rb9"] == WIRE["rb9"].points
+
+
+def test_a_week_that_will_not_load_leaves_the_rest_of_the_season_out_rather_than_short() -> None:
+    client = _client()
+    client.unloaded_weeks = {5}
+
+    assert _rest(client, playoff_week_start=7) == {}

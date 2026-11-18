@@ -135,7 +135,8 @@ TEAM_LOGO_URL = "https://sleepercdn.com/images/team_logos/nfl/{team}.png"
 
 
 TRENDING, INJURED = "Trending", "IR"
-"""The free-agent lists beside the whole pool, as Sleeper's app offers them."""
+VIEWS = (TRENDING, INJURED)
+"""The free-agent lists beside the whole pool, as Sleeper's app offers them; asked for in any case."""
 
 TRENDING_HOURS, TRENDING_LIMIT = 24, 50
 """Sleeper's trending window and how many of its most-added players to read."""
@@ -257,7 +258,11 @@ class SleeperNFLProvider:
         are free, so the pool is cut to the positions a fantasy league actually
         scores — the rest is practice-squad depth nobody is deciding about.
         That still leaves four thousand, which is why this is a page.
+
+        Raises:
+            InvalidRequestError: a `query.view` that is not one of `VIEWS`.
         """
+        view = paging.view(query, VIEWS)
         state = self._week(league_id)
         available = [
             (state.projections.get(pid), pid, meta)
@@ -269,19 +274,19 @@ class SleeperNFLProvider:
         available.sort(key=lambda row: (-(row[0].points if row[0] else 0.0), row[2].depth_chart_order or 99))
         ids = [pid for _, pid, _ in available]
         adds: dict[str, int] = {}
-        if query.view == TRENDING:
+        if view == TRENDING:
             # Sleeper's own trending adds, most added first, as its app lists them.
             adds = {t.player_id: t.count for t in self.client.get_trending("add", TRENDING_HOURS, TRENDING_LIMIT)}
             ids = sorted((pid for pid in ids if pid in adds), key=lambda pid: -adds[pid])
-        elif query.view == INJURED:
+        elif view == INJURED:
             ids = [pid for pid in ids if state.players[pid].injury_status.upper() == "IR"]
-        ranked = views.cards(state, ids, starters=set(), wire=True)
+        ranked = views.cards(state, ids, starters=set(), wire=True, ahead=outlook.rest_of_season(self.client, state))
         if adds:
             ranked = [
                 card.model_copy(update={"columns": {**card.columns, ADDS_COLUMN: str(adds[card.player_id])}})
                 for card in ranked
             ]
-        return paging.page(ranked, query).model_copy(update={"views": [TRENDING, INJURED]})
+        return paging.page(ranked, query).model_copy(update={"views": list(VIEWS)})
 
     def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
         """Anyone on an NFL roster at a fantasy position whose name holds `text`, the best projected first."""

@@ -125,6 +125,15 @@ class SleeperNFLSource(Protocol):
         rules: Mapping[str, float],
     ) -> dict[str, WeeklyProjection]: ...
 
+    def get_projections_bulk(
+        self,
+        season: str,
+        weeks: list[int],
+        scoring: ScoringFormat,
+        positions: Collection[str],
+        rules: Mapping[str, float],
+    ) -> Batch[int, dict[str, WeeklyProjection]]: ...
+
     def get_rosters(self, league_id: str) -> list[SleeperRoster]: ...
 
     def get_season_stats(
@@ -577,36 +586,33 @@ class SleeperClient:
         field goals its own way, 9.77 for one the league's app shows at 7.78.
         Only a league whose rules are unknown falls back to the stock figure.
         """
-        # The sport segment is required, and its absence is not an error: the
-        # path without it answers 200 with an empty list, so every projection
-        # silently became a zero and every player read as having no game.
-        asked = sorted(positions)
-        url = f"{PROJECTIONS_URL}/{NFL}/{season}/{week}?season_type=regular&order_by={scoring}" + "".join(
-            f"&position[]={p}" for p in asked
-        )
-        data = self._api.cached(f"proj_{NFL}_{season}_{week}_{scoring}_{'-'.join(asked)}", url, PROJECTIONS_TTL)
+        url, key = _projection_address(season, week, scoring, positions)
+        return _projections(self._api.cached(key, url, PROJECTIONS_TTL), scoring, rules)
 
-        projections: dict[str, WeeklyProjection] = {}
-        for row in data or []:
-            player = row.get("player") or {}
-            stats = row.get("stats") or {}
-            points = stats.get(scoring)
-            if points is None:
-                continue
-            if rules:
-                points = league_points(_numbers(stats), rules)
-            player_id = str(row.get("player_id") or "")
-            projections[player_id] = WeeklyProjection(
-                player_id=player_id,
-                name=_full_name(player) or player_id,
-                position=str(player.get("position") or ""),
-                team=str(player.get("team") or row.get("team") or FREE_AGENT),
-                opponent=str(row.get("opponent") or ""),
-                points=float(points),
-                injury_status=str(player.get("injury_status") or ""),
-                stats=_numbers(stats) | {scoring: float(points)},
-            )
-        return projections
+    def get_projections_bulk(
+        self,
+        season: str,
+        weeks: list[int],
+        scoring: ScoringFormat,
+        positions: Collection[str],
+        rules: Mapping[str, float],
+    ) -> Batch[int, dict[str, WeeklyProjection]]:
+        """Each of `weeks` read as `get_projections` reads one, fetched in parallel under the same cache keys.
+
+        The rest of a season is a dozen weeks, each its own request. A week
+        that would not load is a failure rather than empty: an empty week is
+        one Sleeper has not projected yet.
+        """
+        batch = self._weekly(
+            weeks,
+            lambda w: _projection_address(season, w, scoring, positions)[1],
+            lambda w: _projection_address(season, w, scoring, positions)[0],
+            PROJECTIONS_TTL,
+        )
+        return Batch(
+            values={w: _projections(raw, scoring, rules) for w, raw in batch.values.items()},
+            failures=batch.failures,
+        )
 
     def get_nba_projections(self, season: str, week: int) -> list[GameProjection]:
         """Per-game NBA projections for a Sleeper week.
@@ -655,6 +661,43 @@ class SleeperClient:
             for item in data or []
             if item.get("player_id")
         ]
+
+
+def _projection_address(season: str, week: int, scoring: ScoringFormat, positions: Collection[str]) -> tuple[str, str]:
+    """A week's projections' URL and cache key: the same pair whether the week is read alone or with others."""
+    # The sport segment is required, and its absence is not an error: the
+    # path without it answers 200 with an empty list, so every projection
+    # silently became a zero and every player read as having no game.
+    asked = sorted(positions)
+    url = f"{PROJECTIONS_URL}/{NFL}/{season}/{week}?season_type=regular&order_by={scoring}" + "".join(
+        f"&position[]={p}" for p in asked
+    )
+    return url, f"proj_{NFL}_{season}_{week}_{scoring}_{'-'.join(asked)}"
+
+
+def _projections(data: Any, scoring: ScoringFormat, rules: Mapping[str, float]) -> dict[str, WeeklyProjection]:
+    """One week's projection rows by player id, each priced by the league's `rules` where they are known."""
+    projections: dict[str, WeeklyProjection] = {}
+    for row in data or []:
+        player = row.get("player") or {}
+        stats = row.get("stats") or {}
+        points = stats.get(scoring)
+        if points is None:
+            continue
+        if rules:
+            points = league_points(_numbers(stats), rules)
+        player_id = str(row.get("player_id") or "")
+        projections[player_id] = WeeklyProjection(
+            player_id=player_id,
+            name=_full_name(player) or player_id,
+            position=str(player.get("position") or ""),
+            team=str(player.get("team") or row.get("team") or FREE_AGENT),
+            opponent=str(row.get("opponent") or ""),
+            points=float(points),
+            injury_status=str(player.get("injury_status") or ""),
+            stats=_numbers(stats) | {scoring: float(points)},
+        )
+    return projections
 
 
 def _trim_catalog(raw: Any) -> dict[str, dict[str, Any]]:

@@ -504,6 +504,17 @@ class NFLSource(Protocol):
         """The week's projections for the players at `positions`, by player id."""
         ...
 
+    def get_projections_bulk(
+        self,
+        season: str,
+        weeks: list[int],
+        scoring: Scoring,
+        positions: Collection[str],
+        rules: Mapping[str, float],
+    ) -> Weeks[Mapping[str, Projection]]:
+        """Each of `weeks`' projections as `get_projections` reads one, or why it would not load."""
+        ...
+
     def get_rosters(self, league_id: str) -> Sequence[Team]: ...
 
     def get_season_stats(self, season: str, scoring: Scoring, rules: Mapping[str, float]) -> Mapping[str, SeasonTotals]:

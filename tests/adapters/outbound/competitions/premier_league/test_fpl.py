@@ -32,7 +32,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Player,
     Squad,
 )
-from thefrontoffice.domain.errors import NotFoundError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import InvalidRequestError, NotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery, Spot, Summary
 
 # ── configuration ───────────────────────────────────────────────────────
@@ -219,6 +219,11 @@ def test_a_doubtful_player_is_in_the_prompts_market() -> None:
 def test_an_injured_player_is_kept_out_of_the_market_page() -> None:
     market = provider().free_agents(H2H_LEAGUE, PlayerQuery()).players
     assert "103" not in {card.player_id for card in market}
+
+
+def test_a_list_of_the_market_fpl_does_not_offer_is_refused() -> None:
+    with pytest.raises(InvalidRequestError):
+        provider().free_agents(H2H_LEAGUE, PlayerQuery(view="Trending"))
 
 
 def test_the_briefing_keeps_the_squad_and_only_the_players_named() -> None:

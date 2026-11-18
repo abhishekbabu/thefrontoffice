@@ -38,7 +38,13 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperRoster,
     TrendingPlayer,
 )
-from thefrontoffice.domain.errors import LeagueNotFoundError, NotFoundError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import (
+    InvalidRequestError,
+    LeagueNotFoundError,
+    NotFoundError,
+    PlayerNotFoundError,
+    TeamNotFoundError,
+)
 from thefrontoffice.domain.models import PlayerQuery, Summary
 
 # ── leagues ─────────────────────────────────────────────────────────────
@@ -484,11 +490,11 @@ def test_a_player_on_no_nfl_roster_is_not_a_signing() -> None:
 def test_a_free_agent_carries_the_numbers_behind_its_columns() -> None:
     """Sorting "22.3" as text is the bug this exists to prevent."""
     client = league_client()
-    client.players_catalog = {"a": PlayerMeta(player_id="a", name="A", position="WR", team="NYJ", years_exp=7)}
+    client.players_catalog = {"a": PlayerMeta(player_id="a", name="A", position="WR", team="NYJ", depth_chart_order=2)}
 
     card = nfl_provider(client).free_agents("L1", PlayerQuery()).players[0]
 
-    assert card.values["Exp"] == 7.0
+    assert card.values["Depth"] == 2.0
 
 
 def test_the_drawer_names_the_club_in_full_with_its_crest() -> None:
@@ -685,7 +691,7 @@ def test_a_warning_about_next_weeks_bye_is_not_priced_as_a_move() -> None:
     assert all(o.player_id not in starters for m in matchup.moves for o in m.into)
 
 
-def test_a_free_agent_whose_role_grew_says_so_in_the_usage_column() -> None:
+def test_a_free_agent_whose_role_grew_says_so_in_the_trend_column() -> None:
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
     client.week = 5
     client.game_lines = [
@@ -700,10 +706,53 @@ def test_a_free_agent_whose_role_grew_says_so_in_the_usage_column() -> None:
         for week, snaps in ((1, 12), (2, 14), (3, 50), (4, 50))
     ]
 
-    cards = _available(client, sort="Usage")
+    cards = _available(client, sort="Trend")
 
     assert next(iter(cards)) == "wr9"
-    assert cards["wr9"]["Usage"].startswith("snaps")
+    assert cards["wr9"]["Trend"].startswith("snaps")
+
+
+def test_a_free_agent_carries_his_snap_and_target_share_over_his_last_games_sortable() -> None:
+    """Shares of the offense where his position has them; a kicker or a defense has neither."""
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    client.week = 5
+    client.players_catalog = {
+        **client.get_nfl_players(),
+        "wr7": PlayerMeta(player_id="wr7", name="Other WR", position="WR", team="NYJ"),
+        "k9": PlayerMeta(player_id="k9", name="Free K", position="K", team="NYJ"),
+    }
+    client.game_lines = [
+        NFLGameLine(
+            player_id=pid,
+            week=week,
+            team="NYJ",
+            opponent="MIA",
+            position="WR",
+            stats={"off_snp": snaps, "tm_off_snp": 60, "rec_tgt": targets, "pts_ppr": 5},
+        )
+        for pid, snaps, targets in (("wr9", 45, 6), ("wr7", 15, 2))
+        for week in (2, 3, 4)
+    ]
+
+    page = nfl_provider(client).free_agents("L1", PlayerQuery(sort="Snap%"))
+    cards = {card.player_id: card for card in page.players}
+
+    assert [c.player_id for c in page.players][:2] == ["wr9", "wr7"]
+    assert cards["wr9"].values["Snap%"] == 0.75 and cards["wr9"].values["Tgt%"] == 0.75
+    assert (cards["wr9"].columns["Snap%"], cards["wr9"].columns["Tgt%"]) == ("75%", "75%")
+    assert (cards["k9"].columns["Snap%"], cards["k9"].columns["Tgt%"]) == ("—", "—")
+
+
+def test_a_free_agent_sorts_by_the_rest_of_his_season() -> None:
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    client.league = replace(client.league, playoff_week_start=6)
+    client.weekly_projections[5] = {"bye1": proj("bye1", "Bye Guy", "TE", 40.0, team="LAR")}
+
+    page = nfl_provider(client).free_agents("L1", PlayerQuery(sort="ROS"))
+
+    # Week 4 is the default projections, week 5 his alone: 40 beats 14 + 0.
+    assert [c.player_id for c in page.players][:2] == ["bye1", "wr9"]
+    assert page.players[0].columns["ROS"] == "40.0"
 
 
 def test_a_backup_who_jumped_while_the_starter_missed_his_game_reads_as_growing_while_the_starter_is_out() -> None:
@@ -726,7 +775,7 @@ def test_a_backup_who_jumped_while_the_starter_missed_his_game_reads_as_growing_
         for week, snaps in played
     ]
 
-    assert _available(client)["wr9"]["Usage"].startswith("snaps")
+    assert _available(client)["wr9"]["Trend"].startswith("snaps")
 
 
 # ── the roster as rows ──────────────────────────────────────────────────────
@@ -1219,6 +1268,20 @@ def test_the_wire_offers_sleepers_trending_adds_most_added_first_with_their_coun
     assert page.views == ["Trending", "IR"]
     # Star QB trends, but he is on a roster: nobody's to add.
     assert [(c.player_id, c.columns["Adds"]) for c in page.players] == [("wr9", "120")]
+
+
+def test_a_view_is_matched_regardless_of_case() -> None:
+    """`?view=trending` once answered with the whole pool, which reads as the trending list."""
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, trending=[TrendingPlayer("wr9", 120)])
+
+    page = nfl_provider(client).free_agents("L1", PlayerQuery(view="trending"))
+
+    assert [c.player_id for c in page.players] == ["wr9"]
+
+
+def test_a_view_nobody_offers_is_refused_rather_than_ignored() -> None:
+    with pytest.raises(InvalidRequestError):
+        nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).free_agents("L1", PlayerQuery(view="hot"))
 
 
 def test_the_wire_lists_free_agents_on_ir_on_their_own() -> None:
