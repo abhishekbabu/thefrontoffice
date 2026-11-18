@@ -3,7 +3,7 @@
 from support.reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
 
 from thefrontoffice.adapters.inbound.cli.render import render_scout_report, render_trade_verdict, render_week
-from thefrontoffice.domain.models import Move, ScoutReport, Summary, Swap
+from thefrontoffice.domain.models import Move, ScoutReport, Side, Summary, Swap
 
 
 def _rec(**overrides: object) -> Move:
@@ -94,3 +94,19 @@ def test_the_week_shows_the_changes_the_projections_imply_as_the_page_does() -> 
     )
 
     assert all(name in out for name in ("Saka", "Foden", "+2.1 xPts", "Isak"))
+
+
+def test_a_head_to_head_week_names_both_teams_and_their_points() -> None:
+    """The page says these in the card headers; the terminal has no cards, so it says them first."""
+    out = render_week(
+        Summary(
+            mine=Side(name="Your lineup", detail="7-3", points="61.20 pts"),
+            opponent=Side(name="Rival", detail="3-7", points="58.00 pts"),
+        )
+    )
+
+    assert all(fact in out for fact in ("Rival", "3-7", "58.00 pts", "61.20 pts"))
+
+
+def test_a_week_with_nobody_to_play_names_no_teams() -> None:
+    assert "Your lineup" not in render_week(Summary(mine=Side(name="Your lineup", points="61.20 pts")))

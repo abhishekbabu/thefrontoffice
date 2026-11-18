@@ -14,7 +14,7 @@ import {
 } from "@/lib/api";
 import { keys, useCapabilities } from "@/lib/queries";
 import { moment } from "@/lib/format";
-import { ActionList, WhyButton } from "@/components/ui/actions";
+import { ActionList, WhyButton, staleVerdicts } from "@/components/ui/actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -130,6 +130,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       >
         {onWeek && <WeekStepper range={onWeek} onStep={step} />}
       </LeagueHeader>
+      {/* Only what no card below says: the score once there is one, the chances. */}
       <StatStrip stats={shown.data?.headline ?? []} />
 
       <QueryState query={shown} lines={4} />
@@ -159,7 +160,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
                 ai && (
                   <span className="flex items-center gap-2 normal-case tracking-normal">
                     {judgment.data && !judge.isPending && (
-                      <span className="font-normal">judged {moment(judgment.data.answered_at)}</span>
+                      <JudgedAt at={judgment.data.answered_at} stale={staleVerdicts(shown.data.actions)} />
                     )}
                     {judge.isPending && <Busy>judging…</Busy>}
                     <IconButton
@@ -234,6 +235,20 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       )}
       {drawer}
     </>
+  );
+}
+
+/**
+ * When the list was last judged, and — once for the whole list rather than on
+ * every row — that some of it has changed since. Said in words, with the
+ * color only to find it.
+ */
+export function JudgedAt({ at, stale }: { at: string; stale: boolean }) {
+  return (
+    <span className="font-normal">
+      judged {moment(at)}
+      {stale && <span className="text-warn"> · stale</span>}
+    </span>
   );
 }
 

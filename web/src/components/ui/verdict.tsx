@@ -9,18 +9,23 @@ import { Label } from "@/components/ui/label";
  * A stale one stays, faded and labelled beside its badge: the reasoning may
  * still hold, but it was about something that has changed since. The label
  * sits with the badge rather than at the row's far edge, where on a wide
- * screen it ended up a long way from what it qualifies.
+ * screen it ended up a long way from what it qualifies. Where one notice
+ * already covers a whole list — the to-do card says so in its header —
+ * `noted` is false and a stale verdict is only faded.
  */
 export function Verdict({
   label,
   variant,
   reason,
   stale = false,
+  noted = true,
 }: {
   label: string;
   variant: Variant;
   reason: string;
   stale?: boolean;
+  /** Whether a stale verdict says so beside its badge; false where the list it is in says so once. */
+  noted?: boolean;
 }) {
   return (
     <div
@@ -33,9 +38,7 @@ export function Verdict({
         <Badge variant={stale ? "muted" : variant} appearance="status">
           {label}
         </Badge>
-        {stale && (
-          <Label>stale — re-judge</Label>
-        )}
+        {stale && noted && <Label>stale — re-judge</Label>}
       </span>
       <span className="min-w-0 flex-1 text-foreground">{reason}</span>
     </div>

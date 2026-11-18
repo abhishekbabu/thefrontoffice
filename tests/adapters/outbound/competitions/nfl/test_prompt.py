@@ -13,9 +13,11 @@ from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeESPN, FakeSlee
 from support.prompts import named_fields, schema_fields
 
 from thefrontoffice.adapters.outbound.competitions.nfl import prompt
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import SEASON_WEEKS
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
+    ScheduledGame,
     SleeperLeague,
     SleeperMatchup,
     SleeperRoster,
@@ -30,10 +32,6 @@ from thefrontoffice.domain.models import Stat, task_id
 def _context(**kwargs: Any) -> Any:
     client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS), **kwargs)
     return nfl_provider(client).build_context("L1")
-
-
-def _lineup_stat(context: Any) -> Stat:
-    return next(stat for stat in context.headline if stat.label == "Lineup")
 
 
 def _figures(text: str) -> list[float]:
@@ -177,9 +175,9 @@ def test_matchup_opponent_and_live_score_are_surfaced() -> None:
 
 def test_a_week_with_no_matchup_reports_no_opponent_figures() -> None:
     """Paired with nobody is not a 0-0 scoreline against somebody."""
-    labels = {s.label for s in _context(matchups=[SleeperMatchup(roster_id=1, matchup_id=None)]).headline}
+    client = _kicked_off("in_game", matchups=[SleeperMatchup(roster_id=1, matchup_id=None)])
 
-    assert not labels & {"Opponent", "Live"}
+    assert _headline(client) == {}
 
 
 def test_trending_players_are_included_with_their_projection() -> None:
@@ -192,39 +190,6 @@ def test_trending_failure_degrades_without_losing_the_report() -> None:
     """An independent signal, not load-bearing."""
     ctx = _context(trending_error=SleeperAPIError("429"))
     assert ctx.roster_lines  # the rest still built
-
-
-def test_the_lineup_figure_is_the_current_total_beside_the_best() -> None:
-    """The gap is the point: how many points are sitting on the bench."""
-    client = FakeSleeper(
-        league=SMALL_LEAGUE,
-        projections=dict(DEFAULT_PROJECTIONS),
-        rosters=[
-            SleeperRoster(
-                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb2"]
-            )
-        ],
-    )
-    lineup = _lineup_stat(nfl_provider(client).build_context("L1"))
-
-    assert _figures(lineup.value) == [26.0, 40.0]  # 22 + 4, and 22 + 18
-    assert lineup.tone == "warning"
-
-
-def test_no_bench_gap_is_reported_when_already_optimal() -> None:
-    client = FakeSleeper(
-        league=SMALL_LEAGUE,
-        projections=dict(DEFAULT_PROJECTIONS),
-        rosters=[
-            SleeperRoster(
-                roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["qb1", "rb1", "rb2"], starter_ids=["qb1", "rb1"]
-            )
-        ],
-    )
-    lineup = _lineup_stat(nfl_provider(client).build_context("L1"))
-
-    assert _figures(lineup.value) == [40.0]  # no best beside it: this is the best
-    assert lineup.tone == "neutral"
 
 
 def test_the_bench_gap_matches_the_printed_figures() -> None:
@@ -253,74 +218,76 @@ def test_the_bench_gap_matches_the_printed_figures() -> None:
 # ── headline figures ────────────────────────────────────────────────────
 
 
-def test_the_weeks_header_leaves_the_record_to_the_league_view() -> None:
-    """Record and points for answer how the season is going, which is the league view's question."""
-    week = {stat.label for stat in _context().headline}
-
-    assert "Record" not in week and "Lineup" in week
-
-
-def test_the_header_agrees_with_the_prompt_about_the_lineup_total() -> None:
-    """Two numbers for the same thing, differing in the last decimal, reads as
-    a bug even when neither is wrong."""
-    context = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1")
-
-    current, best = _figures(_lineup_stat(context).value)
-    assert _figures(context.constraints)[:2] == [current, best]
+MATCHED = [
+    SleeperMatchup(roster_id=1, matchup_id=7, points=88.5),
+    SleeperMatchup(roster_id=2, matchup_id=7, points=71.0),
+]
 
 
-def test_the_header_carries_the_matchup() -> None:
-    """The question the page is opened to answer: who, and am I ahead."""
-    client = FakeSleeper(
-        projections=DEFAULT_PROJECTIONS,
-        matchups=[
-            SleeperMatchup(roster_id=1, matchup_id=7, points=88.5),
-            SleeperMatchup(roster_id=2, matchup_id=7, points=71.0),
-        ],
-    )
-    labels = {s.label: s for s in nfl_provider(client).build_context("L1").headline}
+def _kicked_off(*statuses: str, matchups: list[SleeperMatchup] = MATCHED, week: int = 3) -> FakeSleeper:
+    """The week with one game per status: 'in_game', 'complete' or 'pre_game'."""
+    clubs = [("KC", "LV"), ("NYJ", "NE"), ("BUF", "MIA")]
+    schedule = [
+        ScheduledGame(week=week, date="2026-09-27", home=home, away=away, status=status)
+        for (home, away), status in zip(clubs, statuses, strict=False)
+    ]
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, matchups=matchups, season_schedule=schedule)
+    client.week = week
+    return client
 
-    assert "Opponent" in labels
+
+def _headline(client: FakeSleeper) -> dict[str, Stat]:
+    return {s.label: s for s in nfl_provider(client).build_context("L1").headline}
+
+
+def test_the_weeks_header_leaves_what_the_cards_say_to_the_cards() -> None:
+    """Record is the league view's; the lineup's projection and the opponent head their own cards."""
+    week = set(_headline(_kicked_off("in_game")))
+
+    assert not week & {"Record", "Lineup", "Opponent"}
+
+
+def test_the_header_carries_the_score_once_a_game_has_kicked_off() -> None:
+    labels = _headline(_kicked_off("in_game", "pre_game"))
+
     assert (labels["Live"].value, labels["Live"].tone) == ("88.50 – 71.00", "good")
     assert "Margin" not in labels  # the same two numbers, subtracted
 
 
-def test_trailing_is_the_figure_that_warns() -> None:
-    client = FakeSleeper(
-        projections=DEFAULT_PROJECTIONS,
-        matchups=[
-            SleeperMatchup(roster_id=1, matchup_id=7, points=60.0),
-            SleeperMatchup(roster_id=2, matchup_id=7, points=84.0),
-        ],
-    )
-    live = next(s for s in nfl_provider(client).build_context("L1").headline if s.label == "Live")
+def test_before_any_kickoff_there_is_no_score_to_show() -> None:
+    """0-0 before a snap is not a figure."""
+    assert not set(_headline(_kicked_off("pre_game", "pre_game"))) & {"Live", "Final"}
 
-    assert live.tone == "warning"
+
+def test_a_last_week_with_every_game_over_reads_as_final() -> None:
+    """Any earlier week moves on to the next once it is over; the season's last stays to be read."""
+    labels = _headline(_kicked_off("complete", "complete", "complete", week=SEASON_WEEKS))
+
+    assert "Final" in labels and "Live" not in labels
+
+
+def test_trailing_is_the_figure_that_warns() -> None:
+    behind = [replace(MATCHED[0], points=60.0), replace(MATCHED[1], points=84.0)]
+
+    assert _headline(_kicked_off("in_game", matchups=behind))["Live"].tone == "warning"
 
 
 def test_a_week_with_no_opponent_reports_no_matchup_figures() -> None:
     """A bye or a missing scoreboard is not a 0-0 scoreline."""
-    labels = {s.label for s in nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).build_context("L1").headline}
+    client = _kicked_off("in_game", matchups=[])
 
-    assert "Live" not in labels
-    assert "Lineup" in labels  # the rest of the header still stands
+    assert _headline(client) == {}
 
 
 def test_the_matchup_is_fetched_once_for_both_the_prompt_and_the_header() -> None:
     """Deriving them separately would pull the scoreboard twice per report, and
     the scoreboard is the one thing here that changes minute to minute."""
-    client = FakeSleeper(
-        projections=DEFAULT_PROJECTIONS,
-        matchups=[
-            SleeperMatchup(roster_id=1, matchup_id=7, points=88.5),
-            SleeperMatchup(roster_id=2, matchup_id=7, points=71.0),
-        ],
-    )
+    client = _kicked_off("in_game")
     context = nfl_provider(client).build_context("L1")
 
-    opponent = next(s.value for s in context.headline if s.label == "Opponent")
+    live = next(s.value for s in context.headline if s.label == "Live")
     assert client.matchup_fetches == 1
-    assert opponent in context.situation
+    assert all(f"{figure}" in context.situation for figure in _figures(live))
 
 
 # ── what the projections rest on ────────────────────────────────────────

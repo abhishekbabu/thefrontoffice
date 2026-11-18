@@ -35,8 +35,12 @@ const URGENCY: Record<Urgency, { label: string; variant: Variant }> = {
  * card would look the same as a page that never checked.
  *
  * Each item arrives with the model's last verdict on it, marked stale by the
- * server where the item has changed since. `suggested` are the moves the
- * model added that the list did not hold.
+ * server where the item has changed since. An agreement is a chip beside the
+ * row's controls: the row already says the move and its numbers, and a
+ * sentence agreeing with them says them again. Only an overrule or a wait
+ * carries the model's reason. A stale verdict is faded; the caller says it is
+ * stale once, in `aside`, rather than on every row. `suggested` are the moves
+ * the model added that the list did not hold.
  *
  * Items the manager dismissed or snoozed are kept out of the list but not out
  * of reach: they collect under a closed "Hidden" at the foot, each with a way
@@ -86,6 +90,8 @@ export function ActionList({
             const controls = onDecide && action.key && (
               <Decide action={action} onDecide={onDecide} busy={deciding} />
             );
+            const below = footer ? footer(action, controls) : controls;
+            const agreed = action.verdict?.decision === "AGREE";
             return (
               <Row
                 key={action.key || `${action.kind}-${action.title}`}
@@ -102,8 +108,15 @@ export function ActionList({
                     back: changed since dismissed
                   </Label>
                 )}
-                {action.verdict && <VerdictLine verdict={action.verdict} stale={action.stale} />}
-                {footer ? footer(action, controls) : controls}
+                {action.verdict && !agreed && <VerdictLine verdict={action.verdict} stale={action.stale} />}
+                {agreed ? (
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Agreed stale={action.stale} />
+                    {below}
+                  </span>
+                ) : (
+                  below
+                )}
               </Row>
             );
           })}
@@ -305,8 +318,23 @@ function VerdictLine({ verdict, stale }: { verdict: TaskVerdict; stale: boolean 
       variant={decisionTone(verdict.decision)}
       reason={verdict.reason}
       stale={stale}
+      noted={false}
     />
   );
+}
+
+/** An agreement, as a chip alone: faded and muted where it was about the item as it was. */
+function Agreed({ stale }: { stale: boolean }) {
+  return (
+    <Badge variant={stale ? "muted" : decisionTone("AGREE")} appearance="status" className={cn(stale && "opacity-60")}>
+      {DECISION_LABEL.AGREE}
+    </Badge>
+  );
+}
+
+/** Whether any verdict on the list was about an item that has changed since: one notice covers them all. */
+export function staleVerdicts(actions: Action[]): boolean {
+  return actions.some((action) => action.verdict && action.stale && !action.mark.hidden);
 }
 
 /**

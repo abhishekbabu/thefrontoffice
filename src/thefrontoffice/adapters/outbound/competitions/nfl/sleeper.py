@@ -375,7 +375,13 @@ class SleeperNFLProvider:
         judges the moves somebody is looking at rather than inventing its own.
         """
         state = self._week(league_id)
-        context = prompt.build(state, [item.action for item in self._tasks(state)], self._trending())
+        context = prompt.build(
+            state,
+            [item.action for item in self._tasks(state)],
+            self._trending(),
+            kicked_off=bool(self.scoreboard.started(state)),
+            over=self.scoreboard.over(state.season, state.week),
+        )
         context.movable = self._movable(state)
         return context
 
@@ -585,7 +591,9 @@ class SleeperNFLProvider:
         # No fixture notes: a bye is on the player's own row, and on the to-do
         # list when it costs a starter, so a list of clubs would say it twice.
         return Summary(
-            headline=prompt.headline(state),
+            headline=prompt.headline(
+                state, kicked_off=bool(live.started), over=self.scoreboard.over(state.season, state.week)
+            ),
             mine=Side(
                 name="Your lineup",
                 detail=state.roster.record,
