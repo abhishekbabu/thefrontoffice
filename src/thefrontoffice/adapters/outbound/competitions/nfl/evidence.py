@@ -182,17 +182,21 @@ class Evidence:
     def matchup(self, player: Projection) -> Matchup | None:
         return self.allowed.get((player.opponent, player.position)) if player.opponent else None
 
-    def describe(self, player: Projection) -> str:
-        """Both halves in one line, or empty when there is nothing played to go on."""
-        matchup, role, trend = self.matchup(player), self.roles.get(player.player_id), self.trends.get(player.player_id)
+    def describe(self, player: Projection, trend: bool = True) -> str:
+        """Both halves in one line, or empty when there is nothing played to go on.
+
+        Without `trend` where whatever this line sits under already says how his role grew.
+        """
+        matchup, role = self.matchup(player), self.roles.get(player.player_id)
+        grew = self.trends.get(player.player_id) if trend else None
         parts = [matchup.describe()] if matchup else []
         parts += [role.describe()] if role else []
-        parts += [f"role growing: {trend.describe()}"] if trend else []
+        parts += [f"role growing: {grew.describe()}"] if grew else []
         return "; ".join(parts)
 
-    def stat(self, player: Projection) -> Stat | None:
+    def stat(self, player: Projection, trend: bool = True) -> Stat | None:
         """The same line labelled with the player, toned by the matchup."""
-        text = self.describe(player)
+        text = self.describe(player, trend)
         if not text:
             return None
         matchup = self.matchup(player)

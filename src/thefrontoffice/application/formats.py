@@ -49,7 +49,12 @@ class VerdictAnswer(BaseModel):
             "WAIT when it turns on news due before the deadline."
         )
     )
-    reason: str = Field(description="One sentence, grounded in role, matchup or news — never the projection alone.")
+    reason: str = Field(
+        description=(
+            "One sentence, grounded in role, matchup or news — never the projection alone, and never "
+            "restating a figure the item already shows."
+        )
+    )
 
 
 class ScoutAnswer(BaseModel):

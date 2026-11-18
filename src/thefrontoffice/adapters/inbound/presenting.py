@@ -125,14 +125,19 @@ def _win_chance(forecast: Forecast) -> Stat:
 
 
 def _stake(odds: PlayoffOdds, win: float | None) -> Stat:
-    """The playoff chance, with this week weighed by its own forecast, and what winning it is worth."""
+    """What this week is worth to the playoffs: '99% win / 83% loss', or the one chance where it has no split.
+
+    The chance weighed by this week's forecast is left out beside the split:
+    it sits between the two, and next to them read as the same figure twice.
+    It still tones the stat.
+    """
     chance = chance_now(odds, win)
-    stake = (
-        f" · {odds.with_win:.0%} with a win, {odds.with_loss:.0%} without"
+    value = (
+        f"{odds.with_win:.0%} win / {odds.with_loss:.0%} loss"
         if odds.with_win is not None and odds.with_loss is not None
-        else ""
+        else f"{chance:.0%}"
     )
-    return Stat(label="Playoffs", value=f"{chance:.0%}{stake}", tone=_playoff_tone(chance))
+    return Stat(label="Playoffs", value=value, tone=_playoff_tone(chance))
 
 
 def _playoff_tone(chance: float) -> Tone:

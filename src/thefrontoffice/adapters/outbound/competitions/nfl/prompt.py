@@ -173,12 +173,19 @@ Return the calls in the required structured form.
 )
 
 
-def build(state: Week, tasks: list[Action], trending: Sequence[Trending] | None) -> CompetitionContext:
+def build(
+    state: Week,
+    tasks: list[Action],
+    trending: Sequence[Trending] | None,
+    kicked_off: bool = False,
+    over: bool = False,
+) -> CompetitionContext:
     """The scouting prompt, and the parts it was assembled from.
 
     `tasks` is the week's to-do list as the page shows it, numbered here so
     each verdict the model returns can be put back beside its row. `trending`
-    is None where the crowd's adds would not load.
+    is None where the crowd's adds would not load. `kicked_off` and `over`
+    say whether the week's score is a figure yet, as `headline` reads them.
     """
     evidence, news = state.evidence, state.news
     lineup_str = "".join(
@@ -228,7 +235,7 @@ def build(state: Week, tasks: list[Action], trending: Sequence[Trending] | None)
         extra=f"TO DO:\n{tasks_str}",
         roster_lines=roster_lines(state),
         candidate_lines=available_lines,
-        headline=headline(state),
+        headline=headline(state, kicked_off, over),
         tasks=tasks,
         listed=frozenset(meta.name for task in tasks if (meta := state.players.get(task.player_id))),
         worth=_worth(state),
@@ -308,22 +315,15 @@ def task_line(position: int, task: Action) -> str:
     return f"- {task_id(position)} [{task.urgency}, {task.kind}] {task.title}{when}. {task.reason}\n{evidence}"
 
 
-def headline(state: Week) -> list[Stat]:
-    """Where this team stands this week, in points: the lineup, what the bench still holds, and the matchup.
+def headline(state: Week, kicked_off: bool = False, over: bool = False) -> list[Stat]:
+    """The week's score, once there is one: live from the first kickoff, final once every game is over.
 
-    The season's own figures — record, points for — are the league view's,
-    and the week is already in the page's title. Only points left on the
-    bench warns: it is the one figure here that is a decision still open.
+    Nothing else: the lineup's projection heads its own card, the opponent
+    names theirs, the season's figures are the league view's, and the week is
+    in the page's title. Before any game kicks off a score is 0-0, which is
+    not a figure anyone needs.
     """
-    # Points left on the bench are a decision only in the week being played: one played is
-    # settled, and one to come is already shown at its best.
-    if state.on_bench > 0 and not (state.is_past or state.is_future):
-        lineup = Stat(
-            label="Lineup", value=f"{state.current_points:.2f} proj · best {state.best_points:.2f}", tone="warning"
-        )
-    else:
-        lineup = Stat(label="Lineup", value=f"{state.current_points:.2f} proj")
-    return [lineup, *matchup(state)[1]]
+    return matchup(state, kicked_off, over)[1]
 
 
 def lineup_slots(state: Week, *notes: str) -> str:
@@ -391,8 +391,11 @@ def _trending(state: Week, trending: Sequence[Trending] | None) -> str:
     return "".join(lines) or "- (none)\n"
 
 
-def matchup(state: Week) -> tuple[str, list[Stat]]:
-    """The matchup as prose for the prompt, and as figures for the header."""
+def matchup(state: Week, kicked_off: bool = False, over: bool = False) -> tuple[str, list[Stat]]:
+    """The matchup as prose for the prompt, and the score as a figure for the header once a game has kicked off.
+
+    `kicked_off` is whether any game of the week has, and `over` whether every one has finished.
+    """
     roster = state.roster
     header = (
         f"LEAGUE: {state.league.name} ({state.league.total_rosters} teams)\n"
@@ -407,19 +410,17 @@ def matchup(state: Week) -> tuple[str, list[Stat]]:
     margin = round(mine.points - theirs.points, 2)
 
     prose = header + f"OPPONENT: {name}\nLIVE SCORE: you {mine.points:.2f} - {theirs.points:.2f} them\n"
-    if state.is_future:
-        # Nobody has scored in a week still to come: a score here is 0-0, not a result.
-        return prose, [Stat(label="Opponent", value=name)]
-    stats = [
-        Stat(label="Opponent", value=name),
-        # Toned by who is ahead: the score is the verdict so far. No separate
-        # margin beside it — that is the same two numbers subtracted, and
-        # read next to the simulated "Likely margin" it looked like a second
-        # forecast that disagreed with the first.
-        Stat(
-            label="Final" if state.is_past else "Live",
-            value=f"{mine.points:.2f} – {theirs.points:.2f}",
-            tone="good" if margin > 0 else "warning" if margin < 0 else "neutral",
-        ),
-    ]
-    return prose, stats
+    final = state.is_past or over
+    if state.is_future or not (final or kicked_off):
+        # Nobody has scored before a kickoff: a score here is 0-0, not a result.
+        return prose, []
+    # Toned by who is ahead: the score is the verdict so far. No separate
+    # margin beside it — that is the same two numbers subtracted, and
+    # read next to the simulated "Likely margin" it looked like a second
+    # forecast that disagreed with the first.
+    score = Stat(
+        label="Final" if final else "Live",
+        value=f"{mine.points:.2f} – {theirs.points:.2f}",
+        tone="good" if margin > 0 else "warning" if margin < 0 else "neutral",
+    )
+    return prose, [score]

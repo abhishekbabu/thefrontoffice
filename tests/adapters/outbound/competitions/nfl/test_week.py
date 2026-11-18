@@ -95,10 +95,10 @@ def test_a_week_nobody_is_scheduled_for_does_not_flag_the_whole_roster() -> None
 
 
 def test_the_summary_does_not_ask_for_the_waiver_pool() -> None:
-    """It is the expensive half of a report and nothing in the header uses it."""
+    """It is the expensive half of a report and nothing on the page uses it."""
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS, trending_error=AssertionError("summary fetched trending"))
 
-    assert nfl_provider(client).summary("L1").headline
+    assert nfl_provider(client).summary("L1").mine
 
 
 def test_the_week_shows_the_team_you_are_playing() -> None:

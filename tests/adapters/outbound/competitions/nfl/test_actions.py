@@ -578,6 +578,16 @@ def test_a_free_agent_whose_role_just_grew_is_worth_picking_up() -> None:
     assert any(stat.label == free.name for stat in action.evidence)
 
 
+def test_a_breakouts_evidence_leaves_the_role_change_to_its_reason() -> None:
+    """The reason already says how his role grew; the line under it carries only what it does not."""
+    free = proj("wr9", "Rising Receiver", "WR", 8.0, team="KC", opp="LV")
+
+    [action] = [a for a in _actions(_with_free_agent(free)) if a.player_id == "wr9"]
+
+    [his] = [stat for stat in action.evidence if stat.label == free.name]
+    assert "role growing" not in his.value
+
+
 def test_a_growing_role_the_projection_has_given_up_on_is_left_alone() -> None:
     """Projected near nothing again usually means the starter is back."""
     free = proj("wr9", "Rising Receiver", "WR", 1.0, team="KC", opp="LV")
@@ -633,6 +643,62 @@ def test_the_drop_is_judged_on_his_season_not_a_week_he_is_on_bye() -> None:
     [action] = [a for a in _actions(_full_roster()) if a.kind == "waiver"]
 
     assert action.drop != ON_BYE.player_id
+
+
+def _bench_pair(hot: WeeklyProjection, lines: list[NFLGameLine]) -> Action:
+    """A full roster needing a pickup, choosing between a hot receiver and a cold one projected for 6."""
+    cold = proj("wr2", "Cold Receiver", "WR", 6.0, team="KC", opp="LV")
+    client = _client(
+        [QB, _ruled_out(RB), WR, FLEX, cold, hot, BACKUP_QB, FREE_RB],
+        ["qb", "rb", "wr", "te"],
+        ["wr2", "wr3", "qb2"],
+        game_lines=lines + _scored(BACKUP_QB, 30.0, 30.0),
+    )
+    # Week 6, so five weeks are played: enough for a season and a recent run to disagree.
+    client.week = 6
+    client.season_schedule = [*SCHEDULE, *(replace(game, week=6) for game in SCHEDULE[:3])]
+    [action] = [a for a in _actions(client) if a.kind == "waiver"]
+    return action
+
+
+def test_the_drop_weighs_recent_form_beside_the_projection() -> None:
+    """Hot of late and cold of late, with the cold one ahead on the season: form decides who goes."""
+    hot = proj("wr3", "Hot Receiver", "WR", 6.0, team="KC", opp="LV")
+    cold_games = [replace(line, player_id="wr2") for line in _scored(hot, 15.0, 15.0, 5.0, 5.0, 4.7)]
+
+    action = _bench_pair(hot, _scored(hot, 1.0, 1.0, 13.0, 13.0, 13.6) + cold_games)
+
+    assert action.drop == "wr2"
+    assert "4.90/game" in action.reason and "6.00 proj" in action.reason
+
+
+def test_a_hot_player_on_bye_is_not_dropped_for_his_empty_week() -> None:
+    hot = proj("wr3", "Hot Receiver", "WR", 0.0, team="NE", opp="")
+    cold_games = [replace(line, player_id="wr2") for line in _scored(hot, 5.0, 5.0, 4.7)]
+
+    action = _bench_pair(hot, _scored(hot, 13.0, 13.0, 13.6) + cold_games)
+
+    assert action.drop == "wr2"
+
+
+def test_a_drop_on_bye_is_priced_on_his_season_not_his_empty_week() -> None:
+    idle = proj("wr3", "Idle Receiver", "WR", 0.0, team="NE", opp="")
+    cold_games = [replace(line, player_id="wr2") for line in _scored(idle, 9.0, 9.0, 9.0)]
+
+    action = _bench_pair(idle, _scored(idle, 2.0, 2.0, 2.0) + cold_games)
+
+    assert action.drop == "wr3"
+    assert "2.00 season" in action.reason and "proj" not in action.reason.split("Drop")[-1]
+
+
+def test_a_player_with_nothing_to_go_on_is_the_last_resort() -> None:
+    """No games played and no game this week: an unknown, not the weakest."""
+    unknown = proj("wr3", "New Receiver", "WR", 0.0, team="NE", opp="")
+    cold_games = [replace(line, player_id="wr2") for line in _scored(unknown, 1.0, 1.0)]
+
+    action = _bench_pair(unknown, cold_games)
+
+    assert action.drop == "wr2"
 
 
 def test_a_roster_with_a_spot_open_drops_nobody() -> None:

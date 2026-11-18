@@ -1,5 +1,7 @@
 """Tests for putting the engines' figures into words: `adapters/inbound/presenting.py`."""
 
+import re
+
 from support.simulation import odds_split
 
 from thefrontoffice.adapters.inbound import presenting
@@ -53,7 +55,19 @@ def test_the_week_header_carries_the_playoff_chance_and_what_this_week_is_worth(
 
     [_, stat] = summary.headline
     assert stat.label == "Playoffs"
-    assert all(figure in stat.value for figure in ("70%", "90%", "50%"))
+    assert _percents(stat.value) == [90, 50]  # after a win, then a loss; the 70% between them is not repeated
+
+
+def test_a_playoff_chance_with_no_split_is_the_chance_alone() -> None:
+    odds = PlayoffOdds(spots=1, teams=[], playoffs=0.42, simulations=1)
+
+    [stat] = presenting.week(WeekView(summary=Summary(), odds=odds)).headline
+
+    assert _percents(stat.value) == [42]
+
+
+def _percents(text: str) -> list[int]:
+    return [int(figure) for figure in re.findall(r"(\d+)%", text)]
 
 
 def test_the_table_carries_each_teams_chance_on_its_row() -> None:

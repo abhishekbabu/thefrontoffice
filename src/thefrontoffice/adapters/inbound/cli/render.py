@@ -6,7 +6,7 @@ same models its own way, and one renderer serves every competition.
 
 import textwrap
 
-from thefrontoffice.domain.models import Move, ScoutReport, Summary, TradeVerdict
+from thefrontoffice.domain.models import Move, ScoutReport, Side, Summary, TradeVerdict
 
 _INDENT = "  "
 
@@ -77,6 +77,11 @@ def render_week(summary: Summary) -> str:
     Items the manager dismissed or snoozed stay out, as they do on the page.
     """
     parts = [f"{_INDENT}{stat.label}: {stat.value}" for stat in summary.headline]
+    # The page heads each team's card with its name and points, and its header leaves them out; here
+    # there are no cards, so a head-to-head says them first.
+    if summary.opponent is not None:
+        sides = (("You", summary.mine), ("Opponent", summary.opponent))
+        parts[:0] = [f"{_INDENT}{label}: {_side(side)}" for label, side in sides if side is not None]
     if summary.swaps:
         parts.extend(["", f"{_INDENT}CHANGES THE PROJECTIONS IMPLY"])
         parts.extend(
@@ -93,3 +98,9 @@ def render_week(summary: Summary) -> str:
         parts.append(f"{_INDENT}   [{action.urgency}] {action.title}{change}")
         parts.append(_wrap(action.reason, indent=_INDENT + "     "))
     return "\n".join(parts)
+
+
+def _side(side: Side) -> str:
+    """'Rival (3-7) · 61.20 pts · 118.40 proj': a team as its card's header names it."""
+    detail = f" ({side.detail})" if side.detail else ""
+    return " · ".join(filter(None, (f"{side.name}{detail}", side.points)))

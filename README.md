@@ -14,9 +14,12 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 
 - **To-do list**: starters out or on bye, empty slots, bench swaps, IR moves,
   pickups with a growing role, and the trade deadline. Each item names the fix
-  and who to drop.
+  and who to drop: the weakest bench player by recent form and projection
+  together, never one the best lineup starts or one just on bye.
 - **Win chance and playoff odds**: the week is simulated 10,000 times and the
-  season 5,000. Every move shows what it does to both, live on Sundays.
+  season 5,000. Every move shows what it does to both, live on Sundays. The
+  matchup header shows the score once a game kicks off, and playoff odds as
+  "99% win / 83% loss".
 - **Every week of the season**: page back to see what was played and forward to
   see the projected lineups. FPL gameweeks and NBA category weeks work the same way.
 - **Trades**: near-even offers that start for you, ranked by what they do to
@@ -36,7 +39,8 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   and every recent move in full. A fixture opens to your players and your
   opponent's in it.
 - **AI, if you add a key**: a verdict on each to-do item and free agent, and an
-  assistant that sees whatever's on screen.
+  assistant that sees whatever's on screen. An agreement is a chip; only an
+  overrule or a wait carries a reason.
 - **Light and dark mode**, several palettes, and a terminal CLI.
 
 NFL has the deepest analysis. FPL and NBA share the matchup, schedule, fixtures,

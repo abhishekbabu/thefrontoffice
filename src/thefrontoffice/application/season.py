@@ -6,7 +6,7 @@ week — and this plays every remaining matchup, seeds the table by record and
 then points for, and counts how often each team finishes in a playoff place.
 
 The odds are also split on this week's result, because that is the part
-still in the manager's hands: "61%, 74% with a win" says what this week is
+still in the manager's hands: "74% win / 52% loss" says what this week is
 worth in a way a single figure cannot.
 """
 

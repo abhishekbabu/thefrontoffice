@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@/test/render";
-import { Categories, undated, useJudgeWhenDue } from "@/panels/Scout";
+import { Categories, JudgedAt, undated, useJudgeWhenDue } from "@/panels/Scout";
 
 function Judging({ due, scope, judge }: { due: boolean; scope: string; judge: { mutate: () => void; isPending: boolean } }) {
   useJudgeWhenDue(due, scope, judge);
@@ -63,5 +63,16 @@ describe("undated", () => {
     expect(undated("Week 11 · 19-23 Nov")).toBe("19-23 Nov");
     expect(undated("Gameweek 10 · in progress")).toBe("in progress");
     expect(undated("GW 2 · deadline Sat")).toBe("deadline Sat");
+  });
+});
+
+describe("JudgedAt", () => {
+  it("says stale once, beside when the list was judged, only while something on it has changed", async () => {
+    const at = new Date().toISOString();
+    const stale = await render(<JudgedAt at={at} stale />);
+    const fresh = await render(<JudgedAt at={at} stale={false} />);
+
+    expect(stale.container.textContent).toMatch(/^judged .+ · stale$/);
+    expect(fresh.container.textContent).not.toContain("stale");
   });
 });

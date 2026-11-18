@@ -18,7 +18,12 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
 
-from thefrontoffice.adapters.outbound.competitions.nfl.evidence import RISES, average, season_average
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
+    MIN_GAMES_FOR_AVERAGE,
+    RISES,
+    average,
+    season_average,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupChange,
     best_upgrade,
@@ -259,11 +264,14 @@ def _caveat(player: Projection) -> str:
     return f" {player.name} is {player.injury_status.lower()}."
 
 
-def _evidence(state: Week, players: Sequence[Projection]) -> list[Stat]:
-    """Each player's matchup and role, then his latest headline, for whoever has them."""
+def _evidence(state: Week, players: Sequence[Projection], told: frozenset[str] = frozenset()) -> list[Stat]:
+    """Each player's matchup and role, then his latest headline, for whoever has them.
+
+    `told` are the players whose growing role the item's reason already states: their line leaves it out.
+    """
     lines = []
     for player in players:
-        if stat := state.evidence.stat(player):
+        if stat := state.evidence.stat(player, trend=player.player_id not in told):
             lines.append(stat)
         lines += _news(state, [player])
     return lines
@@ -406,7 +414,7 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
                         f"{trend.describe().capitalize()}. Projects {player.points:.2f}; projections lag a role change."
                     ),
                     player_id=player.player_id,
-                    evidence=_evidence(state, [player]),
+                    evidence=_evidence(state, [player], told=frozenset({player.player_id})),
                     key=f"rise:{player.player_id}",
                 ),
             )
@@ -417,11 +425,12 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
 def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]:
     """Every pickup with who to drop for it, or the open spot it can go into.
 
-    The drop is the bench player worth least for the rest of the season, by
-    his average a game — not this week's projection, which reads a starter on
-    bye as nothing. Never someone another item moves, nobody whose game has
-    kicked off (the platform will not release him), and nobody whose role is
-    growing: that is the player this list would tell you to pick up.
+    The drop is the bench player worth least, by `worth` — his recent form
+    beside his projection, and never this week's projection alone, which reads
+    a starter on bye as nothing. Never someone another item moves, nobody
+    whose game has kicked off (the platform will not release him), nobody the
+    best lineup starts, and nobody whose role is growing: that is the player
+    this list would tell you to pick up.
 
     A pickup that fills a hole needs a body whoever it costs, so it names the
     cheapest drop regardless. A breakout is optional, and is dropped from the
@@ -475,23 +484,84 @@ def _reworded(item: Item, **update: str) -> Item:
 def _worth_a_spot(state: Week, player_id: str, drop: Projection | None) -> bool:
     """Whether an optional pickup is worth more than the player it would cost."""
     pickup = state.projections.get(player_id)
-    return drop is not None and pickup is not None and pickup.points > season_average(state.evidence, drop)
+    if drop is None or pickup is None:
+        return False
+    kept = worth(state, drop)
+    return pickup.points > (season_average(state.evidence, drop) if kept is None else kept)
+
+
+FORM_WEIGHT = 0.5
+"""The share of a player's worth, when choosing who to drop, that is his recent form; the rest is his outlook.
+
+Worth = FORM_WEIGHT × form + (1 − FORM_WEIGHT) × outlook, where form is his points a game over his
+last `ROLE_GAMES` games played and outlook is this week's projection — or, in a week he does not play
+(a bye, a ruling), his season average. Either alone where the other is unknown. Even weights: a
+projection alone drops a receiver scoring thirteen a game for one scoring five whenever a bye or a
+quiet matchup dents the first's number, and form alone chases one big afternoon.
+"""
+
+
+def form(state: Week, player: Projection) -> float | None:
+    """His points a game over his last few games played; None until he has played enough of them to say anything."""
+    role = state.evidence.roles.get(player.player_id)
+    return role.points if role is not None and role.games >= MIN_GAMES_FOR_AVERAGE else None
+
+
+def _plays(state: Week, player: Projection) -> bool:
+    """Whether this week's projection is about a game he will play: not a bye, nor a week he is ruled out of."""
+    return (bool(player.opponent) or not state.scheduled) and not ruled_out(player.injury_status)
+
+
+def outlook(state: Week, player: Projection) -> float | None:
+    """What he should score: this week's projection, or his season average in a week he does not play.
+
+    A bye or a one-week ruling projects nothing, which says nothing about him.
+    """
+    return player.points if _plays(state, player) else average(state.evidence, player.player_id)
+
+
+def worth(state: Week, player: Projection) -> float | None:
+    """`FORM_WEIGHT` of his form and the rest his outlook; either alone where the other is unknown, None with neither."""
+    recent, ahead = form(state, player), outlook(state, player)
+    if recent is None or ahead is None:
+        return ahead if recent is None else recent
+    return FORM_WEIGHT * recent + (1 - FORM_WEIGHT) * ahead
 
 
 def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> Projection | None:
-    """The player it costs least to lose, by his season rather than his week: never one kept, nor one whose role is growing.
+    """The player it costs least to lose, by his `worth`: never one kept, one the best lineup starts, nor one whose role is growing.
 
     A player whose role is growing is the one a to-do list would tell you to
-    pick up, so he is never the one to let go.
+    pick up, so he is never the one to let go. Nor is one the best lineup
+    would start this week. A player with nothing to go on — no recent games,
+    and no game this week — is the last resort rather than the first: an
+    unknown is not a weak player.
     """
-    candidates = [p for p in among if p.player_id not in keep and p.player_id not in state.evidence.trends]
-    return min(candidates, key=lambda p: (season_average(state.evidence, p), p.points), default=None)
+    starting = {slot.player.player_id for slot in state.best if slot.player}
+    candidates = [
+        p
+        for p in among
+        if p.player_id not in keep and p.player_id not in state.evidence.trends and p.player_id not in starting
+    ]
+
+    def weakest(player: Projection) -> tuple[bool, float, float]:
+        value = worth(state, player)
+        return value is None, value or 0.0, player.points
+
+    return min(candidates, key=weakest, default=None)
 
 
 def _drop_reason(state: Week, player: Projection) -> str:
-    played = average(state.evidence, player.player_id)
-    per_game = f"{played:.2f}/game, " if played is not None else ""
-    return f"Drop {player.name} ({per_game}{player.points:.2f} proj), weakest on bench."
+    """'Drop X (4.90/game, 6.60 proj), weakest on bench': the figures his worth was read from."""
+    figures = []
+    if (recent := form(state, player)) is not None:
+        figures.append(f"{recent:.2f}/game")
+    if _plays(state, player):
+        figures.append(f"{player.points:.2f} proj")
+    elif (played := average(state.evidence, player.player_id)) is not None:
+        figures.append(f"{played:.2f} season")
+    shown = f" ({', '.join(figures)})" if figures else ""
+    return f"Drop {player.name}{shown}, weakest on bench."
 
 
 def _same_game(
