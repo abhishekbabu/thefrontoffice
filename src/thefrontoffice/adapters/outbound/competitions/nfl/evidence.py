@@ -58,6 +58,16 @@ def _team_targets(lines: Sequence[GameLine]) -> dict[tuple[str, int], float]:
 
 
 @dataclass(frozen=True)
+class Appearance:
+    """One game he took the field in: for whom, what he scored, and how much of it he was on for."""
+
+    week: int
+    team: str
+    points: float
+    snap_share: float | None
+
+
+@dataclass(frozen=True)
 class Role:
     """What a player has been asked to do, per game, over his last few games."""
 
@@ -183,6 +193,9 @@ class Evidence:
     trends: dict[str, Trend] = field(default_factory=dict)
     """Players whose role jumped in the latest week played, by the biggest of their jumps."""
 
+    appearances: dict[str, tuple[Appearance, ...]] = field(default_factory=dict)
+    """Each player's games played this season, oldest first, week by week: what a split by who else played reads."""
+
     def matchup(self, player: Projection) -> Matchup | None:
         return self.allowed.get((player.opponent, player.position)) if player.opponent else None
 
@@ -213,28 +226,32 @@ def gather(lines: Sequence[GameLine], scoring: str, out: Collection[str] = froze
     `out` is who is ruled out of the coming game: a backup's jump in the week a
     starter missed is his role only while that starter stays out.
     """
-    games, positions = _games(lines, scoring)
+    appearances, positions = _appearances(lines, scoring)
     return Evidence(
         roles=_roles(lines, scoring),
         allowed=_allowed(lines, scoring),
-        games=games,
+        games={pid: tuple(game.points for game in each) for pid, each in appearances.items()},
         positions=positions,
         trends=_trends(lines, out),
+        appearances=appearances,
     )
 
 
-def _games(lines: Sequence[GameLine], scoring: str) -> tuple[dict[str, tuple[float, ...]], dict[str, str]]:
-    """Each player's scores in the games he took the field in, by the same rule his role is read by."""
+def _appearances(lines: Sequence[GameLine], scoring: str) -> tuple[dict[str, tuple[Appearance, ...]], dict[str, str]]:
+    """Each player's games he took the field in, by the same rule his role is read by, oldest first."""
     played: dict[str, list[GameLine]] = defaultdict(list)
     for line in lines:
         if took_the_field(line):
             played[line.player_id].append(line)
-    games = {
-        pid: tuple(game.stats.get(scoring, 0.0) for game in sorted(each, key=lambda game: game.week))
+    appearances = {
+        pid: tuple(
+            Appearance(week=game.week, team=game.team, points=game.stats.get(scoring, 0.0), snap_share=snap_share(game))
+            for game in sorted(each, key=lambda game: game.week)
+        )
         for pid, each in played.items()
     }
-    positions = {pid: each[-1].position for pid, each in played.items()}
-    return games, positions
+    positions = {pid: max(each, key=lambda game: game.week).position for pid, each in played.items()}
+    return appearances, positions
 
 
 def _roles(lines: Sequence[GameLine], scoring: str) -> dict[str, Role]:

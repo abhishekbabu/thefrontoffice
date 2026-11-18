@@ -1166,6 +1166,13 @@ export interface components {
              */
             ruled_out: boolean;
             /**
+             * Notes
+             * @description A cell's fuller reading, by column, where the cell abbreviates it — 'Bowers Q' reads 'Without Brock Bowers (TE, Q): 6.10/game in 3 games · 8.60 with'. Shown as its tooltip.
+             */
+            notes: {
+                [key: string]: string;
+            };
+            /**
              * Roles
              * @description The columns a table renders as more than text, by what they hold — so no client matches names.
              */

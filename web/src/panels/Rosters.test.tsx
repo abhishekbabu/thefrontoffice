@@ -17,6 +17,7 @@ const card = (id: string, name: string): PlayerCard => ({
   columns: { Player: name, Pos: "WR" },
   values: {},
   ruled_out: false,
+  notes: {},
   roles: { Player: "player" },
 });
 

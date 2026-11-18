@@ -31,6 +31,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     listed,
     ruled_out,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.teammates import HurtTeammates
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,
     Week,
@@ -197,6 +198,10 @@ SNAP_COLUMN, TARGET_COLUMN = "Snap%", "Tgt%"
 TREND_COLUMN = "Trend"
 """Whose role just jumped: the pickups a projection has not caught up with yet."""
 
+WITHOUT_COLUMN = "Without"
+"""A hurt teammate his value hangs on, 'Bowers Q', with his points a game without him and with in the tooltip:
+whether a pickup chasing an injury actually gains from it (see `teammates`)."""
+
 BACK_COLUMN = "Back"
 """When ESPN expects him back from injury, as a week of the season: the stash question on the IR list."""
 
@@ -241,6 +246,7 @@ def cards(
     without it there is no such column, rather than one of noughts.
     """
     reserve = reserve or {}
+    hurt = HurtTeammates(state.players, state.evidence) if wire else None
     rows = []
     for player_id in player_ids:
         meta = state.players.get(player_id)
@@ -254,10 +260,13 @@ def cards(
         role = state.evidence.roles.get(player_id) if wire else None
         snaps, targets = (role.snap_share, role.target_share) if role else (None, None)
         rest = ahead.get(player_id, 0.0) if ahead is not None else None
+        # The teammate whose absence he would gain most from, first; the rest are in the drawer.
+        split = next(iter(hurt.splits(meta)), None) if hurt else None
         rows.append(
             PlayerCard(
                 player_id=player_id,
                 ruled_out=ruled_out(injury),
+                notes={WITHOUT_COLUMN: split.note()} if split else {},
                 values={
                     **({FIT_COLUMN: fitted[0]} if fitted else {}),
                     **({TREND_COLUMN: trend.rise} if trend else {}),
@@ -279,6 +288,7 @@ def cards(
                     **({SNAP_COLUMN: share(snaps), TARGET_COLUMN: share(targets)} if wire else {}),
                     # Sorts by the size of the jump.
                     **({TREND_COLUMN: trend.short() if trend else "—"} if wire else {}),
+                    **({WITHOUT_COLUMN: split.cell() if split else "—"} if wire else {}),
                     # Through the zero-point fallback, which carries his ruling
                     # where Sleeper has published no projection for him.
                     "Opponent": _versus(projection or zero_projection(player_id, meta), state.scheduled, "—"),
@@ -411,7 +421,11 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
     groups = [
         StatGroup(
             title=f"Week {state.week}",
-            stats=[_opponent(projection, state), *(_role(projection, state) if projection else [])],
+            stats=[
+                _opponent(projection, state),
+                *(_role(projection, state) if projection else []),
+                *(s.stat() for s in HurtTeammates(state.players, state.evidence).splits(meta)),
+            ],
         )
     ]
     # ESPN's report where it has him, which says when he is back; Sleeper's

@@ -103,22 +103,21 @@ def build(
     return Outlook(usual=usual, weeks=ahead)
 
 
-def rest_of_season(client: NFLSource, state: Week) -> dict[str, float] | None:
-    """Each player's projected points from next week through the last regular-season week, by player id.
-
-    The weeks after this one, because this week is the Proj column beside it;
-    through the week before `playoff_week_start` (the season's last week where
-    the league sets none), because a pickup's playoff weeks are a different
-    question. A week he byes or is not projected in adds nothing, which is
-    what a bye costs. Where no regular-season week is left after this one, this
-    week alone. None where any week would not load: a sum missing a week reads
-    as a player worth less, not as a hole.
-    """
+def last_regular_week(state: Week) -> int:
+    """The regular season's last week: the one before `playoff_week_start`, or the NFL's last where the league sets none."""
     start = state.league.playoff_week_start
-    last = start - 1 if start else SEASON_WEEKS
-    weeks = list(range(state.week + 1, last + 1))
+    return start - 1 if start else SEASON_WEEKS
+
+
+def weeks_left(client: NFLSource, state: Week) -> dict[int, Mapping[str, Projection]] | None:
+    """Each regular-season week after this one, with its projections; None where any would not load.
+
+    Empty where none is left after this one. A sum missing a week reads as a
+    player worth less, not as a hole, so a week that fails fails them all.
+    """
+    weeks = list(range(state.week + 1, last_regular_week(state) + 1))
     if not weeks:
-        return {pid: p.points for pid, p in state.projections.items()}
+        return {}
     league = state.league
     batch = client.get_projections_bulk(
         state.season, weeks, league.scoring_format, FANTASY_POSITIONS, league.scoring_rules
@@ -126,8 +125,25 @@ def rest_of_season(client: NFLSource, state: Week) -> dict[str, float] | None:
     if batch.failures:
         logger.warning(f"Leaving out the rest of the season: weeks {sorted(batch.failures)} would not load")
         return None
+    return dict(batch.values)
+
+
+def rest_of_season(client: NFLSource, state: Week) -> dict[str, float] | None:
+    """Each player's projected points from next week through the last regular-season week, by player id.
+
+    The weeks after this one, because this week is the Proj column beside it;
+    through `last_regular_week`, because a pickup's playoff weeks are a different
+    question. A week he byes or is not projected in adds nothing, which is
+    what a bye costs. Where no regular-season week is left after this one, this
+    week alone. None where any week would not load (see `weeks_left`).
+    """
+    ahead = weeks_left(client, state)
+    if ahead is None:
+        return None
+    if not ahead:
+        return {pid: p.points for pid, p in state.projections.items()}
     totals: dict[str, float] = {}
-    for projections in batch.values.values():
+    for projections in ahead.values():
         for pid, p in projections.items():
             totals[pid] = totals.get(pid, 0.0) + p.points
     return {pid: round(points, 2) for pid, points in totals.items()}

@@ -67,8 +67,9 @@ BENCH:
 
 TO DO — WHAT LEAGUE STATE ALREADY SAYS NEEDS DECIDING:
 - Computed exactly from the league, not estimated: starters who cannot play, empty slots, swaps
-  the bench allows, byes ahead, the trade deadline. The manager sees this list; your verdicts
-  appear beside it, so judge these items rather than restating them.
+  the bench allows, byes ahead, the trade deadline, a hurt free agent to hold in an empty IR slot.
+  The manager sees this list; your verdicts appear beside it, so judge these items rather than
+  restating them.
 {tasks_str}
 
 TOP AVAILABLE PLAYERS (not rostered anywhere in this league):

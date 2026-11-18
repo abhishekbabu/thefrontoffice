@@ -263,6 +263,7 @@ class SleeperClient:
             playoff_week_start=int((data.get("settings") or {}).get("playoff_week_start") or 0),
             median_game=bool((data.get("settings") or {}).get("league_average_match")),
             ir_allows=SleeperClient.ir_allows(data.get("settings") or {}),
+            ir_slots=int((data.get("settings") or {}).get("reserve_slots") or 0),
             draft_id=str(data.get("draft_id") or ""),
             waiver_budget=int((data.get("settings") or {}).get("waiver_budget") or 0),
             scoring_rules={str(k): float(v) for k, v in settings_blob.items() if isinstance(v, int | float)},

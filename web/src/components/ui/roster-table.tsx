@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { DataTable, type SortState } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Empty } from "@/components/ui/state";
+import { Tooltip } from "@/components/ui/tooltip";
 import type { PlayerCard, PlayerOrder } from "@/lib/api";
 
 /** A header's sort as the server takes it: no column is the competition's own order. */
@@ -78,6 +79,17 @@ export function RosterTable({
         }
         if (role === "player") return <span className="font-medium">{value}</span>;
         if (role === "slot") return <span className="font-mono text-[11px] text-muted-foreground">{value}</span>;
+        // A cell that abbreviates something says it in full on hover and focus.
+        const note = row.notes[column];
+        if (note) {
+          return (
+            <Tooltip label={note}>
+              <span tabIndex={0} aria-label={`${value}: ${note}`} className="underline decoration-dotted underline-offset-2">
+                {value}
+              </span>
+            </Tooltip>
+          );
+        }
         return undefined;
       }}
     />
