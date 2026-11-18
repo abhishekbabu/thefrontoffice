@@ -22,8 +22,10 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Trades**: near-even offers that start for you, ranked by what they do to
   your playoff odds, each with why the other manager might accept. A pickup
   most trades share, and each player's pricing note, is said once.
-- **Free agents**: ranked by projection and fit, with Sleeper's trending adds
-  and an IR stash list.
+- **Free agents**: ranked by projection and fit, with rest-of-season points
+  (next week through the last regular-season week, byes as zero; this week
+  alone once none is left), snap and target share over the last 3 games, a
+  role-jump trend, Sleeper's trending adds and an IR stash list.
 - **Player pages**: tabs for this week, the game log, past seasons, league
   history (draft pick, then each add, drop and trade, opening in full as in
   Activity) and linked news.

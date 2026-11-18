@@ -286,6 +286,25 @@ def test_projections_are_asked_for_by_sport(tmp_path: Path) -> None:
     assert "/projections/nfl/2026/1" in session.requests[0]
 
 
+def test_weeks_of_projections_come_back_keyed_by_week_with_a_failed_week_a_failure(tmp_path: Path) -> None:
+    """An empty week is one Sleeper has not projected yet; a failed request is not one."""
+    client, _ = _client({"projections/nfl/2026/2?": PROJECTION_PAYLOAD}, tmp_path)
+
+    weeks = client.get_projections_bulk("2026", [2, 3], "pts_ppr", POSITIONS, {})
+
+    assert weeks.value(2)["1"].points == 22.4
+    assert list(weeks.failures) == [3]
+
+
+def test_weeks_of_projections_share_the_single_weeks_cache(tmp_path: Path) -> None:
+    client, session = _client({"projections/nfl": PROJECTION_PAYLOAD}, tmp_path)
+    client.get_projections("2026", 2, "pts_ppr", POSITIONS, {})
+
+    client.get_projections_bulk("2026", [2], "pts_ppr", POSITIONS, {})
+
+    assert len(session.requests) == 1
+
+
 def test_a_projection_carries_the_players_designation(tmp_path: Path) -> None:
     payload = [
         {

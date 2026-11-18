@@ -6,7 +6,10 @@ a formatted column sorts on the number behind it, and a row with nothing to
 sort on never displaces one that has something.
 """
 
-from thefrontoffice.adapters.outbound.competitions.paging import page
+import pytest
+
+from thefrontoffice.adapters.outbound.competitions.paging import page, view
+from thefrontoffice.domain.errors import InvalidRequestError
 from thefrontoffice.domain.models import PLAYER_COLUMN, POSITION_COLUMN, PlayerCard, PlayerQuery
 
 
@@ -128,6 +131,18 @@ def test_search_ignores_case() -> None:
 
 def test_filters_combine_rather_than_replace_each_other() -> None:
     assert page(POOL, PlayerQuery(position="FWD", search="NEW")).total == 1
+
+
+def test_a_view_is_named_as_offered_whatever_case_it_is_asked_in() -> None:
+    assert view(PlayerQuery(view="trending"), ("Trending", "IR")) == "Trending"
+    assert view(PlayerQuery(), ("Trending", "IR")) == ""
+
+
+def test_a_view_not_offered_is_refused() -> None:
+    with pytest.raises(InvalidRequestError):
+        view(PlayerQuery(view="Hot"), ("Trending", "IR"))
+    with pytest.raises(InvalidRequestError):
+        view(PlayerQuery(view="Trending"), ())
 
 
 def test_a_search_matching_nothing_is_an_empty_page() -> None:

@@ -411,6 +411,7 @@ class YahooNBAProvider:
         browsed one stat at a time is the scout's job, and this is the list you
         read when you just want to see who is out there.
         """
+        paging.view(query, ())  # no other lists: one asked for is refused, not ignored
         ranked = self._cards(self._yahoo(league_id).fetch_available(AVAILABLE_BROWSE_LIMIT))
         return paging.page(ranked, query)
 

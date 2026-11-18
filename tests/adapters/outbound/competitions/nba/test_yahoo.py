@@ -32,7 +32,13 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPI
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooTeam
 from thefrontoffice.application.scouting import ScoutEngine
-from thefrontoffice.domain.errors import LeagueNotFoundError, NotFoundError, PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import (
+    InvalidRequestError,
+    LeagueNotFoundError,
+    NotFoundError,
+    PlayerNotFoundError,
+    TeamNotFoundError,
+)
 from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat
 
 
@@ -508,6 +514,11 @@ def test_an_unknown_team_is_refused() -> None:
 def test_available_players_have_no_lineup_column() -> None:
     """Somebody on the wire is not in a lineup of yours."""
     assert "Slot" not in nba_provider(FakeYahoo()).free_agents("", PlayerQuery()).players[0].columns
+
+
+def test_a_list_of_available_players_yahoo_does_not_offer_is_refused() -> None:
+    with pytest.raises(InvalidRequestError):
+        nba_provider(FakeYahoo()).free_agents("", PlayerQuery(view="Trending"))
 
 
 def test_available_players_carry_the_same_form_columns_as_a_roster() -> None:

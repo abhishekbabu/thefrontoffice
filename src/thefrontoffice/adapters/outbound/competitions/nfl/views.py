@@ -188,19 +188,38 @@ def held(roster: Team) -> dict[str, str]:
     return {pid: "IR" if pid in roster.ir_ids else "TAXI" for pid in roster.reserve_ids}
 
 
+ROS_COLUMN = "ROS"
+"""Projected points over the rest of the regular season: see `outlook.rest_of_season` for which weeks."""
+
+SNAP_COLUMN, TARGET_COLUMN = "Snap%", "Tgt%"
+"""His share of his offense's snaps, and of its targets, over his last few games (`evidence.ROLE_GAMES`)."""
+
+TREND_COLUMN = "Trend"
+"""Whose role just jumped: the pickups a projection has not caught up with yet."""
+
+
+def share(value: float | None) -> str:
+    """A share of the offense as a cell or a stat reads it; a dash where his position has none."""
+    return f"{value:.0%}" if value is not None else "—"
+
+
 def cards(
     state: Week,
     player_ids: list[str],
     starters: set[str],
     wire: bool = False,
     reserve: Mapping[str, str] | None = None,
+    ahead: Mapping[str, float] | None = None,
 ) -> list[PlayerCard]:
     """One table shape for every list of players this sport shows.
 
     The wire has no lineup to be in, so no slot; it has instead what each
     would add to your lineup — "how good is he" is only half the question
-    there, and "how good is he for me" is the other. `reserve` names the slot
-    of each player held in one (see `held`), who is neither started nor benched.
+    there, and "how good is he for me" is the other — and how he has been
+    used, which a projection alone hides. `reserve` names the slot of each
+    player held in one (see `held`), who is neither started nor benched.
+    `ahead` is each player's rest-of-season projection, where it loaded;
+    without it there is no such column, rather than one of noughts.
     """
     reserve = reserve or {}
     rows = []
@@ -213,16 +232,22 @@ def cards(
         depth = meta.depth_chart_order
         fitted = fit(state, projection) if wire and projection else None
         trend = state.evidence.trends.get(player_id) if wire else None
+        role = state.evidence.roles.get(player_id) if wire else None
+        snaps, targets = (role.snap_share, role.target_share) if role else (None, None)
+        rest = ahead.get(player_id, 0.0) if ahead is not None else None
         rows.append(
             PlayerCard(
                 player_id=player_id,
                 ruled_out=ruled_out(injury),
                 values={
                     **({FIT_COLUMN: fitted[0]} if fitted else {}),
-                    **({"Usage": trend.rise} if trend else {}),
+                    **({TREND_COLUMN: trend.rise} if trend else {}),
+                    **({SNAP_COLUMN: snaps} if snaps is not None else {}),
+                    **({TARGET_COLUMN: targets} if targets is not None else {}),
+                    **({ROS_COLUMN: rest} if rest is not None else {}),
                     "Proj": projection.points if projection else 0.0,
                     "Depth": float(depth) if depth else 0.0,
-                    "Exp": float(meta.years_exp),
+                    **({} if wire else {"Exp": float(meta.years_exp)}),
                 },
                 columns={
                     PLAYER_COLUMN: meta.name,
@@ -230,15 +255,18 @@ def cards(
                     "Team": meta.team,
                     **({} if wire else {SLOT_COLUMN: _slot(player_id, starters, reserve)}),
                     "Proj": f"{projection.points:.2f}" if projection else "0.00",
+                    **({ROS_COLUMN: f"{rest:.1f}"} if rest is not None else {}),
                     **({FIT_COLUMN: fitted[1] if fitted else "—"} if wire else {}),
-                    # Whose role just grew: the pickups a projection has
-                    # not caught up with yet. Sorts by the size of the jump.
-                    **({"Usage": trend.short() if trend else "—"} if wire else {}),
+                    **({SNAP_COLUMN: share(snaps), TARGET_COLUMN: share(targets)} if wire else {}),
+                    # Sorts by the size of the jump.
+                    **({TREND_COLUMN: trend.short() if trend else "—"} if wire else {}),
                     # Through the zero-point fallback, which carries his ruling
                     # where Sleeper has published no projection for him.
                     "Opponent": _versus(projection or zero_projection(player_id, meta), state.scheduled, "—"),
                     "Depth": str(depth) if depth else "—",
-                    "Exp": f"{meta.years_exp}y",
+                    # Years in the league tell a roster apart; on the wire the
+                    # usage beside it says more about a pickup, in the room.
+                    **({} if wire else {"Exp": f"{meta.years_exp}y"}),
                     STATUS_COLUMN: injury,
                 },
             )
@@ -284,13 +312,13 @@ def _role_and_matchup(projection: Projection, state: Week) -> StatGroup | None:
     if role := state.evidence.roles.get(projection.player_id):
         games = f"last {role.games}" if role.games > 1 else "last game"
         if role.snap_share is not None:
-            stats.append(Stat(label=f"Snap share, {games}", value=f"{role.snap_share:.0%}"))
+            stats.append(Stat(label=f"Snap share, {games}", value=share(role.snap_share)))
         if role.position in evidence.CARRY_POSITIONS:
             stats.append(Stat(label="Carries a game", value=f"{role.carries:.1f}"))
         if role.position in evidence.TARGET_POSITIONS:
             stats.append(Stat(label="Targets a game", value=f"{role.targets:.1f}"))
             if role.target_share is not None:
-                stats.append(Stat(label="Target share", value=f"{role.target_share:.0%}"))
+                stats.append(Stat(label="Target share", value=share(role.target_share)))
         stats.append(Stat(label=f"Points a game, {games}", value=f"{role.points:.2f}"))
     return StatGroup(title="Role and matchup", stats=stats) if stats else None
 

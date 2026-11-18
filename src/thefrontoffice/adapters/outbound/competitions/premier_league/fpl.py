@@ -408,6 +408,7 @@ class FPLProvider:
         question is not who is free but who is worth the money. Ranked on the
         game's own projection, which is what a transfer is decided on.
         """
+        paging.view(query, ())  # no other lists: one asked for is refused, not ignored
         squad = self.client.get_squad(self.entry_id, self._gameweek().id)
         owned = {pick.element for pick in squad.picks}
 

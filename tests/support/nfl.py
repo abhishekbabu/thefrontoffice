@@ -213,6 +213,21 @@ class FakeSleeper:
         self.rules_asked.append(dict(rules))
         return self.weekly_projections.get(week, self.projections)
 
+    def get_projections_bulk(
+        self,
+        season: str,
+        weeks: list[int],
+        scoring: ScoringFormat,
+        positions: Collection[str],
+        rules: Mapping[str, float],
+    ) -> Batch[int, dict[str, WeeklyProjection]]:
+        """Like the client's: a week that fails is recorded with why, and the read itself never raises."""
+        batch: Batch[int, dict[str, WeeklyProjection]] = self._unloaded(weeks)
+        for week in weeks:
+            if week not in batch.failures:
+                batch.values[week] = self.get_projections(season, week, scoring, positions, rules)
+        return batch
+
     # Signature mirrors the real client exactly, defaults included: a fake that
     # accepts anything lets a miswired call through, which is how a mangled
     # `get_trending(client, "add")` once degraded silently to "(unavailable)".

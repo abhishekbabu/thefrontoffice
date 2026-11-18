@@ -12,6 +12,9 @@ does on the card: sorting "£15.5m" as text puts it below "£9.0m", and parsing
 it back would mean teaching this module every sport's units.
 """
 
+from collections.abc import Sequence
+
+from thefrontoffice.domain.errors import InvalidRequestError
 from thefrontoffice.domain.models import POSITION_COLUMN, PlayerCard, PlayerPage, PlayerQuery
 
 
@@ -37,3 +40,23 @@ def _matches(card: PlayerCard, query: PlayerQuery) -> bool:
     # Across every column rather than the name alone: a search is as often for
     # a club or a status as for a person.
     return query.search.casefold() in " ".join(card.columns.values()).casefold()
+
+
+def view(query: PlayerQuery, offered: Sequence[str]) -> str:
+    """Which of the `offered` lists `query` asks for, as offered; empty for the whole pool.
+
+    Matched regardless of case, since a hand-typed `trending` means Sleeper's
+    Trending as plainly as the button does. One nobody offers is refused rather
+    than ignored: answering with the whole pool reads as that list.
+
+    Raises:
+        InvalidRequestError: a view that is not one of `offered`.
+    """
+    if not query.view:
+        return ""
+    wanted = query.view.casefold()
+    found = next((name for name in offered if name.casefold() == wanted), None)
+    if found is None:
+        choices = f"one of {', '.join(offered)}" if offered else "none here"
+        raise InvalidRequestError([f"No player list called {query.view!r}: {choices}."])
+    return found
