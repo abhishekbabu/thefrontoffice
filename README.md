@@ -15,7 +15,10 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **To-do list**: starters out or on bye, empty slots, bench swaps, IR moves,
   pickups with a growing role, and the trade deadline. Each item names the fix
   and who to drop: the weakest bench player by recent form and projection
-  together, never one the best lineup starts or one just on bye.
+  together, never one the best lineup starts or one just on bye. An empty IR
+  slot gets the best free agent on IR who is back before the playoffs (ESPN's
+  estimate), projects 25+ points from then, and rates within a point a game of
+  that weakest bench player, with the spot his claim takes until he moves to IR.
 - **Win chance and playoff odds**: the week is simulated 10,000 times and the
   season 5,000. Every move shows what it does to both, live on Sundays. The
   matchup header shows the score once a game kicks off, and playoff odds as
@@ -29,7 +32,10 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   (next week through the last regular-season week, byes as zero; this week
   alone once none is left), snap and target share over the last 3 games, a
   role-jump trend, Sleeper's trending adds and an IR stash list, soonest back
-  first by ESPN's estimated return.
+  first by ESPN's estimated return. "Without" names a hurt teammate his value
+  hangs on (a regular at his position, or for a WR/TE the club's top target
+  earner), with his points a game in the games that teammate missed or left
+  under 30% of snaps against the games he played, on hover and in the drawer.
 - **Player pages**: tabs for this week, the game log, past seasons, league
   history (draft pick, then each add, drop and trade, opening in full as in
   Activity) and linked news. An injured NFL player shows ESPN's injury, its

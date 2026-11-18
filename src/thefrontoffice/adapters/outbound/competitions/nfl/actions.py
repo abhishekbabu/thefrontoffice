@@ -46,10 +46,10 @@ from thefrontoffice.domain.models import Action, Stat, Urgency, urgency_rank
 STACKED = 3
 """Starters riding on one real game at which a bad afternoon there is most of a bad week."""
 
-Move = Literal["ir", "hole", "swap", "upgrade", "rise", "stack", "teammate", "bye", "deadline", "short"]
+Move = Literal["ir", "hole", "swap", "upgrade", "rise", "stack", "teammate", "bye", "deadline", "short", "stash"]
 """What an item on the list is about: a player IR no longer takes, a starter who cannot play or an empty slot, a swap the bench
 allows, a free agent who outscores a starter, a role that grew, a stacked game, a teammate ahead of
-one of yours who may sit, next week's byes, the trade deadline, a week ahead left short."""
+one of yours who may sit, next week's byes, the trade deadline, a week ahead left short, a hurt free agent to hold on IR."""
 
 STARTS_NOW: frozenset[Move] = frozenset({"hole", "upgrade"})
 """Pickups that go straight into this week's lineup."""
@@ -127,7 +127,7 @@ def _ir_locked(state: Week, started: set[str]) -> list[Item]:
             room -= 1
         else:
             drop = drop_candidate(state, (p for p in state.bench if p.team not in started), set())
-            reason += f" {_drop_reason(state, drop)}" if drop else " No bench player can be dropped yet."
+            reason += f" {drop_reason(state, drop)}" if drop else " No bench player can be dropped yet."
         items.append(
             Item(
                 "ir",
@@ -273,7 +273,7 @@ def _evidence(state: Week, players: Sequence[Projection], told: frozenset[str] =
     for player in players:
         if stat := state.evidence.stat(player, trend=player.player_id not in told):
             lines.append(stat)
-        lines += _news(state, [player])
+        lines += headlines(state, [player])
     return lines
 
 
@@ -471,7 +471,7 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
                 item,
                 drop=drop.player_id,
                 title=f"{action.title}, drop {drop.name}",
-                reason=f"{action.reason} {_drop_reason(state, drop)}",
+                reason=f"{action.reason} {drop_reason(state, drop)}",
             )
         )
     return out
@@ -551,7 +551,7 @@ def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> 
     return min(candidates, key=weakest, default=None)
 
 
-def _drop_reason(state: Week, player: Projection) -> str:
+def drop_reason(state: Week, player: Projection) -> str:
     """'Drop X (4.90/game, 6.60 proj), weakest on bench': the figures his worth was read from."""
     figures = []
     if (recent := form(state, player)) is not None:
@@ -693,7 +693,7 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
                     reason=f"{described}. {outcome}",
                     when=f"before kickoff, {day(game.date)}" if game and game.date else "",
                     player_id=mine.player_id,
-                    evidence=_evidence(state, [mine]) + _news(state, [other for other, _ in regulars]),
+                    evidence=_evidence(state, [mine]) + headlines(state, [other for other, _ in regulars]),
                     key=f"teammate:{mine.player_id}:" + ",".join(sorted(other.player_id for other, _ in regulars)),
                 ),
             )
@@ -701,7 +701,7 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
     return items
 
 
-def _news(state: Week, players: Sequence[Projection | PlayerInfo]) -> list[Stat]:
+def headlines(state: Week, players: Sequence[Projection | PlayerInfo]) -> list[Stat]:
     """Each player's latest headlines."""
     return [
         Stat(label=player.name, value=f"News, {dated(a)}: {a.headline}", url=a.url)

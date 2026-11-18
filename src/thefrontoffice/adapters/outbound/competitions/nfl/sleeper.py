@@ -9,7 +9,8 @@ is the only configuration.
 
 The port, and the gathering of a week: everything else is a role beside it —
 `week.py` (state, the live scoreboard), `views.py` (how a player reads),
-`actions.py` (the to-do list), `forecast.py` (the matchup simulated),
+`actions.py` and `stash.py` (the to-do list), `teammates.py` (a hurt teammate's
+absence), `forecast.py` (the matchup simulated),
 `league.py` (the season), `outlook.py` and `market.py` (the weeks ahead and
 the trades), `prompt.py` (what a model reads).
 """
@@ -32,6 +33,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl import (
     news,
     outlook,
     prompt,
+    stash,
     tuning,
     views,
 )
@@ -117,6 +119,7 @@ from thefrontoffice.domain.models import (
     TradeProposal,
     WeekRange,
     outcome,
+    urgency_rank,
 )
 from thefrontoffice.domain.ports import LeagueRef
 
@@ -627,13 +630,13 @@ class SleeperNFLProvider:
         )
 
     def _tasks(self, state: Week) -> list[actions.Item]:
-        """The week's to-do list, each item with what it is about."""
-        return actions.build(
-            state,
-            self.scoreboard.games(state),
-            self.scoreboard.started(state),
-            actions.wire(state, self._signable(state)),
+        """The week's to-do list, each item with what it is about: the week's moves, then any IR stash."""
+        started = self.scoreboard.started(state)
+        listed = actions.build(state, self.scoreboard.games(state), started, actions.wire(state, self._signable(state)))
+        stashed = stash.to_do(
+            self.client, state, self.scoreboard.schedule(state.season), self._signable(state), listed, started
         )
+        return sorted([*listed, *stashed], key=lambda item: urgency_rank(item.action.urgency))
 
     def _with_short_week(self, state: Week, listed: list[actions.Item]) -> list[actions.Item]:
         """The list with next week flagged where byes and injuries leave it short, in place of its bye items."""

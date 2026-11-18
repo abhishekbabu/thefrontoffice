@@ -261,6 +261,11 @@ class LeagueRules(Protocol):
         ...
 
     @property
+    def ir_slots(self) -> int:
+        """How many injured-reserve slots each roster has; nought where the league has none."""
+        ...
+
+    @property
     def roster_spots(self) -> int:
         """Players the roster holds outside its reserve and taxi slots."""
         ...

@@ -150,6 +150,15 @@ def test_a_leagues_ir_slot_takes_ir_and_whatever_its_settings_switch_on(tmp_path
     assert client.get_leagues("42", "2026")[0].ir_allows == {"IR", "OUT"}
 
 
+def test_a_league_counts_its_ir_slots_and_none_where_it_sets_none(tmp_path: Path) -> None:
+    payload = [{**LEAGUE_PAYLOAD[0], "settings": {"reserve_slots": 2}}]
+    client, _ = _client({"leagues/nfl": payload}, tmp_path)
+    assert client.get_leagues("42", "2026")[0].ir_slots == 2
+
+    plain, _ = _client({"leagues/nfl": LEAGUE_PAYLOAD}, tmp_path / "plain")
+    assert plain.get_leagues("42", "2026")[0].ir_slots == 0
+
+
 def test_rosters_tell_injured_reserve_from_taxi(tmp_path: Path) -> None:
     payload = [{"roster_id": 1, "owner_id": "42", "players": ["a", "b", "c"], "reserve": ["b"], "taxi": ["c"]}]
     client, _ = _client({"rosters": payload}, tmp_path)

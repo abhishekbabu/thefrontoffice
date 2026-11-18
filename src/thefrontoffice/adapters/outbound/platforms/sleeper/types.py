@@ -89,6 +89,8 @@ class SleeperLeague:
     ir_allows: frozenset[str] = frozenset({"IR"})
     """The designations the league's injured-reserve slot takes, upper-cased. A player on IR whose
     designation is no longer among them locks the roster: Sleeper refuses every move until he leaves it."""
+    ir_slots: int = 0
+    """How many injured-reserve slots each roster has (`reserve_slots`); nought where the league has none."""
 
     @property
     def roster_spots(self) -> int:
