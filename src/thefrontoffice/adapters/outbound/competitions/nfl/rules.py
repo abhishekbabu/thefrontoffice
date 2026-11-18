@@ -25,21 +25,55 @@ def last_regular_week(rules: LeagueRules) -> int:
     return start - 1 if start else SEASON_WEEKS
 
 
-def season_end(rules: LeagueRules) -> int:
-    """The league's last week: its championship's, or the NFL's last where it sets no bracket.
+def _round_lengths(rules: LeagueRules) -> list[int]:
+    """Each playoff round's length in weeks, first round first; empty where the league sets no bracket.
 
     A bracket of `playoff_teams` takes ceil(log2(teams)) rounds from `playoff_week_start`,
     each one week, or two where `playoff_round_type` says so (every round, or the final alone).
-    Capped at the NFL's last week, which no fantasy week runs past.
     """
     start, teams = rules.playoff_week_start, rules.playoff_teams
     if not start or not teams:
-        return SEASON_WEEKS
+        return []
     rounds = math.ceil(math.log2(teams))
-    weeks = 2 * rounds if rules.playoff_round_type == TWO_WEEK_ROUNDS else rounds
-    if rules.playoff_round_type == TWO_WEEK_FINAL and rounds:
-        weeks += 1
-    return min(SEASON_WEEKS, start + weeks - 1)
+    lengths = [2 if rules.playoff_round_type == TWO_WEEK_ROUNDS else 1] * rounds
+    if rules.playoff_round_type == TWO_WEEK_FINAL and lengths:
+        lengths[-1] = 2
+    return lengths
+
+
+def season_end(rules: LeagueRules) -> int:
+    """The league's last week: its championship's, or the NFL's last where it sets no bracket.
+
+    Capped at the NFL's last week, which no fantasy week runs past.
+    """
+    if not rules.playoff_week_start or not rules.playoff_teams:
+        return SEASON_WEEKS
+    return min(SEASON_WEEKS, rules.playoff_week_start + sum(_round_lengths(rules)) - 1)
+
+
+ROUND_NAMES = ("Final", "Semifinals", "Quarterfinals")
+"""The bracket's last rounds, counted back from the final; any earlier is "Round N"."""
+
+
+def playoff_round(rules: LeagueRules, week: int) -> str:
+    """Which bracket round a week is — "Semifinals", "Final, week 1 of 2" — or empty for the regular season.
+
+    Read from the same rounds `season_end` counts, so the two cannot disagree. A league
+    that starts its playoffs but names no bracket size has no rounds to name: "Playoffs".
+    """
+    start = rules.playoff_week_start
+    if not start or week < start:
+        return ""
+    if not rules.playoff_teams:
+        return "Playoffs"
+    lengths, first = _round_lengths(rules), start
+    for index, length in enumerate(lengths):
+        if week < first + length:
+            from_end = len(lengths) - 1 - index
+            name = ROUND_NAMES[from_end] if from_end < len(ROUND_NAMES) else f"Round {index + 1}"
+            return f"{name}, week {week - first + 1} of {length}" if length > 1 else name
+        first += length
+    return ""  # past the final: no week the league plays
 
 
 RULED_OUT = {
