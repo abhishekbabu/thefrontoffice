@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type Competition, type League, type LeagueSchedule, type ScheduleRow } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import type { Variant } from "@/lib/tone";
-import { StatStrip } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
 import { ListCard, ListRow } from "@/components/ui/list";
 import { Empty, QueryState } from "@/components/ui/state";
@@ -14,8 +13,7 @@ import { Label } from "@/components/ui/label";
  * Your season, week by week: who you play, how each went, and what else falls in it.
  *
  * Read from the league's schedule, the same answer the League page's table
- * and header come from, so the record above and the results below cannot
- * disagree. The week being played shows its score so far, from the matchup
+ * comes from, so the two cannot disagree. The week being played shows its score so far, from the matchup
  * the Matchup page reads.
  */
 export function SchedulePanel({ competition, league }: { competition: Competition; league: League }) {
@@ -27,7 +25,6 @@ export function SchedulePanel({ competition, league }: { competition: Competitio
   return (
     <>
       <LeagueHeader league={league} />
-      <StatStrip stats={schedule.data?.headline ?? []} />
       <QueryState query={schedule} lines={6} />
       {schedule.data && schedule.data.season.length === 0 && (
         <Empty title="No head-to-head schedule" />

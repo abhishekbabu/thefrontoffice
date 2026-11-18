@@ -82,7 +82,7 @@ export function RostersPanel({ competition, league }: { competition: Competition
                   <ExternalLink href={selected.url} label={`Open ${selected.name} on the platform`} />
                 )}
               </span>
-              <span>{[selected?.detail, `${roster.data.length} players`].filter(Boolean).join(" · ")}</span>
+              <span>{roster.data.length} players</span>
             </CardHeader>
 
             <RosterTable

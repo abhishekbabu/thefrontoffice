@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { api, type Competition, type League, type LeagueSchedule } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { href } from "@/lib/route";
-import { StatStrip } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Table, Td, Th } from "@/components/ui/table";
@@ -27,8 +26,6 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
   return (
     <>
       <LeagueHeader league={league} />
-      {/* The season in figures, here rather than on the week: how it is going, not what Sunday needs. */}
-      <StatStrip stats={schedule.data?.headline ?? []} />
       <QueryState query={schedule} lines={6} />
       {schedule.data && schedule.data.standings.length === 0 && <Empty title="No table" />}
       {schedule.data && schedule.data.standings.length > 0 && (
@@ -80,7 +77,7 @@ function Standings({
               <Td className="text-right font-mono text-muted-foreground">{row.rank}</Td>
               <Td>
                 <span className="flex min-w-0 items-center gap-2">
-                  <span className={cn("truncate", row.is_mine && "font-semibold")}>{row.name}</span>
+                  <span className="truncate">{row.name}</span>
                   {row.is_mine && (
                     <Badge variant="muted" appearance="label" className="shrink-0">
                       you

@@ -42,8 +42,9 @@ export function LineupCard({
       <div className="grid grid-cols-1 md:grid-cols-2">
         <SpotList spots={lineup} onOpen={onOpen} />
         <div className="border-t border-border md:border-l md:border-t-0">
+          {/* The open spots are rows of their own below, so the heading does not count them again. */}
           <Label as="div" className="border-b border-border px-4 py-2">
-            {benchTitle(openSpots)}
+            Bench
           </Label>
           {(bench.length > 0 || openSpots === 0) && (
             <SpotList spots={bench} empty="Nobody on the bench." onOpen={onOpen} />
@@ -84,11 +85,6 @@ export function Swaps({ swaps, className }: { swaps: Swap[]; className?: string 
       ))}
     </div>
   );
-}
-
-/** "Bench", or "Bench · 1 open" where the roster has room nobody is in. */
-function benchTitle(open: number) {
-  return open > 0 ? `Bench · ${open} open` : "Bench";
 }
 
 /**
@@ -244,7 +240,7 @@ export function SideCard({ side, label, onOpen }: { side: Side | null; label: st
       <SpotList spots={side.lineup} onOpen={onOpen} />
       {(side.bench.length > 0 || side.open_spots > 0) && (
         <>
-          <ScoreHeads spots={side.bench}>{benchTitle(side.open_spots)}</ScoreHeads>
+          <ScoreHeads spots={side.bench}>Bench</ScoreHeads>
           {side.bench.length > 0 && <SpotList spots={side.bench} onOpen={onOpen} />}
           <OpenSpots count={side.open_spots} />
         </>

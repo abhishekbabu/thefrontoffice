@@ -42,12 +42,12 @@ describe("SideCard", () => {
 });
 
 describe("open roster spots", () => {
-  it("draws each spot nobody holds at the foot of the bench, and counts them in its heading", async () => {
+  it("draws each spot nobody holds at the foot of the bench, and only there", async () => {
     const side = { name: "Mine", detail: "", points: "", lineup: [spot("Starter")], bench: [spot("Backup")], reserve: [], open_spots: 2 };
     const { container } = await render(<SideCard side={side} label="You" />);
     const text = container.textContent ?? "";
 
-    expect(text).toContain("Bench · 2 open");
+    expect(text).not.toContain("2 open");
     expect(text.split("Open roster spot")).toHaveLength(3);
     expect(text.indexOf("Backup")).toBeLessThan(text.indexOf("Open roster spot"));
   });

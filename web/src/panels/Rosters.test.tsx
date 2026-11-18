@@ -29,6 +29,9 @@ describe("Rosters", () => {
     const { container } = await render(<RostersPanel competition={competition} league={league} />, client);
 
     expect(container.textContent).toContain("Lamb");
+    // The record is the league table's; the card names the team and counts its players.
+    expect(container.textContent).toContain("1 players");
+    expect(container.textContent).not.toContain("6-4");
     const rival = [...container.querySelectorAll<HTMLButtonElement>("button[aria-pressed]")].find((b) =>
       b.textContent?.includes("Rival"),
     )!;

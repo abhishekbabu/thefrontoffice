@@ -61,7 +61,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     FANTASY_POSITIONS,
     SEASON_WEEKS,
     ruled_out,
-    scoring_label,
+    scoring_name,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,
@@ -177,7 +177,7 @@ class SleeperNFLProvider:
             LeagueRef(
                 league_id=lg.league_id,
                 name=lg.name,
-                detail=f"{lg.total_rosters}-team · {scoring_label(lg.scoring_format)}",
+                detail=f"{lg.total_rosters}-team · {scoring_name(lg.scoring_format)}",
                 url=LEAGUE_URL.format(league_id=lg.league_id),
             )
             for lg in leagues

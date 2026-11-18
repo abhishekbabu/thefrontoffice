@@ -86,6 +86,15 @@ SCORING_LABELS: dict[Scoring, str] = {
 }
 
 
+SCORING_NAMES: dict[Scoring, str] = {"pts_ppr": "PPR", "pts_half_ppr": "Half PPR", "pts_std": "Standard"}
+"""The same, as a manager names it: the league's header, read by someone who knows what PPR means."""
+
+
 def scoring_label(scoring: Scoring) -> str:
-    """How a league scores, as a person would say it."""
+    """How a league scores, spelled out for the model."""
     return SCORING_LABELS[scoring]
+
+
+def scoring_name(scoring: Scoring) -> str:
+    """How a league scores, in the word its managers use."""
+    return SCORING_NAMES[scoring]
