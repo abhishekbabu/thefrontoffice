@@ -14,19 +14,27 @@ the injured, so a row with no id match falls back to his full name within one
 club, refusing a name two players share, as the news does. A name match whose
 player carries a different ESPN id is somebody else, and matches nothing.
 
+The report keeps only a club's latest twenty-five entries, so a player hurt
+weeks ago has often fallen off it while Sleeper still has him out. For those,
+the provider asks ESPN after each one by id (`ESPNSource.get_athlete_injuries`):
+Sleeper's ESPN id where it carries one, otherwise the one his name finds on his
+club's ESPN roster — the same full-name join, refusing a name two players share.
+
 The report also says when he is expected back. That is a day; which fantasy
 week it is depends on the schedule, so the week is worked out here from it.
 """
 
+from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
-from thefrontoffice.adapters.outbound.competitions.nfl.clubs import players_by_club
+from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club, on_a_club, players_by_club
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, PlayerInfo, Projection, Reported
-from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out
+from thefrontoffice.adapters.outbound.platforms.espn.types import Athlete, InjuryReport
 from thefrontoffice.domain.models import Stat
 
 ESPN_STATUS = {
@@ -68,6 +76,43 @@ def matched(
             player_id = named if named and not (theirs and report.athlete_id and theirs != report.athlete_id) else None
         if player_id and (player_id not in found or report.updated > found[player_id].updated):
             found[player_id] = report
+    return found
+
+
+def unreported(players: Mapping[str, PlayerInfo], found: Mapping[str, InjuryReport]) -> list[str]:
+    """Who Sleeper has ruled out, on a club and at a fantasy position, that the report did not name.
+
+    The players the app needs a return for — on IR, PUP or out — and the only
+    ones worth a request each. Those it did name, even as cleared, it has spoken for.
+    """
+    return sorted(
+        pid for pid, meta in players.items() if pid not in found and on_a_club(meta) and ruled_out(meta.injury_status)
+    )
+
+
+def athletes(
+    wanted: Sequence[str], players: Mapping[str, PlayerInfo], espn_ids: Mapping[str, str], roster: Sequence[Athlete]
+) -> dict[str, Athlete]:
+    """ESPN's athlete for each of `wanted`, keyed by Sleeper's id; nobody whose id cannot be settled.
+
+    Sleeper's own ESPN id first. Failing that, his full name on his club's
+    ESPN roster — unless two there share it, or the id it finds is one Sleeper
+    gives somebody else.
+    """
+    known = {pid: eid for eid, pid in espn_ids.items()}
+    by_name: dict[str, dict[str, Athlete | None]] = defaultdict(dict)
+    for athlete in roster:
+        names = by_name[athlete.club]
+        if key := normalize_name(athlete.name):
+            names[key] = None if key in names else athlete
+    found: dict[str, Athlete] = {}
+    for pid in wanted:
+        meta = players[pid]
+        club = espn_club(meta.team)
+        if pid in known:
+            found[pid] = Athlete(athlete_id=known[pid], name=meta.name, club=club)
+        elif (athlete := by_name[club].get(normalize_name(meta.name))) and athlete.athlete_id not in espn_ids:
+            found[pid] = athlete
     return found
 
 

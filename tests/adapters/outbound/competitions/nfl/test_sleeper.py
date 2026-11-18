@@ -1427,6 +1427,66 @@ def test_the_ir_list_puts_the_soonest_back_first_and_unknown_returns_last() -> N
     assert [c.player_id for c in by_back.players] == [late, soon, unknown]
 
 
+def _dropped_by_the_report(espn_id: str = "") -> tuple[FakeSleeper, FakeESPN]:
+    """One player on IR whom ESPN's league-wide report has dropped, and his own entry in its history."""
+    from thefrontoffice.adapters.outbound.platforms.espn.types import Athlete, InjuryReport
+
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS, season_schedule=SEASON_SCHEDULE)
+    client.players_catalog = {
+        **client.get_nfl_players(),
+        "ir1": PlayerMeta(
+            player_id="ir1", name="Long Gone", position="RB", team="WAS", injury_status="IR", espn_id=espn_id
+        ),
+    }
+    espn = FakeESPN()
+    espn.rosters = [Athlete(athlete_id="77", name="Long Gone", club="WSH")]
+    espn.histories = {
+        "77": InjuryReport(
+            name="Long Gone",
+            club="WSH",
+            status="Injured Reserve",
+            updated=datetime(2026, 9, 28, tzinfo=UTC),
+            athlete_id="77",
+            returns=date(2026, 9, 15),
+            injury="Left knee - acl, surgery",
+        )
+    }
+    return client, espn
+
+
+def test_a_player_the_report_has_dropped_is_found_on_his_clubs_roster_and_shows_when_he_is_back() -> None:
+    client, espn = _dropped_by_the_report()
+
+    page = nfl_provider(client, espn).free_agents("L1", PlayerQuery(view="IR"))
+    detail = nfl_provider(client, espn).player("L1", "ir1")
+
+    assert [c.columns["Back"] for c in page.players if c.player_id == "ir1"] == ["wk 2"]
+    [group] = [g for g in detail.groups if g.title == "Injury"]
+    assert {s.label: s.value for s in group.stats}["Back"] == "~15 Sep · wk 2"
+    assert espn.asked_after == ["77"]
+
+
+def test_a_player_sleeper_gives_an_espn_id_is_asked_after_without_reading_the_rosters() -> None:
+    client, espn = _dropped_by_the_report(espn_id="77")
+    espn.rosters = []
+
+    page = nfl_provider(client, espn).free_agents("L1", PlayerQuery(view="IR"))
+
+    assert [c.columns["Back"] for c in page.players if c.player_id == "ir1"] == ["wk 2"]
+    assert espn.roster_reads == 0
+
+
+def test_espn_failing_past_the_report_leaves_the_report_standing() -> None:
+    from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
+
+    client, espn = _dropped_by_the_report()
+    espn.backfill_error = ESPNAPIError("down")
+
+    page = nfl_provider(client, espn).free_agents("L1", PlayerQuery(view="IR"))
+
+    assert [c.columns["Back"] for c in page.players if c.player_id == "ir1"] == ["—"]
+
+
 def test_a_player_carries_this_seasons_position_rank_and_none_before_he_plays() -> None:
     played = {**HISTORY, "2026": {"qb1": _stats("qb1", "2026", games=10, ppr=250.0, rank=3)}}
 

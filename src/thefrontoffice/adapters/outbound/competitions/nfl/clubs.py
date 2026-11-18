@@ -26,6 +26,11 @@ def espn_club(team: str) -> str:
     return SLEEPER_TO_ESPN.get(team, team)
 
 
+def on_a_club(meta: PlayerInfo) -> bool:
+    """Whether he is a fantasy player on a club: someone ESPN reports on, and not a team defense."""
+    return meta.team != FREE_AGENT and meta.position in FANTASY_POSITIONS and meta.position not in NOT_PLAYERS
+
+
 def players_by_club(players: Mapping[str, PlayerInfo]) -> dict[str, dict[str, str | None]]:
     """Each club's fantasy players by normalized name, under ESPN's spelling of the club.
 
@@ -35,8 +40,8 @@ def players_by_club(players: Mapping[str, PlayerInfo]) -> dict[str, dict[str, st
     """
     clubs: dict[str, dict[str, str | None]] = defaultdict(dict)
     for player_id, meta in players.items():
-        team, position = meta.team, meta.position
-        if team == FREE_AGENT or position not in FANTASY_POSITIONS or position in NOT_PLAYERS:
+        team = meta.team
+        if not on_a_club(meta):
             continue
         key = normalize_name(meta.name)
         if not key:

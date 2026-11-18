@@ -10,7 +10,7 @@ from support.http import NO_WAIT, FakeSession
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
-from thefrontoffice.adapters.outbound.platforms.espn.types import NFL
+from thefrontoffice.adapters.outbound.platforms.espn.types import NFL, Athlete
 
 TEAMS = {
     "sports": [
@@ -221,3 +221,81 @@ def test_an_injury_row_carries_espns_athlete_id_its_return_and_the_latest_word(t
     assert minshew.url == "https://www.espn.com/nfl/player/news/_/id/4038524/g"
     # Whatever ESPN leaves unspecified, or dates unreadably, reads as nothing.
     assert (hall.athlete_id, hall.returns, hall.injury, hall.url) == ("", None, "Knee", "")
+
+
+def _roster(*players: tuple[str, str]) -> dict[str, Any]:
+    items: list[Any] = [
+        {"id": pid, "fullName": name, "injuries": [], "headshot": {"href": "x"}} for pid, name in players
+    ]
+    return {
+        "team": {"abbreviation": "?"},
+        "athletes": [{"position": "offense", "items": [*items, {"id": "9"}]}, "junk"],
+    }
+
+
+def test_every_clubs_roster_names_each_player_with_espns_id_under_espns_abbreviation(tmp_path: Path) -> None:
+    routes = {
+        "/teams/2/roster": _roster(("1", "Josh Allen"), ("2", "James Cook")),
+        "/teams/20/roster": _roster(("3", "Breece Hall")),
+        "/teams": TEAMS,
+    }
+    client, _ = _client(routes, tmp_path)
+
+    roster = client.get_rosters(NFL)
+
+    assert [(a.athlete_id, a.name, a.club) for a in roster] == [
+        ("1", "Josh Allen", "BUF"),
+        ("2", "James Cook", "BUF"),
+        ("3", "Breece Hall", "NYJ"),
+    ]
+
+
+def test_a_club_whose_roster_fails_is_left_out_and_a_roster_is_read_once_a_day(tmp_path: Path) -> None:
+    client, session = _client({"/teams/2/roster": _roster(("1", "Josh Allen")), "/teams": TEAMS}, tmp_path)
+
+    assert [a.club for a in client.get_rosters(NFL)] == ["BUF"]
+    assert [a.club for a in client.get_rosters(NFL)] == ["BUF"]
+    assert sum("/teams/2/roster" in url for url in session.requests) == 1
+
+
+ACHANE = {
+    "status": "Injured Reserve",
+    "date": "2026-09-28T20:10Z",
+    "shortComment": "The Dolphins placed Achane (knee) on injured reserve Monday.",
+    "details": {"type": "Knee - ACL", "detail": "Surgery", "side": "Left", "returnDate": "2027-02-15"},
+}
+
+
+def test_an_athletes_own_history_gives_his_newest_entry_with_its_return(tmp_path: Path) -> None:
+    history = {
+        "count": 3,
+        "items": [
+            {"status": "Questionable", "date": "2026-09-01T12:00Z"},
+            ACHANE,
+            {"status": "Out", "date": "unreadable"},
+        ],
+    }
+    routes = {"athletes/4429160/injuries": history, "athletes/1/injuries": {"count": 0, "items": []}}
+    client, session = _client(routes, tmp_path)
+    athletes = [
+        Athlete(athlete_id="4429160", name="De'Von Achane", club="MIA"),
+        Athlete(athlete_id="1", name="Never Hurt", club="MIA"),
+        Athlete(athlete_id="2", name="Unknown To ESPN", club="MIA"),
+    ]
+
+    found = client.get_athlete_injuries(NFL, "2026", athletes)
+
+    assert set(found) == {"4429160"}
+    report = found["4429160"]
+    assert (report.name, report.club, report.status, report.athlete_id) == (
+        "De'Von Achane",
+        "MIA",
+        "Injured Reserve",
+        "4429160",
+    )
+    assert report.updated == datetime(2026, 9, 28, 20, 10, tzinfo=UTC)
+    assert report.returns == date(2027, 2, 15)
+    assert report.injury == "Left knee - acl, surgery"
+    assert report.comment.startswith("The Dolphins placed Achane")
+    assert report.url == "https://www.espn.com/nfl/player/news/_/id/4429160"
+    assert any("/leagues/nfl/seasons/2026/athletes/4429160/injuries" in url for url in session.requests)

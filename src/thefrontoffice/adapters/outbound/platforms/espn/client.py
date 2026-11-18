@@ -13,6 +13,13 @@ The injury report is read because a fantasy platform's designation is
 whatever was set last: on the Tuesday after a game, a player ruled out of it
 still reads Out. ESPN's is dated, and moves with the week's practices.
 
+That report is short: ESPN keeps the latest twenty-five entries a club has,
+newest first, and a player cleared to play still takes a slot — so a starter
+put on injured reserve in September has fallen off it by November. ESPN's core
+API keeps each player's own injury entry for the season, with the same
+estimated return, but it is one request per player and asks for his ESPN id;
+each club's roster is where that id is found by name.
+
 The scoreboard is read for the one thing the fantasy platforms leave out: how
 far through a game is. Sleeper says a game is under way, and nothing about
 whether that is the first minute or the last.
@@ -20,12 +27,13 @@ whether that is the first minute or the last.
 
 import logging
 import re
+from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import Any, Protocol
 
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError, ESPNUnavailableError
-from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, NewsArticle, ScoreboardGame
+from thefrontoffice.adapters.outbound.platforms.espn.types import Athlete, InjuryReport, NewsArticle, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
@@ -33,15 +41,22 @@ from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://site.api.espn.com/apis/site/v2/sports"
+CORE_URL = "https://sports.core.api.espn.com/v2/sports"
+"""ESPN's core API: per-athlete records the site API's league-wide views cut short."""
 
 # A club list changes when a franchise moves; news turns over within hours.
 TEAMS_TTL = timedelta(days=1)
+ROSTERS_TTL = timedelta(days=1)
+"""A roster changes with a signing, and a day-old one still names everyone hurt for longer than that."""
 NEWS_TTL = timedelta(minutes=30)
 INJURIES_TTL = timedelta(minutes=30)
 SCOREBOARD_TTL = timedelta(minutes=1)
 """A clock that is a minute stale is a minute of a sixty-minute game."""
 NEWS_LIMIT = 50
 """ESPN's own ceiling for one feed; asking for more returns the same fifty."""
+HISTORY_LIMIT = 5
+"""A player's injury entries this season, of which the newest is read. ESPN keeps one per player
+and updates it in place, so five is room to spare rather than a page of history."""
 
 
 class ESPNSource(Protocol):
@@ -57,6 +72,14 @@ class ESPNSource(Protocol):
 
     def get_scoreboard(self, league: str, season: str, week: int) -> list[ScoreboardGame]:
         """Every regular-season game of `week`, as it stands right now."""
+        ...
+
+    def get_rosters(self, league: str) -> list[Athlete]:
+        """Everyone on every club's roster, with ESPN's id for him."""
+        ...
+
+    def get_athlete_injuries(self, league: str, season: str, athletes: Sequence[Athlete]) -> dict[str, InjuryReport]:
+        """Each athlete's latest injury this season, keyed by his ESPN id; nobody ESPN has none for."""
         ...
 
 
@@ -120,6 +143,45 @@ class ESPNClient:
         clubs = [club for club in data.get("injuries") or [] if isinstance(club, dict)]
         return [report for club in clubs for report in (_injury(row) for row in club.get("injuries") or []) if report]
 
+    def get_rosters(self, league: str) -> list[Athlete]:
+        """Everyone on every club's roster, with ESPN's id for him.
+
+        A club whose roster will not load is left out rather than failing the
+        rest, as its news is: its players simply go unfound.
+        """
+        ids = self.get_teams(league)
+        prefix = league.replace("/", "_")
+        urls = {f"roster_{prefix}_{club}": f"{BASE_URL}/{league}/teams/{team}/roster" for club, team in ids.items()}
+        raw = self._api.cached_many(urls, ROSTERS_TTL, keep=_roster).values
+        return [
+            Athlete(athlete_id=row["id"], name=row["name"], club=club)
+            for club in ids
+            for row in raw.get(f"roster_{prefix}_{club}") or []
+        ]
+
+    def get_athlete_injuries(self, league: str, season: str, athletes: Sequence[Athlete]) -> dict[str, InjuryReport]:
+        """Each athlete's latest injury this season, keyed by his ESPN id; nobody ESPN has none for.
+
+        One request per athlete, in parallel and cached as long as the
+        league-wide report is. One that fails is left out, like a club's news.
+        """
+        sport, name = league.split("/")
+        keys = {f"athlete_injuries_{sport}_{name}_{season}_{a.athlete_id}": a for a in athletes}
+        urls = {
+            key: f"{CORE_URL}/{sport}/leagues/{name}/seasons/{season}/athletes/{a.athlete_id}/injuries"
+            f"?limit={HISTORY_LIMIT}"
+            for key, a in keys.items()
+        }
+        raw = self._api.cached_many(urls, INJURIES_TTL).values
+        found = {}
+        for key, athlete in keys.items():
+            payload = raw.get(key)
+            rows = payload.get("items") if isinstance(payload, dict) else None
+            entries = [e for e in (_entry(row, athlete, name) for row in rows or []) if e]
+            if entries:
+                found[athlete.athlete_id] = max(entries, key=lambda e: e.updated)
+        return found
+
     def get_scoreboard(self, league: str, season: str, week: int) -> list[ScoreboardGame]:
         """Every regular-season game of `week`, as it stands right now."""
         data = self._api.cached(
@@ -182,6 +244,38 @@ def _injury(row: Any) -> InjuryReport | None:
         )
     except KeyError, TypeError, ValueError, AttributeError:
         logger.debug(f"Skipping an unreadable ESPN injury row: {str(row)[:200]}")
+        return None
+
+
+def _roster(payload: Any) -> list[dict[str, str]]:
+    """A club's roster cut to each player's id and name: the rest is a third of a megabyte nobody reads."""
+    groups = payload.get("athletes") if isinstance(payload, dict) else None
+    return [
+        {"id": str(row["id"]), "name": str(row["fullName"])}
+        for group in groups or []
+        if isinstance(group, dict)
+        for row in group.get("items") or []
+        if isinstance(row, dict) and row.get("id") and row.get("fullName")
+    ]
+
+
+def _entry(row: Any, athlete: Athlete, league: str) -> InjuryReport | None:
+    """One entry of a player's injury history, or None for one missing what or when."""
+    try:
+        details = row.get("details") or {}
+        return InjuryReport(
+            name=athlete.name,
+            club=athlete.club,
+            status=str(row["status"]),
+            updated=parse_utc(str(row["date"])),
+            athlete_id=athlete.athlete_id,
+            returns=_return_date(details.get("returnDate")),
+            injury=_what(details),
+            comment=str(row.get("shortComment") or ""),
+            url=f"https://www.espn.com/{league}/player/news/_/id/{athlete.athlete_id}",
+        )
+    except KeyError, TypeError, ValueError, AttributeError:
+        logger.debug(f"Skipping an unreadable ESPN injury history entry: {str(row)[:200]}")
         return None
 
 

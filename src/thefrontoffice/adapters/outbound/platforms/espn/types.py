@@ -1,4 +1,4 @@
-"""What we keep from ESPN: its news feeds, its live scoreboard, and its injury report."""
+"""What we keep from ESPN: its news feeds, its live scoreboard, its injury report, and who is on each club."""
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -69,3 +69,13 @@ class InjuryReport:
     """The latest one-line update, as ESPN's report carries it."""
     url: str = ""
     """His news page on ESPN, where the update comes from; empty where ESPN gave none."""
+
+
+@dataclass(frozen=True)
+class Athlete:
+    """One player on a club's roster, as ESPN lists him: enough to ask after him by ESPN's own id."""
+
+    athlete_id: str
+    name: str
+    club: str
+    """ESPN's abbreviation."""
