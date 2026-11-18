@@ -8,10 +8,39 @@ first user and imported from there, so a planner read its injury rules out of
 the to-do list's module.
 """
 
-from thefrontoffice.adapters.outbound.competitions.nfl.model import Scoring
+import math
+
+from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueRules, Scoring
 
 SEASON_WEEKS = 18
 """The NFL's regular season, in weeks: the furthest any fantasy season or projection runs."""
+
+TWO_WEEK_FINAL, TWO_WEEK_ROUNDS = 1, 2
+"""Sleeper's `playoff_round_type` codes; 0, and any it adds later, is one week a round."""
+
+
+def last_regular_week(rules: LeagueRules) -> int:
+    """The regular season's last week: the one before `playoff_week_start`, or the NFL's last where the league sets none."""
+    start = rules.playoff_week_start
+    return start - 1 if start else SEASON_WEEKS
+
+
+def season_end(rules: LeagueRules) -> int:
+    """The league's last week: its championship's, or the NFL's last where it sets no bracket.
+
+    A bracket of `playoff_teams` takes ceil(log2(teams)) rounds from `playoff_week_start`,
+    each one week, or two where `playoff_round_type` says so (every round, or the final alone).
+    Capped at the NFL's last week, which no fantasy week runs past.
+    """
+    start, teams = rules.playoff_week_start, rules.playoff_teams
+    if not start or not teams:
+        return SEASON_WEEKS
+    rounds = math.ceil(math.log2(teams))
+    weeks = 2 * rounds if rules.playoff_round_type == TWO_WEEK_ROUNDS else rounds
+    if rules.playoff_round_type == TWO_WEEK_FINAL and rounds:
+        weeks += 1
+    return min(SEASON_WEEKS, start + weeks - 1)
+
 
 RULED_OUT = {
     "OUT": "is ruled out",

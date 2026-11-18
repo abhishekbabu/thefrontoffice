@@ -77,6 +77,9 @@ class SleeperLeague:
     """How many teams the regular season sends to the playoffs. Zero where unknown."""
     playoff_week_start: int = 0
     """The first playoff week; the regular season is every week before it. Zero where unknown."""
+    playoff_round_type: int = 0
+    """How long each playoff round lasts, as Sleeper codes it: 0 one week a round, 1 a two-week
+    championship, 2 two weeks a round."""
     scoring_rules: dict[str, float] = field(default_factory=dict)
     """Points per unit of each stat, as the league set them — what Sleeper's own app prices a line by.
     Empty where unknown, and a line is then read at Sleeper's published figure for the format."""

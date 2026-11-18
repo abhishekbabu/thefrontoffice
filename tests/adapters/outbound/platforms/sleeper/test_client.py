@@ -130,6 +130,15 @@ def test_a_league_carries_its_trade_deadline(tmp_path: Path) -> None:
     assert client.get_leagues("42", "2026")[0].trade_deadline == 11
 
 
+def test_a_league_carries_its_playoff_bracket(tmp_path: Path) -> None:
+    settings = {"playoff_teams": 6, "playoff_week_start": 15, "playoff_round_type": 1}
+    payload = [{**LEAGUE_PAYLOAD[0], "settings": settings}]
+    client, _ = _client({"leagues/nfl": payload}, tmp_path)
+    league = client.get_leagues("42", "2026")[0]
+
+    assert (league.playoff_teams, league.playoff_week_start, league.playoff_round_type) == (6, 15, 1)
+
+
 def test_a_league_says_whether_it_also_plays_its_median(tmp_path: Path) -> None:
     payload = [{**LEAGUE_PAYLOAD[0], "settings": {"league_average_match": 1}}]
     client, _ = _client({"leagues/nfl": payload}, tmp_path)

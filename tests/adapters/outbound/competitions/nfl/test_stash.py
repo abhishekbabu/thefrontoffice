@@ -1,7 +1,7 @@
 """Tests for the IR stash to-do: `nfl/stash.py`, through the summary and the prompt.
 
-The fake league plays week 3 with one IR slot and playoffs from week 15, so the
-regular season ends in week 14. KC plays every Sunday. The free agent `ir1` is
+The fake league plays week 3 with one IR slot and six playoff teams from week 15,
+so the regular season ends in week 14 and the final is week 17. KC plays every Sunday. The free agent `ir1` is
 on IR, back for week 6, and projects 12 a week once back.
 """
 
@@ -28,6 +28,7 @@ LEAGUE = SleeperLeague(
     scoring_format="pts_ppr",
     roster_positions=["QB", "RB", "WR", "FLEX", "BN", "BN"],
     playoff_week_start=15,
+    playoff_teams=6,
     ir_slots=1,
 )
 
@@ -112,7 +113,8 @@ def test_an_empty_ir_slot_stashes_a_free_agent_back_before_the_playoffs_into_the
 
     assert (item.key, item.kind, item.player_id, item.drop) == ("stash:ir1", "waiver", "ir1", "")
     assert "wk 6" in item.reason
-    assert "108.0" in item.reason
+    assert "144.0" in item.reason  # weeks 6 to 17, the final's, at 12
+    assert "wk 17" in item.reason
 
 
 def test_a_full_roster_names_the_weakest_bench_player_to_drop_for_the_claim() -> None:
@@ -142,14 +144,19 @@ def test_a_player_back_only_in_the_playoffs_is_not_a_stash() -> None:
     assert _stashes(*_client({"ir1": (12.0, 15)})) == []
 
 
+def test_a_starter_back_for_the_last_regular_week_is_a_stash_for_the_playoffs() -> None:
+    # Weeks 14 to 17: 48 points.
+    assert [a.player_id for a in _stashes(*_client({"ir1": (12.0, 14)}))] == ["ir1"]
+
+
 def test_a_player_back_too_late_to_score_much_is_not_a_stash() -> None:
-    # Week 14 alone: 12 points.
-    assert _stashes(*_client({"ir1": (12.0, 14)})) == []
+    # Weeks 14 to 17 at 8: 32 points, short of what the claim is worth.
+    assert _stashes(*_client({"ir1": (8.0, 14)})) == []
 
 
 def test_a_player_worth_less_than_the_weakest_bench_player_is_not_a_stash() -> None:
-    # Nine weeks at 3: enough points, but half the bench receiver's 6 a week.
-    assert _stashes(*_client({"ir1": (3.0, 6)})) == []
+    # Twelve weeks at 3.5: enough points, but well under the bench receiver's 6 a week.
+    assert _stashes(*_client({"ir1": (3.5, 6)})) == []
 
 
 def test_a_player_with_no_return_date_is_not_a_stash() -> None:
@@ -174,7 +181,7 @@ def test_the_judge_sees_the_stash_among_the_items_it_rules_on() -> None:
 
 
 def test_his_form_before_the_injury_counts_beside_a_modest_projection() -> None:
-    client, espn = _client({"ir1": (3.0, 6)})
+    client, espn = _client({"ir1": (3.5, 6)})
     client.game_lines = [
         game_line("ir1", week, team="KC", opponent="LV", off_snp=50, tm_off_snp=60, rec_tgt=9, pts_ppr=20.0)
         for week in (1, 2)

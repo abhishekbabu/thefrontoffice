@@ -190,7 +190,7 @@ def held(roster: Team) -> dict[str, str]:
 
 
 ROS_COLUMN = "ROS"
-"""Projected points over the rest of the regular season: see `outlook.rest_of_season` for which weeks."""
+"""Projected points over the rest of the season, through the fantasy final: see `outlook.rest_of_season` for which weeks."""
 
 SNAP_COLUMN, TARGET_COLUMN = "Snap%", "Tgt%"
 """His share of his offense's snaps, and of its targets, over his last few games (`evidence.ROLE_GAMES`)."""

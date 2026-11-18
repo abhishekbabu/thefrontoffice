@@ -39,7 +39,6 @@ from thefrontoffice.adapters.outbound.competitions.nfl import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.forecast import Forecasts, seed
-from thefrontoffice.adapters.outbound.competitions.nfl.league import season_end
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     current_lineup,
     lineup_changes,
@@ -64,6 +63,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     SEASON_WEEKS,
     ruled_out,
     scoring_name,
+    season_end,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,

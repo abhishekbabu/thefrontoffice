@@ -15,7 +15,12 @@ from collections.abc import Callable, Mapping, Sequence
 from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item, drop_candidate, join
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, lineup_points
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, NFLSource, Projection, active, by_club
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, SEASON_WEEKS, long_term
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
+    FANTASY_POSITIONS,
+    SEASON_WEEKS,
+    long_term,
+    season_end,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, lineup_for
 from thefrontoffice.domain.models import Action, Outlook, WeekAhead
 
@@ -103,19 +108,13 @@ def build(
     return Outlook(usual=usual, weeks=ahead)
 
 
-def last_regular_week(state: Week) -> int:
-    """The regular season's last week: the one before `playoff_week_start`, or the NFL's last where the league sets none."""
-    start = state.league.playoff_week_start
-    return start - 1 if start else SEASON_WEEKS
-
-
 def weeks_left(client: NFLSource, state: Week) -> dict[int, Mapping[str, Projection]] | None:
-    """Each regular-season week after this one, with its projections; None where any would not load.
+    """Each week after this one through the league's championship, with its projections; None where any would not load.
 
     Empty where none is left after this one. A sum missing a week reads as a
     player worth less, not as a hole, so a week that fails fails them all.
     """
-    weeks = list(range(state.week + 1, last_regular_week(state) + 1))
+    weeks = list(range(state.week + 1, season_end(state.league) + 1))
     if not weeks:
         return {}
     league = state.league
@@ -129,13 +128,14 @@ def weeks_left(client: NFLSource, state: Week) -> dict[int, Mapping[str, Project
 
 
 def rest_of_season(client: NFLSource, state: Week) -> dict[str, float] | None:
-    """Each player's projected points from next week through the last regular-season week, by player id.
+    """Each player's projected points from next week through the league's championship week, by player id.
 
     The weeks after this one, because this week is the Proj column beside it;
-    through `last_regular_week`, because a pickup's playoff weeks are a different
-    question. A week he byes or is not projected in adds nothing, which is
-    what a bye costs. Where no regular-season week is left after this one, this
-    week alone. None where any week would not load (see `weeks_left`).
+    through `rules.season_end`, because a manager's season runs to the final —
+    a pickup's playoff weeks are the ones he is added for. A week he byes or is
+    not projected in adds nothing, which is what a bye costs. Where no week of
+    the league's is left after this one, this week alone. None where any week
+    would not load (see `weeks_left`).
     """
     ahead = weeks_left(client, state)
     if ahead is None:

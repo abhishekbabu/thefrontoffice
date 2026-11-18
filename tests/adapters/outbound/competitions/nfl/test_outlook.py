@@ -204,37 +204,49 @@ def test_a_team_the_league_does_not_have_is_not_found() -> None:
 # ── the rest of the season ──────────────────────────────────────────────
 
 
-def _rest(client: FakeSleeper, playoff_week_start: int) -> dict[str, float]:
-    client.league = replace(client.league, playoff_week_start=playoff_week_start)
+def _rest(client: FakeSleeper, start: int, teams: int = 4, round_type: int = 0) -> dict[str, float]:
+    """This week is 3; four teams play two rounds from `start`."""
+    client.league = replace(client.league, playoff_week_start=start, playoff_teams=teams, playoff_round_type=round_type)
     page = nfl_provider(client).free_agents("L1", PlayerQuery())
     return {card.player_id: card.values["ROS"] for card in page.players if "ROS" in card.values}
 
 
-def test_the_rest_of_the_season_sums_the_weeks_after_this_one_up_to_the_playoffs() -> None:
-    """Weeks 4 to 6 with the playoffs from 7: three weeks of each, this week (3) left to Proj."""
+def test_the_rest_of_the_season_sums_the_weeks_after_this_one_through_the_final() -> None:
+    """Playoffs in weeks 6 and 7: weeks 4 to 7, this week (3) left to Proj."""
     client = _client()
     client.weekly_projections[3] = {"rb9": replace(WIRE["rb9"], points=99.0)}
 
-    assert _rest(client, playoff_week_start=7)["rb9"] == 3 * WIRE["rb9"].points
+    assert _rest(client, start=6)["rb9"] == 4 * WIRE["rb9"].points
+
+
+def test_a_two_week_final_adds_a_week_to_the_rest_of_the_season() -> None:
+    """Rounds in week 5 and weeks 6-7: weeks 4 to 7."""
+    assert _rest(_client(), start=5, round_type=1)["rb9"] == 4 * WIRE["rb9"].points
+
+
+def test_two_week_rounds_double_the_playoff_weeks_in_the_rest_of_the_season() -> None:
+    """Rounds in weeks 5-6 and 7-8: weeks 4 to 8."""
+    assert _rest(_client(), start=5, round_type=2)["rb9"] == 5 * WIRE["rb9"].points
 
 
 def test_a_week_he_is_not_projected_in_adds_nothing_to_the_rest_of_his_season() -> None:
-    """Spare RB byes in week 5: one week of three is nought, not his average."""
+    """Spare RB byes in week 5: one week of four is nought, not his average."""
     client = _client()
     client.weekly_projections[BYE_WEEK] = {"qb9": WIRE["qb9"]}
 
-    assert _rest(client, playoff_week_start=7)["rb9"] == 2 * WIRE["rb9"].points
+    assert _rest(client, start=6)["rb9"] == 3 * WIRE["rb9"].points
 
 
-def test_the_last_regular_season_week_is_the_rest_of_the_season_on_its_own() -> None:
+def test_the_final_week_is_the_rest_of_the_season_on_its_own() -> None:
+    """Two teams play one round, in week 3: nothing of the league's is left after it."""
     client = _client()
     client.weekly_projections[4] = {"rb9": replace(WIRE["rb9"], points=99.0)}
 
-    assert _rest(client, playoff_week_start=4)["rb9"] == WIRE["rb9"].points
+    assert _rest(client, start=3, teams=2)["rb9"] == WIRE["rb9"].points
 
 
 def test_a_week_that_will_not_load_leaves_the_rest_of_the_season_out_rather_than_short() -> None:
     client = _client()
     client.unloaded_weeks = {5}
 
-    assert _rest(client, playoff_week_start=7) == {}
+    assert _rest(client, start=6) == {}
