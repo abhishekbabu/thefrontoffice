@@ -718,6 +718,7 @@ def _trim_catalog(raw: Any) -> dict[str, dict[str, Any]]:
                 number=int(p.get("number") or 0),
                 injury_body_part=str(p.get("injury_body_part") or ""),
                 injury_notes=str(p.get("injury_notes") or ""),
+                espn_id=str(p.get("espn_id") or ""),
             )
         )
         for player_id, p in (raw or {}).items()

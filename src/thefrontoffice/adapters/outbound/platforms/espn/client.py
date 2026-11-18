@@ -19,7 +19,8 @@ whether that is the first minute or the last.
 """
 
 import logging
-from datetime import timedelta
+import re
+from datetime import date, timedelta
 from typing import Any, Protocol
 
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
@@ -155,19 +156,72 @@ def _game(event: Any) -> ScoreboardGame | None:
         return None
 
 
+ATHLETE_ID = re.compile(r"/id/(\d+)")
+"""ESPN's athlete id, which its injury rows carry only inside the links to his pages."""
+
+UNSPECIFIED = "Not Specified"
+"""ESPN's word for a detail it does not know, which reads as nothing at all."""
+
+
 def _injury(row: Any) -> InjuryReport | None:
     """One report row, or None for one missing who, which club, what or when."""
     try:
         athlete = row["athlete"]
+        details = row.get("details") or {}
+        links = [link for link in athlete.get("links") or [] if isinstance(link, dict)]
         return InjuryReport(
             name=str(athlete["displayName"]),
             club=str(athlete["team"]["abbreviation"]),
             status=str(row["status"]),
             updated=parse_utc(str(row["date"])),
+            athlete_id=_athlete_id(links),
+            returns=_return_date(details.get("returnDate")),
+            injury=_what(details),
+            comment=str(row.get("shortComment") or ""),
+            url=_link(links, "news"),
         )
-    except KeyError, TypeError, ValueError:
+    except KeyError, TypeError, ValueError, AttributeError:
         logger.debug(f"Skipping an unreadable ESPN injury row: {str(row)[:200]}")
         return None
+
+
+def _athlete_id(links: list[dict[str, Any]]) -> str:
+    """His ESPN id, out of the first link to one of his pages that carries it."""
+    for link in links:
+        if found := ATHLETE_ID.search(str(link.get("href") or "")):
+            return found.group(1)
+    return ""
+
+
+def _link(links: list[dict[str, Any]], rel: str) -> str:
+    """The web page of his that `rel` names, never the app's own URL scheme."""
+    return next(
+        (
+            str(link["href"])
+            for link in links
+            if rel in (link.get("rel") or []) and str(link.get("href") or "").startswith("https://")
+        ),
+        "",
+    )
+
+
+def _return_date(label: Any) -> date | None:
+    """ESPN's estimated return, or None where it is missing or unreadable — an estimate, not worth the row."""
+    try:
+        return date.fromisoformat(str(label)[:10]) if label else None
+    except ValueError:
+        return None
+
+
+def _what(details: dict[str, Any]) -> str:
+    """'Right elbow, surgery', leaving out whatever ESPN did not specify."""
+    part = " ".join(
+        str(details[key]) for key in ("side", "type") if details.get(key) and details[key] != UNSPECIFIED
+    ).capitalize()
+    detail = str(details.get("detail") or "")
+    if detail and detail != UNSPECIFIED:
+        return f"{part}, {detail.lower()}" if part else detail
+    return part
 
 
 def _article(row: Any) -> NewsArticle | None:

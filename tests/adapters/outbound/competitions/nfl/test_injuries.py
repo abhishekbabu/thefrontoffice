@@ -1,11 +1,22 @@
 """Tests for the latest injury report, joined to Sleeper: `nfl/injuries.py`."""
 
+from collections.abc import Sequence
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
-from support.nfl import proj
+from support.nfl import SEASON_SCHEDULE, proj
 
-from thefrontoffice.adapters.outbound.competitions.nfl.injuries import catalog, designations, reported
+from thefrontoffice.adapters.outbound.competitions.nfl.injuries import (
+    BODY_PART,
+    PlayerInjuries,
+    catalog,
+    designations,
+    long_return,
+    matched,
+    reported,
+    return_week,
+    short_return,
+)
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta
 
@@ -17,36 +28,115 @@ PLAYERS = {
 }
 
 
-def _report(name: str, club: str, status: str) -> InjuryReport:
-    return InjuryReport(name=name, club=club, status=status, updated=datetime(2026, 10, 27, 13, tzinfo=UTC))
+SCHEDULE = {w: [g for g in SEASON_SCHEDULE if g.week == w] for w in {g.week for g in SEASON_SCHEDULE}}
+
+
+def _report(
+    name: str, club: str, status: str, athlete_id: str = "", updated: datetime = datetime(2026, 10, 27, 13, tzinfo=UTC)
+) -> InjuryReport:
+    return InjuryReport(name=name, club=club, status=status, updated=updated, athlete_id=athlete_id)
+
+
+def _designations(reports: Sequence[InjuryReport], espn_ids: dict[str, str] | None = None) -> dict[str, str]:
+    return designations(matched(reports, PLAYERS, espn_ids or {}))
 
 
 def test_the_report_names_a_player_by_his_name_on_his_own_club() -> None:
-    assert designations([_report("Breece Hall", "NYJ", "Questionable")], PLAYERS) == {"hall": "Questionable"}
+    assert _designations([_report("Breece Hall", "NYJ", "Questionable")]) == {"hall": "Questionable"}
 
 
 def test_a_club_is_read_in_espns_spelling() -> None:
-    assert designations([_report("Antonio Williams", "WSH", "Out")], PLAYERS) == {"wash": "Out"}
+    assert _designations([_report("Antonio Williams", "WSH", "Out")]) == {"wash": "Out"}
 
 
 def test_a_player_of_the_same_name_on_another_club_is_not_him() -> None:
-    assert designations([_report("Breece Hall", "BUF", "Out")], PLAYERS) == {}
+    assert _designations([_report("Breece Hall", "BUF", "Out")]) == {}
 
 
 def test_a_name_two_players_on_a_club_share_is_nobodys() -> None:
-    assert designations([_report("Chris Jones", "KC", "Out")], PLAYERS) == {}
+    assert _designations([_report("Chris Jones", "KC", "Out")]) == {}
 
 
 def test_a_player_cleared_to_play_carries_no_designation() -> None:
-    assert designations([_report("Breece Hall", "NYJ", "Active")], PLAYERS) == {"hall": ""}
+    assert _designations([_report("Breece Hall", "NYJ", "Active")]) == {"hall": ""}
 
 
 def test_a_designation_the_rules_have_no_word_for_changes_nothing() -> None:
-    assert designations([_report("Breece Hall", "NYJ", "Day-To-Day")], PLAYERS) == {}
+    assert _designations([_report("Breece Hall", "NYJ", "Day-To-Day")]) == {}
 
 
 def test_a_long_ruling_reads_in_sleepers_words() -> None:
-    assert designations([_report("Breece Hall", "NYJ", "Injured Reserve")], PLAYERS) == {"hall": "IR"}
+    assert _designations([_report("Breece Hall", "NYJ", "Injured Reserve")]) == {"hall": "IR"}
+
+
+def test_espns_id_wins_over_a_name() -> None:
+    """Sleeper's espn_id names him whatever ESPN calls him, and whichever club the name would find."""
+    report = _report("Breece Hall Jr.", "NYJ", "Out", athlete_id="4427366")
+
+    assert set(matched([report], PLAYERS, {"4427366": "wash"})) == {"wash"}
+
+
+def test_a_name_match_carrying_another_espn_id_is_somebody_else() -> None:
+    players = {**PLAYERS, "hall": replace(PLAYERS["hall"], espn_id="111")}
+
+    assert matched([_report("Breece Hall", "NYJ", "Out", athlete_id="222")], players, {"111": "hall"}) == {}
+
+
+def test_a_shared_name_with_no_id_match_still_matches_nobody() -> None:
+    assert matched([_report("Chris Jones", "KC", "Out", athlete_id="999")], PLAYERS, {}) == {}
+
+
+def test_two_rows_for_one_player_keep_the_latest() -> None:
+    older = _report("Breece Hall", "NYJ", "Out", updated=datetime(2026, 10, 20, tzinfo=UTC))
+    newer = _report("Breece Hall", "NYJ", "Questionable")
+
+    assert _designations([newer, older]) == {"hall": "Questionable"}
+
+
+def test_a_return_date_is_the_first_week_with_a_game_on_or_after_it() -> None:
+    assert return_week(date(2026, 9, 14), SCHEDULE) == 1  # the week's Monday game
+    assert return_week(date(2026, 9, 15), SCHEDULE) == 2  # the Tuesday after it
+    assert return_week(date(2026, 9, 18), SCHEDULE) is None  # past the last game
+
+
+def test_a_return_reads_as_a_week_and_falls_back_to_the_day() -> None:
+    assert short_return(date(2026, 9, 13), SCHEDULE) == "wk 1"
+    assert short_return(date(2027, 3, 1), SCHEDULE) == "1 Mar"
+    assert long_return(date(2026, 9, 13), SCHEDULE) == "~13 Sep · wk 1"
+    assert long_return(date(2027, 3, 1), SCHEDULE) == "~1 Mar"
+
+
+def _hurt(status: str = "Injured Reserve", comment: str = "Hall (knee) had surgery.") -> PlayerInjuries:
+    report = replace(
+        _report("Breece Hall", "NYJ", status),
+        returns=date(2026, 9, 13),
+        injury="Right knee, surgery",
+        comment=comment,
+        url="https://espn.example/hall",
+    )
+    return PlayerInjuries(by_player={"hall": report})
+
+
+def test_the_drawer_shows_the_injury_its_return_and_the_latest_word_linked() -> None:
+    stats = {s.label: s for s in _hurt().stats("hall", SCHEDULE)}
+
+    assert stats["Status"].value == "Injured Reserve"
+    assert stats[BODY_PART].value == "Right knee, surgery"
+    assert stats["Back"].value == "~13 Sep · wk 1"
+    [update] = [s for s in stats.values() if s.url]
+    assert (update.value, update.url) == ("Hall (knee) had surgery.", "https://espn.example/hall")
+
+
+def test_a_comment_that_only_repeats_the_status_is_left_out() -> None:
+    assert not any(s.url for s in _hurt("Questionable", "questionable").stats("hall", SCHEDULE))
+
+
+def test_a_cleared_player_has_no_injury_to_show() -> None:
+    injuries = _hurt("Active")
+
+    assert injuries.stats("hall", SCHEDULE) == []
+    assert injuries.returns("hall") is None
+    assert injuries.of("nobody") is None
 
 
 def test_a_projection_takes_the_reports_designation_and_keeps_his_points() -> None:

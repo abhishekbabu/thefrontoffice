@@ -18,7 +18,7 @@ import logging
 import statistics
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex, normalize_name
@@ -279,8 +279,14 @@ class SleeperNFLProvider:
             adds = {t.player_id: t.count for t in self.client.get_trending("add", TRENDING_HOURS, TRENDING_LIMIT)}
             ids = sorted((pid for pid in ids if pid in adds), key=lambda pid: -adds[pid])
         elif view == INJURED:
-            ids = [pid for pid in ids if state.players[pid].injury_status.upper() == "IR"]
+            # Soonest back first, as projected among the same day; no estimate last.
+            ids = sorted(
+                (pid for pid in ids if state.players[pid].injury_status.upper() == "IR"),
+                key=lambda pid: state.injuries.returns(pid) or date.max,
+            )
         ranked = views.cards(state, ids, starters=set(), wire=True, ahead=outlook.rest_of_season(self.client, state))
+        if view == INJURED:
+            ranked = views.with_returns(ranked, state, self.scoreboard.schedule(state.season))
         if adds:
             ranked = [
                 card.model_copy(update={"columns": {**card.columns, ADDS_COLUMN: str(adds[card.player_id])}})
@@ -451,7 +457,8 @@ class SleeperNFLProvider:
         rosters = with_lineups(rosters, matchups)
 
         catalog = self.client.get_nfl_players()
-        designations = self._designations(catalog)
+        reports = self._injuries(catalog)
+        designations = injuries.designations(reports.by_player)
         players = injuries.catalog(catalog, designations, lambda meta, status: replace(meta, injury_status=status))
         published = self.client.get_projections(
             season, week, league.scoring_format, FANTASY_POSITIONS, league.scoring_rules
@@ -478,6 +485,7 @@ class SleeperNFLProvider:
             if browsing
             else self._evidence(season, week, league, phase.is_regular_season, players),
             news=news.PlayerNews() if browsing else self._news(catalog),
+            injuries=reports,
             current=current if browsing else 0,
             is_regular_season=phase.is_regular_season,
             league=league,
@@ -543,15 +551,16 @@ class SleeperNFLProvider:
         out = {pid for pid, meta in players.items() if ruled_out(meta.injury_status)}
         return evidence.gather(lines, scoring, out)
 
-    def _designations(self, players: dict[str, PlayerMeta]) -> dict[str, str]:
-        """Each player's designation as ESPN's injury report has it now, where it names him."""
+    def _injuries(self, players: dict[str, PlayerMeta]) -> injuries.PlayerInjuries:
+        """Each player's row on ESPN's injury report as it stands now, where it names him."""
         try:
             reports = self.espn.get_injuries(espn.NFL)
         except ESPNAPIError as e:
             # Sleeper's own designations stand: older, but still a designation.
             logger.warning(f"Continuing on Sleeper's injury designations alone: {e}")
-            return {}
-        return injuries.designations(reports, players)
+            return injuries.PlayerInjuries()
+        espn_ids = {meta.espn_id: pid for pid, meta in players.items() if meta.espn_id}
+        return injuries.PlayerInjuries(by_player=injuries.matched(reports, players, espn_ids))
 
     def _news(self, players: dict[str, PlayerMeta]) -> news.PlayerNews:
         """Recent articles about every player, from each club's own feed."""

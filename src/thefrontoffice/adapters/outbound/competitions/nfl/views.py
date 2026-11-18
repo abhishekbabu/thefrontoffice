@@ -8,7 +8,7 @@ and the provider is the place a week is gathered, not drawn.
 import logging
 from collections.abc import Callable, Mapping, Sequence
 
-from thefrontoffice.adapters.outbound.competitions.nfl import evidence, history
+from thefrontoffice.adapters.outbound.competitions.nfl import evidence, history, injuries
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, best_upgrade
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     FREE_AGENT,
@@ -197,6 +197,25 @@ SNAP_COLUMN, TARGET_COLUMN = "Snap%", "Tgt%"
 TREND_COLUMN = "Trend"
 """Whose role just jumped: the pickups a projection has not caught up with yet."""
 
+BACK_COLUMN = "Back"
+"""When ESPN expects him back from injury, as a week of the season: the stash question on the IR list."""
+
+
+def with_returns(rows: Sequence[PlayerCard], state: Week, schedule: Mapping[int, Sequence[Game]]) -> list[PlayerCard]:
+    """Each row with when he is expected back, sorting by the day; a dash and no value where ESPN gives none."""
+    out = []
+    for row in rows:
+        back = state.injuries.returns(row.player_id)
+        out.append(
+            row.model_copy(
+                update={
+                    "columns": {**row.columns, BACK_COLUMN: injuries.short_return(back, schedule) if back else "—"},
+                    "values": {**row.values, **({BACK_COLUMN: float(back.toordinal())} if back else {})},
+                }
+            )
+        )
+    return out
+
 
 def share(value: float | None) -> str:
     """A share of the offense as a cell or a stat reads it; a dash where his position has none."""
@@ -304,11 +323,9 @@ def fit(state: Week, projection: Projection) -> tuple[float, str] | None:
     return (gain, f"+{gain:.2f} over {slot.player.name}") if gain > 0 else (gain, f"{gain:.2f} vs {slot.player.name}")
 
 
-def _role_and_matchup(projection: Projection, state: Week) -> StatGroup | None:
-    """What sits behind the projection: the defense he faces, and how he has been used."""
+def _role(projection: Projection, state: Week) -> list[Stat]:
+    """How he has been used, behind the projection; nothing before he has played."""
     stats = []
-    if matchup := state.evidence.matchup(projection):
-        stats.append(Stat(label="Matchup", value=matchup.describe(), tone=matchup.tone))
     if role := state.evidence.roles.get(projection.player_id):
         games = f"last {role.games}" if role.games > 1 else "last game"
         if role.snap_share is not None:
@@ -320,7 +337,21 @@ def _role_and_matchup(projection: Projection, state: Week) -> StatGroup | None:
             if role.target_share is not None:
                 stats.append(Stat(label="Target share", value=share(role.target_share)))
         stats.append(Stat(label=f"Points a game, {games}", value=f"{role.points:.2f}"))
-    return StatGroup(title="Role and matchup", stats=stats) if stats else None
+    return stats
+
+
+def _opponent(projection: Projection | None, state: Week) -> Stat:
+    """Who he plays and what that defense gives up, in one line: 'vs Miami Dolphins · 19th-most to QBs (17.51 a game)'.
+
+    Toned by the matchup; a bye, a ruling or no fixtures yet reads as itself.
+    """
+    versus = _versus(
+        projection, state.scheduled, "—", _team_name(projection.opponent, state.players) if projection else ""
+    )
+    matchup = state.evidence.matchup(projection) if projection else None
+    if matchup is None:
+        return Stat(label="Opponent", value=versus)
+    return Stat(label="Opponent", value=f"{versus} · {matchup.allowed_to()}", tone=matchup.tone)
 
 
 def _team_name(team: str, players: Mapping[str, PlayerInfo]) -> str:
@@ -380,30 +411,19 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
     groups = [
         StatGroup(
             title=f"Week {state.week}",
-            stats=[
-                Stat(
-                    label="Opponent",
-                    value=_versus(
-                        projection,
-                        scheduled,
-                        "—",
-                        _team_name(projection.opponent, state.players) if projection else "",
-                    ),
-                ),
-                Stat(label="Projected", value=f"{projection.points:.2f}" if projection else "—"),
-                Stat(
-                    label="Status",
-                    value=injury or "active",
-                    tone="warning" if injury else "good",
-                ),
-                *([Stat(label="Injury", value=body)] if body else []),
-            ],
+            stats=[_opponent(projection, state), *(_role(projection, state) if projection else [])],
         )
     ]
+    # ESPN's report where it has him, which says when he is back; Sleeper's
+    # designation where it does not. Nothing for a healthy player.
+    hurt = state.injuries.stats(player_id, schedule) or [
+        *([Stat(label="Status", value=injury, tone="warning")] if injury else []),
+        *([Stat(label=injuries.BODY_PART, value=body)] if body else []),
+    ]
+    if hurt:
+        groups.append(StatGroup(title="Injury", stats=hurt))
     if projection and projection.stats:
         groups.append(StatGroup(title="Projected line", stats=_projection_lines(projection.stats)))
-    if projection and (context := _role_and_matchup(projection, state)):
-        groups.append(context)
     groups.append(
         StatGroup(
             title="Player",
