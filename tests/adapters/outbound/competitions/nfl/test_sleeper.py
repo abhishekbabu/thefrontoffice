@@ -797,7 +797,8 @@ def test_a_free_agent_carries_his_snap_and_target_share_over_his_last_games_sort
 
 def test_a_free_agent_sorts_by_the_rest_of_his_season() -> None:
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
-    client.league = replace(client.league, playoff_week_start=6)
+    # A two-team final in week 5 ends the season there.
+    client.league = replace(client.league, playoff_week_start=5, playoff_teams=2)
     client.weekly_projections[5] = {"bye1": proj("bye1", "Bye Guy", "TE", 40.0, team="LAR")}
 
     page = nfl_provider(client).free_agents("L1", PlayerQuery(sort="ROS"))

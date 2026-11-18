@@ -246,6 +246,11 @@ class LeagueRules(Protocol):
     @property
     def playoff_week_start(self) -> int: ...
     @property
+    def playoff_round_type(self) -> int:
+        """How long each playoff round lasts: 0 one week, 1 a two-week final, 2 two weeks each."""
+        ...
+
+    @property
     def waiver_budget(self) -> int:
         """Each team's FAAB for the season; nought where the league uses none."""
         ...

@@ -29,8 +29,9 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   your playoff odds, each with why the other manager might accept. A pickup
   most trades share, and each player's pricing note, is said once.
 - **Free agents**: ranked by projection and fit, with rest-of-season points
-  (next week through the last regular-season week, byes as zero; this week
-  alone once none is left), snap and target share over the last 3 games, a
+  (next week through the fantasy final — the bracket's last week from
+  `playoff_teams` and Sleeper's `playoff_round_type`, capped at week 18 — byes
+  as zero; this week alone once none is left), snap and target share over the last 3 games, a
   role-jump trend, Sleeper's trending adds and an IR stash list, soonest back
   first by ESPN's estimated return. "Without" names a hurt teammate his value
   hangs on (a regular at his position, or for a WR/TE the club's top target

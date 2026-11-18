@@ -10,7 +10,7 @@ weakest bench player dropped for it.
 
 Whether he is worth it is read the way a drop is: his recent form beside his
 outlook (`actions.FORM_WEIGHT`), where the outlook is his projection over the
-weeks after he is back rather than this week's, which is nought.
+weeks after he is back through the fantasy final rather than this week's, which is nought.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -26,12 +26,18 @@ from thefrontoffice.adapters.outbound.competitions.nfl.actions import (
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import MIN_GAMES_FOR_AVERAGE
 from thefrontoffice.adapters.outbound.competitions.nfl.injuries import return_week
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, NFLSource, PlayerInfo, Projection, open_spots
-from thefrontoffice.adapters.outbound.competitions.nfl.outlook import last_regular_week, weeks_left
+from thefrontoffice.adapters.outbound.competitions.nfl.outlook import weeks_left
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import last_regular_week, season_end
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.domain.models import Action, Stat
 
-STASH_FROM = 25.0
-"""Projected points from his return to the end of the regular season below which he is not worth the claim."""
+STASH_FROM = 40.0
+"""Projected points from his return through the fantasy final below which he is not worth the claim.
+
+The window runs through the playoffs (`rules.season_end`), so even a player back in the
+last regular-season week brings a 6-team bracket's three weeks with him: 40 is those
+weeks from a flex-grade starter (about 13 a week). The old 25, set against the regular
+season alone, would pass a backup on the bracket weeks by themselves."""
 
 COMPARABLE_BY = 1.0
 """Points a game he may fall short of the weakest bench player and still be worth stashing: about a coin flip."""
@@ -53,7 +59,7 @@ def to_do(
     empty = state.league.ir_slots - len(state.roster.ir_ids)
     if empty <= 0:
         return []
-    last = last_regular_week(state)
+    last, final = last_regular_week(state.league), season_end(state.league)
     named = {pid for item in listed for pid in (item.action.player_id, item.action.replaces, item.action.drop) if pid}
     back = {
         pid: week
@@ -117,7 +123,7 @@ def to_do(
                     urgency="later",
                     title=f"Stash {meta.name} on IR" + (f", drop {drop.name}" if drop else ""),
                     # His form before the injury is his evidence line's, said there once.
-                    reason=f"Back wk {week}; {rest:.1f} proj pts through wk {last}.{spot}",
+                    reason=f"Back wk {week}; {rest:.1f} proj pts through wk {final}.{spot}",
                     player_id=pid,
                     drop=drop.player_id if drop else "",
                     evidence=_evidence(state, meta),
