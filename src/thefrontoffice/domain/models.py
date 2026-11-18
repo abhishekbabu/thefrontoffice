@@ -1012,10 +1012,25 @@ class TradeIdea(BaseModel):
         default=0.0,
         description="Their chance of a playoff place before the trade: out of it, they have only worth to weigh.",
     )
-    pickup: str = Field(default="", description="The free agent added to the roster spot a two-for-one frees.")
+    pickup: str = Field(
+        default="",
+        description="The free agent added to the roster spot a two-for-one frees, where not the list's shared one.",
+    )
     form: list[Stat] = Field(
         default_factory=list,
-        description="The players in it whose own games move their price off their projection, and why.",
+        description="The players in it whose own games move their price off their projection, and why, "
+        "each said on the first trade he is in.",
+    )
+
+
+class Trades(BaseModel):
+    """The trades worth offering, best first, with what most of them share said once rather than on each."""
+
+    ideas: list[TradeIdea] = Field(default_factory=list)
+    pickup: str = Field(
+        default="",
+        description="The free agent most of the two-for-ones would add to the spot they free; an idea "
+        "names its own pickup only where it is someone else.",
     )
 
 

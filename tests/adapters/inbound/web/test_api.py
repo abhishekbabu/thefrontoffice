@@ -920,7 +920,7 @@ def test_trades_are_priced_in_playoff_chance() -> None:
 
     client = _client(_SeasonProvider(Summary()))
 
-    [idea] = client.get("/api/nfl-sleeper/leagues/L1/trades").json()
+    [idea] = client.get("/api/nfl-sleeper/leagues/L1/trades").json()["ideas"]
 
     assert (idea["team"], idea["giving"], idea["receiving"]) == ("Them", ["A (QB)"], ["B (WR)"])
     assert idea["playoffs_change"] > 0

@@ -12,6 +12,7 @@ worth in a way a single figure cannot.
 
 import logging
 import random
+from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import replace
 
@@ -23,6 +24,7 @@ from thefrontoffice.domain.models import (
     TeamWeek,
     TradeIdea,
     TradeOption,
+    Trades,
     outcome,
 )
 from thefrontoffice.domain.ports import SeasonProvider, TradeMarketProvider
@@ -55,6 +57,9 @@ simulation never reaches: from there a few points of chance are worth less than 
 
 MIN_PLAYOFF_GAIN = 1.0
 """Projected points a playoff week: less than that is a trade not worth the asking."""
+
+SHARED_FROM = 2
+"""Trades naming the same pickup from which he is said once under the list rather than on each."""
 
 
 def simulate_season(season: SeasonInput, simulations: int = SEASONS) -> PlayoffOdds:
@@ -157,7 +162,7 @@ class MarketEngine:
     def __init__(self, provider: TradeMarketProvider):
         self.provider = provider
 
-    def trades(self, league_id: str) -> list[TradeIdea]:
+    def trades(self, league_id: str) -> Trades:
         """The trades that would do most for you, best first; none past the deadline.
 
         A manager will take a trade near even in worth if it helps his
@@ -172,7 +177,7 @@ class MarketEngine:
         """
         market = self.provider.trade_market(league_id)
         if market is None or not market.season.spots or not market.options:
-            return []
+            return Trades()
         before = simulate_season(market.season)
         chances = {t.team_id: t.playoffs for t in before.teams}
         safe = before.playoffs >= SAFE
@@ -193,8 +198,29 @@ class MarketEngine:
         ideas = [_priced(market.season, before, option, names) for option in tried]
         worth = [idea for idea in ideas if _worth_offering(idea)]
         if safe:
-            return sorted(worth, key=lambda idea: (-for_you(idea), -idea.playoffs_change))[:TRADES_SHOWN]
-        return sorted(worth, key=lambda idea: (-idea.playoffs_change, -for_you(idea)))[:TRADES_SHOWN]
+            shown = sorted(worth, key=lambda idea: (-for_you(idea), -idea.playoffs_change))
+        else:
+            shown = sorted(worth, key=lambda idea: (-idea.playoffs_change, -for_you(idea)))
+        return _said_once(shown[:TRADES_SHOWN])
+
+
+def _said_once(ideas: list[TradeIdea]) -> Trades:
+    """The list with nothing said twice: a pickup most trades share hoisted out of them, and each
+    player's form said on the first trade he is in.
+
+    Five trades freeing a spot for the same free agent are one fact about the
+    wire, not five about the trades.
+    """
+    named = Counter(idea.pickup for idea in ideas if idea.pickup)
+    shared = next((pickup for pickup, count in named.most_common(1) if count >= SHARED_FROM), "")
+    said: set[str] = set()
+    kept: list[TradeIdea] = []
+    for idea in ideas:
+        form = [line for line in idea.form if line.label not in said]
+        said.update(line.label for line in form)
+        pickup = "" if idea.pickup == shared else idea.pickup
+        kept.append(idea.model_copy(update={"pickup": pickup, "form": form}))
+    return Trades(ideas=kept, pickup=shared)
 
 
 def _per_team(options: list[TradeOption], key: Callable[[TradeOption], float]) -> list[TradeOption]:

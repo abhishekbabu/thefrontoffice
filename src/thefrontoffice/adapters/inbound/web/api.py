@@ -72,7 +72,7 @@ from thefrontoffice.domain.models import (
     Subject,
     Summary,
     TeamRef,
-    TradeIdea,
+    Trades,
 )
 from thefrontoffice.domain.ports import (
     AccountLogin,
@@ -473,8 +473,8 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         provider = wiring.registry.find(competition).open_as(OutlookProvider, "planning the weeks ahead")
         return provider.weeks_ahead(league_id, team)
 
-    @app.get("/api/{competition}/leagues/{league_id}/trades", response_model=list[TradeIdea])
-    def trades(competition: str, league_id: str) -> list[TradeIdea]:
+    @app.get("/api/{competition}/leagues/{league_id}/trades", response_model=Trades)
+    def trades(competition: str, league_id: str) -> Trades:
         """The trades that would most raise your playoff chance and that the other side gains from too.
 
         Its own route because it plays the season out once per trade tried —

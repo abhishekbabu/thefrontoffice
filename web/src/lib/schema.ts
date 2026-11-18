@@ -1962,15 +1962,29 @@ export interface components {
             their_playoffs: number;
             /**
              * Pickup
-             * @description The free agent added to the roster spot a two-for-one frees.
+             * @description The free agent added to the roster spot a two-for-one frees, where not the list's shared one.
              * @default
              */
             pickup: string;
             /**
              * Form
-             * @description The players in it whose own games move their price off their projection, and why.
+             * @description The players in it whose own games move their price off their projection, and why, each said on the first trade he is in.
              */
             form: components["schemas"]["Stat"][];
+        };
+        /**
+         * Trades
+         * @description The trades worth offering, best first, with what most of them share said once rather than on each.
+         */
+        Trades: {
+            /** Ideas */
+            ideas: components["schemas"]["TradeIdea"][];
+            /**
+             * Pickup
+             * @description The free agent most of the two-for-ones would add to the spot they free; an idea names its own pickup only where it is someone else.
+             * @default
+             */
+            pickup: string;
         };
         /**
          * Turn
@@ -3633,7 +3647,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TradeIdea"][];
+                    "application/json": components["schemas"]["Trades"];
                 };
             };
             /** @description Bad Request */

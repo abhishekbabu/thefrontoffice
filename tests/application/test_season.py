@@ -190,13 +190,13 @@ class _Market:
 
 
 def test_a_trade_that_makes_you_stronger_raises_your_playoff_chance() -> None:
-    [idea] = MarketEngine(_Market(_trade("b", mine=115, theirs=101))).trades("L1")
+    [idea] = MarketEngine(_Market(_trade("b", mine=115, theirs=101))).trades("L1").ideas
 
     assert idea.playoffs_change > 0
 
 
 def test_a_trade_that_changes_nothing_is_not_offered() -> None:
-    assert MarketEngine(_Market(_trade("b", mine=100, theirs=100))).trades("L1") == []
+    assert MarketEngine(_Market(_trade("b", mine=100, theirs=100))).trades("L1").ideas == []
 
 
 def test_trades_are_ranked_on_the_playoff_chance_not_on_points() -> None:
@@ -204,19 +204,19 @@ def test_trades_are_ranked_on_the_playoff_chance_not_on_points() -> None:
     rival = _trade("b", mine=110, theirs=110, name="to the rival")
     other = _trade("c", mine=108, theirs=101, name="elsewhere")
 
-    ideas = MarketEngine(_Market(rival, other)).trades("L1")
+    ideas = MarketEngine(_Market(rival, other)).trades("L1").ideas
 
     assert [i.giving for i in ideas][0] == ["elsewhere"]
 
 
 def test_what_a_trade_hands_the_other_side_is_counted() -> None:
-    [idea] = MarketEngine(_Market(_trade("b", mine=115, theirs=110))).trades("L1")
+    [idea] = MarketEngine(_Market(_trade("b", mine=115, theirs=110))).trades("L1").ideas
 
     assert idea.their_playoffs_change > 0
 
 
 def test_no_market_is_no_trades() -> None:
-    assert MarketEngine(_Over()).trades("L1") == []
+    assert MarketEngine(_Over()).trades("L1").ideas == []
 
 
 # Two of the three can still reach the one place; "d" has lost every game and cannot.
@@ -230,12 +230,12 @@ OUT = _season(
 
 def test_a_trade_that_does_nothing_for_a_contenders_lineup_is_not_offered() -> None:
     """A manager still chasing a place wants his starters better for it."""
-    assert MarketEngine(_Market(_trade("b", mine=115, theirs=100), season=OUT)).trades("L1") == []
+    assert MarketEngine(_Market(_trade("b", mine=115, theirs=100), season=OUT)).trades("L1").ideas == []
 
 
 def test_a_team_out_of_the_race_is_offered_a_trade_on_worth_alone() -> None:
     """With no place left to chase, his lineup is nothing to him; what he gets back is."""
-    [idea] = MarketEngine(_Market(_trade("d", mine=115, theirs=100), season=OUT)).trades("L1")
+    [idea] = MarketEngine(_Market(_trade("d", mine=115, theirs=100), season=OUT)).trades("L1").ideas
 
     assert idea.team == "D" and idea.their_playoffs < 0.05
 
@@ -254,7 +254,7 @@ def test_a_team_already_safe_is_offered_what_helps_its_playoff_lineup() -> None:
     now = _trade("b", mine=110, theirs=101, name="for now", season=SAFE_SEASON, playoff=1.0, get="now")
     later = _trade("c", mine=102, theirs=101, name="for December", season=SAFE_SEASON, playoff=6.0, get="later")
 
-    ideas = MarketEngine(_Market(now, later, season=SAFE_SEASON)).trades("L1")
+    ideas = MarketEngine(_Market(now, later, season=SAFE_SEASON)).trades("L1").ideas
 
     assert [i.giving for i in ideas] == [["for December"], ["for now"]]
     assert ideas[0].playoff_points == 6.0
@@ -265,7 +265,7 @@ def test_a_team_on_the_bubble_is_offered_its_playoff_chance_before_its_december(
     december = _trade("b", mine=100, theirs=101, name="for December", playoff=6.0, get="later")
     now = _trade("c", mine=110, theirs=101, name="for now", playoff=1.0, get="now")
 
-    ideas = MarketEngine(_Market(december, now)).trades("L1")
+    ideas = MarketEngine(_Market(december, now)).trades("L1").ideas
 
     assert [i.giving for i in ideas] == [["for now"], ["for December"]]
 
@@ -275,7 +275,7 @@ def test_two_offers_for_the_same_player_are_one_idea() -> None:
     first = _trade("b", mine=115, theirs=101, name="one")
     second = _trade("b", mine=114, theirs=101, name="other")
 
-    ideas = MarketEngine(_Market(first, second)).trades("L1")
+    ideas = MarketEngine(_Market(first, second)).trades("L1").ideas
 
     assert [i.giving for i in ideas] == [["one"]]
 
@@ -283,7 +283,7 @@ def test_two_offers_for_the_same_player_are_one_idea() -> None:
 def test_a_trade_names_the_free_agent_for_the_spot_it_frees() -> None:
     option = replace(_trade("b", mine=115, theirs=101), pickup="Wire RB (RB)")
 
-    [idea] = MarketEngine(_Market(option)).trades("L1")
+    [idea] = MarketEngine(_Market(option)).trades("L1").ideas
 
     assert idea.pickup == "Wire RB (RB)"
 
@@ -292,6 +292,37 @@ def test_a_trade_carries_why_its_players_are_priced_off_their_projections() -> N
     line = Stat(label="Lead Back", value="priced 16.0 a week, projected 12.4: snaps 32→77% in week 9")
     option = replace(_trade("b", mine=115, theirs=101), form=(line,))
 
-    [idea] = MarketEngine(_Market(option)).trades("L1")
+    [idea] = MarketEngine(_Market(option)).trades("L1").ideas
 
     assert idea.form == [line]
+
+
+def test_a_pickup_most_trades_share_is_said_once_for_the_list() -> None:
+    """Freeing a spot for the same free agent is one fact about the wire, not one per trade."""
+    shared = [replace(_trade(t, mine=115, theirs=101, get=t), pickup="Wire TE (TE)") for t in ("b", "c")]
+
+    trades = MarketEngine(_Market(*shared)).trades("L1")
+
+    assert trades.pickup == "Wire TE (TE)"
+    assert [i.pickup for i in trades.ideas] == ["", ""]
+
+
+def test_a_pickup_on_one_trade_alone_stays_on_it() -> None:
+    first = replace(_trade("b", mine=115, theirs=101, get="b"), pickup="Wire TE (TE)")
+    second = replace(_trade("c", mine=114, theirs=101, get="c"), pickup="Wire RB (RB)")
+
+    trades = MarketEngine(_Market(first, second)).trades("L1")
+
+    assert trades.pickup == ""
+    assert sorted(i.pickup for i in trades.ideas) == ["Wire RB (RB)", "Wire TE (TE)"]
+
+
+def test_a_players_pricing_is_said_on_the_first_trade_he_is_in() -> None:
+    line = Stat(label="Lead Back", value="priced 16.0 a week, projected 12.4: snaps 32→77% in week 9")
+    other = Stat(label="Slot WR", value="priced 9.0 a week, projected 11.0: targets down")
+    first = replace(_trade("b", mine=115, theirs=101, get="b"), form=(line,))
+    second = replace(_trade("c", mine=114, theirs=101, get="c"), form=(line, other))
+
+    ideas = MarketEngine(_Market(first, second)).trades("L1").ideas
+
+    assert [i.form for i in ideas] == [[line], [other]]
