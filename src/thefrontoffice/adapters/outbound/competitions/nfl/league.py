@@ -28,7 +28,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     fielded,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.outcomes import UNDER_WAY
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, season_end
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, playoff_round, season_end
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Scoreboard,
     Week,
@@ -110,7 +110,7 @@ def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence
         )
         opponent = by_roster.get(sides[1].roster_id) if sides else None
 
-        playoff = _playoff_round(state, week)
+        playoff = playoff_round(state.league, week)
         if playoff and week > state.week:
             # Sleeper fills the bracket weeks with placeholder pairings until
             # the regular season ends; a name there is not who you will play.
@@ -134,12 +134,6 @@ def _season_rows(client: NFLSource, state: Week, schedule: Mapping[int, Sequence
 def last_week(state: Week) -> int:
     """The league's final week: the end of its playoffs, or the NFL's last where it names none."""
     return season_end(state.league)
-
-
-def _playoff_round(state: Week, week: int) -> str:
-    """'Playoffs, round 1' for a bracket week; empty for the regular season."""
-    start = state.league.playoff_week_start
-    return f"Playoffs, round {week - start + 1}" if start and week >= start else ""
 
 
 def _headline(state: Week, standings: list[StandingRow]) -> list[Stat]:

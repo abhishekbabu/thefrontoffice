@@ -8,6 +8,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     SCORING_LABELS,
     SEASON_WEEKS,
     last_regular_week,
+    playoff_round,
     scoring_name,
     season_end,
 )
@@ -59,3 +60,73 @@ def test_a_league_with_no_bracket_runs_to_the_nfls_last_week() -> None:
     assert season_end(replace(LEAGUE, playoff_week_start=0, playoff_teams=6)) == SEASON_WEEKS
     assert season_end(LEAGUE) == SEASON_WEEKS
     assert last_regular_week(replace(LEAGUE, playoff_week_start=0)) == SEASON_WEEKS
+
+
+# ── the bracket's rounds ────────────────────────────────────────────────
+
+
+def _rounds(teams: int, round_type: int = 0, start: int = 14) -> dict[int, str]:
+    """Every bracket week the league plays, with the round it names."""
+    league = replace(LEAGUE, playoff_week_start=start, playoff_teams=teams, playoff_round_type=round_type)
+    return {week: playoff_round(league, week) for week in range(start, season_end(league) + 1)}
+
+
+def test_a_four_team_bracket_is_semifinals_then_the_final() -> None:
+    assert _rounds(4) == {14: "Semifinals", 15: "Final"}
+
+
+def test_six_and_eight_teams_play_three_rounds_one_week_each() -> None:
+    expected = {14: "Quarterfinals", 15: "Semifinals", 16: "Final"}
+
+    assert _rounds(6) == expected
+    assert _rounds(8) == expected
+
+
+def test_a_bracket_deeper_than_quarterfinals_numbers_its_first_round() -> None:
+    assert _rounds(16, start=13) == {13: "Round 1", 14: "Quarterfinals", 15: "Semifinals", 16: "Final"}
+
+
+def test_a_two_week_final_spans_two_weeks_and_says_which() -> None:
+    """The live league: six teams from week 14 — three rounds, not four."""
+    assert _rounds(6, round_type=1) == {
+        14: "Quarterfinals",
+        15: "Semifinals",
+        16: "Final, week 1 of 2",
+        17: "Final, week 2 of 2",
+    }
+    assert _rounds(4, round_type=1) == {14: "Semifinals", 15: "Final, week 1 of 2", 16: "Final, week 2 of 2"}
+
+
+def test_two_week_rounds_label_every_week_of_every_round() -> None:
+    assert _rounds(4, round_type=2, start=12) == {
+        12: "Semifinals, week 1 of 2",
+        13: "Semifinals, week 2 of 2",
+        14: "Final, week 1 of 2",
+        15: "Final, week 2 of 2",
+    }
+    assert _rounds(8, round_type=2, start=12) == {
+        12: "Quarterfinals, week 1 of 2",
+        13: "Quarterfinals, week 2 of 2",
+        14: "Semifinals, week 1 of 2",
+        15: "Semifinals, week 2 of 2",
+        16: "Final, week 1 of 2",
+        17: "Final, week 2 of 2",
+    }
+
+
+def test_the_last_week_season_end_counts_is_the_finals() -> None:
+    for teams in (4, 6, 8, 12):
+        for round_type in (0, 1, 2):
+            rounds = _rounds(teams, round_type, start=12)
+            assert rounds[max(rounds)].startswith("Final"), (teams, round_type)
+
+
+def test_regular_season_weeks_and_weeks_past_the_final_name_no_round() -> None:
+    league = replace(LEAGUE, playoff_week_start=14, playoff_teams=4)
+
+    assert (playoff_round(league, 13), playoff_round(league, 16)) == ("", "")
+    assert playoff_round(replace(LEAGUE, playoff_week_start=0, playoff_teams=6), 16) == ""
+
+
+def test_a_league_that_names_no_bracket_size_calls_its_playoff_weeks_playoffs() -> None:
+    assert playoff_round(replace(LEAGUE, playoff_week_start=15, playoff_teams=0), 16) == "Playoffs"
