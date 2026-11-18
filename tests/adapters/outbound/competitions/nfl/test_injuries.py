@@ -9,6 +9,7 @@ from support.nfl import SEASON_SCHEDULE, proj
 from thefrontoffice.adapters.outbound.competitions.nfl.injuries import (
     BODY_PART,
     PlayerInjuries,
+    athletes,
     catalog,
     designations,
     long_return,
@@ -16,8 +17,9 @@ from thefrontoffice.adapters.outbound.competitions.nfl.injuries import (
     reported,
     return_week,
     short_return,
+    unreported,
 )
-from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
+from thefrontoffice.adapters.outbound.platforms.espn.types import Athlete, InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta
 
 PLAYERS = {
@@ -91,6 +93,47 @@ def test_two_rows_for_one_player_keep_the_latest() -> None:
     newer = _report("Breece Hall", "NYJ", "Questionable")
 
     assert _designations([newer, older]) == {"hall": "Questionable"}
+
+
+RULED_OUT = {
+    "out": PlayerMeta(player_id="out", name="Out Man", position="WR", team="WAS", injury_status="Out"),
+    "ir": PlayerMeta(player_id="ir", name="Ir Man", position="RB", team="NYJ", injury_status="IR", espn_id="5"),
+    "q": PlayerMeta(player_id="q", name="Q Man", position="TE", team="NYJ", injury_status="Questionable"),
+    "fa": PlayerMeta(player_id="fa", name="Free Man", position="RB", team="FA", injury_status="IR"),
+    "def": PlayerMeta(player_id="def", name="Jets", position="DEF", team="NYJ", injury_status="Out"),
+    "k": PlayerMeta(player_id="k", name="Kick Man", position="K", team="NYJ", injury_status="IR"),
+}
+
+
+def test_only_players_ruled_out_on_a_club_and_missing_from_the_report_are_asked_after() -> None:
+    found = {"k": _report("Kick Man", "NYJ", "Active")}
+
+    assert unreported(RULED_OUT, found) == ["ir", "out"]
+
+
+def _athletes(roster: list[Athlete], espn_ids: dict[str, str] | None = None) -> dict[str, str]:
+    found = athletes(["out", "ir"], RULED_OUT, espn_ids if espn_ids is not None else {"5": "ir"}, roster)
+    return {pid: a.athlete_id for pid, a in found.items()}
+
+
+def test_sleepers_espn_id_is_used_as_it_stands_and_a_name_is_found_on_his_clubs_roster() -> None:
+    roster = [Athlete(athlete_id="9", name="Out Man", club="WSH"), Athlete(athlete_id="6", name="Ir Man", club="NYJ")]
+
+    assert _athletes(roster) == {"ir": "5", "out": "9"}
+
+
+def test_a_name_on_another_club_or_shared_by_two_on_his_finds_nobody() -> None:
+    elsewhere = [Athlete(athlete_id="9", name="Out Man", club="NYJ")]
+    shared = [Athlete(athlete_id="9", name="Out Man", club="WSH"), Athlete(athlete_id="8", name="Out Man", club="WSH")]
+
+    assert _athletes(elsewhere) == {"ir": "5"}
+    assert _athletes(shared) == {"ir": "5"}
+
+
+def test_a_name_finding_an_id_sleeper_gives_somebody_else_finds_nobody() -> None:
+    roster = [Athlete(athlete_id="5", name="Out Man", club="WSH")]
+
+    assert _athletes(roster) == {"ir": "5"}
 
 
 def test_a_return_date_is_the_first_week_with_a_game_on_or_after_it() -> None:

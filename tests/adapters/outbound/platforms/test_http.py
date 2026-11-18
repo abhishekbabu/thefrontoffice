@@ -230,6 +230,19 @@ def test_a_batch_only_fetches_what_it_does_not_have(tmp_path: Path) -> None:
     assert result["k1"] == {"week": 1}
 
 
+def test_a_batch_can_trim_what_it_stores(tmp_path: Path) -> None:
+    """A club's whole roster is a third of a megabyte, of which a name and an id are read."""
+    cache = JsonDiskCache(tmp_path / "cache")
+
+    def keep(raw: Any) -> Any:
+        return raw["week"]
+
+    result = _client(tmp_path, RoutedSession(ROUTES), cache=cache).cached_many(URLS, TTL, keep=keep).values
+
+    assert result["k3"] == 3
+    assert cache.get("k3", TTL) == 3
+
+
 def test_a_batch_takes_a_stored_null_as_a_hit(tmp_path: Path) -> None:
     """The same rule `cached` keeps: null is an answer, and asking again every read is the bug."""
     cache = JsonDiskCache(tmp_path / "cache")

@@ -147,7 +147,10 @@ on disk.
 - **Platforms.** Sleeper runs the NFL leagues and supplies stats for both NFL
   and NBA. FPL comes from its public API, NBA leagues from Yahoo, and news and
   injuries from ESPN (joined to Sleeper by ESPN's id where Sleeper carries it,
-  else by full name within a club). Every response is cached on disk, and transient failures
+  else by full name within a club). ESPN's league-wide injury report keeps only
+  each club's latest 25 entries, so a player Sleeper has ruled out whom it has
+  dropped is looked up on his own: his ESPN id from Sleeper or his club's ESPN
+  roster, then his latest injury entry. Every response is cached on disk, and transient failures
   are retried. Football projections and stat lines are priced by each league's
   own scoring settings, as the Sleeper app prices them.
 - **The to-do list is the app's, not the model's.** It is computed from league

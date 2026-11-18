@@ -5,6 +5,7 @@ failure mode is a drawer that silently never shows a return date rather than
 an error. Run with `just test-integration`.
 """
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -30,3 +31,24 @@ def test_the_injury_report_still_carries_athlete_ids_and_return_dates(client: ES
     assert all(r.athlete_id.isdigit() for r in hurt)
     assert any(r.returns for r in hurt)
     assert any(r.injury for r in hurt)
+
+
+def test_a_roster_names_each_player_with_an_id_his_own_injury_history_answers_to(client: ESPNClient) -> None:
+    """The backfill for whoever the report has dropped: a roster's ids, then each one's own entry."""
+    roster = client.get_rosters(NFL)
+    assert len({a.club for a in roster}) == 32
+    assert all(a.athlete_id.isdigit() and a.name for a in roster)
+
+    # Whoever the report itself names as hurt has an entry of his own; ask after a handful of them.
+    known = {a.athlete_id for a in roster}
+    hurt = [r for r in client.get_injuries(NFL) if r.status != "Active" and r.athlete_id in known][:10]
+    by_id = {a.athlete_id: a for a in roster}
+    # A season is named for the year it kicks off; January and February still belong to the one before.
+    now = datetime.now(UTC)
+    season = str(now.year if now.month > 2 else now.year - 1)
+
+    found = client.get_athlete_injuries(NFL, season, [by_id[r.athlete_id] for r in hurt])
+
+    assert found, "nobody the report calls hurt has an entry of his own: the core API's shape has moved"
+    assert all(r.status and r.updated for r in found.values())
+    assert any(r.returns for r in found.values())

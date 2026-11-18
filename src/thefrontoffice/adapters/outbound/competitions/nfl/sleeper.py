@@ -460,7 +460,7 @@ class SleeperNFLProvider:
         rosters = with_lineups(rosters, matchups)
 
         catalog = self.client.get_nfl_players()
-        reports = self._injuries(catalog)
+        reports = self._injuries(catalog, season)
         designations = injuries.designations(reports.by_player)
         players = injuries.catalog(catalog, designations, lambda meta, status: replace(meta, injury_status=status))
         published = self.client.get_projections(
@@ -554,8 +554,12 @@ class SleeperNFLProvider:
         out = {pid for pid, meta in players.items() if ruled_out(meta.injury_status)}
         return evidence.gather(lines, scoring, out)
 
-    def _injuries(self, players: dict[str, PlayerMeta]) -> injuries.PlayerInjuries:
-        """Each player's row on ESPN's injury report as it stands now, where it names him."""
+    def _injuries(self, players: dict[str, PlayerMeta], season: str) -> injuries.PlayerInjuries:
+        """Each player's row on ESPN's injury report as it stands now, where it names him.
+
+        Then, for whoever Sleeper has ruled out and the report has dropped,
+        his own latest entry from ESPN.
+        """
         try:
             reports = self.espn.get_injuries(espn.NFL)
         except ESPNAPIError as e:
@@ -563,7 +567,28 @@ class SleeperNFLProvider:
             logger.warning(f"Continuing on Sleeper's injury designations alone: {e}")
             return injuries.PlayerInjuries()
         espn_ids = {meta.espn_id: pid for pid, meta in players.items() if meta.espn_id}
-        return injuries.PlayerInjuries(by_player=injuries.matched(reports, players, espn_ids))
+        found = injuries.matched(reports, players, espn_ids)
+        return injuries.PlayerInjuries(by_player=found | self._backfilled(players, found, espn_ids, season))
+
+    def _backfilled(
+        self, players: dict[str, PlayerMeta], found: dict[str, espn.InjuryReport], espn_ids: dict[str, str], season: str
+    ) -> dict[str, espn.InjuryReport]:
+        """The latest entry of each player ruled out whom the report has dropped, keyed by Sleeper's id.
+
+        The rosters are read only for a player Sleeper carries no ESPN id for.
+        Enrichment like the news: what will not load leaves the report as it was.
+        """
+        wanted = injuries.unreported(players, found)
+        if not wanted:
+            return {}
+        try:
+            roster = self.espn.get_rosters(espn.NFL) if any(not players[pid].espn_id for pid in wanted) else []
+            athletes = injuries.athletes(wanted, players, espn_ids, roster)
+            entries = self.espn.get_athlete_injuries(espn.NFL, season, list(athletes.values()))
+        except ESPNAPIError as e:
+            logger.warning(f"Continuing on the injury report alone, without the players it has dropped: {e}")
+            return {}
+        return {pid: entries[a.athlete_id] for pid, a in athletes.items() if a.athlete_id in entries}
 
     def _news(self, players: dict[str, PlayerMeta]) -> news.PlayerNews:
         """Recent articles about every player, from each club's own feed."""

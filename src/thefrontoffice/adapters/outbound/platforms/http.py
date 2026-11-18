@@ -156,15 +156,20 @@ class JsonApiClient:
         trim = keep or (lambda raw: raw)
         return self._cache.cached(key, ttl, lambda: trim(self.get(url, timeout=timeout)))
 
-    def cached_many(self, urls: dict[str, str], ttl: timedelta) -> Batch[str, Any]:
+    def cached_many(
+        self, urls: dict[str, str], ttl: timedelta, keep: Callable[[Any], Any] | None = None
+    ) -> Batch[str, Any]:
         """Several cached GETs at once, fetching only the misses and in parallel.
 
         A request that fails is reported in the batch's `failures` rather than
         failing the rest, and logged here. Whether a hole is tolerable is the
         caller's to say: a week that would not load is not a week with nothing
         in it, so the caller has to be told which one it was.
+
+        `keep` trims each response before it is stored, as it does for `cached`.
         """
-        batch = fetch_many(self._cache, {key: (lambda url=url: self.get(url)) for key, url in urls.items()}, ttl)
+        trim = keep or (lambda raw: raw)
+        batch = fetch_many(self._cache, {key: (lambda url=url: trim(self.get(url))) for key, url in urls.items()}, ttl)
         for key, error in batch.failures.items():
             logger.warning(f"{self._name} batch missing {key}: {error}")
         return batch
