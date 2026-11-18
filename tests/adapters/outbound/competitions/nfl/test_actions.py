@@ -290,6 +290,8 @@ def test_the_last_week_to_trade_says_so() -> None:
     [action] = _at_deadline(3)
 
     assert (action.kind, action.urgency, action.when) == ("trade", "soon", "week 3")
+    # The week is the deadline's label alone, not restated in the title or the reason.
+    assert "3" not in action.title + action.reason
 
 
 def test_a_deadline_next_week_is_planning() -> None:

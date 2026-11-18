@@ -56,8 +56,8 @@ def test_leagues_are_listed_with_format_and_size() -> None:
     refs = nfl_provider(FakeSleeper()).list_leagues()
     assert len(refs) == 1
     assert refs[0].name == "Sunday Money"
-    assert "12-team" in refs[0].detail
-    assert "PPR" in refs[0].detail
+    # The format by its name alone: the header is read by someone who knows what PPR means.
+    assert refs[0].detail.split(" · ") == ["12-team", "PPR"]
 
 
 def test_a_league_you_are_not_in_raises() -> None:

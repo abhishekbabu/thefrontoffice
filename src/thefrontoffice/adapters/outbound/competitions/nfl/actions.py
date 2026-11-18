@@ -118,8 +118,8 @@ def _ir_locked(state: Week, started: set[str]) -> list[Item]:
         reason = f"{meta.name} is {status}. Roster locked until he leaves IR."
         drop = None
         if room > 0:
+            # The open spot is drawn on the bench; the reason does not say it again.
             room -= 1
-            reason += " Open roster spot."
         else:
             drop = drop_candidate(state, (p for p in state.bench if p.team not in started), set())
             reason += f" {_drop_reason(state, drop)}" if drop else " No bench player can be dropped yet."
@@ -446,8 +446,9 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
             out.append(item)
             continue
         if room > 0:
+            # It goes into the open spot, which the bench draws: no drop to name, nothing to add.
             room -= 1
-            out.append(_reworded(item, reason=f"{action.reason} Open roster spot."))
+            out.append(item)
             continue
         drop = drop_candidate(state, (p for p in state.bench if p.team not in started), named | chosen)
         if item.move == "rise" and not _worth_a_spot(state, action.player_id, drop):
@@ -696,7 +697,8 @@ def _trade_deadline(state: Week) -> list[Item]:
                 kind="trade",
                 urgency="soon" if final else "later",
                 title="Make any trades this week" if final else "Line up any trades now",
-                reason=f"Trade deadline: week {deadline}" + (" (this week)." if final else " (next week)."),
+                # The week is said once, as the deadline: the title already says how close it is.
+                reason="Trade deadline.",
                 when=f"week {deadline}",
                 key=f"deadline:{deadline}",
             ),
