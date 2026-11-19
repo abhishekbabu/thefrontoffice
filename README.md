@@ -53,6 +53,9 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   "99% win / 83% loss".
 - **Every week of the season**: page back to see what was played and forward to
   see the projected lineups. FPL gameweeks and NBA weeks work the same way.
+  An NBA week played shows its result, its final score and both rosters as
+  they ended it (Yahoo's `roster;week=N`, cached 7 days), each player with his
+  line in the league's categories or his fantasy points.
 - **Trades**: near-even offers that start for you, one a row: give, get, the
   partner and why he might accept, and what each does to your regular season,
   your playoff weeks, your total and your playoff odds. Ranked by the odds, or

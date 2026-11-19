@@ -304,7 +304,8 @@ class YahooNBAProvider:
         """Any week of the season: its score as it finished or stands, and no to-do list.
 
         A week to come shows both rosters as they stand today, against that
-        week's opponent; a week played shows none (`week.side` says why).
+        week's opponent; a week played shows both as they ended it, each player
+        with his line over it.
 
         Raises:
             NotFoundError: the season has no such week.
@@ -314,7 +315,7 @@ class YahooNBAProvider:
         yahoo = self._yahoo_for(league)
         my_team = yahoo.get_user_team()
         if week < current:
-            return self._board(yahoo, league, my_team, week, None)
+            return self._board(yahoo, league, my_team, week, None, played=True)
         roster = yahoo.roster(my_team.team_key)
         weights = self._weights(league, yahoo)
 
@@ -364,12 +365,16 @@ class YahooNBAProvider:
         week: int,
         roster: list[YahooPlayer] | None,
         read: Callable[[Pairing, list[YahooPlayer]], Mapping[str, Reading]] | None = None,
+        *,
+        played: bool = False,
     ) -> Summary:
         """One week's head-to-head, and where it sits in the season.
 
         `roster` is yours where rosters are shown, and None where they are not;
         the opponent's is read alongside it. `read` gives each shown player's
-        week, from the pairing and the opponent's roster.
+        week, from the pairing and the opponent's roster. A week `played` reads
+        both rosters as Yahoo kept them for it instead: a basketball lineup is
+        set day by day, so today's did not play it.
         """
         current = league.current_week or week
         weeks = WeekRange(week=week, current=current, first=league.first_week, last=league.last_week(current))
@@ -377,7 +382,11 @@ class YahooNBAProvider:
         if found is None:
             return Summary(window=f"Week {week}", weeks=weeks)
         records = {t.team_key: t.standing.record for t in yahoo.teams() if t.standing}
-        theirs = yahoo.roster(found.opponent.team_key) if roster is not None else None
+        if played:
+            kept = yahoo.played_rosters([team.team_key, found.opponent.team_key], week)
+            roster, theirs = kept[team.team_key], kept[found.opponent.team_key]
+        else:
+            theirs = yahoo.roster(found.opponent.team_key) if roster is not None else None
         readings = read(found, theirs) if read is not None and theirs is not None else None
         scored = None if league.by_points else yahoo.settings().categories
         return nba_week.board(found, weeks, records, roster, theirs, scored, readings)

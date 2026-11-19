@@ -119,7 +119,7 @@ def season(
                 opponent=found.opponent.name if found else "",
                 detail=playoff or (records.get(found.opponent.team_key, "") if found else BYE),
                 result=_result(found, week, current, points=points),
-                outcome=_outcome(found),
+                outcome=ended(found),
                 is_current=week == current,
                 playoffs=bool(playoff),
             )
@@ -162,7 +162,7 @@ def _amount(printed: str) -> float:
         return 0.0
 
 
-def _outcome(found: Pairing | None) -> Outcome | None:
+def ended(found: Pairing | None) -> Outcome | None:
     """How a settled week ended for you; None before then, and for a week you did not play."""
     if found is None or not found.settled:
         return None

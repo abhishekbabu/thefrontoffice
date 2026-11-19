@@ -337,6 +337,22 @@ def test_a_roster_says_where_each_player_sits_and_what_ails_them(tmp_path: Path)
     assert ctx.requests == [("team/nba.l.123.t.1/roster", False)]
 
 
+def test_a_week_played_reads_each_roster_as_it_ended_with_each_players_line(tmp_path: Path) -> None:
+    played = {"12": "143", "18": "-"}
+    answers = {
+        paths.played_roster("t1", 3).query: roster_xml(rostered_xml("A B", "PG", stats=played, points="140.80")),
+        paths.played_roster("t2", 3).query: roster_xml(rostered_xml("C D", "BN", stats={"12": "-"})),
+    }
+    client, ctx = _client(tmp_path, answers=answers)
+
+    rosters = client.played_rosters(["t1", "t2"], 3)
+
+    [mine], [theirs] = rosters["t1"], rosters["t2"]
+    assert (mine.name, mine.slot, mine.stats, mine.points) == ("A B", "PG", played, "140.8")
+    assert (theirs.stats, theirs.points) == ({"12": "-"}, "")
+    assert sorted(path for path, _ in ctx.requests) == sorted(answers)
+
+
 def test_a_roster_failure_is_ours_to_render_not_requests(tmp_path: Path) -> None:
     """The SDK's own roster fetch failed in requests' terms, and escaped as a 500."""
     client, _ = _client(tmp_path, error=requests.ConnectionError("down"))

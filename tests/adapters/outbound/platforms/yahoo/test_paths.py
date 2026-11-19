@@ -62,3 +62,10 @@ def test_only_a_lookup_by_key_or_name_is_one_no_plan_could_make() -> None:
 def test_only_the_scoreboard_keeps_its_copy_when_a_refresh_fails() -> None:
     assert paths.scoreboard("466.l.1", 3).keep_on_failure
     assert not paths.roster("466.l.1.t.1").keep_on_failure
+
+
+def test_a_week_played_is_read_with_each_players_line_over_it_and_kept_long() -> None:
+    read = paths.played_roster("466.l.1.t.2", 3)
+
+    assert read.path == "team/466.l.1.t.2/roster;week=3/players/stats;type=week;week=3"
+    assert read.ttl > paths.ROSTER_TTL

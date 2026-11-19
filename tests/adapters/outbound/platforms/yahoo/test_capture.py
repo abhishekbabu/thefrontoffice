@@ -65,6 +65,8 @@ YAHOO = {
     **{paths.scoreboard(KEY, week).path: scoreboard_xml(start=f"2026-01-0{week}") for week in (1, 2, 3)},
     paths.roster("t1").path: roster_xml(rostered_xml("My Center", "C")),
     paths.roster("t2").path: roster_xml(rostered_xml("Their Guard", "PG", status="GTD")),
+    paths.played_roster("t1", 1).path: roster_xml(rostered_xml("Then Center", "C", stats={"12": "80"})),
+    paths.played_roster("t2", 1).path: roster_xml(rostered_xml("Then Guard", "PG", stats={"12": "-"})),
 }
 """What Yahoo answers each path a sweep asks for."""
 
@@ -147,6 +149,18 @@ def test_a_finished_week_already_held_is_not_asked_for_again(tmp_path: Path) -> 
 
     assert paths.scoreboard(KEY, 1).path not in planned
     assert {paths.scoreboard(KEY, 2).path, paths.scoreboard(KEY, 3).path} <= planned
+    assert paths.played_roster("t1", 1).path not in planned
+
+
+def test_a_week_played_is_planned_as_both_rosters_of_your_matchup_once_its_scoreboard_is_held(tmp_path: Path) -> None:
+    """Week 2 is being played: only week 1's rosters stand as that week ended them."""
+    capture = _capture(tmp_path)
+    _hand_over(capture, _answer(LIST, YAHOO))
+    _hand_over(capture, *(_answer(step.path, YAHOO) for step in capture.plan([KEY]).steps))
+
+    played = [step.path for step in capture.plan([KEY]).steps if ";week=" in step.path and "/stats" in step.path]
+
+    assert played == [paths.played_roster("t1", 1).path, paths.played_roster("t2", 1).path]
 
 
 # ── the reader, served from the capture ─────────────────────────────────
@@ -166,6 +180,10 @@ def test_the_reader_reads_everything_it_needs_from_a_sweep(tmp_path: Path) -> No
     assert matchup is not None and matchup.opponent.name == "Theirs"
     assert [p.status for p in matchup.opponent_roster] == ["GTD"]
     assert yahoo.pairing("t1", 3) is not None
+    assert {key: [p.name for p in found] for key, found in yahoo.played_rosters(["t1", "t2"], 1).items()} == {
+        "t1": ["Then Center"],
+        "t2": ["Then Guard"],
+    }
     assert [(t.name, t.standing.rank if t.standing else 0) for t in yahoo.standings()] == [("Mine", 2), ("Theirs", 1)]
     assert sorted(yahoo.season("t1", [1, 2, 3])) == [1, 2, 3]
     assert yahoo.settings().categories == []

@@ -115,6 +115,12 @@ class YahooPlayer:
     slot: str = ""
     """Where their manager has them this week: 'PG', 'BN', 'IL'. Empty off a roster."""
 
+    stats: dict[str, str] = field(default_factory=dict)
+    """Yahoo stat id -> his line over a week played, as Yahoo prints it ('-' for no games); empty unless asked for."""
+
+    points: str = ""
+    """His fantasy points over a week played, in a points league, as Yahoo prints it; empty unless asked for."""
+
 
 @dataclass(frozen=True)
 class TeamStanding:
