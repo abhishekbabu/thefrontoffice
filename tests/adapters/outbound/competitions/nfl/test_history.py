@@ -90,14 +90,6 @@ def test_a_week_that_will_not_load_is_left_out_rather_than_failing_the_drawer() 
     assert detail.moves_tab in detail.tabs
 
 
-def test_the_drawer_is_tabbed_and_each_headline_links_its_article() -> None:
-    detail = _detail(league_client(), "qb1")
-
-    assert detail.tabs[0] == "This week"
-    assert {g.tab for g in detail.groups} <= {"", *detail.tabs}
-    assert {t.tab for t in detail.tables} <= set(detail.tabs)
-
-
 def test_a_player_is_found_by_part_of_his_name_with_position_club_and_owner() -> None:
     found = nfl_provider(league_client()).search_players("L1", "star")
 

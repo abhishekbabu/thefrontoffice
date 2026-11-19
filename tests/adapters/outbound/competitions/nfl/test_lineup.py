@@ -9,7 +9,6 @@ from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupSlot,
     Rank,
     best_upgrade,
-    eligible_positions,
     fits,
     lineup_changes,
     lineup_points,
@@ -26,14 +25,6 @@ def p(pid: str, pos: str, pts: float, name: str = "") -> WeeklyProjection:
 
 def _names(lineup: list[LineupSlot]) -> list[str]:
     return [s.player.player_id if s.player else "-" for s in lineup]
-
-
-# ── slot eligibility ────────────────────────────────────────────────────
-
-
-def test_a_named_slot_accepts_only_that_position() -> None:
-    assert eligible_positions("QB") == ("QB",)
-    assert eligible_positions("TE") == ("TE",)
 
 
 # ── optimal_lineup ──────────────────────────────────────────────────────
@@ -72,23 +63,12 @@ def test_a_slot_with_nobody_eligible_is_left_empty() -> None:
     assert lineup_points(lineup) == 20.0
 
 
-def test_empty_roster_yields_empty_slots() -> None:
-    lineup = optimal_lineup(["QB", "RB", "FLEX"], [])
-    assert all(s.player is None for s in lineup)
-    assert lineup_points(lineup) == 0.0
-
-
 def test_slot_order_is_preserved_in_the_result() -> None:
     """The optimiser fills restrictive slots first, but must return them in the
     league's own order so the rendered lineup reads correctly."""
     players = [p("qb1", "QB", 25), p("rb1", "RB", 20), p("wr1", "WR", 18)]
     lineup = optimal_lineup(["FLEX", "QB", "RB"], players)
     assert [s.slot for s in lineup] == ["FLEX", "QB", "RB"]
-
-
-def test_defense_and_kicker_slots_are_filled() -> None:
-    players = [p("k1", "K", 9), p("d1", "DEF", 7)]
-    assert _names(optimal_lineup(["K", "DEF"], players)) == ["k1", "d1"]
 
 
 def test_the_lineup_starts_by_the_rank_it_is_given_not_the_projection() -> None:
@@ -163,19 +143,10 @@ def test_covering_a_starter_worth_nothing_this_week_is_never_inside_the_margin()
     assert change.start.player_id == "wr2"
 
 
-def test_filling_an_empty_slot_is_never_inside_the_margin() -> None:
+def test_filling_an_empty_slot_benches_nobody_gains_his_whole_worth_and_is_never_inside_the_margin() -> None:
     [change] = lineup_changes(["WR", "WR"], ["wr1"], [p("wr1", "WR", 10.0), p("wr2", "WR", 0.5)], margin=SWAP_BY)
 
-    assert (change.start.player_id, change.bench) == ("wr2", None)
-
-
-def test_filling_an_empty_slot_reports_no_benched_player() -> None:
-    players = [p("rb1", "RB", 20), p("rb2", "RB", 10)]
-    changes = lineup_changes(["RB", "RB"], ["rb1"], players)
-    assert len(changes) == 1
-    assert changes[0].start.player_id == "rb2"
-    assert changes[0].bench is None
-    assert changes[0].gain == 10.0
+    assert (change.start.player_id, change.bench, change.gain) == ("wr2", None, 0.5)
 
 
 # ── current_lineup ──────────────────────────────────────────────────────

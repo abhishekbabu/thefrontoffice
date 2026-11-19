@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import UTC
 from typing import Any
 
+import pytest
 from support.espn import FakeESPN
 from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeSleeper, game_line, nfl_provider, proj
 from support.prompts import named_fields, schema_fields
@@ -50,6 +51,7 @@ def test_roster_and_available_players_are_separated() -> None:
     assert "Star QB" in ctx.roster_lines
     assert "Waiver WR" in ctx.candidate_lines
     assert "Waiver WR" not in ctx.roster_lines
+    assert "Good RB" not in ctx.candidate_lines
 
 
 def test_a_player_in_a_reserve_slot_is_marked_wherever_the_model_reads_your_roster() -> None:
@@ -72,11 +74,6 @@ def test_the_context_names_each_player_the_to_do_list_already_moves() -> None:
 
     assert "rb1" in named
     assert "Good RB" in ctx.listed
-
-
-def test_rostered_players_are_never_offered_as_waiver_adds() -> None:
-    ctx = _context()
-    assert "Good RB" not in ctx.candidate_lines
 
 
 def test_a_suggested_move_is_weighed_by_each_players_season_not_this_weeks_projection() -> None:
@@ -174,13 +171,6 @@ def test_matchup_opponent_and_live_score_are_surfaced() -> None:
     assert "71.8" in ctx.situation
 
 
-def test_a_week_with_no_matchup_reports_no_opponent_figures() -> None:
-    """Paired with nobody is not a 0-0 scoreline against somebody."""
-    client = _kicked_off("in_game", matchups=[SleeperMatchup(roster_id=1, matchup_id=None)])
-
-    assert _headline(client) == {}
-
-
 def test_trending_players_are_included_with_their_projection() -> None:
     ctx = _context(trending=[TrendingPlayer(player_id="wr9", count=41234)])
     assert "Waiver WR" in ctx.prompt
@@ -273,21 +263,17 @@ def test_trailing_is_the_figure_that_warns() -> None:
     assert _headline(_kicked_off("in_game", matchups=behind))["Live"].tone == "warning"
 
 
-def test_a_week_with_no_opponent_reports_no_matchup_figures() -> None:
-    """A bye or a missing scoreboard is not a 0-0 scoreline."""
-    client = _kicked_off("in_game", matchups=[])
+@pytest.mark.parametrize("matchups", [[], [SleeperMatchup(roster_id=1, matchup_id=None)]], ids=["none", "unpaired"])
+def test_a_week_with_no_opponent_reports_no_matchup_figures(matchups: list[SleeperMatchup]) -> None:
+    """A bye, a missing scoreboard or being paired with nobody is not a 0-0 scoreline."""
+    assert _headline(_kicked_off("in_game", matchups=matchups)) == {}
 
-    assert _headline(client) == {}
 
-
-def test_the_matchup_is_fetched_once_for_both_the_prompt_and_the_header() -> None:
-    """Deriving them separately would pull the scoreboard twice per report, and
-    the scoreboard is the one thing here that changes minute to minute."""
-    client = _kicked_off("in_game")
-    context = nfl_provider(client).build_context("L1")
+def test_the_header_and_the_prompt_read_the_same_score() -> None:
+    """The scoreboard changes minute to minute; that it is fetched once is `test_sleeper.py`'s."""
+    context = nfl_provider(_kicked_off("in_game")).build_context("L1")
 
     live = next(s.value for s in context.headline if s.label == "Live")
-    assert client.matchup_fetches == 1
     assert all(f"{figure}" in context.situation for figure in _figures(live))
 
 

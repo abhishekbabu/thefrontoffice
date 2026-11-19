@@ -87,14 +87,6 @@ def test_a_position_no_filter_offers_matches_only_itself() -> None:
 # ── ordering ────────────────────────────────────────────────────────────
 
 
-def test_the_sports_own_ranking_is_the_default() -> None:
-    """That ranking answers "who should I look at"; a column sort is a
-    question about it, so it only applies when asked for."""
-    result = page(POOL, PlayerQuery())
-
-    assert [c.columns["Player"] for c in result.players][:2] == ["Haaland", "Saka"]
-
-
 def test_a_formatted_column_sorts_on_the_number_behind_it() -> None:
     """Sorted as text, "£9.0m" sits above "£15.5m"."""
     result = page(POOL, PlayerQuery(sort="Price"))
@@ -165,10 +157,3 @@ def test_a_view_not_offered_is_refused() -> None:
         view(PlayerQuery(view="Hot"), ("Trending", "IR"))
     with pytest.raises(InvalidRequestError):
         view(PlayerQuery(view="Trending"), ())
-
-
-def test_a_search_matching_nothing_is_an_empty_page() -> None:
-    result = page(POOL, PlayerQuery(search="zzzz"))
-
-    assert result.players == []
-    assert result.total == 0

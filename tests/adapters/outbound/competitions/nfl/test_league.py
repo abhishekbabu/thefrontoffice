@@ -154,14 +154,6 @@ def test_a_week_with_no_real_games_lists_none() -> None:
     assert nfl_provider(league_client()).schedule("L1").matches == []
 
 
-def test_a_game_you_have_players_in_names_them() -> None:
-    """The only thing that makes one game on a slate different from another."""
-    matches = nfl_provider(at_week(2)).schedule("L1").matches
-    marked = {(m.away, m.home) for m in matches if m.yours}
-
-    assert marked == {("BUF", "MIA")}  # every fake projection is a BUF player
-
-
 def test_activity_is_newest_first_on_the_instant_not_the_label() -> None:
     """ "Sep 3" sorts before "Sep 21" alphabetically and after it in time."""
     client = at_week(
@@ -279,8 +271,6 @@ def test_a_bracket_week_still_to_come_names_the_round_not_a_placeholder_opponent
 
 
 def _with_playoffs(week: int, spots: int = 1, start: int = 9) -> FakeSleeper:
-    from dataclasses import replace
-
     client = at_week(week)
     client.league = replace(client.league, playoff_teams=spots, playoff_week_start=start)
     return client

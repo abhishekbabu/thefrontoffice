@@ -63,6 +63,14 @@ def _group(detail: PlayerDetail, title: str) -> list[Stat]:
     return group.stats
 
 
+def test_the_drawer_opens_on_this_week_and_files_every_group_and_table_under_a_tab_it_offers() -> None:
+    detail = _drawer("qb1")
+
+    assert detail.tabs[0] == "This week"
+    assert {g.tab for g in detail.groups} <= {"", *detail.tabs}
+    assert {t.tab for t in detail.tables} <= set(detail.tabs)
+
+
 def test_a_receivers_projected_line_is_his_receiving_alone() -> None:
     stats = _group(_drawer("wr9"), "Projected line")
 

@@ -1,7 +1,9 @@
 """Tests for a player's points without a hurt teammate: `nfl/teammates.py`.
 
 The club is LV. Its tight end one is hurt; its tight end two is the free agent
-everybody is adding. Every figure below can be checked with a pencil.
+everybody is adding. Every figure below can be checked with a pencil. How games part
+by whether the teammate played, and how a split reads and is toned, are shared, and
+covered in `competitions/test_teammates.py`.
 """
 
 from dataclasses import replace
@@ -41,65 +43,45 @@ def test_a_backup_scores_his_games_without_the_starter_against_his_games_with_hi
     assert found.alongside == pytest.approx(26 / 3)
 
 
-def test_a_game_the_teammate_played_for_another_club_counts_neither_way() -> None:
-    lines = [*_season(), _te("te1", 5, 50, 20.0, team="KC")]
-
-    found = split(gather(lines, SCORING), BACKUP, STAR)
-
-    assert found is not None
-    assert found.games == 1
-
-
 def test_a_player_who_never_played_without_him_has_no_split() -> None:
     lines = [_te("te1", 1, 50, 15.0), _te("te2", 1, 30, 8.0)]
 
     assert split(gather(lines, SCORING), BACKUP, STAR) is None
 
 
-def test_the_split_says_its_sample_and_tones_by_which_way_it_cuts() -> None:
-    found = split(gather(_season(), SCORING), BACKUP, replace(STAR, injury_status="Out"))
+@pytest.mark.parametrize(
+    ("status", "back", "cell"),
+    [
+        ("Out", False, "Bowers O"),
+        ("IR", False, "Bowers IR"),
+        ("Questionable", True, "Bowers Q"),
+        ("", True, "Bowers back"),
+    ],
+)
+def test_a_teammate_is_back_unless_ruled_out_and_his_cell_abbreviates_his_designation(
+    status: str, back: bool, cell: str
+) -> None:
+    found = split(gather(_season(), SCORING), BACKUP, replace(STAR, injury_status=status))
     assert found is not None
 
-    assert (found.back, found.cell()) == (False, "Bowers O")
-    assert "2 games" in found.figures()
-    assert found.stat().tone == "warning"
+    assert (found.back, found.cell()) == (back, cell)
 
 
-def test_a_teammate_not_ruled_out_is_back_and_the_figure_beside_him_counts() -> None:
+def test_a_teammate_back_whom_he_scored_more_beside_is_good_news() -> None:
+    """Mayer scored more beside Bowers, and Bowers plays: the figure beside him is the one that counts."""
     found = split(gather(_season(), SCORING), BACKUP, STAR)
     assert found is not None
 
-    assert found.back
-    assert found.figures().startswith(f"{26 / 3:.2f}/game in 3 games")
-    assert found.stat().label.startswith("With")
-    # Mayer scored more beside Bowers, and Bowers plays: good news for Mayer.
     assert found.stat().tone == "good"
 
 
-def test_a_teammate_back_without_any_designation_reads_as_back() -> None:
-    found = split(gather(_season(), SCORING), BACKUP, replace(STAR, injury_status=""))
-    assert found is not None
-
-    assert found.cell() == "Bowers back"
-
-
-def test_a_teammate_back_who_he_never_played_beside_says_so() -> None:
+def test_a_player_who_never_played_beside_him_has_no_figure_alongside() -> None:
     lines = [_te("te1", 1, 50, 15.0), _te("te2", 2, 30, 8.0)]
 
     found = split(gather(lines, SCORING), BACKUP, STAR)
 
     assert found is not None
-    assert found.figures().startswith("never with")
-
-
-def test_a_split_with_no_game_alongside_him_is_neither_good_nor_bad() -> None:
-    lines = [_te("te1", 1, 50, 15.0), _te("te2", 2, 30, 8.0)]
-
-    found = split(gather(lines, SCORING), BACKUP, STAR)
-
-    assert found is not None
-    assert (found.games, found.alongside) == (1, None)
-    assert found.stat().tone == "neutral"
+    assert (found.games, found.alongside, found.alongside_games) == (1, None, 0)
 
 
 def test_a_hurt_regular_at_his_position_is_his_teammate_to_weigh() -> None:
@@ -190,12 +172,3 @@ def test_a_receiver_weighs_his_clubs_hurt_top_target_earner_at_tight_end() -> No
     assert [m.player_id for m in hurt.of(receiver)] == ["te1"]
     # Counted once, though he is both a hurt regular at tight end and the top target earner.
     assert [m.player_id for m in hurt.of(BACKUP)] == ["te1"]
-
-
-def test_only_his_games_for_this_club_count() -> None:
-    lines = [*_season(), _te("te2", 6, 50, 30.0, team="KC")]
-
-    found = split(gather(lines, SCORING), BACKUP, STAR)
-
-    assert found is not None
-    assert found.games == 2

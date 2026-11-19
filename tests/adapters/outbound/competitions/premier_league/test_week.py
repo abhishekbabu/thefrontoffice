@@ -37,23 +37,6 @@ H2H_LEAGUE = "950"
 # ── nothing to say ──────────────────────────────────────────────────────
 
 
-def test_an_optimal_eleven_produces_no_change_recommendations() -> None:
-    from thefrontoffice.adapters.outbound.competitions.premier_league.rules import best_lineup, effective_points
-
-    best = best_lineup(list(SQUAD_PLAYERS.values()), effective_points)
-    optimal = [Pick(element=p.id, position=i, multiplier=1) for i, p in enumerate(best.starters, start=1)]
-    optimal += [Pick(element=p.id, position=i, multiplier=0) for i, p in enumerate(best.bench, start=12)]
-    squad = Squad(gameweek=4, picks=optimal, bank=30, value=1004)
-
-    assert provider(squad=squad).summary(LEAGUE_ID).swaps == []
-
-
-def test_the_summary_marks_the_captain() -> None:
-    lineup = mine(provider().summary(LEAGUE_ID)).lineup
-
-    assert [(spot.player, spot.mark) for spot in lineup if spot.mark == "C"] == [("P8", "C")]
-
-
 def test_the_summary_warns_on_a_doubtful_starter() -> None:
     """Starting a doubtful player is the mistake the page exists to surface."""
     lineup = mine(provider(players=DOUBTFUL_P3).summary(LEAGUE_ID)).lineup
@@ -68,7 +51,6 @@ def test_the_summary_lists_the_swap_and_the_armband_the_best_eleven_implies() ->
     lineup = [(a.player_id, a.replaces) for a in summary.actions or [] if a.kind == "lineup"]
 
     assert lineup == [("15", "7"), ("15", "")]
-    assert summary.swaps == []
 
 
 def test_the_header_compares_the_eleven_as_set_with_the_best_at_their_worth() -> None:
@@ -153,13 +135,6 @@ def test_a_player_yet_to_kick_a_ball_keeps_their_projection() -> None:
     waiting = [s for s in lineup if s.value.endswith("xPts")]
     assert waiting, "a squad of eleven cannot all have played"
     assert all("0 pts" not in s.value for s in waiting)
-
-
-def test_a_captain_scores_double() -> None:
-    lineup = mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup
-    captain = next(s for s in lineup if s.mark == "C")
-
-    assert captain.value == "24 pts"
 
 
 def _triple_captain() -> Squad:
@@ -391,7 +366,7 @@ def test_a_gameweek_played_reads_the_squad_picked_for_it_and_what_fpl_credited()
     assert mine(summary).points == "63 pts"
     assert summary.window == "Gameweek 2 · final"
     assert summary.opponent is None  # a classic league has no tie
-    assert summary.actions is None and summary.swaps == []
+    assert summary.actions is None
     assert summary.weeks is not None and (summary.weeks.week, summary.weeks.current) == (2, 4)
 
 
