@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import type { CaptureStatus } from "@/lib/api";
+import { act } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { CaptureStatus, Setting, SettingsGroup } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { SettingsPanel } from "@/panels/Settings";
 import { offlineClient, render } from "@/test/render";
@@ -41,5 +42,81 @@ describe("Yahoo sync", () => {
   it("says the sync is not read while Yahoo is read through OAuth", async () => {
     const { card } = await settingsWith({ active: false, synced_at: null, leagues: [] });
     expect(card).toContain("YAHOO_SOURCE");
+  });
+});
+
+function setting(key: string, kind: Setting["kind"], value: string, choices: string[] = []): Setting {
+  return { key, field: key.toLowerCase(), secret: false, present: true, kind, choices, value, shadowed: false, effective: value };
+}
+
+const GROUPS: SettingsGroup[] = [
+  {
+    title: "General",
+    note: "",
+    settings: [
+      setting("YAHOO_SOURCE", "choice", "oauth", ["oauth", "browser"]),
+      setting("LOG_LEVEL", "choice", "INFO", ["DEBUG", "INFO", "WARNING"]),
+      setting("DEBUG_MODE", "boolean", "false"),
+    ],
+  },
+];
+
+/** Settings with the fixed-value fields, and every PUT the page sends recorded. */
+async function fixedValues() {
+  const saved: Record<string, string>[] = [];
+  const capture: CaptureStatus = { active: false, synced_at: null, leagues: [] };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "PUT") saved.push((JSON.parse(String(init.body)) as { values: Record<string, string> }).values);
+      return Response.json(path.endsWith("/capture") ? capture : GROUPS);
+    }),
+  );
+  const client = offlineClient();
+  client.setQueryData(keys.settings, GROUPS);
+  client.setQueryData(keys.capture("yahoo"), capture);
+  const { container } = await render(<SettingsPanel onBack={() => {}} />, client);
+
+  const group = (key: string) => container.querySelector<HTMLElement>(`[role=group][aria-label="${key}"]`)!;
+  const chips = (key: string) => [...group(key).querySelectorAll<HTMLButtonElement>("button[aria-pressed]")];
+  const pressed = (key: string) => chips(key).filter((c) => c.getAttribute("aria-pressed") === "true").map((c) => c.textContent);
+  const chip = (key: string, text: string) => chips(key).find((c) => c.textContent === text)!;
+  const click = (el: HTMLElement) => act(async () => el.click());
+  const save = () => container.querySelector<HTMLButtonElement>("button[aria-label^=Save]");
+  return { saved, chips, pressed, chip, click, save };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("Fixed-value settings", () => {
+  it("offers each choice as a chip, with the stored one pressed", async () => {
+    const { chips, pressed } = await fixedValues();
+
+    expect(chips("LOG_LEVEL").map((c) => c.textContent)).toEqual(["DEBUG", "INFO", "WARNING"]);
+    expect(pressed("LOG_LEVEL")).toEqual(["INFO"]);
+    expect(pressed("YAHOO_SOURCE")).toEqual(["oauth"]);
+    expect(chips("DEBUG_MODE")).toHaveLength(2);
+  });
+
+  it("saves the pressed choice, and a boolean as .env spells it", async () => {
+    const { saved, pressed, chip, chips, click, save } = await fixedValues();
+
+    await click(chip("YAHOO_SOURCE", "browser"));
+    await click(chips("DEBUG_MODE").find((c) => c.getAttribute("aria-pressed") === "false")!);
+    expect(pressed("YAHOO_SOURCE")).toEqual(["browser"]);
+
+    await click(save()!);
+    expect(saved).toEqual([{ YAHOO_SOURCE: "browser", DEBUG_MODE: "true" }]);
+  });
+
+  it("has nothing to save once a choice is pressed back to the stored one", async () => {
+    const { chip, click, save } = await fixedValues();
+
+    await click(chip("LOG_LEVEL", "DEBUG"));
+    expect(save()?.disabled).toBe(false);
+    await click(chip("LOG_LEVEL", "INFO"));
+    expect(save()).toBeNull();
   });
 });

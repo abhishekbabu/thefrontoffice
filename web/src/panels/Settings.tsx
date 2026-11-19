@@ -4,7 +4,7 @@ import { api, type CaptureStatus, type Setting, type SettingsGroup } from "@/lib
 import { bookmarklet } from "@/lib/bookmarklet";
 import { moment } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
 import { IconButton } from "@/components/ui/icon-button";
 import { QueryState } from "@/components/ui/state";
@@ -191,8 +191,11 @@ function Row({
   draft: string | undefined;
   onChange: (value: string) => void;
 }) {
+  // A row of chips is several controls, so it cannot sit in a `<label>`: a
+  // click on the key would press whichever chip came first.
+  const Wrapper = setting.kind === "boolean" || setting.kind === "choice" ? "div" : "label";
   return (
-    <label className="grid grid-cols-1 items-baseline gap-1.5 border-b border-border/45 py-2.5 last:border-b-0 sm:grid-cols-[16rem_minmax(0,42rem)] sm:gap-4">
+    <Wrapper className="grid grid-cols-1 items-baseline gap-1.5 border-b border-border/45 py-2.5 last:border-b-0 sm:grid-cols-[16rem_minmax(0,42rem)] sm:gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <code className="font-mono text-[12px] text-foreground">{setting.key}</code>
         {draft !== undefined && (
@@ -214,7 +217,7 @@ function Row({
         )}
       </div>
       <Control setting={setting} draft={draft} onChange={onChange} />
-    </label>
+    </Wrapper>
   );
 }
 
@@ -232,27 +235,28 @@ function Control({
 }) {
   const current = draft ?? (setting.secret ? "" : setting.value);
 
-  if (setting.kind === "boolean") {
+  if (setting.kind === "boolean" || setting.kind === "choice") {
     // `.env` spells booleans lowercase, and that is what gets written.
+    const options =
+      setting.kind === "boolean"
+        ? [
+            { value: "true", label: "On" },
+            { value: "false", label: "Off" },
+          ]
+        : setting.choices.map((choice) => ({ value: choice, label: choice }));
     return (
-      <input
-        type="checkbox"
-        checked={current === "true"}
-        onChange={(e) => onChange(e.target.checked ? "true" : "false")}
-        className="size-4 accent-[var(--color-primary)] justify-self-start"
-      />
-    );
-  }
-
-  if (setting.kind === "choice") {
-    return (
-      <Select value={current} onChange={(e) => onChange(e.target.value)} className={FIELD}>
-        {setting.choices.map((choice) => (
-          <option key={choice} value={choice}>
-            {choice}
-          </option>
+      <div role="group" aria-label={setting.key} className="flex flex-wrap gap-1.5">
+        {options.map((option) => (
+          <ToggleChip
+            key={option.value}
+            pressed={option.value === current}
+            onClick={() => onChange(option.value)}
+            className={setting.kind === "choice" ? "h-8 font-mono text-[12.5px]" : "h-8"}
+          >
+            {option.label}
+          </ToggleChip>
         ))}
-      </Select>
+      </div>
     );
   }
 
