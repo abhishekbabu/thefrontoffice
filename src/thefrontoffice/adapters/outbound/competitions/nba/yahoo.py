@@ -8,7 +8,7 @@ weights — and the budget constraint is the league's weekly add limit.
 
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from itertools import zip_longest
 
@@ -42,10 +42,13 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource, once
+from thefrontoffice.adapters.outbound.platforms.yahoo.paths import RECENT_AVERAGE
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
+    Average,
     Pairing,
     Timeframe,
     YahooLeague,
+    YahooLine,
     YahooPlayer,
     YahooTeam,
 )
@@ -276,6 +279,7 @@ class YahooNBAProvider:
         projections = index_for(self.sleeper, start, end)
         clubs = self.games.get_remaining_games_bulk([p.team for p in unique], start, end)
         returns = self._returns(unique, self._reports())
+        provisional = bool(self.games.unscheduled(start, end))
         stats = {p.player_key: self.form.get_player_stats(p.name) for p in unique}
         projected = {p.player_key: projections.lookup(p.name) if projections else None for p in unique}
         if weights:
@@ -292,6 +296,7 @@ class YahooNBAProvider:
                 projected[p.player_key],
                 value,
                 self._games(p, clubs, returns.get(p.player_key), end),
+                provisional,
             )
             for p in unique
         }
@@ -351,7 +356,10 @@ class YahooNBAProvider:
         if found is None:
             return Slate()
         roster = yahoo.roster(team.team_key)
-        return Slate(games=[nba_week.match(game, roster) for game in self.games.games_between(found.start, found.end)])
+        return Slate(
+            games=[nba_week.match(game, roster) for game in self.games.games_between(found.start, found.end)],
+            note=nba_week.not_final(self.games.unscheduled(found.start, found.end)),
+        )
 
     def _within(self, league: YahooLeague, week: int) -> int:
         """The week being played, once `week` is known to be one of the season's.
@@ -396,7 +404,8 @@ class YahooNBAProvider:
             theirs = yahoo.roster(found.opponent.team_key) if roster is not None else None
         readings = read(found, theirs) if read is not None and theirs is not None else None
         scored = None if league.by_points else yahoo.settings().categories
-        return nba_week.board(found, weeks, records, roster, theirs, scored, readings)
+        unscheduled = [] if played else self.games.unscheduled(found.start, found.end)
+        return nba_week.board(found, weeks, records, roster, theirs, scored, readings, unscheduled)
 
     def schedule(self, league_id: str) -> LeagueSchedule:
         """The table, and your head-to-head season from every week's scoreboard.
@@ -503,7 +512,10 @@ class YahooNBAProvider:
             readings=decided.readings,
         )
 
-        schedule_context = prompt.schedule(week, remaining_games, projected=projections is not None)
+        unscheduled = self.games.unscheduled(start, end) if start and end else []
+        schedule_context = prompt.schedule(
+            week, remaining_games, projected=projections is not None, unscheduled=unscheduled
+        )
         trans_context = prompt.transactions(used_adds, limit)
         by_key = {p.player_key: p for p in (*rostered, *free_agents)}
         return CompetitionContext(
@@ -568,11 +580,15 @@ class YahooNBAProvider:
             weekly=rules.weekly_lineups,
             seed=seed(league.league_key, week),
         )
-        if not league.by_points:
-            return nba_forecast.categories(found, mine, theirs, week_left, rules.categories)
-        if not rules.weights:
+        if league.by_points and not rules.weights:
             raise UnsupportedError(league.name, "a forecast without the points its settings would sum")
-        return nba_forecast.points(found, mine, theirs, week_left, rules.weights)
+        matchup = (
+            nba_forecast.points(found, mine, theirs, week_left, rules.weights)
+            if league.by_points
+            else nba_forecast.categories(found, mine, theirs, week_left, rules.categories)
+        )
+        # Games the NBA has yet to schedule are games nobody is drawn for: the chance is read off a short week.
+        return replace(matchup, provisional=bool(self.games.unscheduled(found.start, found.end)))
 
     def _recent(self, player: YahooPlayer) -> list[NBAGameLog]:
         return self.form.recent_games(player.name)
@@ -620,10 +636,11 @@ class YahooNBAProvider:
     # ── players and teams ───────────────────────────────────────────
 
     def roster(self, league_id: str = "") -> list[PlayerCard]:
-        """The user's roster, with recent form where Sleeper has it."""
+        """The user's roster, each player with Yahoo's averages over the last month."""
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
-        return self._cards(yahoo.roster(yahoo.get_user_team().team_key), self._weights(league, yahoo))
+        team = yahoo.get_user_team().team_key
+        return self._cards(yahoo, league, yahoo.roster(team), self._roster_averages(yahoo, team))
 
     def teams(self, league_id: str) -> list[TeamRef]:
         """Everyone in the league, yours first."""
@@ -645,7 +662,7 @@ class YahooNBAProvider:
         yahoo = self._yahoo_for(league)
         if not any(t.team_key == team_id for t in yahoo.teams()):
             raise TeamNotFoundError(team_id)
-        return self._cards(yahoo.roster(team_id), self._weights(league, yahoo))
+        return self._cards(yahoo, league, yahoo.roster(team_id), self._roster_averages(yahoo, team_id))
 
     def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
         """The best players nobody in the league holds.
@@ -658,8 +675,10 @@ class YahooNBAProvider:
         paging.view(query, ())  # no other lists: one asked for is refused, not ignored
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
-        ranked = self._cards(_wire(yahoo), self._weights(league, yahoo), wire=True)
-        return paging.page(ranked, query)
+        wire = _wire(yahoo)
+        # Each page of the wire carries its players' averages, so the table costs no read beyond the list.
+        carried = {p.player_key: p.line for p in wire if p.coverage == RECENT_AVERAGE}
+        return paging.page(self._cards(yahoo, league, wire, carried, wire=True), query)
 
     def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
         """Anyone in the league whose name holds `text`, rostered or not, in Yahoo's order.
@@ -677,17 +696,37 @@ class YahooNBAProvider:
         ]
 
     def _cards(
-        self, players: list[YahooPlayer], weights: Mapping[str, float] | None, wire: bool = False
+        self,
+        yahoo: YahooSource,
+        league: YahooLeague,
+        players: list[YahooPlayer],
+        recent: Mapping[str, YahooLine],
+        wire: bool = False,
     ) -> list[PlayerCard]:
         """One table shape for every list of players this sport shows (`views.cards`); the wire's with teammate splits."""
         reports = self._reports()
+        weights = self._weights(league, yahoo)
         splits = self._splits(players, weights, reports) if wire else None
-        return views.cards(players, self.form.get_player_stats, self._returns(players, reports), weights, splits)
+        return views.cards(players, recent, self._returns(players, reports), weights is not None, splits)
+
+    @staticmethod
+    def _roster_averages(yahoo: YahooSource, team_key: str) -> dict[str, YahooLine]:
+        """Each of a team's players' averages over the last month, in one read; none where it will not load.
+
+        Enrichment: a roster without them is a table of dashes, not a failed page.
+        """
+        try:
+            return yahoo.roster_averages(team_key, RECENT_AVERAGE)
+        except FrontOfficeError as e:
+            logger.warning(f"Showing the roster without Yahoo's averages: {e}")
+            return {}
 
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
-        """Any player in the league — yours, a rival's or a free agent — with their recent line where Sleeper has it.
+        """Any player in the league — yours, a rival's or a free agent — with Yahoo's averages for him.
 
-        A points league heads it with his fantasy points per game; a category league with his points.
+        His season and his last month, in the league's categories, both read
+        together. A points league heads it with his fantasy points per game; a
+        category league with his points.
         """
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
@@ -696,13 +735,19 @@ class YahooNBAProvider:
             raise PlayerNotFoundError([player_id])
         player = found[0]
 
-        stats = self.form.get_player_stats(player.name)
+        try:
+            spans = yahoo.averages([player_id], (Average.SEASON, RECENT_AVERAGE))
+        except FrontOfficeError as e:
+            logger.warning(f"Showing {player.name} without Yahoo's averages: {e}")
+            spans = {}
         weights = self._weights(league, yahoo)
         reports = self._reports()
         return views.detail(
             player,
-            stats,
-            weights,
+            spans.get(Average.SEASON, {}).get(player_id),
+            spans.get(RECENT_AVERAGE, {}).get(player_id),
+            yahoo.settings().categories,
+            weights is not None,
             self._injuries([player], reports).stats(player_id),
             self._splits([player], weights, reports)(player),
         )

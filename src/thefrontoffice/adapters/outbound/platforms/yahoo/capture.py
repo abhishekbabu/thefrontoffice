@@ -206,8 +206,8 @@ class YahooCapture:
         """Everything the app reads of one league that can be planned from what is held.
 
         The scoreboard of every week of the season, since any can be opened. A
-        roster for every team the held team list names, which the first sync of
-        a league has to learn before it can ask. Both rosters of your matchup in
+        roster for every team the held team list names, and its players' recent
+        averages, which the first sync of a league has to learn before it can ask. Both rosters of your matchup in
         each week played, as it ended, once that week's scoreboard is held and
         until they are.
         """
@@ -224,7 +224,8 @@ class YahooCapture:
             reads.extend(
                 paths.scoreboard(key, week, current) for week in range(league.first_week, league.last_week(current) + 1)
             )
-        reads.extend(paths.roster(team.team_key) for team in self._teams(key))
+        for team in self._teams(key):
+            reads.extend((paths.roster(team.team_key), paths.roster_averages(team.team_key, paths.RECENT_AVERAGE)))
         reads.extend(read for read in self._played(league) if self._stored(read) is None)
         return reads
 

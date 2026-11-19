@@ -18,6 +18,8 @@ import requests
 from support.http import NO_WAIT, http_error
 from support.yahoo import (
     FakeContext,
+    averaged_xml,
+    league_players_xml,
     league_standings_xml,
     players_xml,
     roster_xml,
@@ -38,7 +40,14 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooUnavailableError,
 )
 from thefrontoffice.adapters.outbound.platforms.yahoo.paths import ScoreboardPace
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import TeamStanding, Timeframe, YahooLeague, YahooPlayer
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
+    Average,
+    TeamStanding,
+    Timeframe,
+    YahooLeague,
+    YahooLine,
+    YahooPlayer,
+)
 from thefrontoffice.domain.errors import TeamNotFoundError
 
 STATS = {"PTS": "12", "REB": "15", "BLK": "18"}
@@ -136,6 +145,7 @@ def test_a_403_on_the_leaders_names_the_missing_permission(tmp_path: Path) -> No
 # ── fetch_available ─────────────────────────────────────────────────────
 
 
+AVERAGED = "/stats;type=average_lastmonth"
 SEASON_RANK = "players;count=25;status=A;sort=AR;sort_type=season"
 WEEK_RANK = "players;count=25;status=A;sort=AR;sort_type=lastweek"
 
@@ -148,10 +158,10 @@ def test_the_wire_is_read_a_page_of_25_at_a_time_under_each_ranking(tmp_path: Pa
 
     assert sorted(ctx.queries) == sorted(
         [
-            SEASON_RANK,
-            f"{SEASON_RANK};start=25",
-            "players;count=10;status=A;sort=AR;sort_type=season;start=50",
-            WEEK_RANK,
+            SEASON_RANK + AVERAGED,
+            f"{SEASON_RANK};start=25{AVERAGED}",
+            f"players;count=10;status=A;sort=AR;sort_type=season;start=50{AVERAGED}",
+            WEEK_RANK + AVERAGED,
         ]
     )
 
@@ -749,3 +759,43 @@ def test_no_error_message_names_a_command_or_a_button() -> None:
     for error in (YahooLoginRequiredError(), YahooAuthError()):
         assert "just " not in str(error)
         assert "click" not in str(error).lower()
+
+
+def test_averages_by_key_are_read_for_each_span_together_as_yahoo_prints_them(tmp_path: Path) -> None:
+    season = league_players_xml(averaged_xml("466.p.1", "average_season", {"12": "15.7"}, "32.67"))
+    month = league_players_xml(averaged_xml("466.p.1", "average_lastmonth", {"12": "17.7"}))
+    client, ctx = _client(
+        tmp_path,
+        answers={"players;player_keys=466.p.1/stats;type=average_season": season, "players;player_keys": month},
+    )
+
+    found = client.averages(["466.p.1", "466.p.1"], (Average.SEASON, Average.LAST_MONTH))
+
+    assert found == {
+        Average.SEASON: {"466.p.1": YahooLine(stats={"12": "15.7"}, points="32.67")},
+        Average.LAST_MONTH: {"466.p.1": YahooLine(stats={"12": "17.7"})},
+    }
+    assert len(ctx.queries) == 2
+
+
+def test_a_player_yahoo_carries_no_line_for_has_no_averages(tmp_path: Path) -> None:
+    client, _ = _client(tmp_path, players_xml("Nobody"))
+
+    assert client.averages(["466.p.0"], (Average.SEASON,)) == {Average.SEASON: {}}
+
+
+def test_a_rosters_averages_are_one_read_by_player(tmp_path: Path) -> None:
+    roster = roster_xml(averaged_xml("466.p.3", "average_lastmonth", {"15": "8.7"}))
+    client, ctx = _client(tmp_path, roster)
+
+    assert client.roster_averages("466.l.1.t.2", Average.LAST_MONTH) == {"466.p.3": YahooLine(stats={"15": "8.7"})}
+    assert ctx.queries == ["team/466.l.1.t.2/roster/players/stats;type=average_lastmonth"]
+
+
+def test_a_wire_page_says_which_span_its_players_lines_cover(tmp_path: Path) -> None:
+    page = league_players_xml(averaged_xml("466.p.9", "average_lastmonth", {"12": "9.5"}))
+    client, _ = _client(tmp_path, page)
+
+    [player] = client.fetch_available({Timeframe.SEASON: 1})[Timeframe.SEASON]
+
+    assert (player.coverage, player.line) == ("average_lastmonth", YahooLine(stats={"12": "9.5"}))

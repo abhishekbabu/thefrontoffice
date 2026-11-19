@@ -405,7 +405,8 @@ class ForecastEngine:
         matchup = self.provider.matchup_input(league_id)
         if matchup is None:
             return None
-        return remembered(matchup), matchup
+        forecast = remembered(matchup)
+        return (forecast.model_copy(update={"provisional": True}) if matchup.provisional else forecast), matchup
 
     def pickups(self, league_id: str, player_ids: list[str]) -> list[PickupChance]:
         """What each of these free agents would do to this week's chance, started at his best.

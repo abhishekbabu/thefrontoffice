@@ -879,6 +879,8 @@ class MatchupInput:
     seed: int = 0
     categories: CategoryMatchup | None = None
     """A week won category by category, simulated in place of `mine` and `theirs`, which are then empty."""
+    provisional: bool = False
+    """Whether games are still to be added to the week — a schedule not yet final — so any forecast of it runs short."""
 
 
 @dataclass(frozen=True)
@@ -980,6 +982,10 @@ class Forecast(BaseModel):
     categories: dict[str, float] = Field(
         default_factory=dict,
         description="Each category's name and your chance of winning it, in a week won on categories; empty otherwise.",
+    )
+    provisional: bool = Field(
+        default=False,
+        description="Whether the week's schedule is not final yet, so the games it was played over are short.",
     )
 
 
@@ -1331,6 +1337,10 @@ class Slate(BaseModel):
     byes: list[str] = Field(
         default_factory=list,
         description="Clubs with no game that week, alphabetical; empty where every club plays, or none has played yet.",
+    )
+    note: str = Field(
+        default="",
+        description="One line on the slate as a whole, where it is not to be read as complete; empty for most.",
     )
 
 

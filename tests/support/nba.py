@@ -1,6 +1,6 @@
 """Fantasy basketball on Yahoo, standing in: the league platform, Sleeper's form and projections beside it."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from typing import Any
 
@@ -12,6 +12,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSourc
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame, SeasonState
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
+    Average,
     LeagueSettings,
     Matchup,
     MatchupSide,
@@ -20,6 +21,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     TeamStanding,
     Timeframe,
     YahooLeague,
+    YahooLine,
     YahooPlayer,
     YahooTeam,
 )
@@ -35,6 +37,7 @@ def make_player(
     injury_note: str = "",
     stats: dict[str, str] | None = None,
     points: str = "",
+    coverage: str = "",
 ) -> YahooPlayer:
     return YahooPlayer(
         player_key=key or name.lower().replace(" ", "-"),
@@ -46,6 +49,7 @@ def make_player(
         slot=selected_position,
         stats=stats or {},
         points=points,
+        coverage=coverage or ("week" if stats or points else ""),
     )
 
 
@@ -146,6 +150,11 @@ class FakeYahoo:
         self.played_weeks: list[int] = []
         self.winners: dict[int, str] = {}
         """The winning team's key in each week settled, empty for a tie; a week it does not name is unsettled."""
+        self.lines: dict[Average, dict[str, YahooLine]] = {}
+        """Each player's averages over each span, by key."""
+        self.averages_error: Exception | None = None
+        self.averaged: list[tuple[tuple[str, ...], tuple[Average, ...]]] = []
+        """Every lookup of averages by key: the keys, and the spans."""
 
     def get_user_team(self) -> YahooTeam:
         return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
@@ -243,6 +252,20 @@ class FakeYahoo:
     def search_players(self, query: str) -> list[YahooPlayer]:
         return self.search_results.get(query, [])
 
+    def averages(self, player_keys: list[str], spans: Sequence[Average]) -> dict[Average, dict[str, YahooLine]]:
+        """The `lines` of these players over each span; nobody it holds none for."""
+        self.averaged.append((tuple(player_keys), tuple(spans)))
+        if self.averages_error:
+            raise self.averages_error
+        return {span: {k: v for k, v in self.lines.get(span, {}).items() if k in player_keys} for span in spans}
+
+    def roster_averages(self, team_key: str, average: Average) -> dict[str, YahooLine]:
+        """The `lines` over `average` of the team's roster."""
+        if self.averages_error:
+            raise self.averages_error
+        held = {p.player_key for p in self.roster(team_key)}
+        return {k: v for k, v in self.lines.get(average, {}).items() if k in held}
+
     def players(self, player_keys: list[str]) -> list[YahooPlayer]:
         """Anybody this league was built with, on a roster or not."""
         everyone = [
@@ -338,6 +361,7 @@ class FakeNBA:
         scores: BoxScores | None = None,
         dated: dict[str, list[date]] | None = None,
         logs: dict[str, list[NBAGameLog]] | None = None,
+        unscheduled: list[date] | None = None,
     ) -> None:
         self.stats = stats or {}
         self.games = games or {}
@@ -346,6 +370,8 @@ class FakeNBA:
         self.dated = dated or {}
         self.logs = logs or {}
         """Each player's recent games by name, newest first."""
+        self.pending = unscheduled or []
+        """Days the NBA has yet to schedule, whatever the window: those inside it are the window's."""
 
     def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
         return [g for g in self.slate if start_date.isoformat() <= g.date <= end_date.isoformat()]
@@ -353,6 +379,9 @@ class FakeNBA:
     def games_left(self, start_date: date, end_date: date, now: datetime | None = None) -> list[ScheduledGame]:
         """Every game of the slate inside the window: whatever a test builds it with is still to come."""
         return self.games_between(start_date, end_date)
+
+    def unscheduled(self, start_date: date, end_date: date) -> list[date]:
+        return [day for day in self.pending if start_date <= day <= end_date]
 
     def get_player_stats(self, full_name: str) -> Any:
         return self.stats.get(full_name)

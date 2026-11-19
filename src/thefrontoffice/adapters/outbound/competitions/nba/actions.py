@@ -104,7 +104,7 @@ def starts(roster: Sequence[YahooPlayer], readings: Mapping[str, Reading], by_po
                 title=f"Start {candidate.player.name} over {starter.player.name}",
                 reason=(
                     f"+{gain:.1f} {_unit(by_points)} this week at {slot}. "
-                    "Lineups are daily: on a night only one plays, start that one."
+                    "Lineups are daily: on a night only one plays, start that one." + _pending(candidate)
                 ),
                 player_id=candidate.player.player_key,
                 replaces=starter.player.player_key,
@@ -183,7 +183,10 @@ def streams(
                 kind="waiver",
                 urgency="soon",
                 title=f"Pick up {pickup.player.name}, drop {drop.player.name}",
-                reason=f"+{gain:.1f} {_unit(by_points)} this week. {drop.player.name}: weakest you can drop.",
+                reason=(
+                    f"+{gain:.1f} {_unit(by_points)} this week. {drop.player.name}: weakest you can drop."
+                    + _pending(pickup)
+                ),
                 player_id=pickup.player.player_key,
                 drop=drop.player.player_key,
                 players=views.compared(
@@ -199,6 +202,14 @@ def streams(
 def _streams_over(pickup: Reading, drop: Reading) -> bool:
     """Whether `pickup` beats `drop` this week, without giving up more than `MARGIN` of a game for it."""
     return beats(_worth(pickup), _worth(drop)) and _game(pickup) >= _game(drop) - abs(_game(drop)) * MARGIN
+
+
+PROVISIONAL = " Provisional: schedule not final."
+"""What an item weighed on games left adds while the NBA has days of the week to schedule."""
+
+
+def _pending(reading: Reading) -> str:
+    return PROVISIONAL if reading.provisional else ""
 
 
 def _worth(reading: Reading) -> float:

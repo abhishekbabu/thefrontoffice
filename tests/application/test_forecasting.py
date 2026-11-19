@@ -6,6 +6,7 @@ hurt — without depending on any sport's data.
 """
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 import pytest
 from support.simulation import FEW, FakeForecast, outcome
@@ -565,3 +566,18 @@ def test_a_move_bringing_in_a_new_group_leaves_every_other_week_as_it_was() -> N
     with_move = simulate(_match(mine, theirs, move), FEW)
 
     assert with_move.win == without.win
+
+
+class _Provisional(FakeForecast):
+    """A week the NBA has days of still to schedule."""
+
+    def matchup(self, candidates: Sequence[str]) -> MatchupInput | None:
+        return replace(_match([outcome("a", 0, 10, 20)], [outcome("b", 5, 15)]), provisional=True)
+
+
+def test_a_week_still_to_be_scheduled_is_forecast_as_provisional_without_marking_the_one_remembered() -> None:
+    found = ForecastEngine(_Provisional()).forecast("L1")
+    plain = ForecastEngine(_Fixed()).forecast("L1")
+
+    assert found is not None and found[0].provisional
+    assert plain is not None and not plain[0].provisional

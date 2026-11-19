@@ -141,3 +141,10 @@ def test_the_scout_numbers_each_item_on_the_list() -> None:
     )
 
     assert "T1" in text and "Start A over B" in text
+
+
+def test_a_schedule_not_final_names_the_days_still_to_be_scheduled() -> None:
+    pending = [date(2026, 12, 4), date(2026, 12, 11)]
+
+    assert "4-11 Dec" in prompt.schedule(_week(), {"LAL": 3}, projected=False, unscheduled=pending)
+    assert "Dec" not in prompt.schedule(_week(), {"LAL": 3}, projected=False)

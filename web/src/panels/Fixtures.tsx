@@ -48,6 +48,7 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
 
   const rows = browses ? games.data?.games : schedule.data?.matches;
   const byes = (browses && games.data?.byes) || [];
+  const note = (browses && games.data?.note) || "";
   return (
     <>
       <LeagueHeader league={league}>
@@ -62,7 +63,7 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
           className="touch-pan-y p-5"
           {...swipe}
         >
-          <Games rows={rows} byes={byes} onOpen={setOpen} />
+          <Games rows={rows} byes={byes} note={note} onOpen={setOpen} />
         </WeekPane>
       )}
       <SlideOver
@@ -129,15 +130,23 @@ const slot = (game: Match) => (game.kickoff ? kickoff(game.kickoff) : game.label
 export function Games({
   rows,
   byes = [],
+  note = "",
   onOpen,
 }: {
   rows: Match[];
   /** Clubs with no game this week. */
   byes?: string[];
+  /** Why the list is not to be read as complete — a schedule not final yet; empty for most weeks. */
+  note?: string;
   onOpen?: (game: Match) => void;
 }) {
   return (
     <ListCard title="Fixtures" count={`${rows.length} games`}>
+      {note && (
+        <ListRow>
+          <span className={cn("min-w-0 flex-1 text-[12.5px]", toneText("warning"))}>{note}</span>
+        </ListRow>
+      )}
       {byes.length > 0 && (
         <ListRow>
           <Label className="shrink-0">Byes</Label>

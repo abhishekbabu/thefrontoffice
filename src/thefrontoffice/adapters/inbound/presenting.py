@@ -129,9 +129,8 @@ def _win_chance(forecast: Forecast) -> Stat:
     """One figure and its range: the chance alone hides how close it is."""
     tone: Tone = "good" if forecast.win >= 0.6 else "warning" if forecast.win <= 0.4 else "neutral"
     margin = forecast.margin
-    return Stat(
-        label="Win chance", value=f"{forecast.win:.0%} · margin {margin.low:+.0f} to {margin.high:+.0f}", tone=tone
-    )
+    value = f"{forecast.win:.0%} · margin {margin.low:+.0f} to {margin.high:+.0f}"
+    return Stat(label="Win chance", value=f"{value} · provisional" if forecast.provisional else value, tone=tone)
 
 
 def _stake(odds: PlayoffOdds, win: float | None) -> Stat:

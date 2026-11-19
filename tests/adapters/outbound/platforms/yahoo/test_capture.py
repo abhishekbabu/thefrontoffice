@@ -65,6 +65,7 @@ YAHOO = {
     **{paths.scoreboard(KEY, week).path: scoreboard_xml(start=f"2026-01-0{week}") for week in (1, 2, 3)},
     paths.roster("t1").path: roster_xml(rostered_xml("My Center", "C")),
     paths.roster("t2").path: roster_xml(rostered_xml("Their Guard", "PG", status="GTD")),
+    **{paths.roster_averages(team, paths.RECENT_AVERAGE).path: roster_xml() for team in ("t1", "t2")},
     paths.played_roster("t1", 1).path: roster_xml(rostered_xml("Then Center", "C", stats={"12": "80"})),
     paths.played_roster("t2", 1).path: roster_xml(rostered_xml("Then Guard", "PG", stats={"12": "-"})),
 }
@@ -135,7 +136,7 @@ def test_a_league_the_list_does_not_name_is_not_planned(tmp_path: Path) -> None:
     assert [step.path for step in capture.plan(["466.l.999"]).steps] == [LIST]
 
 
-def test_a_sweep_fetches_every_teams_roster_once_the_team_list_is_held(tmp_path: Path) -> None:
+def test_a_sweep_fetches_every_teams_roster_and_its_averages_once_the_team_list_is_held(tmp_path: Path) -> None:
     fetched = _sweep(_capture(tmp_path))
 
     assert sorted(fetched) == sorted(YAHOO)
