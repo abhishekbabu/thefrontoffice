@@ -11,7 +11,7 @@ holds pending state: the bank before this week's transfers, and the free
 transfers remaining. It is deliberately not used. Reaching it means scraping a
 session cookie out of a browser, which breaks whenever the login flow changes,
 and everything it holds can be derived from the public history instead — see
-`free_transfers` in `premier_league/squad.py`.
+`free_transfers` in `premier_league/rules.py`.
 """
 
 import logging

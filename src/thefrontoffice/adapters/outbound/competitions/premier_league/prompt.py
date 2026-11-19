@@ -7,7 +7,7 @@ The provider fetches and the prompt describes.
 
 from thefrontoffice.adapters.outbound.competitions.dates import at_time
 from thefrontoffice.adapters.outbound.competitions.premier_league.league import league_of, standing
-from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
+from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
     TRANSFER_HIT,
     Lineup,
     LineupChange,

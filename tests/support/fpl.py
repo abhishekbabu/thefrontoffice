@@ -93,6 +93,9 @@ MARKET = {
     103: player(103, "MID", 9.0, cost=60, team="LIV", status="i"),
 }
 
+DOUBTFUL_P3 = {**SQUAD_PLAYERS, 3: player(3, "DEF", 6.0, status="d", chance_of_playing=50), **MARKET}
+"""The catalog with a starting defender doubtful: flagged, priced and started like anyone else."""
+
 STARTING_IDS = [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13]
 BENCH_IDS = [2, 12, 14, 15]
 

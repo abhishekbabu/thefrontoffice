@@ -30,7 +30,7 @@ STARTING_SIZE = 11
 SQUAD_SIZE = 15
 
 # `status` on an element, as a manager reads it. Which of these rule a player
-# out is a rule of the game, and lives in `premier_league/squad.py`.
+# out is a rule of the game, and lives in `premier_league/rules.py`.
 STATUS_LABELS: dict[str, str] = {
     "a": "",
     "d": "doubtful",
