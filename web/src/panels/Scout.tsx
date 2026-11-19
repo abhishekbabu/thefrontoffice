@@ -286,7 +286,7 @@ export function BestTrade({ competition, league }: { competition: Competition; l
             Best: give {best.giving.join(" and ")} for {best.receiving.join(", ")} with {best.team}
           </span>
           <Badge variant="ok" appearance="pill" className="tabular-nums">
-            {gain(best, trades.data.ranked_by)}
+            {gain(best, trades.data.ranked_by, trades.data.measure)}
           </Badge>
         </>
       )}
@@ -301,9 +301,13 @@ export function BestTrade({ competition, league }: { competition: Competition; l
   );
 }
 
-/** What a trade gains you on the figure the list is ranked by, in words: '+21.4 pts rest of season', 'playoff odds +4.0 pts'. */
-export function gain(idea: TradeIdea, ranked: Trades["ranked_by"]): string {
+/**
+ * What a trade gains you on the figure the list is ranked by, in words: '+21.4 pts rest of season',
+ * '+1.25 cats rest of season', 'playoff odds +4.0 pts'.
+ */
+export function gain(idea: TradeIdea, ranked: Trades["ranked_by"], measure: Trades["measure"] = "points"): string {
   if (ranked === "playoffs_change") return `playoff odds ${percentPoints(idea.playoffs_change)}`;
+  if (measure === "categories") return `${signed(idea.total, 2)} cats rest of season`;
   return `${signed(idea.total)} pts rest of season`;
 }
 

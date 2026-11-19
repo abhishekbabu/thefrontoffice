@@ -62,6 +62,12 @@ class YahooLine:
 
 
 POINTS_SCORING = frozenset({"headpoint", "point"})
+
+INJURED = frozenset({"IL", "IL+"})
+"""Roster slots that hold an injured player outside the active roster."""
+
+UNSTARTED = INJURED | {"BN"}
+"""Roster slots whose players score nothing: the bench and the injured ones."""
 """Yahoo's scoring types for a league scored in fantasy points: head-to-head, or over the season."""
 
 
@@ -238,6 +244,22 @@ class LeagueSettings:
 
     best_game: bool = False
     """Whether each player scores only his best game of the week — Yahoo's "High Score" points — not their sum."""
+
+    trade_end: date | None = None
+    """The last day a trade is accepted; None where the settings name none."""
+
+    slots: dict[str, int] = field(default_factory=dict)
+    """How many of each roster position a team holds, as the settings list them: 'PG': 1, 'BN': 3, 'IL': 2."""
+
+    @property
+    def starting(self) -> int:
+        """Lineup slots that score: every position but the bench and the injured ones; nought where none are listed."""
+        return sum(count for slot, count in self.slots.items() if slot not in UNSTARTED)
+
+    @property
+    def roster_size(self) -> int:
+        """Players a team may hold outside its injured slots; nought where no positions are listed."""
+        return sum(count for slot, count in self.slots.items() if slot not in INJURED)
 
 
 @dataclass(frozen=True)

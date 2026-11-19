@@ -7,8 +7,8 @@ are named from the bracket the settings describe, as football names its own.
 Also which season a date belongs to, and where a league and its teams live on Yahoo.
 """
 
-from collections.abc import Mapping
-from datetime import datetime
+from collections.abc import Mapping, Sequence
+from datetime import date, datetime, timedelta
 
 from thefrontoffice.adapters.outbound.competitions import brackets
 from thefrontoffice.adapters.outbound.competitions.dates import span
@@ -63,6 +63,26 @@ def _key_numbers(key: str, *kinds: str) -> list[str]:
     if len(parts) != 1 + 2 * len(kinds) or tuple(parts[1::2]) != kinds:
         return []
     return parts[2::2]
+
+
+WEEK = timedelta(days=7)
+
+
+def week_dates(drawn: Mapping[int, Sequence[Pairing]]) -> dict[int, tuple[date, date]]:
+    """Each week's first and last day: its scoreboard's, or for a week nobody is drawn in yet — a playoff week
+    before the bracket — the seven days after the week before it.
+
+    A week before every drawn one has no dates to follow on from, and is left out.
+    """
+    dates: dict[int, tuple[date, date]] = {}
+    for week in sorted(drawn):
+        found = drawn[week]
+        if found:
+            dates[week] = (found[0].start, found[0].end)
+        elif week - 1 in dates:
+            start = dates[week - 1][1] + timedelta(days=1)
+            dates[week] = (start, start + WEEK - timedelta(days=1))
+    return dates
 
 
 def table(teams: list[YahooTeam], mine: str) -> list[StandingRow]:

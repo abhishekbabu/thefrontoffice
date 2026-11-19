@@ -185,12 +185,12 @@ def test_every_registered_provider_implements_the_competition_port() -> None:
 
 
 def test_what_each_competition_can_do_is_read_off_its_provider() -> None:
-    """FPL managers transfer against the market rather than trade; only the NFL simulates its season."""
+    """FPL managers transfer against the market rather than trade; only head-to-head leagues search for trades."""
     ports = (TradeProvider, WireProvider, OutlookProvider, TradeMarketProvider)
     can = {e.key: tuple(e.can(port) for port in ports) for e in _registry().entries}
 
     assert can == {
-        "nba-yahoo": (True, True, True, False),
+        "nba-yahoo": (True, True, True, True),
         "nfl-sleeper": (True, True, True, True),
         "premier-league-fpl": (False, False, True, False),
     }

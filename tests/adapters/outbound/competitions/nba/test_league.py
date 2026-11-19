@@ -5,7 +5,7 @@ from datetime import date, datetime
 
 import pytest
 
-from thefrontoffice.adapters.outbound.competitions.nba.league import season, season_year, table
+from thefrontoffice.adapters.outbound.competitions.nba.league import season, season_year, table, week_dates
 from thefrontoffice.adapters.outbound.competitions.nba.rules import PACIFIC
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     LeagueSettings,
@@ -180,3 +180,18 @@ def test_a_league_without_playoffs_has_no_bracket_weeks() -> None:
 def test_nba_season_rolls_over_in_september(when: datetime, expected: int) -> None:
     """Basketball's season starts in the autumn and runs into the next calendar year."""
     assert season_year(when) == expected
+
+
+# ── the weeks' dates ────────────────────────────────────────────────────
+
+
+def test_a_drawn_week_is_dated_by_its_scoreboard_and_one_not_drawn_follows_the_week_before() -> None:
+    dates = week_dates({18: [_week()], 19: [], 20: []})
+
+    assert dates[18] == (date(2026, 11, 16), date(2026, 11, 22))
+    assert dates[19] == (date(2026, 11, 23), date(2026, 11, 29))
+    assert dates[20] == (date(2026, 11, 30), date(2026, 12, 6))
+
+
+def test_a_week_with_nothing_before_it_to_follow_has_no_dates() -> None:
+    assert week_dates({19: [], 20: [_week()]}) == {20: (date(2026, 11, 16), date(2026, 11, 22))}

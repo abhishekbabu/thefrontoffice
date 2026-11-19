@@ -13,7 +13,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import INJURED, YahooPlayer
 from thefrontoffice.domain.models import Better
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
@@ -93,7 +93,7 @@ turnovers is not a reason to add anybody."""
 BOX_SCORE = tuple(dict.fromkeys(key for c in CATEGORIES for key in (c.made, c.attempts) if key))
 """Every Sleeper box-score key the categories are built from."""
 
-INJURED_SLOTS = frozenset({"IL", "IL+"})
+INJURED_SLOTS = INJURED
 """Roster slots that hold an injured player outside the active roster."""
 
 NOT_TAKEN: dict[str, frozenset[str]] = {
@@ -196,3 +196,20 @@ def fantasy_points(figures: Mapping[str, float], weights: Mapping[str, float]) -
     if not figures or not weights or any(stat not in COUNTED for stat in weights):
         return None
     return sum(weight * figures.get(COUNTED[stat].label, 0.0) for stat, weight in weights.items())
+
+
+def printed(stats: Mapping[str, str], category: Category) -> tuple[float, float]:
+    """A category's figure on a Yahoo scoreboard as numbers: its total and nought, or a percentage's makes and
+    attempts from the '109/218' Yahoo prints beside it. A figure not yet printed — a dash — is nothing scored."""
+    if category.is_percentage:
+        made, _, taken = stats.get(category.yahoo_shots, "").partition("/")
+        return amount(made), amount(taken)
+    return amount(stats.get(category.yahoo_stat, "")), 0.0
+
+
+def amount(figure: str) -> float:
+    """A figure as Yahoo prints it, as a number; nothing printed is nothing scored."""
+    try:
+        return float(figure)
+    except ValueError:
+        return 0.0

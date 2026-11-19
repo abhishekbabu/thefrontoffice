@@ -62,7 +62,22 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   once those are 80%+ by the total: points over every regular-season week left
   plus each playoff week weighed by the odds. None that lose points both before
   and in the playoffs; the ranked column is marked. Pricing notes are on hover;
-  a pickup most trades share is said once.
+  a pickup most trades share is said once. NBA (Yahoo) offers one or two of yours
+  for one of theirs, priced at a game's value in the league's scoring over the
+  best free agent's, times his club's games left; only trades both sides gain on
+  (10+ fantasy points or 0.1+ categories a week for them). A week is measured from
+  each roster's daily lineups (the best who play each night, capped at the
+  starting slots): fantasy points in a points league, or categories you expect to
+  win in an "H2H Cat One" league, against the team you play each regular-season
+  week and against the field in a playoff week. Each category's chance is normal on
+  the two sides' totals (each player's game-to-game spread, ±10% form, 10% of games
+  missed unforeseen; a percentage as makes over attempts), and a week's is the
+  chance of taking more than half, so the season simulates on those chances. The
+  trade deadline is read from the league's settings and shown; none past it. A
+  player on an IL slot neither moves nor is moved for; a full roster taking two
+  for one drops its least valuable player. Leagues counting every category in the
+  table, or a best game only, are not searched. About 2s for the page on a cached
+  10-team league.
 - **Free agents**: best fit first, so a 1QB league's list does not open on
   quarterbacks. Fits is his value less that of the weakest starter in your best
   lineup he could replace, who on hover, both valued as the to-do list values a

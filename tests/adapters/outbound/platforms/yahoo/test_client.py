@@ -403,6 +403,22 @@ def test_a_week_played_reads_each_roster_as_it_ended_with_each_players_line(tmp_
     assert sorted(path for path, _ in ctx.requests) == sorted(answers)
 
 
+def test_every_teams_roster_is_read_together_by_team_key(tmp_path: Path) -> None:
+    answers = {
+        paths.roster("t1").query: roster_xml(rostered_xml("A B", "PG")),
+        paths.roster("t2").query: roster_xml(rostered_xml("C D", "IL", status="O")),
+    }
+    client, ctx = _client(tmp_path, answers=answers)
+
+    rosters = client.rosters(["t1", "t2"])
+
+    assert {key: [(p.name, p.slot) for p in players] for key, players in rosters.items()} == {
+        "t1": [("A B", "PG")],
+        "t2": [("C D", "IL")],
+    }
+    assert sorted(path for path, _ in ctx.requests) == sorted(answers)
+
+
 def test_a_roster_failure_is_ours_to_render_not_requests(tmp_path: Path) -> None:
     """The SDK's own roster fetch failed in requests' terms, and escaped as a 500."""
     client, _ = _client(tmp_path, error=requests.ConnectionError("down"))
@@ -556,6 +572,34 @@ def test_the_settings_say_how_lineups_are_set_and_whether_only_a_best_game_score
     assert (daily.settings().weekly_lineups, daily.settings().best_game) == (False, False)
 
 
+def test_the_settings_say_when_trading_ends_and_what_a_roster_holds(tmp_path: Path) -> None:
+    positions = "".join(
+        f"<roster_position><position>{slot}</position><count>{count}</count></roster_position>"
+        for slot, count in (("PG", 1), ("Util", 2), ("BN", 3), ("IL", 2))
+    )
+    settings = (
+        "<fantasy_content><league><settings><trade_end_date>2027-02-25</trade_end_date>"
+        f"<roster_positions>{positions}</roster_positions></settings></league></fantasy_content>"
+    )
+    client, _ = _client(tmp_path, answers={"settings": settings})
+
+    rules = client.settings()
+
+    assert rules.trade_end == date(2027, 2, 25)
+    assert (rules.starting, rules.roster_size) == (3, 6)
+
+
+def test_settings_without_a_trade_deadline_or_positions_name_neither(tmp_path: Path) -> None:
+    settings = (
+        "<fantasy_content><league><settings><trade_end_date>soon</trade_end_date></settings></league></fantasy_content>"
+    )
+    client, _ = _client(tmp_path, answers={"settings": settings})
+
+    rules = client.settings()
+
+    assert (rules.trade_end, rules.starting, rules.roster_size) == (None, 0, 0)
+
+
 def test_a_league_with_playoffs_off_has_no_bracket(tmp_path: Path) -> None:
     settings = (
         "<fantasy_content><league><settings><uses_playoff>0</uses_playoff>"
@@ -627,6 +671,16 @@ def test_a_season_reads_every_weeks_scoreboard_and_a_week_without_you_is_none(tm
     assert [week for week, found in weeks.items() if found is not None] == [1, 2]
     assert weeks[3] is None
     assert sorted(ctx.queries) == [f"scoreboard;week={week}" for week in (1, 2, 3)]
+
+
+def test_every_matchup_of_a_week_is_read_and_a_week_not_yet_drawn_has_none(tmp_path: Path) -> None:
+    empty = "<fantasy_content><league><scoreboard><matchups count='0'/></scoreboard></league></fantasy_content>"
+    client, _ = _client(tmp_path, scoreboard_xml(), answers={"scoreboard;week=20": empty})
+
+    weeks = client.matchups([6, 20])
+
+    assert [(p.mine.team_key, p.opponent.team_key, p.start) for p in weeks[6]] == [("t1", "t2", date(2026, 2, 9))]
+    assert weeks[20] == []
 
 
 def test_between_seasons_there_is_no_week_to_ask_about(tmp_path: Path) -> None:

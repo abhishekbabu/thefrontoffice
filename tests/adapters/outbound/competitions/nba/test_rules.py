@@ -9,9 +9,11 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     SCOUTED,
     THREES,
     TURNOVERS,
+    amount,
     fantasy_points,
     fits,
     line,
+    printed,
     stranded,
 )
 
@@ -114,3 +116,16 @@ def test_a_weighted_stat_no_category_counts_leaves_no_score_rather_than_a_partia
 )
 def test_a_lineup_slot_takes_the_positions_yahoo_lets_into_it(slot: str, positions: str, takes: bool) -> None:
     assert fits(slot, positions) is takes
+
+
+def test_a_scoreboard_count_is_its_total_and_a_percentage_its_makes_and_attempts() -> None:
+    stats = {POINTS.yahoo_stat: "143", FIELD_GOALS.yahoo_shots: "109/218"}
+
+    assert printed(stats, POINTS) == (143.0, 0.0)
+    assert printed(stats, FIELD_GOALS) == (109.0, 218.0)
+
+
+def test_a_figure_not_yet_printed_is_nothing_scored() -> None:
+    assert printed({POINTS.yahoo_stat: "-"}, POINTS) == (0.0, 0.0)
+    assert printed({}, FIELD_GOALS) == (0.0, 0.0)
+    assert amount("") == 0.0

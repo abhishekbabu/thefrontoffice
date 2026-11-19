@@ -150,6 +150,11 @@ class FakeYahoo:
         self.played_weeks: list[int] = []
         self.winners: dict[int, str] = {}
         """The winning team's key in each week settled, empty for a tie; a week it does not name is unsettled."""
+        self.others: dict[str, list[YahooPlayer]] = {}
+        """Other teams' rosters by key; one player named for the team where it names none."""
+        self.slots: dict[str, int] = {}
+        """The settings' roster positions."""
+        self.trade_end: date | None = None
         self.lines: dict[Average, dict[str, YahooLine]] = {}
         """Each player's averages over each span, by key."""
         self.averages_error: Exception | None = None
@@ -162,6 +167,8 @@ class FakeYahoo:
         return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
 
     def roster(self, team_key: str) -> list[YahooPlayer]:
+        if team_key in self.others:
+            return self.others[team_key]
         if team_key != "t.1":
             name = next((t.name for t in self.league_teams if t.team_key == team_key), team_key)
             return [make_player(f"{name} One", selected_position="PF")]
@@ -189,6 +196,13 @@ class FakeYahoo:
         if self.season_weeks is not None:
             return {week: self.season_weeks.get(week) for week in weeks}
         return {week: self.pairing(team_key, week) for week in weeks}
+
+    def matchups(self, weeks: list[int]) -> dict[int, list[Pairing]]:
+        """Your side of each week's scoreboard as `season` reads it: the one matchup this league plays."""
+        return {week: [found] if (found := self.season("t.1", [week])[week]) else [] for week in weeks}
+
+    def rosters(self, team_keys: list[str]) -> dict[str, list[YahooPlayer]]:
+        return {key: self.roster(key) for key in team_keys}
 
     def fetch_available(self, depths: Mapping[Timeframe, int]) -> dict[Timeframe, list[YahooPlayer]]:
         """`available` by season rank and `risers` by the last week's, each as deep as asked; nothing by any other."""
@@ -224,6 +238,8 @@ class FakeYahoo:
             playoff_teams=6,
             weekly_lineups=self.weekly_lineups,
             best_game=self.best_game,
+            trade_end=self.trade_end,
+            slots=self.slots,
         )
 
     def pairing(self, team_key: str, week: int) -> Pairing | None:
