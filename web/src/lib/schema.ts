@@ -1950,6 +1950,11 @@ export interface components {
              * @default
              */
             projection: string;
+            /**
+             * Line
+             * @description His figures in each category the league scores, in its order, where a row shows them as columns — a category week played. Labelled alike on every row of the side; empty for most.
+             */
+            line: components["schemas"]["Stat"][];
         };
         /**
          * StandingRow
@@ -2050,6 +2055,12 @@ export interface components {
              * @description Which way this figure improves; null where it does not compare, like an opponent or a college.
              */
             better: ("higher" | "lower") | null;
+            /**
+             * Hint
+             * @description What the label means, where it is the app's own measure rather than the league's: a tooltip.
+             * @default
+             */
+            hint: string;
         };
         /**
          * StatGroup

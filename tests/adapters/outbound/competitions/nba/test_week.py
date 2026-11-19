@@ -18,7 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASch
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, Pairing, StatCategory
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, Pairing, StatCategory, YahooLine
 from thefrontoffice.domain.models import WeekRange
 
 
@@ -247,11 +247,13 @@ def test_a_failed_schedule_raises_for_one_club_and_leaves_every_club_unknown_in_
 
 def test_a_row_reads_his_games_left_and_a_games_value_with_his_status_beside_his_club() -> None:
     player = make_player("Hurt Guard", position="PG", team="GSW", key="hg", status="O", selected_position="PG")
-    reading = Reading(player=player, line={POINTS.label: 20.0}, per_game=39.4, games=0)
+    reading = Reading(
+        player=player, line={POINTS.label: 20.0}, per_game=39.4, games=0, average=YahooLine(points="35.20")
+    )
 
     [row] = week.side("Mine", "", "", [player], {"hg": reading}, by_points=True).lineup
 
-    assert (row.value, row.detail, row.tone) == ("0G · 39.4 fpts/g", "PG · GSW · O", "warning")
+    assert (row.value, row.detail, row.tone) == ("0G · 35.20 fpts/g", "PG · GSW · O", "warning")
 
 
 def test_a_row_with_no_reading_shows_his_status() -> None:
@@ -266,8 +268,28 @@ def test_a_week_played_reads_in_the_leagues_categories_and_in_its_order() -> Non
     scored = [StatCategory(FIELD_GOALS.yahoo_stat, "FG%"), StatCategory(POINTS.yahoo_stat, "PTS")]
     player = make_player("A", stats={POINTS.yahoo_stat: "143", FIELD_GOALS.yahoo_stat: "0.456", "99": "7"})
 
-    assert week.line(player, scored) == "0.456 FG% · 143 PTS"
-    assert week.line(make_player("B", stats={POINTS.yahoo_stat: "-"}), scored) == "no games"
+    assert [(s.label, s.value) for s in week.line(player, scored)] == [("FG%", ".456"), ("PTS", "143")]
+    assert week.line(make_player("B", stats={POINTS.yahoo_stat: "-"}), scored) == []
+
+
+def test_a_week_played_row_carries_its_line_as_columns_and_no_line_where_he_played_none() -> None:
+    scored = [StatCategory(FIELD_GOALS.yahoo_stat, "FG%"), StatCategory(POINTS.yahoo_stat, "PTS")]
+    played = make_player("A", selected_position="PG", stats={POINTS.yahoo_stat: "143", FIELD_GOALS.yahoo_stat: ".5"})
+    idle = make_player("B", selected_position="C", stats={POINTS.yahoo_stat: "-"})
+
+    a, b = week.side("Mine", "", "", [played, idle], scored=scored).lineup
+
+    assert [(s.label, s.value) for s in a.line] == [("FG%", ".500"), ("PTS", "143")]
+    assert a.detail == "PF · LAL"
+    assert (b.line, b.detail) == ([], "PF · LAL · no games")
+
+
+def test_a_category_lines_rates_read_as_every_page_prints_them() -> None:
+    scored = [StatCategory(FIELD_GOALS.yahoo_stat, "FG%"), StatCategory(POINTS.yahoo_stat, "PTS")]
+
+    fg, pts = week.categories(scored, {"5": "0.85", "12": "301"}, {"5": "-", "12": ""})
+
+    assert (fg.mine, fg.theirs, pts.mine, pts.theirs) == (".850", "-", "301", "")
 
 
 # ── a schedule not yet final ────────────────────────────────────────────

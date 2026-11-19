@@ -190,7 +190,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
           )}
 
           {shown.data.categories.length > 0 && (
-            <Categories lines={shown.data.categories} theirs={shown.data.opponent?.name ?? "Them"} />
+            <Categories lines={shown.data.categories} />
           )}
 
           {shown.data.opponent ? (
@@ -339,7 +339,7 @@ function chanceTone(win: number): string {
  * The leader is said in words as well as weight and color, since a category
  * week is won by the count of those words.
  */
-export function Categories({ lines, theirs }: { lines: CategoryLine[]; theirs: string }) {
+export function Categories({ lines }: { lines: CategoryLine[] }) {
   const forecast = lines.some((line) => line.win != null);
   return (
     <Card>
@@ -352,7 +352,8 @@ export function Categories({ lines, theirs }: { lines: CategoryLine[]; theirs: s
           <tr>
             <Th className="w-16">Cat</Th>
             <Th className="w-20 text-right">You</Th>
-            <Th className="w-20 max-w-32 truncate text-right">{theirs}</Th>
+            {/* Not the opponent's name, which truncates: the lineup cards below name both teams. */}
+            <Th className="w-20 text-right">Them</Th>
             <Th className="text-right">Leads</Th>
             {forecast && <Th className="w-12 text-right">Win</Th>}
           </tr>

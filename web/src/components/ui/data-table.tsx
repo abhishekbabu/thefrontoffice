@@ -52,6 +52,8 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
   const columns = rows[0] ? Object.keys(rows[0].columns) : [];
   const isNumeric = (column: string) => numeric?.has(column) ?? false;
   const isActive = (column: string) => sort?.column === column;
+  // A league scoring nine categories sends fifteen columns: at the usual padding they truncate.
+  const dense = columns.length > 10;
 
   /**
    * Column widths, measured once from the real content and then held.
@@ -117,7 +119,7 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
       <thead>
         <tr ref={head}>
           {columns.map((column) => (
-            <Th key={column} className={cn(isNumeric(column) && "text-right", onSort && "p-0")}>
+            <Th key={column} className={cn(isNumeric(column) && "text-right", dense && "px-2", onSort && "p-0")}>
               {onSort ? (
                 // The label says which of the three states the next click is,
                 // which is not guessable from an arrow. Through the shared
@@ -133,12 +135,14 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
                   // column so the label stays flush with the digits under it
                   // and the arrow's reserved space falls on the far side.
                   className={cn(
-                    "flex w-full items-center gap-1 px-4 py-2 transition-colors hover:text-foreground",
+                    "flex w-full items-center gap-1 py-2 transition-colors hover:text-foreground",
+                    dense ? "px-2" : "px-4",
                     isNumeric(column) && "flex-row-reverse justify-start",
                     isActive(column) && "text-foreground",
                   )}
                 >
-                  <span className="truncate">{column}</span>
+                  {/* Dense headers are a category's few letters: kept whole, so the browser sizes the column to them. */}
+                  <span className={cn(!dense && "truncate")}>{column}</span>
                   {/* Only the sorted column shows an arrow — one on every
                       header is decoration, one here answers "what am I looking
                       at". The space is kept on all of them regardless, or
@@ -173,7 +177,7 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
               return (
                 // A row with a note under it ends at the note, not here: a rule
                 // between them reads as two rows rather than one and its note.
-                <Td key={column} className={cn("truncate", isNumeric(column) && "text-right", note && "border-b-0 pb-1.5")}>
+                <Td key={column} className={cn("truncate", dense && "px-2", isNumeric(column) && "text-right", note && "border-b-0 pb-1.5")}>
                   {render?.(column, value, row) ?? value}
                 </Td>
               );

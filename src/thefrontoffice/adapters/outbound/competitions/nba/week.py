@@ -58,12 +58,17 @@ def categories(
     return [
         CategoryLine(
             name=category.name,
-            mine=mine.get(category.stat_id, ""),
-            theirs=theirs.get(category.stat_id, ""),
+            mine=_figure(category, mine.get(category.stat_id, "")),
+            theirs=_figure(category, theirs.get(category.stat_id, "")),
             lead=_lead(category, mine.get(category.stat_id, ""), theirs.get(category.stat_id, "")),
         )
         for category in scored
     ]
+
+
+def _figure(category: StatCategory, value: str) -> str:
+    """A side's figure as every page prints it — a rate '.850', not '0.85' — or as Yahoo sent it where not a number."""
+    return views.printed(value, rate=views.rate(category)) if views.number(value) is not None else value
 
 
 Lead = Literal["mine", "theirs", "even"]
@@ -153,7 +158,7 @@ def side(
     `roster` is None where no roster is shown; in a week played, it is as the
     week ended, each player carrying his line over it, read in the league's
     categories `scored`. `readings` are each player's week by Yahoo's key, which
-    his row reads its games left and value a game from (`views.cell`).
+    his row reads its games left and Yahoo's averages from (`views.cell`).
     """
     rows = list(roster or [])
     found = readings or {}
@@ -177,22 +182,24 @@ def _spot(
 ) -> Spot:
     """A player as his row reads: where he is slotted, his positions and club, and his week or his status.
 
-    With a reading, the row's figure is his games left and what he gives a game,
-    and any status moves beside his club; without one, the status is the figure.
-    In a week played, what he did in it instead of what he is listed as today:
-    his fantasy points as the figure, or his line in the categories beside his club.
+    With a reading, the row's figure is his games left and Yahoo's averages for
+    him, and any status moves beside his club; without one, the status is the
+    figure. In a week played, what he did in it instead of what he is listed as
+    today: his fantasy points as the figure, or his line in each category as columns.
     """
     about = f"{player.position} · {player.team}"
     if player.stats or player.points:
         points = _fantasy(player.points)
+        figures = line(player, scored)
         return Spot(
             player_id=player.player_key,
             slot=player.slot,
             player=player.name,
-            detail=f"{about} · {line(player, scored)}" if scored else about,
+            detail=about if figures or not scored else f"{about} · no games",
             value=points,
             scoring="final" if points else None,
             scored=points,
+            line=figures,
         )
     shown = views.cell(reading, by_points) if reading else ""
     return Spot(
@@ -213,10 +220,22 @@ def _fantasy(printed: str) -> str:
         return printed
 
 
-def line(player: YahooPlayer, scored: Sequence[StatCategory]) -> str:
-    """His week in the league's categories, in its order: '.456 FG% · 143 PTS'; 'no games' where he played none."""
-    parts = [f"{value} {c.name}" for c in scored if (value := player.stats.get(c.stat_id, "-")) not in ("", "-")]
-    return " · ".join(parts) or "no games"
+def line(player: YahooPlayer, scored: Sequence[StatCategory]) -> list[Stat]:
+    """His week in each of the league's categories, in its order, as columns: a rate '.456', a count '143'.
+
+    None where he played no games: a row of dashes says less than 'no games'.
+    """
+    figures = [player.stats.get(c.stat_id, "") for c in scored]
+    if all(views.number(figure) is None for figure in figures):
+        return []
+    return [
+        Stat(
+            label=c.name,
+            value=views.printed(figure, rate=views.rate(c)),
+            better="lower" if c.fewer_wins else "higher",
+        )
+        for c, figure in zip(scored, figures, strict=True)
+    ]
 
 
 RESULT = {"won": "Won", "lost": "Lost", "drawn": "Tied"}

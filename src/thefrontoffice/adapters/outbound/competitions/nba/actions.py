@@ -184,7 +184,9 @@ def streams(
                 urgency="soon",
                 title=f"Pick up {pickup.player.name}, drop {drop.player.name}",
                 reason=(
-                    f"+{gain:.1f} {_unit(by_points)} this week. {drop.player.name}: weakest you can drop."
+                    f"+{gain:.1f} {_unit(by_points)} this week. {drop.player.name}: weakest you can drop"
+                    + _drags(drop)
+                    + "."
                     + _pending(pickup)
                 ),
                 player_id=pickup.player.player_key,
@@ -222,6 +224,12 @@ def streams_over(pickup: Reading, drop: Reading) -> bool:
 
 PROVISIONAL = " Provisional: schedule not final."
 """What an item weighed on games left adds while the NBA has days of the week to schedule."""
+
+
+def _drags(reading: Reading) -> str:
+    """What drags his value, in a category league: ' (FG% .380 · 2.9 TO)'; nothing where nothing does."""
+    drags = views.weak(reading)
+    return f" ({drags})" if drags else ""
 
 
 def _pending(reading: Reading) -> str:

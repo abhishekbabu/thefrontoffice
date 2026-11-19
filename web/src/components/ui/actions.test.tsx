@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Action, MovePlayer, TaskVerdict } from "@/lib/api";
-import { ActionList, staleVerdicts } from "@/components/ui/actions";
+import { ActionList, Compared, staleVerdicts } from "@/components/ui/actions";
 import { render, settle } from "@/test/render";
 
 function action(key: string, verdict: TaskVerdict | null = null, stale = false): Action {
@@ -73,9 +73,9 @@ const player = (
   team: "TEN",
   held,
   figures: [
-    { label: "Snap% (L3)", value: snaps, tone: "neutral", url: "", better: null },
-    { label: "Proj", value: proj, tone: "neutral", url: "", better: null },
-    { label: "Opp", value: opp, tone: "good", url: "", better: null },
+    { label: "Snap% (L3)", value: snaps, tone: "neutral", url: "", better: null, hint: "" },
+    { label: "Proj", value: proj, tone: "neutral", url: "", better: null, hint: "" },
+    { label: "Opp", value: opp, tone: "good", url: "", better: null, hint: "" },
   ],
 });
 
@@ -152,5 +152,22 @@ describe("staleVerdicts", () => {
 
     expect(staleVerdicts([action("a", said("AGREE", ""), true)])).toBe(true);
     expect(staleVerdicts([hidden, action("b", null, true), action("c", said("AGREE", ""))])).toBe(false);
+  });
+});
+
+describe("players compared", () => {
+  it("lets a figure that is the app's own measure explain itself, and leaves the league's plain", async () => {
+    const valued = (name: string): MovePlayer => ({
+      ...player("in", name, "free agent", ["", "", ""]),
+      figures: [
+        { label: "Value/g", value: "1.2", tone: "neutral", url: "", better: null, hint: "A game's worth across the categories." },
+        { label: "Weak in", value: "FG% .380", tone: "neutral", url: "", better: null, hint: "" },
+      ],
+    });
+    const { container } = await render(<Compared players={[valued("A"), valued("B")]} />);
+
+    const explained = [...container.querySelectorAll("[aria-label]")].map((el) => el.getAttribute("aria-label"));
+    expect(explained).toEqual(["Value/g: A game's worth across the categories."]);
+    expect(container.textContent).toContain("Weak inFG% .380FG% .380");
   });
 });

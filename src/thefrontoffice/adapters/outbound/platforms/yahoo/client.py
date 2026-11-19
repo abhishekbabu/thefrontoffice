@@ -517,7 +517,31 @@ def _player(data: Any) -> YahooPlayer:
         stats={_text(s, "stat_id"): _text(s, "value") for s in _items(_node(data, "player_stats", "stats"), "stat")},
         points=_text(data, "player_points", "total"),
         coverage=_text(data, "player_stats", "coverage_type"),
+        image_url=full_size(_text(data, "image_url")),
+        owner=_owner(_node(data, "ownership")),
     )
+
+
+RESIZER = "https://"
+"""Where the real image begins inside Yahoo's resizer URL, which serves a 46x60 thumbnail of it."""
+
+
+def full_size(url: str) -> str:
+    """A headshot at full size: Yahoo's resizer URL carries the original after it, from its last scheme on."""
+    start = url.rfind(RESIZER)
+    return url[start:] if start > 0 else url
+
+
+OWNERSHIP = {"freeagents": "Free agent", "waivers": "Waivers"}
+"""Yahoo's ownership types for a player nobody holds, in the words a chip shows."""
+
+
+def _owner(ownership: Any) -> str:
+    """Whose roster he is on, from his `ownership`: the team's name, 'Free agent' or 'Waivers'; empty without it."""
+    if not isinstance(ownership, dict):
+        return ""
+    held = _text(ownership, "owner_team_name")
+    return held or OWNERSHIP.get(_text(ownership, "ownership_type"), "")
 
 
 def team_list(league: Any) -> list[YahooTeam]:
@@ -583,6 +607,7 @@ def league_settings(league: Any) -> LeagueSettings:
     playoffs = _text(settings, "uses_playoff") == "1"
     return LeagueSettings(
         categories=category_list(league),
+        positions=[_text(slot, "position") for slot in _items(_node(settings, "roster_positions"), "roster_position")],
         weights={
             _text(stat, "stat_id"): float(_text(stat, "value"))
             for stat in _items(_node(settings, "stat_modifiers", "stats"), "stat")

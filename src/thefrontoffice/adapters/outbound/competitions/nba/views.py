@@ -16,6 +16,7 @@ from thefrontoffice.adapters.outbound.competitions.injuries import BODY_PART, ap
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     ASSISTS,
+    CATEGORIES,
     POINTS,
     REBOUNDS,
     fantasy_points,
@@ -35,15 +36,25 @@ from thefrontoffice.domain.models import (
     MoveSide,
     PlayerCard,
     PlayerDetail,
+    PlayerOrder,
     Stat,
     StatGroup,
 )
 
 CARD_CATEGORIES = (POINTS, REBOUNDS, ASSISTS)
-"""The categories a table row has room for; the drawer carries every one the league scores."""
+"""The categories a lineup row, and a points league's table, have room for."""
 
 FANTASY_POINTS = "FPTS"
 """A points league's fantasy points per game, as a column and a drawer name them."""
+
+VALUE = "Value"
+"""A category league's column of what a game of him is worth across its categories (`worth.category_value`)."""
+
+VALUE_HINT = (
+    "What a game of him is worth across the league's categories: each one's figure against its spread "
+    "among both rosters and the top of the wire, turnovers counted against. Recent form beside this week's projection."
+)
+POINTS_HINT = "Fantasy points a game this week is weighed on: recent form beside this week's projection."
 
 SEASON = "Season"
 LAST_MONTH = "Last 30 days"
@@ -89,26 +100,41 @@ def cards(
     returns: Mapping[str, date],
     by_points: bool,
     splits: Callable[[YahooPlayer], Sequence[Split]] | None = None,
+    scored: Sequence[StatCategory] = (),
+    readings: Mapping[str, Reading] | None = None,
 ) -> list[PlayerCard]:
-    """One table shape for every list of players this sport shows.
+    """One table shape for every list of players this sport shows, best a game first (`ranked`).
 
     `recent` is each player's averages over the last month, by Yahoo's key, as
-    Yahoo prints them: the categories a row has room for, and in a points league
-    his fantasy points a game. The lineup slot is a column only where somebody
-    holds one: on the wire nobody does, and the column would be blank down its
-    whole length. `returns` is the day ESPN expects each player back, by
-    Yahoo's key. `splits`, on the wire, adds the teammate whose absence matters
-    most to each (`teammates.Split`), the rest being in his drawer.
+    Yahoo prints them: in a points league his fantasy points a game and the
+    categories a row has room for; in a category league every category it
+    scores (`scored`), then his `VALUE` a game from `readings`. The lineup slot
+    is a column only where somebody holds one: on the wire nobody does, and
+    the column would be blank down its whole length. `returns` is the day ESPN
+    expects each player back, by Yahoo's key. `splits`, on the wire, adds the
+    teammate whose absence matters most to each (`teammates.Split`), the rest
+    being in his drawer.
     """
     slotted = any(p.slot for p in players)
+    valued = readings or {}
     rows = []
     for player in players:
         line = recent.get(player.player_key, YahooLine())
         split = next(iter(splits(player)), None) if splits else None
         back = returns.get(player.player_key) if player.status else None
-        shown = {c.label: line.stats.get(c.yahoo_stat, "") for c in CARD_CATEGORIES}
         if by_points:
-            shown[FANTASY_POINTS] = line.points
+            shown = {
+                FANTASY_POINTS: line.points,
+                **{c.label: line.stats.get(c.yahoo_stat, "") for c in CARD_CATEGORIES},
+            }
+            cells = {label: printed(figure) for label, figure in shown.items()}
+        else:
+            shown = {c.name: line.stats.get(c.stat_id, "") for c in scored}
+            cells = {c.name: printed(shown[c.name], rate=rate(c)) for c in scored}
+            reading = valued.get(player.player_key)
+            game = reading.per_game if reading else None
+            shown[VALUE] = f"{game:.2f}" if game is not None else ""
+            cells[VALUE] = f"{game:.1f}" if game is not None else NO_FIGURE
         rows.append(
             PlayerCard(
                 player_id=player.player_key,
@@ -119,7 +145,7 @@ def cards(
                     POSITION_COLUMN: player.position,
                     "Team": player.team,
                     **({SLOT_COLUMN: player.slot} if slotted else {}),
-                    **{label: printed(figure) for label, figure in shown.items()},
+                    **cells,
                     **({WITHOUT_COLUMN: split.cell() if split else NO_FIGURE} if splits else {}),
                     STATUS_COLUMN: player.status,
                 },
@@ -129,7 +155,17 @@ def cards(
                 },
             )
         )
-    return rows
+    return ranked(rows, by_points)
+
+
+def ranked(rows: list[PlayerCard], by_points: bool) -> list[PlayerCard]:
+    """Best a game first: by fantasy points in a points league, by `VALUE` in a category one; blanks last."""
+    return PlayerOrder(sort=FANTASY_POINTS if by_points else VALUE).ordered(rows)
+
+
+def rate(category: StatCategory) -> bool:
+    """Whether a category is a rate, '.536', rather than a count."""
+    return category.name.endswith("%")
 
 
 def averages(line: YahooLine, scored: Sequence[StatCategory], by_points: bool) -> list[Stat]:
@@ -139,7 +175,7 @@ def averages(line: YahooLine, scored: Sequence[StatCategory], by_points: bool) -
         *(
             Stat(
                 label=c.name,
-                value=printed(line.stats.get(c.stat_id, ""), rate=c.name.endswith("%")),
+                value=printed(line.stats.get(c.stat_id, ""), rate=rate(c)),
                 better="lower" if c.fewer_wins else "higher",
             )
             for c in scored
@@ -155,15 +191,19 @@ def detail(
     by_points: bool,
     reported: list[Stat],
     splits: Sequence[Split] = (),
+    left: str = "",
 ) -> PlayerDetail:
-    """The drawer on one player: his averages this season and over the last month, his teammates out, his injury.
+    """The drawer on one player: his week, his averages this season and over the last month, his teammates out, his injury.
 
-    Both averages are Yahoo's, in the league's categories `scored`. A points
-    league heads it with his fantasy points a game this season, a category
-    league with his points. `splits` is his line without each regular teammate
-    who is hurt or lately sat out, and with him (`teammates.Split`). `reported`
-    is ESPN's report on him, which says when he is back; where it has none,
-    Yahoo's status stands alone. Nothing for a healthy player.
+    Both averages are Yahoo's, in the league's categories `scored`; the last
+    month only where it differs from the season, which early on it does not. A
+    points league heads it with his fantasy points a game this season, a
+    category league with his points. `left` is his games left this week
+    (`games_left`), empty where unknown. `splits` is his line without each
+    regular teammate who is hurt or lately sat out, and with him
+    (`teammates.Split`). `reported` is ESPN's report on him, which says when he
+    is back; where it has none, Yahoo's status stands alone. Nothing for a
+    healthy player.
     """
     figure = "" if season is None else season.points if by_points else season.stats.get(POINTS.yahoo_stat, "")
     headline = figure if number(figure) is not None else ""
@@ -172,17 +212,20 @@ def detail(
         *([Stat(label="Status", value=player.status, tone="warning")] if player.status else []),
         *([Stat(label=BODY_PART, value=player.injury_note)] if player.injury_note else []),
     ]
-    spans = ((SEASON, season), (LAST_MONTH, recent))
+    spans = ((SEASON, season), (LAST_MONTH, None if recent == season else recent))
     return PlayerDetail(
         player_id=player.player_key,
         name=player.name,
         position=player.position,
         team=player.team,
+        image_url=player.image_url,
+        owner=player.owner,
         headline=headline,
         headline_label=f"{unit}, season" if headline else "No games this season",
         note=player.status,
         tone="warning" if player.status else "neutral",
         groups=[
+            *([StatGroup(title=THIS_WEEK, stats=[Stat(label=GAMES_LEFT, value=left)])] if left else []),
             *(StatGroup(title=title, stats=averages(line, scored, by_points)) for title, line in spans if line),
             *([StatGroup(title="Teammates", stats=[split.stat() for split in splits])] if splits else []),
             *([StatGroup(title="Injury", stats=hurt)] if hurt else []),
@@ -190,27 +233,38 @@ def detail(
     )
 
 
+THIS_WEEK = "This week"
+
+
 def games_left(reading: Reading) -> str:
     """His games left, '3', or '3+' while the week's schedule is not final; empty where it would not load."""
-    if reading.games is None:
+    return counted(reading.games, reading.provisional)
+
+
+def counted(games: int | None, provisional: bool) -> str:
+    """Games left as a page says them: '3', '3+' while the schedule is not final, or empty where unknown."""
+    if games is None:
         return ""
-    return f"{reading.games}+" if reading.provisional else str(reading.games)
+    return f"{games}+" if provisional else str(games)
 
 
 def cell(reading: Reading, by_points: bool) -> str:
     """His week as a lineup row reads it: '3G · 41.5 fpts/g', or in a category league '3G · 22.1p 8.3r 4.0a'.
 
-    Games left, then what he gives a game (`worth.per_game`): fantasy points in
-    a points league, the categories a row has room for in a category one. '3+G'
+    Games left, then Yahoo's averages over his last month (`Reading.average`),
+    the figures every table and his drawer show: fantasy points a game in a
+    points league, the categories a row has room for in a category one. '3+G'
     while the NBA has days of the week to schedule: three at least.
     """
     left = games_left(reading)
     games = f"{left}G" if left else ""
+    line = reading.average or YahooLine()
     if by_points:
-        figure = f"{reading.per_game:.1f} fpts/g" if reading.per_game is not None else ""
+        figure = f"{line.points} fpts/g" if number(line.points) is not None else ""
     else:
-        figures = reading.line or {}
-        figure = " ".join(c.tagged(figures[c.label]) for c in CARD_CATEGORIES if c.label in figures)
+        figure = " ".join(
+            f"{value}{c.tag}" for c in CARD_CATEGORIES if number(value := line.stats.get(c.yahoo_stat, "")) is not None
+        )
     return " · ".join(part for part in (games, figure) if part)
 
 
@@ -220,21 +274,57 @@ BACK = "Back"
 WEEK = "Week"
 """What he adds this week: a game's value × minutes nudge × games left (`Reading.worth`)."""
 
+PER_GAME = "Value/g"
+"""What a game of him is worth, in the league's scoring: the figure every weekly call is weighed on."""
 
-def per_game_label(by_points: bool) -> str:
-    """What a game of him is counted in: fantasy points, or his value across the categories."""
-    return "FPTS/g" if by_points else "Value/g"
+WEAK = "Weak in"
+"""The categories that drag a player's value, in a category league."""
+
+BY_STAT = {c.yahoo_stat: c for c in CATEGORIES}
+
+
+def weak(reading: Reading) -> str:
+    """The categories that drag his value, with his figures in them: 'FG% .380 · 2.9 TO'; empty where none.
+
+    Each figure is Yahoo's average over his last month where it carries one —
+    the number his row and his drawer show — and his figure the value is read
+    off where it does not.
+    """
+    line = reading.average or YahooLine()
+    figures = reading.line or {}
+    parts = []
+    for category in reading.weak:
+        shown = printed(line.stats.get(category.stat_id, ""), rate=rate(category))
+        if shown == NO_FIGURE:
+            weighed = figures.get(BY_STAT[category.stat_id].label)
+            if weighed is None:
+                continue
+            shown = f"{weighed:.3f}".removeprefix("0") if rate(category) else f"{weighed:.1f}"
+        parts.append(f"{category.name} {shown}" if rate(category) else f"{shown} {category.name}")
+    return " · ".join(parts)
 
 
 def figures(reading: Reading, by_points: bool) -> list[Stat]:
-    """The rows a to-do item compares him on, alike for every player on it; '—' where he has none."""
+    """The rows a to-do item compares him on, alike for every player on it; '—' where he has none.
+
+    Beside the figures the week is weighed on, Yahoo's own: his fantasy points
+    a game in a points league, as his row shows them; in a category league the
+    categories that drag his value (`weak`), so a drop reads as more than a number.
+    """
     worth = reading.worth
     status = reading.player.status
+    average = reading.average or YahooLine()
     return [
         Stat(label=GAMES_LEFT, value=games_left(reading) or NO_FIGURE),
         Stat(
-            label=per_game_label(by_points),
+            label=PER_GAME,
             value=f"{reading.per_game:.1f}" if reading.per_game is not None else NO_FIGURE,
+            hint=POINTS_HINT if by_points else VALUE_HINT,
+        ),
+        (
+            Stat(label=FANTASY_POINTS, value=printed(average.points))
+            if by_points
+            else Stat(label=WEAK, value=weak(reading) or NO_FIGURE)
         ),
         Stat(label="Min/g", value=f"{reading.minutes:.1f}" if reading.minutes is not None else NO_FIGURE),
         Stat(label=WEEK, value=f"{worth:.1f}" if worth is not None else NO_FIGURE),

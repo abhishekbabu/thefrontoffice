@@ -100,6 +100,10 @@ class Stat(BaseModel):
         default=None,
         description="Which way this figure improves; null where it does not compare, like an opponent or a college.",
     )
+    hint: str = Field(
+        default="",
+        description="What the label means, where it is the app's own measure rather than the league's: a tooltip.",
+    )
 
 
 SpotScoring = Literal["projected", "live", "final"]
@@ -144,6 +148,13 @@ class Spot(BaseModel):
         description=(
             "What he is projected, shown beside what he has scored on every row that says how it "
             "scores — the guess beside the answer, and before kickoff the only number there is."
+        ),
+    )
+    line: list[Stat] = Field(
+        default_factory=list,
+        description=(
+            "His figures in each category the league scores, in its order, where a row shows them as "
+            "columns — a category week played. Labelled alike on every row of the side; empty for most."
         ),
     )
 

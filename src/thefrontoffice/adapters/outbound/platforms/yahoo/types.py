@@ -143,6 +143,13 @@ class YahooPlayer:
     """The span `stats` and `points` cover, as Yahoo names it: 'week' for a week played, an `Average` on the
     wire; empty where they carry nothing."""
 
+    image_url: str = ""
+    """His headshot on Yahoo's CDN, full size; empty where Yahoo sent none."""
+
+    owner: str = ""
+    """Whose roster he is on — a team's name, 'Free agent' or 'Waivers' — where his ownership was asked for;
+    empty otherwise."""
+
     @property
     def line(self) -> YahooLine:
         return YahooLine(stats=self.stats, points=self.points)
@@ -210,6 +217,9 @@ class LeagueSettings:
 
     categories: list[StatCategory] = field(default_factory=list)
     """The categories it scores, in the order its settings list them."""
+
+    positions: list[str] = field(default_factory=list)
+    """The lineup slots it has, as its settings list them: 'PG', 'G', 'Util', 'BN'."""
 
     weights: dict[str, float] = field(default_factory=dict)
     """Yahoo stat id -> fantasy points per unit, in a points league; empty in a category one."""
