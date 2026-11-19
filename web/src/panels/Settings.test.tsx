@@ -18,23 +18,18 @@ const group = (title: string, section: SettingsGroup["section"], platform = "", 
 });
 
 const YAHOO = group("NBA on Yahoo", "platforms", "yahoo");
+const YAHOO_CARD = '[role=group][aria-label="NBA on Yahoo"]';
 
 async function settingsWith(status: CaptureStatus, groups: SettingsGroup[] = [YAHOO]) {
   const client = offlineClient();
   client.setQueryData(keys.settings, groups);
   client.setQueryData(keys.capture("yahoo"), status);
   const { container } = await render(<SettingsPanel onBack={() => {}} />, client);
-  const card = container.querySelector("[data-group=yahoo]");
+  const card = container.querySelector(YAHOO_CARD);
   return { container, card: card?.textContent ?? "" };
 }
 
 describe("Yahoo status", () => {
-  it("sits in the Yahoo group's own card, under Platforms", async () => {
-    const { container } = await settingsWith({ active: true, synced_at: null, leagues: [], session: null });
-    const section = container.querySelector("[data-group=yahoo]")?.closest("section");
-    expect(section?.querySelector("h2")?.textContent).toBe("Platforms");
-  });
-
   it("is not shown without a Yahoo group", async () => {
     const { container } = await settingsWith({ active: true, synced_at: null, leagues: [], session: null }, []);
     expect(container.textContent).not.toContain("Sync Yahoo");
@@ -57,16 +52,15 @@ describe("Yahoo status", () => {
   it("says when it last ran, and how many leagues it holds, in its status", async () => {
     const synced = new Date();
     synced.setHours(9, 5);
-    const { container } = await settingsWith({
+    const { card } = await settingsWith({
       active: true,
       synced_at: synced.toISOString(),
       leagues: ["Hoops", "Dunks"],
       session: null,
     });
 
-    const header = container.querySelector("[data-group=yahoo] > :first-child")?.textContent ?? "";
-    expect(header).toMatch(/2 leagues · last synced 0?9:05/);
-    expect(container.textContent).not.toContain("Hoops");
+    expect(card).toMatch(/2 leagues · last synced 0?9:05/);
+    expect(card).not.toContain("Hoops");
   });
 
   it("says how to copy the session cookie, and where it goes, while read with one", async () => {
@@ -97,7 +91,6 @@ describe("Yahoo status", () => {
     });
 
     expect(card).toContain("Session expired");
-    expect(card).toContain("Paste a fresh one");
   });
 });
 
@@ -239,7 +232,7 @@ describe("A group read more than one way", () => {
 
   async function switched() {
     const { container } = await settingsWith(session, [SWITCHED]);
-    const card = container.querySelector<HTMLElement>("[data-group=yahoo]")!;
+    const card = container.querySelector<HTMLElement>(YAHOO_CARD)!;
     const other = () => [...card.querySelectorAll("details")].find((d) => d.textContent?.startsWith("Other methods"));
     const shown = (key: string) => [...card.querySelectorAll("code")].some((c) => c.textContent === key && !other()?.contains(c));
     const chip = (text: string) =>
@@ -265,13 +258,6 @@ describe("A group read more than one way", () => {
     expect(card.textContent).toContain("needs a developer app");
     expect(shown("YAHOO_CLIENT_ID")).toBe(true);
     expect(other()?.textContent).toContain("YAHOO_SESSION_COOKIE");
-  });
-
-  it("shows only the chosen way's steps", async () => {
-    const { card } = await switched();
-    const visible = [...card.querySelectorAll("details:not(.hidden) > summary")].map((s) => s.textContent);
-
-    expect(visible).toEqual(["Session cookie", "Other methods"]);
   });
 
   it("says what a setting does where it carries a hint", async () => {

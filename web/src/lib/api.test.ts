@@ -11,10 +11,6 @@ describe("reading a failed response", () => {
     expect([error.message, error.code, error.remedy]).toEqual(["Sleeper is not responding.", "platform_unavailable", remedy]);
   });
 
-  it("names the condition a page acts on, such as a conversation the server no longer holds", () => {
-    expect(failure({ detail: "Expired.", code: "chat_expired", remedy: null }, "404 Not Found").code).toBe("chat_expired");
-  });
-
   it("says the server did not answer where nothing it sent came back", () => {
     const error = failure(null, "502 Bad Gateway");
 

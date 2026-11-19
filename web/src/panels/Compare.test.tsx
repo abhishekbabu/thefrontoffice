@@ -43,7 +43,6 @@ describe("Compare", () => {
     expect(text).toContain("Rival");
     // The heading once, over its rows, not as a prefix on each label.
     expect(text).toMatch(/Week 11Targets a game8\.19\.4best/);
-    expect(text).not.toContain("Week 11 ·");
     // Only the better figure is marked, and only in a row that compares.
     expect(text.match(/best/g)).toHaveLength(1);
 

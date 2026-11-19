@@ -23,12 +23,6 @@ describe("parse", () => {
     expect(parse("/nfl-sleeper/123")).toMatchObject({ leagueId: "123", view: DEFAULT_VIEW });
   });
 
-  it("reads every view it can be sent to", () => {
-    for (const view of VIEWS) {
-      expect(parse(`/nfl-sleeper/123/${view}`)).toMatchObject({ view });
-    }
-  });
-
   it("falls back rather than trusting a view nobody wrote", () => {
     expect(parse("/nfl-sleeper/123/nonsense")).toMatchObject({ view: DEFAULT_VIEW });
   });

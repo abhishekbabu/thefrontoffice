@@ -166,7 +166,7 @@ function GroupCard({
     <Row key={setting.key} setting={setting} draft={drafts[setting.key]} onChange={onEdit(setting)} />
   );
   return (
-    <Card data-group={group.platform || undefined}>
+    <Card role="group" aria-label={group.title}>
       <CardHeader>
         <span>{group.title}</span>
         {yahoo && status.data && <YahooState status={status.data} />}

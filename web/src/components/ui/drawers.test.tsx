@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Capabilities, Competition, League } from "@/lib/api";
+import type { Competition, League } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import type { Comparing } from "@/components/ui/compare";
 import { useDrawers } from "@/components/ui/drawers";
-import { offlineClient, render, settle } from "@/test/render";
+import { drawerClient, render, settle } from "@/test/render";
 import { REED_WHITE } from "@/test/players";
 
 const NBA = { key: "nba-yahoo" } as Competition;
@@ -22,8 +22,7 @@ function Page({ comparing }: { comparing: Comparing }) {
 }
 
 async function page(comparing: Comparing) {
-  const client = offlineClient();
-  client.setQueryData<Capabilities>(keys.capabilities, { ai: false, limits: { judged: 10 } });
+  const client = drawerClient();
   client.setQueryData(keys.compare(NBA.key, LEAGUE.league_id, ["p.1", "p.2"]), REED_WHITE);
   for (const player of REED_WHITE.players) client.setQueryData(keys.player(NBA.key, LEAGUE.league_id, player.player_id), player);
   const { container } = await render(<Page comparing={comparing} />, client);

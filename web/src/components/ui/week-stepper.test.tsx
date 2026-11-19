@@ -2,7 +2,7 @@ import { act } from "react";
 import { describe, expect, it } from "vitest";
 import type { WeekRange } from "@/lib/api";
 import { SWIPE_DISTANCE, WeekPane, WeekStepper, useSwipe } from "@/components/ui/week-stepper";
-import { render } from "@/test/render";
+import { press, render } from "@/test/render";
 
 describe("WeekPane", () => {
   const pane = (week: number, pending = false) => (
@@ -34,12 +34,6 @@ function stepping(week: number) {
 
 const button = (container: HTMLElement, label: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
-
-async function press(key: string, target: EventTarget = window) {
-  await act(async () => {
-    target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-  });
-}
 
 describe("WeekStepper", () => {
   it("names the week each arrow goes to, and steps to it", async () => {
@@ -84,8 +78,8 @@ describe("WeekStepper", () => {
     await render(ui);
     const input = document.body.appendChild(document.createElement("input"));
 
-    await press("ArrowLeft");
-    await press("ArrowRight", input);
+    await press(window, "ArrowLeft");
+    await press(input, "ArrowRight");
 
     expect(steps).toEqual([9]);
     input.remove();
