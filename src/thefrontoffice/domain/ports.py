@@ -21,6 +21,9 @@ from thefrontoffice.domain.models import (
     ItemState,
     LeagueSchedule,
     MatchupInput,
+    OddsCheck,
+    OddsFit,
+    OddsModel,
     Outcomes,
     Outlook,
     PlayedMatchup,
@@ -460,6 +463,32 @@ class TradeMarketProvider(Protocol):
 
     def trade_market(self, league_id: str) -> TradeMarket | None:
         """The season with the trades worth trying; None past the deadline or where there is no season to play."""
+        ...
+
+
+@runtime_checkable
+class OddsTuning(Protocol):
+    """The spreads a category league's odds are priced with, fitted to a season already played and checked on
+    seasons played — read from box scores alone, so it needs no league of the account's own."""
+
+    def seasons(self) -> tuple[str, str]:
+        """The season finished last, to fit on, and the one being played, to check the fit on as well."""
+        ...
+
+    def fit_odds(self, season: str) -> OddsFit:
+        """How far rostered-calibre players' weeks of `season` strayed from what their games projected.
+
+        Raises:
+            NotFoundError: the season has no week to fit on.
+        """
+        ...
+
+    def check_odds(self, season: str, model: OddsModel) -> OddsCheck:
+        """How the spreads `model` names called the categories and weeks of leagues dealt from `season`.
+
+        Raises:
+            NotFoundError: the season has no week to check on.
+        """
         ...
 
 

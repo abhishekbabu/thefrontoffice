@@ -5,6 +5,7 @@ player gives. Two slots a night, so a third player on the same nights as two
 better ones sits — the lineup fit most basketball trades are made of.
 """
 
+from dataclasses import replace
 from datetime import date, timedelta
 
 import pytest
@@ -12,7 +13,7 @@ from support.nba import make_player
 
 from thefrontoffice.adapters.outbound.competitions.nba.market import THEIR_GAIN, League, Week, build
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS
-from thefrontoffice.adapters.outbound.competitions.nba.strength import POINTS, Profile, Scored, Totals
+from thefrontoffice.adapters.outbound.competitions.nba.strength import POINTS, Profile, Scored, Totals, Uncertainty
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 from thefrontoffice.domain.models import TeamRecord, TradeMarket, TradeOption
 
@@ -21,6 +22,9 @@ EARLY, LATE = "early", "late"
 
 VALUES = {"m1": 30.0, "m2": 30.0, "m3": 20.0, "b1": 25.0, "b2": 15.0, "b3": 5.0, "c1": 10.0, "fa": 8.0}
 """A game of each, in fantasy points: yours (m), your partner's (b), the third team's (c), a free agent."""
+
+EXACT = Uncertainty(missed=0.0, form={}, rate={}, game={})
+"""A week that is exactly its games: what a trade's arithmetic here is checked under."""
 
 CLUBS = {"m1": EARLY, "m2": EARLY, "m3": EARLY, "b1": LATE, "b2": LATE, "b3": LATE, "c1": EARLY, "fa": LATE}
 
@@ -52,6 +56,7 @@ def _league(
     categories: tuple[Scored, ...] = (),
     current: int = 5,
     banked: dict[str, Totals] | None = None,
+    uncertainty: Uncertainty = EXACT,
 ) -> League:
     rosters = rosters or {
         "a": [_player("m1"), _player("m2"), _player("m3")],
@@ -75,6 +80,7 @@ def _league(
         banked=banked or {},
         wire=wire,
         seed=1,
+        uncertainty=uncertainty,
     )
 
 
@@ -235,3 +241,29 @@ def test_a_playoff_week_is_measured_against_the_field() -> None:
     trade = _trade(_market(_category_league()), "M3", "B2")
 
     assert trade is not None and trade.playoff_points is not None
+
+
+ROUNDED = ("BLK", "STL", "REB")
+
+
+def _all_round(value: float) -> Profile:
+    """A game giving a tenth of `value` in each of three counts."""
+    return Profile(value=value, mean=dict.fromkeys(ROUNDED, value / 10), variance=dict.fromkeys(ROUNDED, 4.0))
+
+
+def _chance_of_week_5(spreads: Uncertainty) -> float:
+    profiles = {key: _all_round(value) for key, value in VALUES.items()}
+    categories = tuple(Scored(label) for label in ROUNDED)
+    league = _league(profiles=profiles, categories=categories, uncertainty=spreads)
+    fixture = next(f for f in _market(league).season.fixtures if f.week == 5)
+    assert fixture.chances is not None
+    return fixture.chances[0]
+
+
+def test_a_side_ahead_in_every_category_is_less_sure_of_the_week_when_they_move_together() -> None:
+    """You lead C in all three; a week your roster plays more lifts all three at once, as one it plays less sinks
+    them, so the week is a sweep or a wipe-out more often than independent categories would be."""
+    independent = _chance_of_week_5(EXACT)
+    together = _chance_of_week_5(replace(EXACT, loadings=dict.fromkeys(ROUNDED, 0.7)))
+
+    assert 0.5 < together < independent

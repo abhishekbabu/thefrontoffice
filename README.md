@@ -70,9 +70,13 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   starting slots): fantasy points in a points league, or categories you expect to
   win in an "H2H Cat One" league, against the team you play each regular-season
   week and against the field in a playoff week. Each category's chance is normal on
-  the two sides' totals (each player's game-to-game spread, ±10% form, 10% of games
-  missed unforeseen; a percentage as makes over attempts), and a week's is the
-  chance of taking more than half, so the season simulates on those chances. The
+  the two sides' totals: each player's game-to-game spread, plus spreads fitted to
+  last season by `just calibrate-nba` (11.5% of games missed and expected, ±22–38%
+  form a week by category, a line drawn toward the typical rostered player's where
+  weeks bore it out; a percentage as makes over attempts). A week's chance is that of
+  taking more than half, with the categories moving together through one fitted swing
+  (a week a roster plays more lifts points, boards, threes and turnovers at once),
+  so the season simulates on those chances. The
   trade deadline is read from the league's settings and shown; none past it. A
   player on an IL slot neither moves nor is moved for; a full roster taking two
   for one drops its least valuable player. Leagues counting every category in the
@@ -351,6 +355,7 @@ what's missing. It never prints a secret.
 | `just yahoo-login [--force]` | Authorize Yahoo in a browser. `--force` replaces the token. |
 | `just backtest` | Score the win-chance simulation on finished weeks. |
 | `just tune` | Search the simulation's range settings, holding out the last week. |
+| `just calibrate-nba` | Fit NBA category odds on last season's Sleeper box scores; Brier-check them on this season. |
 
 In the CLI: `/week`, `/roster`, `/scout`, `/trade <text>`, `/leagues`, `/help`.
 

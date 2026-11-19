@@ -32,6 +32,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     YahooTeam,
     YahooTransaction,
 )
+from thefrontoffice.domain.models import Calibration, CalibrationBucket, OddsCheck, OddsFit, OddsModel
 
 
 def make_player(
@@ -488,3 +489,41 @@ def nba_provider(
         espn=espn or FakeESPN(),
         fallback_weekly_adds=3,
     )
+
+
+class FakeOddsTuning:
+    """Stands in for the fit behind basketball's category odds (`OddsTuning`): one fit, and a check for each
+    season and model asked, scored as given."""
+
+    def __init__(self, brier: Mapping[str, float] | None = None, error: Exception | None = None) -> None:
+        self.brier = brier or {"hand-set": 0.2, "fitted, independent": 0.19, "fitted": 0.18}
+        self.error = error
+        self.checked: list[tuple[str, str]] = []
+
+    def seasons(self) -> tuple[str, str]:
+        return "2025", "2026"
+
+    def fit_odds(self, season: str) -> OddsFit:
+        if self.error:
+            raise self.error
+        return OddsFit(
+            season=season,
+            player_weeks=3744,
+            missed=0.115,
+            form={"PTS": 0.24},
+            rate={"FG%": 0.015},
+            game={"PTS": 0.39},
+            typical={"PTS": 15.5, "FG%": 0.477},
+            kept={"PTS": 1.0, "FG%": 0.84},
+            correlation={"PTS": {"PTS": 1.0, "FG%": 0.39}, "FG%": {"PTS": 0.39, "FG%": 1.0}},
+            loadings={"PTS": 0.94, "FG%": 0.23},
+        )
+
+    def check_odds(self, season: str, model: OddsModel) -> OddsCheck:
+        self.checked.append((season, model))
+        called = Calibration(
+            matchups=10,
+            brier=self.brier[model],
+            buckets=[CalibrationBucket(low=0.8, high=1.0, matchups=10, predicted=0.9, won=0.8)],
+        )
+        return OddsCheck(season=season, model=model, weeks=3, categories=called, matchups=called)

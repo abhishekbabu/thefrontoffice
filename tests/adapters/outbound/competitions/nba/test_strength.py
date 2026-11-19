@@ -1,5 +1,6 @@
 """Tests for a basketball roster's week to come: `nba/strength.py`."""
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -14,11 +15,16 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.strength import (
     ATTEMPTS,
+    FITTED,
+    SWINGS,
     Profile,
     Scored,
     Totals,
+    Uncertainty,
     banked,
     category_chances,
+    hermite,
+    loadings,
     nights,
     points_spread,
     profile,
@@ -50,6 +56,9 @@ def _game(day: int, **box: float) -> NBAGameLog:
 
 DAY = [date(2026, 12, d) for d in range(1, 8)]
 
+EXACT = Uncertainty(missed=0.0, form={}, rate={}, game={})
+"""A week that is exactly its games: no game missed, no line regressed, nothing beyond each game's swing."""
+
 
 # ── what a game of him gives ────────────────────────────────────────────
 
@@ -69,10 +78,10 @@ def test_a_points_game_varies_as_his_own_nights_did() -> None:
     assert found.variance[FANTASY] == pytest.approx(200 / 3)
 
 
-def test_too_few_nights_of_his_own_vary_by_the_usual_share() -> None:
+def test_too_few_nights_of_his_own_vary_by_the_usual_share_in_that_category() -> None:
     found = profile(_reading({BLOCKS.label: 2.0}), [_game(1, blk=2)], None)
 
-    assert found.variance[BLOCKS.label] == pytest.approx((0.4 * 2.0) ** 2)
+    assert found.variance[BLOCKS.label] == pytest.approx((FITTED.game[BLOCKS.label] * 2.0) ** 2)
 
 
 def test_a_percentage_game_is_his_makes_out_of_the_shots_he_has_been_taking() -> None:
@@ -148,15 +157,50 @@ def test_a_week_sums_each_players_games() -> None:
         "b": Profile(value=1, mean={BLOCKS.label: 1.0}, variance={BLOCKS.label: 1.0}),
     }
 
-    totals = week_totals({"a": 3, "b": 2, "nobody": 4}, profiles)
+    totals = week_totals({"a": 3, "b": 2, "nobody": 4}, profiles, EXACT)
 
     assert totals.mean[BLOCKS.label] == 8.0
+
+
+def test_a_week_expects_the_games_a_player_will_miss() -> None:
+    profiles = {"a": Profile(value=1, mean={BLOCKS.label: 2.0}, variance={BLOCKS.label: 1.0})}
+
+    totals = week_totals({"a": 4}, profiles, Uncertainty(missed=0.25, form={}, rate={}, game={}))
+
+    assert totals.mean[BLOCKS.label] == pytest.approx(4 * 0.75 * 2.0)
+
+
+def test_the_hand_set_spreads_expected_every_game_played() -> None:
+    profiles = {"a": Profile(value=1, mean={BLOCKS.label: 2.0}, variance={BLOCKS.label: 1.0})}
+
+    totals = week_totals({"a": 4}, profiles, Uncertainty(missed=0.25, form={}, rate={}, game={}, discounted=False))
+
+    assert totals.mean[BLOCKS.label] == pytest.approx(8.0)
+
+
+def test_a_line_far_from_the_typical_players_is_drawn_toward_it_as_far_as_weeks_bore_out() -> None:
+    profiles = {"a": Profile(value=1, mean={BLOCKS.label: 3.0}, variance={BLOCKS.label: 1.0})}
+    regressed = replace(EXACT, typical={BLOCKS.label: 1.0}, kept={BLOCKS.label: 0.5})
+
+    assert week_totals({"a": 2}, profiles, regressed).mean[BLOCKS.label] == pytest.approx(2 * 2.0)
+
+
+def test_a_percentage_is_drawn_toward_the_typical_rate_on_the_shots_he_takes() -> None:
+    shooter = Profile(
+        value=1, mean={FIELD_GOALS.label: 6.0}, variance={FIELD_GOALS.label: 3.0}, attempts={FIELD_GOALS.label: 10.0}
+    )
+    regressed = replace(EXACT, typical={FIELD_GOALS.label: 0.5}, kept={FIELD_GOALS.label: 0.5})
+
+    totals = week_totals({"a": 1}, {"a": shooter}, regressed)
+
+    assert (totals.mean[FIELD_GOALS.label], totals.attempts[FIELD_GOALS.label]) == pytest.approx((5.5, 10.0))
 
 
 def test_a_weeks_spread_carries_form_and_unforeseen_nights_beyond_each_games() -> None:
     profiles = {"a": Profile(value=1, mean={BLOCKS.label: 2.0}, variance={BLOCKS.label: 1.0})}
 
     assert week_totals({"a": 3}, profiles).variance[BLOCKS.label] > 3 * 1.0
+    assert week_totals({"a": 3}, profiles, EXACT).variance[BLOCKS.label] == 3 * 1.0
 
 
 def test_a_points_weeks_spread_is_its_variance_rooted() -> None:
@@ -186,7 +230,7 @@ def test_a_weeks_percentage_is_its_makes_over_its_attempts_summed() -> None:
         value=1, mean={FIELD_GOALS.label: 6.0}, variance={FIELD_GOALS.label: 3.0}, attempts={FIELD_GOALS.label: 12.0}
     )
 
-    totals = week_totals({"a": 3}, {"a": shooter})
+    totals = week_totals({"a": 3}, {"a": shooter}, replace(EXACT, rate={FIELD_GOALS.label: 0.05}))
 
     assert (totals.mean[FIELD_GOALS.label], totals.attempts[FIELD_GOALS.label]) == (18.0, 36.0)
     assert totals.variance[FIELD_GOALS.label] > 3 * 3.0
@@ -246,3 +290,49 @@ def test_an_even_split_of_an_even_number_is_a_draw() -> None:
     win, loss = week_chances([1.0, 0.0])
 
     assert (win, loss) == (0.0, 0.0)
+
+
+# ── categories that move together ───────────────────────────────────────
+
+
+def test_a_category_won_by_less_moves_against_the_swing_the_rest_share() -> None:
+    """A week a roster plays more lifts its turnovers with its points: good for one, bad for the other."""
+    together = loadings([Scored(BLOCKS.label), TO], FITTED)
+
+    assert together == (FITTED.loadings[BLOCKS.label], -FITTED.loadings[TURNOVERS.label])
+
+
+def test_a_favourite_in_every_category_is_less_sure_of_the_week_when_they_move_together() -> None:
+    chances = [0.7] * 9
+
+    alone, _ = week_chances(chances)
+    together, _ = week_chances(chances, [0.6] * 9)
+
+    assert together < alone - 0.05
+
+
+def test_categories_moving_together_leave_each_ones_chance_as_it_was() -> None:
+    """Weighed over the shared swing, one category's chance is what it was alone: only the week's changes."""
+    for chance in (0.2, 0.5, 0.9):
+        win, loss = week_chances([chance], [0.8])
+
+        assert (win, loss) == pytest.approx((chance, 1 - chance), abs=1e-4)
+
+
+def test_no_loadings_is_independent_categories() -> None:
+    chances = [0.6, 0.3, 0.8, 0.55, 0.45]
+
+    assert week_chances(chances, [0.0] * 5) == week_chances(chances)
+
+
+def test_a_certain_category_stays_certain_whatever_the_swing() -> None:
+    assert week_chances([1.0, 1.0, 0.0], [0.9, 0.9, 0.9]) == pytest.approx((1.0, 0.0))
+
+
+def test_the_swing_is_read_at_levels_that_hold_a_standard_normal() -> None:
+    """Weights summing to one, mean nought, variance one, and a normal's fourth moment of three."""
+    for nodes in (SWINGS, hermite(7)):
+        assert sum(w for _, w in nodes) == pytest.approx(1.0)
+        assert sum(w * x for x, w in nodes) == pytest.approx(0.0, abs=1e-12)
+        assert sum(w * x**2 for x, w in nodes) == pytest.approx(1.0)
+        assert sum(w * x**4 for x, w in nodes) == pytest.approx(3.0)

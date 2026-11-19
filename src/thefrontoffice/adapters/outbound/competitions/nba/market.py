@@ -33,11 +33,14 @@ from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nba.strength import (
+    FITTED,
     POINTS,
     Profile,
     Scored,
     Totals,
+    Uncertainty,
     category_chances,
+    loadings,
     points_spread,
     started,
     week_chances,
@@ -111,6 +114,8 @@ class League:
     weekly: bool = False
     deadline: date | None = None
     seed: int = 0
+    uncertainty: Uncertainty = FITTED
+    """How far a week may stray from what its games add up to (`strength.FITTED`)."""
 
     @property
     def measure(self) -> TradeMeasure:
@@ -162,6 +167,8 @@ class _Model:
             w.week: {team: other for home, away in w.pairs for team, other in ((home, away), (away, home))}
             for w in league.weeks
         }
+        self.together = loadings(league.categories, league.uncertainty)
+        """How each category's margin moves with the swing a week's categories share (`strength.week_chances`)."""
         self._totals: dict[tuple[Lineup, int], Totals] = {}
         self._expected: dict[tuple[Lineup, Lineup, int], list[float]] = {}
 
@@ -172,7 +179,7 @@ class _Model:
     def totals(self, lineup: Lineup, week: Week) -> Totals:
         if (lineup, week.week) not in self._totals:
             counts = started(lineup, week.days, self.league.slots, weekly=self.league.weekly)
-            self._totals[lineup, week.week] = week_totals(counts, self.league.profiles)
+            self._totals[lineup, week.week] = week_totals(counts, self.league.profiles, self.league.uncertainty)
         return self._totals[lineup, week.week]
 
     def chances(self, mine: Lineup, theirs: Lineup, week: Week) -> list[float]:
@@ -199,7 +206,7 @@ class _Model:
 
     def fixture(self, home: str, away: str, rosters: Mapping[str, Lineup], week: Week) -> Fixture:
         """A category week between two rosters, as each side's chance of taking it."""
-        chances = week_chances(self.chances(rosters[home], rosters[away], week))
+        chances = week_chances(self.chances(rosters[home], rosters[away], week), self.together)
         return Fixture(week.week, home, away, chances=chances)
 
     def scored(self, team: str, lineup: Lineup, week: Week) -> TeamWeek:
@@ -221,7 +228,7 @@ def _season(model: _Model) -> SeasonInput:
         if league.categories:
             for home, away in week.pairs:
                 mine, theirs = (model.totals(rosters[team], week).plus(_banked(banked, team)) for team in (home, away))
-                chances = week_chances(category_chances(mine, theirs, league.categories))
+                chances = week_chances(category_chances(mine, theirs, league.categories), model.together)
                 fixtures.append(Fixture(week.week, home, away, chances=chances))
             continue
         fixtures += [Fixture(week.week, home, away) for home, away in week.pairs]

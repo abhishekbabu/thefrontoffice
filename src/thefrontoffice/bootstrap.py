@@ -42,6 +42,7 @@ from thefrontoffice.domain.ports import (
     CompetitionProvider,
     ContextProvider,
     ForecastProvider,
+    OddsTuning,
     SeasonProvider,
     SubjectProvider,
     TradeMarketProvider,
@@ -304,6 +305,14 @@ def _yahoo_auth(settings: AppSettings, cache: DiskCache) -> YahooAuth:
         cache=cache,
         retry=_retry(),
     )
+
+
+def odds_tuning(settings: AppSettings = process_settings) -> OddsTuning:
+    """The fit behind a basketball category league's odds, read from Sleeper alone: no league or login needed."""
+    from thefrontoffice.adapters.outbound.competitions.nba.tuning import NBAOddsTuning
+
+    client = _sleeper_client(settings)
+    return NBAOddsTuning(games=client, projections=client)
 
 
 def yahoo_auth(settings: AppSettings = process_settings) -> YahooAuth:
