@@ -55,9 +55,14 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   plus each playoff week weighed by the odds. None that lose points both before
   and in the playoffs; the ranked column is marked. Pricing notes are on hover;
   a pickup most trades share is said once.
-- **Free agents**: best fit first (points over the weakest starter he would
-  replace, who on hover), so a 1QB league's list does not open on quarterbacks;
-  the Win column shows only where a pickup moves this week's odds by half a
+- **Free agents**: best fit first, so a 1QB league's list does not open on
+  quarterbacks. Fits is his value less that of the weakest starter in your best
+  lineup he could replace, who on hover, both valued as the to-do list values a
+  pickup and its drop (recent form and projection, fill-in work, snaps); a
+  starter on bye or ruled out counts as an empty slot. Kickers, defenses and
+  players out past this week (IR, PUP, suspended) follow everyone else unless
+  your K or DEF slot is empty this week, still best fit first under their
+  position filter. The Win column shows only where a pickup moves this week's odds by half a
   point or more. With projection and rest-of-season points
   (next week through the fantasy final — the bracket's last week from
   `playoff_teams` and Sleeper's `playoff_round_type`, capped at week 18 — byes

@@ -9,28 +9,21 @@ IR once it processes — so it needs a spot for that moment: an open one, or the
 weakest bench player dropped for it.
 
 Whether he is worth it is read the way a drop is: his recent form beside his
-outlook (`actions.FORM_WEIGHT`), where the outlook is his projection over the
+outlook (`worth.FORM_WEIGHT`), where the outlook is his projection over the
 weeks after he is back through the fantasy final rather than this week's, which is nought,
-times his usage before he was hurt (`actions.usage`).
+times his usage before he was hurt (`worth.usage`).
 """
 
 from collections.abc import Callable, Mapping, Sequence
 
-from thefrontoffice.adapters.outbound.competitions.nfl.actions import (
-    FORM_WEIGHT,
-    Item,
-    drop_candidate,
-    drop_reason,
-    headlines,
-    usage,
-    worth,
-)
+from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item, drop_candidate, drop_reason, headlines
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import MIN_GAMES_FOR_AVERAGE
 from thefrontoffice.adapters.outbound.competitions.nfl.injuries import return_week
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, NFLSource, PlayerInfo, Projection, open_spots
 from thefrontoffice.adapters.outbound.competitions.nfl.outlook import weeks_left
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import last_regular_week, season_end
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
+from thefrontoffice.adapters.outbound.competitions.nfl.worth import FORM_WEIGHT, usage, worth
 from thefrontoffice.domain.models import Action, Stat
 
 STASH_FROM = 40.0

@@ -22,11 +22,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl import views
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
     MIN_GAMES_FOR_AVERAGE,
     REGULAR,
-    RISES,
-    ROLE_GAMES,
-    TARGET_POSITIONS,
     average,
-    season_average,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.handcuffs import handcuffs, understudies
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
@@ -48,6 +44,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, S
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import Split, surname
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import split as split_on
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
+from thefrontoffice.adapters.outbound.competitions.nfl.worth import blend, filling_in, form, plays, value, worth
 from thefrontoffice.domain.models import Action, MoveSide, Stat, Urgency, urgency_rank
 
 STACKED = 3
@@ -537,103 +534,6 @@ def _worth_a_spot(state: Week, player_id: str, drop: Projection | None) -> bool:
     return value(state, pickup) > value(state, drop)
 
 
-FORM_WEIGHT = 0.5
-"""The share of a player's worth, when choosing who to drop, that is his recent form; the rest is his outlook.
-
-Worth = (FORM_WEIGHT × form + (1 − FORM_WEIGHT) × outlook) × usage, where form is his points a game
-over his last `ROLE_GAMES` games played — or, where those include games a regular teammate missed and
-that teammate is back, his points a game beside him (`filling_in`) — and outlook is this week's
-projection, or, in a week he does not play (a bye, a ruling), his season average. Either alone where
-the other is unknown. Even weights: a projection alone drops a receiver scoring thirteen a game for
-one scoring five whenever a bye or a quiet matchup dents the first's number, and form alone chases
-one big afternoon. Usage is `usage`.
-"""
-
-USAGE_SWING = 0.1
-"""The most his usage moves his worth, either way: a tenth.
-
-Points follow snaps, and a role that is steady says more about next week than
-one that swings. So a back, receiver or tight end on `REGULAR` of the snaps in
-every one of his last `ROLE_GAMES` games is worth a tenth more; one whose share
-moved by the smallest jump that counts (`RISES`) between them, and not because
-his role grew, a tenth less — a fill-in, a part-timer, a starter losing his
-place. A role grew where it is a trend, or where his latest game is his most
-snaps of them: a debut ramping up has too few games before it for a trend. A
-tenth because it is a tiebreak between comparable players, not a ranking of
-its own. Quarterbacks, kickers and defenses are on for every
-snap or none, so theirs says nothing.
-"""
-
-
-def filling_in(state: Week, player: Projection) -> Split | None:
-    """The split on a regular teammate who is back, where his recent games were without him (see `HurtTeammates`)."""
-    meta = state.players.get(player.player_id)
-    return state.teammates.filling_in(meta) if meta is not None else None
-
-
-def form(state: Week, player: Projection) -> float | None:
-    """His points a game over his last few games played; None until he has played enough of them to say anything.
-
-    Where those games were fill-in work for a teammate who is back, his points a
-    game beside that teammate instead — or None where he has never played beside him.
-    """
-    role = state.evidence.roles.get(player.player_id)
-    if role is None or role.games < MIN_GAMES_FOR_AVERAGE:
-        return None
-    split = filling_in(state, player)
-    return role.points if split is None else split.alongside
-
-
-def usage(state: Week, player_id: str) -> float:
-    """What his snaps over his last games multiply his worth by: 1 ± `USAGE_SWING`, or 1."""
-    games = state.evidence.appearances.get(player_id, ())[-ROLE_GAMES:]
-    shares = [game.snap_share for game in games if game.snap_share is not None]
-    if state.evidence.positions.get(player_id) not in TARGET_POSITIONS or len(shares) < MIN_GAMES_FOR_AVERAGE:
-        return 1.0
-    if min(shares) >= REGULAR:
-        return 1 + USAGE_SWING
-    grew = player_id in state.evidence.trends or shares[-1] == max(shares)
-    if not grew and max(shares) - min(shares) >= RISES["snaps"][0]:
-        return 1 - USAGE_SWING
-    return 1.0
-
-
-def _plays(state: Week, player: Projection) -> bool:
-    """Whether this week's projection is about a game he will play: not a bye, nor a week he is ruled out of."""
-    return (bool(player.opponent) or not state.scheduled) and not ruled_out(player.injury_status)
-
-
-def outlook(state: Week, player: Projection) -> float | None:
-    """What he should score: this week's projection, or his season average in a week he does not play.
-
-    A bye or a one-week ruling projects nothing, which says nothing about him.
-    """
-    return player.points if _plays(state, player) else average(state.evidence, player.player_id)
-
-
-def worth(state: Week, player: Projection) -> float | None:
-    """`FORM_WEIGHT` of his form and the rest his outlook, times his `usage`; either alone where the other is unknown, None with neither."""
-    return _blend(state, player, form(state, player))
-
-
-def _blend(state: Week, player: Projection, recent: float | None) -> float | None:
-    """`worth` with `recent` as his form: what a teammate check reads his games without the teammate through."""
-    ahead = outlook(state, player)
-    if recent is None:
-        blended = ahead
-    elif ahead is None:
-        blended = recent
-    else:
-        blended = FORM_WEIGHT * recent + (1 - FORM_WEIGHT) * ahead
-    return None if blended is None else blended * usage(state, player.player_id)
-
-
-def value(state: Week, player: Projection) -> float:
-    """His `worth`, or his season average where there is nothing to read it from: what both sides of a move are weighed by."""
-    found = worth(state, player)
-    return season_average(state.evidence, player) if found is None else found
-
-
 def cuffed(state: Week) -> dict[str, PlayerInfo]:
     """Each of your backs held as a handcuff, mapped to the starter he backs up (see `handcuffs`)."""
     starting = state.starter_ids | {slot.player.player_id for slot in state.best if slot.player}
@@ -766,7 +666,7 @@ def drop_reason(state: Week, player: Projection) -> str:
     split = filling_in(state, player)
     if (recent := form(state, player)) is not None:
         figures.append(f"{recent:.2f}/game" + (f" with {surname(split.teammate.name)}" if split else ""))
-    if _plays(state, player):
+    if plays(state, player):
         figures.append(f"{player.points:.2f} proj")
     elif (played := average(state.evidence, player.player_id)) is not None:
         figures.append(f"{played:.2f} season")
@@ -953,7 +853,7 @@ def worth_without(state: Week, player: Projection, teammates: Sequence[PlayerInf
     ]
     if splits:
         most = max(splits, key=lambda found: found.games)
-        blended = _blend(state, player, most.without)
+        blended = blend(state, player, most.without)
         if blended is not None:
             return blended, most
     return value(state, player) * (1 + TEAMMATE_BUMP), None
