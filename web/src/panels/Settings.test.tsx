@@ -5,16 +5,29 @@ import { keys } from "@/lib/queries";
 import { SettingsPanel } from "@/panels/Settings";
 import { offlineClient, render } from "@/test/render";
 
-async function settingsWith(status: CaptureStatus) {
+const YAHOO: SettingsGroup = { title: "NBA on Yahoo", note: "", section: "platforms", platform: "yahoo", settings: [] };
+
+async function settingsWith(status: CaptureStatus, groups: SettingsGroup[] = [YAHOO]) {
   const client = offlineClient();
-  client.setQueryData(keys.settings, []);
+  client.setQueryData(keys.settings, groups);
   client.setQueryData(keys.capture("yahoo"), status);
   const { container } = await render(<SettingsPanel onBack={() => {}} />, client);
-  const card = [...container.querySelectorAll("div")].find((d) => d.textContent?.startsWith("Yahoo sync"));
+  const card = container.querySelector("[data-group=yahoo]");
   return { container, card: card?.textContent ?? "" };
 }
 
-describe("Yahoo sync", () => {
+describe("Yahoo status", () => {
+  it("sits in the Yahoo group's own card, under Platforms", async () => {
+    const { container } = await settingsWith({ active: true, synced_at: null, leagues: [], session: null });
+    const section = container.querySelector("[data-group=yahoo]")?.closest("section");
+    expect(section?.querySelector("h2")?.textContent).toBe("Platforms");
+  });
+
+  it("is not shown without a Yahoo group", async () => {
+    const { container } = await settingsWith({ active: true, synced_at: null, leagues: [], session: null }, []);
+    expect(container.textContent).not.toContain("Sync Yahoo");
+  });
+
   it("offers the bookmark, built to call back the app it is served from", async () => {
     const { container } = await settingsWith({ active: true, synced_at: null, leagues: [], session: null });
     const link = [...container.querySelectorAll("a")].find((a) => a.textContent === "Sync Yahoo");
@@ -83,8 +96,10 @@ function setting(key: string, kind: Setting["kind"], value: string, choices: str
 
 const GROUPS: SettingsGroup[] = [
   {
-    title: "General",
+    title: "NBA on Yahoo",
     note: "",
+    section: "platforms",
+    platform: "yahoo",
     settings: [
       setting("YAHOO_SOURCE", "choice", "oauth", ["oauth", "browser", "session"]),
       setting("LOG_LEVEL", "choice", "INFO", ["DEBUG", "INFO", "WARNING"]),
@@ -115,7 +130,9 @@ async function fixedValues() {
   const chip = (key: string, text: string) => chips(key).find((c) => c.textContent === text)!;
   const click = (el: HTMLElement) => act(async () => el.click());
   const save = () => container.querySelector<HTMLButtonElement>("button[aria-label^=Save]");
-  return { saved, chips, pressed, chip, click, save };
+  const discard = () => container.querySelector<HTMLButtonElement>("button[aria-label^=Discard]");
+  const status = () => container.querySelector("[role=status]")?.textContent;
+  return { container, saved, chips, pressed, chip, click, save, discard, status };
 }
 
 afterEach(() => {
@@ -150,5 +167,47 @@ describe("Fixed-value settings", () => {
     expect(save()?.disabled).toBe(false);
     await click(chip("LOG_LEVEL", "INFO"));
     expect(save()).toBeNull();
+  });
+});
+
+describe("Saving", () => {
+  it("says how many changes wait, and that they were saved", async () => {
+    const { chip, click, save, status } = await fixedValues();
+
+    await click(chip("LOG_LEVEL", "DEBUG"));
+    expect(status()).toBe("1 unsaved");
+    await click(save()!);
+    await vi.waitFor(() => expect(status()).toBe("Saved"));
+  });
+
+  it("discards every unsaved change at once", async () => {
+    const { chip, click, discard, pressed, saved, status } = await fixedValues();
+
+    await click(chip("LOG_LEVEL", "DEBUG"));
+    await click(chip("YAHOO_SOURCE", "session"));
+    await click(discard()!);
+
+    expect(pressed("LOG_LEVEL")).toEqual(["INFO"]);
+    expect(pressed("YAHOO_SOURCE")).toEqual(["oauth"]);
+    expect(status()).toBe("");
+    expect(discard()).toBeNull();
+    expect(saved).toEqual([]);
+  });
+});
+
+describe("Layout", () => {
+  it("runs from the accounts read to what is rarely touched", async () => {
+    const { container } = await settingsWith({ active: false, synced_at: null, leagues: [], session: null }, [
+      YAHOO,
+      { title: "Model providers", note: "", section: "ai", platform: "", settings: [] },
+      { title: "Tracing", note: "", section: "advanced", platform: "", settings: [] },
+    ]);
+
+    expect([...container.querySelectorAll("h2")].map((h) => h.textContent)).toEqual([
+      "Platforms",
+      "AI",
+      "Appearance",
+      "Advanced",
+    ]);
   });
 });

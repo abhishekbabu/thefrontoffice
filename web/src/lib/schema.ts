@@ -1729,6 +1729,16 @@ export interface components {
             title: string;
             /** Note */
             note: string;
+            /**
+             * Section
+             * @enum {string}
+             */
+            section: "platforms" | "ai" | "advanced";
+            /**
+             * Platform
+             * @default
+             */
+            platform: string;
             /** Settings */
             settings: components["schemas"]["Setting"][];
         };
