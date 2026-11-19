@@ -172,7 +172,7 @@ class PlayerContextBuilder:
             line = f"- {p.name} ({p.position}){il_str}{status_str}{games_str}{note}"
             if stats_dict:
                 line += f": {self._format_stats(stats_dict)}"
-            if projections is not None and (projected := projections.lookup(p.name)):
+            if projections is not None and (projected := projections.find(p.name, p.team, stats_dict)):
                 line += f" | PROJ {projected.games}G {prompt.scored(projected.line, self.weights)}"
             for split in splits(p) if splits else ():
                 line += f" | {split.prompt()}"

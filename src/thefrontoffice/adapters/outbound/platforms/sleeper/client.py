@@ -654,6 +654,10 @@ class SleeperClient:
         gives projected category totals — which is what a category league
         actually needs, and what the NBA scout had no source for.
 
+        A game Sleeper lists but projects nothing for — a player ruled out —
+        is kept with empty `stats`: he is still a known name, so the join can
+        tell him apart from a namesake rather than fall back to a surname.
+
         Returns an empty list out of season: Sleeper publishes nothing before
         opening night, and the scout falls back to recent form alone.
         """
@@ -666,7 +670,7 @@ class SleeperClient:
         for row in data or []:
             stats = row.get("stats") or {}
             if stats.get("pts") is None:
-                continue
+                stats = {}
             player = row.get("player") or {}
             projections.append(
                 GameProjection(

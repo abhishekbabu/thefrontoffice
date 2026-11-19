@@ -539,7 +539,7 @@ def test_the_drawer_carries_sleepers_projection_a_game_and_who_he_is() -> None:
             team="LAL",
             opponent="BOS",
             date="2026-02-10",
-            stats={"pts": 24.0, "fgm": 9.0, "fga": 18.0},
+            stats={"pts": 24.0, "reb": 7.0, "ast": 5.0, "tpm": 2.0, "fgm": 9.0, "fga": 18.0},
         )
     ]
     provider = nba_provider(
