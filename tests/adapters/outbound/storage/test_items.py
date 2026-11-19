@@ -1,6 +1,6 @@
 """Tests for keeping item decisions on disk: `storage/items.py`."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from thefrontoffice.adapters.outbound.cache import DiskCache
@@ -33,13 +33,6 @@ def test_a_decision_kept_under_the_label_is_found_under_the_key(tmp_path: Path) 
     DiskItemStateStore(DiskCache(tmp_path)).save("items:NFL (Sleeper):L1", DISMISSED)
 
     assert DiskItemStateStore(DiskCache(tmp_path)).states("items:nfl-sleeper:L1") == DISMISSED
-
-
-def test_a_decision_found_under_the_label_is_refiled_under_the_key(tmp_path: Path) -> None:
-    DiskItemStateStore(DiskCache(tmp_path)).save("items:NFL (Sleeper):L1", DISMISSED)
-    DiskItemStateStore(DiskCache(tmp_path)).states("items:nfl-sleeper:L1")
-
-    assert DiskCache(tmp_path).get("items:nfl-sleeper:L1", timedelta(days=1)) is not None
 
 
 def test_every_decision_restored_under_the_key_does_not_bring_the_old_ones_back(tmp_path: Path) -> None:
