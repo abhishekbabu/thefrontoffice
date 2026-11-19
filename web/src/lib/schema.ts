@@ -108,6 +108,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/{platform}/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capture Status
+         * @description When the platform's browser sync last stored anything, for Settings to say beside the bookmark.
+         */
+        get: operations["capture_status"];
+        put?: never;
+        /**
+         * Ingest Capture
+         * @description Store what the sync bookmark fetched before replying: the hand-over is the only copy.
+         */
+        post: operations["ingest_capture"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/{platform}/capture/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capture Plan
+         * @description What the sync bookmark should fetch next, for the comma-separated league keys it has found so far.
+         *
+         *     Called from the platform's own page, so the bookmark knows nothing of
+         *     what the app reads: it fetches what this says, hands it back, and asks
+         *     again until there is nothing new to fetch.
+         */
+        get: operations["capture_plan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/{competition}/leagues": {
         parameters: {
             query?: never;
@@ -769,6 +817,102 @@ export interface components {
             limits: components["schemas"]["Limits"];
         };
         /**
+         * Capture
+         * @description What one round of a browser sync hands over.
+         */
+        Capture: {
+            profile: components["schemas"]["CapturedResponse"];
+            /** Responses */
+            responses: components["schemas"]["CapturedResponse"][];
+        };
+        /**
+         * CapturePlan
+         * @description What a browser should fetch next, given what the app already holds.
+         *
+         *     Planned again after each hand-over: what one response holds (a league's
+         *     current week, its teams) decides what the next round asks for. A browser
+         *     stops when a plan asks for nothing it has not already fetched.
+         */
+        CapturePlan: {
+            /**
+             * Base
+             * @description The URL every step's path is fetched below, with the browser's session.
+             */
+            base: string;
+            /**
+             * Probe
+             * @description Fetched first: anything but 200 means the browser is not signed in.
+             */
+            probe: string;
+            /** Steps */
+            steps: components["schemas"]["CaptureStep"][];
+        };
+        /**
+         * CaptureReceipt
+         * @description What one hand-over stored, and what it refused.
+         */
+        CaptureReceipt: {
+            /** Stored */
+            stored: number;
+            /**
+             * Leagues
+             * @description Each league that had something stored, by key.
+             */
+            leagues: string[];
+            /**
+             * Errors
+             * @description Each response refused, with why.
+             */
+            errors: string[];
+        };
+        /**
+         * CaptureStatus
+         * @description How fresh the capture is, for the page that offers the sync.
+         */
+        CaptureStatus: {
+            /**
+             * Active
+             * @description Whether the app reads this platform from the capture rather than its API.
+             */
+            active: boolean;
+            /** Synced At */
+            synced_at: string | null;
+            /**
+             * Leagues
+             * @description The leagues captured this season, by name.
+             */
+            leagues: string[];
+        };
+        /**
+         * CaptureStep
+         * @description One response the app wants a browser to fetch.
+         */
+        CaptureStep: {
+            /**
+             * Path
+             * @description Below the plan's `base`, exactly as fetched and as handed back.
+             */
+            path: string;
+            /**
+             * League
+             * @description The league it belongs to; empty for one about the account.
+             * @default
+             */
+            league: string;
+        };
+        /**
+         * CapturedResponse
+         * @description One response a browser fetched: its body and nothing of the session that fetched it.
+         */
+        CapturedResponse: {
+            /** Path */
+            path: string;
+            /** Status */
+            status: number;
+            /** Body */
+            body: string;
+        };
+        /**
          * CategoryLine
          * @description One scoring category of a category league's week: each side's figure, and who leads it.
          */
@@ -848,7 +992,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "error" | "platform_unavailable" | "unknown_competition" | "not_configured" | "unsupported" | "subject_gone" | "item_decision" | "ai_unavailable" | "ai_key_invalid" | "ai_quota" | "ai_failed" | "login_required" | "access_not_approved" | "chat_expired" | "not_found" | "invalid_request" | "unknown_setting" | "settings_unwritable";
+            code: "error" | "platform_unavailable" | "capture_required" | "unknown_competition" | "not_configured" | "unsupported" | "subject_gone" | "item_decision" | "ai_unavailable" | "ai_key_invalid" | "ai_quota" | "ai_failed" | "login_required" | "access_not_approved" | "chat_expired" | "not_found" | "invalid_request" | "unknown_setting" | "settings_unwritable";
             remedy: components["schemas"]["Remedy"] | null;
         };
         /**
@@ -2559,6 +2703,240 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoginState"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    capture_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                platform: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaptureStatus"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    ingest_capture: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                platform: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Capture"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaptureReceipt"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    capture_plan: {
+        parameters: {
+            query?: {
+                leagues?: string;
+            };
+            header?: never;
+            path: {
+                platform: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapturePlan"];
                 };
             };
             /** @description Bad Request */

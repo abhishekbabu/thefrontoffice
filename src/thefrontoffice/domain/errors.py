@@ -11,6 +11,7 @@ from typing import Literal
 ErrorCode = Literal[
     "error",
     "platform_unavailable",
+    "capture_required",
     "unknown_competition",
     "not_configured",
     "unsupported",
@@ -84,6 +85,16 @@ class PlatformUnavailableError(PlatformError):
 
     def __init__(self, detail: str) -> None:
         super().__init__(f"{self.platform} is not responding ({detail}). Usually clears in a few minutes.")
+
+
+class CaptureRequiredError(PlatformError):
+    """The app reads a platform from what a browser captured of it, and the capture lacks what was asked.
+
+    Raised rather than answering empty: a league with nothing captured is not a
+    league with nothing in it. The remedy is another sync from the browser.
+    """
+
+    code = "capture_required"
 
 
 class UnknownCompetitionError(FrontOfficeError):

@@ -23,7 +23,7 @@ from support.reports import MOCK_FPL_REPORT
 from support.settings import NOWHERE, isolated_settings
 from support.simulation import FakeForecast
 from support.stores import FakeAnswers
-from support.wiring import FakeCompetition, FakeLogin, entry
+from support.wiring import FakeCapture, FakeCompetition, FakeLogin, entry
 from support.wiring import wiring as fake_wiring
 
 from thefrontoffice import bootstrap
@@ -35,6 +35,7 @@ from thefrontoffice.config.settings import AppSettings, env_var
 from thefrontoffice.domain.errors import PortInUseError
 from thefrontoffice.domain.models import (
     Action,
+    CaptureStatus,
     CompetitionContext,
     LeagueSchedule,
     Match,
@@ -108,7 +109,7 @@ def _client(provider: FakeCompetition | None = None, **wiring: Any) -> TestClien
             label=e.label,
             name=e.name,
             sport=e.sport,
-            needs=e.needs,
+            needs=e.needed(),
         )
         for e in REGISTRY.entries
     ]
@@ -515,6 +516,57 @@ def test_a_route_that_does_not_exist_carries_a_code_like_any_failure(client: Tes
 
 def test_a_platform_with_no_login_is_a_404_with_its_code(client: TestClient) -> None:
     response = client.post("/api/cricket/login")
+    assert (response.status_code, response.json()["code"]) == (404, "not_found")
+
+
+# ── the browser sync ────────────────────────────────────────────────────
+
+YAHOO_PAGE = {"Origin": "https://basketball.fantasysports.yahoo.com"}
+
+
+def test_the_sync_plan_covers_each_league_the_bookmark_names() -> None:
+    client = _client()
+
+    plan = client.get("/api/yahoo/capture/plan", params={"leagues": "466.l.1,466.l.2"}, headers=YAHOO_PAGE).json()
+
+    assert [step["league"] for step in plan["steps"]] == ["", "466.l.1", "466.l.2"]
+
+
+def test_a_hand_over_is_stored_before_the_reply_says_what_landed() -> None:
+    capture = FakeCapture()
+    client = _client(capture=capture)
+    profile = {"path": "profile", "status": 200, "body": "<x/>"}
+    responses = [{"path": "leagues", "status": 200, "body": "<x/>"}]
+
+    response = client.post("/api/yahoo/capture", json={"profile": profile, "responses": responses}, headers=YAHOO_PAGE)
+
+    assert response.json()["stored"] == 1
+    assert [r.path for c in capture.ingested for r in c.responses] == ["leagues"]
+
+
+def test_a_hand_over_carrying_anything_but_bodies_is_refused() -> None:
+    """Nothing of the session is accepted, so nothing of it can be stored."""
+    capture = FakeCapture()
+    client = _client(capture=capture)
+    profile = {"path": "profile", "status": 200, "body": "<x/>", "cookie": "Y=secret"}
+
+    response = client.post("/api/yahoo/capture", json={"profile": profile, "responses": []}, headers=YAHOO_PAGE)
+
+    assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+    assert capture.ingested == []
+
+
+def test_settings_reads_when_the_sync_last_ran() -> None:
+    synced = datetime(2026, 11, 18, 17, tzinfo=UTC)
+    client = _client(capture=FakeCapture(CaptureStatus(active=True, synced_at=synced, leagues=["Hoops"])))
+
+    status = client.get("/api/yahoo/capture").json()
+
+    assert (datetime.fromisoformat(status["synced_at"]), status["leagues"]) == (synced, ["Hoops"])
+
+
+def test_a_platform_with_no_browser_sync_is_a_404_with_its_code(client: TestClient) -> None:
+    response = client.get("/api/sleeper/capture/plan")
     assert (response.status_code, response.json()["code"]) == (404, "not_found")
 
 

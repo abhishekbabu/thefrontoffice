@@ -4,6 +4,9 @@ Logging in and finding the leagues to read is `auth.py`'s; this reads one of the
 The SDK is a transport and an XML parser here and nothing more: every request
 goes through `call`, and every response is read into this package's own types,
 so nothing outside it touches an object whose attributes arrive by `setattr`.
+
+Where the responses come from is the `YahooResponses` the reader is handed:
+Yahoo itself (`LiveResponses`), or what a browser captured of it (`capture.py`).
 """
 
 import logging
@@ -16,17 +19,17 @@ from yahoofantasy.api.parse import as_list, parse_response
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.http import fetch_many
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy, outage
+from thefrontoffice.adapters.outbound.platforms.yahoo import paths
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooAPIError,
     YahooAuthError,
     YahooUnavailableError,
 )
+from thefrontoffice.adapters.outbound.platforms.yahoo.paths import YahooRead
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Matchup,
     MatchupSide,
     Pairing,
-    PlayerStat,
-    PlayerStatus,
     StatCategory,
     TeamStanding,
     Timeframe,
@@ -37,22 +40,6 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
 from thefrontoffice.domain.errors import FrontOfficeError, TeamNotFoundError
 
 logger = logging.getLogger(__name__)
-
-SCOREBOARD_TTL_SECONDS = 120
-"""yahoofantasy persists every response for an hour. That suits rosters, but the
-scoreboard drives the "which categories are close" analysis and goes stale
-within a game night."""
-
-# TTLs from how fast each answer actually goes stale. Waiver leaders move as
-# the league claims players; a name search resolves to the same player for as
-# long as anyone is looking.
-LEADERS_TTL = timedelta(minutes=30)
-SEARCH_TTL = timedelta(hours=6)
-# The hour the SDK's own store kept them for, when it fetched them.
-TEAMS_TTL = timedelta(hours=1)
-ROSTER_TTL = timedelta(hours=1)
-# A league's scoring is set before the season and almost never changes during it.
-SETTINGS_TTL = timedelta(hours=12)
 
 
 def translate(error: Exception) -> FrontOfficeError:
@@ -105,15 +92,76 @@ def request(retry: RetryPolicy, send: Callable[[], Any]) -> Any:
 
 
 class YahooContext(Protocol):
-    """The SDK's authorized context: the two ways this package asks Yahoo anything."""
+    """The SDK's authorized context: how this package asks Yahoo anything."""
 
     def make_request(self, url: str, league: str | bool = False) -> str:
         """The raw XML for `url`, under `league/<key>/` when a league is named."""
         ...
 
-    def _load_or_fetch(self, persist_path: str, query: str, *, league: str, persist_ttl: int = 3600) -> Any:
-        """The parsed response, from the SDK's own store while it is younger than `persist_ttl`."""
+
+class YahooResponses(Protocol):
+    """Where a Yahoo reader's responses come from: Yahoo itself, or what a browser captured of it."""
+
+    def raw(self, read: YahooRead) -> str:
+        """The XML Yahoo answers `read` with.
+
+        Raises:
+            YahooAPIError: it could not be had.
+        """
         ...
+
+    def many(self, reads: Mapping[str, YahooRead]) -> dict[str, str]:
+        """Each read's XML, keyed as `reads` keys them; one that cannot be had fails them all."""
+        ...
+
+
+class LiveResponses:
+    """Yahoo's answers, asked of Yahoo through the SDK and kept in our own cache.
+
+    Our cache rather than the SDK's store: the vendor persists into one shared
+    pickle by read-modify-write, so concurrent writes clobber each other, and
+    its `_load` takes no expiry at all — waiver leaders cached once stayed
+    cached until the file was deleted.
+    """
+
+    def __init__(self, context: YahooContext, *, cache: JsonDiskCache, retry: RetryPolicy) -> None:
+        self._context = context
+        self._cache = cache
+        self._retry = retry
+
+    def _fetch(self, read: YahooRead) -> str:
+        return request(self._retry, lambda: self._context.make_request(read.query, league=read.league or False))
+
+    def raw(self, read: YahooRead) -> str:
+        """`read` from the cache while it holds, from Yahoo once it does not.
+
+        A read that keeps its copy on failure — the scoreboard — falls back to
+        the stored one, stale but usable, when the refresh fails.
+        """
+        hit = self._cache.lookup(read.path, read.ttl)
+        if hit is not None:
+            return hit.value
+        try:
+            value = self._fetch(read)
+        except FrontOfficeError as e:
+            kept = self._cache.lookup(read.path, timedelta.max) if read.keep_on_failure else None
+            if kept is None:
+                raise
+            logger.warning(f"Could not refresh {read.path}, using the stored copy: {e}")
+            return kept.value
+        self._cache.set(read.path, value)
+        return value
+
+    def many(self, reads: Mapping[str, YahooRead]) -> dict[str, str]:
+        """Each read, the misses fetched concurrently: run one after another they were the dominant latency."""
+        if not reads:
+            return {}
+        ttl = min(read.ttl for read in reads.values())
+        fetches = {read.path: (lambda read=read: self._fetch(read)) for read in reads.values()}
+        batch = fetch_many(self._cache, fetches, ttl)
+        for error in batch.failures.values():
+            raise error
+        return {name: batch.values[read.path] for name, read in reads.items()}
 
 
 class YahooSource(Protocol):
@@ -168,40 +216,11 @@ class YahooSource(Protocol):
 
 
 class YahooClient:
-    """Reads one Yahoo league.
+    """Reads one Yahoo league, from whichever `YahooResponses` it is handed."""
 
-    Responses go through our own cache rather than the SDK's store: the vendor
-    persists into one shared pickle by read-modify-write, so concurrent writes
-    clobber each other, and its `_load` takes no expiry at all — waiver leaders
-    cached once stayed cached until the file was deleted.
-    """
-
-    def __init__(self, league: YahooLeague, *, context: YahooContext, cache: JsonDiskCache, retry: RetryPolicy) -> None:
+    def __init__(self, league: YahooLeague, *, responses: YahooResponses) -> None:
         self.league = league
-        self._context = context
-        self._cache = cache
-        self._retry = retry
-
-    def _fetch(self, query: str) -> Any:
-        """One request scoped to this league."""
-        return request(self._retry, lambda: self._context.make_request(query, league=self.league.league_key))
-
-    def _player_query(
-        self,
-        count: int,
-        status: PlayerStatus,
-        sort: PlayerStat | str | None,
-        sort_type: Timeframe | None,
-    ) -> tuple[str, str]:
-        """The Yahoo query string for a page of players, and the key it is cached under."""
-        params: dict[str, str] = {"count": str(count), "status": status.value}
-        if sort is not None:
-            params["sort"] = str(sort)
-        if sort_type is not None:
-            params["sort_type"] = sort_type.value
-
-        params_str = ";".join(f"{k}={v}" for k, v in params.items())
-        return f"players;{params_str}", f"players_{self.league.league_key}_{'_'.join(params.values())}"
+        self._responses = responses
 
     def _players(self, raw: Any, count: int | None = None) -> list[YahooPlayer]:
         """A league's players response, read; a league listing none is an empty answer."""
@@ -215,41 +234,20 @@ class YahooClient:
     ) -> dict[str, list[YahooPlayer]]:
         """Top available players for each Yahoo stat id in `stats`, keyed as `stats` keys them.
 
-        One request per stat, run concurrently: they are independent, and run one
-        after another they were the dominant latency in a scout run. Which stats
-        a sport scores is the sport's to say, so the caller names them. One
-        failing fails them all — a category left empty would read as nobody
-        worth adding in it.
+        One request per stat, run concurrently. Which stats a sport scores is
+        the sport's to say, so the caller names them. One failing fails them
+        all — a category left empty would read as nobody worth adding in it.
         """
-        queries = {
-            name: self._player_query(per_stat, PlayerStatus.ALL_AVAILABLE, stat_id, sort_type)
-            for name, stat_id in stats.items()
-        }
-        batch = fetch_many(
-            self._cache, {key: (lambda query=query: self._fetch(query)) for query, key in queries.values()}, LEADERS_TTL
-        )
-        for error in batch.failures.values():
-            raise error
-        return {name: self._players(batch.values[key], per_stat) for name, (_, key) in queries.items()}
+        raws = self._responses.many(paths.leaders(self.league.league_key, stats, per_stat, sort_type))
+        return {name: self._players(raw, per_stat) for name, raw in raws.items()}
 
     def fetch_available(self, count: int = 100) -> list[YahooPlayer]:
-        """The best available players in the league, however they became free.
-
-        ALL_AVAILABLE rather than FREE_AGENT: somebody sitting on waivers is
-        still a decision to be made about, and a list that hides them is a list
-        that goes quiet every Tuesday.
-        """
-        query, key = self._player_query(count, PlayerStatus.ALL_AVAILABLE, PlayerStat.ACTUAL_RANK, Timeframe.SEASON)
-        return self._players(self._cache.cached(key, LEADERS_TTL, lambda: self._fetch(query)), count)
+        """The best available players in the league, however they became free."""
+        return self._players(self._responses.raw(paths.available(self.league.league_key, count)), count)
 
     def search_players(self, query: str) -> list[YahooPlayer]:
         """Players in the league whose name matches `query`; no match is an empty answer."""
-        raw = self._cache.cached(
-            f"player_search_{self.league.league_key}_{query}",
-            SEARCH_TTL,
-            lambda: self._fetch(f"players;search={query}"),
-        )
-        return self._players(raw)
+        return self._players(self._responses.raw(paths.search(self.league.league_key, query)))
 
     def players(self, player_keys: list[str]) -> list[YahooPlayer]:
         """The players with these keys, whoever holds them — yours, a rival's or nobody's.
@@ -257,17 +255,11 @@ class YahooClient:
         A key Yahoo does not know is left out, so asking for one that is gone
         is an empty answer rather than a failure.
         """
-        keys = ",".join(player_keys)
-        raw = self._cache.cached(
-            f"players_by_key_{self.league.league_key}_{keys}",
-            ROSTER_TTL,
-            lambda: self._fetch(f"players;player_keys={keys}"),
-        )
-        return self._players(raw)
+        return self._players(self._responses.raw(paths.by_keys(self.league.league_key, player_keys)))
 
     def teams(self) -> list[YahooTeam]:
         """Every team in the league."""
-        raw = self._cache.cached(f"teams_{self.league.league_key}", TEAMS_TTL, lambda: self._fetch("teams"))
+        raw = self._responses.raw(paths.teams(self.league.league_key))
         return readable("team list", lambda: team_list(parse(raw)["fantasy_content"]["league"]))
 
     def stat_categories(self) -> list[StatCategory]:
@@ -279,7 +271,7 @@ class YahooClient:
             YahooAuthError: the app is not authorized for Fantasy Sports.
             YahooAPIError: Yahoo could not be reached, or answered unreadably.
         """
-        raw = self._cache.cached(f"settings_{self.league.league_key}", SETTINGS_TTL, lambda: self._fetch("settings"))
+        raw = self._responses.raw(paths.settings(self.league.league_key))
         return readable("league settings", lambda: category_list(parse(raw)["fantasy_content"]["league"]))
 
     def get_user_team(self) -> YahooTeam:
@@ -295,11 +287,7 @@ class YahooClient:
 
     def roster(self, team_key: str) -> list[YahooPlayer]:
         """The players a team holds today, each in the slot their manager has them in."""
-        raw = self._cache.cached(
-            f"roster_{team_key}",
-            ROSTER_TTL,
-            lambda: request(self._retry, lambda: self._context.make_request(f"team/{team_key}/roster")),
-        )
+        raw = self._responses.raw(paths.roster(team_key))
         return readable("roster", lambda: player_list(parse(raw)["fantasy_content"]["team"]["roster"]))
 
     def get_matchup(self, team_key: str) -> Matchup | None:
@@ -330,23 +318,13 @@ class YahooClient:
             YahooAuthError: the app is not authorized for Fantasy Sports.
             YahooAPIError: Yahoo could not be reached, or answered unreadably.
         """
-        scoreboard = call(self._retry, lambda: self._scoreboard(week))
-        return readable("scoreboard", lambda: find_matchup(scoreboard, team_key))
+        raw = self._responses.raw(paths.scoreboard(self.league.league_key, week))
+        return readable("scoreboard", lambda: find_matchup(parse(raw), team_key))
 
-    def _scoreboard(self, week: int) -> Any:
-        """The week's scoreboard, as fresh as `SCOREBOARD_TTL_SECONDS` allows.
 
-        Read through the SDK's store, keyed as the SDK keys it, so a refresh that
-        fails can fall back to the copy persisted there — stale, but usable.
-        """
-        key, query = f"weeks.{self.league.league_key}.{week}", f"scoreboard;week={week}"
-        try:
-            return self._context._load_or_fetch(
-                key, query, league=self.league.league_key, persist_ttl=SCOREBOARD_TTL_SECONDS
-            )
-        except Exception as e:
-            logger.warning(f"Could not refresh scoreboard, using persisted copy: {e}")
-            return self._context._load_or_fetch(key, query, league=self.league.league_key)
+def leagues_in(raw: Any) -> list[YahooLeague]:
+    """The leagues a login's league list names; none, where it plays in no game or no league."""
+    return readable("league list", lambda: league_list(parse(raw)["fantasy_content"]["users"]["user"]["games"]))
 
 
 # ── reading responses ───────────────────────────────────────────────────

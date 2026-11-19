@@ -17,6 +17,7 @@ type Schemas = components["schemas"];
 export type Action = Schemas["Action"];
 export type ActivityRow = Schemas["ActivityRow"];
 export type Capabilities = Schemas["Capabilities"];
+export type CaptureStatus = Schemas["CaptureStatus"];
 export type Competition = Schemas["Competition"];
 export type ErrorBody = Schemas["ErrorBody"];
 export type ErrorCode = ErrorBody["code"];
@@ -181,4 +182,6 @@ export const api = {
   /** Start a platform's login, named as a remedy names it: `yahoo`. */
   login: (platform: string) => post<Ok<"start_login">>(`/api/${segment(platform)}/login`, {}),
   loginState: (platform: string) => request<Ok<"login_state">>(`/api/${segment(platform)}/login`),
+  /** When a platform's browser sync last stored anything, and which leagues it holds. */
+  captureStatus: (platform: string) => request<Ok<"capture_status">>(`/api/${segment(platform)}/capture`),
 };

@@ -8,16 +8,26 @@ which the real parser reads.
 
 import threading
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
 import requests
 from support.http import NO_WAIT, http_error
-from support.yahoo import SDK_STORE_TTL, FakeContext
+from support.yahoo import (
+    FakeContext,
+    players_xml,
+    roster_xml,
+    rostered_xml,
+    scoreboard_xml,
+    standings_xml,
+    team_xml,
+    teams_xml,
+)
 
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
-from thefrontoffice.adapters.outbound.platforms.yahoo.client import SCOREBOARD_TTL_SECONDS, YahooClient, translate
+from thefrontoffice.adapters.outbound.platforms.yahoo import paths
+from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, YahooClient, translate
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooAPIError,
     YahooAuthError,
@@ -31,51 +41,6 @@ STATS = {"PTS": "12", "REB": "15", "BLK": "18"}
 """Three of a sport's stat ids, named the way the caller names them."""
 
 
-def players_xml(*names: str) -> str:
-    """A league's players response, as Yahoo serves it."""
-    rows = "".join(
-        f"<player><player_key>466.p.{i}</player_key><name><full>{name}</full></name><display_position>PF</display_position>"
-        f"<editorial_team_abbr>LAL</editorial_team_abbr></player>"
-        for i, name in enumerate(names)
-    )
-    return (
-        '<fantasy_content xmlns="http://fantasysports.yahooapis.com/fantasy/v2/base.rng">'
-        f'<league><players count="{len(names)}">{rows}</players></league></fantasy_content>'
-    )
-
-
-def teams_xml(*teams: str) -> str:
-    return f"<fantasy_content><league><teams>{''.join(teams)}</teams></league></fantasy_content>"
-
-
-def team_xml(key: str, name: str, *, mine: bool = False, adds: int = 0, standings: str = "") -> str:
-    owned = "<is_owned_by_current_login>1</is_owned_by_current_login>" if mine else ""
-    return (
-        f"<team><team_key>{key}</team_key><name>{name}</name>{owned}"
-        f"<roster_adds><value>{adds}</value></roster_adds>{standings}</team>"
-    )
-
-
-def standings_xml(rank: int, wins: int, losses: int, ties: int, points: str) -> str:
-    return (
-        f"<team_standings><rank>{rank}</rank><points_for>{points}</points_for><outcome_totals>"
-        f"<wins>{wins}</wins><losses>{losses}</losses><ties>{ties}</ties></outcome_totals></team_standings>"
-    )
-
-
-def roster_xml(*players: str) -> str:
-    return f"<fantasy_content><team><roster><players>{''.join(players)}</players></roster></team></fantasy_content>"
-
-
-def rostered_xml(name: str, slot: str, status: str = "", note: str = "") -> str:
-    return (
-        f"<player><player_key>466.p.{len(name)}</player_key><name><full>{name}</full></name>"
-        f"<display_position>PG,SG</display_position><editorial_team_abbr>BOS</editorial_team_abbr>"
-        f"<status>{status}</status><injury_note>{note}</injury_note>"
-        f"<selected_position><position>{slot}</position></selected_position></player>"
-    )
-
-
 LEAGUE = YahooLeague(league_key="466.l.123", name="My League", current_week=5)
 
 
@@ -87,7 +52,13 @@ def _client(
     league: YahooLeague = LEAGUE,
 ) -> tuple[YahooClient, FakeContext]:
     ctx = FakeContext(response, error, answers)
-    return YahooClient(league, context=ctx, cache=JsonDiskCache(tmp_path / "cache"), retry=NO_WAIT), ctx
+    live = LiveResponses(ctx, cache=JsonDiskCache(tmp_path / "cache"), retry=NO_WAIT)
+    return YahooClient(league, responses=live), ctx
+
+
+def _stored(tmp_path: Path, path: str, xml: str, age: timedelta) -> None:
+    """A response the cache already holds, kept `age` ago."""
+    JsonDiskCache(tmp_path / "cache").set(path, xml, now=datetime.now(UTC) - age)
 
 
 # ── fetch_top_by_stat ───────────────────────────────────────────────────
@@ -102,6 +73,13 @@ def test_one_request_per_stat_asked_for_keyed_as_asked(tmp_path: Path) -> None:
     assert all("count=4" in q and "status=A" in q for q in ctx.queries)
     assert {q.split("sort=")[1].split(";")[0] for q in ctx.queries} == set(STATS.values())
     assert {league for _, league in ctx.requests} == {"466.l.123"}
+
+
+def test_asking_for_no_stats_asks_yahoo_nothing(tmp_path: Path) -> None:
+    client, ctx = _client(tmp_path, players_xml("A B"))
+
+    assert client.fetch_top_by_stat({}) == {}
+    assert ctx.requests == []
 
 
 def test_category_requests_run_concurrently(tmp_path: Path) -> None:
@@ -336,23 +314,6 @@ def test_a_roster_failure_is_ours_to_render_not_requests(tmp_path: Path) -> None
 # ── the matchup ─────────────────────────────────────────────────────────
 
 
-def _side_xml(key: str, name: str, points: str, blocks: str) -> str:
-    return (
-        f"<team><team_key>{key}</team_key><name>{name}</name><team_points><total>{points}</total></team_points>"
-        f"<team_stats><stats><stat><stat_id>18</stat_id><value>{blocks}</value></stat></stats></team_stats></team>"
-    )
-
-
-def scoreboard_xml(start: str = "2026-02-09", end: str = "2026-02-15") -> str:
-    matchup = (
-        f"<matchup><week_start>{start}</week_start><week_end>{end}</week_end>"
-        f"<teams>{_side_xml('t1', 'Mine', '50', '12')}{_side_xml('t2', 'Theirs', '60', '17')}</teams></matchup>"
-    )
-    return (
-        f"<fantasy_content><league><scoreboard><matchups>{matchup}</matchups></scoreboard></league></fantasy_content>"
-    )
-
-
 def _matchup_client(tmp_path: Path, scoreboard: str | None = None, **kwargs: object) -> tuple[YahooClient, FakeContext]:
     answers = {
         "scoreboard;week=5": scoreboard or scoreboard_xml(),
@@ -431,26 +392,42 @@ def test_between_seasons_there_is_no_week_to_ask_about(tmp_path: Path) -> None:
     client, ctx = _client(tmp_path, league=replace(LEAGUE, current_week=None))
 
     assert client.get_matchup("t1") is None
-    assert ctx.store_ttls == []
+    assert ctx.requests == []
 
 
-def test_the_scoreboard_is_refreshed_on_a_short_ttl(tmp_path: Path) -> None:
+SCOREBOARD = paths.scoreboard(LEAGUE.league_key, 5).path
+
+
+def test_the_scoreboard_is_refreshed_once_minutes_old(tmp_path: Path) -> None:
     """An hour-old scoreboard would misstate every category margin."""
+    _stored(tmp_path, SCOREBOARD, scoreboard_xml(start="2026-01-01"), timedelta(minutes=5))
     client, ctx = _matchup_client(tmp_path)
+
+    info = client.get_matchup("t1")
+
+    assert info is not None and info.start == date(2026, 2, 9)
+    assert "scoreboard;week=5" in ctx.queries
+
+
+def test_a_scoreboard_a_minute_old_is_not_asked_again(tmp_path: Path) -> None:
+    _stored(tmp_path, SCOREBOARD, scoreboard_xml(), timedelta(minutes=1))
+    client, ctx = _matchup_client(tmp_path)
+
     client.get_matchup("t1")
 
-    assert ctx.store_ttls == [SCOREBOARD_TTL_SECONDS]
-    assert SCOREBOARD_TTL_SECONDS < SDK_STORE_TTL
+    assert "scoreboard;week=5" not in ctx.queries
 
 
-def test_a_failed_scoreboard_refresh_falls_back_to_the_persisted_copy(tmp_path: Path) -> None:
-    client, ctx = _matchup_client(tmp_path, fail_first=[RuntimeError("yahoo down")])
+def test_a_failed_scoreboard_refresh_falls_back_to_the_stored_copy(tmp_path: Path) -> None:
+    _stored(tmp_path, SCOREBOARD, scoreboard_xml(start="2026-01-05"), timedelta(days=1))
+    client, ctx = _matchup_client(tmp_path)
+    ctx.answers.pop("scoreboard;week=5")
+    ctx.response = "<not xml"
 
     info = client.get_matchup("t1")
 
     assert info is not None
-    assert info.start == date(2026, 2, 9)
-    assert ctx.store_ttls == [SCOREBOARD_TTL_SECONDS, SDK_STORE_TTL]
+    assert info.start == date(2026, 1, 5)
 
 
 def test_a_failed_scoreboard_raises_rather_than_reading_as_no_matchup(tmp_path: Path) -> None:

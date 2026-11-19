@@ -30,6 +30,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
+from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague, YahooPlayer, YahooTeam
 from thefrontoffice.domain.errors import (
@@ -67,6 +68,11 @@ logger = logging.getLogger(__name__)
 # Enough to find somebody, few enough to read — and one Yahoo request rather
 # than the eight the category scout makes.
 AVAILABLE_BROWSE_LIMIT = 100
+
+LEADERS = {c.label: c.yahoo_stat for c in SCOUTED}
+"""The stats the free-agent scout ranks the wire by, a request each."""
+
+LEADERS_PER_STAT = 10
 
 # Where the moves are actually made. Unlike the other two platforms these
 # cannot be checked from here — the sport is behind an approval this app does
@@ -141,7 +147,7 @@ class YahooNBAProvider:
             LeagueNotFoundError: the login plays in no NBA league this season.
         """
         if self._found is None:
-            self._found = self._auth.find_leagues("nba", self.season_year())
+            self._found = self._auth.find_leagues(YAHOO_GAME.code, self.season_year())
         if not self._found:
             raise LeagueNotFoundError("no Yahoo NBA leagues for this season")
         return self._found
@@ -242,7 +248,7 @@ class YahooNBAProvider:
             NotFoundError: between seasons, or a week outside this one.
         """
         current = league.current_week
-        if not current or not _first(league) <= week <= _last(league, current):
+        if not current or not league.first_week <= week <= league.last_week(current):
             raise NotFoundError(f"week {week} of the {league.name} season")
         return current
 
@@ -255,7 +261,7 @@ class YahooNBAProvider:
         the opponent's is read alongside it.
         """
         current = league.current_week or week
-        weeks = WeekRange(week=week, current=current, first=_first(league), last=_last(league, current))
+        weeks = WeekRange(week=week, current=current, first=league.first_week, last=league.last_week(current))
         found = yahoo.pairing(team.team_key, week)
         if found is None:
             return Summary(window=f"Week {week}", weeks=weeks)
@@ -524,7 +530,7 @@ def _rank_free_agents(yahoo: YahooSource) -> tuple[list[YahooPlayer], dict[str, 
     them, and ahead of single-category players — the ordering the prompt
     relies on when it asks for the three best adds.
     """
-    leaders = yahoo.fetch_top_by_stat({c.label: c.yahoo_stat for c in SCOUTED}, per_stat=10)
+    leaders = yahoo.fetch_top_by_stat(LEADERS, per_stat=LEADERS_PER_STAT)
 
     categories_by_key: dict[str, list[str]] = {}
     player_by_key: dict[str, YahooPlayer] = {}
@@ -542,16 +548,6 @@ def _rank_free_agents(yahoo: YahooSource) -> tuple[list[YahooPlayer], dict[str, 
     return players, annotations
 
 
-def _first(league: YahooLeague) -> int:
-    """The season's first matchup week."""
-    return league.start_week or 1
-
-
-def _last(league: YahooLeague, current: int) -> int:
-    """The season's last matchup week, and never before the week being played."""
-    return max(league.end_week or current, current)
-
-
 def _standings(teams: list[YahooTeam]) -> list[StandingRow]:
     """The table in rank order; a team Yahoo sent without its standings has no row in it."""
     rows = [
@@ -567,6 +563,16 @@ def _standings(teams: list[YahooTeam]) -> list[StandingRow]:
         if team.standing is not None
     ]
     return sorted(rows, key=lambda row: row.rank)
+
+
+YAHOO_GAME = YahooGame(
+    code="nba",
+    season=YahooNBAProvider.season_year,
+    available=AVAILABLE_BROWSE_LIMIT,
+    leaders=LEADERS,
+    per_stat=LEADERS_PER_STAT,
+)
+"""What this provider reads of Yahoo's NBA game, so a browser sync captures exactly that."""
 
 
 def _league_url(league_key: str) -> str:
