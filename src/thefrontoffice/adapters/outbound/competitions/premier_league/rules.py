@@ -15,7 +15,7 @@ slots, only a count of each position that must fall between a minimum and a
 maximum. That is why this does not reuse the football lineup solver.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
@@ -215,6 +215,79 @@ def formations() -> list[dict[str, int]]:
 def _span(position: str) -> tuple[int, int]:
     low, high = FORMATION_LIMITS[position]
     return low, high + 1
+
+
+OUTFIELD = ("DEF", "MID", "FWD")
+"""The outfield positions, in the order a lineup lists them: the order auto-subs look for a place in."""
+
+
+def substitution_chances(starters: Sequence[tuple[str, float]], bench: Sequence[tuple[str, float]]) -> list[float]:
+    """Each bench player's chance of coming on, by the game's auto-sub rules, from each player's chance of not playing.
+
+    `starters` and `bench` are (position, chance he does not play) pairs, the
+    bench in the order the manager set it. The rules:
+
+    - the reserve keeper comes on only for the starting keeper, and only if he plays;
+    - the outfield bench is taken in order, each one who plays coming on for the
+      first starter in the lineup who did not, whose place he can take without
+      leaving fewer than the formation's minimum at any position
+      (`FORMATION_LIMITS`: three defenders, two midfielders, one forward);
+    - one who would break the formation, or who did not play himself, is passed over
+      for the next.
+
+    Exact, not sampled: every starter misses on his own, so the outfield is read as
+    the chance of each count missing at each position, and the bench is played
+    through each count in turn.
+    """
+    chances = [0.0] * len(bench)
+    keeper_misses = 1.0
+    for position, misses in starters:
+        if position == "GKP":
+            keeper_misses *= misses
+    counts = tuple(sum(p == q for p, _ in starters) for q in OUTFIELD)
+    missing: dict[tuple[int, ...], float] = {(0, 0, 0): 1.0}
+    for position, misses in starters:
+        if position in OUTFIELD:
+            at = OUTFIELD.index(position)
+            spread: dict[tuple[int, ...], float] = {}
+            for gone, chance in missing.items():
+                _add(spread, gone, chance * (1 - misses))
+                _add(spread, _shifted(gone, at, 1), chance * misses)
+            missing = spread
+    states: dict[tuple[tuple[int, ...], tuple[int, ...]], float] = {(m, counts): p for m, p in missing.items()}
+    for i, (position, misses) in enumerate(bench):
+        if position == "GKP":
+            chances[i] = keeper_misses * (1 - misses)
+            continue
+        after: dict[tuple[tuple[int, ...], tuple[int, ...]], float] = {}
+        for (gone, lineup), chance in states.items():
+            _add(after, (gone, lineup), chance * misses)
+            place = _place_for(position, gone, lineup)
+            if place is None:
+                _add(after, (gone, lineup), chance * (1 - misses))
+                continue
+            chances[i] += chance * (1 - misses)
+            moved = _shifted(_shifted(lineup, place, -1), OUTFIELD.index(position), 1)
+            _add(after, (_shifted(gone, place, -1), moved), chance * (1 - misses))
+        states = after
+    return chances
+
+
+def _place_for(position: str, gone: tuple[int, ...], lineup: tuple[int, ...]) -> int | None:
+    """The first position in the lineup with a starter who did not play, whose place a `position` can take."""
+    for at, outfield in enumerate(OUTFIELD):
+        if gone[at] and (outfield == position or lineup[at] - 1 >= FORMATION_LIMITS[outfield][0]):
+            return at
+    return None
+
+
+def _shifted(counts: tuple[int, ...], at: int, by: int) -> tuple[int, ...]:
+    return (*counts[:at], counts[at] + by, *counts[at + 1 :])
+
+
+def _add[K](into: dict[K, float], key: K, chance: float) -> None:
+    if chance:
+        into[key] = into.get(key, 0.0) + chance
 
 
 @dataclass(frozen=True)

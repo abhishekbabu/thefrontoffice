@@ -28,6 +28,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.competitions import worth as shared
+from thefrontoffice.adapters.outbound.competitions.premier_league.clean_sheets import (
+    AVERAGE_DIFFICULTY,
+    Strength,
+    strength,
+)
 from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
     APPEARANCE_POINTS,
     ASSIST_POINTS,
@@ -68,17 +73,9 @@ player at home.
 UNDERLYING_WEIGHT = 0.25
 """The share of a match that his underlying numbers decide, the rest his points.
 
-A quarter: expected goals and assists, clean-sheet odds, saves, bonus and
+A quarter: expected goals and assists, clean-sheet odds (`clean_sheets.py`), saves, bonus and
 defensive contributions say what he should have scored, which steadies a run
 of lucky or unlucky weeks, but points are what the game pays.
-"""
-
-CLEAN_SHEET_ODDS = {1: 0.5, 2: 0.4, 3: 0.3, 4: 0.2, 5: 0.12}
-"""The chance of a clean sheet by the fixture's difficulty, for his side.
-
-A proxy, since FPL publishes no defensive strength this season: about half
-of matches against the weakest attacks end goalless for the defending side,
-and about one in eight against the strongest.
 """
 
 SETTLE_MATCHES = 5
@@ -123,8 +120,6 @@ nor assumes it clears by Saturday.
 
 GONE = frozenset({"u", "n"})
 """Unavailable or not in the squad: usually a player sold or loaned out, who is not coming back in a month."""
-
-AVERAGE_DIFFICULTY = 3
 
 
 @dataclass(frozen=True)
@@ -209,8 +204,10 @@ def gather(client: FPLSource, upcoming: Gameweek) -> Valuation:
     """Every player's worth for `upcoming` and the `HORIZON` from it.
 
     Form degrades to the projection alone where the results will not load,
-    rather than failing a page over it. The fixtures do not: without them a
-    blank cannot be told from a match, and every figure would be a guess.
+    rather than failing a page over it, and clean-sheet odds to the fixtures'
+    difficulty where the season's matches will not. The gameweek's fixtures do
+    not: without them a blank cannot be told from a match, and every figure
+    would be a guess.
     """
     gameweeks = client.get_gameweeks()
     finished = [g.id for g in gameweeks if g.finished and g.id < upcoming.id]
@@ -222,7 +219,13 @@ def gather(client: FPLSource, upcoming: Gameweek) -> Valuation:
         results = {}
     weeks = [g.id for g in gameweeks if upcoming.id <= g.id < upcoming.id + HORIZON] or [upcoming.id]
     fixtures = {week: client.get_fixtures(week) for week in weeks}
-    return valuation(client.get_players(), results, fixtures, played=len(finished))
+    catalog = client.get_players()
+    try:
+        clubs = strength(catalog, client.get_season_fixtures())
+    except FPLAPIError as e:
+        logger.warning(f"Reading clean sheets by fixture difficulty, without the season's matches: {e}")
+        clubs = Strength()
+    return valuation(catalog, results, fixtures, played=len(finished), clubs=clubs)
 
 
 def valuation(
@@ -231,13 +234,18 @@ def valuation(
     fixtures: Mapping[int, list[Fixture]],
     *,
     played: int,
+    clubs: Strength | None = None,
 ) -> Valuation:
     """Every player's `Worth` from the window's `results`, oldest first, and each gameweek's `fixtures`, the first
     being the one decided. `played` is how many gameweeks of the season are over, for a share of minutes where the
-    window has none."""
+    window has none; `clubs` what each club's season says of its clean sheets, by difficulty without it."""
     schedule = [_by_club(week) for week in fixtures.values()]
+    clubs = clubs or Strength()
     return Valuation(
-        {pid: value(player, record(pid, results.values()), schedule, played=played) for pid, player in catalog.items()},
+        {
+            pid: value(player, record(pid, results.values()), schedule, played=played, clubs=clubs)
+            for pid, player in catalog.items()
+        },
         fixtures,
     )
 
@@ -264,7 +272,9 @@ def record(pid: int, weeks: Iterable[Mapping[int, LiveStat]]) -> Record:
     )
 
 
-def value(player: Player, run: Record, schedule: list[dict[str, list[Opponent]]], *, played: int) -> Worth:
+def value(
+    player: Player, run: Record, schedule: list[dict[str, list[Opponent]]], *, played: int, clubs: Strength
+) -> Worth:
     """One player's `Worth` from his run and his club's fixtures, gameweek by gameweek from the one decided."""
     first = schedule[0].get(player.team, []) if schedule else []
     projects = projected(player)
@@ -275,7 +285,7 @@ def value(player: Player, run: Record, schedule: list[dict[str, list[Opponent]]]
 
     def match(opponent: Opponent) -> float:
         scale = difficulty(opponent.difficulty)
-        expected = underlying(player, run, share, opponent.difficulty)
+        expected = underlying(player, run, share, opponent, clubs)
         projection = player.expected_points / max(len(first), 1) * scale
         # Before a minute has been played the projection is all there is, form or not.
         outlook = projection if projects or expected is None else expected
@@ -292,7 +302,7 @@ def value(player: Player, run: Record, schedule: list[dict[str, list[Opponent]]]
         form=form,
         outlook=player.expected_points,
         projected=projects,
-        underlying=underlying(player, run, share, first[0].difficulty) if first else None,
+        underlying=underlying(player, run, share, first[0], clubs) if first else None,
         fixtures=tuple(first),
         availability=chance,
         usage=nudge,
@@ -346,11 +356,11 @@ def _per_90(total: float, minutes: int) -> float:
     return total * 90 / max(minutes, RATE_MINUTES)
 
 
-def underlying(player: Player, run: Record, share: float | None, rating: int) -> float | None:
-    """What a match of him should score at this difficulty, from his underlying numbers; None without minutes.
+def underlying(player: Player, run: Record, share: float | None, opponent: Opponent, clubs: Strength) -> float | None:
+    """What a match of him should score against `opponent`, from his underlying numbers; None without minutes.
 
     Appearance, expected goals and assists at his position's rates (scaled by
-    the difficulty), clean-sheet odds (`CLEAN_SHEET_ODDS`), saves, bonus, and the
+    the difficulty), his club's clean-sheet odds there (`Strength.clean_sheet`), saves, bonus, and the
     defensive-contribution points he has been earning a match — all at his
     share of the minutes. Goals conceded are left to the clean-sheet odds.
     """
@@ -360,8 +370,8 @@ def underlying(player: Player, run: Record, share: float | None, rating: int) ->
     attacking = (
         _per_90(player.expected_goals, minutes) * GOAL_POINTS.get(player.position, 0)
         + _per_90(player.expected_assists, minutes) * ASSIST_POINTS
-    ) * difficulty(rating)
-    clean_sheet = CLEAN_SHEET_ODDS.get(rating or AVERAGE_DIFFICULTY, 0.3) * CLEAN_SHEET_POINTS.get(player.position, 0)
+    ) * difficulty(opponent.difficulty)
+    clean_sheet = clubs.clean_sheet(player.team, opponent) * CLEAN_SHEET_POINTS.get(player.position, 0)
     saves = _per_90(player.saves, minutes) / SAVES_PER_POINT
     bonus = _per_90(player.bonus, minutes)
     defending = run.defending / run.matches if run.matches else 0.0

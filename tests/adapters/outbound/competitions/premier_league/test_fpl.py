@@ -738,14 +738,19 @@ def test_a_search_puts_the_player_worth_more_first_however_few_own_him() -> None
 
 
 def test_a_tie_still_to_come_is_simulated_around_each_players_worth() -> None:
-    """GW4 is over, so the tie is GW5's: P8's range keeps its spread and moves to his worth a match."""
-    from thefrontoffice.adapters.outbound.competitions.premier_league import worth
+    """GW4 is over, so the tie is GW5's: P8's range keeps its spread and moves to his worth a match.
 
-    fake = FakeFPL(finished=4, live={}, games={8: [game(3, 4), game(4, 12)]})
-    found = FPLProvider(ENTRY_ID, client=fake).matchup_input(H2H_LEAGUE_ID)
-    reading = worth.gather(fake, fake.upcoming_gameweek()).of(fake.get_players()[8])
+    His worth does not read his log, so a log twice as hot draws the same mean — only the spread is his own.
+    """
 
-    assert found is not None and reading is not None and reading.per_match is not None
-    captain = next(o for o in found.mine if o.player_id == "8")
-    assert sum(captain.samples) / len(captain.samples) == pytest.approx(reading.per_match, abs=0.01)
-    assert captain.samples[1] == pytest.approx(3 * captain.samples[0], abs=0.05)  # 12 against 4, as he scored them
+    def captain(log: list[int]) -> tuple[float, ...]:
+        fake = FakeFPL(finished=4, live={}, games={8: [game(3 + i, p) for i, p in enumerate(log)]})
+        found = FPLProvider(ENTRY_ID, client=fake).matchup_input(H2H_LEAGUE_ID)
+        assert found is not None
+        return next(o for o in found.mine if o.player_id == "8").samples
+
+    cold, hot = captain([4, 12]), captain([8, 24])
+
+    assert sum(cold) / 2 == pytest.approx(sum(hot) / 2, abs=0.01)
+    assert sum(cold) / 2 != pytest.approx(8.0)  # not the mean of his log
+    assert cold[1] == pytest.approx(3 * cold[0], abs=0.05)  # 12 against 4, as he scored them
