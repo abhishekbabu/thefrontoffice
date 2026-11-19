@@ -18,6 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nba import actions, prompt, views
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
+from thefrontoffice.adapters.outbound.competitions.nba import outlook as nba_outlook
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
@@ -65,6 +66,7 @@ from thefrontoffice.domain.models import (
     CompetitionContext,
     LeagueSchedule,
     MatchupInput,
+    Outlook,
     PlayedMatchup,
     PlayerCard,
     PlayerDetail,
@@ -297,6 +299,7 @@ class YahooNBAProvider:
                 value,
                 self._games(p, clubs, returns.get(p.player_key), end),
                 provisional,
+                returns.get(p.player_key),
             )
             for p in unique
         }
@@ -546,6 +549,126 @@ class YahooNBAProvider:
             # A kept judgment's add of somebody another manager has since claimed is no move at all.
             movable=frozenset(p.name for p in (*rostered, *free_agents)),
         )
+
+    # ── the wire ────────────────────────────────────────────────────
+
+    def build_wire_context(self, league_id: str, player_ids: list[str]) -> CompetitionContext:
+        """The prompt asking for one call per listed free agent.
+
+        Each candidate's line is the scout's — form, status and return, games
+        left, projection, teammates out, worth this week — plus the weakest
+        player he streams over by the to-do list's margin (`actions.fit`), and
+        the id the call has to name. Every figure is read over the same players
+        whichever are asked about: the roster, the opponent and the top of the
+        wire, as the to-do list reads them, so a call kept against a line is
+        checked against that same line on any page.
+
+        Raises:
+            PlayerNotFoundError: an id is rostered in this league, or not on the wire.
+        """
+        league = self._league(league_id)
+        yahoo = self._yahoo_for(league)
+        weights = self._weights(league, yahoo)
+        team = yahoo.get_user_team()
+        rostered = yahoo.roster(team.team_key)
+        held = {p.player_key for p in rostered}
+        everyone = _wire(yahoo)
+        available = {p.player_key: p for p in everyone if p.player_key not in held}
+        unavailable = [pid for pid in player_ids if pid not in available]
+        if unavailable:
+            raise PlayerNotFoundError(unavailable)
+        candidates = [available[pid] for pid in player_ids]
+        week = yahoo.get_matchup(team.team_key)
+        limit = self._add_limit(yahoo)
+        reports = self._reports()
+        known = [*rostered, *everyone]
+        returns = self._returns(known, reports)
+        splits = self._splits(known, weights, reports)
+        readings: dict[str, Reading] = {}
+        remaining: dict[str, int] = {}
+        start, end = (week.start, week.end) if week else (None, None)
+        if week:
+            pool = [*rostered, *week.opponent_roster, *_wire(yahoo, STREAM_DEPTH)]
+            readings = self._readings(yahoo, weights, pool, week.start, week.end, candidates)
+            remaining = self.games.get_remaining_games_bulk(
+                [p.team for p in (*rostered, *candidates)], week.start, week.end
+            )
+        builder = PlayerContextBuilder(self.form, self.games, weights)
+        projections = index_for(self.sleeper, start, end)
+
+        def lines(players: list[YahooPlayer]) -> dict[str, str]:
+            return builder.build_player_lines(
+                players,
+                start,
+                end,
+                remaining_games=remaining,
+                projections=projections,
+                returns=returns,
+                splits=splits,
+                readings=readings,
+            )
+
+        candidate_lines = lines(candidates)
+        fits = {
+            p.player_key: actions.fit(r, rostered, readings, weights is not None)
+            for p in candidates
+            if (r := readings.get(p.player_key))
+        }
+        return prompt.wire(
+            week=week,
+            weights=weights,
+            roster=lines(rostered),
+            candidates={p.player_key: candidate_lines[p.name] for p in candidates},
+            names={p.player_key: p.name for p in candidates},
+            fits=fits,
+            constraints=prompt.transactions(team.adds_used, limit),
+        )
+
+    # ── the weeks ahead ─────────────────────────────────────────────
+
+    def weeks_ahead(self, league_id: str, team_id: str = "") -> Outlook:
+        """The next few matchup weeks of a roster, yours where `team_id` is empty, counted in games (`outlook.build`).
+
+        The weeks' dates are Yahoo's scoreboards, which the season page reads
+        too and which hold for a week; their games are Sleeper's schedule.
+
+        Raises:
+            TeamNotFoundError: no team in the league has that id.
+            PlatformError: the schedule would not load.
+        """
+        league = self._league(league_id)
+        yahoo = self._yahoo_for(league)
+        if team_id and not any(t.team_key == team_id for t in yahoo.teams()):
+            raise TeamNotFoundError(team_id)
+        team_key = team_id or yahoo.get_user_team().team_key
+        current = league.current_week
+        if not current:
+            return Outlook(measure="games")
+        last = min(current + nba_outlook.WEEKS_AHEAD, league.last_week(current))
+        pairings = yahoo.season(team_key, list(range(current + 1, last + 1)))
+        windows = [
+            nba_outlook.Window(
+                week,
+                found.start,
+                found.end,
+                self.games.games_between(found.start, found.end),
+                self.games.unscheduled(found.start, found.end),
+            )
+            for week, found in sorted(pairings.items())
+            if found is not None
+        ]
+        if not windows:
+            return Outlook(measure="games")
+        roster = yahoo.roster(team_key)
+        try:
+            wire = _wire(yahoo, STREAM_DEPTH)
+        except FrontOfficeError as e:
+            logger.warning(f"Planning the weeks ahead without the wire, which would not load: {e}")
+            wire = []
+        weights = self._weights(league, yahoo)
+        readings = self._readings(yahoo, weights, [*roster, *wire], windows[0].start, windows[-1].end)
+        returns = self._returns([*roster, *wire], self._reports())
+        return nba_outlook.build(windows, roster, wire, readings, returns, self._add_limit(yahoo))
 
     # ── the week, simulated ─────────────────────────────────────────
 

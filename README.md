@@ -96,7 +96,15 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   synced Yahoo league finds only the players the sync carried: every roster
   and the wire it read.
 - **Rosters**: any team's squad, yours by default, and the weeks ahead where
-  somebody is out on a bye or hurt (one line when nobody is).
+  somebody is out on a bye or hurt (one line when nobody is). NBA counts each of
+  the next 4 weeks in games its daily lineups can start (active players playing
+  each day, capped at the lineup's slots) against the median week, naming
+  regulars with 2 games or fewer, injured players with ESPN's return day,
+  "heavy" weeks (most clubs play 4+), and a stream with more games than its drop
+  at the to-do list's margin, one week each, none in a league without adds.
+  A week the NBA has yet to finish scheduling (the Cup knockouts) is marked
+  provisional: its count is a floor, so it is never short or light, streams
+  nothing, and stays out of the median.
 - **Schedule and Fixtures**: your season week by week, a future opponent with
   their record now. A week's real games grouped by kickoff, each naming your
   players and your opponent's in it, with the week's byes (FPL: blanks) on one
@@ -148,6 +156,10 @@ games, 1–20 Dec: the Cup knockouts, before eliminated clubs get games), the he
 says "Schedule: not final", games left read "3+G", Fixtures carries a note naming
 the days, to-do items and the win chance say "provisional", and the scout is told
 the counts are a floor. It clears once Sleeper's schedule fills in.
+Each item compares its players on games left, value a game, minutes, worth and
+ESPN's return day. NBA free agents can be judged too: each line carries the
+scout's figures and the weakest drop he clears by that margin, read over the
+same players whoever is asked about.
 The NBA matchup header carries a win chance too: what each side has on Yahoo's
 scoreboard, plus every game its players have left, each drawn from one of their
 last 15 box scores (Sleeper). On a night more of a roster plays than its

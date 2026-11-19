@@ -107,9 +107,12 @@ export function RostersPanel({ competition, league }: { competition: Competition
  *
  * A week where byes and injuries land together is a loss that can be seen a
  * month out, and a pickup made then costs a bench spot rather than whatever
- * is left on the morning. Only a week somebody misses is listed, and one
- * short enough to act on carries the pickup that fixes it; a stretch with
- * nobody missing is one line, not a row a week saying so.
+ * is left on the morning. Only a week with something to say is listed —
+ * somebody missing, a regular with few games, a heavy week, one short enough
+ * to act on — with the pickup that fixes it where one does; a stretch with
+ * nothing to say is one line, not a row a week saying so. A week the league
+ * has yet to finish scheduling is provisional: its count is a floor. A week
+ * counts projected points, or in basketball the games the daily lineups can start.
  */
 function WeeksAhead({ competition, league, team }: { competition: Competition; league: League; team: string }) {
   const outlook = useQuery<Outlook, Error>({
@@ -118,19 +121,24 @@ function WeeksAhead({ competition, league, team }: { competition: Competition; l
   });
 
   const weeks = outlook.data?.weeks;
-  const flagged = weeks?.filter((w) => w.missing.length > 0 || w.short);
+  const flagged = weeks?.filter(
+    (w) => w.missing.length > 0 || w.light.length > 0 || w.short || w.heavy || w.provisional || w.fix,
+  );
   const short = weeks?.filter((w) => w.short).length ?? 0;
   const usual = outlook.data?.usual;
+  const games = outlook.data?.measure === "games";
+  // Games are whole; a usual week of them is a median, which can fall between two.
+  const figure = (value: number) => (games ? `${Number(value.toFixed(1))} games` : `${value.toFixed(1)} proj`);
   return (
     <ListCard
       title="Weeks ahead"
-      count={short ? `${short} short` : usual != null ? `usual week ${usual.toFixed(1)}` : undefined}
+      count={short ? `${short} short` : usual != null ? `usual week ${figure(usual)}` : undefined}
       loading={outlook.isLoading}
       error={outlook.error}
     >
       {weeks?.length === 0 && <CardNote>No weeks left.</CardNote>}
       {weeks && weeks.length > 0 && flagged?.length === 0 && (
-        <CardNote>No byes or injuries through week {weeks[weeks.length - 1]!.week}.</CardNote>
+        <CardNote>Nothing to flag through week {weeks[weeks.length - 1]!.week}.</CardNote>
       )}
       {flagged?.map((week) => (
         <ListRow key={week.week} className="flex-col items-stretch gap-1">
@@ -139,17 +147,33 @@ function WeeksAhead({ competition, league, team }: { competition: Competition; l
             <span className="min-w-0 flex-1 truncate text-muted-foreground">
               {week.missing.length ? `Without ${week.missing.join(", ")}` : "Everyone available"}
             </span>
-            <span className="shrink-0 font-mono text-[12px] tabular-nums">{week.points.toFixed(1)} proj</span>
+            <span className="shrink-0 font-mono text-[12px] tabular-nums">{figure(week.points)}</span>
             {/* Said in words as well as tinted. */}
+            {week.provisional && (
+              <Badge variant="warn" appearance="pill" className="shrink-0">
+                provisional
+              </Badge>
+            )}
+            {week.heavy && (
+              <Badge variant="ok" appearance="pill" className="shrink-0">
+                heavy
+              </Badge>
+            )}
             {week.short && (
               <Badge variant="fail" appearance="pill" className="shrink-0">
-                short {week.short_by.toFixed(1)}
+                short {Number(week.short_by.toFixed(1))}
               </Badge>
             )}
           </div>
+          {week.light.length > 0 && (
+            <p className="pl-[5.75rem] text-[12.5px] text-muted-foreground">Light: {week.light.join(", ")}</p>
+          )}
           {week.fix && (
             <p className="pl-[5.75rem] text-[12.5px]">
-              {week.fix} <span className="font-mono text-muted-foreground">({signed(week.gain)})</span>
+              {week.fix}{" "}
+              <span className="font-mono text-muted-foreground">
+                ({games ? `${signed(week.gain, 0)} games` : signed(week.gain)})
+              </span>
             </p>
           )}
         </ListRow>

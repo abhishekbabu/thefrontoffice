@@ -37,17 +37,26 @@ from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import Average, Timeframe, YahooLeague, YahooLine, YahooTeam
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
+    Average,
+    MatchupSide,
+    Pairing,
+    Timeframe,
+    YahooLeague,
+    YahooLine,
+    YahooTeam,
+)
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.domain.errors import (
     InvalidRequestError,
     LeagueNotFoundError,
     NotFoundError,
+    PlayerNotFoundError,
     TeamNotFoundError,
     UnsupportedError,
 )
 from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat, TradeProposal
-from thefrontoffice.domain.ports import ForecastProvider
+from thefrontoffice.domain.ports import ForecastProvider, OutlookProvider, WireProvider
 
 
 def _scout(yahoo: FakeYahoo, ai: FakeAI | None = None, nba: FakeNBA | None = None) -> ScoutEngine:
@@ -1201,3 +1210,126 @@ def test_a_week_with_days_unscheduled_is_simulated_as_provisional() -> None:
 
 def test_the_scouts_schedule_names_the_days_still_to_be_scheduled() -> None:
     assert "10-12 Feb" in _pending().build_context().extra
+
+
+# ── the weeks ahead ─────────────────────────────────────────────────────
+
+AHEAD_DAYS = {"LAL": [7, 9, 11, 13], "BOS": [8], "MIA": [8, 10], "NYK": [7, 9, 11, 13]}
+"""Week 6, 7-13 December: Starter's and Streamer's clubs play four, Benched's one, Spare's two."""
+
+
+def _ahead(
+    yahoo: FakeYahoo | None = None, league: YahooLeague | None = None, unscheduled: list[date] | None = None
+) -> YahooNBAProvider:
+    """Week 5 being played, week 6 dated on the scoreboard, and no matchup in the weeks after."""
+    yahoo = yahoo or FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+    side = MatchupSide(team_key="t.1", name="My Team", points="", stats={})
+    yahoo.season_weeks = {6: Pairing(start=date(2026, 12, 7), end=date(2026, 12, 13), mine=side, opponent=side)}
+    slate = [
+        ScheduledGame(week=0, date=f"2026-12-{day:02d}", home=club, away="ZZZ")
+        for club, days in AHEAD_DAYS.items()
+        for day in days
+    ]
+    return nba_provider(
+        yahoo,
+        nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=slate, unscheduled=unscheduled),
+        league=league or replace(POINTS_LEAGUE, end_week=20),
+    )
+
+
+def test_basketball_plans_its_weeks_ahead_in_games_and_streams_into_a_heavy_one() -> None:
+    provider = _ahead()
+    assert isinstance(provider, OutlookProvider)
+
+    outlook = provider.weeks_ahead("466.l.1")
+
+    assert outlook.measure == "games"
+    [week] = outlook.weeks  # the weeks without a matchup are left out
+    assert (week.week, week.points, week.heavy) == (6, 6, True)  # one slot: a game a day on six days
+    assert "Streamer" in week.fix
+    assert "drop Spare" in week.fix
+    assert week.gain == 2
+
+
+def test_another_managers_weeks_ahead_read_his_roster_and_an_unknown_team_is_refused() -> None:
+    provider = _ahead()
+
+    [week] = provider.weeks_ahead("466.l.1", "t.2").weeks
+    assert week.points == 4  # Their Team One, at LAL: four games
+
+    with pytest.raises(TeamNotFoundError):
+        provider.weeks_ahead("466.l.1", "t.9")
+
+
+def test_no_weeks_ahead_between_seasons_or_after_the_last() -> None:
+    between = replace(POINTS_LEAGUE, current_week=None, end_week=20)
+
+    assert _ahead(league=between).weeks_ahead("466.l.1").weeks == []
+    assert _ahead(league=POINTS_LEAGUE).weeks_ahead("466.l.1").weeks == []  # week 5 is the last
+
+
+def test_a_wire_that_will_not_load_leaves_the_weeks_ahead_without_a_stream() -> None:
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+    yahoo.wire_error = YahooCaptureMissingError("the wire")
+
+    [week] = _ahead(yahoo).weeks_ahead("466.l.1").weeks
+
+    assert (week.points, week.fix) == (6, "")
+
+
+# ── the wire, judged ────────────────────────────────────────────────────
+
+ROOKIE = make_player("Rookie", "PG", "BOS", key="rookie")
+
+
+def _wire() -> YahooNBAProvider:
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER, ROOKIE], weights=WEIGHTS)
+    return nba_provider(yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES), league=POINTS_LEAGUE)
+
+
+def test_a_free_agents_line_carries_his_id_his_week_and_the_drop_he_streams_over() -> None:
+    provider = _wire()
+    assert isinstance(provider, WireProvider)
+
+    context = provider.build_wire_context("466.l.1", ["streamer"])
+
+    line = context.targets["streamer"]
+    assert line.startswith("- [id streamer] Streamer")
+    assert "WEEK: 4G" in line
+    assert "streams over Spare" in line
+    assert line in context.prompt
+    assert "Starter" in context.prompt  # the roster that could make way
+    assert context.candidate_lines["Streamer"] == line
+
+
+def test_a_free_agents_line_is_the_same_whoever_is_asked_about_beside_him() -> None:
+    provider = _wire()
+
+    alone = provider.build_wire_context("466.l.1", ["streamer"]).targets["streamer"]
+    together = provider.build_wire_context("466.l.1", ["rookie", "streamer"]).targets["streamer"]
+
+    assert alone == together
+
+
+def test_a_rostered_or_unknown_player_is_not_judged_as_a_free_agent() -> None:
+    with pytest.raises(PlayerNotFoundError) as caught:
+        _wire().build_wire_context("466.l.1", ["streamer", "spare", "nobody"])
+
+    assert caught.value.names == ["spare", "nobody"]
+
+
+def test_a_free_agent_is_judged_without_a_week_when_there_is_no_matchup() -> None:
+    yahoo = FakeYahoo(roster=[STARTER], available=[STREAMER], weights=WEIGHTS, matchup_dates=None)
+    provider = nba_provider(yahoo, nba=FakeNBA(stats=WEEK_FORM), league=POINTS_LEAGUE)
+
+    line = provider.build_wire_context("466.l.1", ["streamer"]).targets["streamer"]
+
+    assert "WEEK" not in line
+    assert "fits" not in line
+
+
+def test_a_week_ahead_the_nba_has_yet_to_schedule_is_provisional() -> None:
+    [week] = _ahead(unscheduled=[date(2026, 12, 10)]).weeks_ahead("466.l.1").weeks
+
+    assert (week.provisional, week.fix) == (True, "")
+    assert _ahead().weeks_ahead("466.l.1").weeks[0].provisional is False

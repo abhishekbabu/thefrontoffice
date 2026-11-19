@@ -259,3 +259,13 @@ def test_games_left_read_as_a_floor_while_the_weeks_schedule_is_not_final() -> N
     assert cell(pending, by_points=True) == "3+G · 41.5 fpts/g"
     [_in] = compared([("in", "bench", pending)], True)
     assert {f.label: f.value for f in _in.figures}["G left"] == "3+"
+
+
+def test_a_player_compared_carries_when_espn_expects_him_back() -> None:
+    hurt, fit = replace(READING, back=date(2026, 12, 3)), READING
+
+    rows = [
+        {f.label: f.value for f in p.figures} for p in compared([("in", "bench", hurt), ("out", "starter", fit)], True)
+    ]
+
+    assert (rows[0]["Back"], rows[1]["Back"]) == ("~3 Dec", "—")

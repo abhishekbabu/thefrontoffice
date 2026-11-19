@@ -1296,6 +1296,13 @@ export interface components {
              * @description What your best lineup projects in a typical one of these weeks. None once none are left.
              */
             usual: number | null;
+            /**
+             * Measure
+             * @description What a week's `points` count: projected points, or the games the daily lineups can start where a week is won on how many games are played.
+             * @default proj
+             * @enum {string}
+             */
+            measure: "proj" | "games";
             /** Weeks */
             weeks: components["schemas"]["WeekAhead"][];
         };
@@ -2312,6 +2319,23 @@ export interface components {
              */
             short: boolean;
             /**
+             * Light
+             * @description Regulars with few games that week, where a week counts games: 'Jalen Brunson (2 games)'.
+             */
+            light: string[];
+            /**
+             * Heavy
+             * @description Whether most clubs play four or more games that week: a stream brings more of them.
+             * @default false
+             */
+            heavy: boolean;
+            /**
+             * Provisional
+             * @description Whether the league has days of that week still to schedule, so its games are a floor.
+             * @default false
+             */
+            provisional: boolean;
+            /**
              * Fix
              * @description The pickup that closes most of the gap, and who to drop for him.
              * @default
@@ -2319,7 +2343,7 @@ export interface components {
             fix: string;
             /**
              * Gain
-             * @description What that pickup adds to the week's best lineup.
+             * @description What that pickup adds to the week, in its competition's measure.
              * @default 0
              */
             gain: number;

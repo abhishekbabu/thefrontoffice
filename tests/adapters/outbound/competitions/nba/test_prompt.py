@@ -10,7 +10,7 @@ from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, POINTS, STEALS, TURNOVERS
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup, MatchupSide
-from thefrontoffice.application.formats import ScoutAnswer, TradeAnswer
+from thefrontoffice.application.formats import ScoutAnswer, TradeAnswer, WireAnswer
 from thefrontoffice.domain.models import Action
 
 
@@ -116,6 +116,7 @@ def test_the_prompts_name_only_fields_their_answers_have() -> None:
     """A guided field the schema lacks is an instruction the model cannot follow."""
     assert named_fields(prompt.NBA_SCOUT_PROMPT) <= schema_fields(ScoutAnswer)
     assert named_fields(prompt.NBA_TRADE_PROMPT) <= schema_fields(TradeAnswer)
+    assert named_fields(prompt.NBA_WIRE_PROMPT) <= schema_fields(WireAnswer)
 
 
 def test_a_players_week_states_its_parts_and_their_product() -> None:
@@ -148,3 +149,22 @@ def test_a_schedule_not_final_names_the_days_still_to_be_scheduled() -> None:
 
     assert "4-11 Dec" in prompt.schedule(_week(), {"LAL": 3}, projected=False, unscheduled=pending)
     assert "Dec" not in prompt.schedule(_week(), {"LAL": 3}, projected=False)
+
+
+def test_a_wire_target_is_the_candidates_line_by_id_with_the_drop_he_streams_over() -> None:
+    context = prompt.wire(
+        week=_week(),
+        weights=None,
+        roster={"Mine One": "- Mine One (PF)\n"},
+        candidates={"p.1": "- Free One (C) [3G left]\n", "p.2": "- Free Two (PG)\n"},
+        names={"p.1": "Free One", "p.2": "Free Two"},
+        fits={"p.1": "streams over Mine One: +4.0 value this week (3G vs 1G)"},
+        constraints="TRANSACTION CONTEXT: 2 adds left",
+    )
+
+    assert context.targets["p.1"].startswith("- [id p.1] Free One (C) [3G left]")
+    assert "streams over Mine One" in context.targets["p.1"]
+    assert "fits" not in context.targets["p.2"]
+    assert all(line in context.prompt for line in context.targets.values())
+    assert "Mine One (PF)" in context.prompt
+    assert set(context.candidate_lines) == {"Free One", "Free Two"}

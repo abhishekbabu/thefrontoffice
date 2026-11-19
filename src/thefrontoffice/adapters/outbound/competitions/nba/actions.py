@@ -173,7 +173,7 @@ def streams(
     for pickup in wire:
         if len(items) == min(STREAMS, adds_left):
             break
-        drop = next((d for d in drops if _streams_over(pickup, d)), None)
+        drop = next((d for d in drops if streams_over(pickup, d)), None)
         if drop is None:
             continue
         drops.remove(drop)
@@ -199,7 +199,23 @@ def streams(
     return items
 
 
-def _streams_over(pickup: Reading, drop: Reading) -> bool:
+def fit(pickup: Reading, roster: Sequence[YahooPlayer], readings: Mapping[str, Reading], by_points: bool) -> str:
+    """'streams over Kel'el Ware: +12.3 value this week (4G vs 2G)'; empty where he clears no drop.
+
+    The weakest player the to-do list would let go (`droppable`) whom he beats
+    by `MARGIN` (`streams_over`): what a stream of him would cost, read the
+    way the list reads its own pickups.
+    """
+    drop = next((d for d in droppable(roster, readings, set()) if streams_over(pickup, d)), None)
+    if drop is None:
+        return ""
+    gain = _worth(pickup) - _worth(drop)
+    return (
+        f"streams over {drop.player.name}: +{gain:.1f} {_unit(by_points)} this week ({pickup.games}G vs {drop.games}G)"
+    )
+
+
+def streams_over(pickup: Reading, drop: Reading) -> bool:
     """Whether `pickup` beats `drop` this week, without giving up more than `MARGIN` of a game for it."""
     return beats(_worth(pickup), _worth(drop)) and _game(pickup) >= _game(drop) - abs(_game(drop)) * MARGIN
 

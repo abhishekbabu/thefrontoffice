@@ -215,6 +215,8 @@ def cell(reading: Reading, by_points: bool) -> str:
 
 
 GAMES_LEFT = "G left"
+BACK = "Back"
+"""When ESPN expects him back, while it reports him hurt."""
 WEEK = "Week"
 """What he adds this week: a game's value × minutes nudge × games left (`Reading.worth`)."""
 
@@ -237,6 +239,7 @@ def figures(reading: Reading, by_points: bool) -> list[Stat]:
         Stat(label="Min/g", value=f"{reading.minutes:.1f}" if reading.minutes is not None else NO_FIGURE),
         Stat(label=WEEK, value=f"{worth:.1f}" if worth is not None else NO_FIGURE),
         Stat(label=STATUS_COLUMN, value=status or NO_FIGURE, tone="warning" if ruled_out(status) else "neutral"),
+        Stat(label=BACK, value=approximately(reading.back) if reading.back else NO_FIGURE),
     ]
 
 

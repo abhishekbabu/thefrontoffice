@@ -1092,8 +1092,20 @@ class WeekAhead(BaseModel):
     )
     short_by: float = Field(description="How far the week falls below the usual one; negative where it is above.")
     short: bool = Field(description="Whether the week falls far enough below the usual to act on.")
+    light: list[str] = Field(
+        default_factory=list,
+        description="Regulars with few games that week, where a week counts games: 'Jalen Brunson (2 games)'.",
+    )
+    heavy: bool = Field(
+        default=False,
+        description="Whether most clubs play four or more games that week: a stream brings more of them.",
+    )
+    provisional: bool = Field(
+        default=False,
+        description="Whether the league has days of that week still to schedule, so its games are a floor.",
+    )
     fix: str = Field(default="", description="The pickup that closes most of the gap, and who to drop for him.")
-    gain: float = Field(default=0.0, description="What that pickup adds to the week's best lineup.")
+    gain: float = Field(default=0.0, description="What that pickup adds to the week, in its competition's measure.")
 
 
 class Outlook(BaseModel):
@@ -1102,6 +1114,13 @@ class Outlook(BaseModel):
     usual: float | None = Field(
         default=None,
         description="What your best lineup projects in a typical one of these weeks. None once none are left.",
+    )
+    measure: Literal["proj", "games"] = Field(
+        default="proj",
+        description=(
+            "What a week's `points` count: projected points, or the games the daily lineups can start "
+            "where a week is won on how many games are played."
+        ),
     )
     weeks: list[WeekAhead] = Field(default_factory=list)
 
