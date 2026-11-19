@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import type * as React from "react";
 import { AnimatePresence, m, useIsPresent } from "motion/react";
 import { backdrop, slideOver, type Swap } from "@/lib/motion";
@@ -36,14 +37,18 @@ export function SlideOver({
   className?: string;
   children: React.ReactNode;
 }) {
-  return (
+  // Portalled to the body: a page panel animates in with a transform, and a
+  // transformed ancestor makes `position: fixed` measure from it rather than
+  // the viewport, so the drawer would stop at the page's width cap.
+  return createPortal(
     <AnimatePresence>
       {open && (
         <Panel key="slide-over" label={label} onClose={onClose} className={className}>
           {children}
         </Panel>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 
@@ -114,8 +119,7 @@ function Panel({
 
   return (
     <div
-      // max-w-none: mounted beside a page, where the page's width cap would otherwise reach it.
-      className={cn("fixed inset-0 z-50 flex max-w-none justify-end", !present && "pointer-events-none")}
+      className={cn("fixed inset-0 z-50 flex justify-end", !present && "pointer-events-none")}
       onClick={present ? onClose : undefined}
       role="presentation"
     >

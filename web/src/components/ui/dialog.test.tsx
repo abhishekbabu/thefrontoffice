@@ -44,6 +44,15 @@ describe("a slide-over", () => {
     expect(dialog?.getAttribute("aria-label")).toBe("Josh Allen");
   });
 
+  it("mounts outside the page, so no page width cap or transform can reach it", async () => {
+    const { dialog } = await opened();
+    const { container } = await render(<div data-page="capped" />);
+
+    expect(dialog?.closest("[data-page]")).toBeNull();
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog?.parentElement?.parentElement).toBe(document.body);
+  });
+
   it("takes focus when it opens", async () => {
     const { dialog } = await opened();
     expect(dialog?.contains(document.activeElement)).toBe(true);
