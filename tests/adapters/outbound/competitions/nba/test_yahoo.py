@@ -623,17 +623,38 @@ def test_the_week_spans_the_season_the_league_carries() -> None:
     assert weeks is not None and (weeks.first, weeks.last) == (1, 21)
 
 
-def test_a_week_played_shows_its_categories_but_no_roster() -> None:
-    """Yahoo sets a basketball lineup day by day: today's roster did not play week 3."""
-    yahoo = FakeYahoo()
+def test_a_week_played_shows_both_rosters_as_they_ended_it_with_each_line() -> None:
+    """Today's roster did not play week 3: the one Yahoo kept for that week did, and his line is that week's."""
+    yahoo = FakeYahoo(roster=[make_player("Today Only", selected_position="PG")])
     yahoo.week_stats[3] = ({BLOCKS.yahoo_stat: "30"}, {BLOCKS.yahoo_stat: "21"})
+    yahoo.winners[3] = "t.1"
+    yahoo.played["t.1"] = [
+        make_player("Then Starter", selected_position="C", status="O", stats={BLOCKS.yahoo_stat: "9", "12": "143"}),
+        make_player("Then Hurt", selected_position="IL", stats={BLOCKS.yahoo_stat: "-", "12": "-"}),
+    ]
     week = nba_provider(yahoo).week_of("", 3)
 
-    assert yahoo.pairings == [3]
+    assert yahoo.played_weeks == [3]
     assert [line.lead for line in week.categories if line.lead] == ["mine"]
     assert week.actions is None
-    assert week.mine is not None and week.mine.lineup == []
+    assert week.mine is not None and week.opponent is not None
+    assert [(s.player, s.value, s.tone) for s in week.mine.lineup] == [("Then Starter", "", "neutral")]
+    assert "143 PTS" in week.mine.lineup[0].detail and "9 BLK" in week.mine.lineup[0].detail
+    assert [s.player for s in week.mine.reserve] == ["Then Hurt"]
+    assert "no games" in week.mine.reserve[0].detail
+    assert [s.player for s in week.opponent.lineup] == ["t.2 One"]
+    assert {s.label: s.value for s in week.headline}["Result"] == "Won"
     assert week.weeks is not None and (week.weeks.week, week.weeks.current) == (3, 5)
+
+
+@pytest.mark.parametrize(("winner", "said"), [("t.2", "Lost"), ("", "Tied")])
+def test_a_week_settled_says_how_it_ended(winner: str, said: str) -> None:
+    yahoo = FakeYahoo()
+    yahoo.winners[4] = winner
+
+    week = nba_provider(yahoo).week_of("", 4)
+
+    assert {s.label: s.value for s in week.headline}["Result"] == said
 
 
 def test_a_week_to_come_shows_both_rosters_as_they_stand() -> None:
@@ -644,6 +665,7 @@ def test_a_week_to_come_shows_both_rosters_as_they_stand() -> None:
     assert week.mine is not None and [s.player for s in week.mine.lineup] == ["Mine One"]
     assert week.mine.points == ""  # nothing recorded yet: no 0-0-0
     assert [stat.label for stat in week.headline] == []
+    assert yahoo.played_weeks == []
 
 
 def test_a_week_with_no_opponent_is_just_its_place_in_the_season() -> None:
@@ -828,9 +850,13 @@ def test_a_points_week_played_is_won_on_its_final_total() -> None:
     yahoo = FakeYahoo(weights=WEIGHTS)
     yahoo.week_points[3] = (("1185.50", "1192.10"), ("778.80", "917.22"))
 
+    yahoo.played["t.1"] = [make_player("Then Starter", selected_position="C", stats={"12": "87"}, points="140.80")]
+
     week = _points(yahoo).week_of("", 3)
 
     assert [(s.label, s.value, s.tone) for s in week.headline] == [("Final", "1185.50 – 778.80", "good")]
+    assert week.mine is not None
+    assert [(s.player, s.scored, s.scoring) for s in week.mine.lineup] == [("Then Starter", "140.8", "final")]
 
 
 def test_a_category_league_keeps_its_categories() -> None:

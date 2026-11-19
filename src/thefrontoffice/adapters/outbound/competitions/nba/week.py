@@ -20,6 +20,7 @@ from typing import Literal, Protocol
 
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day, span, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nba import views
+from thefrontoffice.adapters.outbound.competitions.nba.league import ended
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, PACIFIC, ruled_out, stranded
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNBASource
@@ -144,19 +145,20 @@ def side(
     roster: Sequence[YahooPlayer] | None,
     readings: Mapping[str, Reading] | None = None,
     by_points: bool = False,
+    scored: Sequence[StatCategory] = (),
 ) -> Side:
     """One team in the week, its roster parted as Yahoo slots it: the lineup, the bench, the injured list.
 
-    `roster` is None for a week already played: Yahoo sets a basketball lineup
-    day by day, so no one roster is the one that played the week, and today's
-    would claim one that did not. `readings` are each player's week by Yahoo's
-    key, which his row reads its games left and value a game from (`views.cell`).
+    `roster` is None where no roster is shown; in a week played, it is as the
+    week ended, each player carrying his line over it, read in the league's
+    categories `scored`. `readings` are each player's week by Yahoo's key, which
+    his row reads its games left and value a game from (`views.cell`).
     """
     rows = list(roster or [])
     found = readings or {}
 
     def spot(player: YahooPlayer) -> Spot:
-        return _spot(player, found.get(player.player_key), by_points)
+        return _spot(player, found.get(player.player_key), by_points, scored)
 
     return Side(
         name=name,
@@ -169,14 +171,29 @@ def side(
     )
 
 
-def _spot(player: YahooPlayer, reading: Reading | None = None, by_points: bool = False) -> Spot:
+def _spot(
+    player: YahooPlayer, reading: Reading | None = None, by_points: bool = False, scored: Sequence[StatCategory] = ()
+) -> Spot:
     """A player as his row reads: where he is slotted, his positions and club, and his week or his status.
 
     With a reading, the row's figure is his games left and what he gives a game,
     and any status moves beside his club; without one, the status is the figure.
+    In a week played, what he did in it instead of what he is listed as today:
+    his fantasy points as the figure, or his line in the categories beside his club.
     """
-    shown = views.cell(reading, by_points) if reading else ""
     about = f"{player.position} · {player.team}"
+    if player.stats or player.points:
+        points = _fantasy(player.points)
+        return Spot(
+            player_id=player.player_key,
+            slot=player.slot,
+            player=player.name,
+            detail=f"{about} · {line(player, scored)}" if scored else about,
+            value=points,
+            scoring="final" if points else None,
+            scored=points,
+        )
+    shown = views.cell(reading, by_points) if reading else ""
     return Spot(
         player_id=player.player_key,
         slot=player.slot,
@@ -185,6 +202,32 @@ def _spot(player: YahooPlayer, reading: Reading | None = None, by_points: bool =
         value=shown or player.status,
         tone="warning" if ruled_out(player.status) else "neutral",
     )
+
+
+def _fantasy(printed: str) -> str:
+    """Fantasy points as Yahoo prints them, without trailing zeros: '140.80' reads '140.8'."""
+    try:
+        return f"{float(printed):g}"
+    except ValueError:
+        return printed
+
+
+def line(player: YahooPlayer, scored: Sequence[StatCategory]) -> str:
+    """His week in the league's categories, in its order: '.456 FG% · 143 PTS'; 'no games' where he played none."""
+    parts = [f"{value} {c.name}" for c in scored if (value := player.stats.get(c.stat_id, "-")) not in ("", "-")]
+    return " · ".join(parts) or "no games"
+
+
+RESULT = {"won": "Won", "lost": "Lost", "drawn": "Tied"}
+
+
+def result(found: Pairing) -> list[Stat]:
+    """How a settled week ended for you, in a word; nothing before it is settled."""
+    outcome = ended(found)
+    if outcome is None:
+        return []
+    tone: Tone = "good" if outcome == "won" else "warning" if outcome == "lost" else "neutral"
+    return [Stat(label="Result", value=RESULT[outcome], tone=tone)]
 
 
 STATUS = {"in_game": "live", "complete": "final"}
@@ -225,7 +268,8 @@ def board(
     """One week's head-to-head, and where it sits in the season.
 
     `records` is each team's record by key. `roster` is yours and `theirs` the
-    opponent's where rosters are shown, and None where they are not.
+    opponent's where rosters are shown, and None where they are not: in a week
+    played, as it ended, each player with his line over it.
     `categories_scored` is the league's own list, None for a points league.
     `readings` are every shown player's week, by Yahoo's key.
     """
@@ -234,7 +278,7 @@ def board(
         # Won on the fantasy-point total, which Yahoo keeps: the categories behind it win nothing.
         when = stage(weeks.week, weeks.current)
         return Summary(
-            headline=points(found.mine, found.opponent, when),
+            headline=[*result(found), *points(found.mine, found.opponent, when)],
             mine=side(
                 found.mine.name, records.get(found.mine.team_key, ""), total(found.mine, when), roster, readings, True
             ),
@@ -252,9 +296,14 @@ def board(
     lines = categories(categories_scored, found.mine.stats, found.opponent.stats)
     tally = score(lines)
     return Summary(
-        headline=[headline(tally)] if tally else [],
+        headline=[*result(found), *([headline(tally)] if tally else [])],
         mine=side(
-            found.mine.name, records.get(found.mine.team_key, ""), written(tally) if tally else "", roster, readings
+            found.mine.name,
+            records.get(found.mine.team_key, ""),
+            written(tally) if tally else "",
+            roster,
+            readings,
+            scored=categories_scored,
         ),
         opponent=side(
             found.opponent.name,
@@ -262,6 +311,7 @@ def board(
             written((tally[1], tally[0], tally[2])) if tally else "",
             theirs,
             readings,
+            scored=categories_scored,
         ),
         categories=lines,
         window=window,

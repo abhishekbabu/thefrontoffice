@@ -27,6 +27,8 @@ SETTINGS_TTL = timedelta(hours=12)
 SCOREBOARD_TTL = timedelta(minutes=2)
 """The scoreboard drives the "which categories are close" analysis and goes
 stale within a game night."""
+PLAYED_TTL = timedelta(days=7)
+"""A week once played stands, bar the stat corrections Yahoo makes in the days after it."""
 
 FRONTEND = "https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/"
 """The read-only host Yahoo's own pages fetch from: it answers their session cookie, and nothing writes through it."""
@@ -98,6 +100,14 @@ def standings(league_key: str) -> YahooRead:
 
 def roster(team_key: str) -> YahooRead:
     return YahooRead(f"team/{team_key}/roster", ROSTER_TTL)
+
+
+def played_roster(team_key: str, week: int) -> YahooRead:
+    """A team's roster as it ended a week already played, each player with his line over that week.
+
+    Asked for only once the week is over, so no copy held was read while it was being played.
+    """
+    return YahooRead(f"team/{team_key}/roster;week={week}/players/stats;type=week;week={week}", PLAYED_TTL)
 
 
 def scoreboard(league_key: str, week: int) -> YahooRead:

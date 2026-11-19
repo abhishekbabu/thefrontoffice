@@ -199,6 +199,10 @@ class YahooSource(Protocol):
         """The players a team holds, each in the slot their manager has them in."""
         ...
 
+    def played_rosters(self, team_keys: list[str], week: int) -> dict[str, list[YahooPlayer]]:
+        """Each team's roster as it ended a week already played, each player with his line over it, by team key."""
+        ...
+
     def search_players(self, query: str) -> list[YahooPlayer]:
         """Players in the league whose name matches `query`."""
         ...
@@ -332,6 +336,18 @@ class YahooClient:
         raw = self._responses.raw(paths.roster(team_key))
         return readable("roster", lambda: player_list(parse(raw)["fantasy_content"]["team"]["roster"]))
 
+    def played_rosters(self, team_keys: list[str], week: int) -> dict[str, list[YahooPlayer]]:
+        """Each team's roster as it ended a week already played, each player with his line over it, by team key.
+
+        Slotted as the week's last day had them: a basketball lineup is set day
+        by day, and Yahoo keeps no one lineup for the week. Fetched together.
+        """
+        raws = self._responses.many({key: paths.played_roster(key, week) for key in team_keys})
+        return {
+            key: readable("roster", lambda raw=raw: player_list(parse(raw)["fantasy_content"]["team"]["roster"]))
+            for key, raw in raws.items()
+        }
+
     def get_matchup(self, team_key: str) -> Matchup | None:
         """This week's head-to-head for the team, or None when it has none this week.
 
@@ -436,6 +452,8 @@ def _player(data: Any) -> YahooPlayer:
         status=_text(data, "status"),
         injury_note=_text(data, "injury_note"),
         slot=_text(data, "selected_position", "position"),
+        stats={_text(s, "stat_id"): _text(s, "value") for s in _items(_node(data, "player_stats", "stats"), "stat")},
+        points=_text(data, "player_points", "total"),
     )
 
 

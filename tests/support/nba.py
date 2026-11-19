@@ -33,6 +33,8 @@ def make_player(
     status: str = "",
     selected_position: str = "",
     injury_note: str = "",
+    stats: dict[str, str] | None = None,
+    points: str = "",
 ) -> YahooPlayer:
     return YahooPlayer(
         player_key=key or name.lower().replace(" ", "-"),
@@ -42,6 +44,8 @@ def make_player(
         status=status,
         injury_note=injury_note,
         slot=selected_position,
+        stats=stats or {},
+        points=points,
     )
 
 
@@ -137,6 +141,11 @@ class FakeYahoo:
         self.wire_error: Exception | None = None
         self.weekly_lineups = False
         self.best_game = False
+        self.played: dict[str, list[YahooPlayer]] = {}
+        """Each team's roster as it ended a week played, by team key, each player with his line."""
+        self.played_weeks: list[int] = []
+        self.winners: dict[int, str] = {}
+        """The winning team's key in each week settled, empty for a tie; a week it does not name is unsettled."""
 
     def get_user_team(self) -> YahooTeam:
         return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
@@ -148,6 +157,14 @@ class FakeYahoo:
         if self.roster_error:
             raise self.roster_error
         return self.roster_players
+
+    def played_rosters(self, team_keys: list[str], week: int) -> dict[str, list[YahooPlayer]]:
+        """Each team as it ended `week`, from `played`; one player with no games for a team it does not name."""
+        self.played_weeks.append(week)
+        return {
+            key: self.played.get(key, [make_player(f"{key} One", selected_position="PF", stats={"12": "-"})])
+            for key in team_keys
+        }
 
     def teams(self) -> list[YahooTeam]:
         return self.league_teams
@@ -212,6 +229,9 @@ class FakeYahoo:
             opponent=MatchupSide(
                 team_key="t.2", name="Their Team", points=their_points, projected=their_projected, stats=theirs
             ),
+            status="postevent" if week in self.winners else "",
+            winner=self.winners.get(week, ""),
+            tied=self.winners.get(week) == "",
         )
 
     def fetch_top_by_stat(

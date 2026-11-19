@@ -258,3 +258,11 @@ def test_a_row_with_no_reading_shows_his_status() -> None:
     [row] = week.side("Mine", "", "", [player]).bench
 
     assert (row.value, row.detail) == ("GTD", "PF · LAL")
+
+
+def test_a_week_played_reads_in_the_leagues_categories_and_in_its_order() -> None:
+    scored = [StatCategory(FIELD_GOALS.yahoo_stat, "FG%"), StatCategory(POINTS.yahoo_stat, "PTS")]
+    player = make_player("A", stats={POINTS.yahoo_stat: "143", FIELD_GOALS.yahoo_stat: "0.456", "99": "7"})
+
+    assert week.line(player, scored) == "0.456 FG% · 143 PTS"
+    assert week.line(make_player("B", stats={POINTS.yahoo_stat: "-"}), scored) == "no games"

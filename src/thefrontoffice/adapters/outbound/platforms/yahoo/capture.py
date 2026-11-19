@@ -20,6 +20,7 @@ from xml.sax.saxutils import escape
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import (
+    find_matchup,
     leagues_in,
     parse,
     player_list,
@@ -207,7 +208,9 @@ class YahooCapture:
         The scoreboard of every week of the season, since any can be opened —
         less a week already finished and held, which will not change. A roster
         for every team the held team list names, which the first sync of a
-        league has to learn before it can ask.
+        league has to learn before it can ask. Both rosters of your matchup in
+        each week played, as it ended, once that week's scoreboard is held and
+        until they are.
         """
         key = league.league_key
         reads = [
@@ -224,6 +227,20 @@ class YahooCapture:
                 if week >= current or self._stored(read) is None:
                     reads.append(read)
         reads.extend(paths.roster(team.team_key) for team in self._teams(key))
+        reads.extend(read for read in self._played(league) if self._stored(read) is None)
+        return reads
+
+    def _played(self, league: YahooLeague) -> list[YahooRead]:
+        """Both rosters of your matchup in each week played whose scoreboard is held, as they ended it."""
+        mine = next((team.team_key for team in self._teams(league.league_key) if team.is_mine), None)
+        if mine is None:
+            return []
+        reads = []
+        for week in range(league.first_week, league.current_week or 0):
+            raw = self._stored(paths.scoreboard(league.league_key, week))
+            found = readable("scoreboard", lambda raw=raw: find_matchup(parse(raw), mine)) if raw else None
+            if found is not None:
+                reads.extend(paths.played_roster(side.team_key, week) for side in (found.mine, found.opponent))
         return reads
 
     def plan(self, leagues: Sequence[str]) -> CapturePlan:

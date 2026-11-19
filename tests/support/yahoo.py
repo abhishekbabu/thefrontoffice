@@ -133,12 +133,19 @@ def roster_xml(*players: str) -> str:
     return f"<fantasy_content><team><roster><players>{''.join(players)}</players></roster></team></fantasy_content>"
 
 
-def rostered_xml(name: str, slot: str, status: str = "", note: str = "") -> str:
+def rostered_xml(
+    name: str, slot: str, status: str = "", note: str = "", stats: dict[str, str] | None = None, points: str = ""
+) -> str:
+    """A player on a roster; `stats` and `points` are his line over a week played, as a week's roster carries them."""
+    line = "".join(f"<stat><stat_id>{k}</stat_id><value>{v}</value></stat>" for k, v in (stats or {}).items())
     return (
         f"<player><player_key>466.p.{len(name)}</player_key><name><full>{name}</full></name>"
         f"<display_position>PG,SG</display_position><editorial_team_abbr>BOS</editorial_team_abbr>"
         f"<status>{status}</status><injury_note>{note}</injury_note>"
-        f"<selected_position><position>{slot}</position></selected_position></player>"
+        f"<selected_position><position>{slot}</position></selected_position>"
+        + (f"<player_stats><stats>{line}</stats></player_stats>" if stats else "")
+        + (f"<player_points><total>{points}</total></player_points>" if points else "")
+        + "</player>"
     )
 
 
