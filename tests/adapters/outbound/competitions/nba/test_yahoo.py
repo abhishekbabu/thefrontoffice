@@ -1005,6 +1005,15 @@ def test_a_bench_player_with_more_this_week_starts_and_a_free_agent_streams_in()
     assert stream.drop == "spare"
 
 
+def test_the_week_reads_streams_from_the_top_of_the_wire_leaving_the_deep_list_to_the_free_agents_page() -> None:
+    """The summary is the page opened most: three pages of Yahoo's wire, not sixteen."""
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+
+    nba_provider(yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES), league=POINTS_LEAGUE).summary("")
+
+    assert yahoo.wire_depths == {Timeframe.SEASON: 50, Timeframe.LAST_WEEK: 25}
+
+
 def test_with_no_adds_left_nothing_streams() -> None:
     actions = _decisions(adds_used=3).summary("").actions
 

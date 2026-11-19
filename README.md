@@ -135,7 +135,8 @@ worth this week is that game's value (his recent run blended with Sleeper's
 projection, in fantasy points or across the scored categories, each counted in
 its spread over the players read) × games left (none while ruled out, or from
 ESPN's return date), ±10% for steady or swinging minutes. The to-do list adds
-a bench start over a starter whose slot he fits, and up to two streams within
+a bench start over a starter whose slot he fits, and up to two streams (from
+the wire's top 50 by season and top 25 by last week, three requests) within
 the adds left, each with a drop — never from IL or the better half of the
 roster — all at a fifth more worth. Lineups are daily; starts are weekly.
 The NBA matchup header carries a win chance too: what each side has on Yahoo's
@@ -267,7 +268,7 @@ works again at once.
   league list an hour. A copy past its time but within twice it is served at
   once and refreshed on one background thread, so a page never waits on Yahoo for
   something it read recently. Rivals' rosters and the deep wire are fetched only
-  by the pages that show them. With 5 leagues, opening every NBA page costs about
+  by the pages that show them; the week summary reads only the wire's first three pages. With 5 leagues, opening every NBA page costs about
   200 requests cold, nothing within the same couple of minutes, and about 400 a
   day for 5 visits.
 - **The cookie is a password.** It's stored in the local `.env` and grants read

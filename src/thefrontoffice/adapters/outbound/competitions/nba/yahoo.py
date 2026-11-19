@@ -85,6 +85,13 @@ Season rank alone buries a player who has just stepped into a role — he ranks
 low on a season mostly spent on the bench — so the last week's ranking is read
 beside it. Three hundred deep by season is past every regular rotation player."""
 
+STREAM_DEPTH = {Timeframe.SEASON: 50, Timeframe.LAST_WEEK: 25}
+"""How deep the week's to-do list reads the wire for streams: three pages, the top of each ranking.
+
+A stream worth an add sits near the top of one ranking or the other, and the
+summary is the page opened most, so it leaves the deep list to the Free agents
+page. Its first pages are the same reads, so whichever page asks first serves both."""
+
 
 @dataclass(frozen=True)
 class Decided:
@@ -241,7 +248,7 @@ class YahooNBAProvider:
         carried it) leaves the week's rows and starts standing, with nothing to stream.
         """
         try:
-            free_agents = _wire(yahoo)
+            free_agents = _wire(yahoo, STREAM_DEPTH)
         except FrontOfficeError as e:
             logger.warning(f"Weighing the week without the wire, which would not load: {e}")
             free_agents = []
@@ -737,13 +744,13 @@ class YahooNBAProvider:
         return lambda player: mates.splits(player, known)
 
 
-def _wire(yahoo: YahooSource) -> list[YahooPlayer]:
-    """The available players under every ranking in `WIRE_DEPTH`, taken from each in turn, each player once.
+def _wire(yahoo: YahooSource, depths: Mapping[Timeframe, int] = WIRE_DEPTH) -> list[YahooPlayer]:
+    """The available players under every ranking in `depths`, taken from each in turn, each player once.
 
     Interleaved rather than one list after the other, so the week's risers sit
     beside the season's best instead of below three hundred of them.
     """
-    rankings = list(yahoo.fetch_available(WIRE_DEPTH).values())
+    rankings = list(yahoo.fetch_available(depths).values())
     return once(p for row in zip_longest(*rankings) for p in row if p is not None)
 
 
