@@ -7,6 +7,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooAuthError,
     YahooCaptureMissingError,
     YahooLoginRequiredError,
+    YahooSessionExpiredError,
 )
 from thefrontoffice.domain.errors import AccessNotApprovedError, LoginRequiredError, UnknownCompetitionError
 
@@ -37,6 +38,13 @@ def test_a_missing_login_offers_the_login_of_the_platform_that_needs_it() -> Non
 
 def test_a_missing_browser_sync_sends_you_to_settings_where_the_bookmark_is() -> None:
     fix = remedies.remedy(YahooCaptureMissingError())
+
+    assert fix is not None and fix.action == "settings"
+
+
+def test_an_expired_session_sends_you_to_settings_where_the_cookie_is_pasted() -> None:
+    """Not to the OAuth login: a fresh cookie is the only fix."""
+    fix = remedies.remedy(YahooSessionExpiredError())
 
     assert fix is not None and fix.action == "settings"
 

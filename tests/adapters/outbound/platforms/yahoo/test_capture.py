@@ -33,6 +33,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.capture import (
 )
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
+from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague
 from thefrontoffice.domain.errors import InvalidRequestError
 from thefrontoffice.domain.models import Capture, CapturedResponse, CaptureReceipt
@@ -291,7 +292,12 @@ def test_ready_only_once_a_recent_sync_has_stored_something(tmp_path: Path) -> N
 
 def test_the_status_says_when_it_last_synced_and_which_leagues_it_holds(tmp_path: Path) -> None:
     capture = _capture(tmp_path, active=False)
-    assert capture.status().model_dump() == {"active": False, "synced_at": None, "leagues": []}
+    assert capture.status().model_dump() == {
+        "active": False,
+        "synced_at": None,
+        "leagues": [],
+        "session": None,
+    }
 
     before = datetime.now(UTC)
     _sweep(capture)
@@ -299,3 +305,14 @@ def test_the_status_says_when_it_last_synced_and_which_leagues_it_holds(tmp_path
 
     assert status.synced_at is not None and status.synced_at >= before
     assert status.leagues == ["Hoops"]
+
+
+def test_read_with_the_session_cookie_the_status_says_how_that_is_going(tmp_path: Path) -> None:
+    cache = JsonDiskCache(tmp_path / "cache")
+    state = SessionState(cache, "A1=cookie")
+    state.refused()
+    state.record()
+
+    status = YahooCapture(cache, games=(GAME,), active=False, session=state).status()
+
+    assert status.session is not None and status.session.expired

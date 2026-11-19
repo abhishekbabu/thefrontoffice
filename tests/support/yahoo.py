@@ -1,6 +1,11 @@
-"""Yahoo's transport, standing in: the SDK context both the login and the league reader ask through, and the XML it answers in."""
+"""Yahoo's transport, standing in: the SDK context both the login and the league reader ask through, the
+frontend host the session reader fetches from, and the XML they answer in."""
 
 import threading
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+
+from support.http import http_error
 
 
 class FakeContext:
@@ -44,6 +49,44 @@ class FakeContext:
     @property
     def queries(self) -> list[str]:
         return [query for query, _ in self.requests]
+
+
+@dataclass
+class FrontendResponse:
+    """What Yahoo's frontend host answers one request with."""
+
+    status_code: int = 200
+    text: str = "<fantasy_content/>"
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise http_error(self.status_code)
+
+
+@dataclass
+class FakeFrontend:
+    """Stands in for the `requests` session the session reader fetches Yahoo's frontend host through.
+
+    `answers` maps the end of a URL to its body; any other URL is a 404. Each
+    of `statuses`, by the same fragment, answers that status instead. Every
+    request is kept, headers and all.
+    """
+
+    answers: dict[str, str] = field(default_factory=dict)
+    statuses: dict[str, int] = field(default_factory=dict)
+    requests: list[tuple[str, dict[str, str], bool]] = field(default_factory=list)
+
+    def get(self, url: str, *, headers: Mapping[str, str], timeout: int, allow_redirects: bool) -> FrontendResponse:
+        self.requests.append((url, dict(headers), allow_redirects))
+        status = next((code for fragment, code in self.statuses.items() if url.endswith(fragment)), None)
+        if status is not None:
+            return FrontendResponse(status, "")
+        body = next((xml for fragment, xml in self.answers.items() if url.endswith(fragment)), None)
+        return FrontendResponse(200, body) if body is not None else FrontendResponse(404, "")
+
+    @property
+    def urls(self) -> list[str]:
+        return [url for url, _, _ in self.requests]
 
 
 # ── Yahoo's XML ─────────────────────────────────────────────────────────

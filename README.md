@@ -140,7 +140,8 @@ Add credentials in the app's **Settings** page or in `.env`. The page writes
   `fantasy.premierleague.com/entry/<THIS>/event/1`, as `FPL_ENTRY_ID`.
 - **NBA**: a [Yahoo developer app](https://developer.yahoo.com/apps/), then
   `just yahoo-login` (see [Yahoo access](#yahoo-access)). Until Yahoo approves
-  the app, use the [browser sync](#yahoo-browser-sync) instead.
+  the app, use your [session cookie](#yahoo-session-cookie) or the
+  [browser sync](#yahoo-browser-sync) instead.
 - **Analysis (optional)**: a free key from
   [Gemini](https://aistudio.google.com/app/apikey),
   [Groq](https://console.groq.com/keys) or
@@ -148,7 +149,8 @@ Add credentials in the app's **Settings** page or in `.env`. The page writes
   to the first that has quota.
 
 > [!WARNING]
-> `.env` and `.yahoofantasy` hold secrets. Never commit them. Don't copy
+> `.env` and `.yahoofantasy` hold secrets (`.env` may hold your Yahoo session
+> cookie). Never commit them. Don't copy
 > `.yahoofantasy` to a second machine either: two machines sharing one refresh
 > token sign each other out.
 
@@ -178,6 +180,40 @@ If every Fantasy endpoint answers **403**, one of these is missing:
 - **API Permissions → Fantasy Sports → Read** has to be saved *before* you
   authorize. A token keeps the grant it was issued with, so fix the permission,
   then run `just yahoo-login --force`.
+
+### Yahoo session cookie
+
+While Yahoo hasn't approved the app, the server can read Yahoo the way Yahoo's
+own pages do, with your signed-in session. No syncing: each page fetches what it
+needs.
+
+1. On a Yahoo Fantasy page in Dia or Chrome, open DevTools → **Network**.
+2. Click any request to `pub-api-ro.fantasysports.yahoo.com` → **Request
+   Headers** → `cookie` → copy the value.
+3. In **Settings**, paste it into `YAHOO_SESSION_COOKIE` and set `YAHOO_SOURCE`
+   to `session` (no client id or secret needed).
+
+**Settings → Yahoo sync** shows when the server last fetched with that cookie.
+When Yahoo refuses it (you signed out, or the session timed out), NBA pages say
+"Yahoo session expired" and send you to Settings; paste a fresh cookie and it
+works again at once.
+
+- **What it does.** The server GETs the same paths the browser sync plans from
+  `https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/` with your cookie and
+  browser-like headers, and caches each under the same key a sync would, with
+  the normal TTLs (scoreboard 2 minutes, rosters and teams an hour). Switching
+  between `session` and `browser` keeps what either fetched. Before trusting a
+  league list it checks your profile, since a signed-out session gets an empty
+  list rather than a refusal.
+- **The cookie is a password.** It's stored in the local `.env` and grants read
+  access to your Yahoo account until it expires. Settings and `just doctor`
+  only report whether it's set; it's never logged, never sent to Logfire
+  (`cookie` headers are redacted), and sent nowhere but Yahoo. The cache keeps a
+  16-character digest of it, to tell whether the cookie Yahoo refused is still
+  the one set. To revoke it, sign out of Yahoo.
+- **Temporary.** This uses Yahoo's undocumented, read-only frontend API and may
+  break without notice. Switch with `YAHOO_SOURCE`: `oauth` (Yahoo's API),
+  `browser` (the bookmark below) or `session`.
 
 ### Yahoo browser sync
 
@@ -221,7 +257,8 @@ Settings come from the environment or `.env`, and each is validated at startup.
 | --- | --- | --- |
 | `SLEEPER_USERNAME` | none | Enables NFL |
 | `FPL_ENTRY_ID` | none | Enables FPL |
-| `YAHOO_SOURCE` | `oauth` | `browser` reads Yahoo from the [browser sync](#yahoo-browser-sync) |
+| `YAHOO_SOURCE` | `oauth` | `session` reads Yahoo with your [session cookie](#yahoo-session-cookie); `browser` from the [browser sync](#yahoo-browser-sync) |
+| `YAHOO_SESSION_COOKIE` | none | Your Yahoo Cookie header, for `YAHOO_SOURCE=session`. Secret |
 | `YAHOO_CLIENT_ID` / `YAHOO_CLIENT_SECRET` | none | Enables NBA, read through OAuth |
 | `YAHOO_REDIRECT_URI` | `https://localhost:8080` | Must match the Yahoo app |
 | `YAHOO_MAX_WEEKLY_ADDS` | `3` | The NBA add budget for a league whose Yahoo settings name none |

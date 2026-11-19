@@ -52,8 +52,9 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeLogfire:
     # Set, then removed: monkeypatch records a variable only once it has touched
     # it, and `setup_telemetry` writes os.environ itself — so an absent variable
     # it sets would otherwise outlive the test.
-    monkeypatch.setenv(telemetry.CAPTURE_CONTENT_VAR, "")
-    monkeypatch.delenv(telemetry.CAPTURE_CONTENT_VAR)
+    for var in (telemetry.CAPTURE_CONTENT_VAR, telemetry.SANITIZE_HEADERS_VAR):
+        monkeypatch.setenv(var, "")
+        monkeypatch.delenv(var)
     return stub
 
 
@@ -94,6 +95,14 @@ def test_an_explicit_otel_variable_wins(fake: FakeLogfire, monkeypatch: pytest.M
     monkeypatch.setenv(telemetry.CAPTURE_CONTENT_VAR, "true")
     _telemetry().setup("front-office-cli")
     assert os.environ[telemetry.CAPTURE_CONTENT_VAR] == "true"
+
+
+def test_credential_headers_are_redacted_wherever_headers_are_captured(fake: FakeLogfire) -> None:
+    """The Yahoo session cookie rides in a request header; no span may carry it."""
+    import os
+
+    _telemetry().setup("api")
+    assert {"cookie", "authorization"} <= set(os.environ[telemetry.SANITIZE_HEADERS_VAR].split(","))
 
 
 # ── what gets instrumented ──────────────────────────────────────────────

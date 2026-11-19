@@ -1533,6 +1533,15 @@ class CaptureReceipt(BaseModel):
     errors: list[str] = Field(default_factory=list, description="Each response refused, with why.")
 
 
+class SessionStatus(BaseModel):
+    """How the server's last read of a platform with the person's session cookie went."""
+
+    fetched_at: datetime | None = None
+    """When it last read anything with the cookie now set; None before it has, or once it is refused."""
+
+    expired: bool = Field(default=False, description="Whether the platform refused the cookie now set.")
+
+
 class CaptureStatus(BaseModel):
     """How fresh the capture is, for the page that offers the sync."""
 
@@ -1541,3 +1550,5 @@ class CaptureStatus(BaseModel):
     """When a hand-over last stored anything; None before the first."""
 
     leagues: list[str] = Field(default_factory=list, description="The leagues captured this season, by name.")
+    session: SessionStatus | None = None
+    """How reading with the person's session cookie is going, where the app reads that way; None otherwise."""

@@ -882,6 +882,7 @@ export interface components {
              * @description The leagues captured this season, by name.
              */
             leagues: string[];
+            session: components["schemas"]["SessionStatus"] | null;
         };
         /**
          * CaptureStep
@@ -992,7 +993,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "error" | "platform_unavailable" | "capture_required" | "unknown_competition" | "not_configured" | "unsupported" | "subject_gone" | "item_decision" | "ai_unavailable" | "ai_key_invalid" | "ai_quota" | "ai_failed" | "login_required" | "access_not_approved" | "chat_expired" | "not_found" | "invalid_request" | "unknown_setting" | "settings_unwritable";
+            code: "error" | "platform_unavailable" | "capture_required" | "session_expired" | "unknown_competition" | "not_configured" | "unsupported" | "subject_gone" | "item_decision" | "ai_unavailable" | "ai_key_invalid" | "ai_quota" | "ai_failed" | "login_required" | "access_not_approved" | "chat_expired" | "not_found" | "invalid_request" | "unknown_setting" | "settings_unwritable";
             remedy: components["schemas"]["Remedy"] | null;
         };
         /**
@@ -1658,6 +1659,20 @@ export interface components {
              * @description Figures read straight from the platform, never written by the model.
              */
             headline: components["schemas"]["Stat"][];
+        };
+        /**
+         * SessionStatus
+         * @description How the server's last read of a platform with the person's session cookie went.
+         */
+        SessionStatus: {
+            /** Fetched At */
+            fetched_at: string | null;
+            /**
+             * Expired
+             * @description Whether the platform refused the cookie now set.
+             * @default false
+             */
+            expired: boolean;
         };
         /**
          * Setting

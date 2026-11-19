@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 CAPTURE_CONTENT_VAR = "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
 """The OpenTelemetry variable deciding whether prompt text is exported."""
 
+SANITIZE_HEADERS_VAR = "OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS"
+"""The OpenTelemetry variable naming headers redacted wherever HTTP headers are captured."""
+
+SECRET_HEADERS = "cookie,set-cookie,authorization"
+"""The headers carrying a credential — the Yahoo session cookie among them. The
+requests instrumentation captures no header unless told to; this keeps these
+redacted even then, beside Logfire's own scrubbing of anything named cookie."""
+
 
 class Telemetry:
     """Tracing for one process, configured from `config` on the first setup and left alone after.
@@ -50,6 +58,7 @@ class Telemetry:
 
         # Set before configure(): the genai instrumentation reads it at import.
         os.environ.setdefault(CAPTURE_CONTENT_VAR, str(config.logfire_capture_prompts).lower())
+        os.environ.setdefault(SANITIZE_HEADERS_VAR, SECRET_HEADERS)
 
         logfire.configure(
             service_name=service_name,

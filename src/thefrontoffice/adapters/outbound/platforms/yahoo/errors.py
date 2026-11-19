@@ -1,4 +1,4 @@
-"""Yahoo's failures, as the rest of the app sees them — including the two its login can fix, and the browser sync's."""
+"""Yahoo's failures, as the rest of the app sees them — including the two its login can fix, the browser sync's and the session cookie's."""
 
 from thefrontoffice.domain.errors import (
     AccessNotApprovedError,
@@ -6,6 +6,7 @@ from thefrontoffice.domain.errors import (
     LoginRequiredError,
     PlatformError,
     PlatformUnavailableError,
+    SessionExpiredError,
 )
 
 
@@ -61,3 +62,10 @@ class YahooCaptureMissingError(CaptureRequiredError, YahooAPIError):
 
     def __init__(self, detail: str = "") -> None:
         super().__init__(detail or "No Yahoo sync yet. Run the sync bookmark from Settings on a Yahoo Fantasy page.")
+
+
+class YahooSessionExpiredError(SessionExpiredError, YahooAPIError):
+    """Yahoo is read with the person's session cookie, and Yahoo refused it: signed out, or timed out."""
+
+    def __init__(self) -> None:
+        super().__init__("Yahoo session expired — paste a fresh cookie in Settings.")
