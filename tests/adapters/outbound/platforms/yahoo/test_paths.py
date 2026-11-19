@@ -8,6 +8,7 @@ def test_a_league_read_is_kept_under_the_path_yahoo_serves_it_at() -> None:
     read = paths.settings("466.l.1")
 
     assert (read.query, read.league, read.path) == ("settings", "466.l.1", "league/466.l.1/settings")
+    assert paths.standings("466.l.1").path == "league/466.l.1/standings"
 
 
 def test_a_read_naming_its_own_subject_is_its_own_path() -> None:
@@ -36,6 +37,7 @@ def test_only_a_lookup_by_key_or_name_is_one_no_plan_could_make() -> None:
     assert paths.by_keys("466.l.1", ["466.p.1"]).lookup
     assert paths.search("466.l.1", "James").lookup
     assert not paths.teams("466.l.1").lookup
+    assert not paths.standings("466.l.1").lookup
 
 
 def test_only_the_scoreboard_keeps_its_copy_when_a_refresh_fails() -> None:

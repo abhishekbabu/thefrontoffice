@@ -12,6 +12,7 @@ from datetime import date, datetime
 from thefrontoffice.adapters.outbound.competitions import paging, places
 from thefrontoffice.adapters.outbound.competitions.dates import span
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
+from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
@@ -53,7 +54,6 @@ from thefrontoffice.domain.models import (
     PlayerPage,
     PlayerQuery,
     Slate,
-    StandingRow,
     Stat,
     StatGroup,
     Summary,
@@ -298,19 +298,28 @@ class YahooNBAProvider:
         )
 
     def schedule(self, league_id: str) -> LeagueSchedule:
-        """The league table, which is the only one of these Yahoo gives cheaply.
+        """The table, and your head-to-head season from every week's scoreboard.
 
-        A category league has no season of fixtures to list in the football
-        sense, Yahoo publishes no real-world NBA schedule through this SDK, and
-        there is no league-wide transaction feed on it either. Three empty
-        sections is the honest answer, and each renders as nothing rather than
-        as an empty promise.
+        Between seasons there are no weeks to read, so only the table. Yahoo
+        publishes no real-world NBA schedule through this SDK and no league-wide
+        transaction feed, so those sections stay empty and render as nothing.
+
+        Raises:
+            YahooCaptureMissingError: read from a browser sync that has not carried the table.
         """
-        yahoo = self._yahoo(league_id)
-        standings = _standings(yahoo.teams())
-        mine = next((row for row in standings if row.is_mine), None)
-        headline = places.season(mine.record, mine.rank, len(standings)) if mine else []
-        return LeagueSchedule(headline=headline, standings=standings)
+        league = self._league(league_id)
+        yahoo = self._yahoo_for(league)
+        mine = yahoo.get_user_team().team_key
+        standings = nba_league.table(yahoo.standings(), mine)
+        row = next((row for row in standings if row.is_mine), None)
+        headline = places.season(row.record, row.rank, len(standings)) if row else []
+        season = []
+        current = league.current_week
+        if current:
+            weeks = list(range(league.first_week, league.last_week(current) + 1))
+            records = {row.team_id: row.record for row in standings}
+            season = nba_league.season(yahoo.season(mine, weeks), yahoo.rules(), current, records)
+        return LeagueSchedule(headline=headline, season=season, standings=standings)
 
     def build_context(self, league_id: str = "") -> CompetitionContext:
         """Gather league state and render the scouting prompt.
@@ -556,23 +565,6 @@ def _rank_free_agents(yahoo: YahooSource) -> tuple[list[YahooPlayer], dict[str, 
     players = [player_by_key[key] for key, _ in ranked]
     annotations = {key: f"[Top in: {', '.join(cats)}]" for key, cats in ranked}
     return players, annotations
-
-
-def _standings(teams: list[YahooTeam]) -> list[StandingRow]:
-    """The table in rank order; a team Yahoo sent without its standings has no row in it."""
-    rows = [
-        StandingRow(
-            rank=team.standing.rank,
-            name=team.name,
-            record=team.standing.record,
-            team_id=team.team_key,
-            points=team.standing.points_for,
-            is_mine=team.is_mine,
-        )
-        for team in teams
-        if team.standing is not None
-    ]
-    return sorted(rows, key=lambda row: row.rank)
 
 
 YAHOO_GAME = YahooGame(

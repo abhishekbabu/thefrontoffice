@@ -8,8 +8,7 @@ first user and imported from there, so a planner read its injury rules out of
 the to-do list's module.
 """
 
-import math
-
+from thefrontoffice.adapters.outbound.competitions import brackets
 from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueRules, Scoring
 
 SEASON_WEEKS = 18
@@ -28,17 +27,13 @@ def last_regular_week(rules: LeagueRules) -> int:
 def _round_lengths(rules: LeagueRules) -> list[int]:
     """Each playoff round's length in weeks, first round first; empty where the league sets no bracket.
 
-    A bracket of `playoff_teams` takes ceil(log2(teams)) rounds from `playoff_week_start`,
-    each one week, or two where `playoff_round_type` says so (every round, or the final alone).
+    One week a round, or two where `playoff_round_type` says so (every round, or the final alone).
     """
-    start, teams = rules.playoff_week_start, rules.playoff_teams
-    if not start or not teams:
-        return []
-    rounds = math.ceil(math.log2(teams))
-    lengths = [2 if rules.playoff_round_type == TWO_WEEK_ROUNDS else 1] * rounds
-    if rules.playoff_round_type == TWO_WEEK_FINAL and lengths:
-        lengths[-1] = 2
-    return lengths
+    return brackets.lengths(
+        rules.playoff_teams,
+        two_week_rounds=rules.playoff_round_type == TWO_WEEK_ROUNDS,
+        two_week_final=rules.playoff_round_type == TWO_WEEK_FINAL,
+    )
 
 
 def season_end(rules: LeagueRules) -> int:
@@ -49,10 +44,6 @@ def season_end(rules: LeagueRules) -> int:
     if not rules.playoff_week_start or not rules.playoff_teams:
         return SEASON_WEEKS
     return min(SEASON_WEEKS, rules.playoff_week_start + sum(_round_lengths(rules)) - 1)
-
-
-ROUND_NAMES = ("Final", "Semifinals", "Quarterfinals")
-"""The bracket's last rounds, counted back from the final; any earlier is "Round N"."""
 
 
 def playoff_round(rules: LeagueRules, week: int) -> str:
@@ -66,14 +57,7 @@ def playoff_round(rules: LeagueRules, week: int) -> str:
         return ""
     if not rules.playoff_teams:
         return "Playoffs"
-    lengths, first = _round_lengths(rules), start
-    for index, length in enumerate(lengths):
-        if week < first + length:
-            from_end = len(lengths) - 1 - index
-            name = ROUND_NAMES[from_end] if from_end < len(ROUND_NAMES) else f"Round {index + 1}"
-            return f"{name}, week {week - first + 1} of {length}" if length > 1 else name
-        first += length
-    return ""  # past the final: no week the league plays
+    return brackets.round_name(_round_lengths(rules), start, week)
 
 
 RULED_OUT = {

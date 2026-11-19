@@ -206,6 +206,7 @@ class YahooCapture:
         reads = [
             paths.settings(key),
             paths.teams(key),
+            paths.standings(key),
             paths.available(key, game.available),
             *paths.leaders(key, game.leaders, game.per_stat).values(),
         ]

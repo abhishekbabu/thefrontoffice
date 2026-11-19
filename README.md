@@ -93,7 +93,9 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Schedule and Fixtures**: your season week by week, a future opponent with
   their record now. A week's real games grouped by kickoff, each naming your
   players and your opponent's in it, with the week's byes (FPL: blanks) on one
-  line; a game opens to them.
+  line; a game opens to them. NBA builds your season from each week's Yahoo
+  scoreboard: categories won-lost-tied, or points in a points league, with the
+  playoff rounds named from the league's bracket.
 - **League and Activity**: the table with PF, PA, FAAB left and waiver order,
   and every recent move in full.
 - **AI, if you add a key**: a verdict on each to-do item and free agent, and an
@@ -191,7 +193,9 @@ reads only the sync in this mode and never calls Yahoo, and a sync older than
   `pub-api-ro.fantasysports.yahoo.com` (the read-only host Yahoo's frontend
   uses) with your Yahoo session, and posts the response bodies to
   `/api/yahoo/capture`. It repeats until nothing new is planned: league lists,
-  then each league's settings, teams, scoreboards and free agents, then rosters.
+  then each league's settings, teams, standings, scoreboards and free agents, then
+  rosters. A sync from before a page's data was planned (the NBA table, say)
+  shows "run the sync again" on that page rather than an empty one.
 - **What leaves the browser.** Only response bodies. Your Yahoo cookies stay in
   the browser and are attached to Yahoo's requests alone; the app accepts no
   other field and stores nothing but the bodies.

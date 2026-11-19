@@ -109,6 +109,10 @@ class TeamStanding:
     points_for: str
     """As Yahoo prints it; empty where it gives none."""
 
+    points_against: str = ""
+    playoff_seed: int = 0
+    """Zero until the regular season has seeded the bracket."""
+
     @property
     def record(self) -> str:
         return record(self.wins, self.losses, self.ties)
@@ -128,6 +132,12 @@ class YahooTeam:
 
     standing: TeamStanding | None = None
     """None where Yahoo sent no standings with the team."""
+
+    waiver_priority: int = 0
+    """Place in the waiver order; zero where Yahoo sent none."""
+
+    faab_balance: str = ""
+    """Waiver budget left, as Yahoo prints it; empty in a league without FAAB."""
 
 
 @dataclass(frozen=True)
@@ -150,6 +160,42 @@ class Pairing:
     end: date
     mine: MatchupSide
     opponent: MatchupSide
+    status: str = ""
+    """'preevent', 'midevent' or 'postevent': not started, being played, or settled."""
+
+    winner: str = ""
+    """The winning team's key once settled; empty before, and for a tie."""
+
+    tied: bool = False
+    tied_categories: int = 0
+    """Categories neither side won."""
+
+    playoffs: bool = False
+    consolation: bool = False
+    """A playoff-week game for a team out of the championship bracket."""
+
+    @property
+    def settled(self) -> bool:
+        return self.status == "postevent"
+
+
+@dataclass(frozen=True)
+class YahooRules:
+    """What a league's settings say about how its season is scored and how it ends."""
+
+    scoring_type: str = ""
+    """'head' or 'headone' for categories, 'headpoint' for points, 'roto'."""
+
+    playoff_start_week: int = 0
+    """Zero for a league with no playoffs."""
+
+    playoff_teams: int = 0
+    multiweek_final: bool = False
+
+    @property
+    def points(self) -> bool:
+        """Whether a matchup is won on fantasy points rather than on categories."""
+        return self.scoring_type == "headpoint"
 
 
 @dataclass(frozen=True)

@@ -35,6 +35,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Timeframe,
     YahooLeague,
     YahooPlayer,
+    YahooRules,
     YahooTeam,
 )
 from thefrontoffice.domain.errors import FrontOfficeError, TeamNotFoundError
@@ -210,6 +211,18 @@ class YahooSource(Protocol):
         """Every team in the league."""
         ...
 
+    def standings(self) -> list[YahooTeam]:
+        """Every team in the league, each with its place in the table."""
+        ...
+
+    def rules(self) -> YahooRules:
+        """How the league scores a matchup, and where its playoffs start."""
+        ...
+
+    def season(self, team_key: str, weeks: list[int]) -> dict[int, Pairing | None]:
+        """The team's head-to-head in each of `weeks`, None where it plays nobody."""
+        ...
+
     def stat_categories(self) -> list[StatCategory]:
         """The categories the league scores, in the order its settings list them."""
         ...
@@ -261,6 +274,32 @@ class YahooClient:
         """Every team in the league."""
         raw = self._responses.raw(paths.teams(self.league.league_key))
         return readable("team list", lambda: team_list(parse(raw)["fantasy_content"]["league"]))
+
+    def standings(self) -> list[YahooTeam]:
+        """Every team in the league, each with its place in the table: the teams list carries none.
+
+        Raises:
+            YahooCaptureMissingError: read from a browser sync that has not carried the table yet.
+            YahooAPIError: Yahoo could not be reached, or answered unreadably.
+        """
+        raw = self._responses.raw(paths.standings(self.league.league_key))
+        return readable("standings", lambda: team_list(parse(raw)["fantasy_content"]["league"]["standings"]))
+
+    def rules(self) -> YahooRules:
+        """How the league scores a matchup, and where its playoffs start, from its settings."""
+        raw = self._responses.raw(paths.settings(self.league.league_key))
+        return readable("league settings", lambda: rules_of(parse(raw)["fantasy_content"]["league"]))
+
+    def season(self, team_key: str, weeks: list[int]) -> dict[int, Pairing | None]:
+        """The team's head-to-head in each of `weeks`, None where it plays nobody.
+
+        Every week's scoreboard in one batch, fetched concurrently where they are fetched at all.
+        """
+        raws = self._responses.many({str(week): paths.scoreboard(self.league.league_key, week) for week in weeks})
+        return {
+            int(week): readable("scoreboard", lambda raw=raw: find_matchup(parse(raw), team_key))
+            for week, raw in raws.items()
+        }
 
     def stat_categories(self) -> list[StatCategory]:
         """The categories the league scores, in the order its settings list them.
@@ -401,6 +440,8 @@ def _team(data: Any) -> YahooTeam:
         is_mine=bool(_value(data, "is_owned_by_current_login")),
         adds_used=_number(data, "roster_adds", "value"),
         standing=_standing(standings) if isinstance(standings, dict) else None,
+        waiver_priority=_number(data, "waiver_priority"),
+        faab_balance=_text(data, "faab_balance"),
     )
 
 
@@ -411,6 +452,8 @@ def _standing(data: Any) -> TeamStanding:
         losses=_number(data, "outcome_totals", "losses"),
         ties=_number(data, "outcome_totals", "ties"),
         points_for=_text(data, "points_for"),
+        points_against=_text(data, "points_against"),
+        playoff_seed=_number(data, "playoff_seed"),
     )
 
 
@@ -422,8 +465,33 @@ def find_matchup(scoreboard: Any, team_key: str) -> Pairing | None:
         keys = [side.team_key for side in sides]
         if team_key in keys and len(sides) == 2:
             mine, opponent = sides if keys[0] == team_key else sides[::-1]
-            return Pairing(_day(_value(matchup, "week_start")), _day(_value(matchup, "week_end")), mine, opponent)
+            return Pairing(
+                _day(_value(matchup, "week_start")),
+                _day(_value(matchup, "week_end")),
+                mine,
+                opponent,
+                status=_text(matchup, "status"),
+                winner=_text(matchup, "winner_team_key"),
+                tied=_text(matchup, "is_tied") == "1",
+                tied_categories=sum(
+                    _text(won, "is_tied") == "1" for won in _items(_node(matchup, "stat_winners"), "stat_winner")
+                ),
+                playoffs=_text(matchup, "is_playoffs") == "1",
+                consolation=_text(matchup, "is_consolation") == "1",
+            )
     return None
+
+
+def rules_of(league: Any) -> YahooRules:
+    """How a league's `settings` score a matchup and end its season; a league with playoffs off has no bracket."""
+    settings = _node(league, "settings")
+    playoffs = _text(settings, "uses_playoff") == "1"
+    return YahooRules(
+        scoring_type=_text(settings, "scoring_type"),
+        playoff_start_week=_number(settings, "playoff_start_week") if playoffs else 0,
+        playoff_teams=_number(settings, "num_playoff_teams") if playoffs else 0,
+        multiweek_final=_text(settings, "has_multiweek_championship") == "1",
+    )
 
 
 def category_list(league: Any) -> list[StatCategory]:
