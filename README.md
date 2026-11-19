@@ -151,7 +151,13 @@ and Rosters show every category the league scores over the last 30 days plus
 its pool: both rosters of this week's matchup and the top of the wire; FG% and FT%
 count by impact, the rate's distance from the pool's times attempts, so a 3-for-4
 big doesn't outrank a 9-for-18 scorer), best first;
-in a points league FPTS a game and PTS/REB/AST, most FPTS first. Lineup rows show
+in a points league FPTS a game and PTS/REB/AST, most FPTS first. Free agents
+instead open on what a pickup is worth this week: a game's value (or fantasy
+points) times the games he can play — none while ruled out, those from ESPN's
+return day once he is back, and a game-time decision's (GTD, DTD, Q) next game
+at 0.8, the rate NFL's simulation gives a questionable player. A player out for
+the week stays on the list, status and return shown, below everyone who plays;
+a column click still sorts by that column. Lineup rows show
 games left and Yahoo's PTS/REB/AST (FPTS in a points league); a week played shows
 each category as a column. Position filters are PG/SG/SF/PF/C, plus G and F where
 the league's lineup has them, each keeping anybody eligible there. The drawer has

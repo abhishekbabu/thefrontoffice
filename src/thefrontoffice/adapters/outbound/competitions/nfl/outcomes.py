@@ -18,6 +18,7 @@ half a game to what he has.
 
 from dataclasses import dataclass
 
+from thefrontoffice.adapters.outbound.competitions.availability import DOUBTFUL, QUESTIONABLE
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.model import COMPLETE, Projection, kicked_off
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT
@@ -74,9 +75,9 @@ UNDER_WAY = 0.5
 PASSING_GAME = frozenset({"QB", "WR", "TE"})
 """Positions whose weeks rise and fall with their own team's passing game."""
 
-# The chance a player plays, by designation. Rough base rates, and the slot a
-# news reading of his situation would replace.
-PLAYS = {**dict.fromkeys(RULED_OUT, 0.0), "DOUBTFUL": 0.25, "QUESTIONABLE": 0.8}
+# The chance a player plays, by designation (`competitions.availability`), and the
+# slot a news reading of his situation would replace.
+PLAYS = {**dict.fromkeys(RULED_OUT, 0.0), "DOUBTFUL": DOUBTFUL, "QUESTIONABLE": QUESTIONABLE}
 
 
 @dataclass(frozen=True)

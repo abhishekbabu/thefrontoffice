@@ -37,7 +37,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     ruled_out,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Valuer
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Valuer, game_value
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, PlayerMeta, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
@@ -182,6 +182,26 @@ def cards(
 def ranked(rows: list[PlayerCard], by_points: bool) -> list[PlayerCard]:
     """Best a game first: by fantasy points in a points league, by `VALUE` in a category one; blanks last."""
     return PlayerOrder(sort=FANTASY_POINTS if by_points else VALUE).ordered(rows)
+
+
+def by_worth(rows: list[PlayerCard], readings: Mapping[str, Reading]) -> list[PlayerCard]:
+    """The wire worth picking up now first: a game's value times the games he can play this week (`Reading.available`).
+
+    By a game's value alone a player ruled out for a fortnight led the list,
+    though he adds nothing this week; he stays on it, his status and return
+    beside him, below everyone who can play. Where worths tie — a week with no
+    games left — those who can play still lead, then a game's value. A row with
+    no reading keeps its place in `rows` after the rest.
+    """
+
+    def key(row: PlayerCard) -> tuple[bool, float, bool, float]:
+        reading = readings.get(row.player_id)
+        worth = reading.available if reading else None
+        if reading is None or worth is None:
+            return True, 0.0, False, 0.0
+        return False, -worth, row.ruled_out, -(game_value(reading) or 0.0)
+
+    return sorted(rows, key=key)
 
 
 def rate(category: StatCategory) -> bool:

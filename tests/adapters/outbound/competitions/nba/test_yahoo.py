@@ -1029,6 +1029,23 @@ def test_a_hurt_player_counts_only_the_games_from_his_return() -> None:
     assert row(FakeESPN()).startswith("0G")  # out, and nobody says when he is back
 
 
+@pytest.mark.parametrize("league", [yahoo_league(), POINTS_LEAGUE], ids=["categories", "points"])
+def test_the_wire_leads_with_who_can_play_this_week_not_the_best_a_game_ruled_out(league: YahooLeague) -> None:
+    """Out until after the week, Curry's game is the wire's best and adds nothing to it."""
+    week = (date(2026, 11, 16), date(2026, 11, 22))
+    available = make_player("Available", "SF", "NYK", key="available")
+    days = [date(2026, 11, 18), date(2026, 11, 20), date(2026, 11, 22)]
+    form = FakeNBA(stats={"Stephen Curry": _line(30), "Available": _line(12)}, dated={"GSW": days, "NYK": days})
+    espn = FakeESPN(injuries=[_espn_report("Stephen Curry", "GS", back=date(2026, 11, 27))])
+    weights = WEIGHTS if league is POINTS_LEAGUE else None
+    yahoo = FakeYahoo(roster=[STARTER], available=[CURRY, available], weights=weights, matchup_dates=week)
+
+    agents = nba_provider(yahoo, nba=form, league=league, espn=espn).free_agents("", PlayerQuery()).players
+
+    assert [card.player_id for card in agents] == ["available", "curry"]
+    assert (agents[1].columns["Status"], agents[1].notes["Status"]) == ("O", "back ~27 Nov")
+
+
 def test_a_week_to_come_reads_each_players_games_in_it() -> None:
     week = _decisions(league=replace(POINTS_LEAGUE, end_week=21)).week_of("", 6)
 

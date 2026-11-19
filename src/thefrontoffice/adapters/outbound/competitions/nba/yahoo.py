@@ -925,12 +925,13 @@ class YahooNBAProvider:
         return self._cards(yahoo, league, yahoo.roster(team_id), self._roster_averages(yahoo, team_id))
 
     def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
-        """The best players nobody in the league holds.
+        """The best players nobody in the league holds, the most worth picking up this week first (`views.by_worth`).
 
-        Ordered by Yahoo's own ranks rather than by a category — season and
-        last week in turn (`_wire`): a wire browsed one stat at a time is the
-        scout's job, and this is the list you read when you just want to see
-        who is out there.
+        Drawn from Yahoo's own ranks rather than a category's — season and last
+        week in turn (`_wire`): a wire browsed one stat at a time is the scout's
+        job, and this is the list you read when you just want to see who is out
+        there. Where his week cannot be read, a player keeps Yahoo's order after
+        those whose can.
         """
         paging.view(query, ())  # no other lists: one asked for is refused, not ignored
         league = self._league(league_id)
@@ -965,24 +966,30 @@ class YahooNBAProvider:
     ) -> list[PlayerCard]:
         """One table shape for every list of players this sport shows (`views.cards`); the wire's with teammate splits.
 
-        A category league's carry each player's value a game (`_valued`), which orders them.
+        A category league's carry each player's value a game (`_valued`), which orders them. The wire is
+        ordered by what he is worth this week instead (`views.by_worth`), in either kind of league.
         """
         reports = self._reports()
         weights = self._weights(league, yahoo)
         splits = self._splits(players, weights, reports) if wire else None
         scored = [] if weights else yahoo.settings().categories
-        readings = {} if weights else self._valued(yahoo, league, players)
-        return views.cards(
+        readings = self._valued(yahoo, league, players, weights) if wire or not weights else {}
+        rows = views.cards(
             players, recent, self._returns(players, reports), weights is not None, splits, scored, readings
         )
+        return views.by_worth(rows, readings) if wire else rows
 
-    def _valued(self, yahoo: YahooSource, league: YahooLeague, players: list[YahooPlayer]) -> dict[str, Reading]:
-        """Each of `players` read on the week's own scale: the pool the to-do list weighs, so a value reads alike.
+    def _valued(
+        self, yahoo: YahooSource, league: YahooLeague, players: list[YahooPlayer], weights: Mapping[str, float] | None
+    ) -> dict[str, Reading]:
+        """Each of `players`' week, a category league's read on the week's own scale: the pool the to-do list weighs,
+        so a value reads alike.
 
-        The pool is both rosters of this week's matchup and the top of the wire
-        (`_decide`); `players` are read on it without joining it. Enrichment: none
-        between seasons, in a week without a matchup, or where a read fails —
-        the table stands, its values dashed.
+        That pool is both rosters of this week's matchup and the top of the wire
+        (`_decide`); `players` are read on it without joining it. A points league's
+        fantasy points need no scale, so `players` are their own pool. Enrichment:
+        none between seasons, in a week without a matchup, or where a read fails —
+        the table stands, its values dashed and in its own order.
         """
         week = league.current_week
         if not week:
@@ -992,6 +999,8 @@ class YahooNBAProvider:
             found = yahoo.pairing(team.team_key, week)
             if found is None:
                 return {}
+            if weights:
+                return self._readings(yahoo, weights, players, found.start, found.end)
             pool = [*yahoo.roster(team.team_key), *yahoo.roster(found.opponent.team_key), *_wire(yahoo, STREAM_DEPTH)]
             return self._readings(yahoo, None, pool, found.start, found.end, players)
         except FrontOfficeError as e:

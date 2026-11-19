@@ -13,6 +13,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
+from thefrontoffice.adapters.outbound.competitions.availability import QUESTIONABLE
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import INJURED, YahooPlayer
 from thefrontoffice.domain.models import Better
 
@@ -173,6 +174,16 @@ those players mostly play, and flagging them as out buries the ones who will not
 def ruled_out(status: str) -> bool:
     """Whether a Yahoo status means he will not play."""
     return status.upper() in RULED_OUT
+
+
+GAME_TIME = frozenset({"GTD", "DTD", "Q"})
+"""Yahoo's statuses for a player who may yet play: a game-time decision, day-to-day, questionable."""
+
+
+def chance(status: str) -> float:
+    """The chance he plays his next game: discounted for a game-time decision (`availability.QUESTIONABLE`), else
+    whole. A ruling is not a chance: his games already start from his return."""
+    return QUESTIONABLE if status.upper() in GAME_TIME else 1.0
 
 
 Line = dict[str, float]

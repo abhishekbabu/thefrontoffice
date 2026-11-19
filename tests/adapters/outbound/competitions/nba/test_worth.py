@@ -1,5 +1,7 @@
 """Tests for a basketball player's worth this week: `nba/worth.py`."""
 
+from dataclasses import replace
+
 import pytest
 from support.nba import make_player
 
@@ -152,6 +154,14 @@ def test_a_week_with_either_part_unknown_is_unknown(per: float | None, games: in
     reading = Reading(player=make_player("A"), line=None, per_game=per, games=games)
 
     assert reading.worth is None
+
+
+def test_what_picking_him_up_is_worth_discounts_a_game_time_decisions_next_game() -> None:
+    doubtful = Reading(player=make_player("A", status="GTD"), line={}, per_game=10.0, games=3)
+
+    assert doubtful.available == pytest.approx(28.0)
+    assert replace(doubtful, player=make_player("A")).available == pytest.approx(30.0)
+    assert replace(doubtful, games=None).available is None
 
 
 def test_a_reading_carries_his_line_value_and_minutes() -> None:
