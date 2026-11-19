@@ -67,13 +67,15 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
    * "not a number" can give one 145px and the other 65. So the first paint is
    * measured — with the browser doing what it is good at — and every render
    * after it uses that answer. Stored as percentages, so the table still
-   * follows its container without being measured again.
+   * follows its container without being measured again — and with the width
+   * they summed to as its floor, so on a phone the table scrolls inside its
+   * card rather than squeezing every column to a letter.
    *
    * Re-measured only when the columns themselves change, which is a different
    * competition or a different league, and never on a sort.
    */
   const key = columns.join("|");
-  const [frozen, setFrozen] = useState<{ key: string; widths: string[] } | null>(null);
+  const [frozen, setFrozen] = useState<{ key: string; widths: string[]; total: number } | null>(null);
   const head = useRef<HTMLTableRowElement>(null);
   const widths = frozen?.key === key ? frozen.widths : null;
 
@@ -83,7 +85,7 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
     const sizes = cells.map((cell) => cell.getBoundingClientRect().width);
     const total = sizes.reduce((sum, size) => sum + size, 0);
     if (!total) return;
-    setFrozen({ key, widths: sizes.map((size) => `${((size / total) * 100).toFixed(3)}%`) });
+    setFrozen({ key, widths: sizes.map((size) => `${((size / total) * 100).toFixed(3)}%`), total: Math.ceil(total) });
   }, [key, widths]);
 
   /**
@@ -108,7 +110,7 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
   return (
     // Fixed only once the widths are known: until then the browser sizes the
     // columns from the content, which is the measurement being taken.
-    <Table className={cn(widths && "table-fixed")}>
+    <Table className={cn(widths && "table-fixed")} style={widths ? { minWidth: frozen?.total } : undefined}>
       {widths && (
         <colgroup>
           {columns.map((column, i) => (

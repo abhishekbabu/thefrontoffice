@@ -133,7 +133,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
           .filter(Boolean)
           .join(" · ")}
       >
-        {onWeek && <WeekStepper range={onWeek} onStep={step} />}
+        {onWeek && <WeekStepper range={onWeek} onStep={step} word={competition.week_word} />}
       </LeagueHeader>
       {/* Only what no card below says: the score once there is one, the chances. */}
       <StatStrip stats={shown.data?.headline ?? []} />
@@ -253,7 +253,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
 
           {!shown.data.opponent && (
             <Badge variant="muted" appearance="label">
-              No opponent this week
+              No opponent this {competition.week_word ?? "week"}
             </Badge>
           )}
         </WeekPane>

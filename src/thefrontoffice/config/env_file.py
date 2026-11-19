@@ -20,7 +20,17 @@ from typing import Literal, get_args, get_origin
 
 from pydantic import BaseModel
 
-from thefrontoffice.config.settings import GROUPS, AppSettings, Section, env_var, group, is_secret, value_type
+from thefrontoffice.config.settings import (
+    GROUPS,
+    AppSettings,
+    Section,
+    env_var,
+    group,
+    hint,
+    is_secret,
+    mode,
+    value_type,
+)
 from thefrontoffice.domain.errors import SettingsUnwritableError, UnknownSettingError
 
 logger = logging.getLogger(__name__)
@@ -99,6 +109,12 @@ class Setting(BaseModel):
     An empty field with a default behind it is not unset, and showing it as
     such invites someone to type the value it already has."""
 
+    mode: str = ""
+    """The value of its group's `switch` it is needed under; empty where it is needed whatever that reads."""
+
+    hint: str = ""
+    """What it does, where its name alone would mislead."""
+
 
 class SettingsGroup(BaseModel):
     """The settings that unlock one thing, and what to know before setting them."""
@@ -110,6 +126,13 @@ class SettingsGroup(BaseModel):
 
     platform: str = ""
     """The platform it reads, where it reads one, so the page can set that platform's status beside it."""
+
+    switch: str = ""
+    """The key choosing how the platform is read, where there is a choice: only the settings
+    whose `mode` it reads, and its note in `modes`, are about the way chosen."""
+
+    modes: dict[str, str] = {}
+    """What to know about each value of `switch`, for whichever is chosen."""
 
     settings: list[Setting]
 
@@ -243,6 +266,8 @@ class EnvFile:
             kind=kind,
             choices=choices,
             shadowed=is_shadowed(key),
+            mode=mode(field),
+            hint=hint(field),
         )
 
     def groups(self) -> list[SettingsGroup]:
@@ -255,6 +280,8 @@ class EnvFile:
                 note=each.note,
                 section=each.section,
                 platform=each.platform,
+                switch=env_var(each.switch) if each.switch else "",
+                modes=dict(each.modes),
                 settings=[setting for setting in described if group(setting.field) == each],
             )
             for each in GROUPS

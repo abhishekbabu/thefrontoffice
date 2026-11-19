@@ -151,6 +151,13 @@ def test_the_premier_league_entry_builds_its_provider(tmp_path: Path) -> None:
     assert isinstance(fpl.open(), fpl.provider())
 
 
+def test_fpl_calls_its_weeks_gameweeks_and_the_others_weeks(tmp_path: Path) -> None:
+    registry = _registry(tmp_path)
+
+    assert registry.find("premier-league").week_word == "gameweek"
+    assert registry.find("nfl").week_word == registry.find("nba").week_word == "week"
+
+
 def test_the_nba_entry_builds_its_provider_without_contacting_yahoo(tmp_path: Path) -> None:
     """Building runs on every request; the leagues are found when a call first needs them.
 

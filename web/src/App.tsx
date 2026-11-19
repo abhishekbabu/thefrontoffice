@@ -196,6 +196,17 @@ export default function App() {
           />
         </div>
 
+        {/* The page under an open menu, shaded as under a drawer, so where the
+            menu ends reads at a glance; a tap on it closes the menu. Before the
+            rail, so the rail paints over it. */}
+        {menuOpen && (
+          <div
+            aria-hidden
+            onClick={() => setMenuAt(null)}
+            className="absolute inset-x-0 top-full h-dvh bg-scrim transition-opacity duration-150 ease-out starting:opacity-0 md:hidden"
+          />
+        )}
+
         {/* Always laid out from md up; below it, only while the menu is open,
             dropped over the page rather than pushing it down. It drops in and
             lifts out in CSS: `starting:` is where it opens from, and

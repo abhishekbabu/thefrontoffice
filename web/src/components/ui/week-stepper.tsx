@@ -14,46 +14,58 @@ import { Badge } from "@/components/ui/badge";
  * The arrow keys do the same, as does a sideways swipe on whatever `useSwipe`
  * is attached to. Each control says which week it goes to, because "next"
  * alone does not say whether next is the week you want.
+ *
+ * `word` is what the competition calls a round — FPL's are gameweeks — and is
+ * said in every label here, so the stepper agrees with the page under it.
  */
-export function WeekStepper({ range, onStep }: { range: WeekRange; onStep: (week: number) => void }) {
+export function WeekStepper({
+  range,
+  onStep,
+  word = "week",
+}: {
+  range: WeekRange;
+  onStep: (week: number) => void;
+  word?: string;
+}) {
   const { week, current, first, last } = range;
+  const Word = word.charAt(0).toUpperCase() + word.slice(1);
   useArrowKeys(
     () => week > first && onStep(week - 1),
     () => week < last && onStep(week + 1),
   );
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="Week">
+    <div className="flex items-center gap-1" role="group" aria-label={Word}>
       <IconButton
-        label={`Week ${week - 1}`}
+        label={`${Word} ${week - 1}`}
         icon={<ChevronLeft />}
         onClick={() => onStep(week - 1)}
         disabled={week <= first}
       />
       {/* The week and where it stands, stacked in a column of fixed width, so
           the arrows stay put whichever week is shown and whatever is said under it. */}
-      <div className="flex w-24 flex-col items-center gap-0.5">
+      <div className="flex w-28 flex-col items-center gap-0.5">
         <span className="font-mono text-[12px] tabular-nums" aria-live="polite">
-          Week {week}
+          {Word} {week}
         </span>
         {/* Said, not only implied by the controls: which week this is relative to now. */}
         {week === current ? (
           <Badge variant="muted" appearance="label" className="h-4 px-1.5 text-[10.5px]">
-            this week
+            this {word}
           </Badge>
         ) : (
           <Button
             variant="ghost"
-            aria-label={`Back to this week (week ${current})`}
+            aria-label={`Back to this ${word} (${word} ${current})`}
             onClick={() => onStep(current)}
             className="h-4 gap-1 px-1.5 font-mono text-[10.5px] text-muted-foreground"
           >
             <Undo2 className="size-2.5" />
-            week {current}
+            {word} {current}
           </Button>
         )}
       </div>
       <IconButton
-        label={`Week ${week + 1}`}
+        label={`${Word} ${week + 1}`}
         icon={<ChevronRight />}
         onClick={() => onStep(week + 1)}
         disabled={week >= last}

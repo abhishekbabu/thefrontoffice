@@ -274,6 +274,36 @@ def test_groups_arrive_by_section_with_each_platform_named(env: EnvFile) -> None
     assert all(not group.platform for group in groups if group.section != "platforms")
 
 
+def test_a_switched_group_names_its_switch_and_says_something_of_every_choice(env: EnvFile) -> None:
+    """The page shows only the way chosen, so every way the switch offers needs its own note."""
+    yahoo = next(group for group in env.groups() if group.platform == "yahoo")
+    switch = next(setting for setting in yahoo.settings if setting.key == yahoo.switch)
+
+    assert yahoo.switch == "YAHOO_SOURCE"
+    assert sorted(yahoo.modes) == sorted(switch.choices)
+    assert all(yahoo.modes.values())
+
+
+def test_a_setting_marked_for_one_way_of_reading_says_which(env: EnvFile) -> None:
+    """A client id means nothing while Yahoo is read through a cookie; the page folds it away then."""
+    yahoo = {setting.key: setting.mode for setting in next(g for g in env.groups() if g.platform == "yahoo").settings}
+
+    assert yahoo["YAHOO_SESSION_COOKIE"] == "session"
+    assert yahoo["YAHOO_CLIENT_ID"] == yahoo["YAHOO_REDIRECT_URI"] == "oauth"
+    assert yahoo["YAHOO_SOURCE"] == yahoo["YAHOO_MAX_WEEKLY_ADDS"] == ""
+
+
+def test_every_mode_a_setting_names_is_one_its_switch_offers(env: EnvFile) -> None:
+    for group in env.groups():
+        modes = {setting.mode for setting in group.settings} - {""}
+        assert modes <= set(group.modes), group.title
+
+
+def test_the_weekly_add_limit_says_it_is_only_a_fallback(env: EnvFile) -> None:
+    """Each league's own limit is read from Yahoo; this one counts only where Yahoo reports none."""
+    assert env.describe("yahoo_max_weekly_adds").hint
+
+
 def test_a_key_in_the_file_nothing_reads_is_unknown(env: EnvFile) -> None:
     env.path.write_text("GOOGLE_APIKEY=abc\nSLEEPER_USERNAME=someone\n", encoding="utf-8")
 

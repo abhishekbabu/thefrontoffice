@@ -291,14 +291,18 @@ function Row({
     >
       <div
         {...clickable(open)}
-        className={cn("flex items-start gap-3 px-4 py-3", open && ["cursor-pointer hover:bg-muted", pressableRow])}
+        className={cn(
+          "flex flex-col items-start gap-1.5 px-4 py-3 sm:flex-row sm:gap-3",
+          open && ["cursor-pointer hover:bg-muted", pressableRow],
+        )}
       >
-        <Badge variant={badge.variant} appearance="status" className="mt-0.5 w-(--badge-column) shrink-0">
+        {/* Over the title on a phone: as a column of its own it took a quarter of the width. */}
+        <Badge variant={badge.variant} appearance="status" className="mt-0.5 shrink-0 sm:w-(--badge-column)">
           {badge.label}
         </Badge>
         {/* Beside the title on a wide screen; under it on a phone, where a
             corner column squeezes the title to a word a line. */}
-        <div className="grid min-w-0 flex-1 grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-3">
+        <div className="grid w-full min-w-0 flex-1 grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-3">
           <div className="text-[13.5px] font-medium">{title}</div>
           {(when || chance) && (
             <Meta className="flex flex-wrap gap-x-2 pt-0.5 sm:row-span-2 sm:max-w-[11rem] sm:flex-col sm:flex-nowrap sm:items-end sm:gap-0.5 sm:text-right">
@@ -337,7 +341,7 @@ function Row({
         </div>
       </div>
       {/* Outside the clickable area: a verdict or a thread is read, not opened. */}
-      {children && <div className="px-4 pb-3 pl-[calc(var(--badge-column)+1.75rem)]">{children}</div>}
+      {children && <div className="px-4 pb-3 sm:pl-[calc(var(--badge-column)+1.75rem)]">{children}</div>}
     </m.li>
   );
 }

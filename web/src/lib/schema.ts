@@ -971,6 +971,8 @@ export interface components {
             label: string;
             /** Name */
             name: string;
+            /** Week Word */
+            week_word: string;
             /** Judges Wire */
             judges_wire: boolean;
             /** Plans Weeks */
@@ -1801,6 +1803,16 @@ export interface components {
              * @default
              */
             effective: string;
+            /**
+             * Mode
+             * @default
+             */
+            mode: string;
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
         };
         /**
          * SettingsGroup
@@ -1821,6 +1833,18 @@ export interface components {
              * @default
              */
             platform: string;
+            /**
+             * Switch
+             * @default
+             */
+            switch: string;
+            /**
+             * Modes
+             * @default {}
+             */
+            modes: {
+                [key: string]: string;
+            };
             /** Settings */
             settings: components["schemas"]["Setting"][];
         };

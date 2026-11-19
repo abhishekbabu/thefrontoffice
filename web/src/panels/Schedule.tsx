@@ -55,10 +55,15 @@ export function Season({ rows }: { rows: ScheduleRow[] }) {
             <ListHeading>Playoffs</ListHeading>
           )}
           {/* Read left to right as one sentence: when, against whom, how it went, what else is on. */}
+          {/* On a phone, when stacks over its dates and the rest wraps beside
+              them: in one line the result ran 125px off the card. */}
           <ListRow current={row.is_current}>
-            <Label className="w-24 shrink-0">{row.label}</Label>
-            <Meta className="w-32 shrink-0">{row.date}</Meta>
-            <span className="flex w-64 min-w-0 items-center gap-2">
+            <span className="flex w-24 shrink-0 flex-col gap-0.5 sm:contents">
+              <Label className="sm:w-24 sm:shrink-0">{row.label}</Label>
+              <Meta className="sm:w-32 sm:shrink-0">{row.date}</Meta>
+            </span>
+            <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 sm:contents">
+            <span className="flex w-full min-w-0 items-center gap-2 sm:w-64">
               {row.opponent ? (
                 <>
                   <span className="truncate">{row.opponent}</span>
@@ -90,6 +95,7 @@ export function Season({ rows }: { rows: ScheduleRow[] }) {
                 {mark}
               </Badge>
             ))}
+            </span>
           </ListRow>
         </Fragment>
       ))}
