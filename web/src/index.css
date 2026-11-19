@@ -110,12 +110,15 @@ body {
    piece of a page except a band marked `data-bleed` (the header, the stat
    strip), which spans the column so its rule reaches the edge — its contents
    take the same cap, so a title and its controls line up with the body below.
-   `:where` keeps this at zero specificity: any utility on the element wins,
-   which is how a full-screen overlay mounted beside the page keeps its width.
+   It sits in the base layer, so any utility on the element wins: unlayered
+   CSS beats every Tailwind layer whatever its specificity, which once capped
+   a full-screen overlay at the page's width.
    A view whose table needs the room opts out in the shell (`WIDE` in App.tsx). */
-:root { --page-max: 75rem; }
-[data-page="wide"] { --page-max: none; }
-:where([data-page]) > :where(:not([data-bleed])) { max-width: var(--page-max); }
+@layer base {
+  :root { --page-max: 75rem; }
+  [data-page="wide"] { --page-max: none; }
+  :where([data-page]) > :where(:not([data-bleed])) { max-width: var(--page-max); }
+}
 
 /* Digits line up in columns nearly everywhere in this app, so tabular figures
    are the default for the mono face rather than something each table opts into. */
