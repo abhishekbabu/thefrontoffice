@@ -553,6 +553,28 @@ def test_the_drawer_carries_sleepers_projection_a_game_and_who_he_is() -> None:
     assert [s.value for s in groups["Player"].stats] == ["3 seasons · age 24 · #11 · Duke"]
 
 
+def test_a_projected_line_says_which_way_each_category_improves_so_a_comparison_can_mark_it() -> None:
+    """Fewer turnovers is the better projection; more of everything else."""
+    rows = [
+        GameProjection(
+            player_id="ab",
+            name="A B",
+            team="LAL",
+            opponent="BOS",
+            date="2026-02-10",
+            stats={"pts": 24.0, "reb": 7.0, "ast": 5.0, "tpm": 2.0, "fgm": 9.0, "fga": 18.0, "to": 3.0},
+        )
+    ]
+    provider = nba_provider(
+        FakeYahoo(roster=[make_player("A B", "PG", key="ab")]), nba=_guard(), sleeper=FakeSleeperProjections(rows=rows)
+    )
+
+    [projected] = [g for g in provider.player("", "ab").groups if g.title == "Projected line"]
+
+    better = {s.label: s.better for s in projected.stats}
+    assert (better["TO"], better["PTS"], better["FG%"]) == ("lower", "higher", "higher")
+
+
 def test_the_game_log_reads_every_game_oldest_first_home_or_away_with_his_shooting_made_over_tried() -> None:
     tables = {t.title: t for t in _opened().tables}
 
