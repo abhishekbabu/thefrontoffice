@@ -306,7 +306,9 @@ def test_each_player_line_carries_his_role_and_matchup() -> None:
 
 def test_with_nothing_played_the_lines_are_the_projection_alone() -> None:
     """No role or matchup line beneath any player: there is nothing to read them from."""
-    assert all(line.count("\n") == 1 for line in _context().roster_lines.values())
+    lines = _context().roster_lines.values()
+    assert all("%" not in line for line in lines)  # no share of the snaps
+    assert all(len(_figures(line)) == 1 for line in lines)  # his projection, and no points a defense allowed
 
 
 def test_a_to_do_item_carries_its_players_and_their_figures_into_the_prompt() -> None:

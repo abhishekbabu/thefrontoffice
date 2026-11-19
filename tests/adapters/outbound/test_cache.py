@@ -18,7 +18,6 @@ from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from support.cache import stored_text
 from support.logs import capture_logs
 
 from thefrontoffice.adapters.outbound.cache import DATABASE, DiskCache, _legacy_filename
@@ -83,15 +82,14 @@ def test_a_rewrite_replaces_the_value_and_its_age(tmp_path: Path) -> None:
     assert DiskCache(directory).get("k", HOUR, now=T0 + timedelta(hours=1, minutes=30)) == "new"
 
 
-def test_values_are_stored_compressed(tmp_path: Path) -> None:
-    """A trimmed player catalog is megabytes of repetitive JSON."""
+def test_a_catalog_takes_a_fraction_of_its_json_on_disk(tmp_path: Path) -> None:
+    """A trimmed player catalog is megabytes of repetitive JSON; the directory holding it should not be."""
     directory = tmp_path / "cache"
-    catalog = {str(n): {"position": "WR", "team": "KC", "status": "Active"} for n in range(2000)}
+    catalog = {str(n): {"position": "WR", "team": "KC", "status": "Active"} for n in range(20_000)}
     DiskCache(directory).set("players_nfl", catalog, now=T0)
 
-    ((size,),) = _execute(directory, "SELECT length(value) FROM entries")
-    assert isinstance(size, int) and size * 5 < len(json.dumps(catalog))
-    assert '"position": "WR"' in stored_text(directory)
+    on_disk = sum(path.stat().st_size for path in directory.iterdir())
+    assert on_disk * 5 < len(json.dumps(catalog))
 
 
 # ── durability ──────────────────────────────────────────────────────────
@@ -152,7 +150,7 @@ def test_a_database_damaged_after_it_was_prepared_costs_persistence_not_the_run(
         path.unlink()
     (directory / DATABASE).write_text("not a database", encoding="utf-8")
 
-    with capture_logs("thefrontoffice.adapters.outbound.cache", logging.WARNING) as logs:
+    with capture_logs(DiskCache.__module__, logging.WARNING) as logs:
         c = DiskCache(directory)
         c.set("k2", "v2", now=T0)
 
@@ -188,7 +186,7 @@ def test_writes_from_many_threads_all_land(tmp_path: Path) -> None:
     once, which SQLite refuses rather than queues: the losers kept their value
     in memory only, and on Windows that was nearly all of them.
     """
-    with capture_logs("thefrontoffice.adapters.outbound.cache", logging.WARNING) as logs:
+    with capture_logs(DiskCache.__module__, logging.WARNING) as logs:
         landed = [_store_together(tmp_path / f"cache{attempt}") for attempt in range(ATTEMPTS)]
 
     assert logs.text == ""
@@ -218,7 +216,7 @@ def test_a_write_that_cannot_persist_says_so(tmp_path: Path) -> None:
     blocker = tmp_path / "blocker"
     blocker.write_text("not a directory", encoding="utf-8")
 
-    with capture_logs("thefrontoffice.adapters.outbound.cache", logging.WARNING) as logs:
+    with capture_logs(DiskCache.__module__, logging.WARNING) as logs:
         DiskCache(blocker / "sub").set("k", "v", now=T0)
 
     assert "Could not open cache database" in logs.text
@@ -233,7 +231,7 @@ def test_a_database_another_process_holds_is_waited_for_not_dropped(tmp_path: Pa
     release = threading.Timer(0.2, holder.close)
     release.start()
 
-    with capture_logs("thefrontoffice.adapters.outbound.cache", logging.WARNING) as logs:
+    with capture_logs(DiskCache.__module__, logging.WARNING) as logs:
         DiskCache(directory).set("k", "v", now=T0)
     release.join()
 
