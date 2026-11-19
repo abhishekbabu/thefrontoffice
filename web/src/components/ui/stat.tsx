@@ -19,25 +19,26 @@ export function StatStrip({ stats }: { stats: Stat[] }) {
     // A band under the header, so it spans the column like the header does,
     // its rule reaching the edge while the figures keep to the page's width.
     <div data-bleed className="border-b border-border">
-      <div className="flex max-w-(--page-max) flex-wrap">
-        {stats.map((stat) => (
-          <div
-            key={stat.label}
-            // Not on the last: a divider with nothing after it reads as an empty
-            // cell stretching to the edge.
-            className="min-w-[7rem] border-border px-5 py-2.5 [&:not(:last-child)]:border-r"
-          >
-            <Label>{stat.label}</Label>
-            <div
-              className={cn(
-                "mt-0.5 font-display text-[19px] font-semibold tracking-tight tabular-nums",
-                toneText(stat.tone),
-              )}
-            >
-              {stat.value}
+      {/* Each figure's divider is on its left, and the row is pulled a pixel
+          left under a clip: whichever figure starts a line — the first, or
+          the first after a wrap on a phone — has its divider cut off, and no
+          line ends on a divider with nothing after it. */}
+      <div className="max-w-(--page-max) overflow-hidden">
+        <div className="-ml-px flex flex-wrap">
+          {stats.map((stat) => (
+            <div key={stat.label} className="min-w-[7rem] border-l border-border px-5 py-2.5">
+              <Label>{stat.label}</Label>
+              <div
+                className={cn(
+                  "mt-0.5 font-display text-[19px] font-semibold tracking-tight tabular-nums",
+                  toneText(stat.tone),
+                )}
+              >
+                {stat.value}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

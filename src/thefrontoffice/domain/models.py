@@ -550,6 +550,41 @@ class ItemMark(BaseModel):
     )
 
 
+MoveSide = Literal["in", "out"]
+"""Whether a move brings a player in or takes him out."""
+
+Held = Literal["starter", "bench", "reserve", "free agent"]
+"""Where a player stands to the manager: in his lineup, on his bench, in a reserve slot, or on the wire."""
+
+
+class MovePlayer(BaseModel):
+    """One player a to-do item moves, with the figures it is weighed on.
+
+    Every player on an item carries the same rows in the same order, so the
+    player coming in and the one going out read side by side as data — never
+    parsed out of a sentence.
+    """
+
+    side: MoveSide = Field(description="Whether the move brings him in or takes him out.")
+    player_id: str
+    name: str
+    position: str = ""
+    team: str = Field(default="", description="His real-world club.")
+    held: Held
+    figures: list[Stat] = Field(
+        default_factory=list,
+        description="The rows he is compared on, labelled alike for every player on the item; '—' where he has none.",
+    )
+
+    def text(self) -> str:
+        """'IN: Chimere Dike (WR, LV; free agent) — Snap% 66%, Proj 9.88': how a model reads him."""
+        figures = ", ".join(f"{figure.label} {figure.value}" for figure in self.figures)
+        about = ", ".join(part for part in (self.position, self.team) if part)
+        return f"{self.side.upper()}: {self.name} ({about}{'; ' if about else ''}{self.held})" + (
+            f" — {figures}" if figures else ""
+        )
+
+
 class Action(BaseModel):
     """One decision the week asks of the manager, and why it is one.
 
@@ -605,6 +640,13 @@ class Action(BaseModel):
             "the matchup and the role behind the number. Empty where nothing has been played yet."
         ),
     )
+    players: list[MovePlayer] = Field(
+        default_factory=list,
+        description=(
+            "Who the move brings in and takes out, figure by figure, for a side-by-side reading. "
+            "Empty where it moves one player or none: `evidence` says what it rests on then."
+        ),
+    )
     verdict: TaskVerdict | None = Field(
         default=None,
         description="The model's judgement, once a report has been run. None before, and for an item it skipped.",
@@ -628,10 +670,20 @@ class Action(BaseModel):
         """What this item currently says, so a verdict on an older version of it reads as stale.
 
         Everything a judgement rested on and nothing it produced: the move,
-        the reason, the deadline and the evidence — not the verdict itself.
+        the reason, the deadline, the evidence and the figures compared — not the verdict itself.
         """
-        said = [self.title, self.reason, self.when, [[line.label, line.value] for line in self.evidence]]
+        said: list[object] = [self.title, self.reason, self.when, [[line.label, line.value] for line in self.evidence]]
+        if self.players:
+            said.append([player.text() for player in self.players])
         return hashlib.sha256(json.dumps(said).encode("utf-8")).hexdigest()[:12]
+
+    def lines(self) -> list[str]:
+        """What the item rests on, as a model reads it: each player it moves, then each line of evidence.
+
+        One rendering for every prompt that lists an item, so the judging
+        prompt and a follow-up question name the players' roles alike.
+        """
+        return [player.text() for player in self.players] + [f"{line.label}: {line.value}" for line in self.evidence]
 
 
 class ItemState(BaseModel):

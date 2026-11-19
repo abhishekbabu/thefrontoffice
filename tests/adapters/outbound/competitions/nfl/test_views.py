@@ -10,8 +10,27 @@ from dataclasses import replace
 import pytest
 from support.nfl import DEFAULT_PROJECTIONS, FakeSleeper, game_line, nfl_provider
 
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Matchup
+from thefrontoffice.adapters.outbound.competitions.nfl.views import ease
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import SeasonStats
 from thefrontoffice.domain.models import PlayerDetail, Stat
+
+
+@pytest.mark.parametrize(
+    ("rank", "said"),
+    [
+        (1, "easiest"),
+        (6, "6th-easiest"),
+        (16, "16th-easiest"),
+        (17, "16th-toughest"),
+        (30, "3rd-toughest"),
+        (32, "toughest"),
+    ],
+)
+def test_a_matchup_reads_as_how_easy_or_tough_it_is_from_the_nearer_end(rank: int, said: str) -> None:
+    """Rank 1 gives up the most: the easiest. Counted from whichever end is nearer, so no '27th-easiest'."""
+    assert ease(Matchup(opponent="DAL", position="WR", allowed=20.0, rank=rank, defenses=32)) == said
+
 
 LINE = {
     "pass_att": 0.4,

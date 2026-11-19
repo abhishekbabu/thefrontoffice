@@ -18,6 +18,7 @@ from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
     LeagueSchedule,
+    MovePlayer,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
@@ -39,6 +40,12 @@ TASK = Action(
     when="before kickoff, Sun 25 Oct",
     key="swap:hall:bernard",
     evidence=[Stat(label="Breece Hall", value="vs MIA, 4th-most to RBs (26.1 a game)")],
+    players=[
+        MovePlayer(
+            side="in", player_id="hall", name="Breece Hall", held="bench", figures=[Stat(label="Proj", value="12.1")]
+        ),
+        MovePlayer(side="out", player_id="bernard", name="Germie Bernard", held="starter"),
+    ],
 )
 
 HALL = PlayerDetail(
@@ -117,6 +124,7 @@ def test_an_item_is_briefed_with_its_evidence_and_the_roster() -> None:
 
     assert TASK.title in sent and TASK.when in sent
     assert all(line.value in sent for line in TASK.evidence)
+    assert all(player.text() in sent for player in TASK.players)
     assert "Breece Hall (RB, NYJ)" in sent
     assert sent.endswith("Why?")
 

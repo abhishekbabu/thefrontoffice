@@ -217,7 +217,7 @@ def _task_text(task: Action) -> str:
     lines = [f"{task.title} ({task.urgency}, {task.kind})", task.reason]
     if task.when:
         lines.append(f"Deadline: {task.when}")
-    lines += [f"- {line.label}: {line.value}" for line in task.evidence]
+    lines += [f"- {line}" for line in task.lines()]
     return "\n".join(lines)
 
 

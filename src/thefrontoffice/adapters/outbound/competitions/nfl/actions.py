@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from thefrontoffice.adapters.outbound.competitions.nfl import views
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
     MIN_GAMES_FOR_AVERAGE,
     REGULAR,
@@ -46,7 +47,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, THIS_WEEK, listed, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import Split, surname
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
-from thefrontoffice.domain.models import Action, Stat, Urgency, urgency_rank
+from thefrontoffice.domain.models import Action, MoveSide, Stat, Urgency, urgency_rank
 
 STACKED = 3
 """Starters riding on one real game at which a bad afternoon there is most of a bad week."""
@@ -105,7 +106,37 @@ def build(
     items += _teammates(state, kickoff, started)
     items += _next_week_byes(state, games.get(state.week + 1, []))
     items += _trade_deadline(state)
-    return sorted(_with_drops(state, items, started), key=lambda i: urgency_rank(i.action.urgency))
+    items = _with_players(state, _with_drops(state, items, started))
+    return sorted(items, key=lambda i: urgency_rank(i.action.urgency))
+
+
+def _with_players(state: Week, items: list[Item]) -> list[Item]:
+    """Each item that moves more than one player, with them side by side and its evidence cut to their news.
+
+    The figures a row would otherwise state in a sentence — role, projection,
+    matchup — are the comparison's rows; only what a figure cannot say, a
+    headline, stays as evidence. An item that already names its players, or
+    moves one, is left as it is.
+    """
+    known = {**state.projections, **{p.player_id: p for p in state.projected}}
+    out = []
+    for item in items:
+        action = item.action
+        outs = [pid for pid in dict.fromkeys((action.replaces, action.drop)) if pid]
+        moved: list[tuple[MoveSide, Projection | None]] = [
+            ("in", known.get(action.player_id)),
+            *(("out", known.get(pid)) for pid in outs),
+        ]
+        players: list[tuple[MoveSide, Projection]] = [(side, player) for side, player in moved if player is not None]
+        if action.players or not outs or len(players) != len(moved):
+            out.append(item)
+            continue
+        # A growing role is the reason a breakout is on the list, and its reason says so already.
+        told = frozenset({action.player_id}) if item.move == "rise" else frozenset()
+        compared = views.compared(state, players, told)
+        update = {"players": compared, "evidence": headlines(state, [player for _, player in players])}
+        out.append(replace(item, action=action.model_copy(update=update)))
+    return out
 
 
 def _ir_locked(state: Week, started: set[str]) -> list[Item]:
@@ -191,7 +222,9 @@ def _lineup(
 
         if change is not None:
             moved.update({change.start.player_id, *([player.player_id] if player else [])})
-            reason = f"{why}. {change.start.name} projects {change.start.points:.2f}.{_caveat(change.start)}"
+            # A starter going out is compared with his cover, figure by figure; an empty slot has nobody to compare.
+            projects = "" if player else f" {change.start.name} projects {change.start.points:.2f}."
+            reason = f"{why}.{projects}{_caveat(change.start)}"
             # Only the player coming in: the one going out is not playing, and
             # his matchup is beside the point.
             hole = _hole(slot.slot, player)
@@ -215,10 +248,8 @@ def _lineup(
                     kind="waiver",
                     urgency="now",
                     title=f"Pick up {pick.name}{replaces}",
-                    reason=(
-                        f"{why}, no bench cover. {pick.name} projects {pick.points:.2f}, "
-                        f"best {pick.position} available."
-                    ),
+                    reason=f"{why}, no bench cover. Best {pick.position} available"
+                    + ("." if player else f", projects {pick.points:.2f}."),
                     player_id=pick.player_id,
                     replaces=player.player_id if player else "",
                     evidence=_evidence(state, [pick]),
@@ -365,10 +396,7 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
                     title=f"Pick up {player.name}, drop {starter.name}"
                     if streamed
                     else f"Pick up {player.name} to start over {starter.name}",
-                    reason=(
-                        f"{player.name} projects {player.points:.2f}, +{gain:.2f} over {starter.name} "
-                        f"at {slot.slot}.{_caveat(player)}"
-                    ),
+                    reason=f"+{gain:.2f} proj over {starter.name} at {slot.slot}.{_caveat(player)}",
                     player_id=player.player_id,
                     replaces=starter.player_id,
                     drop=starter.player_id if streamed else "",
@@ -417,8 +445,8 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
                 Action(
                     kind="waiver",
                     urgency="soon",
-                    title=f"Pick up {player.name}: role growing",
-                    reason=f"{trend.describe().capitalize()}. Projects {player.points:.2f}.",
+                    title=f"Pick up {player.name}",
+                    reason=f"Role growing: {trend.describe()}.",
                     player_id=player.player_id,
                     evidence=_evidence(state, [player], told=frozenset({player.player_id})),
                     key=f"rise:{player.player_id}",
@@ -490,7 +518,7 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
                 item,
                 drop=drop.player_id,
                 title=f"{action.title}, drop {drop.name}",
-                reason=f"{reason} {drop_reason(state, drop)}",
+                reason=f"{reason} {drop_note(state, drop)}",
             )
         )
     return out
@@ -707,6 +735,19 @@ def insurance_note(state: Week, player: Projection) -> str:
     return insured(state).get(player.player_id, (0, ""))[1]
 
 
+def drop_note(state: Week, player: Projection) -> str:
+    """'Williams: weakest on bench.' — why he is the drop, where a comparison beside it carries his figures.
+
+    Only what no figure there says: whose handcuff or stash he is, or that his
+    recent points were fill-in work, with what he scores beside the teammate back.
+    """
+    why = insurance_note(state, player) or "weakest on bench"
+    split = filling_in(state, player)
+    if split is not None and (beside := form(state, player)) is not None:
+        why += f", {beside:.2f}/game with {surname(split.teammate.name)}"
+    return f"{player.name}: {why}."
+
+
 def drop_reason(state: Week, player: Projection) -> str:
     """'Drop X (4.90/game, 6.60 proj), weakest on bench': the figures his worth was read from.
 
@@ -769,8 +810,8 @@ def _same_game(
                     urgency="later",
                     title=f"{len(stacked)} starters in {away} @ {home}",
                     reason=(
-                        f"{join([p.name for p in stacked])}. Start {swap.name} ({swap.points:.2f}) over "
-                        f"{out.name} ({out.points:.2f}) to cut the risk if you're favored; keep the stack if not."
+                        f"{join([p.name for p in stacked])}. Start {swap.name} over {out.name} to cut the risk "
+                        "if you're favored; keep the stack if not."
                     ),
                     player_id=swap.player_id,
                     replaces=out.player_id,
@@ -828,18 +869,17 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
             continue
         doubt = [other for other, _ in regulars if not ruled_out(other.injury_status)]
         out = [other for other, _ in regulars if ruled_out(other.injury_status)]
-        described = join(
+        # Said as his teammate, so neither the page nor a model reads him as one of yours.
+        described = ("Teammate " if len(regulars) == 1 else "Teammates ") + join(
             [f"{other.name} ({other.injury_status.lower()}, {share:.0%} of snaps)" for other, share in regulars]
         )
-        if doubt:
-            title = f"Check {join([o.name for o in doubt])} before setting {mine.name}"
-            outcome = (
-                f"If {'he sits' if len(doubt) == 1 else 'they sit'}, {mine.name} ({mine.points:.2f} proj) "
-                "gets more work. Inactives are out ~90 min before kickoff."
-            )
-        else:
-            title = f"More work for {mine.name} with {join([o.name for o in out])} out"
-            outcome = f"{mine.name} projects {mine.points:.2f}, which may not count the extra work."
+        starter = None if mine.player_id in state.starter_ids else _would_bench(state, mine, started)
+        title, outcome = _teammate_wording(mine, starter, doubt, out)
+        evidence = _evidence(state, [mine])
+        players = []
+        if starter is not None:
+            players = views.compared(state, [("in", mine), ("out", starter)], frozenset())
+            evidence = headlines(state, [mine, starter])
         game = kickoff.get(mine.team)
         items.append(
             Item(
@@ -851,12 +891,47 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
                     reason=f"{described}. {outcome}",
                     when=f"before kickoff, {day(game.date)}" if game and game.date else "",
                     player_id=mine.player_id,
-                    evidence=_evidence(state, [mine]) + headlines(state, [other for other, _ in regulars]),
+                    evidence=evidence + headlines(state, [other for other, _ in regulars]),
+                    players=players,
                     key=f"teammate:{mine.player_id}:" + ",".join(sorted(other.player_id for other, _ in regulars)),
                 ),
             )
         )
     return items
+
+
+def _would_bench(state: Week, mine: Projection, started: set[str]) -> Projection | None:
+    """The starter a bench player would replace: the weakest one in a slot he can play, still free to move."""
+    upgrade = best_upgrade(state.lineup, mine)
+    starter = upgrade[1].player if upgrade else None
+    return starter if starter is not None and starter.team not in started else None
+
+
+def _teammate_wording(
+    mine: Projection, starter: Projection | None, doubt: list[PlayerInfo], out: list[PlayerInfo]
+) -> tuple[str, str]:
+    """The title and the second half of the reason for a teammate check: the decision it leaves you.
+
+    A bench player is a start to make if the teammate sits, over the starter
+    he would replace; a starter is one to leave in. Either way the teammate
+    is named as the condition, never as a player of yours.
+    """
+    if doubt:
+        names = join([o.name for o in doubt])
+        sits = "sits" if len(doubt) == 1 else "sit"
+        title = (
+            f"Start {mine.name} over {starter.name} if {names} {sits}"
+            if starter
+            else f"Keep {mine.name} in: more work if {names} {sits}"
+        )
+        return title, "Inactives are out ~90 min before kickoff."
+    names = join([o.name for o in out])
+    if starter:
+        return f"Consider {mine.name} over {starter.name}: {names} out", "His projection may not count the extra work."
+    return (
+        f"More work for {mine.name} with {names} out",
+        f"{mine.name} projects {mine.points:.2f}, which may not count the extra work.",
+    )
 
 
 def headlines(state: Week, players: Sequence[Projection | PlayerInfo]) -> list[Stat]:

@@ -38,6 +38,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     projections_for,
     zero_projection,
 )
+from thefrontoffice.adapters.outbound.competitions.places import ordinal
 from thefrontoffice.domain.errors import PlatformError, PlayerNotFoundError
 from thefrontoffice.domain.models import (
     FIT_COLUMN,
@@ -47,6 +48,9 @@ from thefrontoffice.domain.models import (
     SLOT_COLUMN,
     STATUS_COLUMN,
     Better,
+    Held,
+    MovePlayer,
+    MoveSide,
     PlayerCard,
     PlayerDetail,
     Side,
@@ -423,6 +427,90 @@ def _opponent(projection: Projection | None, state: Week) -> Stat:
     if matchup is None:
         return Stat(label="Opponent", value=versus)
     return Stat(label="Opponent", value=f"{versus} · {matchup.allowed_to()}", tone=matchup.tone)
+
+
+RECENT = f"(L{evidence.ROLE_GAMES})"
+"""How a compared figure says it is his last few games, not his season: 'L3'."""
+
+DASH = "—"
+
+
+def compared(state: Week, moved: Sequence[tuple[MoveSide, Projection]], told: frozenset[str]) -> list[MovePlayer]:
+    """The players a to-do item moves, each on the same rows, for reading side by side.
+
+    The rows are his role over his last few games, his projection and his
+    matchup — and his trend or his injury where any of them has one. A row
+    no player has a figure for is left out, so a kicker swap is not a column
+    of dashes. `told` are the players whose trend the item's own reason
+    already states.
+    """
+    rows = [_figures(state, player, trend=player.player_id not in told) for _, player in moved]
+    blank = {label for label in rows[0] if all(row[label].value == DASH for row in rows)} if rows else set()
+    return [
+        MovePlayer(
+            side=side,
+            player_id=player.player_id,
+            name=player.name,
+            position=player.position,
+            team=player.team,
+            held=standing(state, player.player_id),
+            figures=[figure for label, figure in row.items() if label not in blank],
+        )
+        for (side, player), row in zip(moved, rows, strict=True)
+    ]
+
+
+def _figures(state: Week, player: Projection, trend: bool) -> dict[str, Stat]:
+    """One player's rows, keyed by label, every row present: '—' where he has no figure for it."""
+    role = state.evidence.roles.get(player.player_id)
+    targets = role is not None and role.position in evidence.TARGET_POSITIONS
+    grew = state.evidence.trends.get(player.player_id) if trend else None
+    season = evidence.average(state.evidence, player.player_id)
+    matchup = state.evidence.matchup(player)
+    plays = (bool(player.opponent) or not state.scheduled) and not ruled_out(player.injury_status)
+    rows = [
+        Stat(label=f"{SNAP_COLUMN} {RECENT}", value=share(role.snap_share) if role else DASH),
+        Stat(label=f"Tgt/g {RECENT}", value=f"{role.targets:.1f}" if role and targets else DASH),
+        Stat(label=f"{TARGET_COLUMN} {RECENT}", value=share(role.target_share) if role and targets else DASH),
+        Stat(label=f"Pts/g {RECENT}", value=f"{role.points:.2f}" if role else DASH),
+        Stat(label="Pts/g (season)", value=f"{season:.2f}" if season is not None else DASH),
+        # A bye or a ruling projects nought, which says nothing about him: the opponent row says why.
+        Stat(label="Proj", value=f"{player.points:.2f}" if plays else DASH),
+        Stat(
+            label="Opp",
+            value=_versus(player, state.scheduled, DASH) + (f", {ease(matchup)}" if matchup else ""),
+            tone=matchup.tone if matchup else "neutral",
+        ),
+        Stat(label=TREND_COLUMN, value=grew.short() if grew else DASH, tone="good" if grew else "neutral"),
+        Stat(
+            label=STATUS_COLUMN,
+            value=player.injury_status.lower() if listed(player.injury_status) else DASH,
+            tone="warning" if listed(player.injury_status) else "neutral",
+        ),
+    ]
+    return {row.label: row for row in rows}
+
+
+def ease(matchup: evidence.Matchup) -> str:
+    """'6th-easiest' where a defense gives up more than most to the position, '3rd-toughest' where less."""
+    if matchup.rank == 1:
+        return "easiest"
+    if matchup.rank == matchup.defenses:
+        return "toughest"
+    if matchup.rank <= matchup.defenses // 2:
+        return f"{ordinal(matchup.rank)}-easiest"
+    return f"{ordinal(matchup.defenses - matchup.rank + 1)}-toughest"
+
+
+def standing(state: Week, player_id: str) -> Held:
+    """Where he stands to the manager: starting, benched, held in reserve, or nobody's."""
+    if player_id in state.starter_ids:
+        return "starter"
+    if player_id in state.roster.reserve_ids:
+        return "reserve"
+    if player_id in state.roster.player_ids:
+        return "bench"
+    return "free agent"
 
 
 def _team_name(team: str, players: Mapping[str, PlayerInfo]) -> str:

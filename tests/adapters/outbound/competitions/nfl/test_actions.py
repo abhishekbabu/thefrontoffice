@@ -354,11 +354,52 @@ def test_a_swap_shows_the_role_and_matchup_of_both_players() -> None:
 
     [action] = _actions(client)
 
-    assert [stat.label for stat in action.evidence] == ["Bench Receiver", "Ty End"]
-    assert all(stat.value for stat in action.evidence)
+    assert [(p.side, p.name, p.held) for p in action.players] == [
+        ("in", "Bench Receiver", "bench"),
+        ("out", "Ty End", "starter"),
+    ]
+    assert _figures(action, "Bench Receiver")["Snap% (L3)"] == "50%"
+    assert _figures(action, "Ty End")["Proj"] == "5.00"
 
 
-def test_covering_a_player_who_cannot_play_shows_only_the_one_coming_in() -> None:
+def test_compared_players_share_the_same_rows_in_the_same_order() -> None:
+    """Side by side only reads if every row lines up: a figure one of them lacks is a dash, not a missing row."""
+    better = replace(BENCH_WR, points=12.0)
+    benched = replace(FLEX, points=5.0)
+    client = _client([QB, RB, WR, benched, better], ["qb", "rb", "wr", "te"], ["wr2"], game_lines=_played(better))
+
+    [action] = _actions(client)
+
+    labels = [[figure.label for figure in p.figures] for p in action.players]
+    assert labels[0] == labels[1]
+    assert _figures(action, "Ty End")["Snap% (L3)"] == "—"
+
+
+def test_a_row_no_compared_player_has_is_left_out() -> None:
+    """Nobody here is hurt or trending, so neither row is a pair of dashes."""
+    better = replace(BENCH_WR, points=12.0)
+    benched = replace(FLEX, points=5.0)
+    client = _client([QB, RB, WR, benched, better], ["qb", "rb", "wr", "te"], ["wr2"], game_lines=_played(better))
+
+    [action] = _actions(client)
+
+    assert "Status" not in _figures(action, "Ty End") and "Trend" not in _figures(action, "Ty End")
+
+
+def test_a_compared_item_keeps_only_news_as_evidence() -> None:
+    """The role and the matchup are figures in the comparison; a sentence repeating them is noise."""
+    better = replace(BENCH_WR, points=12.0)
+    benched = replace(FLEX, points=5.0)
+    client = _client(
+        [QB, RB, WR, benched, better], ["qb", "rb", "wr", "te"], ["wr2"], game_lines=_played(better, benched)
+    )
+
+    [action] = _actions(client)
+
+    assert action.evidence == []
+
+
+def test_covering_a_player_who_cannot_play_compares_him_with_his_cover() -> None:
     client = _client(
         [QB, _ruled_out(RB), WR, FLEX, BENCH_RB],
         ["qb", "rb", "wr", "te"],
@@ -368,16 +409,37 @@ def test_covering_a_player_who_cannot_play_shows_only_the_one_coming_in() -> Non
 
     [action] = _actions(client)
 
-    assert [stat.label for stat in action.evidence] == ["Bench Back"]
+    assert [p.name for p in action.players] == ["Bench Back", "Ron Back"]
+    # Ruled out projects nothing, which says nothing about him: his row says why instead.
+    assert _figures(action, "Ron Back")["Proj"] == "—"
+    assert _figures(action, "Ron Back")["Status"] == "out"
 
 
-def test_a_waiver_pick_shows_what_his_projection_rests_on() -> None:
+def test_a_waiver_pick_for_a_hole_is_compared_with_the_starter_he_covers() -> None:
     free = proj("fa1", "Free Back", "RB", 11.0, team="KC", opp="LV")
     client = _client([QB, _ruled_out(RB), WR, FLEX, free], ["qb", "rb", "wr", "te"], [], game_lines=_played(free))
 
     [action] = _actions(client)
 
-    assert [stat.label for stat in action.evidence] == ["Free Back"]
+    assert [(p.name, p.held) for p in action.players] == [("Free Back", "free agent"), ("Ron Back", "starter")]
+    assert _figures(action, "Free Back")["Proj"] == "11.00"
+
+
+def test_an_item_that_moves_one_player_keeps_its_evidence() -> None:
+    """Nobody to compare him with: what his number rests on is said under the item, as before."""
+    client = _client([QB, RB, WR, BENCH_WR], ["qb", "rb", "wr"], ["wr2"], game_lines=_played(BENCH_WR))
+
+    [action] = _actions(client)
+
+    assert action.player_id == "wr2" and not action.replaces
+    assert action.players == []
+    assert [stat.label for stat in action.evidence] == ["Bench Receiver"]
+
+
+def _figures(action: Action, name: str) -> dict[str, str]:
+    """One compared player's rows, by label."""
+    [player] = [p for p in action.players if p.name == name]
+    return {figure.label: figure.value for figure in player.figures}
 
 
 def test_only_finished_weeks_are_read_for_evidence() -> None:
@@ -398,8 +460,7 @@ def test_only_finished_weeks_are_read_for_evidence() -> None:
 
     [action] = _actions(client)
 
-    [his] = [stat for stat in action.evidence if stat.label == better.name]
-    assert "50%" in his.value and "75%" not in his.value
+    assert _figures(action, better.name)["Snap% (L3)"] == "50%"
 
 
 def test_stat_lines_that_will_not_load_leave_the_list_without_evidence() -> None:
@@ -713,7 +774,8 @@ def test_the_drop_weighs_recent_form_beside_the_projection() -> None:
     action = _bench_pair(hot, _scored(hot, 1.0, 1.0, 13.0, 13.0, 13.6) + cold_games)
 
     assert action.drop == "wr2"
-    assert "4.90/game" in action.reason and "6.00 proj" in action.reason
+    assert _figures(action, "Cold Receiver")["Pts/g (L3)"] == "4.90"
+    assert _figures(action, "Cold Receiver")["Proj"] == "6.00"
 
 
 def test_a_hot_player_on_bye_is_not_dropped_for_his_empty_week() -> None:
@@ -732,7 +794,8 @@ def test_a_drop_on_bye_is_priced_on_his_season_not_his_empty_week() -> None:
     action = _bench_pair(idle, _scored(idle, 2.0, 2.0, 2.0) + cold_games)
 
     assert action.drop == "wr3"
-    assert "2.00 season" in action.reason and "proj" not in action.reason.split("Drop")[-1]
+    assert _figures(action, "Idle Receiver")["Pts/g (season)"] == "2.00"
+    assert _figures(action, "Idle Receiver")["Proj"] == "—"
 
 
 def test_a_player_with_nothing_to_go_on_is_the_last_resort() -> None:
@@ -989,6 +1052,15 @@ def test_a_breakout_worth_more_than_the_weakest_on_the_bench_names_him_to_drop()
     assert action.drop == "wr2"
 
 
+def test_a_breakout_and_his_drop_are_compared_without_restating_the_role_change() -> None:
+    """The reason says how his role grew; the comparison carries what it does not, the drop's figures beside his."""
+    [action] = [a for a in _with_breakout(8.0) if a.player_id == "wr9"]
+
+    assert [(p.side, p.player_id) for p in action.players] == [("in", "wr9"), ("out", "wr2")]
+    assert "Trend" not in _figures(action, "Rising Receiver")
+    assert _figures(action, "Rising Receiver")["Snap% (L3)"] == "66%"
+
+
 def test_a_breakout_worth_less_than_anyone_on_the_bench_is_not_worth_a_spot() -> None:
     """Optional, unlike filling a hole: a flier is not worth a better player."""
     assert all(a.player_id != "wr9" for a in _with_breakout(3.0))
@@ -1062,8 +1134,9 @@ def _snaps(player_id: str, team: str, position: str, share: float) -> list[NFLGa
     ]
 
 
-def _behind(status: str, *, his_share: float = 0.9, mine: float = 0.4) -> list[Action]:
-    """What the list says about Bench Receiver (KC) while Star Wideout, a teammate on nobody's roster here, is `status`."""
+def _behind(status: str, *, his_share: float = 0.9, mine: float = 0.4, of: str = "wr2") -> list[Action]:
+    """What the list says about Bench Receiver (KC) — or another of yours, `of` — while Star Wideout,
+    a teammate on nobody's roster here, is `status`."""
     client = _client(
         [QB, RB, WR, FLEX, BENCH_WR],
         ["qb", "rb", "wr", "te"],
@@ -1074,7 +1147,7 @@ def _behind(status: str, *, his_share: float = 0.9, mine: float = 0.4) -> list[A
         **(client.players_catalog or {}),
         "star": PlayerMeta(player_id="star", name="Star Wideout", position="WR", team="KC", injury_status=status),
     }
-    return [a for a in _actions(client) if a.key.startswith("teammate:") and a.player_id == "wr2"]
+    return [a for a in _actions(client) if a.key.startswith("teammate:") and a.player_id == of]
 
 
 def test_a_questionable_regular_beside_your_player_is_a_status_to_check_before_kickoff() -> None:
@@ -1086,6 +1159,33 @@ def test_a_questionable_regular_beside_your_player_is_a_status_to_check_before_k
     assert "Star Wideout" in action.title and "Bench Receiver" in action.title
     assert "Sun 27 Sep" in action.when
     assert not action.replaces and not action.drop
+
+
+def test_a_bench_player_behind_a_doubtful_teammate_is_weighed_against_the_starter_he_would_replace() -> None:
+    """The decision is a start, so the item names who it would bench — the weakest starter in a slot he can play."""
+    [action] = _behind("Questionable")
+
+    assert [(p.side, p.name, p.held) for p in action.players] == [
+        ("in", "Bench Receiver", "bench"),
+        ("out", "Ty End", "starter"),
+    ]
+    assert "Ty End" in action.title
+
+
+def test_the_doubtful_teammate_is_named_as_a_teammate_not_as_one_of_yours() -> None:
+    """A model read 'Star Wideout (questionable)' as a player on the roster; the item has to say whose he is."""
+    [action] = _behind("Questionable")
+
+    assert "Teammate Star Wideout" in action.reason
+    assert "Star Wideout" not in [p.name for p in action.players]
+
+
+def test_a_starter_behind_a_doubtful_teammate_compares_nobody() -> None:
+    """Already in the lineup, he has no one to be weighed against: the item stays a single-player one."""
+    [action] = _behind("Questionable", of="wr")
+
+    assert action.players == []
+    assert "Star Wideout" in action.title
 
 
 def test_a_teammate_already_ruled_out_still_names_whose_work_grows() -> None:

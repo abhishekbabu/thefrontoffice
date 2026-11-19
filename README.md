@@ -31,6 +31,13 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   slot gets the best free agent on IR who is back before the playoffs (ESPN's
   estimate), projects 25+ points from then, and rates within a point a game of
   that weakest bench player, with the spot his claim takes until he moves to IR.
+  An item that moves two players (a pickup and its drop, a swap) shows them
+  side by side on the same rows: snap share, targets a game and target share
+  over the last three games, points a game recent and season, projection and
+  opponent. A bench player whose teammate is listed questionable reads as the
+  start to make: "Start X over Y if Z sits". The trade-deadline item shows the
+  Trades page's best offer and links there. The lineup's points column appears
+  once the week's first game kicks off.
 - **Win chance and playoff odds**: the week is simulated 10,000 times and the
   season 5,000. Every move shows what it does to both, live on Sundays. The
   matchup header shows the score once a game kicks off, and playoff odds as

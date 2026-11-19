@@ -105,7 +105,18 @@ function OpenSpots({ count }: { count: number }) {
   );
 }
 
-function SpotList({ spots, empty, onOpen }: { spots: Spot[]; empty?: string; onOpen?: (id: string) => void }) {
+function SpotList({
+  spots,
+  empty,
+  onOpen,
+  started = true,
+}: {
+  spots: Spot[];
+  empty?: string;
+  onOpen?: (id: string) => void;
+  /** Whether any game of the week has kicked off: before then there are no points to give a column. */
+  started?: boolean;
+}) {
   if (!spots.length) {
     return <CardNote>{empty ?? "Nothing set."}</CardNote>;
   }
@@ -138,7 +149,7 @@ function SpotList({ spots, empty, onOpen }: { spots: Spot[]; empty?: string; onO
             <div className="truncate font-mono text-[11px] text-muted-foreground">{spot.detail}</div>
           </div>
           {spot.scoring ? (
-            <SpotScore spot={spot} />
+            <SpotScore spot={spot} started={started} />
           ) : spot.tone === "warning" ? (
             <Badge variant="warn" appearance="pill" className="tabular-nums">
               {spot.value}
@@ -156,11 +167,12 @@ function SpotList({ spots, empty, onOpen }: { spots: Spot[]; empty?: string; onO
 /**
  * What he was projected, then what he has scored, in two fixed columns, so
  * the real number and the guess are never one figure read two ways. Before
- * kickoff the projection is the only number, and the points column says so
- * with a dash; once the game is on the points lead and the projection steps
- * back. Live and final are said in words, not left to a color.
+ * the week's first kickoff the projection is the only number and the points
+ * column is not drawn at all; once any game is on, a player still to play
+ * says so with a dash, and one under way leads with his points while the
+ * projection steps back. Live and final are said in words, not left to a color.
  */
-function SpotScore({ spot }: { spot: Spot }) {
+function SpotScore({ spot, started }: { spot: Spot; started: boolean }) {
   const played = spot.scoring !== "projected";
   const warn = spot.tone === "warning";
   return (
@@ -173,32 +185,53 @@ function SpotScore({ spot }: { spot: Spot }) {
       >
         {spot.projection}
       </span>
-      <div className="flex w-16 flex-col items-end gap-0.5">
-        <span
-          className={cn(
-            "font-mono text-[14px] font-semibold tabular-nums",
-            !played ? "text-muted-foreground/50" : warn ? "text-warn" : "text-foreground",
-          )}
-        >
-          {played ? spot.scored : "—"}
-        </span>
-        {played && (
+      {started && (
+        <div className="flex w-16 flex-col items-end gap-0.5">
           <span
             className={cn(
-              "font-mono text-[10.5px] uppercase tracking-wide",
-              spot.scoring === "live" ? "text-ok" : "text-muted-foreground",
+              "font-mono text-[14px] font-semibold tabular-nums",
+              !played ? "text-muted-foreground/50" : warn ? "text-warn" : "text-foreground",
             )}
           >
-            {spot.scoring === "live" ? "● live" : "final"}
+            {played ? spot.scored : "—"}
           </span>
-        )}
-      </div>
+          {played && (
+            <span
+              className={cn(
+                "font-mono text-[10.5px] uppercase tracking-wide",
+                spot.scoring === "live" ? "text-ok" : "text-muted-foreground",
+              )}
+            >
+              {spot.scoring === "live" ? "● live" : "final"}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-/** The two score columns' names, set over rows that carry them, flush with `SpotScore`. */
-function ScoreHeads({ spots, children, className }: { spots: Spot[]; children?: ReactNode; className?: string }) {
+/** Whether any game of the week has kicked off, on any of `sides`: a player's points exist from then. */
+export function underWay(...sides: (Side | null | undefined)[]): boolean {
+  return sides.some((side) =>
+    [...(side?.lineup ?? []), ...(side?.bench ?? []), ...(side?.reserve ?? [])].some(
+      (spot) => spot.scoring === "live" || spot.scoring === "final",
+    ),
+  );
+}
+
+/** The score columns' names, set over rows that carry them, flush with `SpotScore`. */
+function ScoreHeads({
+  spots,
+  started,
+  children,
+  className,
+}: {
+  spots: Spot[];
+  started: boolean;
+  children?: ReactNode;
+  className?: string;
+}) {
   if (!spots.some((spot) => spot.scoring)) {
     return children ? (
       <Label as="div" className={cn("border-y border-border px-4 py-2", className)}>
@@ -210,7 +243,7 @@ function ScoreHeads({ spots, children, className }: { spots: Spot[]; children?: 
     <Label as="div" className={cn("flex items-baseline gap-3 border-y border-border px-4 py-2", className)}>
       <span className="flex-1">{children}</span>
       <span className="w-14 text-right">Proj</span>
-      <span className="w-16 text-right">Pts</span>
+      {started && <span className="w-16 text-right">Pts</span>}
     </Label>
   );
 }
@@ -221,8 +254,20 @@ function ScoreHeads({ spots, children, className }: { spots: Spot[]; children?: 
  * Both sides render identically on purpose: the question is which lineup is
  * better, and that is easier to see when nothing but the numbers differs.
  */
-export function SideCard({ side, label, onOpen }: { side: Side | null; label: string; onOpen?: (id: string) => void }) {
+export function SideCard({
+  side,
+  label,
+  onOpen,
+  started,
+}: {
+  side: Side | null;
+  label: string;
+  onOpen?: (id: string) => void;
+  /** Whether the week's first game has kicked off; read from this side alone where the caller does not say. */
+  started?: boolean;
+}) {
   if (!side) return null;
+  const on = started ?? underWay(side);
   return (
     <Card>
       <CardHeader>
@@ -236,20 +281,24 @@ export function SideCard({ side, label, onOpen }: { side: Side | null; label: st
         </span>
         <span className="normal-case tracking-normal">{[side.detail, side.points].filter(Boolean).join(" · ")}</span>
       </CardHeader>
-      <ScoreHeads spots={side.lineup} className="border-t-0" />
-      <SpotList spots={side.lineup} onOpen={onOpen} />
+      <ScoreHeads spots={side.lineup} started={on} className="border-t-0" />
+      <SpotList spots={side.lineup} onOpen={onOpen} started={on} />
       {(side.bench.length > 0 || side.open_spots > 0) && (
         <>
-          <ScoreHeads spots={side.bench}>Bench</ScoreHeads>
-          {side.bench.length > 0 && <SpotList spots={side.bench} onOpen={onOpen} />}
+          <ScoreHeads spots={side.bench} started={on}>
+            Bench
+          </ScoreHeads>
+          {side.bench.length > 0 && <SpotList spots={side.bench} onOpen={onOpen} started={on} />}
           <OpenSpots count={side.open_spots} />
         </>
       )}
       {/* Apart from the bench: these cost no roster spot and cannot start. */}
       {side.reserve.length > 0 && (
         <>
-          <ScoreHeads spots={side.reserve}>Reserve</ScoreHeads>
-          <SpotList spots={side.reserve} onOpen={onOpen} />
+          <ScoreHeads spots={side.reserve} started={on}>
+            Reserve
+          </ScoreHeads>
+          <SpotList spots={side.reserve} onOpen={onOpen} started={on} />
         </>
       )}
     </Card>
