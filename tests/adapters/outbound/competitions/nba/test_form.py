@@ -60,7 +60,7 @@ def test_the_line_is_keyed_by_every_category_label() -> None:
     other way is a figure nobody finds."""
     line = nine_cat([_game("2026-01-01", pts=2, fgm=1, fga=2, ftm=1, fta=1)])
 
-    assert set(line) == {c.label for c in CATEGORIES}
+    assert set(line) == {c.label for c in CATEGORIES} | {c.attempted for c in CATEGORIES if c.is_percentage}
 
 
 # ── the windows ─────────────────────────────────────────────────────────

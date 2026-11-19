@@ -52,7 +52,8 @@ VALUE = "Value"
 
 VALUE_HINT = (
     "What a game of him is worth across the league's categories: each one's figure against its spread "
-    "among both rosters and the top of the wire, turnovers counted against. Recent form beside this week's projection."
+    "among both rosters and the top of the wire, FG% and FT% weighted by attempts, turnovers counted against. "
+    "Recent form beside this week's projection."
 )
 POINTS_HINT = "Fantasy points a game this week is weighed on: recent form beside this week's projection."
 

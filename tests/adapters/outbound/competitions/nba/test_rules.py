@@ -43,6 +43,13 @@ def test_nothing_attempted_is_no_percentage_rather_than_zero() -> None:
     assert "FG%" not in line({"pts": 10.0})
 
 
+def test_a_line_carries_each_percentages_attempts_a_game() -> None:
+    figures = line({"fgm": 9.0, "fga": 20.0, "ftm": 4.0, "fta": 6.0}, games=2)
+
+    assert (figures[FIELD_GOALS.attempted], figures["FTA"]) == (10.0, 3.0)
+    assert "FTA" not in line({"fgm": 2.0, "fga": 4.0})
+
+
 def test_an_absent_count_is_nought() -> None:
     """Sleeper omits a key rather than publishing a zero."""
     assert line({})["STL"] == 0.0

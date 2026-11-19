@@ -141,7 +141,9 @@ team and league pages. NBA averages are Yahoo's own, as Yahoo prints them (a rat
 reads `.850`), one figure per stat on every page: in a category league, Free agents
 and Rosters show every category the league scores over the last 30 days plus
 `Value`, a game's worth across the categories (the to-do list's own figure, read on
-its pool: both rosters of this week's matchup and the top of the wire), best first;
+its pool: both rosters of this week's matchup and the top of the wire; FG% and FT%
+count by impact, the rate's distance from the pool's times attempts, so a 3-for-4
+big doesn't outrank a 9-for-18 scorer), best first;
 in a points league FPTS a game and PTS/REB/AST, most FPTS first. Lineup rows show
 games left and Yahoo's PTS/REB/AST (FPTS in a points league); a week played shows
 each category as a column. Position filters are PG/SG/SF/PF/C, plus G and F where
