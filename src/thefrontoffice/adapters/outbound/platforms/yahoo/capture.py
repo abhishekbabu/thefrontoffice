@@ -205,7 +205,8 @@ class YahooCapture:
     def _reads(self, game: YahooGame, league: YahooLeague) -> list[YahooRead]:
         """Everything the app reads of one league that can be planned from what is held.
 
-        The scoreboard of every week of the season, since any can be opened. A
+        The scoreboard of every week of the season, since any can be opened, and
+        the league's moves, which a player's history reads. A
         roster for every team the held team list names, and its players' recent
         averages, which the first sync of a league has to learn before it can ask. Both rosters of your matchup in
         each week played, as it ended, once that week's scoreboard is held and
@@ -216,6 +217,7 @@ class YahooCapture:
             paths.settings(key),
             paths.teams(key),
             paths.standings(key),
+            paths.transactions(key),
             *(read for sort_type, depth in game.available.items() for read in paths.available(key, depth, sort_type)),
             *paths.leaders(key, game.leaders, game.per_stat).values(),
         ]

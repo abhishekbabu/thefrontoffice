@@ -11,7 +11,7 @@ from dataclasses import replace
 import pytest
 from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeSleeper, game_line, nfl_provider, proj
 
-from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Matchup
+from thefrontoffice.adapters.outbound.competitions.matchups import Matchup
 from thefrontoffice.adapters.outbound.competitions.nfl.views import ease
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,

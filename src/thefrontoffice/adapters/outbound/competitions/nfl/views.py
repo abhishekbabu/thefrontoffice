@@ -9,7 +9,9 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
+from thefrontoffice.adapters.outbound.competitions.careers import experience, recent_seasons
 from thefrontoffice.adapters.outbound.competitions.injuries import BODY_PART
+from thefrontoffice.adapters.outbound.competitions.matchups import Matchup
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, history, injuries
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, eligible_positions
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
@@ -533,7 +535,7 @@ def _figures(state: Week, player: Projection, trend: bool) -> dict[str, Stat]:
     return {row.label: row for row in rows}
 
 
-def ease(matchup: evidence.Matchup) -> str:
+def ease(matchup: Matchup) -> str:
     """'6th-easiest' where a defense gives up more than most to the position, '3rd-toughest' where less."""
     if matchup.rank == 1:
         return "easiest"
@@ -631,7 +633,7 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
         groups.append(StatGroup(title="Projected line", stats=_projection_lines(projection.stats, meta.position)))
     # Who he is matters least to a lineup call, so it goes last and on two lines.
     profile = [
-        _experience(meta.years_exp),
+        experience(meta.years_exp),
         *([f"age {meta.age}"] if meta.age else []),
         *([f"#{meta.number}"] if meta.number else []),
         *([meta.college] if meta.college else []),
@@ -734,11 +736,6 @@ def _game_log(
     return StatTable(title="Game log", tab=GAME_LOG_TAB, columns=columns, rows=rows)
 
 
-def _experience(years: int) -> str:
-    """'rookie', '1 season', '7 seasons'."""
-    return "rookie" if years == 0 else f"{years} season{'' if years == 1 else 's'}"
-
-
 RECENT_WEEKS = 5
 """Weeks the drawer's first tab shows of the game log: enough to see a role change, few enough to read at a glance."""
 
@@ -802,7 +799,7 @@ def _season_table(client: NFLSource, player_id: str, state: Week) -> StatTable |
     history, and neither does a season Sleeper has not published.
     """
     scoring = state.league.scoring_format
-    columns = [state.season, *_recent_seasons(state.season)]
+    columns = [state.season, *recent_seasons(state.season)]
     by_season: dict[str, SeasonTotals | None] = {}
     for season in columns:
         try:
@@ -851,19 +848,6 @@ def _rank(position: str, seasons: StatTable | None) -> str:
     row = next((r for r in seasons.rows if r.label == POSITION_RANK), None) if seasons else None
     value = row.values[0] if row and row.values else NOT_APPLICABLE
     return "" if value == NOT_APPLICABLE else f"{position}{value.lstrip('#')}"
-
-
-def _recent_seasons(season: str) -> list[str]:
-    """The two seasons before this one, newest first.
-
-    Two rather than a career: three years back is a different team, a
-    different scheme and usually a different player.
-    """
-    try:
-        year = int(season)
-    except ValueError:
-        return []
-    return [str(year - 1), str(year - 2)]
 
 
 def lineup_spot(slot: LineupSlot, scheduled: bool, live: Live | None = None) -> Spot:

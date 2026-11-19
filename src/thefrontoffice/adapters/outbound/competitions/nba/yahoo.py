@@ -9,13 +9,15 @@ weights — and the budget constraint is the league's weekly add limit.
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from itertools import zip_longest
 
-from thefrontoffice.adapters.outbound.competitions import paging, places
+from thefrontoffice.adapters.outbound.competitions import news, paging, places
+from thefrontoffice.adapters.outbound.competitions.careers import recent_seasons
+from thefrontoffice.adapters.outbound.competitions.dates import parse_day
 from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries, by_club, matched
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
-from thefrontoffice.adapters.outbound.competitions.nba import actions, prompt, views
+from thefrontoffice.adapters.outbound.competitions.nba import actions, defense, history, prompt, views
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
 from thefrontoffice.adapters.outbound.competitions.nba import market as nba_market
@@ -34,6 +36,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.projections import index_
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     PACIFIC,
     SCOUTED,
+    Line,
     amount,
     position_filters,
     ruled_out,
@@ -47,7 +50,7 @@ from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, PlayerMeta, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource, once
@@ -307,16 +310,10 @@ class YahooNBAProvider:
         provisional = bool(self.games.unscheduled(start, end))
         stats = {p.player_key: self.form.get_player_stats(p.name) for p in unique}
         projected = {p.player_key: projections.lookup(p.name) if projections else None for p in unique}
-        found: dict[str, nba_worth.Scale] = {}
-        if weights:
-            value = nba_worth.points_value(weights)
-        else:
-            per_game = (
-                nba_worth.per_game(stats[p.player_key], projected[p.player_key]) for p in unique if p.player_key in pool
-            )
-            lines = [line for line in per_game if line]
-            found = nba_worth.scales(yahoo.settings().categories, lines)
-            value = nba_worth.category_value(yahoo.settings().categories, lines)
+        per_game = (
+            nba_worth.per_game(stats[p.player_key], projected[p.player_key]) for p in unique if p.player_key in pool
+        )
+        value, found = _valuer(yahoo, weights, [line for line in per_game if line])
         readings = (
             nba_worth.read(
                 p,
@@ -1016,19 +1013,17 @@ class YahooNBAProvider:
             return {}
 
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
-        """Any player in the league — yours, a rival's or a free agent — with Yahoo's averages for him.
+        """Any player in the league — yours, a rival's or a free agent — with his week, his averages and his games.
 
-        His season and his last month, in the league's categories, both read
-        together. A points league heads it with his fantasy points per game; a
-        category league with his points.
+        Yahoo's averages over his season and his last month, read together, as
+        every table shows them; Sleeper's box scores game by game, its
+        projection and its catalog; his week weighed as the to-do list weighs
+        it. Seasons, history and news are read only when their tab is opened
+        (`player_tab`).
         """
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
-        found = yahoo.players([player_id])
-        if not found:
-            raise PlayerNotFoundError([player_id])
-        player = found[0]
-
+        player = self._player(yahoo, player_id)
         try:
             spans = yahoo.averages([player_id], (Average.SEASON, RECENT_AVERAGE))
         except FrontOfficeError as e:
@@ -1036,37 +1031,180 @@ class YahooNBAProvider:
             spans = {}
         weights = self._weights(league, yahoo)
         reports = self._reports()
+        profile = self.form.profile(player.name)
+        week = self._week_of(yahoo, league, player, reports, weights, profile)
+        games = self.form.games(player.name)
         return views.detail(
-            player,
-            spans.get(Average.SEASON, {}).get(player_id),
-            spans.get(RECENT_AVERAGE, {}).get(player_id),
-            yahoo.settings().categories,
-            weights is not None,
-            self._injuries([player], reports).stats(player_id),
-            self._splits([player], weights, reports)(player),
-            self._left(yahoo, league, player, reports),
+            views.Drawer(
+                player=player,
+                season=spans.get(Average.SEASON, {}).get(player_id),
+                recent=spans.get(RECENT_AVERAGE, {}).get(player_id),
+                scored=yahoo.settings().categories,
+                weights=weights,
+                reported=self._injuries([player], reports).stats(player_id),
+                splits=self._splits([player], weights, reports)(player),
+                week=week[0] if week else None,
+                games=games,
+                venues=self._venues(player, games),
+                value=week[1] if week else self._points_valuer(weights),
+                profile=profile,
+            )
         )
 
-    def _left(
-        self, yahoo: YahooSource, league: YahooLeague, player: YahooPlayer, reports: Sequence[InjuryReport]
-    ) -> str:
-        """His games left this week, as a page says them (`views.counted`); empty without a week or a schedule.
+    def player_tab(self, league_id: str, player_id: str, tab: str) -> PlayerDetail:
+        """One of his drawer's tabs read only when opened (`views.DEFERRED`), each a request of its own.
 
-        Counted as his row counts them (`_games`): none while ruled out, or from his return.
+        Seasons are Sleeper's, this one and the two before it, a request each
+        and shared by every player; history is the league's moves on Yahoo, one
+        request for the season's; news is ESPN's feed for his club.
+
+        Raises:
+            PlayerNotFoundError: nothing in this league has that identifier.
+            NotFoundError: the drawer defers no tab of that name.
+            FrontOfficeError: the tab's one source would not load.
+        """
+        if tab not in views.DEFERRED:
+            raise NotFoundError(f"a drawer tab named {tab!r}")
+        league = self._league(league_id)
+        yahoo = self._yahoo_for(league)
+        player = self._player(yahoo, player_id)
+        if tab == views.SEASONS_TAB:
+            table = views.seasons(self._seasons(player), self._weights(league, yahoo))
+            return views.deferred_tab(player, tables=[table] if table else [])
+        if tab == views.HISTORY_TAB:
+            mine = yahoo.get_user_team().name
+            return views.deferred_tab(player, moves=history.moves(yahoo.transactions(), player_id, mine))
+        club = espn_club(player.team)
+        feeds = self.espn.get_team_news(NBA, [club])
+        found = news.attach(feeds, by_club([(club, player.name, player_id)]), datetime.now(UTC))
+        return views.deferred_tab(player, groups=views.news(found.stats(player_id, limit=views.NEWS_IN_DRAWER)))
+
+    @staticmethod
+    def _player(yahoo: YahooSource, player_id: str) -> YahooPlayer:
+        """The player a key names, with whose roster he is on.
+
+        Raises:
+            PlayerNotFoundError: the league knows nobody by that key.
+        """
+        found = yahoo.players([player_id])
+        if not found:
+            raise PlayerNotFoundError([player_id])
+        return found[0]
+
+    def _seasons(self, player: YahooPlayer) -> dict[str, NBASeason | None]:
+        """His totals this season and the two before it, newest first; a season that will not load reads as absent."""
+        current = self.sleeper.get_nba_state().season
+        found: dict[str, NBASeason | None] = {}
+        for season in [current, *recent_seasons(current)]:
+            try:
+                found[season] = self.form.season(player.name, season)
+            except FrontOfficeError as e:
+                logger.warning(f"Leaving {season} out of {player.name}'s seasons: {e}")
+                found[season] = None
+        return found
+
+    def _week_of(
+        self,
+        yahoo: YahooSource,
+        league: YahooLeague,
+        player: YahooPlayer,
+        reports: Sequence[InjuryReport],
+        weights: Mapping[str, float] | None,
+        profile: PlayerMeta | None,
+    ) -> tuple[views.DrawerWeek, nba_worth.Valuer | None] | None:
+        """His matchup week as the drawer shows it, and what a game is worth on the week's scale; None without one.
+
+        Counted as his row counts it (`_games`): none while ruled out, or from
+        his return. Weighed on the to-do list's own pool (`_valued`), so the
+        value it shows is the one his row shows. Each part is enrichment:
+        whatever will not load is left out, and the rest stands.
         """
         week = league.current_week
         if not week:
-            return ""
+            return None
         try:
             found = yahoo.pairing(yahoo.get_user_team().team_key, week)
         except FrontOfficeError as e:
-            logger.warning(f"Showing {player.name} without his games this week: {e}")
-            return ""
+            logger.warning(f"Showing {player.name} without his week: {e}")
+            return None
         if found is None:
-            return ""
-        clubs = self.games.get_remaining_games_bulk([player.team], found.start, found.end)
-        games = self._games(player, clubs, self._returns([player], reports).get(player.player_key), found.end)
-        return views.counted(games, bool(self.games.unscheduled(found.start, found.end)))
+            return None
+        start, end = found.start, found.end
+        back = self._returns([player], reports).get(player.player_key)
+        clubs = self.games.get_remaining_games_bulk([player.team], start, end)
+        games = self._games(player, clubs, back, end)
+        provisional = bool(self.games.unscheduled(start, end))
+        club = player.team.upper()
+        try:
+            fixtures = [g for g in self.games.games_left(start, end) if club in (g.home, g.away)]
+        except FrontOfficeError as e:
+            logger.warning(f"Showing {player.name}'s week without its games: {e}")
+            fixtures = []
+        projections = index_for(self.sleeper, start, end)
+        projected = projections.lookup(player.name) if projections else None
+        value = self._week_valuer(yahoo, weights, found)
+        reading = (
+            nba_worth.read(player, self.form.get_player_stats(player.name), projected, value, games, provisional, back)
+            if value
+            else None
+        )
+        matchup = None
+        if fixtures and profile:
+            opponent = fixtures[0].away if fixtures[0].home == club else fixtures[0].home
+            matchup = defense.allowed(self.form.box_scores(), weights).get((opponent, profile.position))
+        left = views.counted(games, provisional)
+        return views.DrawerWeek(left, fixtures, reading, projected, matchup), value
+
+    def _week_valuer(
+        self, yahoo: YahooSource, weights: Mapping[str, float] | None, found: Pairing
+    ) -> nba_worth.Valuer | None:
+        """What a game is worth on the week's scale: fantasy points, or a category league's value across the pool.
+
+        The pool is the to-do list's (`_decide`): both rosters of this week's
+        matchup and the top of the wire, most of it read already by the page
+        the drawer opened from. None where it will not load.
+        """
+        if weights:
+            return nba_worth.points_value(weights)
+        try:
+            pool = [
+                *yahoo.roster(found.mine.team_key),
+                *yahoo.roster(found.opponent.team_key),
+                *_wire(yahoo, STREAM_DEPTH),
+            ]
+            projections = index_for(self.sleeper, found.start, found.end)
+            lines = [
+                line
+                for p in once(pool)
+                if (
+                    line := nba_worth.per_game(
+                        self.form.get_player_stats(p.name), projections.lookup(p.name) if projections else None
+                    )
+                )
+            ]
+            return _valuer(yahoo, None, lines)[0]
+        except FrontOfficeError as e:
+            logger.warning(f"Showing the drawer without a value a game: {e}")
+            return None
+
+    @staticmethod
+    def _points_valuer(weights: Mapping[str, float] | None) -> nba_worth.Valuer | None:
+        """A points league's fantasy points, which need no pool; None in a category league, which does."""
+        return nba_worth.points_value(weights) if weights else None
+
+    def _venues(self, player: YahooPlayer, games: Sequence[NBAGameLog]) -> dict[str, ScheduledGame]:
+        """His club's game on each date of his log, by ISO date, from the schedule already loaded; none where it
+        will not load, which leaves each game's opponent bare."""
+        days = [day for g in games if (day := parse_day(g.date))]
+        if not days:
+            return {}
+        try:
+            slate = self.games.games_between(min(days), max(days))
+        except FrontOfficeError as e:
+            logger.warning(f"Showing {player.name}'s game log without home and away: {e}")
+            return {}
+        played = {g.date: g.team or player.team.upper() for g in games}
+        return {g.date: g for g in slate if played.get(g.date) in (g.home, g.away)}
 
     def _reports(self) -> list[InjuryReport]:
         """ESPN's NBA injury report; empty where it will not load, which leaves Yahoo's statuses standing alone."""
@@ -1103,6 +1241,17 @@ class YahooNBAProvider:
         regulars = mates.regulars()
         known = conditions(regulars, players, reported(regulars, reports))
         return lambda player: mates.splits(player, known)
+
+
+def _valuer(
+    yahoo: YahooSource, weights: Mapping[str, float] | None, lines: list[Line]
+) -> tuple[nba_worth.Valuer, dict[str, nba_worth.Scale]]:
+    """What a game is worth in the league's scoring, and each category's scale: fantasy points under `weights`, or
+    a category league's value scaled across `lines` (`worth.category_value`)."""
+    if weights:
+        return nba_worth.points_value(weights), {}
+    scored = yahoo.settings().categories
+    return nba_worth.category_value(scored, lines), nba_worth.scales(scored, lines)
 
 
 def _carried(players: Sequence[YahooPlayer]) -> dict[str, YahooLine]:

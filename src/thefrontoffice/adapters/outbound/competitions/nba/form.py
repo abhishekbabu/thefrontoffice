@@ -18,7 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.names import NameIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BOX_SCORE, Line, line
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNBASource
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, PlayerMeta
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,22 @@ class FormSource(Protocol):
         """A player's last fifteen games, newest first; none where there are none."""
         ...
 
+    def games(self, full_name: str) -> list[NBAGameLog]:
+        """Every game of a player's in the window, newest first; none where there are none."""
+        ...
+
+    def profile(self, full_name: str) -> PlayerMeta | None:
+        """Who a player is in Sleeper's catalog — age, experience, position — or None where it cannot place him."""
+        ...
+
+    def season(self, full_name: str, season: str) -> NBASeason | None:
+        """A player's totals over one season, or None where he played none of it or cannot be placed.
+
+        Raises:
+            SleeperAPIError: the season would not load.
+        """
+        ...
+
 
 class SleeperNBAForm:
     """Recent form for basketball.
@@ -147,10 +163,31 @@ class SleeperNBAForm:
         None where the catalog cannot place his name: an unmatched player
         carries no games rather than borrowing someone else's.
         """
+        return self.games(full_name)[:RECENT_GAMES]
+
+    def games(self, full_name: str) -> list[NBAGameLog]:
+        """Every game of a player's in the form window, newest first: his game log.
+
+        None where the catalog cannot place his name, for the reason `recent_games` gives.
+        """
         player_id = self._name_index().lookup(full_name)
         if player_id is None:
             return []
-        return self._game_logs().get(player_id, [])[:RECENT_GAMES]
+        return self._game_logs().get(player_id, [])
+
+    def profile(self, full_name: str) -> PlayerMeta | None:
+        """Who a player is in Sleeper's catalog, or None where his name places nobody, or two."""
+        player_id = self._name_index().lookup(full_name)
+        return self._players().get(player_id) if player_id else None
+
+    def season(self, full_name: str, season: str) -> NBASeason | None:
+        """A player's totals over one season, read only when asked: one request a season, shared by every player.
+
+        Raises:
+            SleeperAPIError: the season would not load.
+        """
+        player_id = self._name_index().lookup(full_name)
+        return self.client.get_nba_season(season).get(player_id) if player_id else None
 
     # ── loading, once ───────────────────────────────────────────────
 

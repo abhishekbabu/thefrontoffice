@@ -32,6 +32,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     DraftPick,
     GameProjection,
     NBAGameLog,
+    NBASeason,
     NFLGameLine,
     PlayerMeta,
     ScheduledGame,
@@ -157,6 +158,8 @@ class SleeperNBASource(Protocol):
     def get_nba_game_logs(self, season: str, weeks: list[int]) -> dict[str, list[NBAGameLog]]: ...
 
     def get_nba_players(self) -> dict[str, PlayerMeta]: ...
+
+    def get_nba_season(self, season: str) -> dict[str, NBASeason]: ...
 
     def get_nba_schedule(self, season: str) -> list[ScheduledGame]: ...
 
@@ -392,6 +395,31 @@ class SleeperClient:
                 | ({str(scoring): league_points(_numbers(row), rules)} if rules else {}),
                 position_rank=int(row.get("pos_rank_ppr") or 0),
                 splits={k: float(v) for k, v in row.items() if k in SPLIT_KEYS},
+            )
+            for pid, row in (stored or {}).items()
+        }
+
+    def get_nba_season(self, season: str) -> dict[str, NBASeason]:
+        """A basketball season in totals, keyed by player_id: every player who played a game of it.
+
+        Trimmed before caching to the games, minutes, box score and Sleeper's
+        position rank — a twentieth of the raw rows — and team rows dropped.
+        """
+        stored = self._api.cached(
+            f"season_{NBA}_{season}",
+            f"{BASE_URL}/stats/{NBA}/regular/{season}",
+            SEASON_STATS_TTL,
+            timeout=CATALOG_TIMEOUT_SECONDS,
+            keep=_trim_nba_season,
+        )
+        return {
+            pid: NBASeason(
+                player_id=pid,
+                season=season,
+                games=int(row.get("gp") or 0),
+                minutes=float(row.get("sp") or 0.0) / 60,
+                totals={k: float(v) for k in NBA_STAT_KEYS if (v := row.get(k)) is not None},
+                position_rank=int(row.get("pos_rank_std") or 0),
             )
             for pid, row in (stored or {}).items()
         }
@@ -727,6 +755,19 @@ def _trim_catalog(raw: Any) -> dict[str, dict[str, Any]]:
         )
         for player_id, p in (raw or {}).items()
         if isinstance(p, dict)
+    }
+
+
+NBA_SEASON_KEYS = frozenset({*NBA_STAT_KEYS, "gp", "sp", "pos_rank_std"})
+"""What a basketball season is kept for: games, seconds played, the box score and Sleeper's position rank."""
+
+
+def _trim_nba_season(raw: Any) -> dict[str, dict[str, Any]]:
+    """A basketball season's rows cut to players who played, and to `NBA_SEASON_KEYS`."""
+    return {
+        str(pid): {k: v for k, v in row.items() if k in NBA_SEASON_KEYS and isinstance(v, int | float)}
+        for pid, row in (raw or {}).items()
+        if isinstance(row, dict) and row.get("gp") and not str(pid).startswith(TEAM_ROW_PREFIX)
     }
 
 

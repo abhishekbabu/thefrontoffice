@@ -86,6 +86,7 @@ from thefrontoffice.domain.ports import (
     LeagueRef,
     OutlookProvider,
     PlayerSearchProvider,
+    PlayerTabProvider,
     TradeMarketProvider,
     WeekBrowsingProvider,
     WireProvider,
@@ -415,6 +416,12 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
     def player(competition: str, league_id: str, player_id: str) -> PlayerDetail:
         """Everything worth knowing about one player, when someone asks."""
         return _provider(competition).player(league_id, player_id)
+
+    @app.get("/api/{competition}/leagues/{league_id}/players/{player_id}/tabs/{tab}", response_model=PlayerDetail)
+    def player_tab(competition: str, league_id: str, player_id: str, tab: str) -> PlayerDetail:
+        """One tab of a player's drawer that is read only when opened (`PlayerDetail.deferred`)."""
+        provider = wiring.registry.find(competition).open_as(PlayerTabProvider, "a player's deferred tabs")
+        return provider.player_tab(league_id, player_id, tab)
 
     @app.get("/api/{competition}/leagues/{league_id}/compare", response_model=PlayerComparison)
     def compare(competition: str, league_id: str, ids: Annotated[list[str], Query()]) -> PlayerComparison:

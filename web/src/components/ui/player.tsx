@@ -6,7 +6,7 @@ import { fade, list, listItem, portrait } from "@/lib/motion";
 import { useLoadedImage } from "@/lib/useLoadedImage";
 import { IconButton } from "@/components/ui/icon-button";
 import { ExternalLink } from "@/components/ui/external-link";
-import { QueryState } from "@/components/ui/state";
+import { Empty, QueryState } from "@/components/ui/state";
 import { BackLink, SlideOver, type Back } from "@/components/ui/dialog";
 import { useShown } from "@/lib/screen";
 import { api, type Competition, type League, type ActivityRow, type PlayerDetail, type Stat, type StatTable } from "@/lib/api";
@@ -264,17 +264,29 @@ function PlayerPanel({
   const tabOf = (section: { tab: string }) => section.tab || detail?.tabs[0] || "";
   const filled = detail ? detail.groups.filter((group) => group.stats.length > 0) : [];
   const movesTab = detail ? detail.moves_tab || detail.tabs[0] || "" : "";
+  // A deferred tab is offered before anyone knows what it holds: it is read
+  // only once opened, since each costs a request the first tab does not.
+  const deferred = detail?.deferred ?? [];
   const present = (detail?.tabs ?? []).filter(
     (t) =>
+      deferred.includes(t) ||
       filled.some((g) => tabOf(g) === t) ||
       detail?.tables.some((x) => tabOf(x) === t) ||
       (t === movesTab && (detail?.moves.length ?? 0) > 0),
   );
   const current = present.includes(tab) ? tab : present[0];
+  const opened = current && deferred.includes(current) ? current : "";
+  const part = useQuery<PlayerDetail, Error>({
+    queryKey: keys.playerTab(competition, league, shown, opened),
+    queryFn: () => api.league(competition, league).playerTab(shown, opened),
+    enabled: Boolean(shown && opened),
+  });
+  const source = opened ? part.data : detail;
   const shownHere = (section: { tab: string }) => present.length <= 1 || tabOf(section) === current;
-  const tables = (detail?.tables ?? []).filter(shownHere);
-  const groups = filled.filter(shownHere);
-  const moves = detail && shownHere({ tab: movesTab }) ? detail.moves : [];
+  const tables = (source?.tables ?? []).filter(shownHere);
+  const groups = (source?.groups ?? []).filter((group) => group.stats.length > 0).filter(shownHere);
+  const moves = source && shownHere({ tab: movesTab }) ? source.moves : [];
+  const nothing = Boolean(opened && part.data && !tables.length && !groups.length && !moves.length);
   const [move, setMove] = useState<ActivityRow | null>(null);
 
   // On screen while open, so a question to the assistant docked over the
@@ -364,6 +376,8 @@ function PlayerPanel({
       </div>
 
       <QueryState query={player} lines={4} />
+      {opened && <QueryState query={part} lines={4} className="mx-5 mt-4" />}
+      {nothing && <Empty title={`No ${opened.toLowerCase()} on record.`} />}
 
       {player.data && (
         // Room at the foot for the assistant's button, which sits over the drawer.

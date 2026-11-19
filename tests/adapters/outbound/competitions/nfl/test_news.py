@@ -2,8 +2,9 @@
 
 from datetime import UTC, datetime, timedelta
 
+from thefrontoffice.adapters.outbound.competitions.news import NEWS_WINDOW
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
-from thefrontoffice.adapters.outbound.competitions.nfl.news import NEWS_WINDOW, attach
+from thefrontoffice.adapters.outbound.competitions.nfl.news import attach
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta
 

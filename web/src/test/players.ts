@@ -22,6 +22,7 @@ export function playerDetail(extra: Partial<PlayerDetail> = {}): PlayerDetail {
     tables: [],
     moves: [],
     moves_tab: "",
+    deferred: [],
     ...extra,
   };
 }

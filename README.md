@@ -148,16 +148,29 @@ in a points league FPTS a game and PTS/REB/AST, most FPTS first. Lineup rows sho
 games left and Yahoo's PTS/REB/AST (FPTS in a points league); a week played shows
 each category as a column. Position filters are PG/SG/SF/PF/C, plus G and F where
 the league's lineup has them, each keeping anybody eligible there. The drawer has
-the photo, whose roster he is on, games left this week, and every category the
-league scores over the season and the last 30 days (the latter only once it
-differs). To-do items compare `Value/g` (explained on hover), Yahoo's FPTS in a
+the photo and whose roster he is on, then five tabs like NFL's. **This week**: games
+left and against whom (`Thu 20 vs LAL · Sat 22 @ BOS`), what his next opponent gives
+up to his position (points a game, or fantasy points in a points league, ranked
+from Sleeper's box scores), `Value/g` and the week's worth, minutes and usage
+(FGA + 0.44×FTA + TO) over his last five beside the whole window, Sleeper's
+projected line, his last five games (value or FPTS, minutes, points), Yahoo's
+averages over the season and the last 30 days (the latter only once it differs),
+teammates out, injury, and his profile (experience, age, number, college).
+**Game log**: every game in Sleeper's six-week window, oldest first, home or away,
+with minutes, the counts, FG/FT made over tried and each game's value. **Seasons**,
+**History** and **News** load only when opened (`GET …/players/{id}/tabs/{tab}`):
+Sleeper's season totals for this season and the two before it a game at a time
+(three requests shared by every player, cached 12 hours), every league move he was
+part of (one Yahoo request for the season's transactions, cached an hour, also in
+the browser sync), and ESPN's news for his club naming him. To-do items compare `Value/g` (explained on hover), Yahoo's FPTS in a
 points league, and in a category league the two categories dragging a player's
 value most (`Weak in: FG% .380 · 2.9 TO`), which a drop's reason names too.
 That costs one request per roster page (the roster's averages) plus, in a category
 league, the matchup's rosters and the wire's first pages the summary reads anyway;
 none more on Free agents (each wire page carries its averages), two per drawer
-(season and last 30 days, cached 3 hours) and the drawer's player lookup carries
-his ownership. Sleeper's box scores still drive everything game by game: worth,
+(season and last 30 days, cached 3 hours) plus the matchup's rosters and the wire's
+first pages its value is scaled on (the summary's own reads), and the drawer's
+player lookup carries his ownership. Sleeper's box scores still drive everything game by game: worth,
 `Value`, the win chance, teammate splits and games left. An NBA league is read as Yahoo
 scores it: a category league shows the categories, a points league its fantasy
 points scored and projected, with the scout's free agents ranked by fantasy points

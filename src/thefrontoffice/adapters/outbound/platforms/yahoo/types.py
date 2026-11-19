@@ -202,6 +202,41 @@ class YahooTeam:
 
 
 @dataclass(frozen=True)
+class MovedPlayer:
+    """One player a league transaction moved, and which way."""
+
+    player_key: str
+    name: str
+    position: str
+    team: str
+    """His NBA club."""
+
+    kind: str
+    """What happened to him, in Yahoo's words: 'add', 'drop', 'trade'."""
+
+    source: str = ""
+    """Whose roster he left — a team's name — or where from: 'freeagents', 'waivers'."""
+
+    destination: str = ""
+    """Whose roster he joined — a team's name — or where to: 'waivers'."""
+
+
+@dataclass(frozen=True)
+class YahooTransaction:
+    """One move the league made: an add, a drop, both at once, or a trade."""
+
+    kind: str
+    """In Yahoo's words: 'add', 'drop', 'add/drop', 'trade'."""
+
+    timestamp: int
+    """When it went through, in epoch seconds."""
+
+    players: tuple[MovedPlayer, ...]
+    bid: str = ""
+    """The FAAB a waiver claim was won with, as Yahoo prints it; empty for none."""
+
+
+@dataclass(frozen=True)
 class StatCategory:
     """One category the league scores, as its settings name it."""
 

@@ -18,6 +18,7 @@ from functools import cached_property
 
 from thefrontoffice.adapters.outbound.competitions.dates import day_month, parse_day, span, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries
+from thefrontoffice.adapters.outbound.competitions.news import PlayerNews
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
@@ -42,7 +43,6 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     by_club,
     kicked_off,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import HurtTeammates
 from thefrontoffice.adapters.outbound.platforms.espn import types as espn

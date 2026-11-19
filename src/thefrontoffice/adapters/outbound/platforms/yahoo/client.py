@@ -31,6 +31,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     LeagueSettings,
     Matchup,
     MatchupSide,
+    MovedPlayer,
     Pairing,
     StatCategory,
     TeamStanding,
@@ -39,6 +40,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     YahooLine,
     YahooPlayer,
     YahooTeam,
+    YahooTransaction,
 )
 from thefrontoffice.domain.errors import FrontOfficeError, TeamNotFoundError
 
@@ -272,6 +274,10 @@ class YahooSource(Protocol):
         """How the league is scored, how often a team may add, and where its playoffs start."""
         ...
 
+    def transactions(self) -> list[YahooTransaction]:
+        """Every move the league has made this season that went through, newest first."""
+        ...
+
 
 class YahooClient:
     """Reads one Yahoo league, from whichever `YahooResponses` it is handed."""
@@ -404,6 +410,14 @@ class YahooClient:
         """
         raw = self._responses.raw(paths.settings(self.league.league_key))
         return readable("league settings", lambda: league_settings(parse(raw)["fantasy_content"]["league"]))
+
+    def transactions(self) -> list[YahooTransaction]:
+        """Every move the league has made this season that went through, newest first: one read for all of them.
+
+        A vetoed trade, or a commissioner's edit moving nobody, is no move.
+        """
+        raw = self._responses.raw(paths.transactions(self.league.league_key))
+        return readable("transactions", lambda: transaction_list(parse(raw)["fantasy_content"]["league"]))
 
     def get_user_team(self) -> YahooTeam:
         """Identify the team owned by the current user.
@@ -565,6 +579,33 @@ def _owner(ownership: Any) -> str:
         return ""
     held = _text(ownership, "owner_team_name")
     return held or OWNERSHIP.get(_text(ownership, "ownership_type"), "")
+
+
+def transaction_list(league: Any) -> list[YahooTransaction]:
+    moves = (_transaction(t) for t in _items(_node(league, "transactions"), "transaction"))
+    return [move for move, status in moves if status == "successful" and move.players]
+
+
+def _transaction(data: Any) -> tuple[YahooTransaction, str]:
+    """One transaction, and Yahoo's word for whether it went through."""
+    players = tuple(_moved(p) for p in _items(_node(data, "players"), "player"))
+    move = YahooTransaction(
+        kind=_text(data, "type"), timestamp=_number(data, "timestamp"), players=players, bid=_text(data, "faab_bid")
+    )
+    return move, _text(data, "status")
+
+
+def _moved(data: Any) -> MovedPlayer:
+    moved = _node(data, "transaction_data")
+    return MovedPlayer(
+        player_key=_text(data, "player_key"),
+        name=_text(data, "name", "full"),
+        position=_text(data, "display_position"),
+        team=_text(data, "editorial_team_abbr"),
+        kind=_text(moved, "type"),
+        source=_text(moved, "source_team_name") or _text(moved, "source_type"),
+        destination=_text(moved, "destination_team_name") or _text(moved, "destination_type"),
+    )
 
 
 def team_list(league: Any) -> list[YahooTeam]:

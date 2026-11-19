@@ -218,6 +218,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/{competition}/leagues/{league_id}/players/{player_id}/tabs/{tab}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Player Tab
+         * @description One tab of a player's drawer that is read only when opened (`PlayerDetail.deferred`).
+         */
+        get: operations["player_tab"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/{competition}/leagues/{league_id}/compare": {
         parameters: {
             query?: never;
@@ -1581,6 +1601,11 @@ export interface components {
              * @default
              */
             moves_tab: string;
+            /**
+             * Deferred
+             * @description Tabs whose sections are read only when opened, each from the player's tab route: they cost a request the rest of the drawer does not. Offered whether or not they turn out to hold anything.
+             */
+            deferred: string[];
         };
         /**
          * PlayerPage
@@ -3344,6 +3369,85 @@ export interface operations {
                 competition: string;
                 league_id: string;
                 player_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    player_tab: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition: string;
+                league_id: string;
+                player_id: string;
+                tab: string;
             };
             cookie?: never;
         };

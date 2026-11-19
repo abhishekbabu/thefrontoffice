@@ -19,7 +19,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.form import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, PlayerMeta
 
 
 def _game(day: str, **stats: float) -> NBAGameLog:
@@ -139,6 +139,38 @@ def test_a_players_recent_games_are_his_last_fifteen_box_scores_newest_first() -
 
 def test_a_name_that_cannot_be_matched_carries_no_games() -> None:
     assert _form(logs=_run(20)).recent_games("Someone Else Entirely") == []
+    assert _form(logs=_run(20)).games("Someone Else Entirely") == []
+
+
+def test_a_players_game_log_is_every_game_in_the_window_newest_first() -> None:
+    games = _form(logs=_run(20)).games("Nikola Jokic")
+
+    assert len(games) == 20
+    assert games[0].date == "2026-01-01"
+
+
+def test_a_players_profile_is_his_catalog_entry() -> None:
+    form = _form()
+
+    assert form.profile("Nikola Jokic") == PlayerMeta(player_id="p1", name="Nikola Jokic", position="C", team="DEN")
+    assert form.profile("Someone Else Entirely") is None
+
+
+def test_a_players_season_is_his_totals_from_the_seasons_read() -> None:
+    totals = NBASeason(player_id="p1", season="2025", games=70, minutes=2400.0, totals={"pts": 2000.0})
+    form = _form(seasons={"2025": {"p1": totals}})
+
+    assert form.season("Nikola Jokic", "2025") == totals
+    assert form.season("Nikola Jokic", "2024") is None
+    assert form.season("Someone Else Entirely", "2025") is None
+
+
+def test_a_season_that_will_not_load_says_so() -> None:
+    client = FakeSleeperNBA()
+    client.season_error = SleeperAPIError("down")
+
+    with pytest.raises(SleeperAPIError):
+        SleeperNBAForm(client=client, season="2026").season("Nikola Jokic", "2025")
 
 
 def test_an_accented_name_still_matches() -> None:

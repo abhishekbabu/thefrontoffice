@@ -7,9 +7,9 @@ The provider fetches and the prompt describes.
 
 from collections.abc import Mapping, Sequence
 
+from thefrontoffice.adapters.outbound.competitions.news import PlayerNews, dated
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence, season_average
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection, Trending
-from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews, dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import STREAMED, listed, scoring_label
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.adapters.outbound.competitions.tasks import task_lines

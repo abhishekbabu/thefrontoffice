@@ -361,6 +361,23 @@ class NFLGameLine:
 
 
 @dataclass(frozen=True)
+class NBASeason:
+    """One player's basketball season in totals, as Sleeper publishes it."""
+
+    player_id: str
+    season: str
+    games: int
+    minutes: float
+    """Minutes played over the season."""
+
+    totals: dict[str, float]
+    """Summed box-score keys (`NBA_STAT_KEYS`)."""
+
+    position_rank: int = 0
+    """Where Sleeper's standard scoring ranks him at his position; zero where it gives none."""
+
+
+@dataclass(frozen=True)
 class NBAGameLog:
     """One player's line from one basketball game.
 
