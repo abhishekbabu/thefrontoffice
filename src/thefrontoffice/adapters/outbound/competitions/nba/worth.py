@@ -17,9 +17,10 @@ from datetime import date
 from typing import NamedTuple
 
 from thefrontoffice.adapters.outbound.competitions import worth as shared
+from thefrontoffice.adapters.outbound.competitions.availability import expected_games
 from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES, PlayerStats
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
-from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, Line, fantasy_points, line
+from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, Line, chance, fantasy_points, line
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
 
 
@@ -234,6 +235,14 @@ class Reading:
         if self.per_game is None or self.games is None:
             return None
         return self.per_game * self.usage * self.games
+
+    @property
+    def available(self) -> float | None:
+        """`worth` with a game-time decision's next game discounted (`rules.chance`): what picking him up is worth
+        now. None where `worth` is."""
+        if self.per_game is None or self.games is None:
+            return None
+        return self.per_game * self.usage * expected_games(self.games, chance(self.player.status))
 
 
 def game_value(reading: Reading) -> float | None:

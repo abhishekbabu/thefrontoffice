@@ -2,6 +2,7 @@
 
 import pytest
 
+from thefrontoffice.adapters.outbound.competitions.availability import QUESTIONABLE
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     CATEGORIES,
     FIELD_GOALS,
@@ -10,6 +11,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     THREES,
     TURNOVERS,
     amount,
+    chance,
     fantasy_points,
     fits,
     line,
@@ -123,3 +125,8 @@ def test_a_figure_not_yet_printed_is_nothing_scored() -> None:
     assert printed({POINTS.yahoo_stat: "-"}, POINTS) == (0.0, 0.0)
     assert printed({}, FIELD_GOALS) == (0.0, 0.0)
     assert amount("") == 0.0
+
+
+@pytest.mark.parametrize(("status", "expected"), [("", 1.0), ("GTD", QUESTIONABLE), ("dtd", QUESTIONABLE), ("O", 1.0)])
+def test_only_a_game_time_decision_is_a_chance_a_ruling_counts_in_his_games(status: str, expected: float) -> None:
+    assert chance(status) == expected

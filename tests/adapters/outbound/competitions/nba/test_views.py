@@ -12,7 +12,7 @@ from support.nba import FakeNBA, FakeSleeperProjections, FakeYahoo, make_player,
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import BoxScores, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.rules import ASSISTS, BLOCKS, CATEGORIES, POINTS, REBOUNDS
-from thefrontoffice.adapters.outbound.competitions.nba.views import cell, compared
+from thefrontoffice.adapters.outbound.competitions.nba.views import by_worth, cards, cell, compared
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
@@ -673,3 +673,43 @@ def test_a_tab_the_drawer_does_not_defer_is_not_found() -> None:
 def test_a_tab_for_a_player_the_league_does_not_know_is_not_found() -> None:
     with pytest.raises(PlayerNotFoundError):
         nba_provider(FakeYahoo()).player_tab("", "nobody", "News")
+
+
+def _wire(*week: tuple[str, str, float | None, int | None]) -> list[str]:
+    """The wire `by_worth` orders, each player `(name, Yahoo status, value a game, games he can play)`."""
+    players = [make_player(name, status=status) for name, status, _, _ in week]
+    readings = {
+        p.player_key: Reading(player=p, line={}, per_game=per, games=games)
+        for p, (_, _, per, games) in zip(players, week, strict=True)
+    }
+    rows = cards(players, {}, {}, by_points=False, readings=readings)
+    return [row.columns["Player"] for row in by_worth(rows, readings)]
+
+
+def test_a_player_ruled_out_this_week_sinks_below_one_who_plays_but_stays_on_the_wire() -> None:
+    """Out until after the week, the best value a game adds nothing to it."""
+    order = _wire(("Out", "O", 12.6, 0), ("Plays", "", 9.0, 2))
+
+    assert order == ["Plays", "Out"]
+
+
+def test_a_player_back_in_time_counts_the_games_after_his_return() -> None:
+    assert _wire(("Steady", "", 9.0, 1), ("Back Sat", "O", 12.0, 2)) == ["Back Sat", "Steady"]
+
+
+def test_a_game_time_decision_is_discounted_not_dropped() -> None:
+    order = _wire(("Sure", "", 9.5, 3), ("Doubt", "GTD", 10.0, 3), ("Lesser", "", 9.0, 3))
+
+    assert order == ["Sure", "Doubt", "Lesser"]  # 28.5, then 28 (his next game at 0.8), then 27
+
+
+def test_with_no_games_left_those_who_can_play_still_lead_then_a_games_value() -> None:
+    order = _wire(("Out", "O", 12.6, 0), ("Better", "", 9.0, 0), ("Worse", "", 8.0, 0))
+
+    assert order == ["Better", "Worse", "Out"]
+
+
+def test_a_player_whose_week_cannot_be_read_follows_in_his_own_order() -> None:
+    order = _wire(("Unread", "", None, 3), ("Unscheduled", "", 9.0, None), ("Read", "", 5.0, 1))
+
+    assert order == ["Read", "Unscheduled", "Unread"]  # the rest as the table ranks them: by value a game, blanks last
