@@ -228,18 +228,8 @@ export default function App() {
             })}
           </Group>
 
-          {/* Only once there is a league to address: a tab that cannot be linked
-              to yet would render as a control that does nothing. */}
-          {active && league && (
-            <Group label="View">
-              {VIEWS.filter((v) => offers(active, v)).map((v) => (
-                <RailLink key={v} to={href(active.key, league.league_id, v)} active={v === view}>
-                  {VIEW_LABELS[v]}
-                </RailLink>
-              ))}
-            </Group>
-          )}
-
+          {/* Broadest choice to narrowest: the competition, then which of its
+              leagues, then what to look at in it. */}
           {active && (leagues.data?.length ?? 0) > 1 && (
             <Group label="League">
               {leagues.data!.map((l) => (
@@ -249,6 +239,18 @@ export default function App() {
                   active={l.league_id === league?.league_id}
                 >
                   <span className="truncate">{l.name}</span>
+                </RailLink>
+              ))}
+            </Group>
+          )}
+
+          {/* Only once there is a league to address: a tab that cannot be linked
+              to yet would render as a control that does nothing. */}
+          {active && league && (
+            <Group label="View">
+              {VIEWS.filter((v) => offers(active, v)).map((v) => (
+                <RailLink key={v} to={href(active.key, league.league_id, v)} active={v === view}>
+                  {VIEW_LABELS[v]}
                 </RailLink>
               ))}
             </Group>

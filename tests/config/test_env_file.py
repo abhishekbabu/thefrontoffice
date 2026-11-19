@@ -264,6 +264,16 @@ def test_every_setting_is_described_under_a_group(env: EnvFile) -> None:
     assert sorted(grouped) == sorted(AppSettings.model_fields)
 
 
+def test_groups_arrive_by_section_with_each_platform_named(env: EnvFile) -> None:
+    """The page lays the groups out by section and sets a platform's status beside its own settings."""
+    groups = env.groups()
+
+    sections = [group.section for group in groups]
+    assert sections == sorted(sections, key=["platforms", "ai", "advanced"].index)
+    assert [group.platform for group in groups if group.section == "platforms"] == ["yahoo", "sleeper", "fpl"]
+    assert all(not group.platform for group in groups if group.section != "platforms")
+
+
 def test_a_key_in_the_file_nothing_reads_is_unknown(env: EnvFile) -> None:
     env.path.write_text("GOOGLE_APIKEY=abc\nSLEEPER_USERNAME=someone\n", encoding="utf-8")
 

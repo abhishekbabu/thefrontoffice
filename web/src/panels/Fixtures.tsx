@@ -6,7 +6,7 @@ import { kickoff } from "@/lib/format";
 import { toneText } from "@/lib/tone";
 import { cn } from "@/lib/utils";
 import { ListCard, ListHeading, ListRow } from "@/components/ui/list";
-import { Label } from "@/components/ui/label";
+import { Label, Meta } from "@/components/ui/label";
 import { Empty, QueryState } from "@/components/ui/state";
 import { LeagueHeader } from "@/components/ui/page-header";
 import { WeekStepper, useWeekParam } from "@/components/ui/week-stepper";
@@ -103,7 +103,7 @@ function GameDetail({ game, onClose, onOpen }: { game: Match; onClose: () => voi
               {side.players.map((p) => (
                 <ListRow key={p.player_id} onClick={() => onOpen(p.player_id)}>
                   <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{p.detail}</span>
+                  <Meta className="shrink-0">{p.detail}</Meta>
                 </ListRow>
               ))}
             </ListCard>

@@ -1,4 +1,5 @@
 import { GitCompareArrows } from "lucide-react";
+import { Meta } from "@/components/ui/label";
 import { useNavigate } from "react-router-dom";
 import type { ActivityRow } from "@/lib/api";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
@@ -15,13 +16,13 @@ import { SlideOver, SlideOverHeader, type Back } from "@/components/ui/dialog";
 export function MoveRow({ move, onOpen }: { move: ActivityRow; onOpen?: (move: ActivityRow) => void }) {
   return (
     <ListRow current={move.is_mine} onClick={onOpen && move.moves.length ? () => onOpen(move) : undefined}>
-      <span className="w-16 shrink-0 font-mono text-[11px] text-muted-foreground">{move.when}</span>
+      <Meta className="w-16 shrink-0">{move.when}</Meta>
       {/* Gives way on a narrow screen rather than pushing the badge out of the card. */}
       <span className="w-48 min-w-0 truncate">{move.who}</span>
       <Badge variant="muted" appearance="label" className="shrink-0">
         {move.what}
       </Badge>
-      <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">{move.detail}</span>
+      <Meta className="min-w-0 flex-1 truncate">{move.detail}</Meta>
       {move.bid && <span className="shrink-0 font-mono text-[11px] tabular-nums">{move.bid}</span>}
     </ListRow>
   );
@@ -118,9 +119,9 @@ function MoveDetail({
                   {m.change === "added" ? "+" : "−"}
                 </Badge>
                 <span className="min-w-0 flex-1 truncate">{m.player}</span>
-                <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                <Meta className="shrink-0">
                   {[m.position, m.team].filter(Boolean).join(" · ")}
-                </span>
+                </Meta>
               </ListRow>
             ))}
           </ListCard>

@@ -20,7 +20,7 @@ from typing import Literal, get_args, get_origin
 
 from pydantic import BaseModel
 
-from thefrontoffice.config.settings import GROUPS, AppSettings, env_var, group, is_secret, value_type
+from thefrontoffice.config.settings import GROUPS, AppSettings, Section, env_var, group, is_secret, value_type
 from thefrontoffice.domain.errors import SettingsUnwritableError, UnknownSettingError
 
 logger = logging.getLogger(__name__)
@@ -105,6 +105,12 @@ class SettingsGroup(BaseModel):
 
     title: str
     note: str
+    section: Section
+    """Which part of the page it sits in."""
+
+    platform: str = ""
+    """The platform it reads, where it reads one, so the page can set that platform's status beside it."""
+
     settings: list[Setting]
 
 
@@ -247,6 +253,8 @@ class EnvFile:
             SettingsGroup(
                 title=each.title,
                 note=each.note,
+                section=each.section,
+                platform=each.platform,
                 settings=[setting for setting in described if group(setting.field) == each],
             )
             for each in GROUPS

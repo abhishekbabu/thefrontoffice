@@ -23,12 +23,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
+Section = Literal["platforms", "ai", "advanced"]
+"""Where a group sits on the Settings page: the accounts read, the models that judge, everything rarely touched."""
+
+
 @dataclass(frozen=True)
 class Group:
     """What a set of settings unlocks, for a person setting them up."""
 
     title: str
     note: str
+    section: Section
+    platform: str = ""
+    """The platform these settings read, where they read one: its status sits beside them."""
 
 
 @dataclass(frozen=True)
@@ -46,35 +53,38 @@ class Local:
 
 LOCAL = Local()
 
-FPL = Group(
-    "Fantasy Premier League",
-    "FPL has no username lookup. The entry id is the number in the URL of your own points page: "
-    "fantasy.premierleague.com/entry/<THIS>/event/1",
-)
-SLEEPER = Group("NFL on Sleeper", "Sleeper needs no key or OAuth — just the username your leagues are under.")
 YAHOO = Group(
     "NBA on Yahoo",
-    "From a Yahoo developer app with Fantasy Sports read permission and redirect URI https://localhost:8080. "
-    "Yahoo also reviews each application before granting API access. Authorizing is a button on the "
-    "competition itself, once. Until Yahoo approves the app, set YAHOO_SOURCE to session and paste your Yahoo "
-    "cookie, or to browser and use the sync bookmark.",
+    "OAuth needs a Yahoo developer app with Fantasy Sports read access and redirect URI "
+    "https://localhost:8080, which Yahoo reviews before it answers. Until then, set YAHOO_SOURCE to session "
+    "and paste your cookie, or to browser and use the bookmark.",
+    "platforms",
+    "yahoo",
+)
+SLEEPER = Group("NFL on Sleeper", "No key needed: just the username your leagues are under.", "platforms", "sleeper")
+FPL = Group(
+    "Fantasy Premier League",
+    "The entry id is the number in your points page's URL: fantasy.premierleague.com/entry/<THIS>/event/1",
+    "platforms",
+    "fpl",
 )
 AI = Group(
-    "AI",
-    "Optional, and each provider is free to start. Any one key turns on judging the week's to-do list and the "
-    "free agents, and the questions you can ask about an item or a player; without one, everything read from "
-    "the platforms works exactly as it does now. With several, each backs up the one before when its free "
-    "quota runs out — Gemini, then Groq, then OpenRouter. Models are settings because free catalogs change.",
+    "Model providers",
+    "Optional, and free to start. Any one key turns on judging the to-do list and the wire, and asking about a "
+    "player. With several, each backs up the one before when its free quota runs out: Gemini, then Groq, then "
+    "OpenRouter.",
+    "ai",
 )
 TRACING = Group(
     "Tracing",
-    "Optional. Without a token nothing is exported and no network call is made. Prompt text is never sent "
-    "unless you turn it on, and a prompt carries your roster and your leagues.",
+    "Optional. Nothing is sent without a token. Prompts carry your roster and leagues, so they are sent only "
+    "if you turn that on.",
+    "advanced",
 )
-ADVANCED = Group("Advanced", "Rarely worth changing. Each field shows the value already in force; typing replaces it.")
+ADVANCED = Group("Files and server", "Rarely worth changing. Each field shows the value in force.", "advanced")
 
-GROUPS = (FPL, SLEEPER, YAHOO, AI, TRACING, ADVANCED)
-"""In the order someone sets them up, not the order the fields sit in."""
+GROUPS = (YAHOO, SLEEPER, FPL, AI, TRACING, ADVANCED)
+"""Platforms in the order the rail lists their competitions, then models, then what is rarely touched."""
 
 
 class AppSettings(BaseSettings):

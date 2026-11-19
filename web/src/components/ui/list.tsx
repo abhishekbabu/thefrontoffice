@@ -86,10 +86,16 @@ export function ListRow({
   );
 }
 
-/** A heading inside a list card that splits its rows into runs: the playoffs from the season, one kickoff from the next. */
-export function ListHeading({ children }: { children: React.ReactNode }) {
+/**
+ * A heading inside a card that splits its rows into runs: the playoffs from
+ * the season, one kickoff from the next, the bench from the starters.
+ *
+ * The lineups wrote their own — one ruled above and below, one with neither,
+ * one on a tint — so the same break read three ways on one page.
+ */
+export function ListHeading({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <Label as="div" className="border-t border-border bg-muted px-4 py-1.5 first:border-t-0">
+    <Label as="div" className={cn("border-t border-border bg-muted px-4 py-1.5 first:border-t-0", className)}>
       {children}
     </Label>
   );

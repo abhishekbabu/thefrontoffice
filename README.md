@@ -168,7 +168,8 @@ just ui                 # http://localhost:8000, or the next free port
 ```
 
 Add credentials in the app's **Settings** page or in `.env`. The page writes
-`.env` and applies it without a restart.
+`.env` and applies it without a restart. It is laid out as Platforms (each with
+its own status and how-to), AI, Appearance (this browser only) and Advanced.
 
 - **NFL**: your Sleeper username, as `SLEEPER_USERNAME`.
 - **Premier League**: the number in your points page URL,
@@ -228,7 +229,7 @@ needs.
 3. In **Settings**, paste it into `YAHOO_SESSION_COOKIE` and set `YAHOO_SOURCE`
    to `session` (no client id or secret needed).
 
-**Settings → Yahoo sync** shows when the server last fetched with that cookie.
+**Settings → Platforms → NBA on Yahoo** shows when the server last fetched with that cookie.
 When Yahoo refuses it (you signed out, or the session timed out), NBA pages say
 "Yahoo session expired" and send you to Settings; paste a fresh cookie and it
 works again at once.
@@ -254,7 +255,7 @@ works again at once.
 
 While Yahoo hasn't approved the app, read Yahoo the way Yahoo's own pages do.
 Set `YAHOO_SOURCE=browser` (no client id or secret needed), then in
-**Settings → Yahoo sync**:
+**Settings → Platforms → NBA on Yahoo → Sync bookmark**:
 
 1. Drag **Sync Yahoo** to your bookmarks bar.
 2. Open any Yahoo Fantasy Basketball page, signed in, and click the bookmark.

@@ -1,31 +1,50 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Check, Save, Undo2 } from "lucide-react";
 import { api, type CaptureStatus, type Setting, type SettingsGroup } from "@/lib/api";
 import { bookmarklet } from "@/lib/bookmarklet";
 import { moment } from "@/lib/format";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Tooltip } from "@/components/ui/tooltip";
-import { IconButton } from "@/components/ui/icon-button";
-import { QueryState } from "@/components/ui/state";
 import { keys } from "@/lib/queries";
-import { ToggleChip } from "@/components/ui/toggle";
-import { Card, CardHeader } from "@/components/ui/card";
-import { ArrowLeft, Check, Save } from "lucide-react";
+import type { Variant } from "@/lib/tone";
 import { useTheme } from "@/lib/useTheme";
 import { PALETTES } from "@/themes/registry";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { Card, CardHeader } from "@/components/ui/card";
+import { Disclosure } from "@/components/ui/disclosure";
 import { ErrorNote } from "@/components/ui/error-note";
+import { IconButton } from "@/components/ui/icon-button";
+import { Input } from "@/components/ui/input";
+import { Label, META } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import { CardNote, QueryState } from "@/components/ui/state";
+import { ToggleChip } from "@/components/ui/toggle";
+import { Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+
+/**
+ * The page's parts, broadest first: the accounts read, the models that judge
+ * them, how the app looks, and what is rarely touched. Typed by the server's
+ * own sections, so a section it adds is a type error here rather than a group
+ * that never renders.
+ */
+const SECTIONS: Record<SettingsGroup["section"], string> = {
+  platforms: "Platforms",
+  ai: "AI",
+  advanced: "Advanced",
+};
+
+type Drafts = Record<string, string>;
 
 export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const queryClient = useQueryClient();
-  // Grouped by the server, by what each key unlocks and in the order someone
-  // sets them up: a key on its own means nothing, and "this is the one that
-  // turns on football" is what a person is actually looking for.
+  // Grouped by the server, by what each key unlocks: a key on its own means
+  // nothing, and "this is the one that turns on football" is what a person is
+  // actually looking for.
   const settings = useQuery<SettingsGroup[], Error>({ queryKey: keys.settings, queryFn: api.settings });
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Drafts>({});
 
-  const save = useMutation<SettingsGroup[], Error, Record<string, string>>({
+  const save = useMutation<SettingsGroup[], Error, Drafts>({
     mutationFn: api.saveSettings,
     onSuccess: () => {
       setDrafts({});
@@ -36,18 +55,40 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   });
 
   const pending = Object.keys(drafts).length;
+  const edit = (setting: Setting) => (value: string) =>
+    setDrafts((current) => {
+      const next = { ...current };
+      // Typing back to the stored value is not a change.
+      if (value === (setting.secret ? "" : setting.value)) delete next[setting.key];
+      else next[setting.key] = value;
+      return next;
+    });
+  const section = (id: SettingsGroup["section"]) =>
+    (settings.data ?? [])
+      .filter((group) => group.section === id)
+      .map((group) => <GroupCard key={group.title} group={group} drafts={drafts} onEdit={edit} />);
 
   return (
     <>
       <PageHeader
         title="Settings"
-        meta="Written to .env and applied immediately"
+        meta="Saved to .env, applied at once"
         leading={<IconButton label="Back" icon={<ArrowLeft />} onClick={onBack} />}
       >
-        <div className="flex items-center gap-1">
-          {/* The count lives in the label rather than beside the icon: the
-              control does one thing whether one field changed or six, and the
-              rows that changed already say which. */}
+        <div className="flex items-center gap-2">
+          {/* Said in words beside the control, so whether anything is waiting
+              to be written — or just was — reads without hovering. */}
+          <span role="status" className={META}>
+            {save.isPending ? "Saving…" : pending ? `${pending} unsaved` : save.isSuccess ? "Saved" : ""}
+          </span>
+          {pending > 0 && (
+            <IconButton
+              label="Discard changes"
+              icon={<Undo2 />}
+              disabled={save.isPending}
+              onClick={() => setDrafts({})}
+            />
+          )}
           <IconButton
             label={
               save.isPending
@@ -68,37 +109,142 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       {save.isError && <ErrorNote error={save.error} />}
 
       {settings.data && (
-        <div className="flex flex-col gap-4 p-5">
-          <Appearance />
-          <YahooSync />
-          {settings.data.map((group) => (
-            <Card key={group.title}>
-              <CardHeader>
-                <span>{group.title}</span>
-              </CardHeader>
-              <p className="max-w-[70ch] px-4 pt-3 text-[13px] leading-relaxed text-muted-foreground">{group.note}</p>
-              <div className="flex flex-col p-4 pt-3">
-                {group.settings.map((setting) => (
-                  <Row
-                    key={setting.key}
-                    setting={setting}
-                    draft={drafts[setting.key]}
-                    onChange={(value) =>
-                      setDrafts((current) => {
-                        const next = { ...current };
-                        // Typing back to the stored value is not a change.
-                        if (value === (setting.secret ? "" : setting.value)) delete next[setting.key];
-                        else next[setting.key] = value;
-                        return next;
-                      })
-                    }
-                  />
-                ))}
-              </div>
-            </Card>
-          ))}
+        <div className="flex flex-col gap-8 p-5">
+          <Section title={SECTIONS.platforms}>{section("platforms")}</Section>
+          <Section title={SECTIONS.ai}>{section("ai")}</Section>
+          <Section title="Appearance">
+            <Appearance />
+          </Section>
+          <Section title={SECTIONS.advanced}>{section("advanced")}</Section>
         </div>
       )}
+    </>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <Label as="h2">{title}</Label>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * One group's settings in a card: what they unlock, then a row each. A
+ * platform's status sits in the header and its how-to under the rows, beside
+ * the settings they are about rather than in a card of their own.
+ */
+function GroupCard({
+  group,
+  drafts,
+  onEdit,
+}: {
+  group: SettingsGroup;
+  drafts: Drafts;
+  onEdit: (setting: Setting) => (value: string) => void;
+}) {
+  const yahoo = group.platform === "yahoo";
+  const status = useQuery<CaptureStatus, Error>({
+    queryKey: keys.capture("yahoo"),
+    queryFn: () => api.captureStatus("yahoo"),
+    enabled: yahoo,
+  });
+  return (
+    <Card data-group={group.platform || undefined}>
+      <CardHeader>
+        <span>{group.title}</span>
+        {yahoo && status.data && <YahooState status={status.data} />}
+      </CardHeader>
+      {group.note && <p className="max-w-[70ch] px-4 pt-3 text-[13px] leading-relaxed text-muted-foreground">{group.note}</p>}
+      <div className="flex flex-col px-4 py-1">
+        {group.settings.map((setting) => (
+          <Row key={setting.key} setting={setting} draft={drafts[setting.key]} onChange={onEdit(setting)} />
+        ))}
+      </div>
+      {yahoo && status.isError && <ErrorNote error={status.error} className="mx-4 mt-0 mb-4" />}
+      {yahoo && status.data && <YahooHowTo status={status.data} />}
+    </Card>
+  );
+}
+
+/** How reading Yahoo is going, said in the header's corner: in words, with the tone only to find it. */
+export function yahooState(status: CaptureStatus): { text: string; variant: Variant } {
+  const { session } = status;
+  if (session) {
+    if (session.expired) return { text: "Session expired", variant: "warn" };
+    return session.fetched_at
+      ? { text: `Last fetched ${moment(session.fetched_at)}`, variant: "ok" }
+      : { text: "Not fetched yet", variant: "muted" };
+  }
+  if (status.active) {
+    return status.synced_at
+      ? { text: `Last synced ${moment(status.synced_at)}`, variant: "ok" }
+      : { text: "Never synced", variant: "muted" };
+  }
+  return { text: "Reading OAuth", variant: "muted" };
+}
+
+function YahooState({ status }: { status: CaptureStatus }) {
+  const { text, variant } = yahooState(status);
+  return (
+    <Badge variant={variant} appearance="status" className="normal-case tracking-normal">
+      {text}
+    </Badge>
+  );
+}
+
+/**
+ * The two ways to read Yahoo while Yahoo's API refuses the app: the server
+ * fetching with a pasted session cookie, or the bookmark run on a Yahoo page.
+ * Each is open while it is the source in use and not yet working.
+ *
+ * The bookmark's link is set on the element rather than rendered: React refuses a
+ * `javascript:` href, which is the only kind a bookmark can run. Clicking it
+ * here does nothing — it runs on Yahoo's page, after being dragged away.
+ */
+function YahooHowTo({ status }: { status: CaptureStatus }) {
+  const link = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    link.current?.setAttribute("href", bookmarklet(window.location.origin));
+  }, []);
+  const { session } = status;
+  const steps = "max-w-[70ch] list-decimal pl-5";
+  return (
+    <>
+      {!!status.leagues.length && <CardNote>Synced: {status.leagues.join(" · ")}</CardNote>}
+      <Disclosure summary="Session cookie" open={Boolean(session && (session.expired || !session.fetched_at))}>
+        <div className="flex flex-col gap-2 px-4 pb-4 text-[13px] leading-relaxed text-muted-foreground">
+          {session?.expired && <p className="text-foreground">Yahoo refused the cookie. Paste a fresh one.</p>}
+          <ol className={steps}>
+            <li>On a Yahoo Fantasy page in Chrome or Dia, open DevTools → Network.</li>
+            <li>
+              Pick a request to <code className="font-mono text-[12px]">pub-api-ro.fantasysports.yahoo.com</code> →
+              Request Headers → cookie, and copy the value.
+            </li>
+            <li>Paste it into YAHOO_SESSION_COOKIE above and set YAHOO_SOURCE to session.</li>
+          </ol>
+        </div>
+      </Disclosure>
+      <Disclosure summary="Sync bookmark" open={status.active && !status.synced_at}>
+        <div className="flex flex-col items-start gap-2 px-4 pb-4 text-[13px] leading-relaxed text-muted-foreground">
+          {!status.active && !session && <p>YAHOO_SOURCE is oauth: set it to browser to read the sync.</p>}
+          <a
+            ref={link}
+            draggable
+            onClick={(e) => e.preventDefault()}
+            className={buttonVariants({ variant: "secondary", size: "sm" })}
+          >
+            Sync Yahoo
+          </a>
+          <ol className={steps}>
+            <li>Drag the button to your bookmarks bar.</li>
+            <li>Open any Yahoo Fantasy Basketball page and click the bookmark.</li>
+            <li>Allow local network access once when Chrome asks.</li>
+          </ol>
+        </div>
+      </Disclosure>
     </>
   );
 }
@@ -115,10 +261,10 @@ function Appearance() {
   return (
     <Card>
       <CardHeader>
-        <span>Appearance</span>
-        <span className="normal-case tracking-normal">this browser only</span>
+        <span>Palette</span>
+        <span className="font-normal normal-case tracking-normal">This browser only</span>
       </CardHeader>
-      <div className="flex flex-wrap gap-2 p-4">
+      <div role="group" aria-label="Palette" className="flex flex-wrap gap-2 p-4">
         {PALETTES.map((p) => (
           <ToggleChip
             key={p.id}
@@ -138,78 +284,6 @@ function Appearance() {
   );
 }
 
-/**
- * The two ways to read Yahoo while Yahoo's API refuses the app, and how each is going:
- * the server fetching with a pasted session cookie, or the bookmark run on a Yahoo page.
- *
- * The bookmark's link is set on the element rather than rendered: React refuses a
- * `javascript:` href, which is the only kind a bookmark can run. Clicking it
- * here does nothing — it runs on Yahoo's page, after being dragged away.
- */
-function YahooSync() {
-  const status = useQuery<CaptureStatus, Error>({ queryKey: keys.capture("yahoo"), queryFn: () => api.captureStatus("yahoo") });
-  const link = useRef<HTMLAnchorElement>(null);
-  useEffect(() => {
-    link.current?.setAttribute("href", bookmarklet(window.location.origin));
-  }, []);
-  const synced = status.data?.synced_at;
-  const session = status.data?.session;
-
-  return (
-    <Card>
-      <CardHeader>
-        <span>Yahoo sync</span>
-        <span className="normal-case tracking-normal">
-          {session
-            ? session.expired
-              ? "Session expired"
-              : session.fetched_at
-                ? `Last fetched ${moment(session.fetched_at)}`
-                : "Not fetched yet"
-            : synced
-              ? `Last synced ${moment(synced)}`
-              : "Never synced"}
-        </span>
-      </CardHeader>
-      <div className="flex flex-col gap-4 p-4 text-[13px] leading-relaxed text-muted-foreground">
-        <section className="flex flex-col gap-2">
-          <h3 className="font-medium text-foreground">Session cookie</h3>
-          <ol className="max-w-[70ch] list-decimal pl-5">
-            <li>On a Yahoo Fantasy page in Dia or Chrome, open DevTools → Network.</li>
-            <li>
-              Pick any request to <code className="font-mono text-[12px]">pub-api-ro.fantasysports.yahoo.com</code> →
-              Request Headers → cookie → copy the value.
-            </li>
-            <li>Paste it into YAHOO_SESSION_COOKIE below and set YAHOO_SOURCE to session.</li>
-          </ol>
-          {session?.expired && <p className="text-foreground">Yahoo refused the cookie. Paste a fresh one.</p>}
-        </section>
-        <section className="flex flex-col gap-2">
-          <h3 className="font-medium text-foreground">Bookmark</h3>
-          <a
-            ref={link}
-            draggable
-            onClick={(e) => e.preventDefault()}
-            className="self-start rounded-md border border-border bg-secondary px-3 py-1.5 font-medium text-secondary-foreground"
-          >
-            Sync Yahoo
-          </a>
-          <ol className="max-w-[70ch] list-decimal pl-5">
-            <li>Drag the button to your bookmarks bar.</li>
-            <li>Open any Yahoo Fantasy Basketball page and click the bookmark.</li>
-            <li>Allow local network access once when Chrome asks.</li>
-          </ol>
-          {status.data && !status.data.active && !session && (
-            <p>YAHOO_SOURCE is oauth: set it to browser to read the sync.</p>
-          )}
-        </section>
-        {!!status.data?.leagues.length && <p>{status.data.leagues.join(" · ")}</p>}
-        {status.isError && <ErrorNote error={status.error} />}
-      </div>
-    </Card>
-  );
-}
-
 function Row({
   setting,
   draft,
@@ -223,9 +297,9 @@ function Row({
   // click on the key would press whichever chip came first.
   const Wrapper = setting.kind === "boolean" || setting.kind === "choice" ? "div" : "label";
   return (
-    <Wrapper className="grid grid-cols-1 items-baseline gap-1.5 border-b border-border/45 py-2.5 last:border-b-0 sm:grid-cols-[16rem_minmax(0,42rem)] sm:gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <code className="font-mono text-[12px] text-foreground">{setting.key}</code>
+    <Wrapper className="grid grid-cols-1 items-center gap-1.5 border-b border-border/45 py-2.5 last:border-b-0 sm:grid-cols-[16rem_minmax(0,42rem)] sm:gap-4">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <code className="break-all font-mono text-[12px] text-foreground">{setting.key}</code>
         {draft !== undefined && (
           <Badge variant="info" appearance="status">
             unsaved
@@ -279,7 +353,7 @@ function Control({
             key={option.value}
             pressed={option.value === current}
             onClick={() => onChange(option.value)}
-            className={setting.kind === "choice" ? "h-8 font-mono text-[12.5px]" : "h-8"}
+            className={cn("h-8", setting.kind === "choice" && "font-mono text-[12.5px]")}
           >
             {option.label}
           </ToggleChip>
@@ -300,11 +374,7 @@ function Control({
       // A secret's characters never reach the client, so there is nothing to
       // show as a current value — only whether one exists.
       placeholder={
-        setting.secret
-          ? setting.present
-            ? "•••••••• — type to replace"
-            : "not set"
-          : setting.effective || "not set"
+        setting.secret ? (setting.present ? "set — type to replace" : "not set") : setting.effective || "not set"
       }
       className={FIELD}
     />

@@ -30,6 +30,7 @@ import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
 import { WeekStepper, useWeekParam } from "@/components/ui/week-stepper";
 import { Label } from "@/components/ui/label";
+import { Table, Td, Th } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
 /**
@@ -341,36 +342,39 @@ export function Categories({ lines, theirs }: { lines: CategoryLine[]; theirs: s
         <span>Categories</span>
         <span>{lines.length} scored</span>
       </CardHeader>
-      <Label as="div" className="flex items-baseline gap-3 border-b border-border px-4 py-2">
-        <span className="w-16 shrink-0">Cat</span>
-        <span className="w-20 text-right">You</span>
-        <span className="w-20 truncate text-right">{theirs}</span>
-        <span className="flex-1 text-right">Leads</span>
-        {forecast && <span className="w-12 text-right">Win</span>}
-      </Label>
-      {lines.map((line) => {
-        const lead = line.lead ? LEAD[line.lead] : null;
-        return (
-          <div
-            key={line.name}
-            className="flex items-baseline gap-3 border-b border-border/45 px-4 py-2 font-mono text-[12.5px] tabular-nums last:border-b-0"
-          >
-            <Label className="w-16 shrink-0">{line.name}</Label>
-            <span className={cn("w-20 text-right", line.lead === "mine" && "font-semibold")}>{line.mine || "—"}</span>
-            <span className={cn("w-20 text-right", line.lead === "theirs" && "font-semibold")}>
-              {line.theirs || "—"}
-            </span>
-            <span className={cn("flex-1 text-right text-[11px]", lead?.tone ?? "text-muted-foreground")}>
-              {lead?.word ?? "—"}
-            </span>
-            {forecast && (
-              <span className={cn("w-12 text-right", line.win != null ? chanceTone(line.win) : "text-muted-foreground")}>
-                {line.win != null ? percent(line.win) : "—"}
-              </span>
-            )}
-          </div>
-        );
-      })}
+      <Table>
+        <thead>
+          <tr>
+            <Th className="w-16">Cat</Th>
+            <Th className="w-20 text-right">You</Th>
+            <Th className="w-20 max-w-32 truncate text-right">{theirs}</Th>
+            <Th className="text-right">Leads</Th>
+            {forecast && <Th className="w-12 text-right">Win</Th>}
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line) => {
+            const lead = line.lead ? LEAD[line.lead] : null;
+            return (
+              <tr key={line.name} className="font-mono text-[12.5px] [&:last-child>td]:border-b-0">
+                <Td>
+                  <Label>{line.name}</Label>
+                </Td>
+                <Td className={cn("text-right", line.lead === "mine" && "font-semibold")}>{line.mine || "—"}</Td>
+                <Td className={cn("text-right", line.lead === "theirs" && "font-semibold")}>{line.theirs || "—"}</Td>
+                <Td className={cn("text-right text-[11px]", lead?.tone ?? "text-muted-foreground")}>
+                  {lead?.word ?? "—"}
+                </Td>
+                {forecast && (
+                  <Td className={cn("text-right", line.win != null ? chanceTone(line.win) : "text-muted-foreground")}>
+                    {line.win != null ? percent(line.win) : "—"}
+                  </Td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </Table>
     </Card>
   );
 }

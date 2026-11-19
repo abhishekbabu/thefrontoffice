@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  */
 export const LABEL = "font-mono text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground";
 
-type Tag = "span" | "div" | "p" | "h3" | "summary";
+type Tag = "span" | "div" | "p" | "h2" | "h3" | "summary";
 
 /** `children` as a label, in whichever element the place calls for: an `h3` heading a section, a `span` in a row. */
 export function Label({
@@ -23,4 +23,23 @@ export function Label({
   children: React.ReactNode;
 }) {
   return <Element className={cn(LABEL, className)}>{children}</Element>;
+}
+
+/**
+ * The quiet mono line beside or under a name: a date, a club and position, a
+ * league's detail. Twenty places wrote it inline and it drifted to three sizes.
+ */
+export const META = "font-mono text-[11px] text-muted-foreground";
+
+/** `children` as secondary detail, in whichever element the place calls for. */
+export function Meta({
+  as: Element = "span",
+  className,
+  children,
+}: {
+  as?: "span" | "div" | "p";
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return <Element className={cn(META, className)}>{children}</Element>;
 }

@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Plus, Search, Star, X } from "lucide-react";
+import { Plus, Star, X } from "lucide-react";
 import { api, type CaptureStatus, type Competition, type League, type PlayerComparison, type PlayerRef } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { Card, CardHeader } from "@/components/ui/card";
 import { IconButton } from "@/components/ui/icon-button";
-import { Input } from "@/components/ui/input";
-import { LABEL } from "@/components/ui/label";
+import { SearchInput } from "@/components/ui/input";
+import { LABEL, Meta } from "@/components/ui/label";
 import { ListRow } from "@/components/ui/list";
 import { Empty, QueryState } from "@/components/ui/state";
 import { Table, Td, Th } from "@/components/ui/table";
@@ -87,9 +87,9 @@ function Grid({
                   <Portrait src={p.image_url} className="size-14" />
                   <button type="button" onClick={() => onOpen(p.player_id)} className="min-w-0 flex-1 text-left">
                     <div className="truncate font-sans text-[13.5px] font-semibold text-foreground">{p.name}</div>
-                    <div className="font-mono text-[11px] text-muted-foreground">
+                    <Meta as="div" className="font-normal">
                       {[p.position, p.team].filter(Boolean).join(" · ")}
-                    </div>
+                    </Meta>
                     {p.headline && (
                       <div className="mt-1 font-mono text-[15px] font-semibold text-foreground tabular-nums">
                         {p.headline}
@@ -110,7 +110,7 @@ function Grid({
               <th
                 scope="colgroup"
                 colSpan={players.length + 1}
-                className={cn(LABEL, "border-b border-border bg-muted px-4 pt-3 pb-1.5 text-left")}
+                className={cn(LABEL, "border-b border-border bg-muted px-4 py-1.5 text-left")}
               >
                 {table.title}
               </th>
@@ -180,21 +180,18 @@ function Finder({
   const offered = (found.data ?? []).filter((p) => !exclude.includes(p.player_id));
   return (
     <Card>
-      <div className="relative px-4 py-3">
-        <Search
-          className="pointer-events-none absolute left-6.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
+      <div className="px-4 py-3">
+        <SearchInput
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Add a player"
           aria-label="Find a player to compare"
-          className="pl-8"
         />
       </div>
       {sync.data?.active && search.trim().length >= 2 && (
-        <p className="px-4 pb-2 text-[11px] text-muted-foreground">Synced players only: rosters and the top of the wire.</p>
+        <Meta as="p" className="px-4 pb-2">
+          Synced players only: rosters and the top of the wire.
+        </Meta>
       )}
       {offered.map((p) => (
         <ListRow
@@ -206,7 +203,7 @@ function Finder({
         >
           <Plus className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           <span className="min-w-0 flex-1 truncate">{p.name}</span>
-          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{p.detail}</span>
+          <Meta className="shrink-0">{p.detail}</Meta>
         </ListRow>
       ))}
     </Card>

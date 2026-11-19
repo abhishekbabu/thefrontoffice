@@ -5,7 +5,8 @@ import { CardNote } from "@/components/ui/state";
 import type { Side, Spot, Swap } from "@/lib/api";
 import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
-import { Label } from "@/components/ui/label";
+import { Label, Meta } from "@/components/ui/label";
+import { ListHeading } from "@/components/ui/list";
 
 /**
  * The team as it currently stands, and what the numbers say to change.
@@ -43,18 +44,14 @@ export function LineupCard({
         <SpotList spots={lineup} onOpen={onOpen} />
         <div className="border-t border-border md:border-l md:border-t-0">
           {/* The open spots are rows of their own below, so the heading does not count them again. */}
-          <Label as="div" className="border-b border-border px-4 py-2">
-            Bench
-          </Label>
+          <ListHeading>Bench</ListHeading>
           {(bench.length > 0 || openSpots === 0) && (
             <SpotList spots={bench} empty="Nobody on the bench." onOpen={onOpen} />
           )}
           <OpenSpots count={openSpots} />
           {reserve.length > 0 && (
             <>
-              <Label as="div" className="border-y border-border px-4 py-2">
-                Reserve
-              </Label>
+              <ListHeading>Reserve</ListHeading>
               <SpotList spots={reserve} onOpen={onOpen} />
             </>
           )}
@@ -73,9 +70,7 @@ export function LineupCard({
 export function Swaps({ swaps, className }: { swaps: Swap[]; className?: string }) {
   return (
     <div className={className}>
-      <Label as="div" className="px-4 pb-1 pt-3">
-        Projected swaps
-      </Label>
+      <ListHeading>Projected swaps</ListHeading>
       {swaps.map((swap) => (
         <div key={swap.start} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-4 py-2 text-[13px]">
           <span className="font-medium">{swap.start}</span>
@@ -146,7 +141,7 @@ function SpotList({
                 </Badge>
               )}
             </div>
-            <div className="truncate font-mono text-[11px] text-muted-foreground">{spot.detail}</div>
+            <Meta as="div" className="truncate">{spot.detail}</Meta>
           </div>
           {spot.scoring ? (
             <SpotScore spot={spot} started={started} />
@@ -233,18 +228,14 @@ function ScoreHeads({
   className?: string;
 }) {
   if (!spots.some((spot) => spot.scoring)) {
-    return children ? (
-      <Label as="div" className={cn("border-y border-border px-4 py-2", className)}>
-        {children}
-      </Label>
-    ) : null;
+    return children ? <ListHeading className={className}>{children}</ListHeading> : null;
   }
   return (
-    <Label as="div" className={cn("flex items-baseline gap-3 border-y border-border px-4 py-2", className)}>
+    <ListHeading className={cn("flex items-baseline gap-3", className)}>
       <span className="flex-1">{children}</span>
       <span className="w-14 text-right">Proj</span>
       {started && <span className="w-16 text-right">Pts</span>}
-    </Label>
+    </ListHeading>
   );
 }
 
