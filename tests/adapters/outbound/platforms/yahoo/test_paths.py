@@ -7,7 +7,7 @@ import pytest
 
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
 from thefrontoffice.adapters.outbound.platforms.yahoo.paths import ScoreboardPace
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import PlayerStatus, Timeframe
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Average, PlayerStatus, Timeframe
 from thefrontoffice.domain.errors import PlatformError
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
@@ -28,13 +28,13 @@ def test_a_read_naming_its_own_subject_is_its_own_path() -> None:
 def test_available_players_include_those_on_waivers_by_season_rank() -> None:
     [read] = paths.available("466.l.1", 25)
 
-    assert read.query == "players;count=25;status=A;sort=AR;sort_type=season"
+    assert read.query == "players;count=25;status=A;sort=AR;sort_type=season/stats;type=average_lastmonth"
 
 
 def test_a_deeper_wire_is_a_page_of_25_per_read_the_last_only_as_long_as_needed() -> None:
     reads = paths.available("466.l.1", 60, Timeframe.LAST_WEEK)
 
-    assert [read.query for read in reads] == [
+    assert [read.query.removesuffix("/stats;type=average_lastmonth") for read in reads] == [
         "players;count=25;status=A;sort=AR;sort_type=lastweek",
         "players;count=25;status=A;sort=AR;sort_type=lastweek;start=25",
         "players;count=10;status=A;sort=AR;sort_type=lastweek;start=50",
@@ -78,6 +78,23 @@ def test_a_week_played_is_read_with_each_players_line_over_it_and_kept_long() ->
 
     assert read.path == "team/466.l.1.t.2/roster;week=3/players/stats;type=week;week=3"
     assert read.ttl > paths.ROSTER_TTL
+
+
+def test_averages_by_key_are_a_read_per_25_players_each_naming_its_keys() -> None:
+    keys = [f"466.p.{i}" for i in range(30)]
+
+    first, second = paths.averages("466.l.1", keys, Average.SEASON)
+
+    assert first.path == f"league/466.l.1/players;player_keys={','.join(keys[:25])}/stats;type=average_season"
+    assert second.player_keys == tuple(keys[25:])
+    assert first.lookup
+
+
+def test_a_rosters_averages_are_one_read_for_the_team() -> None:
+    read = paths.roster_averages("466.l.1.t.2", Average.LAST_MONTH)
+
+    assert read.path == "team/466.l.1.t.2/roster/players/stats;type=average_lastmonth"
+    assert not read.lookup
 
 
 # ── how long each holds ─────────────────────────────────────────────────

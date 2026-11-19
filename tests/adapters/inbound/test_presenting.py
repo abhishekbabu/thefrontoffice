@@ -210,3 +210,11 @@ def test_your_row_in_the_table_reads_the_chance_the_header_does() -> None:
     header = {s.label: s.value for s in attached.headline}["Playoffs"]
 
     assert [row.playoffs for row in attached.standings] == [header, "40%"]
+
+
+def test_a_provisional_forecast_says_so_beside_the_chance() -> None:
+    forecast = _forecast(0.55).model_copy(update={"provisional": True})
+    summary = presenting.week(WeekView(summary=Summary(), forecast=forecast))
+
+    assert "provisional" in summary.headline[0].value
+    assert "provisional" not in _week_at(0.55).headline[1].value

@@ -131,6 +131,9 @@ class Reading:
     minutes: float | None = None
     """His minutes a game over his last few; None without them."""
 
+    provisional: bool = False
+    """Whether `games` is short of the week's: the NBA has days of it still to schedule (`week.unsettled`)."""
+
     @property
     def worth(self) -> float | None:
         """`per_game` × `usage` × `games`: what he adds this week. None where either is unknown."""
@@ -150,8 +153,9 @@ def read(
     projected: ProjectedTotals | None,
     value: Valuer,
     games: int | None,
+    provisional: bool = False,
 ) -> Reading:
-    """One player's `Reading`, from his form, his projection and the games he can play."""
+    """One player's `Reading`, from his form, his projection and the games he can play — a floor where `provisional`."""
     figures = per_game(stats, projected)
     played = minutes(stats)
     return Reading(
@@ -161,4 +165,5 @@ def read(
         games=games,
         usage=usage(stats),
         minutes=statistics.fmean(played) if played else None,
+        provisional=provisional,
     )

@@ -43,6 +43,24 @@ class Timeframe(StrEnum):
     LAST_MONTH = "lastmonth"
 
 
+class Average(StrEnum):
+    """The spans Yahoo averages a player's line over, as a `stats;type=` asks for them: per game, as its pages show."""
+
+    SEASON = "average_season"
+    LAST_MONTH = "average_lastmonth"
+
+
+@dataclass(frozen=True)
+class YahooLine:
+    """A player's line over some span, as Yahoo prints it."""
+
+    stats: dict[str, str] = field(default_factory=dict)
+    """Yahoo stat id -> its figure: '15.7', '.536', '6.0/11.2'; '-' where he has none."""
+
+    points: str = ""
+    """His fantasy points over the same span, in a points league; empty in a category one."""
+
+
 POINTS_SCORING = frozenset({"headpoint", "point"})
 """Yahoo's scoring types for a league scored in fantasy points: head-to-head, or over the season."""
 
@@ -116,10 +134,18 @@ class YahooPlayer:
     """Where their manager has them this week: 'PG', 'BN', 'IL'. Empty off a roster."""
 
     stats: dict[str, str] = field(default_factory=dict)
-    """Yahoo stat id -> his line over a week played, as Yahoo prints it ('-' for no games); empty unless asked for."""
+    """Yahoo stat id -> his line over `coverage`, as Yahoo prints it ('-' for no games); empty unless asked for."""
 
     points: str = ""
-    """His fantasy points over a week played, in a points league, as Yahoo prints it; empty unless asked for."""
+    """His fantasy points over `coverage`, in a points league, as Yahoo prints it; empty unless asked for."""
+
+    coverage: str = ""
+    """The span `stats` and `points` cover, as Yahoo names it: 'week' for a week played, an `Average` on the
+    wire; empty where they carry nothing."""
+
+    @property
+    def line(self) -> YahooLine:
+        return YahooLine(stats=self.stats, points=self.points)
 
 
 @dataclass(frozen=True)

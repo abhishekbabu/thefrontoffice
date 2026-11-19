@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import PlayerStat, PlayerStatus, Timeframe
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Average, PlayerStat, PlayerStatus, Timeframe
 from thefrontoffice.domain.errors import FrontOfficeError
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,8 @@ AHEAD_TTL = timedelta(days=7)
 """A week to come: only who plays whom, which is set until the playoff bracket is drawn."""
 FINAL_TTL = timedelta(days=365)
 """A week closed and settled: it will never change, so it is never asked for again this season."""
+AVERAGES_TTL = timedelta(hours=3)
+"""A player's averages move once a game night, and only for those who played in it."""
 PLAYED_TTL = timedelta(days=7)
 """A week once played stands, bar the stat corrections Yahoo makes in the days after it."""
 
@@ -139,6 +141,11 @@ def played_roster(team_key: str, week: int) -> YahooRead:
     return YahooRead(f"team/{team_key}/roster;week={week}/players/stats;type=week;week={week}", PLAYED_TTL)
 
 
+def roster_averages(team_key: str, average: Average) -> YahooRead:
+    """A team's roster, each player with his averages over `average`: one read for the whole roster."""
+    return YahooRead(f"team/{team_key}/roster/players/stats;type={average}", AVERAGES_TTL)
+
+
 @dataclass(frozen=True)
 class ScoreboardPace:
     """Whether a league's scores can be moving right now, so the week being played is asked for no oftener than that.
@@ -200,8 +207,12 @@ def player_page(
     sort_type: Timeframe | None,
     ttl: timedelta = LEADERS_TTL,
     start: int = 0,
+    average: Average | None = None,
 ) -> YahooRead:
-    """A page of the league's players, filtered and sorted, `start` places down the order."""
+    """A page of the league's players, filtered and sorted, `start` places down the order.
+
+    With `average`, each player carries his averages over it, in the same response.
+    """
     params: dict[str, str] = {"count": str(count), "status": status.value}
     if sort is not None:
         params["sort"] = str(sort)
@@ -209,7 +220,12 @@ def player_page(
         params["sort_type"] = sort_type.value
     if start:
         params["start"] = str(start)
-    return YahooRead("players;" + ";".join(f"{k}={v}" for k, v in params.items()), ttl, league=league_key)
+    stats = f"/stats;type={average}" if average else ""
+    return YahooRead("players;" + ";".join(f"{k}={v}" for k, v in params.items()) + stats, ttl, league=league_key)
+
+
+RECENT_AVERAGE = Average.LAST_MONTH
+"""The span a table of players shows averages over, on the wire and on a roster alike."""
 
 
 def available(league_key: str, depth: int, sort_type: Timeframe = Timeframe.SEASON) -> list[YahooRead]:
@@ -218,6 +234,8 @@ def available(league_key: str, depth: int, sort_type: Timeframe = Timeframe.SEAS
     ALL_AVAILABLE rather than FREE_AGENT: somebody sitting on waivers is still
     a decision to be made about. The first page holds the players most likely
     to be claimed, so it is asked for oftenest; the rest hold for `DEEP_TTL`.
+    Each player carries his averages over the last month, which is what the
+    wire's table shows: no request beyond the page.
     """
     return [
         player_page(
@@ -228,6 +246,7 @@ def available(league_key: str, depth: int, sort_type: Timeframe = Timeframe.SEAS
             sort_type,
             ttl=DEEP_TTL if start else LEADERS_TTL,
             start=start,
+            average=RECENT_AVERAGE,
         )
         for start in range(0, depth, PAGE)
     ]
@@ -256,3 +275,16 @@ def search(league_key: str, query: str) -> YahooRead:
 def by_keys(league_key: str, player_keys: list[str]) -> YahooRead:
     keys = ",".join(player_keys)
     return YahooRead(f"players;player_keys={keys}", ROSTER_TTL, league=league_key, player_keys=tuple(player_keys))
+
+
+def averages(league_key: str, player_keys: list[str], average: Average) -> list[YahooRead]:
+    """These players' averages over `average`, whoever holds them: a read per `PAGE` of keys."""
+    return [
+        YahooRead(
+            f"players;player_keys={','.join(batch)}/stats;type={average}",
+            AVERAGES_TTL,
+            league=league_key,
+            player_keys=tuple(batch),
+        )
+        for batch in (player_keys[i : i + PAGE] for i in range(0, len(player_keys), PAGE))
+    ]

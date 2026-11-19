@@ -26,6 +26,7 @@ from support.nba import yahoo_team as _yahoo_team
 from support.reports import MOCK_NBA_REPORT
 from support.stores import FakeAnswers
 
+from thefrontoffice.adapters.outbound.competitions.nba.actions import PROVISIONAL
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES
@@ -36,7 +37,7 @@ from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import Timeframe, YahooLeague, YahooTeam
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Average, Timeframe, YahooLeague, YahooLine, YahooTeam
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.domain.errors import (
     InvalidRequestError,
@@ -886,13 +887,13 @@ def test_a_points_leagues_season_reads_each_weeks_fantasy_points() -> None:
     assert next(row.result for row in season if row.label == "Week 3") == "1185.50-778.80"
 
 
-def test_a_points_leagues_rows_carry_fantasy_points_a_game() -> None:
-    yahoo = FakeYahoo(weights=WEIGHTS, roster=[make_player("A B")])
-    form = FakeNBA(stats={"A B": _form(pts=20, reb=10, ast=4, stl=1, blk=2, to=3)})
+def test_a_points_leagues_rows_carry_yahoos_fantasy_points_a_game() -> None:
+    yahoo = FakeYahoo(weights=WEIGHTS, roster=[make_player("A B", key="ab")])
+    yahoo.lines = {Average.LAST_MONTH: {"ab": YahooLine(stats={"12": "20.1"}, points="32.67")}}
 
-    card = _points(yahoo, form).roster()[0]
+    card = _points(yahoo).roster()[0]
 
-    assert (card.columns["FPTS"], card.values["FPTS"]) == ("44.0", pytest.approx(44.0))
+    assert (card.columns["FPTS"], card.values["FPTS"]) == ("32.67", pytest.approx(32.67))
 
 
 def test_a_points_row_with_no_form_shows_a_dash() -> None:
@@ -912,20 +913,23 @@ def test_a_rivals_roster_in_a_points_league_carries_the_same_column() -> None:
     assert "FPTS" in card.columns
 
 
-def test_a_points_leagues_drawer_is_headed_by_fantasy_points_a_game() -> None:
+def test_a_points_leagues_drawer_is_headed_by_yahoos_fantasy_points_a_game_this_season() -> None:
     yahoo = FakeYahoo(weights=WEIGHTS, roster=[make_player("A B", key="ab")])
-    form = FakeNBA(stats={"A B": _form(pts=20, reb=10, ast=4, stl=1, blk=2, to=3)})
+    yahoo.lines = {
+        Average.SEASON: {"ab": YahooLine(stats={"12": "20.1"}, points="32.67")},
+        Average.LAST_MONTH: {"ab": YahooLine(stats={"12": "24.0"}, points="38.10")},
+    }
 
-    detail = _points(yahoo, form).player("", "ab")
+    detail = _points(yahoo).player("", "ab")
 
-    assert (detail.headline, detail.headline_label) == ("44.0", "fpts/game, last 15")
-    assert {s.label: s.value for s in detail.groups[0].stats}["FPTS"] == "44.0"
+    assert (detail.headline, detail.headline_label) == ("32.67", "fpts/game, season")
+    assert [{s.label: s.value for s in g.stats}["FPTS"] for g in detail.groups[:2]] == ["32.67", "38.10"]
 
 
-def test_a_points_drawer_without_form_says_so() -> None:
+def test_a_points_drawer_without_a_season_says_so() -> None:
     detail = _points(FakeYahoo(weights=WEIGHTS, roster=[make_player("A B", key="ab")])).player("", "ab")
 
-    assert (detail.headline, detail.headline_label) == ("", "No recent form")
+    assert (detail.headline, detail.headline_label) == ("", "No games this season")
 
 
 def test_a_points_leagues_scout_ranks_the_wire_by_fantasy_points_a_game() -> None:
@@ -1146,3 +1150,54 @@ def test_basketball_weeks_already_played_are_not_backtested() -> None:
 
     assert isinstance(provider, ForecastProvider)
     assert (provider.played_weeks("466.l.1"), provider.played_matchups("466.l.1", 3)) == ([], [])
+
+
+# ── a schedule not yet final ────────────────────────────────────────────
+
+UNSCHEDULED = [date(2026, 2, 10), date(2026, 2, 11), date(2026, 2, 12)]
+"""Days inside the default matchup week, 9-15 Feb, the schedule has no games for yet."""
+
+
+def _pending(league: YahooLeague = POINTS_LEAGUE, unscheduled: list[date] = UNSCHEDULED) -> YahooNBAProvider:
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+    nba = FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, unscheduled=unscheduled)
+    return nba_provider(yahoo, nba=nba, league=league)
+
+
+def test_a_week_with_days_unscheduled_says_so_in_its_header_rows_and_to_do_list() -> None:
+    summary = _pending().summary("")
+
+    assert ("Schedule", "not final") in [(s.label, s.value) for s in summary.headline]
+    assert summary.mine is not None and summary.mine.lineup[0].value.startswith("1+G · ")
+    assert summary.actions and all(a.reason.endswith(PROVISIONAL) for a in summary.actions)
+
+
+def test_a_week_fully_scheduled_reads_its_games_left_as_a_count() -> None:
+    summary = _pending(unscheduled=[]).summary("")
+
+    assert "Schedule" not in [s.label for s in summary.headline]
+    assert summary.mine is not None and summary.mine.lineup[0].value.startswith("1G · ")
+
+
+def test_a_browsed_week_being_played_with_days_unscheduled_says_so_and_a_week_played_does_not() -> None:
+    provider = _pending()
+
+    assert "Schedule" in [s.label for s in provider.week_of("", 5).headline]
+    assert "Schedule" not in [s.label for s in provider.week_of("", 4).headline]
+
+
+def test_the_fixtures_of_a_week_with_days_unscheduled_carry_a_note_naming_them() -> None:
+    assert "10-12 Feb" in _pending().games_of("", 5).note
+    assert _pending(unscheduled=[]).games_of("", 5).note == ""
+
+
+def test_a_week_with_days_unscheduled_is_simulated_as_provisional() -> None:
+    matchup = _pending(league=yahoo_league()).matchup_input("466.l.1")
+
+    plain = _simulated(FakeYahoo()).matchup_input("466.l.1")
+    assert matchup is not None and matchup.provisional
+    assert plain is not None and not plain.provisional
+
+
+def test_the_scouts_schedule_names_the_days_still_to_be_scheduled() -> None:
+    assert "10-12 Feb" in _pending().build_context().extra

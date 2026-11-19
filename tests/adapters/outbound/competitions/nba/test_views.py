@@ -1,6 +1,6 @@
 """Tests for how a basketball player reads in a table row and in his drawer: `nba/views.py`.
 
-Covered through the provider, which hands each view the player's recent run.
+Covered through the provider, which hands each view Yahoo's averages for the player.
 """
 
 from dataclasses import replace
@@ -10,14 +10,14 @@ import pytest
 from support.espn import FakeESPN
 from support.nba import FakeNBA, FakeYahoo, make_player, nba_provider, toronto
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.rules import ASSISTS, BLOCKS, CATEGORIES, POINTS, REBOUNDS
 from thefrontoffice.adapters.outbound.competitions.nba.views import cell, compared
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
+from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Average, YahooLine, YahooPlayer
 from thefrontoffice.application.comparing import comparison
 from thefrontoffice.domain.errors import PlayerNotFoundError
 from thefrontoffice.domain.models import PlayerQuery
@@ -44,86 +44,93 @@ def test_a_game_time_decision_is_flagged_without_being_ruled_out() -> None:
     assert (card.columns["Status"], card.ruled_out) == ("GTD", False)
 
 
-def _form(played: int = 15, **stats: float) -> PlayerStats:
-    """`played` identical games, run through the real nine-category line."""
-    games = [NBAGameLog(player_id="p", date=f"2026-01-{i + 1:02d}", opponent="BOS", stats=stats) for i in range(played)]
-    return PlayerStats(recent=RecentForm(games=played, line=nine_cat(games)))
-
-
-def test_the_drawer_shows_every_category_of_the_last_fifteen() -> None:
-    """The drawer once looked figures up in a way the form line never matched,
-    and showed a dash where every figure should have been."""
-    stats = _form(pts=20, reb=8, ast=5, stl=1, blk=2, tpm=3, to=2, fgm=9, fga=18, ftm=4, fta=5)
-    yahoo = FakeYahoo(roster=[make_player("A B", key="ab")])
-
-    detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": stats})).player("", "ab")
-
-    figures = {stat.label: stat.value for stat in detail.groups[0].stats}
-    assert list(figures) == [c.label for c in CATEGORIES]
-    assert figures == {
-        "PTS": "20.0",
-        "REB": "8.0",
-        "AST": "5.0",
-        "STL": "1.0",
-        "BLK": "2.0",
-        "3PTM": "3.0",
-        "FG%": "50.0%",
-        "FT%": "80.0%",
-        "TO": "2.0",
+SEASON_LINE = YahooLine(
+    stats={
+        "12": "15.7",
+        "15": "7.1",
+        "16": "3.3",
+        "17": "1.1",
+        "18": "0.7",
+        "10": "0.3",
+        "5": "0.536",
+        "8": "1.0",
+        "19": "1.9",
     }
-    assert detail.headline == "20.0"
+)
+MONTH_LINE = YahooLine(stats={"12": "17.7", "15": "8.7", "16": "4.0", "5": "0.51", "8": "-", "19": "2.3"})
 
 
-def test_the_drawer_says_how_many_games_a_short_run_averages() -> None:
-    """Twelve games in, the line is his last twelve, and saying fifteen would misstate it."""
+def _averaged(*players: YahooPlayer, season: YahooLine = SEASON_LINE, month: YahooLine = MONTH_LINE) -> FakeYahoo:
+    """`players` on your roster, each with these averages over the season and the last month."""
+    yahoo = FakeYahoo(roster=list(players))
+    yahoo.lines = {
+        Average.SEASON: {p.player_key: season for p in players},
+        Average.LAST_MONTH: {p.player_key: month for p in players},
+    }
+    return yahoo
+
+
+def test_the_drawer_shows_yahoos_season_and_last_month_in_every_category_the_league_scores() -> None:
+    yahoo = _averaged(make_player("A B", key="ab"))
+
+    detail = nba_provider(yahoo).player("", "ab")
+
+    season, month = ({s.label: s.value for s in g.stats} for g in detail.groups[:2])
+    assert [g.title for g in detail.groups[:2]] == ["Season", "Last 30 days"]
+    assert list(season) == [c.label for c in CATEGORIES]
+    assert (season["PTS"], season["FG%"], season["FT%"], season["TO"]) == ("15.7", ".536", "1.000", "1.9")
+    assert (month["PTS"], month["FT%"], month["STL"]) == ("17.7", "—", "—")
+    assert (detail.headline, detail.headline_label) == ("15.7", "pts/game, season")
+    assert yahoo.averaged == [(("ab",), (Average.SEASON, Average.LAST_MONTH))]
+
+
+def test_a_drawer_yahoo_has_no_averages_for_says_so_and_still_opens() -> None:
     yahoo = FakeYahoo(roster=[make_player("A B", key="ab")])
+    yahoo.averages_error = YahooAPIError("down")
 
-    detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(played=12, pts=18)})).player("", "ab")
+    detail = nba_provider(yahoo).player("", "ab")
 
-    assert detail.headline == "18.0"
-    assert "12" in detail.headline_label
+    assert (detail.headline, detail.headline_label) == ("", "No games this season")
+    assert {"Season", "Last 30 days"}.isdisjoint(g.title for g in detail.groups)
 
 
 def test_two_players_compare_with_fewer_turnovers_and_more_of_everything_else_best() -> None:
-    """Runs of different lengths still line up on one grid: the run is in the headline, not the heading."""
-    yahoo = FakeYahoo(roster=[make_player("A B", key="ab"), make_player("C D", key="cd")])
-    form = FakeNBA(
-        stats={
-            "A B": _form(pts=20, to=4, fgm=5, fga=10),
-            "C D": _form(played=9, pts=12, to=1, fgm=6, fga=10),
-        }
-    )
-    provider = nba_provider(yahoo, nba=form)
+    yahoo = _averaged(make_player("A B", key="ab"))
+    yahoo.roster_players.append(make_player("C D", key="cd"))
+    yahoo.lines[Average.SEASON]["cd"] = YahooLine(stats={"12": "12.0", "19": "1.0", "5": ".600"})
+    provider = nba_provider(yahoo)
 
-    [table] = comparison([provider.player("", "ab"), provider.player("", "cd")]).tables
+    [season, *_] = comparison([provider.player("", "ab"), provider.player("", "cd")]).tables
 
-    best = {row.label: row.best for row in table.rows}
+    best = {row.label: row.best for row in season.rows}
     assert (best["PTS"], best["TO"], best["FG%"]) == ([0], [1], [1])
 
 
-def test_a_row_short_of_fifteen_games_still_carries_figures() -> None:
-    """Week five, most of a roster has fewer than fifteen games; a dash for each was the bug."""
-    yahoo = FakeYahoo(roster=[make_player("A B")])
-
-    card = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(played=7, pts=20)})).roster()[0]
-
-    assert card.columns["PTS"] == "20.0"
-    assert card.values["PTS"] == 20.0
-
-
-def test_a_table_row_carries_recent_form() -> None:
-    yahoo = FakeYahoo(roster=[make_player("A B")])
-    card = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(pts=20, reb=8, ast=5)})).roster()[0]
-
-    assert (card.columns["PTS"], card.columns["REB"], card.columns["AST"]) == ("20.0", "8.0", "5.0")
-
-
-def test_recent_form_sorts_as_a_number() -> None:
+def test_a_table_row_carries_yahoos_last_month_as_printed_and_sorts_on_its_numbers() -> None:
     """Sorted as text, 9.0 points sits above 20.0."""
-    yahoo = FakeYahoo(roster=[make_player("A B")])
-    card = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(pts=20, reb=8, ast=5)})).roster()[0]
+    card = nba_provider(_averaged(make_player("A B"))).roster()[0]
 
-    assert card.values == {"PTS": 20.0, "REB": 8.0, "AST": 5.0}
+    assert (card.columns["PTS"], card.columns["REB"], card.columns["AST"]) == ("17.7", "8.7", "4.0")
+    assert card.values == {"PTS": 17.7, "REB": 8.7, "AST": 4.0}
+
+
+def test_a_rivals_roster_carries_his_players_averages_too() -> None:
+    yahoo = FakeYahoo()
+    yahoo.lines = {Average.LAST_MONTH: {"their-team-one": MONTH_LINE}}
+
+    [card] = nba_provider(yahoo).roster_of("", "t.2")
+
+    assert card.columns["PTS"] == "17.7"
+
+
+def test_the_wire_reads_the_averages_its_own_pages_carry_without_another_request() -> None:
+    carried = make_player("Free Man", key="fa", stats={"12": "9.5"}, coverage=Average.LAST_MONTH)
+    yahoo = FakeYahoo(available=[carried])
+
+    [card] = nba_provider(yahoo).free_agents("", PlayerQuery()).players
+
+    assert card.columns["PTS"] == "9.5"
+    assert yahoo.averaged == []
 
 
 def test_the_drawer_opens_for_a_player_on_nobodys_roster_or_a_rivals() -> None:
@@ -140,18 +147,11 @@ def test_a_player_the_league_does_not_know_is_not_found() -> None:
         nba_provider().player("", "nobody")
 
 
-def test_a_percentage_with_nothing_attempted_is_a_dash_not_zero() -> None:
-    yahoo = FakeYahoo(roster=[make_player("A B", key="ab")])
-    detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(pts=10)})).player("", "ab")
-
-    figures = {stat.label: stat.value for stat in detail.groups[0].stats}
-    assert (figures["FT%"], figures["PTS"]) == ("—", "10.0")
-
-
-def test_recent_form_is_a_dash_when_there_is_none() -> None:
+def test_an_average_is_a_dash_when_there_is_none() -> None:
     """Out of season there is no line to show, and a zero would read as a bad
     one rather than an absent one."""
     yahoo = FakeYahoo(roster=[make_player("A B")])
+    yahoo.averages_error = YahooAPIError("down")
     card = nba_provider(yahoo).roster()[0]
 
     assert card.columns["PTS"] == "—"
@@ -251,3 +251,11 @@ def test_players_compared_carry_the_same_rows_with_a_dash_where_one_has_none() -
     assert [label for label, _ in rows[0]] == [label for label, _ in rows[1]]
     assert dict(rows[0])["Week"] == "124.5"
     assert dict(rows[1])["Week"] == "—"
+
+
+def test_games_left_read_as_a_floor_while_the_weeks_schedule_is_not_final() -> None:
+    pending = replace(READING, provisional=True)
+
+    assert cell(pending, by_points=True) == "3+G · 41.5 fpts/g"
+    [_in] = compared([("in", "bench", pending)], True)
+    assert {f.label: f.value for f in _in.figures}["G left"] == "3+"

@@ -1,8 +1,18 @@
 """Tests for what a basketball week asks of the manager: `nba/actions.py`."""
 
+from dataclasses import replace
+
 from support.nba import make_player
 
-from thefrontoffice.adapters.outbound.competitions.nba.actions import STREAMS, build, droppable, held, starts, streams
+from thefrontoffice.adapters.outbound.competitions.nba.actions import (
+    PROVISIONAL,
+    STREAMS,
+    build,
+    droppable,
+    held,
+    starts,
+    streams,
+)
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 
@@ -169,3 +179,13 @@ def test_where_a_player_stands_follows_his_slot() -> None:
         "reserve",
         "free agent",
     ]
+
+
+def test_a_start_weighed_on_a_schedule_not_final_says_it_is_provisional() -> None:
+    starter, bench = _player("Starter", "PF"), _player("Bench", "BN")
+    readings = {k: replace(r, provisional=True) for k, r in _readings((starter, 30.0, 1), (bench, 25.0, 3)).items()}
+
+    [item] = starts([starter, bench], readings, by_points=True)
+
+    assert item.reason.endswith(PROVISIONAL)
+    assert _figures(item.players, "G left") == ["3+", "1+"]

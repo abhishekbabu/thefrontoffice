@@ -1799,6 +1799,12 @@ export interface components {
              * @description Clubs with no game that week, alphabetical; empty where every club plays, or none has played yet.
              */
             byes: string[];
+            /**
+             * Note
+             * @description One line on the slate as a whole, where it is not to be read as complete; empty for most.
+             * @default
+             */
+            note: string;
         };
         /**
          * Spot

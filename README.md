@@ -111,13 +111,17 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Light and dark mode**, several palettes, and a terminal CLI.
 
 NFL has the deepest analysis. FPL and NBA share the matchup, schedule, fixtures,
-team and league pages. An NBA player's PTS/REB/AST average his last 15 games, or
-every game he has while fewer (the drawer says how many); under 3 games shows none.
-An NBA league is read as Yahoo scores it: a category league shows the categories,
-a points league its fantasy points scored and projected, with fantasy points a
-game (from the league's weights, over the same games) on player rows and the
-scout's free agents ranked by them. The add budget is the league's own. NBA's
-free agents are Yahoo's top 300 by season rank and top 100 by last week's,
+team and league pages. NBA averages are Yahoo's own, as Yahoo prints them: table
+rows show PTS/REB/AST over the last 30 days (FPTS a game in a points league), and
+the drawer every category the league scores over the season and the last 30 days.
+That costs one request per roster page (the roster's averages), none on Free agents
+(each wire page carries them) and two per drawer (season and last 30 days), each
+cached 3 hours. Sleeper's box scores still drive everything game by game: worth,
+the win chance, teammate splits and games left. An NBA league is read as Yahoo
+scores it: a category league shows the categories, a points league its fantasy
+points scored and projected, with the scout's free agents ranked by fantasy points
+a game over their last 15 Sleeper box scores. The add budget is the league's own.
+NBA's free agents are Yahoo's top 300 by season rank and top 100 by last week's,
 taken in turn so the week's risers sit beside the season's best (16 requests
 of 25 players: each ranking's first page cached for 30 minutes, the rest for 6 hours).
 NBA free agents get the same "Without" column, and every NBA drawer a Teammates
@@ -139,6 +143,11 @@ a bench start over a starter whose slot he fits, and up to two streams (from
 the wire's top 50 by season and top 25 by last week, three requests) within
 the adds left, each with a drop — never from IL or the better half of the
 roster — all at a fifth more worth. Lineups are daily; starts are weekly.
+While the NBA has yet to schedule days of a week (3+ days in a row with under 3
+games, 1–20 Dec: the Cup knockouts, before eliminated clubs get games), the header
+says "Schedule: not final", games left read "3+G", Fixtures carries a note naming
+the days, to-do items and the win chance say "provisional", and the scout is told
+the counts are a floor. It clears once Sleeper's schedule fills in.
 The NBA matchup header carries a win chance too: what each side has on Yahoo's
 scoreboard, plus every game its players have left, each drawn from one of their
 last 15 box scores (Sleeper). On a night more of a roster plays than its

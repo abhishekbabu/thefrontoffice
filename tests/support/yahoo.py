@@ -106,6 +106,23 @@ def players_xml(*names: str, first: int = 0) -> str:
     )
 
 
+def averaged_xml(key: str, coverage: str, stats: dict[str, str], points: str = "") -> str:
+    """A player carrying his line over `coverage`, as a response asked for with `/stats;type=` lists him."""
+    line = "".join(f"<stat><stat_id>{k}</stat_id><value>{v}</value></stat>" for k, v in stats.items())
+    scored = f"<player_points><coverage_type>{coverage}</coverage_type><total>{points}</total></player_points>"
+    return (
+        f"<player><player_key>{key}</player_key><name><full>Player {key}</full></name>"
+        f"<player_stats><coverage_type>{coverage}</coverage_type><stats>{line}</stats></player_stats>"
+        + (scored if points else "")
+        + "</player>"
+    )
+
+
+def league_players_xml(*players: str) -> str:
+    """A league's players response listing these player elements."""
+    return f"<fantasy_content><league><players>{''.join(players)}</players></league></fantasy_content>"
+
+
 def teams_xml(*teams: str) -> str:
     return f"<fantasy_content><league><teams>{''.join(teams)}</teams></league></fantasy_content>"
 

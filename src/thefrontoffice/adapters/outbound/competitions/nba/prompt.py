@@ -5,7 +5,9 @@ The provider gathers; this renders. Nothing here fetches.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 
+from thefrontoffice.adapters.outbound.competitions.dates import span
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, COUNTED, fantasy_points
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.tasks import task_lines
@@ -263,8 +265,13 @@ def recommendation(adds_left: int) -> str:
     )
 
 
-def schedule(week: Matchup | None, remaining_games: Mapping[str, int], projected: bool) -> str:
-    """Whether projections stand behind the lines, then each club's games left in the period."""
+def schedule(
+    week: Matchup | None, remaining_games: Mapping[str, int], projected: bool, unscheduled: Sequence[date] = ()
+) -> str:
+    """Whether projections stand behind the lines, then each club's games left in the period.
+
+    Where the NBA has days of the period still to schedule (`week.unsettled`), says the counts are a floor.
+    """
     note = (
         "PROJECTIONS: lines marked PROJ carry projected totals for this matchup period — "
         "games, then the categories. Prefer them to recent form when the two disagree, "
@@ -283,7 +290,13 @@ def schedule(week: Matchup | None, remaining_games: Mapping[str, int], projected
         f"- {team}: {count} games left\n"
         for team, count in sorted(remaining_games.items(), key=lambda item: item[1], reverse=True)
     )
-    return f"{note}MATCHUP PERIOD: {week.start} to {week.end}\nREMAINING GAMES BY TEAM:\n{rows}"
+    pending = (
+        f"SCHEDULE NOT FINAL: the NBA has yet to schedule games {span(unscheduled[0], unscheduled[-1])} "
+        "(NBA Cup knockouts), so every count below is a floor, not the week's total.\n"
+        if unscheduled
+        else ""
+    )
+    return f"{note}MATCHUP PERIOD: {week.start} to {week.end}\n{pending}REMAINING GAMES BY TEAM:\n{rows}"
 
 
 def scout(

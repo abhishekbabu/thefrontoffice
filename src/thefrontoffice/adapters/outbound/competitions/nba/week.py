@@ -14,8 +14,9 @@ Sleeper's schedule (`SleeperNBASchedule`), since Yahoo publishes none.
 """
 
 import logging
-from collections.abc import Mapping, Sequence
-from datetime import date, datetime
+from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
+from datetime import date, datetime, timedelta
 from typing import Literal, Protocol
 
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day, span, weekday_day_month
@@ -256,6 +257,65 @@ def match(game: ScheduledGame, roster: Sequence[YahooPlayer]) -> Match:
     )
 
 
+NOT_FINAL = Stat(label="Schedule", value="not final", tone="warning")
+"""What a week's header says while the NBA has days of it left to schedule."""
+
+THIN_DAY = 3
+"""Fewer games than this on a day inside the regular season is a day the schedule may not have filled.
+
+A normal day has five to a dozen; a holiday has none, but only one at a time."""
+
+UNFILLED_RUN = 3
+"""How many thin days in a row it takes to read as unscheduled rather than as a quiet stretch."""
+
+CUP_KNOCKOUTS = (12, range(1, 21))
+"""The NBA Cup's knockout weeks, 1-20 December, by month and days: the NBA schedules the clubs knocked out
+of the Cup for them only once its group stage ends, so until then Sleeper's and ESPN's schedules both
+leave those clubs' games out. The one window it is read in: the All-Star break is as long a run of
+empty days, and is final."""
+
+
+ONE_DAY = timedelta(days=1)
+
+
+def unsettled(games: Iterable[ScheduledGame], start: date, end: date) -> list[date]:
+    """The days between `start` and `end` the NBA has yet to schedule, in order; none where it has.
+
+    A day is thin with fewer than `THIN_DAY` games, between the season's first
+    game and its last, in the Cup's knockout weeks (`CUP_KNOCKOUTS`); it is
+    unsettled in a run of `UNFILLED_RUN` thin days or more. Read off the whole
+    season's schedule, so a run crossing either end of the window still counts,
+    and so once the NBA fills the days in, nothing is flagged.
+    """
+    counts = Counter(day for game in games if (day := parse_day(game.date)) is not None)
+    if not counts:
+        return []
+    first, last = min(counts), max(counts)
+    month, days = CUP_KNOCKOUTS
+
+    def thin(day: date) -> bool:
+        return first < day < last and day.month == month and day.day in days and counts[day] < THIN_DAY
+
+    def run(day: date) -> int:
+        """How many thin days in a row `day` sits among: bounded, since only the knockout weeks can be thin."""
+        low = high = day
+        while thin(low - ONE_DAY):
+            low -= ONE_DAY
+        while thin(high + ONE_DAY):
+            high += ONE_DAY
+        return (high - low).days + 1
+
+    window = (start + n * ONE_DAY for n in range((end - start).days + 1))
+    return [day for day in window if thin(day) and run(day) >= UNFILLED_RUN]
+
+
+def not_final(unscheduled: Sequence[date]) -> str:
+    """The line a week's fixtures carry while days of it are unscheduled: 'Schedule not final: no games yet 4-11 Dec.'"""
+    if not unscheduled:
+        return ""
+    return f"Schedule not final: no games yet {span(unscheduled[0], unscheduled[-1])}."
+
+
 def board(
     found: Pairing,
     weeks: WeekRange,
@@ -264,6 +324,7 @@ def board(
     theirs: list[YahooPlayer] | None,
     categories_scored: Sequence[StatCategory] | None,
     readings: Mapping[str, Reading] | None = None,
+    unscheduled: Sequence[date] = (),
 ) -> Summary:
     """One week's head-to-head, and where it sits in the season.
 
@@ -271,14 +332,17 @@ def board(
     opponent's where rosters are shown, and None where they are not: in a week
     played, as it ended, each player with his line over it.
     `categories_scored` is the league's own list, None for a points league.
-    `readings` are every shown player's week, by Yahoo's key.
+    `readings` are every shown player's week, by Yahoo's key. `unscheduled` are
+    the week's days the NBA has yet to schedule (`unsettled`), which the header
+    says, since every games-left count below it is short by them.
     """
     window = f"Week {weeks.week} · {span(found.start, found.end)}"
+    pending = [NOT_FINAL] if unscheduled else []
     if categories_scored is None:
         # Won on the fantasy-point total, which Yahoo keeps: the categories behind it win nothing.
         when = stage(weeks.week, weeks.current)
         return Summary(
-            headline=[*result(found), *points(found.mine, found.opponent, when)],
+            headline=[*result(found), *points(found.mine, found.opponent, when), *pending],
             mine=side(
                 found.mine.name, records.get(found.mine.team_key, ""), total(found.mine, when), roster, readings, True
             ),
@@ -296,7 +360,7 @@ def board(
     lines = categories(categories_scored, found.mine.stats, found.opponent.stats)
     tally = score(lines)
     return Summary(
-        headline=[*result(found), *([headline(tally)] if tally else [])],
+        headline=[*result(found), *([headline(tally)] if tally else []), *pending],
         mine=side(
             found.mine.name,
             records.get(found.mine.team_key, ""),
@@ -397,6 +461,11 @@ class ScheduleSource(Protocol):
         """
         ...
 
+    def unscheduled(self, start_date: date, end_date: date) -> list[date]:
+        """The days inside a matchup window the NBA has yet to schedule (`unsettled`); none where the schedule
+        would not load, which leaves games left unknown already."""
+        ...
+
 
 class SleeperNBASchedule:
     """The real games of a basketball matchup week, and how many each club has left.
@@ -471,6 +540,18 @@ class SleeperNBASchedule:
         return [
             g for g in self.games_between(start_date, end_date) if self._is_remaining(g, start_date, end_date, today)
         ]
+
+    def unscheduled(self, start_date: date, end_date: date) -> list[date]:
+        """The days inside a matchup window the NBA has yet to schedule (`unsettled`), read off the whole season.
+
+        None where the schedule would not load: games left are unknown then, not short.
+        """
+        try:
+            games = {id(g): g for club in self._team_schedule().values() for g in club}.values()
+        except SleeperAPIError as e:
+            logger.warning(f"Reading the schedule as final, it would not load: {e}")
+            return []
+        return unsettled(games, start_date, end_date)
 
     @staticmethod
     def _is_remaining(game: ScheduledGame, start: date, end: date, today: date) -> bool:

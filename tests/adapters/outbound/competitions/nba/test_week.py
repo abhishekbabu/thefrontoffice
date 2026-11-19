@@ -5,6 +5,7 @@ counted on date labels while "has it happened" is decided in the zone the
 league schedules by.
 """
 
+from dataclasses import replace
 from datetime import date, datetime
 from typing import Any
 
@@ -17,7 +18,8 @@ from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASch
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, StatCategory
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, Pairing, StatCategory
+from thefrontoffice.domain.models import WeekRange
 
 
 def _side(points: str, projected: str = "") -> MatchupSide:
@@ -266,3 +268,67 @@ def test_a_week_played_reads_in_the_leagues_categories_and_in_its_order() -> Non
 
     assert week.line(player, scored) == "0.456 FG% · 143 PTS"
     assert week.line(make_player("B", stats={POINTS.yahoo_stat: "-"}), scored) == "no games"
+
+
+# ── a schedule not yet final ────────────────────────────────────────────
+
+
+def _season(*empty: date, start: date = date(2026, 10, 20), end: date = date(2027, 4, 12)) -> list[ScheduledGame]:
+    """Seven games a day from `start` to `end`, none on the days in `empty`."""
+    days = (start + n * week.ONE_DAY for n in range((end - start).days + 1))
+    return [_sched(day.isoformat(), away=f"A{i}") for day in days if day not in empty for i in range(7)]
+
+
+CUP_GAP = [date(2026, 12, day) for day in range(4, 12)]
+"""4-11 December with no games yet: the clubs knocked out of the Cup, not scheduled."""
+
+
+def test_a_run_of_empty_days_in_the_cup_knockout_weeks_is_unscheduled_inside_the_window() -> None:
+    unscheduled = week.unsettled(_season(*CUP_GAP), date(2026, 11, 30), date(2026, 12, 6))
+
+    assert unscheduled == CUP_GAP[:3]
+
+
+def test_a_run_crossing_the_windows_start_still_counts() -> None:
+    """The 11th alone in a window starting that day is the end of an eight-day run, not a quiet day."""
+    assert week.unsettled(_season(*CUP_GAP), date(2026, 12, 11), date(2026, 12, 13)) == [date(2026, 12, 11)]
+
+
+def test_a_day_or_two_without_games_is_a_quiet_stretch_not_an_unscheduled_one() -> None:
+    """A Cup semi-final night has two games, and the final one: the schedule is final all the same."""
+    games = _season(date(2026, 12, 13), date(2026, 12, 16), date(2026, 12, 17))
+
+    assert week.unsettled(games, date(2026, 12, 1), date(2026, 12, 20)) == []
+
+
+def test_the_all_star_break_is_as_long_a_gap_and_final() -> None:
+    gap = [date(2027, 2, day) for day in range(12, 18)]
+
+    assert week.unsettled(_season(*gap), date(2027, 2, 8), date(2027, 2, 21)) == []
+
+
+def test_days_before_the_season_opens_or_after_it_closes_are_not_unscheduled() -> None:
+    games = _season(start=date(2026, 12, 8), end=date(2026, 12, 9))
+
+    assert week.unsettled(games, date(2026, 12, 1), date(2026, 12, 20)) == []
+    assert week.unsettled([], date(2026, 12, 1), date(2026, 12, 20)) == []
+
+
+def test_the_fixtures_note_names_the_days_unscheduled_and_is_empty_without_any() -> None:
+    assert "4-6 Dec" in week.not_final(CUP_GAP[:3])
+    assert week.not_final([]) == ""
+
+
+def test_the_header_says_the_schedule_is_not_final_while_days_are_unscheduled() -> None:
+    found = Pairing(date(2026, 11, 30), date(2026, 12, 13), _side("1"), replace(_side("2"), team_key="t2"))
+    weeks = WeekRange(week=7, current=7, first=1, last=20)
+
+    assert week.NOT_FINAL in week.board(found, weeks, {}, None, None, None, unscheduled=CUP_GAP[:3]).headline
+    assert week.NOT_FINAL not in week.board(found, weeks, {}, None, None, None).headline
+
+
+def test_sleepers_schedule_reads_the_whole_season_and_a_failed_one_as_final() -> None:
+    window = (date(2026, 11, 30), date(2026, 12, 13))
+
+    assert _schedule(schedule=_season(*CUP_GAP)).unscheduled(*window) == CUP_GAP
+    assert _schedule(error=SleeperAPIError("down")).unscheduled(*window) == []

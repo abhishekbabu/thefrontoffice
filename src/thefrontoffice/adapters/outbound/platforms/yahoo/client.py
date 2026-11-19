@@ -10,7 +10,7 @@ Yahoo itself (`LiveResponses`), or what a browser captured of it (`capture.py`).
 """
 
 import logging
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date, timedelta
 from typing import Any, Protocol
 
@@ -27,6 +27,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
 )
 from thefrontoffice.adapters.outbound.platforms.yahoo.paths import ScoreboardPace, YahooRead
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
+    Average,
     LeagueSettings,
     Matchup,
     MatchupSide,
@@ -35,6 +36,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     TeamStanding,
     Timeframe,
     YahooLeague,
+    YahooLine,
     YahooPlayer,
     YahooTeam,
 )
@@ -234,6 +236,14 @@ class YahooSource(Protocol):
         """Players in the league whose name matches `query`."""
         ...
 
+    def averages(self, player_keys: list[str], spans: Sequence[Average]) -> dict[Average, dict[str, YahooLine]]:
+        """These players' averages over each of `spans`, by key; a key Yahoo does not know is left out."""
+        ...
+
+    def roster_averages(self, team_key: str, average: Average) -> dict[str, YahooLine]:
+        """The averages over `average` of every player a team holds, by key."""
+        ...
+
     def players(self, player_keys: list[str]) -> list[YahooPlayer]:
         """The players with these keys, whoever holds them; a key Yahoo does not know is left out."""
         ...
@@ -314,6 +324,25 @@ class YahooClient:
         is an empty answer rather than a failure.
         """
         return self._players(self._responses.raw(paths.by_keys(self.league.league_key, player_keys)))
+
+    def averages(self, player_keys: list[str], spans: Sequence[Average]) -> dict[Average, dict[str, YahooLine]]:
+        """These players' averages over each of `spans`, by key: a read per 25 of them a span, all fetched together.
+
+        A key Yahoo does not know is left out, as is a player it carries no line for.
+        """
+        keys = list(dict.fromkeys(player_keys))
+        reads = {span: paths.averages(self.league.league_key, keys, span) for span in spans}
+        raws = self._responses.many({read.path: read for batch in reads.values() for read in batch})
+        return {
+            span: {p.player_key: p.line for read in batch for p in self._players(raws[read.path]) if p.coverage}
+            for span, batch in reads.items()
+        }
+
+    def roster_averages(self, team_key: str, average: Average) -> dict[str, YahooLine]:
+        """The averages over `average` of every player a team holds, by key: one read."""
+        raw = self._responses.raw(paths.roster_averages(team_key, average))
+        players = readable("roster", lambda: player_list(parse(raw)["fantasy_content"]["team"]["roster"]))
+        return {p.player_key: p.line for p in players if p.coverage}
 
     def teams(self) -> list[YahooTeam]:
         """Every team in the league."""
@@ -487,6 +516,7 @@ def _player(data: Any) -> YahooPlayer:
         slot=_text(data, "selected_position", "position"),
         stats={_text(s, "stat_id"): _text(s, "value") for s in _items(_node(data, "player_stats", "stats"), "stat")},
         points=_text(data, "player_points", "total"),
+        coverage=_text(data, "player_stats", "coverage_type"),
     )
 
 

@@ -72,6 +72,14 @@ describe("Games", () => {
     expect(without.container.textContent).not.toContain("Byes");
   });
 
+  it("says when the week's schedule is not final, and nothing for a week that is", async () => {
+    const pending = await render(<Games rows={[game()]} note="Schedule not final: no games yet 4-11 Dec." />);
+    expect(pending.container.textContent).toContain("4-11 Dec");
+
+    const settled = await render(<Games rows={[game()]} />);
+    expect(settled.container.textContent).not.toContain("Schedule");
+  });
+
   it("opens a game only where somebody's players are in it", async () => {
     const opened: Match[] = [];
     const mine = game({ home: "DAL", yours: [{ player_id: "1", name: "Lamb", detail: "WR · starting" }] });
