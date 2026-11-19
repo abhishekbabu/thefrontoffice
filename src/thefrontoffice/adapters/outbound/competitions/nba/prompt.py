@@ -3,11 +3,14 @@
 The provider gathers; this renders. Nothing here fetches.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, COUNTED, fantasy_points
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
+from thefrontoffice.adapters.outbound.competitions.tasks import task_lines
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup
+from thefrontoffice.domain.models import Action, task_id
 
 OPPONENT_KEY_PLAYERS = 12
 """Enough of the other roster to name its threats without listing its bench."""
@@ -30,6 +33,15 @@ MATCHUP CONTEXT:
 
 {trans_context}
 
+TO DO — WHAT LEAGUE STATE ALREADY SAYS NEEDS DECIDING:
+- Computed from the league, not estimated: IL moves, bench players to start, and pickups each with its drop.
+- "WEEK" on a player line, and "Week" in an item, is his worth this week: a game's value ({value_unit}),
+  blending his recent run with Sleeper's projection, nudged up to a tenth by how steady his minutes are,
+  times the games he can play before the week ends. Items need a fifth more worth than the player replaced.
+- Yahoo lineups are set daily: a start item is about more games or value over the week, not every night.
+- The manager sees this list; your verdicts appear beside it, so judge these items rather than restating them.
+{tasks_str}
+
 TOP FREE AGENTS {free_agent_basis}:
 {fas_str}
 
@@ -44,11 +56,14 @@ YOUR TASK:
 4. For each recommendation, provide:
     - **Reasoning**: {reasoning} Factor in remaining games — players with MORE games left in the matchup period offer more stat production potential.
     - **Drop Target**: Suggest a specific player from the current roster to drop, with a clear justification (e.g., redundant stats, poor recent form, fewer games remaining, or non-active status).
-5. Use a professional, tactical tone. Avoid flowery prose.
+5. Give a verdict on every TO DO item, by its id: AGREE to make it, OVERRULE when news, role or schedule
+   says otherwise, WAIT when it turns on news due before the next game. Never repeat a TO DO item as a move.
+6. Use a professional, tactical tone. Avoid flowery prose.
 
 Return your analysis in the required structured form. Guidance for the fields:
 - situation: {situation}
 - focus: {focus}
+- verdicts: exactly one per TO DO item, `task` set to its id ('{first_task}'). Empty if the list is empty.
 - moves: exactly three, most valuable first. Put the games the player has left in `metric`,
   from the schedule data above (e.g. "{metric_example}"). Use action ADD when adds remain,
   paired with the player it `replaces`; MONITOR when they do not, with `replaces` left empty.
@@ -104,6 +119,7 @@ class Scoring:
     metric_example: str
     impact: str
     currency: str
+    value_unit: str
 
 
 CATEGORY_LEAGUE = Scoring(
@@ -128,6 +144,10 @@ CATEGORY_LEAGUE = Scoring(
     metric_example="4 games left, 2.1 blk",
     impact="Net change in categories (L15/L30 days).",
     currency="categories here, e.g. ['REB', 'BLK']",
+    value_unit=(
+        "his contribution across the scored categories, each counted in its spread across the players read, "
+        "turnovers against"
+    ),
 )
 
 
@@ -157,6 +177,7 @@ def points_league(weights: Mapping[str, float]) -> Scoring:
         metric_example="4 games left, 38.5 fpts/g",
         impact="Net change in fantasy points per game (L15/L30 days).",
         currency="fantasy points per game here, e.g. ['+6.5 fpts/g']",
+        value_unit="fantasy points under the league's weights",
     )
 
 
@@ -274,8 +295,12 @@ def scout(
     trans_context: str,
     adds_left: int,
     weights: Mapping[str, float] | None = None,
+    tasks: Sequence[Action] = (),
 ) -> str:
-    """The scout's prompt, worded for how the league is won: `weights` for a points league, None for categories."""
+    """The scout's prompt, worded for how the league is won: `weights` for a points league, None for categories.
+
+    `tasks` is the week's to-do list as the page shows it, numbered here so a verdict can name its item.
+    """
     league = scoring(weights)
     return NBA_SCOUT_PROMPT.format(
         league_rules=league.rules,
@@ -291,7 +316,19 @@ def scout(
         situation=league.situation,
         focus=league.focus,
         metric_example=league.metric_example,
+        value_unit=league.value_unit,
+        tasks_str=task_lines(tasks) or "- Nothing: the league state asks for no move this week.\n",
+        first_task=task_id(1),
     )
+
+
+def week_line(reading: Reading) -> str:
+    """' | WEEK: 3G × 41.5/g × 1.1 (minutes) = 137.0': his worth this week, and what it is made of."""
+    worth = reading.worth
+    if worth is None or reading.per_game is None:
+        return ""
+    nudge = f" × {reading.usage:g} (minutes)" if reading.usage != 1 else ""
+    return f" | WEEK: {reading.games}G × {reading.per_game:.1f}/g{nudge} = {worth:.1f}"
 
 
 def trade(

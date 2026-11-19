@@ -5,6 +5,7 @@ averaged, a window withheld until it can be filled, and a game nobody played
 kept out of the average.
 """
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -75,14 +76,14 @@ def test_a_window_is_reported_only_once_it_can_be_filled() -> None:
     stats = _form(logs=_run(7)).get_player_stats("Nikola Jokic")
 
     assert stats is not None
-    assert set(stats) == {"last_5", "recent"}
+    assert set(stats) == {"last_5", "recent", "minutes"}
 
 
 def test_every_window_appears_once_there_are_enough_games() -> None:
     stats = _form(logs=_run(20)).get_player_stats("Nikola Jokic")
 
     assert stats is not None
-    assert set(stats) == {"last_5", "last_10", "last_15", "recent"}
+    assert set(stats) == {"last_5", "last_10", "last_15", "recent", "minutes"}
 
 
 def test_the_recent_run_is_every_game_while_short_of_fifteen() -> None:
@@ -116,7 +117,7 @@ def test_the_minimum_games_is_enough_for_a_recent_run() -> None:
     stats = _form(logs=_run(MIN_FORM_GAMES)).get_player_stats("Nikola Jokic")
 
     assert stats is not None
-    assert set(stats) == {"recent"}
+    assert set(stats) == {"recent", "minutes"}
 
 
 def test_a_player_with_no_games_has_no_form_rather_than_zeros() -> None:
@@ -161,3 +162,13 @@ def test_box_scores_that_will_not_load_are_empty() -> None:
     scores = _form(error=SleeperAPIError("down")).box_scores()
 
     assert (dict(scores.logs), dict(scores.players), scores.index.lookup("Nikola Jokic")) == ({}, {}, None)
+
+
+def test_his_minutes_are_kept_game_by_game_newest_first() -> None:
+    """How steady his role is: no category scores them, but his worth reads them."""
+    logs = {"p1": [replace(_game(f"2026-01-0{i}", pts=10), minutes=float(30 + i)) for i in (3, 2, 1)]}
+
+    stats = _form(logs=logs).get_player_stats("Nikola Jokic")
+
+    assert stats is not None
+    assert stats["minutes"] == (33.0, 32.0, 31.0)

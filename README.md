@@ -126,6 +126,15 @@ without him and with him, from Sleeper's box scores; a game the regular played
 under 12 minutes counts as missed, and both sides need 3 games. Regulars who
 missed the same games share one row naming them all. The scout's
 roster and free-agent lines carry the same.
+Each NBA lineup row, both teams, shows games left this week and a game's value
+("3G · 41.5 fpts/g", or "3G · 22.1p 8.3r 4.0a" in categories). An NBA player's
+worth this week is that game's value (his recent run blended with Sleeper's
+projection, in fantasy points or across the scored categories, each counted in
+its spread over the players read) × games left (none while ruled out, or from
+ESPN's return date), ±10% for steady or swinging minutes. The to-do list adds
+a bench start over a starter whose slot he fits, and up to two streams within
+the adds left, each with a drop — never from IL or the better half of the
+roster — all at a fifth more worth. Lineups are daily; starts are weekly.
 
 | | |
 | --- | --- |

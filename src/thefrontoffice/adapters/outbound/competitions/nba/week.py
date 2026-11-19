@@ -19,7 +19,9 @@ from datetime import date, datetime
 from typing import Literal, Protocol
 
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day, span, weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.nba import views
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, PACIFIC, ruled_out, stranded
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNBASource
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
@@ -135,33 +137,52 @@ def total(side: MatchupSide, when: Stage) -> str:
     return " · ".join(part for part in (scored, projected) if part)
 
 
-def side(name: str, detail: str, points: str, roster: Sequence[YahooPlayer] | None) -> Side:
+def side(
+    name: str,
+    detail: str,
+    points: str,
+    roster: Sequence[YahooPlayer] | None,
+    readings: Mapping[str, Reading] | None = None,
+    by_points: bool = False,
+) -> Side:
     """One team in the week, its roster parted as Yahoo slots it: the lineup, the bench, the injured list.
 
     `roster` is None for a week already played: Yahoo sets a basketball lineup
     day by day, so no one roster is the one that played the week, and today's
-    would claim one that did not.
+    would claim one that did not. `readings` are each player's week by Yahoo's
+    key, which his row reads its games left and value a game from (`views.cell`).
     """
     rows = list(roster or [])
+    found = readings or {}
+
+    def spot(player: YahooPlayer) -> Spot:
+        return _spot(player, found.get(player.player_key), by_points)
+
     return Side(
         name=name,
         detail=detail,
         points=points,
-        lineup=[_spot(p) for p in rows if p.slot not in INJURED_SLOTS and p.slot != BENCH],
-        bench=[_spot(p).model_copy(update={"slot": ""}) for p in rows if p.slot == BENCH],
+        lineup=[spot(p) for p in rows if p.slot not in INJURED_SLOTS and p.slot != BENCH],
+        bench=[spot(p).model_copy(update={"slot": ""}) for p in rows if p.slot == BENCH],
         # A player on the injured list was never going to play: no warning on his row.
-        reserve=[_spot(p).model_copy(update={"slot": "", "tone": "neutral"}) for p in rows if p.slot in INJURED_SLOTS],
+        reserve=[spot(p).model_copy(update={"slot": "", "tone": "neutral"}) for p in rows if p.slot in INJURED_SLOTS],
     )
 
 
-def _spot(player: YahooPlayer) -> Spot:
-    """A player as his row reads: where he is slotted, his positions and club, and any status he carries."""
+def _spot(player: YahooPlayer, reading: Reading | None = None, by_points: bool = False) -> Spot:
+    """A player as his row reads: where he is slotted, his positions and club, and his week or his status.
+
+    With a reading, the row's figure is his games left and what he gives a game,
+    and any status moves beside his club; without one, the status is the figure.
+    """
+    shown = views.cell(reading, by_points) if reading else ""
+    about = f"{player.position} · {player.team}"
     return Spot(
         player_id=player.player_key,
         slot=player.slot,
         player=player.name,
-        detail=f"{player.position} · {player.team}",
-        value=player.status,
+        detail=f"{about} · {player.status}" if shown and player.status else about,
+        value=shown or player.status,
         tone="warning" if ruled_out(player.status) else "neutral",
     )
 
@@ -199,12 +220,14 @@ def board(
     roster: list[YahooPlayer] | None,
     theirs: list[YahooPlayer] | None,
     categories_scored: Sequence[StatCategory] | None,
+    readings: Mapping[str, Reading] | None = None,
 ) -> Summary:
     """One week's head-to-head, and where it sits in the season.
 
     `records` is each team's record by key. `roster` is yours and `theirs` the
     opponent's where rosters are shown, and None where they are not.
     `categories_scored` is the league's own list, None for a points league.
+    `readings` are every shown player's week, by Yahoo's key.
     """
     window = f"Week {weeks.week} · {span(found.start, found.end)}"
     if categories_scored is None:
@@ -212,9 +235,16 @@ def board(
         when = stage(weeks.week, weeks.current)
         return Summary(
             headline=points(found.mine, found.opponent, when),
-            mine=side(found.mine.name, records.get(found.mine.team_key, ""), total(found.mine, when), roster),
+            mine=side(
+                found.mine.name, records.get(found.mine.team_key, ""), total(found.mine, when), roster, readings, True
+            ),
             opponent=side(
-                found.opponent.name, records.get(found.opponent.team_key, ""), total(found.opponent, when), theirs
+                found.opponent.name,
+                records.get(found.opponent.team_key, ""),
+                total(found.opponent, when),
+                theirs,
+                readings,
+                True,
             ),
             window=window,
             weeks=weeks,
@@ -223,12 +253,15 @@ def board(
     tally = score(lines)
     return Summary(
         headline=[headline(tally)] if tally else [],
-        mine=side(found.mine.name, records.get(found.mine.team_key, ""), written(tally) if tally else "", roster),
+        mine=side(
+            found.mine.name, records.get(found.mine.team_key, ""), written(tally) if tally else "", roster, readings
+        ),
         opponent=side(
             found.opponent.name,
             records.get(found.opponent.team_key, ""),
             written((tally[1], tally[0], tally[2])) if tally else "",
             theirs,
+            readings,
         ),
         categories=lines,
         window=window,

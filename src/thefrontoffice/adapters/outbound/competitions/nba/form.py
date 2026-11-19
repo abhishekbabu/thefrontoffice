@@ -58,6 +58,8 @@ class PlayerStats(TypedDict, total=False):
     last_10: Line
     last_15: Line
     recent: RecentForm
+    minutes: tuple[float, ...]
+    """The minutes he played in each game of `recent`, newest first: how steady his role is."""
 
 
 def nine_cat(games: list[NBAGameLog]) -> Line:
@@ -128,6 +130,7 @@ class SleeperNBAForm:
         if len(games) >= MIN_FORM_GAMES:
             run = games[:RECENT_GAMES]
             stats["recent"] = RecentForm(games=len(run), line=nine_cat(run))
+            stats["minutes"] = tuple(game.minutes for game in run)
         return stats or None
 
     def box_scores(self) -> BoxScores:

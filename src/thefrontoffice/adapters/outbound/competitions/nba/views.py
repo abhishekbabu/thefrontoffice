@@ -21,6 +21,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     ruled_out,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 from thefrontoffice.domain.models import (
@@ -28,6 +29,9 @@ from thefrontoffice.domain.models import (
     POSITION_COLUMN,
     SLOT_COLUMN,
     STATUS_COLUMN,
+    Held,
+    MovePlayer,
+    MoveSide,
     PlayerCard,
     PlayerDetail,
     Stat,
@@ -173,3 +177,60 @@ def detail(
             *([StatGroup(title="Injury", stats=hurt)] if hurt else []),
         ],
     )
+
+
+def cell(reading: Reading, by_points: bool) -> str:
+    """His week as a lineup row reads it: '3G · 41.5 fpts/g', or in a category league '3G · 22.1p 8.3r 4.0a'.
+
+    Games left, then what he gives a game (`worth.per_game`): fantasy points in
+    a points league, the categories a row has room for in a category one.
+    """
+    games = f"{reading.games}G" if reading.games is not None else ""
+    if by_points:
+        figure = f"{reading.per_game:.1f} fpts/g" if reading.per_game is not None else ""
+    else:
+        figures = reading.line or {}
+        figure = " ".join(c.tagged(figures[c.label]) for c in CARD_CATEGORIES if c.label in figures)
+    return " · ".join(part for part in (games, figure) if part)
+
+
+GAMES_LEFT = "G left"
+WEEK = "Week"
+"""What he adds this week: a game's value × minutes nudge × games left (`Reading.worth`)."""
+
+
+def per_game_label(by_points: bool) -> str:
+    """What a game of him is counted in: fantasy points, or his value across the categories."""
+    return "FPTS/g" if by_points else "Value/g"
+
+
+def figures(reading: Reading, by_points: bool) -> list[Stat]:
+    """The rows a to-do item compares him on, alike for every player on it; '—' where he has none."""
+    worth = reading.worth
+    status = reading.player.status
+    return [
+        Stat(label=GAMES_LEFT, value=str(reading.games) if reading.games is not None else NO_FIGURE),
+        Stat(
+            label=per_game_label(by_points),
+            value=f"{reading.per_game:.1f}" if reading.per_game is not None else NO_FIGURE,
+        ),
+        Stat(label="Min/g", value=f"{reading.minutes:.1f}" if reading.minutes is not None else NO_FIGURE),
+        Stat(label=WEEK, value=f"{worth:.1f}" if worth is not None else NO_FIGURE),
+        Stat(label=STATUS_COLUMN, value=status or NO_FIGURE, tone="warning" if ruled_out(status) else "neutral"),
+    ]
+
+
+def compared(moved: Sequence[tuple[MoveSide, Held, Reading]], by_points: bool) -> list[MovePlayer]:
+    """The players a to-do item moves, each on the same rows (`figures`), for reading side by side."""
+    return [
+        MovePlayer(
+            side=side,
+            player_id=reading.player.player_key,
+            name=reading.player.name,
+            position=reading.player.position,
+            team=reading.player.team,
+            held=held,
+            figures=figures(reading, by_points),
+        )
+        for side, held, reading in moved
+    ]

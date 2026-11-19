@@ -8,8 +8,10 @@ from support.prompts import named_fields, schema_fields
 
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, POINTS, STEALS, TURNOVERS
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup, MatchupSide
 from thefrontoffice.application.formats import ScoutAnswer, TradeAnswer
+from thefrontoffice.domain.models import Action
 
 
 def _week(roster_size: int = 1) -> Matchup:
@@ -114,3 +116,28 @@ def test_the_prompts_name_only_fields_their_answers_have() -> None:
     """A guided field the schema lacks is an instruction the model cannot follow."""
     assert named_fields(prompt.NBA_SCOUT_PROMPT) <= schema_fields(ScoutAnswer)
     assert named_fields(prompt.NBA_TRADE_PROMPT) <= schema_fields(TradeAnswer)
+
+
+def test_a_players_week_states_its_parts_and_their_product() -> None:
+    reading = Reading(player=make_player("A"), line={}, per_game=40.0, games=3, usage=1.1)
+
+    line = prompt.week_line(reading)
+
+    assert "3G" in line and "40.0" in line and "1.1" in line and "132.0" in line
+
+
+def test_an_unnudged_week_names_no_minutes() -> None:
+    assert "minutes" not in prompt.week_line(Reading(player=make_player("A"), line={}, per_game=40.0, games=3))
+
+
+def test_a_week_with_nothing_to_weigh_says_nothing() -> None:
+    assert prompt.week_line(Reading(player=make_player("A"), line=None, per_game=None, games=3)) == ""
+
+
+def test_the_scout_numbers_each_item_on_the_list() -> None:
+    item = Action(kind="lineup", urgency="soon", title="Start A over B", reason="More games.")
+    text = prompt.scout(
+        roster="", week=_week(), free_agents="", schedule_context="", trans_context="", adds_left=1, tasks=[item]
+    )
+
+    assert "T1" in text and "Start A over B" in text

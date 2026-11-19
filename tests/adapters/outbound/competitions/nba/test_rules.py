@@ -10,6 +10,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     THREES,
     TURNOVERS,
     fantasy_points,
+    fits,
     line,
     stranded,
 )
@@ -97,3 +98,19 @@ def test_an_empty_line_scores_nothing_rather_than_zero() -> None:
 def test_a_weighted_stat_no_category_counts_leaves_no_score_rather_than_a_partial_one() -> None:
     """Field goals attempted (stat 3) are weighted by some leagues and counted by no category here."""
     assert fantasy_points({"PTS": 20.0}, {"12": 1.0, "3": -0.5}) is None
+
+
+@pytest.mark.parametrize(
+    ("slot", "positions", "takes"),
+    [
+        ("PG", "PG,SG", True),
+        ("C", "PG,SG", False),
+        ("G", "SG", True),
+        ("F", "PG", False),
+        ("FC", "C", True),
+        ("Util", "C", True),
+        ("Util", "", False),
+    ],
+)
+def test_a_lineup_slot_takes_the_positions_yahoo_lets_into_it(slot: str, positions: str, takes: bool) -> None:
+    assert fits(slot, positions) is takes
