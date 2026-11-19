@@ -15,13 +15,16 @@ report already recommends.
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.dates import at_time
 from thefrontoffice.adapters.outbound.competitions.premier_league import league, prompt
 from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
+    Lineup,
     Roster,
     best_lineup,
+    effective_points,
     fixtures_by_club,
     free_transfers,
     lineup_changes,
@@ -29,14 +32,15 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
     points_of,
     points_with_captain,
     projected_of,
+    purchase_prices,
     roster,
+    selling_price,
 )
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Chip,
     Club,
-    Fixture,
     Gameweek,
     H2HMatch,
     LiveStat,
@@ -80,7 +84,7 @@ logger = logging.getLogger(__name__)
 
 # Where the moves are actually made.
 LEAGUE_URL = "https://fantasy.premierleague.com/leagues/{league_id}/standings/{kind}"
-ENTRY_URL = "https://fantasy.premierleague.com/entry/{entry_id}/event/1"
+ENTRY_URL = "https://fantasy.premierleague.com/entry/{entry_id}/event/{gameweek}"
 
 # Keyed by Opta's code, not the element id. Public, keyless, and already
 # alongside every other asset the site serves.
@@ -134,7 +138,7 @@ class FPLProvider:
                     league_id=str(entry.entry_id),
                     name=entry.name,
                     detail=f"overall rank {entry.overall_rank:,} · {entry.overall_points} pts",
-                    url=ENTRY_URL.format(entry_id=entry.entry_id),
+                    url=self._entry_url(entry.entry_id),
                 )
             ]
         return [
@@ -150,7 +154,7 @@ class FPLProvider:
     # ── squad ───────────────────────────────────────────────────────
 
     def _gameweek(self) -> Gameweek:
-        """The gameweek being played: where points are landing, and the latest whose picks are published.
+        """The latest gameweek whose picks are published: FPL's own `is_current`, which moves only at a deadline.
 
         Picks appear only once a deadline passes, so before the season opens
         no gameweek is current, there is nothing to read, and no squad view
@@ -160,6 +164,27 @@ class FPLProvider:
         if current is None:
             raise FPLAPIError("Season not started; no squad yet.")
         return current
+
+    def _focus(self) -> Gameweek:
+        """The gameweek the week view is about: the one being played, or once it is over, the next.
+
+        FPL keeps a gameweek `is_current` until the next deadline, days after its
+        last match — so a finished one hands over to the gameweek still open,
+        whose deadline is the next thing anybody can act on. Before the season the
+        first gameweek is next; after it, the last stays.
+        """
+        current = self.client.current_gameweek()
+        if current is not None and not current.finished:
+            return current
+        upcoming = self.client.upcoming_gameweek()
+        if current is None or upcoming.id > current.id:
+            return upcoming
+        return current
+
+    def _entry_url(self, entry_id: int) -> str:
+        """A manager's points page on FPL's own site, at the latest gameweek with picks to show."""
+        current = self.client.current_gameweek()
+        return ENTRY_URL.format(entry_id=entry_id, gameweek=current.id if current else 1)
 
     def _roster(self, entry_id: int, gameweek: int) -> Roster:
         """A manager's fifteen as they set them for `gameweek`."""
@@ -388,7 +413,7 @@ class FPLProvider:
                 team_id=str(row.entry),
                 name=row.entry_name,
                 detail=row.manager,
-                url=ENTRY_URL.format(entry_id=row.entry),
+                url=self._entry_url(row.entry),
                 is_mine=row.entry == entry_id,
             )
             for row in self.client.get_standings(mini_league.id, mini_league.is_h2h)
@@ -468,55 +493,37 @@ class FPLProvider:
         }
 
     def summary(self, league_id: str) -> Summary:
-        """The gameweek being played: both squads, the fixtures, the swaps.
+        """The gameweek in focus: both squads, the fixtures, the swaps.
 
-        Reaches for the squad, the history and the tie — everything the week is
-        made of — and stops short of the transfer market, which is the expensive
-        half of a report and answers a different question.
+        The one being played while its matches are; once it is over, the one whose
+        deadline is next, with the squad as last picked against its fixtures and
+        FPL's projection for it. Reaches for the squad, the history and the tie —
+        everything the week is made of — and stops short of the transfer market,
+        which is the expensive half of a report and answers a different question.
         """
         entry_id = self.entry_id
-        # Points are landing in this one; the next deadline is a plan, and the
-        # report is where plans go.
-        gameweek = self._gameweek()
-        mine = self._roster(entry_id, gameweek.id)
-        best = best_lineup(mine.players)
-        entry = self.client.get_entry(entry_id)
-        week_fixtures = self.client.get_fixtures(gameweek.id)
-        fixtures = fixtures_by_club(week_fixtures, (p.team for p in mine.players))
-        live = self._live_points(gameweek.id)
-        scored = mine.scored(live)
+        focus = self._focus()
+        week = self._week(league_id, focus, self._gameweek().id)
+        best = best_lineup(week.mine.players)
         upcoming = self.client.upcoming_gameweek()
 
         return Summary(
             headline=prompt.headline(
-                mine.squad,
+                week.mine.squad,
                 # Keyed to the next deadline, because that is the one an
                 # allowance can still be spent against.
-                free_transfers(self.client.get_history(entry_id), upcoming.id),
+                self._allowance(upcoming.id),
                 best,
-                points_with_captain(mine.starters, mine.captain),
+                points_with_captain(week.mine.starters, week.mine.captain),
                 upcoming,
             ),
-            mine=Side(
-                name=entry.name,
-                detail=f"GW{gameweek.id}",
-                points=_side_points(scored, mine, fixtures),
-                lineup=self._spots(mine, starting=True, fixtures=fixtures, live=live),
-                bench=self._spots(mine, starting=False, fixtures=fixtures, live=live),
-            ),
-            opponent=self._opponent(league_id, entry_id, gameweek.id, week_fixtures, live),
-            swaps=[
-                Swap(
-                    start=change.start.name,
-                    out=change.drop.name if change.drop else "",
-                    gain=f"+{change.gain:.1f} xPts",
-                )
-                for change in lineup_changes(mine.starters, best)
-            ],
-            fixtures=self._warnings(fixtures),
-            boosts=self._chips(entry_id, gameweek.id),
-            window=_window(gameweek, live=any(s.has_played for s in live.values())),
-            weeks=self._range(gameweek.id, gameweek.id),
+            mine=week.mine_side,
+            opponent=week.opponent,
+            swaps=_swaps(week.mine, best),
+            fixtures=self._warnings(week.fixtures),
+            boosts=self._chips(entry_id, focus.id),
+            window=week.window,
+            weeks=self._range(focus.id, focus.id),
         )
 
     # ── other gameweeks ─────────────────────────────────────────────
@@ -531,53 +538,111 @@ class FPLProvider:
         Raises:
             NotFoundError: the season has no such gameweek.
         """
-        current = self._gameweek()
         gameweek = self._gameweek_numbered(week)
+        shown = self._week(league_id, gameweek, self._gameweek().id)
+        return Summary(
+            headline=_browsed_headline(gameweek, shown),
+            mine=shown.mine_side,
+            opponent=shown.opponent,
+            window=shown.window,
+            weeks=self._range(week, self._focus().id),
+        )
+
+    def _week(self, league_id: str, gameweek: Gameweek, picked: int) -> _Week:
+        """Both sides of one gameweek, as far as it has got: played, under way, or to come.
+
+        `picked` is the latest gameweek with published picks. One before it is
+        over; one after it is shown with the squads as last picked, since nobody's
+        picks for it are published until its deadline passes.
+        """
         entry_id = self.entry_id
-        played = week <= current.id
-        # Picks are published only once a deadline passes; a week to come is the squad held now.
-        squad_week = week if played else current.id
+        to_come = gameweek.id > picked
+        squad_week = picked if to_come else gameweek.id
         mine = self._roster(entry_id, squad_week)
-        week_fixtures = self.client.get_fixtures(week)
+        week_fixtures = self.client.get_fixtures(gameweek.id)
+        live = {} if to_come else self._live_points(gameweek.id)
+        projected = projected_of if gameweek.id == picked else _projected_for(gameweek.id, picked)
+        final = not to_come and (
+            gameweek.finished
+            or gameweek.id < picked
+            or (bool(week_fixtures) and all(f.finished for f in week_fixtures))
+        )
+        # Minutes stand in for a kickoff where the fixtures were read before it.
+        begun = final or (
+            not to_come and (any(f.started for f in week_fixtures) or any(s.has_played for s in live.values()))
+        )
+        tie = self._tie(league_id, entry_id, gameweek.id)
+        score = league.tie_score(tie, begun)
+        # Your own rows are summed while the week is under way, since the live feed
+        # moves faster than any total; once it is over, the game's own total stands.
+        if not final:
+            scored: int | None = mine.scored(live) if begun else None
+        elif score is not None:
+            scored = score[0]
+        else:
+            scored = self._points_in(entry_id, gameweek.id)
+
         fixtures = fixtures_by_club(week_fixtures, (p.team for p in mine.players))
-        live = self._live_points(week) if played else {}
-        projected = _projected_for(week, current.id)
-        tie = self._tie(league_id, entry_id, week)
-        theirs = self._tie_roster(tie, week if played else current.id)
-        scored = self._points_in(entry_id, week) if played else None
+        detail = f"GW{gameweek.id}" if squad_week == gameweek.id else f"GW{squad_week} picks"
+        mine_side = Side(
+            name=self.client.get_entry(entry_id).name,
+            detail=detail,
+            points=_side_points(scored, mine, fixtures, projected),
+            lineup=self._spots(mine, starting=True, fixtures=fixtures, live=live, projected=projected),
+            bench=self._spots(mine, starting=False, fixtures=fixtures, live=live, projected=projected),
+        )
         opponent = None
-        if tie is not None and theirs is not None:
+        if tie is not None and (theirs := self._tie_roster(tie, squad_week)) is not None:
             their_fixtures = fixtures_by_club(week_fixtures, (p.team for p in theirs.players))
             opponent = Side(
                 name=tie.opponent_name,
-                detail=f"GW{week}",
-                points=_browsed_points(tie.opponent_points if played else None, theirs, projected),
+                detail=detail,
+                # The game's own total rather than a sum of the rows: it already
+                # accounts for auto-subs, which a squad list cannot show.
+                points=_side_points(score[1] if score else None, theirs, their_fixtures, projected),
                 lineup=self._spots(theirs, starting=True, fixtures=their_fixtures, live=live, projected=projected),
                 bench=self._spots(theirs, starting=False, fixtures=their_fixtures, live=live, projected=projected),
             )
-        return Summary(
-            headline=_browsed_headline(gameweek, played, scored if tie is None else tie.my_points, tie),
-            mine=Side(
-                name=self.client.get_entry(entry_id).name,
-                detail=f"GW{week}",
-                points=_browsed_points(scored if tie is None else tie.my_points if played else None, mine, projected),
-                lineup=self._spots(mine, starting=True, fixtures=fixtures, live=live, projected=projected),
-                bench=self._spots(mine, starting=False, fixtures=fixtures, live=live, projected=projected),
-            ),
+        return _Week(
+            mine=mine,
+            mine_side=mine_side,
             opponent=opponent,
-            window=f"{gameweek.name} · final" if played else _window(gameweek),
-            weeks=self._range(week, current.id),
+            fixtures=fixtures,
+            score=score,
+            scored=scored,
+            to_come=to_come,
+            final=final,
+            window=_window(gameweek, final=final, begun=begun),
         )
 
     def games_of(self, league_id: str, week: int) -> Slate:
-        """The real matches of any gameweek, each with its score once it has kicked off, and its blanks.
+        """The real matches of any gameweek, each with its score once it has kicked off, its blanks,
+        and the players each side has in it.
 
         Raises:
             NotFoundError: the season has no such gameweek.
         """
         self._gameweek_numbered(week)
-        games = league.matches(self.client, week)
+        mine, theirs = self._match_rosters(league_id, week)
+        games = league.matches(self.client, week, mine=mine, theirs=theirs)
         return Slate(games=games, byes=league.blanks(self.client, games))
+
+    def _match_rosters(self, league_id: str, week: int) -> tuple[Roster | None, Roster | None]:
+        """Your squad and your opponent's for a gameweek's matches; None for either that will not load.
+
+        Enrichment, not a dependency: before the season there are no picks at
+        all, and the matches stand without names in them.
+        """
+        current = self.client.current_gameweek()
+        if current is None:
+            return None, None
+        squad_week = min(week, current.id)
+        try:
+            mine = self._roster(self.entry_id, squad_week)
+        except FPLAPIError as e:
+            logger.warning(f"Continuing without your players in the matches: {e}")
+            return None, None
+        return mine, self._tie_roster(self._tie(league_id, self.entry_id, week), squad_week)
 
     def _range(self, week: int, current: int) -> WeekRange:
         return WeekRange(week=week, current=current, first=1, last=max(len(self.client.get_gameweeks()), current))
@@ -589,17 +654,23 @@ class FPLProvider:
         return gameweek
 
     def _tie(self, league_id: str, entry_id: int, week: int) -> H2HMatch | None:
-        """Your head-to-head tie that gameweek; None in a classic league, or where it will not load."""
+        """Your head-to-head tie that gameweek; None in a classic league, or where it will not load.
+
+        Only head-to-head leagues pair managers; a classic league is a table,
+        so there is no opponent to show and saying so beats inventing one.
+        """
         mini_league = self._find_league(league_id, entry_id)
         if mini_league is None or not mini_league.is_h2h:
             return None
         try:
             return self.client.get_h2h_match(mini_league.id, entry_id, week)
         except FPLAPIError as e:
+            # The rest of the page is about your own squad and still stands.
             logger.warning(f"Skipping the head-to-head opponent: {e}")
             return None
 
     def _tie_roster(self, tie: H2HMatch | None, week: int) -> Roster | None:
+        """The squad your opponent picked for `week`; None without a tie, or where it will not load."""
         if tie is None:
             return None
         try:
@@ -620,9 +691,10 @@ class FPLProvider:
     def _chips(self, entry_id: int, gameweek: int) -> StatGroup | None:
         """What is left of the season's chips, and what has become of the rest.
 
-        The game issues a set per half, so the same chip appears twice with
-        different windows — one grouped row per name, showing the first window
-        that has not closed, because that is the one still worth a decision.
+        The game issues a set per half — a Wildcard for GW2-19 and another for
+        GW20-38 — and a chip played in one half spends only that half's. So each
+        window is tracked on its own, and one row per chip reads the window open
+        now: available until it closes, played, or when the next one opens.
 
         A chip whose windows have all passed is still listed: an unplayed Free
         Hit is a thing that was lost, and a row saying so is worth more than a
@@ -630,7 +702,7 @@ class FPLProvider:
         """
         try:
             issued = self.client.get_chips()
-            played = {c.name: c.event for c in self.client.get_chips_played(entry_id)}
+            played = self.client.get_chips_played(entry_id)
         except FPLAPIError as e:
             logger.warning(f"Continuing without chips: {e}")
             return None
@@ -638,22 +710,24 @@ class FPLProvider:
             return None
 
         stats: list[Stat] = []
+        closing: list[int] = []
         for name in dict.fromkeys(c.name for c in issued):
             windows = sorted((c for c in issued if c.name == name), key=lambda c: c.start_event)
-            live = next((c for c in windows if c.stop_event >= gameweek), None)
-            stats.append(self._chip_stat(windows[0].label, live, played.get(name), gameweek))
+            spent = {w: next((p.event for p in played if p.name == name and w.covers(p.event)), None) for w in windows}
+            stat = _chip_stat(windows, spent, gameweek)
+            stats.append(stat)
+            now = next((w for w in windows if w.covers(gameweek)), None)
+            if stat.tone == "good" and now is not None and now.stop_event < windows[-1].stop_event:
+                closing.append(now.stop_event)
         available = sum(stat.tone == "good" for stat in stats)
-        return StatGroup(title="Chips", stats=stats, note=f"{available} available")
+        note = f"{available} available"
+        if closing and (deadline := self._deadline_of(min(closing))):
+            note += f" · this half's expire at the GW{min(closing)} deadline, {deadline}"
+        return StatGroup(title="Chips", stats=stats, note=note)
 
-    @staticmethod
-    def _chip_stat(label: str, live: Chip | None, played: int | None, gameweek: int) -> Stat:
-        if played is not None:
-            return Stat(label=label, value=f"played GW{played}")
-        if live is None:
-            return Stat(label=label, value="expired", tone="warning")
-        if live.covers(gameweek):
-            return Stat(label=label, value="available", tone="good")
-        return Stat(label=label, value=f"from GW{live.start_event}")
+    def _deadline_of(self, week: int) -> str:
+        gameweek = next((g for g in self.client.get_gameweeks() if g.id == week), None)
+        return f"{at_time(gameweek.deadline)} UTC" if gameweek else ""
 
     def _live_points(self, gameweek: int) -> dict[int, LiveStat]:
         """What the squad has actually scored, or nothing before a ball is kicked.
@@ -668,13 +742,15 @@ class FPLProvider:
             return {}
 
     def schedule(self, league_id: str) -> LeagueSchedule:
-        """The season, the table, and the real matches behind the gameweek."""
+        """The season, the table, the league's transfers, and the real matches behind the gameweek."""
         entry_id = self.entry_id
-        # Marked on the week being played, so the season table and the week
-        # view agree about which row is "now". Before the season opens nothing
-        # is being played, and the calendar still has a first week to mark.
-        playing = self.client.current_gameweek() or self.client.upcoming_gameweek()
-        schedule = league.build(self.client, self._find_league(league_id, entry_id), entry_id, playing.id)
+        # Marked on the gameweek in focus, so the season table and the week view
+        # agree about which row is "now".
+        playing = self._focus()
+        mine, theirs = self._match_rosters(league_id, playing.id)
+        schedule = league.build(
+            self.client, self._find_league(league_id, entry_id), entry_id, playing.id, mine=mine, theirs=theirs
+        )
         # The season's figures head the league view, which is the question they answer.
         headline = prompt.season_headline(self.client.get_entry(entry_id), league_id)
         return schedule.model_copy(update={"headline": headline})
@@ -691,44 +767,6 @@ class FPLProvider:
 
     def _find_league(self, league_id: str, entry_id: int) -> MiniLeague | None:
         return league.league_of(self.client.get_entry(entry_id), league_id)
-
-    def _opponent(
-        self,
-        league_id: str,
-        entry_id: int,
-        gameweek: int,
-        week_fixtures: list[Fixture],
-        live: dict[int, LiveStat],
-    ) -> Side | None:
-        """Who this entry is playing, and what they are fielding.
-
-        Only head-to-head leagues pair managers; a classic league is a table,
-        so there is no opponent to show and saying so beats inventing one.
-        """
-        mini_league = self._find_league(league_id, entry_id)
-        if mini_league is None or not mini_league.is_h2h:
-            return None
-
-        try:
-            match = self.client.get_h2h_match(mini_league.id, entry_id, gameweek)
-            if match is None:
-                return None
-            theirs = self._roster(match.opponent_entry, gameweek)
-        except FPLAPIError as e:
-            # The rest of the page is about your own squad and still stands.
-            logger.warning(f"Skipping the head-to-head opponent: {e}")
-            return None
-
-        fixtures = fixtures_by_club(week_fixtures, (p.team for p in theirs.players))
-        return Side(
-            name=match.opponent_name,
-            detail=f"GW{gameweek}",
-            # The game's own total rather than a sum of the rows: it already
-            # accounts for auto-subs, which a squad list cannot show.
-            points=_side_points(match.opponent_points, theirs, fixtures),
-            lineup=self._spots(theirs, starting=True, fixtures=fixtures, live=live),
-            bench=self._spots(theirs, starting=False, fixtures=fixtures, live=live),
-        )
 
     def _spots(
         self,
@@ -826,9 +864,40 @@ class FPLProvider:
             upcoming=upcoming,
             roster=mine,
             catalog=self.client.get_players(),
-            allowance=free_transfers(self.client.get_history(entry_id), upcoming.id),
+            allowance=self._allowance(upcoming.id),
             fixtures=fixtures_by_club(self.client.get_fixtures(upcoming.id), (p.team for p in mine.players)),
+            selling=self._selling_prices(mine),
         )
+
+    def _allowance(self, upcoming: int) -> int:
+        """Free transfers going into `upcoming`, from the history and the chips spent.
+
+        A chip list that will not load leaves the allowance unknowable — a
+        Wildcard week reads as a week of no transfers — so it falls back to the
+        floor of one, which is never wrong in the manager's favor.
+        """
+        history = self.client.get_history(self.entry_id)
+        try:
+            chips = self.client.get_chips_played(self.entry_id)
+        except FPLAPIError as e:
+            logger.warning(f"Counting one free transfer without the chips played: {e}")
+            return 1
+        return free_transfers(history, upcoming, chips=chips)
+
+    def _selling_prices(self, mine: Roster) -> dict[int, int]:
+        """What the game would pay for each of the squad, by element id: half of any rise since purchase is kept back.
+
+        Degrades to current prices — the optimistic case — where the transfer
+        history will not load, rather than failing the report over it.
+        """
+        try:
+            transfers = self.client.get_transfers(self.entry_id)
+            chips = self.client.get_chips_played(self.entry_id)
+        except FPLAPIError as e:
+            logger.warning(f"Pricing sales at current prices: {e}")
+            return {}
+        bought = purchase_prices(mine.players, transfers, chips)
+        return {p.id: selling_price(bought[p.id], p.cost) for p in mine.players}
 
 
 def _scoring(opponents: list[Opponent], stat: LiveStat | None) -> SpotScoring:
@@ -845,17 +914,57 @@ def _scoring(opponents: list[Opponent], stat: LiveStat | None) -> SpotScoring:
     return "projected"
 
 
-def _side_points(scored: int | None, squad: Roster, fixtures: dict[str, list[Opponent]]) -> str:
-    """A side's projection until one of its eleven has kicked off, then what it has scored beside it."""
-    projected = f"{squad.projected():.1f} proj"
-    kicked = any(o.started for player in squad.starters for o in fixtures.get(player.team, []))
-    if scored is None and not kicked:
-        return projected
-    return f"{scored or 0} pts · {projected}"
-
-
 Projected = Callable[[Pick, Player], float | None]
 """What one row is projected for the gameweek shown, multiplied as its points would be; None where FPL says nothing."""
+
+
+@dataclass(frozen=True)
+class _Week:
+    """One gameweek's two sides, and how far it has got."""
+
+    mine: Roster
+    mine_side: Side
+    opponent: Side | None
+    fixtures: dict[str, list[Opponent]]
+    score: tuple[int, int] | None
+    """The tie's score, yours first, once under way; None in a classic league or before kickoff."""
+    scored: int | None
+    to_come: bool
+    final: bool
+    window: str
+
+
+def _side_points(scored: int | None, squad: Roster, fixtures: dict[str, list[Opponent]], projected: Projected) -> str:
+    """A side's projection until one of its eleven has kicked off, then what it has scored beside it.
+
+    A gameweek played has its points and no projection, since the one FPL
+    carries now is for a later week; one further out than the next has neither.
+    """
+    figures = [projected(pick, player) for pick, player in squad.picked if pick.is_starting]
+    known = [f for f in figures if f is not None]
+    projection = f"{sum(known):.1f} proj" if known else ""
+    kicked = any(o.started for player in squad.starters for o in fixtures.get(player.team, []))
+    if scored is None and not kicked:
+        return projection
+    return " · ".join(part for part in (f"{scored or 0} pts", projection) if part)
+
+
+def _swaps(mine: Roster, best: Lineup) -> list[Swap]:
+    """Every change from the eleven as set to the best one, the armband last, so together they reach its total.
+
+    The armband is a change like any other: the best total counts its captain
+    twice, and moving it is worth the gap between the two captains' projections.
+    """
+    swaps = [
+        Swap(start=change.start.name, out=change.drop.name if change.drop else "", gain=f"{change.gain:+.1f} xPts")
+        for change in lineup_changes(mine.starters, best)
+    ]
+    current, captain = mine.captain, best.captain
+    if current is not None and captain is not None and captain.id != current.id:
+        gain = round(effective_points(captain) - effective_points(current), 2)
+        if gain > 0:
+            swaps.append(Swap(start=f"Captain {captain.name}", out=current.name, gain=f"{gain:+.1f} xPts"))
+    return swaps
 
 
 def _projected_for(week: int, current: int) -> Projected:
@@ -869,27 +978,44 @@ def _projected_for(week: int, current: int) -> Projected:
     return lambda pick, player: player.expected_points * max(pick.multiplier, 1)
 
 
-def _browsed_points(scored: int | None, squad: Roster, projected: Projected) -> str:
-    """A browsed side's total: its points once played, its projection where FPL has one, else nothing."""
-    if scored is not None:
-        return f"{scored} pts"
-    figures = [projected(pick, player) for pick, player in squad.picked if pick.is_starting]
-    known = [f for f in figures if f is not None]
-    return f"{sum(known):.1f} proj" if known else ""
-
-
-def _browsed_headline(gameweek: Gameweek, played: bool, mine: int | None, tie: H2HMatch | None) -> list[Stat]:
-    """A gameweek played in its result; one to come by its deadline."""
-    if not played:
+def _browsed_headline(gameweek: Gameweek, week: _Week) -> list[Stat]:
+    """A gameweek to come by its deadline; one under way or played by its score, and FPL's average once there is one."""
+    if week.to_come:
         return [Stat(label="Deadline", value=at_time(gameweek.deadline))]
     stats = []
-    if tie is not None:
-        stats.append(Stat(label="Final", value=f"{tie.my_points} – {tie.opponent_points}"))
-    elif mine is not None:
-        stats.append(Stat(label="Points", value=str(mine)))
+    if week.score is not None:
+        stats.append(Stat(label="Final" if week.final else "Live", value=f"{week.score[0]} – {week.score[1]}"))
+    elif week.scored is not None:
+        stats.append(Stat(label="Points", value=str(week.scored)))
     if gameweek.average_score:
         stats.append(Stat(label="Average", value=str(gameweek.average_score)))
     return stats
+
+
+def _chip_stat(windows: list[Chip], spent: dict[Chip, int | None], gameweek: int) -> Stat:
+    """One chip as the gameweek in focus finds it, from each of its windows.
+
+    The window open now decides the row: unplayed, it is available until that
+    window's last gameweek; played, it says when, and when the next window
+    opens. With none open, the next to open says when, and once every window is
+    behind, the last says whether it was played or lost.
+    """
+    label = windows[0].label
+    now = next((w for w in windows if w.covers(gameweek)), None)
+    later = next((w for w in windows if w.start_event > gameweek), None)
+    lost = any(spent[w] is None for w in windows if w.stop_event < gameweek)
+    suffix = " · one expired unplayed" if lost else ""
+    if now is not None and spent[now] is None:
+        return Stat(label=label, value=f"available until GW{now.stop_event}{suffix}", tone="good")
+    if now is not None:
+        again = f" · again from GW{later.start_event}" if later else ""
+        return Stat(label=label, value=f"played GW{spent[now]}{again}{suffix}")
+    if later is not None:
+        return Stat(label=label, value=f"from GW{later.start_event}{suffix}")
+    last = windows[-1]
+    if spent[last] is not None:
+        return Stat(label=label, value=f"played GW{spent[last]}")
+    return Stat(label=label, value="expired", tone="warning")
 
 
 def _tone(player: Player) -> Tone:
@@ -908,13 +1034,16 @@ def _fixture_text(opponents: list[Opponent], name_of: Callable[[str], str] = str
     return ", ".join(f"{'vs' if m.home else 'at'} {name_of(m.club)} ({m.difficulty})" for m in opponents)
 
 
-def _window(gameweek: Gameweek, live: bool = False) -> str:
-    """Which gameweek, and either when it locks or that it already has.
+def _window(gameweek: Gameweek, *, final: bool, begun: bool) -> str:
+    """Which gameweek, and where it stands: final, in progress, or when it locks.
 
     A deadline is the useful date right up until it passes; after that the
-    useful fact is that points are landing. Rendered in UTC, which is what FPL
-    publishes and what its own site shows every manager.
+    useful fact is that points are landing, and once every match is over, that
+    they have landed. Rendered in UTC, which is what FPL publishes and what its
+    own site shows every manager.
     """
-    if live:
+    if final:
+        return f"{gameweek.name} · final"
+    if begun:
         return f"{gameweek.name} · in progress"
     return f"{gameweek.name} · deadline {at_time(gameweek.deadline)}"

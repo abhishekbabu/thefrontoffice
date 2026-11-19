@@ -41,3 +41,18 @@ def test_an_id_names_one_of_the_entrys_leagues_or_none() -> None:
 
     assert league_of(entry, "900") is work
     assert league_of(entry, "77") is None
+
+
+# ── a tie's score ───────────────────────────────────────────────────────
+
+
+def test_a_tie_has_a_score_only_once_played() -> None:
+    """Before then its points are a running total, and a 0-0 not yet kicked off is no draw."""
+    from thefrontoffice.adapters.outbound.competitions.premier_league.league import tie_score
+    from thefrontoffice.adapters.outbound.platforms.fpl.types import H2HMatch
+
+    tie = H2HMatch(opponent_entry=99, opponent_name="Rival", my_points=40, opponent_points=61)
+
+    assert tie_score(tie, played=True) == (40, 61)
+    assert tie_score(tie, played=False) is None
+    assert tie_score(None, played=True) is None

@@ -6,6 +6,7 @@ missing the captaincy or the transfer allowance is wrong however well it renders
 """
 
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import pytest
 from support.fpl import (
@@ -28,10 +29,13 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Club,
     Fixture,
     GameweekResult,
+    H2HMatch,
     LiveStat,
     Pick,
     Player,
     Squad,
+    TableRow,
+    TransferMade,
 )
 from thefrontoffice.domain.errors import InvalidRequestError, NotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery, Spot, Summary
@@ -118,9 +122,48 @@ def test_the_bench_keeps_its_substitution_order() -> None:
     assert listed == ["P2", "P12", "P14", "P15"]
 
 
+def test_the_allowance_counts_from_the_week_after_the_squad_was_picked() -> None:
+    """GW1 is picked free; GW2-4 each bank one on top of the first, so GW5 opens with four."""
+    assert _headline()["Free transfers"] == "4"
+
+
 def test_an_unused_allowance_rolls_up_to_its_cap() -> None:
-    # Four unused gameweeks, so the allowance has rolled up to its cap.
-    assert _headline()["Free transfers"] == "5"
+    assert _headline(provider(upcoming=8))["Free transfers"] == "5"
+
+
+def test_a_wildcard_week_neither_spends_nor_earns_a_transfer() -> None:
+    assert _headline(provider(chips_played=[ChipPlay(name="wildcard", event=4)]))["Free transfers"] == "3"
+
+
+def test_without_the_chips_played_the_allowance_falls_to_the_floor_of_one() -> None:
+    """A Wildcard week would otherwise read as a week of no transfers, in the manager's favor."""
+    assert _headline(provider(chips_error=FPLAPIError("down")))["Free transfers"] == "1"
+
+
+def _bought(element_in: int, cost: int, event: int = 3) -> TransferMade:
+    return TransferMade(
+        element_in=element_in,
+        element_in_cost=cost,
+        element_out=500,
+        event=event,
+        time=datetime(2026, 8, 20, tzinfo=UTC),
+    )
+
+
+def test_a_transfer_is_priced_at_the_outgoing_players_selling_price() -> None:
+    """P7 was bought at £4.0m and is now £5.0m, so he sells for £4.5m: the £5.5m P100 costs £1.0m, not £0.5m."""
+    prompt = provider(transfers={ENTRY_ID: [_bought(7, 40)]}).build_context(LEAGUE_ID).prompt
+    line = next(line for line in prompt.splitlines() if line.startswith("- P100 ") and "for P7 " in line)
+
+    assert "sells for £4.5m" in line
+    assert "costs £1.0m" in line
+
+
+def test_without_the_transfer_history_a_sale_is_priced_at_the_current_price() -> None:
+    prompt = provider(transfers_error=FPLAPIError("down")).build_context(LEAGUE_ID).prompt
+    line = next(line for line in prompt.splitlines() if line.startswith("- P100 ") and "for P7 " in line)
+
+    assert "sells for £5.0m" in line
 
 
 def test_the_prompt_states_the_bank_in_the_games_own_units() -> None:
@@ -328,7 +371,16 @@ def test_the_summary_offers_the_swap_the_best_eleven_implies() -> None:
     """P15 is the strongest forward and starts on the bench behind P7."""
     swaps = provider().summary(LEAGUE_ID).swaps
 
-    assert [(swap.start, swap.out) for swap in swaps] == [("P15", "P7")]
+    assert [(swap.start, swap.out) for swap in swaps] == [("P15", "P7"), ("Captain P15", "P8")]
+
+
+def test_the_swaps_add_up_to_the_gap_the_header_shows() -> None:
+    """The eleven as set expects 64.0 and the best 73.5 — P15 for P7 (+8.5), the armband from P8 to P15 (+1.0)."""
+    summary = provider().summary(LEAGUE_ID)
+    gained = sum(float(swap.gain.removesuffix(" xPts")) for swap in summary.swaps)
+
+    assert _stats(summary)["Lineup"] == "64.0 · best 73.5 xPts"
+    assert round(gained, 1) == 9.5
 
 
 def test_the_summary_reports_a_blank_gameweek_on_the_player_not_just_the_club() -> None:
@@ -525,7 +577,7 @@ def test_the_season_lists_every_gameweek_with_its_deadline() -> None:
 
 
 def test_a_played_gameweek_carries_its_tie_and_whether_it_was_won() -> None:
-    season = {row.label: row for row in provider().schedule(H2H_LEAGUE).season}
+    season = {row.label: row for row in provider(finished=3).schedule(H2H_LEAGUE).season}
 
     assert season["Gameweek 1"].result == "60-44"
     assert season["Gameweek 1"].outcome == "won"
@@ -540,6 +592,25 @@ def test_the_row_marked_now_is_the_one_being_played() -> None:
 
     assert current == ["Gameweek 4"]
     assert season["Gameweek 4"].result == ""  # in progress is not a result
+
+
+def test_a_finished_gameweek_has_its_result_and_the_next_is_now() -> None:
+    """FPL keeps a finished gameweek current until the next deadline; its result is in, and the row
+    marked now is the next one."""
+    fake = FakeFPL(
+        finished=4, h2h_season={4: H2HMatch(opponent_entry=99, opponent_name="R", my_points=40, opponent_points=61)}
+    )
+    season = {row.label: row for row in FPLProvider(ENTRY_ID, client=fake).schedule(H2H_LEAGUE).season}
+
+    assert (season["Gameweek 4"].result, season["Gameweek 4"].outcome) == ("40-61", "lost")
+    assert [label for label, row in season.items() if row.is_current] == ["Gameweek 5"]
+
+
+def test_a_tie_in_a_gameweek_not_yet_finished_has_no_result() -> None:
+    """A 0-0 for a week nobody has kicked a ball in is not a draw."""
+    season = {row.label: row for row in provider(finished=2).schedule(H2H_LEAGUE).season}
+
+    assert season["Gameweek 3"].result == ""
 
 
 def test_a_classic_league_has_deadlines_but_no_opponents() -> None:
@@ -812,7 +883,7 @@ def test_a_head_to_head_league_links_to_its_own_kind_of_table() -> None:
 def test_a_team_links_to_that_managers_entry() -> None:
     teams = {t.name: t.url for t in provider().teams(H2H_LEAGUE)}
 
-    assert teams["Rival FC"] == "https://fantasy.premierleague.com/entry/99/event/1"
+    assert teams["Rival FC"] == "https://fantasy.premierleague.com/entry/99/event/4"
 
 
 # ── chips, and the armbands ─────────────────────────────────────────────
@@ -832,16 +903,50 @@ def test_the_chips_carry_the_leagues_own_word_for_them() -> None:
     assert boosts.title == "Chips"
 
 
-def test_a_chip_inside_its_window_is_available() -> None:
-    assert _chips()["Bench Boost"] == "available"
+def test_a_chip_inside_its_window_is_available_until_it_closes() -> None:
+    assert _chips()["Bench Boost"] == "available until GW19"
 
 
-def test_the_chips_say_how_many_can_be_played_now() -> None:
+def test_the_chips_say_how_many_can_be_played_now_and_when_this_halfs_expire() -> None:
     boosts = provider().summary(H2H_LEAGUE).boosts
 
     assert boosts is not None
-    available = [label for label, value in _chips().items() if value == "available"]
-    assert boosts.note == f"{len(available)} available"
+    available = [label for label, value in _chips().items() if value.startswith("available")]
+    assert boosts.note.startswith(f"{len(available)} available")
+    assert "GW19 deadline" in boosts.note and "Wed 26 Aug" in boosts.note
+
+
+def test_a_chip_played_in_the_first_half_leaves_the_second_halfs() -> None:
+    """The game issues a Wildcard per half; spending one spends only that half's."""
+    chips = _chips(provider(upcoming=12, chips_played=[ChipPlay(name="wildcard", event=9)]))
+
+    assert chips["Wildcard"] == "played GW9 · again from GW20"
+    assert chips["Free Hit"] == "available until GW19"
+
+
+def test_a_second_half_chip_is_available_once_the_first_was_played() -> None:
+    chips = _chips(provider(upcoming=25, chips_played=[ChipPlay(name="wildcard", event=9)]))
+
+    assert chips["Wildcard"] == "available until GW38"
+
+
+def test_a_first_half_chip_left_unplayed_says_it_was_lost() -> None:
+    chips = _chips(provider(upcoming=25))
+
+    assert chips["Free Hit"] == "available until GW38 · one expired unplayed"
+    assert chips["Bench Boost"] == "expired"
+
+
+def test_a_chip_played_in_its_last_window_says_so_once_the_season_is_past_it() -> None:
+    chips = _chips(
+        provider(
+            chips=[Chip(name="freehit", start_event=1, stop_event=2)],
+            upcoming=30,
+            chips_played=[ChipPlay(name="freehit", event=2)],
+        )
+    )
+
+    assert chips["Free Hit"] == "played GW2"
 
 
 def test_a_chip_whose_window_has_not_opened_says_when_it_does() -> None:
@@ -854,6 +959,7 @@ def test_a_chip_already_played_says_which_week_it_went() -> None:
     played = _chips(provider(chips_played=[ChipPlay(name="bboost", event=3)]))
 
     assert played["Bench Boost"] == "played GW3"
+    assert played["Triple Captain"] == "available until GW19"
 
 
 def test_a_chip_whose_windows_have_all_closed_is_still_listed() -> None:
@@ -1002,3 +1108,161 @@ def test_a_gameweeks_blanks_are_the_clubs_with_no_match_in_it() -> None:
 
 def test_a_gameweek_with_no_matches_listed_has_no_blanks_either() -> None:
     assert FPLProvider(ENTRY_ID, client=FakeFPL(fixtures=[])).games_of("900", 3).byes == []
+
+
+# ── once the gameweek is over ───────────────────────────────────────────
+
+FINISHED_LIVE = {8: LiveStat(points=12, minutes=90), 9: LiveStat(points=1, minutes=64)}
+
+
+def _between_gameweeks() -> FPLProvider:
+    """GW4 finished and still FPL's current one; GW5's deadline is next."""
+    return provider(finished=4, live=FINISHED_LIVE)
+
+
+def test_once_the_gameweek_is_over_the_week_view_is_the_next_one() -> None:
+    summary = _between_gameweeks().summary(H2H_LEAGUE)
+
+    assert summary.window == "Gameweek 5 · deadline Sat 12 Sep, 00:00"
+    assert summary.weeks is not None and (summary.weeks.week, summary.weeks.current) == (5, 5)
+
+
+def test_the_next_gameweek_shows_the_squad_as_last_picked_at_its_projection() -> None:
+    # ep_this is still GW4's; ep_next is the one for GW5.
+    catalog = {pid: replace(p, expected_this=0.0) for pid, p in {**SQUAD_PLAYERS, **MARKET}.items()}
+    summary = provider(finished=4, live=FINISHED_LIVE, players=catalog).summary(H2H_LEAGUE)
+
+    assert mine(summary).detail == "GW4 picks"
+    assert all(spot.scoring == "projected" for spot in mine(summary).lineup)
+    assert mine(summary).points == "64.0 proj"  # ep_next, the captain doubled
+    assert summary.opponent is not None and summary.opponent.points.endswith(" proj")
+
+
+def test_a_finished_gameweek_browsed_reads_final_with_its_score() -> None:
+    summary = _between_gameweeks().week_of(H2H_LEAGUE, 4)
+
+    assert summary.window == "Gameweek 4 · final"
+    assert _stats(summary)["Final"] == "40 – 52"
+
+
+def test_a_finished_gameweek_is_final_however_many_minutes_were_played() -> None:
+    """Minutes in a finished week are its history, not a match under way."""
+    assert "in progress" not in _between_gameweeks().week_of("900", 4).window
+
+
+def test_a_gameweek_under_way_browsed_reads_its_live_score() -> None:
+    summary = provider(live=LIVE).week_of(H2H_LEAGUE, 4)
+
+    assert summary.window == "Gameweek 4 · in progress"
+    assert _stats(summary)["Live"] == "40 – 52"
+
+
+def test_a_gameweek_whose_matches_are_all_over_reads_final_before_fpl_closes_it() -> None:
+    summary = provider(live=LIVE, fixtures=[_arsenal(started=True, finished=True)]).summary(H2H_LEAGUE)
+
+    assert summary.window == "Gameweek 4 · final"
+
+
+def test_before_the_season_the_week_view_has_no_squad_but_the_league_has_its_calendar() -> None:
+    schedule = provider(upcoming=1).schedule(H2H_LEAGUE)
+
+    assert [row.label for row in schedule.season if row.is_current] == ["Gameweek 1"]
+    assert all(not m.yours for m in schedule.matches)
+
+
+# ── who is in each match ────────────────────────────────────────────────
+
+
+def test_a_match_names_your_players_in_it_starters_first() -> None:
+    [game] = provider().games_of(H2H_LEAGUE, 4).games
+    yours = [ref.name for ref in game.yours]
+
+    assert yours[:2] == ["P1", "P3"]  # the keeper and the first defender, as picked
+    assert "P15" not in yours  # MCI, not in this match
+    assert game.theirs  # the opponent fields the same fake fifteen
+
+
+def test_a_classic_league_match_names_only_your_players() -> None:
+    [game] = provider().games_of(LEAGUE_ID, 4).games
+
+    assert game.yours and not game.theirs
+
+
+def test_the_schedules_matches_name_your_players_too() -> None:
+    assert any(m.yours for m in provider().schedule(H2H_LEAGUE).matches)
+
+
+# ── the league's transfers ──────────────────────────────────────────────
+
+
+def _moved(element_in: int, element_out: int, event: int, day: int) -> TransferMade:
+    return TransferMade(
+        element_in=element_in,
+        element_in_cost=50,
+        element_out=element_out,
+        event=event,
+        time=datetime(2026, 8, day, 12, tzinfo=UTC),
+    )
+
+
+TRANSFERS = {
+    ENTRY_ID: [_moved(100, 7, event=3, day=20), _moved(101, 12, event=3, day=20)],
+    99: [_moved(102, 14, event=4, day=27), _moved(13, 101, event=1, day=2)],
+}
+
+
+def test_the_activity_is_each_managers_transfers_one_row_per_gameweek_newest_first() -> None:
+    activity = provider(transfers=TRANSFERS).schedule(H2H_LEAGUE).activity
+
+    assert [(row.who, row.what, row.is_mine) for row in activity] == [
+        ("Rival FC", "GW4 · 1 transfer", False),
+        ("Front Office FC", "GW3 · 2 transfers", True),
+    ]
+    assert activity[1].detail == "+P100, +P101, -P7, -P12"
+    assert [(m.player_id, m.change) for m in activity[0].moves] == [("102", "added"), ("14", "dropped")]
+
+
+def test_a_wildcards_transfers_are_called_one() -> None:
+    activity = (
+        provider(transfers=TRANSFERS, chips_played=[ChipPlay(name="wildcard", event=3)]).schedule(H2H_LEAGUE).activity
+    )
+
+    assert activity[-1].what == "GW3 · Wildcard"
+
+
+def test_a_manager_whose_transfers_will_not_load_is_left_out_not_the_page() -> None:
+    assert provider(transfers_error=FPLAPIError("down")).schedule(H2H_LEAGUE).activity == []
+
+
+def test_a_classic_leagues_activity_covers_its_table() -> None:
+    table = [TableRow(rank=1, entry=ENTRY_ID, entry_name="Front Office FC", manager="Me", total=412)]
+    activity = provider(transfers=TRANSFERS, standings=table).schedule(LEAGUE_ID).activity
+
+    assert [row.who for row in activity] == ["Front Office FC"]
+
+
+# ── what degrades and what fails ────────────────────────────────────────
+
+
+def test_a_tie_that_will_not_load_leaves_your_own_side() -> None:
+    summary = provider(h2h_match_error=FPLAPIError("down")).summary(H2H_LEAGUE)
+
+    assert summary.opponent is None
+    assert mine(summary).lineup
+
+
+def test_matches_without_a_squad_to_read_still_list_the_games() -> None:
+    games = provider(squad_error=FPLAPIError("down")).games_of(H2H_LEAGUE, 4).games
+
+    assert games and not games[0].yours and not games[0].theirs
+
+
+def test_a_played_gameweek_without_its_history_reads_no_points_rather_than_nought() -> None:
+    summary = provider(history_error=FPLAPIError("down")).week_of(LEAGUE_ID, 2)
+
+    assert "Points" not in _stats(summary)
+    assert mine(summary).points == ""
+
+
+def test_a_season_with_no_chips_issued_shows_no_chips() -> None:
+    assert provider(chips=[]).summary(H2H_LEAGUE).boosts is None

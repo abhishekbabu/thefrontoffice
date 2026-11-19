@@ -148,6 +148,17 @@ league plays 2,000 weeks, shows each category's chance in a Win column, and the
 week goes to whoever wins more categories, level a tie. "High Score" leagues (only
 each player's best game scores) get no chance, and the wire is not priced.
 
+FPL's week is the gameweek being played until its last match ends ("final"),
+then the next one: your last picks at FPL's projection for it, against its
+deadline. Its swaps reach the best legal eleven's total, the armband included,
+pairing a keeper only with a keeper. Free transfers follow the game's rules: one
+from GW2, one more a gameweek up to five, none spent or earned in a Wildcard or
+Free Hit week. Chips count per half (GW1/2-19, GW20-38), with the GW19 deadline
+named while a first-half chip is unplayed. The scout prices a transfer at the
+outgoing player's selling price (half of any rise since he was bought, from his
+transfers), and Activity lists each member's transfers over the last three
+gameweeks, one row per manager per gameweek.
+
 | | |
 | --- | --- |
 | ![My team](docs/screenshots/team-dark.png) | ![Free agents](docs/screenshots/free-agents-dark.png) |

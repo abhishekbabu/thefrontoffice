@@ -37,6 +37,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Player,
     Squad,
     TableRow,
+    TransferMade,
 )
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
@@ -177,6 +178,10 @@ class FPLSource(Protocol):
         """The league table. The two formats are different endpoints entirely."""
         ...
 
+    def get_transfers(self, entry_id: int) -> list[TransferMade]:
+        """Every transfer this manager has made this season, newest first."""
+        ...
+
     def upcoming_gameweek(self, now: datetime | None = None) -> Gameweek:
         """The gameweek a manager can still act on."""
         ...
@@ -302,6 +307,12 @@ class FPLClient:
             players[element_id] = Player(
                 id=element_id,
                 code=int(e.get("code") or 0),
+                # `cost_change_start` is how far the price has moved since the season opened.
+                start_cost=(
+                    None
+                    if e.get("now_cost") is None or e.get("cost_change_start") is None
+                    else int(e["now_cost"]) - int(e["cost_change_start"])
+                ),
                 name=str(e.get("web_name") or full_name or element_id),
                 full_name=full_name or str(e.get("web_name") or ""),
                 position=POSITIONS.get(int(e.get("element_type") or 0), ""),
@@ -464,6 +475,29 @@ class FPLClient:
             )
             for row in rows
             if row.get("event") is not None
+        ]
+
+    def get_transfers(self, entry_id: int) -> list[TransferMade]:
+        """Every transfer this manager has made this season, newest first.
+
+        Public, unlike the pending state behind `my-team`, and it carries the price each
+        player was bought at — which is what the game's selling price is figured from.
+        A Wildcard's or a Free Hit's transfers are listed like any other.
+        """
+        data = self._api.cached(f"transfers_{entry_id}", f"{BASE_URL}/entry/{entry_id}/transfers/", HISTORY_TTL)
+        return [
+            TransferMade(
+                element_in=int(row["element_in"]),
+                element_in_cost=int(row.get("element_in_cost") or 0),
+                element_out=int(row["element_out"]),
+                event=int(row["event"]),
+                time=parse_utc(str(row["time"])),
+            )
+            for row in data or []
+            if row.get("element_in") is not None
+            and row.get("element_out") is not None
+            and row.get("event") is not None
+            and row.get("time")
         ]
 
     def get_chips(self) -> list[Chip]:
