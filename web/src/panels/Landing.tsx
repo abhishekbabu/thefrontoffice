@@ -1,15 +1,15 @@
 import { useQueries } from "@tanstack/react-query";
+import { Meta } from "@/components/ui/label";
 import { ChevronRight, Trophy } from "lucide-react";
 import { api, type League, type Competition } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { ExternalLink } from "@/components/ui/external-link";
-import { Card, CardHeader } from "@/components/ui/card";
+import { ListCard, ListRow } from "@/components/ui/list";
 import { CardNote } from "@/components/ui/state";
-import { Skeleton } from "@/components/ui/skeleton";
 import { m } from "motion/react";
 import { list, listItem } from "@/lib/motion";
 import { keys } from "@/lib/queries";
-import { ErrorNote, RemedyAction } from "@/components/ui/error-note";
+import { RemedyAction } from "@/components/ui/error-note";
 
 /**
  * What the app opens on: every league you are in, across every competition.
@@ -57,21 +57,25 @@ export function Landing({
           const result = results[i];
           return (
             <m.div key={competition.key} variants={listItem}>
-            <Card>
-              <CardHeader>
-                <span>{competition.label}</span>
-                {!competition.blocked && result?.isSuccess && (
-                  <span>
-                    {result.data.length} {result.data.length === 1 ? "league" : "leagues"}
-                  </span>
-                )}
-                {competition.blocked && (
+            <ListCard
+              title={competition.label}
+              count={
+                !competition.blocked && result?.isSuccess
+                  ? `${result.data.length} ${result.data.length === 1 ? "league" : "leagues"}`
+                  : undefined
+              }
+              aside={
+                competition.blocked && (
                   <Badge variant="warn" appearance="status">
                     unavailable
                   </Badge>
-                )}
-              </CardHeader>
-
+                )
+              }
+              loading={!competition.blocked && result?.isLoading}
+              // Shown in place rather than as a page-level failure: the other
+              // competitions are still usable, and this one names its own fix.
+              error={result?.error}
+            >
               {/* Stated once, with the action, rather than left to fail on the
                   first click into the competition. */}
               {competition.blocked && (
@@ -83,25 +87,14 @@ export function Landing({
                 </div>
               )}
 
-              {!competition.blocked && result?.isLoading && <Skeleton className="m-4 h-14" />}
-
-              {/* Shown in place rather than as a page-level failure: the other
-                  competitions are still usable, and this one names its own fix. */}
-              {result?.isError && <ErrorNote error={result.error} className="m-4" />}
-
-              {result?.isSuccess && result.data.length === 0 && (
-                <CardNote>No leagues this season.</CardNote>
-              )}
+              {result?.isSuccess && result.data.length === 0 && <CardNote>No leagues this season.</CardNote>}
 
               {/* A row, not a button: the way across to the platform sits inside
                   it, and a link inside a button is two controls a screen reader
                   and a keyboard cannot tell apart. The button's hit area is
                   stretched over the row instead, with the link raised above it. */}
               {result?.data?.map((league) => (
-                <div
-                  key={league.league_id}
-                  className="relative flex w-full items-center gap-3 border-t border-border px-4 py-3 transition-colors hover:bg-muted"
-                >
+                <ListRow key={league.league_id} className="relative items-center py-3 transition-colors hover:bg-muted">
                   <button
                     type="button"
                     onClick={() => onPick(competition, league)}
@@ -111,9 +104,9 @@ export function Landing({
                       {league.name}
                     </div>
                     {league.detail && (
-                      <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                      <Meta as="div" className="mt-0.5 truncate">
                         {league.detail}
-                      </div>
+                      </Meta>
                     )}
                   </button>
                   {/* Straight to the platform, for when you already know what
@@ -124,9 +117,9 @@ export function Landing({
                     className="relative z-10"
                   />
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                </div>
+                </ListRow>
               ))}
-            </Card>
+            </ListCard>
             </m.div>
           );
         })}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Search, Sparkles, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react";
 import { api, type League, type PlayerCall, type PlayerPage, type Competition } from "@/lib/api";
 import { Card, CardHeader } from "@/components/ui/card";
 import { IconButton } from "@/components/ui/icon-button";
@@ -10,7 +10,8 @@ import { Busy, QueryState } from "@/components/ui/state";
 import { ToggleChip } from "@/components/ui/toggle";
 import { Tabs } from "@/components/ui/tabs";
 import { usePlayerDrawer } from "@/components/ui/player";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/input";
+import { Meta } from "@/components/ui/label";
 import { Verdict } from "@/components/ui/verdict";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
@@ -150,19 +151,13 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
             {judge.isError && <ErrorNote error={judge.error} className="mx-4 my-3" />}
 
             <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-              <div className="relative min-w-0 flex-1">
-                <Search
-                  className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden
-                />
-                <Input
-                  value={search}
-                  onChange={(e) => reset(setSearch)(e.target.value)}
-                  placeholder="Search by name, club or status"
-                  aria-label="Search available players"
-                  className="pl-8"
-                />
-              </div>
+              <SearchInput
+                value={search}
+                onChange={(e) => reset(setSearch)(e.target.value)}
+                placeholder="Search by name, club or status"
+                aria-label="Search available players"
+                className="flex-1"
+              />
               {/* Read off the pool rather than written down: the positions
                   differ per competition, and a list here would be a fourth place to
                   edit. Off the unfiltered pool, so choosing one does not
@@ -207,9 +202,9 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
 
             {total > size && (
               <div className="flex items-center justify-between border-t border-border px-4 py-3">
-                <span className="font-mono text-[11px] text-muted-foreground">
+                <Meta>
                   Page {Math.floor(offset / size) + 1} of {Math.ceil(total / size)}
-                </span>
+                </Meta>
                 <div className="flex items-center gap-1">
                   <IconButton
                     label="Previous page"

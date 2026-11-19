@@ -9,16 +9,20 @@
  */
 import { matchPath } from "react-router-dom";
 
-/** Every view a competition has, in the order the rail lists them. */
+/**
+ * Every view a competition has, in the order the rail lists them: this week,
+ * then the season, your roster, the moves that change it, the league around
+ * you, and last the tool you bring players to.
+ */
 export const VIEWS = [
   "matchup",
-  "schedule",
   "fixtures",
+  "schedule",
   "rosters",
-  "trades",
   "free-agents",
-  "activity",
+  "trades",
   "league",
+  "activity",
   "compare",
 ] as const;
 

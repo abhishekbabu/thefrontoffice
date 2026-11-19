@@ -3,7 +3,8 @@ import { ArrowDown } from "lucide-react";
 import { api, type Competition, type League, type TradeIdea, type Trades } from "@/lib/api";
 import { ListCard } from "@/components/ui/list";
 import { Table, Td, Th } from "@/components/ui/table";
-import { Tooltip } from "@/components/ui/tooltip";
+import { Hint } from "@/components/ui/tooltip";
+import { Meta } from "@/components/ui/label";
 import { percent, percentPoints, signed } from "@/lib/format";
 import { CardNote } from "@/components/ui/state";
 import { keys } from "@/lib/queries";
@@ -83,12 +84,14 @@ function TradeIdeas({ competition, league }: { competition: Competition; league:
               <Th>Partner</Th>
               {figures.map((f) => (
                 <Th key={f.key} className="text-right">
-                  <Tooltip label={f.key === ranked ? `${f.about}. Best first.` : f.about} side="left">
-                    <span tabIndex={0} className="inline-flex items-center gap-1">
-                      {f.key === ranked && <ArrowDown className="size-3" aria-label="ordered by" />}
-                      {f.label}
-                    </span>
-                  </Tooltip>
+                  <Hint
+                    label={f.key === ranked ? `${f.about}. Best first.` : f.about}
+                    side="left"
+                    className="inline-flex items-center gap-1"
+                  >
+                    {f.key === ranked && <ArrowDown className="size-3" aria-label="ordered by" />}
+                    {f.label}
+                  </Hint>
                 </Th>
               ))}
             </tr>
@@ -124,7 +127,7 @@ function TradeIdeas({ competition, league }: { competition: Competition; league:
 
 /** A quiet second line in a cell. */
 function Aside({ children }: { children: React.ReactNode }) {
-  return <span className="block whitespace-nowrap font-mono text-[11px] text-muted-foreground">{children}</span>;
+  return <Meta className="block whitespace-nowrap">{children}</Meta>;
 }
 
 /** One side of a trade, a player a line, his pricing on hover where it is off his projection. */
@@ -136,15 +139,9 @@ function Players({ names, pricing }: { names: string[]; pricing: Map<string, str
         return (
           <span key={name} className="block whitespace-nowrap">
             {why ? (
-              <Tooltip label={why}>
-                <span
-                  tabIndex={0}
-                  aria-label={`${name}: ${why}`}
-                  className="underline decoration-dotted underline-offset-2"
-                >
-                  {name}
-                </span>
-              </Tooltip>
+              <Hint label={why} name={`${name}: ${why}`} dotted>
+                {name}
+              </Hint>
             ) : (
               name
             )}

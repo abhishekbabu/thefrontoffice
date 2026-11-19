@@ -14,7 +14,8 @@ import { moment } from "@/lib/format";
 import { decisionTone, toneText, type Variant } from "@/lib/tone";
 import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
-import { Label } from "@/components/ui/label";
+import { Label, Meta } from "@/components/ui/label";
+import { Disclosure } from "@/components/ui/disclosure";
 import { Linked } from "@/components/ui/stat";
 import { Table, Td, Th } from "@/components/ui/table";
 
@@ -136,7 +137,7 @@ export function ActionList({
             >
               {/* The model's own figure, in its own words — a sentence, not a
                   deadline, so it gets the row's width rather than the corner. */}
-              {move.metric && <div className="-mt-2 font-mono text-[11px] text-muted-foreground">{move.metric}</div>}
+              {move.metric && <Meta as="div" className="-mt-2">{move.metric}</Meta>}
             </Row>
           ))}
         </ol>
@@ -207,19 +208,16 @@ function Hidden({
   busy: boolean;
 }) {
   return (
-    <details className="border-t border-border">
-      <Label as="summary" className="cursor-pointer px-4 py-2.5 hover:text-foreground">
-        Hidden ({actions.length})
-      </Label>
+    <Disclosure summary={`Hidden (${actions.length})`}>
       <ul className="flex flex-col pb-1">
         {actions.map((action) => (
           <li key={action.key} className="flex items-center gap-3 px-4 py-1.5 text-[12.5px]">
             <span className="min-w-0 flex-1 truncate text-muted-foreground">{action.title}</span>
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+            <Meta className="shrink-0">
               {action.mark.hidden === "snoozed" && action.mark.snoozed_until
                 ? `snoozed until ${moment(action.mark.snoozed_until)}`
                 : "dismissed"}
-            </span>
+            </Meta>
             {onDecide && (
               <IconButton
                 label="Restore"
@@ -231,7 +229,7 @@ function Hidden({
           </li>
         ))}
       </ul>
-    </details>
+    </Disclosure>
   );
 }
 
@@ -275,11 +273,11 @@ function Row({
         <div className="grid min-w-0 flex-1 grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-3">
           <div className="text-[13.5px] font-medium">{title}</div>
           {(when || chance) && (
-            <span className="flex flex-wrap gap-x-2 pt-0.5 font-mono text-[11px] text-muted-foreground sm:row-span-2 sm:max-w-[11rem] sm:flex-col sm:flex-nowrap sm:items-end sm:gap-0.5 sm:text-right">
+            <Meta className="flex flex-wrap gap-x-2 pt-0.5 sm:row-span-2 sm:max-w-[11rem] sm:flex-col sm:flex-nowrap sm:items-end sm:gap-0.5 sm:text-right">
               {/* The sign is in the words; the color only lets a cost be found at a glance. */}
               {chance && <span className={cn("font-semibold", toneText(chance.tone))}>{chance.value}</span>}
               {when}
-            </span>
+            </Meta>
           )}
           <div className="min-w-0 sm:col-start-1">
             <div className="mt-0.5 text-[12.5px] text-muted-foreground">{reason}</div>

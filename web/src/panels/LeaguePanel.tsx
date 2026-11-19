@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Meta } from "@/components/ui/label";
 import { useNavigate } from "react-router-dom";
 import { api, type Competition, type League, type LeagueSchedule } from "@/lib/api";
 import { keys } from "@/lib/queries";
@@ -12,8 +13,9 @@ import { cn } from "@/lib/utils";
 import { LeagueHeader } from "@/components/ui/page-header";
 
 /**
- * The league table: record, points for and against, FAAB left and waiver
- * order. A row opens that team's roster.
+ * The league table: who, then how they stand — record, points for and
+ * against, playoff chance — then what they have left to spend: FAAB and
+ * waiver order. A row opens that team's roster.
  */
 export function LeaguePanel({ competition, league }: { competition: Competition; league: League }) {
   const schedule = useQuery<LeagueSchedule, Error>({
@@ -62,9 +64,9 @@ function Standings({
             {has("record") && <Th className="text-right">Record</Th>}
             <Th className="text-right">{has("points_against") ? "PF" : "Pts"}</Th>
             {has("points_against") && <Th className="text-right">PA</Th>}
+            {has("playoffs") && <Th className="text-right">Playoffs</Th>}
             {has("waiver_budget") && <Th className="text-right">FAAB</Th>}
             {has("waiver_order") && <Th className="text-right">Waiver</Th>}
-            {has("playoffs") && <Th className="text-right">Playoffs</Th>}
           </tr>
         </thead>
         <tbody>
@@ -84,18 +86,18 @@ function Standings({
                     </Badge>
                   )}
                   {row.detail && (
-                    <span className="hidden truncate font-mono text-[11px] text-muted-foreground sm:block">
+                    <Meta className="hidden truncate sm:block">
                       {row.detail}
-                    </span>
+                    </Meta>
                   )}
                 </span>
               </Td>
               {has("record") && <Td className="text-right font-mono">{row.record}</Td>}
               <Td className="text-right font-mono">{row.points}</Td>
               {has("points_against") && <Td className="text-right font-mono">{row.points_against}</Td>}
+              {has("playoffs") && <Td className="text-right font-mono text-muted-foreground">{row.playoffs}</Td>}
               {has("waiver_budget") && <Td className="text-right font-mono">{row.waiver_budget}</Td>}
               {has("waiver_order") && <Td className="text-right font-mono">{row.waiver_order}</Td>}
-              {has("playoffs") && <Td className="text-right font-mono text-muted-foreground">{row.playoffs}</Td>}
             </tr>
           ))}
         </tbody>

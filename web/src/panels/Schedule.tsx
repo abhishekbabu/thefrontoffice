@@ -5,10 +5,10 @@ import { keys } from "@/lib/queries";
 import type { Variant } from "@/lib/tone";
 import { Badge } from "@/components/ui/badge";
 import { ListCard, ListHeading, ListRow } from "@/components/ui/list";
-import { Tooltip } from "@/components/ui/tooltip";
+import { Hint } from "@/components/ui/tooltip";
 import { Empty, QueryState } from "@/components/ui/state";
 import { LeagueHeader } from "@/components/ui/page-header";
-import { Label } from "@/components/ui/label";
+import { Label, Meta } from "@/components/ui/label";
 
 /**
  * Your season, week by week: who you play, how each went, and what else falls in it.
@@ -57,7 +57,7 @@ export function Season({ rows }: { rows: ScheduleRow[] }) {
           {/* Read left to right as one sentence: when, against whom, how it went, what else is on. */}
           <ListRow current={row.is_current}>
             <Label className="w-24 shrink-0">{row.label}</Label>
-            <span className="w-32 shrink-0 font-mono text-[11px] text-muted-foreground">{row.date}</span>
+            <Meta className="w-32 shrink-0">{row.date}</Meta>
             <span className="flex w-64 min-w-0 items-center gap-2">
               {row.opponent ? (
                 <>
@@ -113,10 +113,8 @@ function Standing({ row }: { row: ScheduleRow }) {
   );
   if (row.playoffs) return badge;
   return (
-    <Tooltip label="Their record now">
-      <span tabIndex={0} aria-label={`Record now ${row.detail}`} className="shrink-0">
-        {badge}
-      </span>
-    </Tooltip>
+    <Hint label="Their record now" name={`Record now ${row.detail}`} className="shrink-0">
+      {badge}
+    </Hint>
   );
 }

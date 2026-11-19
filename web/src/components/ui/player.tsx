@@ -17,7 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { Linked, StatList } from "@/components/ui/stat";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { LABEL, Label } from "@/components/ui/label";
+import { Label, Meta } from "@/components/ui/label";
+import { Table, Td, Th } from "@/components/ui/table";
 import { Tabs } from "@/components/ui/tabs";
 import { MoveDrawer, MoveRow, backTo } from "@/components/ui/move";
 import { ListCard } from "@/components/ui/list";
@@ -65,55 +66,50 @@ function Headline({ detail }: { detail: PlayerDetail }) {
  */
 function TableOfStats({ table }: { table: StatTable }) {
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full border-collapse text-[13px]">
+    // The shared table, boxed and a step denser: the drawer is narrower than a page.
+    <div className="overflow-hidden rounded-md border border-border">
+      <Table>
         <thead>
-          <tr className="border-b border-border">
-            <th className={cn(LABEL, "px-3 py-2 text-left")}>
-              {/* The row labels need no heading; the seasons do. */}
-            </th>
+          <tr>
+            {/* The row labels need no heading; the seasons do. */}
+            <Th className="px-3" />
             {table.columns.map((column, i) => (
-              <th
+              <Th
                 key={column}
                 className={cn(
-                  "px-3 py-2 text-right font-mono text-[11px] font-semibold tabular-nums",
+                  "px-3 text-right tabular-nums",
                   // The first column is the subject — the season in progress,
                   // or the points a game scored — so it reads as that rather
                   // than as another column.
-                  i === 0 ? "text-foreground" : "text-muted-foreground",
+                  i === 0 && "text-foreground",
                 )}
               >
                 {column}
-              </th>
+              </Th>
             ))}
           </tr>
         </thead>
         <tbody>
           {table.rows.map((row) => (
-            <tr key={row.label} className="border-b border-border/45 last:border-b-0">
-              <th
-                scope="row"
-                className="whitespace-nowrap px-3 py-1.5 text-left text-[13px] font-normal text-muted-foreground"
-              >
-                {row.label}
-              </th>
+            <tr key={row.label} className="[&:last-child>td]:border-b-0">
+              <Td className="whitespace-nowrap px-3 py-1.5 text-muted-foreground">{row.label}</Td>
               {row.values.map((value, i) => (
-                <td
+                <Td
                   key={`${row.label}-${i}`}
                   className={cn(
-                    "whitespace-nowrap px-3 py-1.5 text-right font-mono text-[12.5px] tabular-nums",
+                    "whitespace-nowrap px-3 py-1.5 text-right font-mono text-[12.5px]",
                     // Nothing to report reads as absence, not as a figure.
                     value === table.absent && "text-muted-foreground/50",
                     toneText(row.tone),
                   )}
                 >
                   {value}
-                </td>
+                </Td>
               ))}
             </tr>
           ))}
         </tbody>
-      </table>
+      </Table>
     </div>
   );
 }
@@ -127,7 +123,7 @@ function Headlines({ stats }: { stats: Stat[] }) {
           <Linked url={stat.url}>
             <span className="text-[13.5px] leading-snug">{stat.value}</span>
           </Linked>
-          <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">{stat.label}</div>
+          <Meta as="div" className="mt-0.5">{stat.label}</Meta>
         </li>
       ))}
     </ul>
@@ -151,7 +147,7 @@ function TeamLine({ detail }: { detail: PlayerDetail }) {
   const club = detail.team_name || detail.team;
   if (!detail.position && !club) return null;
   return (
-    <p className="mt-1 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+    <Meta as="p" className="mt-1 flex items-center gap-1.5">
       {detail.position && <span className="uppercase tracking-[0.06em]">{detail.position}</span>}
       {detail.position && club && <span aria-hidden>·</span>}
       {club && (
@@ -172,7 +168,7 @@ function TeamLine({ detail }: { detail: PlayerDetail }) {
           <span className="truncate text-[12px]">{club}</span>
         </span>
       )}
-    </p>
+    </Meta>
   );
 }
 
@@ -378,21 +374,14 @@ function PlayerPanel({
           animate="shown"
           className="flex flex-col gap-5 px-5 pt-4 pb-20"
         >
-          {tables.map((table) => (
-            <m.section key={table.title} variants={listItem}>
-              <Label as="h3" className="mb-1.5 block">
-                {table.title}
-              </Label>
-              <TableOfStats table={table} />
-            </m.section>
-          ))}
-
-          {/* A group with nothing in it is a heading that says nothing —
-              a kicker has no passing line, and "Projected line" over empty
-              space reads as a figure that failed to arrive. */}
+          {/* Now before then: his form, status and outlook, and only after
+              them the seasons behind him. A group with nothing in it is a
+              heading that says nothing — a kicker has no passing line, and
+              "Projected line" over empty space reads as a figure that failed
+              to arrive. */}
           {groups.map((group) => (
             <m.section key={group.title} variants={listItem}>
-              <Label as="h3" className="mb-1 block">
+              <Label as="h3" className="mb-1.5 block">
                 {group.title}
               </Label>
               {group.stats.every((stat) => stat.url) ? (
@@ -400,6 +389,15 @@ function PlayerPanel({
               ) : (
                 <StatList stats={group.stats} />
               )}
+            </m.section>
+          ))}
+
+          {tables.map((table) => (
+            <m.section key={table.title} variants={listItem}>
+              <Label as="h3" className="mb-1.5 block">
+                {table.title}
+              </Label>
+              <TableOfStats table={table} />
             </m.section>
           ))}
           {moves.length > 0 && (
