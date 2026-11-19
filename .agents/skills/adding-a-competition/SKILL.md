@@ -53,6 +53,7 @@ names a file; everything else is a role-named helper beside the provider:
 competitions/nba/yahoo.py        provider — Yahoo owns the league
 competitions/nba/projections.py  projected totals, read from Sleeper
 competitions/nba/form.py         recent form, read from Sleeper
+competitions/nba/week.py         the matchup week, its real games read from Sleeper
 competitions/nba/context.py      prompt lines, built from both
 competitions/nfl/sleeper.py      provider — Sleeper owns the league
 competitions/nfl/lineup.py       optimal lineup, computed from projections
@@ -63,25 +64,24 @@ Name helpers for what they produce, not where the data came from. A file called
 
 ## Where the provider's own work goes
 
-A provider answers four separable questions, and past a few hundred lines they
-stop fitting in one file. Football and FPL are both split the same way, and a
-third competition should reach for the same names before inventing others:
+A provider answers separable questions, and past a few hundred lines they stop
+fitting in one file. Football, FPL and basketball are all split the same way, and
+a new competition should reach for the same names before inventing others:
 
 ```text
 competitions/<competition>/<platform>.py  the port, delegating — leagues, identity, lookups
 competitions/<competition>/week.py        the state every view of a week is derived from
 competitions/<competition>/league.py      the season, the table, the fixtures, the activity
 competitions/<competition>/prompt.py      gathered state rendered as the text a model reads
+competitions/<competition>/views.py       how a player reads: a table row, the drawer on him
+competitions/<competition>/rules.py       the facts every one of them shares
 ```
 
-`week.py` is the base: nothing in it imports the others, so `league.py` and
+`week.py` is the base: nothing in it imports the others but `rules.py`, so `league.py` and
 `prompt.py` can both build on it without a cycle. Nothing in `prompt.py`
 decides anything — the provider fetches and the prompt describes.
 
-Split when a provider outgrows one file, not on the way in. Basketball is one
-file on purpose: a category league has no weekly lineup to solve and almost
-none of its methods are free functions, so the same split there would be four
-files holding one idea.
+Split when a provider outgrows one file, not on the way in.
 
 Test modules mirror whatever the source ends up as — `nfl/week.py` is tested in
 `tests/adapters/outbound/competitions/nfl/test_week.py` — with the fakes they share

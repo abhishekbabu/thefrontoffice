@@ -1,8 +1,8 @@
-"""Recent form and remaining games, read from Sleeper.
+"""Recent form, read from Sleeper.
 
 Basketball reads its projections from Sleeper; this is the other half — what a
-player has actually been doing lately, and how many games their club has left
-inside the matchup period.
+player has actually been doing lately. How many games his club has left in the
+matchup period is the week's to say (`week.SleeperNBASchedule`).
 
 Form is per game rather than per week on purpose: a category league is won over
 a matchup period, and "the last ten games" is a window a weekly bucket of three
@@ -10,22 +10,15 @@ or four cannot be cut at.
 """
 
 import logging
-from datetime import date, datetime
 from typing import Literal, NamedTuple, Protocol, TypedDict
-from zoneinfo import ZoneInfo
 
-from thefrontoffice.adapters.outbound.competitions.dates import parse_day
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BOX_SCORE, Line, line
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNBASource
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
 
 logger = logging.getLogger(__name__)
-
-PACIFIC = ZoneInfo("America/Los_Angeles")
-"""The league schedules by Pacific, so a day boundary is decided there rather
-than on whatever clock this happens to be running on."""
 
 # Enough weeks that fifteen games are in reach for anyone playing regularly:
 # clubs play three or four a week, so six covers about twenty.
@@ -72,46 +65,19 @@ def nine_cat(games: list[NBAGameLog]) -> Line:
 
 
 class FormSource(Protocol):
-    """What the basketball provider reads recent form and remaining games through.
-    See `SleeperNBASource` for why it exists.
-    """
+    """What the basketball provider reads recent form through. See `SleeperNBASource` for why it exists."""
 
     def get_player_stats(self, full_name: str) -> PlayerStats | None:
         """A player's last 5, 10 and 15 games, or nothing where there are none."""
         ...
 
-    def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
-        """Count a club's not-yet-played games inside a matchup window.
-
-        Raises:
-            PlatformError: the schedule would not load.
-        """
-        ...
-
-    def get_remaining_games_bulk(
-        self, team_abbrs: list[str], start_date: date, end_date: date, now: datetime | None = None
-    ) -> dict[str, int]:
-        """One schedule load and one `now` for every club asked about.
-
-        Empty where the schedule would not load: games left unknown, never nought.
-        """
-        ...
-
-    def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
-        """Every real game dated inside a matchup window, in date order.
-
-        Raises:
-            PlatformError: the schedule would not load.
-        """
-        ...
-
 
 class SleeperNBAForm:
-    """Recent form and remaining games for basketball.
+    """Recent form for basketball.
 
-    Loads each of the three things it reads once and keeps them: a report asks
-    about every player on a roster and every club in a matchup, and refetching
-    the catalog per question would be the whole cost of the page.
+    Loads each of the two things it reads once and keeps them: a report asks
+    about every player on a roster, and refetching the catalog per question
+    would be the whole cost of the page.
     """
 
     def __init__(self, client: SleeperNBASource, season: str | None = None) -> None:
@@ -119,9 +85,6 @@ class SleeperNBAForm:
         self._season = season
         self._logs: dict[str, list[NBAGameLog]] | None = None
         self._by_name: NameIndex[str] | None = None
-        self._schedule: dict[str, list[ScheduledGame]] | None = None
-
-    # ── recent form ─────────────────────────────────────────────────
 
     def get_player_stats(self, full_name: str) -> PlayerStats | None:
         """A player's last 5, 10 and 15 games, or nothing where there are none.
@@ -147,69 +110,6 @@ class SleeperNBAForm:
             run = games[:RECENT_GAMES]
             stats["recent"] = RecentForm(games=len(run), line=nine_cat(run))
         return stats or None
-
-    # ── remaining games ─────────────────────────────────────────────
-
-    def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
-        """Count a club's not-yet-played games inside a matchup window.
-
-        Two notions of time, kept apart the same way they always were: the
-        window test compares date labels, which is what Yahoo's matchup dates
-        also are, and the has-it-happened test is decided on the day in
-        Pacific — the zone the league schedules by.
-
-        Sleeper publishes a date and a status but no tip-off instant, so a game
-        today counts only while its status still says it has not started, and a
-        stale status on a past date cannot resurrect a played game.
-
-        Raises:
-            SleeperAPIError: the schedule would not load.
-        """
-        today = self._today(now)
-        return sum(
-            1
-            for game in self._team_schedule().get(team_abbr.upper(), [])
-            if self._is_remaining(game, start_date, end_date, today)
-        )
-
-    def get_remaining_games_bulk(
-        self, team_abbrs: list[str], start_date: date, end_date: date, now: datetime | None = None
-    ) -> dict[str, int]:
-        """One schedule load and one `now` for every club asked about.
-
-        Empty where the schedule would not load: games left are then unknown,
-        and a nought for every club would read as a week nobody plays.
-        """
-        moment = now or datetime.now(tz=PACIFIC)
-        try:
-            return {
-                abbr.upper(): self.get_remaining_games(abbr, start_date, end_date, now=moment)
-                for abbr in set(team_abbrs)
-            }
-        except SleeperAPIError as e:
-            logger.warning(f"Continuing without games left, the basketball schedule would not load: {e}")
-            return {}
-
-    def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
-        """Every real game dated inside a matchup window, in date order, each once.
-
-        Raises:
-            SleeperAPIError: the schedule would not load.
-        """
-        games = {id(g): g for club in self._team_schedule().values() for g in club}.values()
-        inside = [g for g in games if (day := parse_day(g.date)) is not None and start_date <= day <= end_date]
-        return sorted(inside, key=lambda g: (g.date, g.away, g.home))
-
-    @staticmethod
-    def _is_remaining(game: ScheduledGame, start: date, end: date, today: date) -> bool:
-        played = parse_day(game.date)
-        if played is None or not (start <= played <= end):
-            return False
-        if played < today:
-            return False
-        # Today's game turns on the status; a future one is remaining whatever
-        # a possibly-stale status says.
-        return played > today or game.status == "pre_game"
 
     # ── loading, once ───────────────────────────────────────────────
 
@@ -251,23 +151,3 @@ class SleeperNBAForm:
                 logger.warning(f"Continuing without the basketball catalog: {e}")
             self._by_name = index
         return self._by_name
-
-    def _team_schedule(self) -> dict[str, list[ScheduledGame]]:
-        if self._schedule is None:
-            by_team: dict[str, list[ScheduledGame]] = {}
-            for game in self.client.get_nba_schedule(self._schedule_season()):
-                for club in (game.home, game.away):
-                    if club:
-                        by_team.setdefault(club, []).append(game)
-            self._schedule = by_team
-        return self._schedule
-
-    def _schedule_season(self) -> str:
-        """The season whose fixtures are still to be played, which is the one
-        the game itself is pointing at even while it has not started."""
-        return self._season or self.client.get_nba_state().season
-
-    @staticmethod
-    def _today(now: datetime | None) -> date:
-        moment = now or datetime.now(tz=PACIFIC)
-        return moment.astimezone(PACIFIC).date()

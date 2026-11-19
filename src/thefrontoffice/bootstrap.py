@@ -400,6 +400,7 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
     as not.
     """
     from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm
+    from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASchedule
     from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, YahooClient, YahooResponses
 
@@ -417,7 +418,8 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
     return _nba()(
         auth=leagues,
         yahoo_for=lambda league: YahooClient(league, responses=responses()),
-        nba=SleeperNBAForm(sleeper),
+        form=SleeperNBAForm(sleeper),
+        games=SleeperNBASchedule(sleeper),
         sleeper=sleeper,
         espn=_espn_client(settings),
         fallback_weekly_adds=settings.yahoo_max_weekly_adds,

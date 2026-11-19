@@ -18,7 +18,9 @@ from datetime import date
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex, normalize_name
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BOX_SCORE, Line, line
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import GameProjection
+from thefrontoffice.domain.errors import FrontOfficeError
 
 logger = logging.getLogger(__name__)
 
@@ -79,3 +81,30 @@ def _within(label: str, start: date, end: date) -> bool:
     """Whether a date label falls inside the matchup period."""
     day = parse_day(label)
     return day is not None and start <= day <= end
+
+
+def index_for(sleeper: SleeperProjectionSource, start: date | None, end: date | None) -> ProjectionIndex | None:
+    """Projected category totals for a matchup period, or None.
+
+    Returns None rather than raising when projections are unavailable —
+    Sleeper publishes none before opening night, and a scout report built
+    from recent form alone is the behavior this had all along.
+    """
+    if start is None or end is None:
+        return None
+    try:
+        state = sleeper.get_nba_state()
+        rows = sleeper.get_nba_projections(state.season, state.week)
+        if not rows and state.week:
+            # A matchup can straddle two Sleeper weeks near a boundary.
+            rows = sleeper.get_nba_projections(state.season, state.week + 1)
+        index = ProjectionIndex(rows, start, end)
+    except FrontOfficeError as e:
+        logger.warning(f"No NBA projections available, using recent form only: {e}")
+        return None
+
+    if index.is_empty:
+        logger.info("Sleeper has no NBA projections for this period (out of season?)")
+        return None
+    logger.debug(f"Matched projections for {len(index)} players")
+    return index

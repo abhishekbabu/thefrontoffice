@@ -7,6 +7,7 @@ from typing import Any
 from support.espn import FakeESPN
 from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, TURNOVERS
+from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame, SeasonState
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
@@ -227,7 +228,7 @@ class FakeSleeperProjections:
 
 
 class FakeSleeperNBA:
-    """Stands in for SleeperClient's basketball box scores, schedule and catalog, read by SleeperNBAForm."""
+    """Stands in for SleeperClient's basketball box scores, schedule and catalog, read by SleeperNBAForm and SleeperNBASchedule."""
 
     def __init__(
         self,
@@ -261,7 +262,7 @@ class FakeSleeperNBA:
 
 
 class FakeNBA:
-    """Stands in for SleeperNBAForm."""
+    """Stands in for SleeperNBAForm and SleeperNBASchedule both: one player's form, one club's games."""
 
     def __init__(
         self,
@@ -291,16 +292,23 @@ class FakeNBA:
 def nba_provider(
     yahoo: FakeYahoo | None = None,
     *,
-    nba: FormSource | None = None,
+    nba: FakeNBA | None = None,
+    form: FormSource | None = None,
+    games: ScheduleSource | None = None,
     sleeper: FakeSleeperProjections | None = None,
     league: YahooLeague | None = None,
     espn: FakeESPN | None = None,
 ) -> YahooNBAProvider:
-    """The NBA provider over these stand-ins, as bootstrap would wire it over the real clients."""
+    """The NBA provider over these stand-ins, as bootstrap would wire it over the real clients.
+
+    `nba` stands in for both Sleeper readers; `form` or `games` replaces one of them.
+    """
+    sleeper_nba = nba or FakeNBA()
     return YahooNBAProvider(
         auth=FakeYahooAuth([league] if league else None),
         yahoo_for=lambda _: yahoo or FakeYahoo(),
-        nba=nba or FakeNBA(),
+        form=form or sleeper_nba,
+        games=games or sleeper_nba,
         sleeper=sleeper or FakeSleeperProjections(),
         espn=espn or FakeESPN(),
         fallback_weekly_adds=3,

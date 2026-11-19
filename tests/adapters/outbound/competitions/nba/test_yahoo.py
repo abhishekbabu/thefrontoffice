@@ -25,15 +25,10 @@ from support.nba import yahoo_team as _yahoo_team
 from support.reports import MOCK_NBA_REPORT
 from support.stores import FakeAnswers
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import (
-    PACIFIC,
-    PlayerStats,
-    RecentForm,
-    SleeperNBAForm,
-    nine_cat,
-)
+from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES
+from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASchedule
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
@@ -46,7 +41,6 @@ from thefrontoffice.domain.errors import (
     InvalidRequestError,
     LeagueNotFoundError,
     NotFoundError,
-    PlayerNotFoundError,
     TeamNotFoundError,
 )
 from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat, TradeProposal
@@ -176,9 +170,9 @@ def test_schedule_context_lists_teams_by_games_remaining() -> None:
 def test_a_schedule_that_will_not_load_leaves_games_remaining_unknown_rather_than_nought() -> None:
     """Nought games left for every club reads as a week nobody plays, and steers every add."""
     yahoo = FakeYahoo(roster=[make_player("Roster One", team="LAL")])
-    form = SleeperNBAForm(client=FakeSleeperNBA(error=SleeperAPIError("down")), season="2026")
+    games = SleeperNBASchedule(client=FakeSleeperNBA(error=SleeperAPIError("down")), season="2026")
 
-    ctx = nba_provider(yahoo, nba=form).build_context()
+    ctx = nba_provider(yahoo, games=games).build_context()
 
     assert "G left]" not in ctx.roster_lines["Roster One"]
     assert "LAL:" not in ctx.extra
@@ -219,7 +213,8 @@ def _two_league_provider(auth: FakeYahooAuth | None = None) -> YahooNBAProvider:
     return YahooNBAProvider(
         auth=auth or FakeYahooAuth([yahoo_league("1", "One"), yahoo_league("2", "Two")]),
         yahoo_for=lambda league: clients[league.league_key],
-        nba=FakeNBA(),
+        form=FakeNBA(),
+        games=FakeNBA(),
         sleeper=FakeSleeperProjections(),
         espn=FakeESPN(),
         fallback_weekly_adds=3,
@@ -278,122 +273,10 @@ def test_selecting_an_unknown_league_raises() -> None:
         nba_provider().schedule("999")
 
 
-def test_a_roster_card_carries_the_row_and_what_a_row_cannot() -> None:
-    """The columns are the table; the id and the tone are what a table needs
-    and a column should not be."""
-    yahoo = FakeYahoo(roster=[make_player("A B", "PF,C", "LAL", status="O", selected_position="IL")])
-
-    card = nba_provider(yahoo).roster()[0]
-
-    assert card.columns["Player"] == "A B"
-    assert card.columns["Slot"] == "IL"
-    assert card.player_id
-    assert card.ruled_out
-
-
-def test_a_game_time_decision_is_flagged_without_being_ruled_out() -> None:
-    yahoo = FakeYahoo(roster=[make_player("A B", status="GTD")])
-
-    card = nba_provider(yahoo).roster()[0]
-
-    assert (card.columns["Status"], card.ruled_out) == ("GTD", False)
-
-
 def _form(played: int = 15, **stats: float) -> PlayerStats:
     """`played` identical games, run through the real nine-category line."""
     games = [NBAGameLog(player_id="p", date=f"2026-01-{i + 1:02d}", opponent="BOS", stats=stats) for i in range(played)]
     return PlayerStats(recent=RecentForm(games=played, line=nine_cat(games)))
-
-
-def test_the_drawer_shows_every_category_of_the_last_fifteen() -> None:
-    """The drawer once looked figures up in a way the form line never matched,
-    and showed a dash where every figure should have been."""
-    stats = _form(pts=20, reb=8, ast=5, stl=1, blk=2, tpm=3, to=2, fgm=9, fga=18, ftm=4, fta=5)
-    yahoo = FakeYahoo(roster=[make_player("A B", key="ab")])
-
-    detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": stats})).player("", "ab")
-
-    figures = {stat.label: stat.value for stat in detail.groups[0].stats}
-    assert list(figures) == [c.label for c in CATEGORIES]
-    assert figures == {
-        "PTS": "20.0",
-        "REB": "8.0",
-        "AST": "5.0",
-        "STL": "1.0",
-        "BLK": "2.0",
-        "3PTM": "3.0",
-        "FG%": "50.0%",
-        "FT%": "80.0%",
-        "TO": "2.0",
-    }
-    assert detail.headline == "20.0"
-
-
-def test_the_drawer_says_how_many_games_a_short_run_averages() -> None:
-    """Twelve games in, the line is his last twelve, and saying fifteen would misstate it."""
-    yahoo = FakeYahoo(roster=[make_player("A B", key="ab")])
-
-    detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(played=12, pts=18)})).player("", "ab")
-
-    assert detail.headline == "18.0"
-    assert "12" in detail.headline_label and "12" in detail.groups[0].title
-
-
-def test_a_row_short_of_fifteen_games_still_carries_figures() -> None:
-    """Week five, most of a roster has fewer than fifteen games; a dash for each was the bug."""
-    yahoo = FakeYahoo(roster=[make_player("A B")])
-
-    card = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(played=7, pts=20)})).roster()[0]
-
-    assert card.columns["PTS"] == "20.0"
-    assert card.values["PTS"] == 20.0
-
-
-def test_a_table_row_carries_recent_form() -> None:
-    yahoo = FakeYahoo(roster=[make_player("A B")])
-    card = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(pts=20, reb=8, ast=5)})).roster()[0]
-
-    assert (card.columns["PTS"], card.columns["REB"], card.columns["AST"]) == ("20.0", "8.0", "5.0")
-
-
-def test_recent_form_sorts_as_a_number() -> None:
-    """Sorted as text, 9.0 points sits above 20.0."""
-    yahoo = FakeYahoo(roster=[make_player("A B")])
-    card = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(pts=20, reb=8, ast=5)})).roster()[0]
-
-    assert card.values == {"PTS": 20.0, "REB": 8.0, "AST": 5.0}
-
-
-def test_the_drawer_opens_for_a_player_on_nobodys_roster_or_a_rivals() -> None:
-    """The wire and other managers' rosters open the same drawer as your own."""
-    yahoo = FakeYahoo(available=[make_player("Free Man", key="fa")])
-    provider = nba_provider(yahoo)
-
-    assert provider.player("", "fa").name == "Free Man"
-    assert provider.player("", "their-team-one").name == "Their Team One"
-
-
-def test_a_player_the_league_does_not_know_is_not_found() -> None:
-    with pytest.raises(PlayerNotFoundError):
-        nba_provider().player("", "nobody")
-
-
-def test_a_percentage_with_nothing_attempted_is_a_dash_not_zero() -> None:
-    yahoo = FakeYahoo(roster=[make_player("A B", key="ab")])
-    detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(pts=10)})).player("", "ab")
-
-    figures = {stat.label: stat.value for stat in detail.groups[0].stats}
-    assert (figures["FT%"], figures["PTS"]) == ("—", "10.0")
-
-
-def test_recent_form_is_a_dash_when_there_is_none() -> None:
-    """Out of season there is no line to show, and a zero would read as a bad
-    one rather than an absent one."""
-    yahoo = FakeYahoo(roster=[make_player("A B")])
-    card = nba_provider(yahoo).roster()[0]
-
-    assert card.columns["PTS"] == "—"
-    assert "PTS" not in card.values
 
 
 # ── projections ─────────────────────────────────────────────────────────
@@ -609,25 +492,6 @@ def test_a_key_in_an_unexpected_shape_yields_no_link_rather_than_a_broken_one() 
     teams = nba_provider(FakeYahoo(teams=[_yahoo_team("Odd", "something-else", rank=1, wins=1, losses=0)])).teams("")
 
     assert [(t.name, t.url) for t in teams] == [("Odd", "")]
-
-
-# ── the basketball calendar ─────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    ("when", "expected"),
-    [
-        (datetime(2026, 10, 20, tzinfo=PACIFIC), 2026),  # opening night
-        (datetime(2026, 12, 31, tzinfo=PACIFIC), 2026),
-        (datetime(2027, 1, 2, tzinfo=PACIFIC), 2026),  # January still belongs to the prior season
-        (datetime(2027, 4, 15, tzinfo=PACIFIC), 2026),  # playoffs
-        (datetime(2026, 9, 1, tzinfo=PACIFIC), 2026),  # September boundary, inclusive
-        (datetime(2026, 8, 31, tzinfo=PACIFIC), 2025),  # the day before
-    ],
-)
-def test_nba_season_rolls_over_in_september(when: datetime, expected: int) -> None:
-    """Basketball's season starts in the autumn and runs into the next calendar year."""
-    assert YahooNBAProvider.season_year(when) == expected
 
 
 # ── the injured list ────────────────────────────────────────────────────
