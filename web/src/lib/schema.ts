@@ -637,7 +637,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "lineup" | "waiver" | "trade";
+            kind: "lineup" | "waiver" | "trade" | "transfer" | "chip";
             /**
              * Urgency
              * @enum {string}
@@ -1315,7 +1315,7 @@ export interface components {
              * Held
              * @enum {string}
              */
-            held: "starter" | "bench" | "reserve" | "free agent";
+            held: "starter" | "bench" | "reserve" | "free agent" | "market";
             /**
              * Figures
              * @description The rows he is compared on, labelled alike for every player on the item; '—' where he has none.

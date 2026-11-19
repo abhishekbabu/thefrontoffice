@@ -19,17 +19,15 @@ from thefrontoffice.adapters.outbound.competitions.premier_league import league,
 from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
     Lineup,
     Roster,
-    best_lineup,
-    effective_points,
     fixtures_by_club,
     free_transfers,
-    lineup_changes,
     points_of,
     points_with_captain,
     projected_of,
     roster,
 )
 from thefrontoffice.adapters.outbound.competitions.premier_league.views import fixture_text
+from thefrontoffice.adapters.outbound.competitions.premier_league.worth import Valuation
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
@@ -43,13 +41,13 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
 )
 from thefrontoffice.domain.errors import NotFoundError
 from thefrontoffice.domain.models import (
+    Action,
     Side,
     Spot,
     SpotScoring,
     Stat,
     StatGroup,
     Summary,
-    Swap,
     Tone,
     WeekRange,
 )
@@ -170,33 +168,40 @@ def tie_roster(client: FPLSource, found: H2HMatch | None, week: int) -> Roster |
 # ── the week view ───────────────────────────────────────────────────
 
 
-def summary(client: FPLSource, entry_id: int, league_id: str) -> Summary:
-    """The gameweek in focus: both squads, the fixtures, the swaps.
+def summary(
+    client: FPLSource,
+    entry_id: int,
+    league_id: str,
+    *,
+    value: Valuation,
+    best: Lineup,
+    free: int,
+    actions: list[Action],
+) -> Summary:
+    """The gameweek in focus: both squads, the fixtures, and what to do before the next deadline.
 
     The one being played while its matches are; once it is over, the one whose
     deadline is next, with the squad as last picked against its fixtures and
-    FPL's projection for it. Reaches for the squad, the history and the tie —
-    everything the week is made of — and stops short of the transfer market,
-    which is the expensive half of a report and answers a different question.
+    its worth for it. The to-do list is about the next deadline either way,
+    since that is the one a decision can still change: `best` is the eleven
+    `value` picks, `free` the transfers left against it, `actions` the list.
     """
     shown_focus = focus(client)
-    week = gather(client, entry_id, league_id, shown_focus, picked(client).id)
-    best = best_lineup(week.mine.players)
+    week = gather(client, entry_id, league_id, shown_focus, picked(client).id, value)
     upcoming = client.upcoming_gameweek()
 
     return Summary(
         headline=prompt.headline(
             week.mine.squad,
-            # Keyed to the next deadline, because that is the one an
-            # allowance can still be spent against.
-            allowance(client, entry_id, upcoming.id),
+            free,
             best,
-            points_with_captain(week.mine.starters, week.mine.captain),
+            points_with_captain(week.mine.starters, week.mine.captain, value),
             upcoming,
+            value,
         ),
         mine=week.mine_side,
         opponent=week.opponent,
-        swaps=swaps(week.mine, best),
+        actions=actions,
         fixtures=warnings(week.fixtures),
         boosts=chips(client, entry_id, shown_focus.id),
         window=week.window,
@@ -204,18 +209,19 @@ def summary(client: FPLSource, entry_id: int, league_id: str) -> Summary:
     )
 
 
-def browsed(client: FPLSource, entry_id: int, league_id: str, week: int) -> Summary:
+def browsed(client: FPLSource, entry_id: int, league_id: str, week: int, value: Valuation) -> Summary:
     """Any other gameweek: one played with the fifteen picked for it and what each scored, one to come
     with the squad as it stands against that gameweek's fixtures.
 
-    A gameweek to come is projected only where FPL has: the next one, by
-    `ep_next`. Further out the rows read "—", since FPL projects nothing there.
+    A gameweek to come is projected only where FPL has: the next one, by each
+    player's worth for it (`value`). Further out the rows read "—", since FPL
+    projects nothing there.
 
     Raises:
         NotFoundError: the season has no such gameweek.
     """
     gameweek = numbered(client, week)
-    shown = gather(client, entry_id, league_id, gameweek, picked(client).id)
+    shown = gather(client, entry_id, league_id, gameweek, picked(client).id, value)
     return Summary(
         headline=browsed_headline(gameweek, shown),
         mine=shown.mine_side,
@@ -225,19 +231,20 @@ def browsed(client: FPLSource, entry_id: int, league_id: str, week: int) -> Summ
     )
 
 
-def gather(client: FPLSource, entry_id: int, league_id: str, gameweek: Gameweek, latest: int) -> Week:
+def gather(client: FPLSource, entry_id: int, league_id: str, gameweek: Gameweek, latest: int, value: Valuation) -> Week:
     """Both sides of one gameweek, as far as it has got: played, under way, or to come.
 
     `latest` is the latest gameweek with published picks. One before it is
     over; one after it is shown with the squads as last picked, since nobody's
-    picks for it are published until its deadline passes.
+    picks for it are published until its deadline passes, and projected at
+    each player's worth for it (`value`).
     """
     to_come = gameweek.id > latest
     squad_week = latest if to_come else gameweek.id
     mine = squad_of(client, entry_id, squad_week)
     week_fixtures = client.get_fixtures(gameweek.id)
     live = {} if to_come else live_points(client, gameweek.id)
-    projected = projected_of if gameweek.id == latest else projected_for(gameweek.id, latest)
+    projected = projected_of if gameweek.id == latest else projected_for(gameweek.id, latest, value)
     final = not to_come and (
         gameweek.finished or gameweek.id < latest or (bool(week_fixtures) and all(f.finished for f in week_fixtures))
     )
@@ -437,33 +444,15 @@ def side_points(scored: int | None, squad: Roster, fixtures: dict[str, list[Oppo
     return " · ".join(part for part in (f"{scored or 0} pts", projection) if part)
 
 
-def swaps(mine: Roster, best: Lineup) -> list[Swap]:
-    """Every change from the eleven as set to the best one, the armband last, so together they reach its total.
-
-    The armband is a change like any other: the best total counts its captain
-    twice, and moving it is worth the gap between the two captains' projections.
-    """
-    changes = [
-        Swap(start=change.start.name, out=change.drop.name if change.drop else "", gain=f"{change.gain:+.1f} xPts")
-        for change in lineup_changes(mine.starters, best)
-    ]
-    current, captain = mine.captain, best.captain
-    if current is not None and captain is not None and captain.id != current.id:
-        gain = round(effective_points(captain) - effective_points(current), 2)
-        if gain > 0:
-            changes.append(Swap(start=f"Captain {captain.name}", out=current.name, gain=f"{gain:+.1f} xPts"))
-    return changes
-
-
-def projected_for(week: int, current: int) -> Projected:
-    """The projection a browsed gameweek has: `ep_next` for the next one alone, and none before or after it.
+def projected_for(week: int, current: int, value: Valuation) -> Projected:
+    """The projection a browsed gameweek has: each player's worth for the next one alone, and none before or after it.
 
     A gameweek played has its points, and a projection beside them would be
     the current week's, not the one it was played on.
     """
     if week != current + 1:
         return lambda pick, player: None
-    return lambda pick, player: player.expected_points * max(pick.multiplier, 1)
+    return lambda pick, player: value(player) * max(pick.multiplier, 1)
 
 
 def browsed_headline(gameweek: Gameweek, week: Week) -> list[Stat]:

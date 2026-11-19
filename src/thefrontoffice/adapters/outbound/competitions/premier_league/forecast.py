@@ -3,9 +3,11 @@
 The generic engine in `application/forecasting.py` plays it out; this says what an
 FPL gameweek is made of. Each player's match is drawn from his own recent matches
 — those he played in the last `RECENT_GAMEWEEKS` gameweeks — once for every match
-his club has left in the gameweek: none in a blank, two in a double. Whether he
-plays at all is FPL's published chance where there is one, else how often he has
-played lately.
+his club has left in the gameweek: none in a blank, two in a double. For a
+gameweek still to come those matches are scaled to his worth a match (`worth.py`),
+so the tie is centred on the figure the eleven and the armband are picked on and
+the spread is still his own. Whether he plays at all is FPL's published chance
+where there is one, else how often he has played lately.
 
 The captain counts twice (three times under Triple Captain) by appearing that many
 times in his side: the same draw, so his week is doubled rather than drawn again.
@@ -17,7 +19,7 @@ which starter a substitute replaces, nor whether the formation allows him.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from statistics import fmean
 
 from thefrontoffice.adapters.outbound.competitions.premier_league.rules import Roster, plays
@@ -49,6 +51,9 @@ class Gameweek:
 
     to_come: bool
     """No deadline has passed for it yet: the picks are last week's, and its chips are not this week's."""
+
+    expected: Mapping[int, float] = field(default_factory=dict)
+    """Each player's worth a match he plays, for a gameweek to come; empty for one under way."""
 
 
 def matchup(mine: Roster, theirs: Roster, week: Gameweek, seed: int) -> MatchupInput:
@@ -141,9 +146,20 @@ def matches_left(player: Player, week: Gameweek) -> int:
 def recent_points(player: Player, week: Gameweek) -> tuple[float, ...]:
     """Points from each match he played in the recent gameweeks; his season's points a match where there are none."""
     played = [g for g in week.games.get(player.id, []) if g.event >= week.recent_from and g.played]
-    if played:
-        return tuple(float(g.points) for g in played)
-    return (player.points_per_game,) if player.points_per_game > 0 else ()
+    samples = tuple(float(g.points) for g in played) or (
+        (player.points_per_game,) if player.points_per_game > 0 else ()
+    )
+    return centred(samples, week.expected.get(player.id))
+
+
+def centred(samples: tuple[float, ...], expected: float | None) -> tuple[float, ...]:
+    """`samples` scaled so their mean is `expected`, his worth a match; as they are without one, or without a mean to scale."""
+    if expected is None:
+        return samples
+    mean = fmean(samples) if samples else 0.0
+    if mean <= 0:
+        return (expected,) if expected > 0 else samples
+    return tuple(round(s * expected / mean, 2) for s in samples)
 
 
 def playing_chance(player: Player, week: Gameweek) -> float:

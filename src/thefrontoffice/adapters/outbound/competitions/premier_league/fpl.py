@@ -13,21 +13,33 @@ the equivalent action is a transfer against the market, which the scouting
 report already recommends.
 
 How a gameweek is gathered lives in `week.py`, how a player reads in
-`views.py`, the season and the table in `league.py`, the model's text in
+`views.py`, what he is worth in `worth.py`, what to do about it in
+`actions.py`, the season and the table in `league.py`, the model's text in
 `prompt.py` and the rules of the game in `rules.py`; the gameweeks ahead in
 `outlook.py`, a head-to-head tie as the simulation reads it in `forecast.py`,
 and a player's news in `news.py`. This is the port.
 """
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
-from thefrontoffice.adapters.outbound.competitions.premier_league import forecast, league, outlook, prompt, views
+from thefrontoffice.adapters.outbound.competitions.premier_league import (
+    actions,
+    forecast,
+    league,
+    outlook,
+    prompt,
+    views,
+    worth,
+)
 from thefrontoffice.adapters.outbound.competitions.premier_league import week as fpl_week
+from thefrontoffice.adapters.outbound.competitions.premier_league.actions import Plan
 from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
+    Lineup,
     Roster,
+    best_lineup,
     fixtures_by_club,
     plays,
     purchase_prices,
@@ -36,7 +48,7 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
 from thefrontoffice.adapters.outbound.competitions.seeds import seed
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
-from thefrontoffice.adapters.outbound.platforms.fpl.types import MiniLeague, as_millions
+from thefrontoffice.adapters.outbound.platforms.fpl.types import Chip, ChipPlay, MiniLeague, Player, as_millions
 from thefrontoffice.domain.errors import PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     CompetitionContext,
@@ -144,7 +156,7 @@ class FPLProvider:
         return views.detail(self.client, player)
 
     def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
-        """Anyone in the game whose name holds `text`, the most owned first.
+        """Anyone in the game whose name holds `text`, the most worth first (`worth.py`), then the most owned.
 
         The whole catalog is already in hand — every player rides on the one
         bootstrap payload — so finding one costs no request. FPL has no owner to
@@ -158,7 +170,8 @@ class FPLProvider:
             for p in self.client.get_players().values()
             if wanted in normalize_name(p.full_name) or wanted in normalize_name(p.name)
         ]
-        found.sort(key=lambda p: (-p.selected_by, -p.total_points))
+        value = self._value()
+        found.sort(key=lambda p: (-value(p), -p.selected_by, -p.total_points))
         return [
             PlayerRef(
                 player_id=str(p.id),
@@ -168,9 +181,13 @@ class FPLProvider:
             for p in found[:limit]
         ]
 
+    def _value(self) -> worth.Valuation:
+        """Every player's worth for the gameweek still open."""
+        return worth.gather(self.client, self.client.upcoming_gameweek())
+
     def roster(self, league_id: str) -> list[PlayerCard]:
         """The squad in full, with the season numbers a week view leaves out."""
-        return views.squad_cards(self._roster(self.entry_id))
+        return views.squad_cards(self._roster(self.entry_id), self._value())
 
     def teams(self, league_id: str) -> list[TeamRef]:
         """Everyone in the mini-league, yours first.
@@ -199,28 +216,68 @@ class FPLProvider:
         """Another manager's squad, in the same columns as your own."""
         if not team_id.isdigit():
             raise TeamNotFoundError(team_id)
-        return views.squad_cards(self._roster(int(team_id)))
+        return views.squad_cards(self._roster(int(team_id)), self._value())
 
     def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
         """The transfer market: everyone you do not already own who can play.
 
         FPL has no waiver wire — every player is buyable at a price — so the
-        question is not who is free but who is worth the money. Ranked on the
-        game's own projection, which is what a transfer is decided on.
+        question is not who is free but who is worth the money. Ranked on each
+        player's worth for the gameweek to come (`worth.py`), the figure the
+        eleven and every transfer are weighed on.
         """
         paging.view(query, ())  # no other lists: one asked for is refused, not ignored
         squad = self.client.get_squad(self.entry_id, fpl_week.picked(self.client).id)
         owned = {pick.element for pick in squad.picks}
-
-        market = [p for p in self.client.get_players().values() if p.id not in owned and plays(p)]
-        market.sort(key=lambda p: (-p.expected_points, -p.form))
-        return paging.page([views.market_card(p) for p in market], query)
+        value = self._value()
+        market = [p for p in _market(self.client.get_players().values(), value) if p.id not in owned]
+        return paging.page([views.market_card(p, value) for p in market], query)
 
     # ── gameweeks ───────────────────────────────────────────────────
 
     def summary(self, league_id: str) -> Summary:
-        """The gameweek in focus: both squads, the fixtures, the swaps (`week.summary`)."""
-        return fpl_week.summary(self.client, self.entry_id, league_id)
+        """The gameweek in focus: both squads, the fixtures, and what to do before the next deadline (`week.summary`)."""
+        plan, best = self._plan()
+        return fpl_week.summary(
+            self.client,
+            self.entry_id,
+            league_id,
+            value=plan.value,
+            best=best,
+            free=plan.allowance,
+            actions=actions.build(plan, best),
+        )
+
+    def _plan(self) -> tuple[Plan, Lineup]:
+        """What the gameweek still open is decided on, and the best eleven for it.
+
+        The squad is the one last fielded; the worth, fixtures and allowance are
+        for the gameweek whose deadline is next, which is the one advice can change.
+        """
+        upcoming = self.client.upcoming_gameweek()
+        mine = self._roster(self.entry_id)
+        value = worth.gather(self.client, upcoming)
+        issued, played = self._chips()
+        plan = Plan(
+            roster=mine,
+            value=value,
+            upcoming=upcoming,
+            # Keyed to the next deadline, because that is the one an allowance can still be spent against.
+            allowance=fpl_week.allowance(self.client, self.entry_id, upcoming.id),
+            selling=self._selling_prices(mine),
+            market=_market(self.client.get_players().values(), value),
+            chips=issued,
+            played=played,
+        )
+        return plan, best_lineup(mine.players, value)
+
+    def _chips(self) -> tuple[list[Chip], list[ChipPlay]]:
+        """The chips issued and the ones spent; none of either where they will not load, which leaves no chip to-do."""
+        try:
+            return self.client.get_chips(), self.client.get_chips_played(self.entry_id)
+        except FPLAPIError as e:
+            logger.warning(f"Continuing without chip reminders: {e}")
+            return [], []
 
     def week_of(self, league_id: str, week: int) -> Summary:
         """Any other gameweek, played or to come (`week.browsed`).
@@ -228,7 +285,7 @@ class FPLProvider:
         Raises:
             NotFoundError: the season has no such gameweek.
         """
-        return fpl_week.browsed(self.client, self.entry_id, league_id, week)
+        return fpl_week.browsed(self.client, self.entry_id, league_id, week, self._value())
 
     def games_of(self, league_id: str, week: int) -> Slate:
         """The real matches of any gameweek, each with its score once it has kicked off, its blanks,
@@ -324,6 +381,9 @@ class FPLProvider:
             live={} if to_come else fpl_week.live_points(self.client, gameweek.id),
             recent_from=forecast.recent_from(gameweek.id),
             to_come=to_come,
+            expected=_per_match(worth.gather(self.client, gameweek), (*mine.players, *theirs.players))
+            if to_come
+            else {},
         )
         return forecast.matchup(mine, theirs, week, seed(league_id, self.entry_id, gameweek.id))
 
@@ -340,24 +400,21 @@ class FPLProvider:
     # ── context ─────────────────────────────────────────────────────
 
     def build_context(self, league_id: str) -> CompetitionContext:
-        """Gather the gameweek, then render it as the text a model reads.
-
-        The squad is the one last fielded; the projections, fixtures and
-        allowance are for the gameweek still open, which is the one advice
-        can change.
-        """
-        entry_id = self.entry_id
-        upcoming = self.client.upcoming_gameweek()
-        mine = self._roster(entry_id)
+        """Gather the gameweek and its to-do list, then render them as the text a model reads (`_plan`)."""
+        plan, best = self._plan()
+        mine, upcoming = plan.roster, plan.upcoming
         return prompt.build(
             league_id=league_id,
-            entry=self.client.get_entry(entry_id),
+            entry=self.client.get_entry(self.entry_id),
             upcoming=upcoming,
             roster=mine,
-            catalog=self.client.get_players(),
-            allowance=fpl_week.allowance(self.client, entry_id, upcoming.id),
-            fixtures=fixtures_by_club(self.client.get_fixtures(upcoming.id), (p.team for p in mine.players)),
-            selling=self._selling_prices(mine),
+            market=list(plan.market),
+            value=plan.value,
+            best=best,
+            allowance=plan.allowance,
+            fixtures=fixtures_by_club(plan.value.weeks.get(upcoming.id, []), (p.team for p in mine.players)),
+            selling=dict(plan.selling),
+            tasks=actions.build(plan, best),
         )
 
     def _selling_prices(self, mine: Roster) -> dict[int, int]:
@@ -374,3 +431,13 @@ class FPLProvider:
             return {}
         bought = purchase_prices(mine.players, transfers, chips)
         return {p.id: selling_price(bought[p.id], p.cost) for p in mine.players}
+
+
+def _market(catalog: Iterable[Player], value: worth.Valuation) -> list[Player]:
+    """Everybody who can play, best worth first: the transfer market as every view of it ranks it."""
+    return sorted((p for p in catalog if plays(p)), key=lambda p: (-value(p), -p.form, p.name))
+
+
+def _per_match(value: worth.Valuation, players: Iterable[Player]) -> dict[int, float]:
+    """Each player's worth a match he plays, by element id, where he has one."""
+    return {p.id: found for p in players if (w := value.of(p)) is not None and (found := w.per_match) is not None}

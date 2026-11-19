@@ -13,7 +13,7 @@ from support.http import NO_WAIT, FakeSession
 from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.client import BASE_URL, FPLClient
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
-from thefrontoffice.adapters.outbound.platforms.fpl.types import Opponent
+from thefrontoffice.adapters.outbound.platforms.fpl.types import LiveStat, Opponent
 
 BOOTSTRAP = {
     "events": [
@@ -631,3 +631,62 @@ def test_a_player_with_no_news_or_projection_carries_none(client: FPLClient) -> 
     assert player.news_added is None
     assert player.price_tonight is None
     assert player.price_locked_until is None
+
+
+# ── results ─────────────────────────────────────────────────────────────
+
+LIVE_GW1 = {
+    "elements": [
+        {
+            "id": 10,
+            "stats": {"total_points": 8, "minutes": 90, "bonus": 1, "influence": "40.2"},
+            "explain": [
+                {
+                    "fixture": 1,
+                    "stats": [
+                        {"identifier": "minutes", "points": 2, "value": 90},
+                        {"identifier": "defensive_contribution", "points": 2, "value": 11},
+                    ],
+                },
+                {"fixture": 2, "stats": [{"identifier": "minutes", "points": 2, "value": 90}]},
+            ],
+        },
+        {"id": 11, "stats": {"total_points": 0, "minutes": 0}, "explain": []},
+        {"stats": {"total_points": 3}},
+    ]
+}
+
+
+def _live_client(tmp_path: Path) -> tuple[FPLClient, FakeSession]:
+    session = FakeSession({"/event/1/live/": LIVE_GW1})
+    return FPLClient(cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, session=session), session
+
+
+def test_results_read_each_players_points_minutes_matches_and_defensive_contributions(tmp_path: Path) -> None:
+    client, _ = _live_client(tmp_path)
+
+    week = client.get_results([1])[1]
+
+    assert week[10] == LiveStat(points=8, minutes=90, matches=2, bonus=1, defending=2)
+    assert week[11] == LiveStat(points=0, minutes=0, matches=0)
+    assert len(week) == 2  # a row without an id is nobody
+
+
+def test_results_already_kept_are_not_fetched_again(tmp_path: Path) -> None:
+    client, session = _live_client(tmp_path)
+
+    assert client.get_results([1]) == client.get_results([1])
+    assert len(session.requests) == 1
+
+
+def test_a_gameweek_whose_results_will_not_load_is_refused_not_read_as_empty(tmp_path: Path) -> None:
+    client, _ = _live_client(tmp_path)
+
+    with pytest.raises(FPLAPIError, match="GW2"):
+        client.get_results([1, 2])
+
+
+def test_the_live_feed_counts_a_players_matches_too(tmp_path: Path) -> None:
+    client, _ = _live_client(tmp_path)
+
+    assert client.get_live(1)[10].matches == 2

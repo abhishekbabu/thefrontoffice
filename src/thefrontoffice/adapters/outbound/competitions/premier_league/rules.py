@@ -15,7 +15,7 @@ slots, only a count of each position that must fall between a minimum and a
 maximum. That is why this does not reuse the football lineup solver.
 """
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
@@ -50,6 +50,26 @@ DEFENSIVE_THRESHOLDS = {"DEF": 10, "MID": 12, "FWD": 12}
 2025/26: clearances, blocks, interceptions and tackles for a defender, recoveries too further forward.
 A keeper earns none."""
 
+MAX_PER_CLUB = 3
+"""Players a squad may hold from any one club."""
+
+LIKELY_TO_PLAY = 75
+"""The chance of playing, in percent, below which a player is not counted on to start: FPL's own
+75% flag, the first step down from fit. The armband never goes to one below it."""
+
+# What a match scores, by position, under the 2025/26 rules: what a player's underlying
+# numbers are turned into points by (`worth.py`).
+APPEARANCE_POINTS = 2
+"""Sixty minutes or more."""
+GOAL_POINTS = {"GKP": 10, "DEF": 6, "MID": 5, "FWD": 4}
+ASSIST_POINTS = 3
+CLEAN_SHEET_POINTS = {"GKP": 4, "DEF": 4, "MID": 1, "FWD": 0}
+SAVES_PER_POINT = 3
+
+type Value = Callable[[Player], float]
+"""What a player is worth to a decision, in expected points: the one figure lineups, the armband and
+transfers are all weighed on (`worth.Valuation`)."""
+
 
 def plays(player: Player) -> bool:
     """Whether the game expects this player to be able to feature.
@@ -59,6 +79,11 @@ def plays(player: Player) -> bool:
     a doubt included — says yes, with the doubt shown beside the player.
     """
     return player.chance_of_playing != 0 and player.status not in RULED_OUT
+
+
+def likely(player: Player) -> bool:
+    """Whether he can be counted on to start: he plays, and FPL has flagged no doubt below `LIKELY_TO_PLAY`."""
+    return plays(player) and (player.chance_of_playing is None or player.chance_of_playing >= LIKELY_TO_PLAY)
 
 
 def effective_points(player: Player) -> float:
@@ -126,6 +151,10 @@ class Roster:
     def captain(self) -> Player | None:
         return next((player for pick, player in self.picked if pick.is_captain), None)
 
+    @property
+    def vice(self) -> Player | None:
+        return next((player for pick, player in self.picked if pick.is_vice_captain), None)
+
     def scored(self, live: dict[int, LiveStat]) -> int | None:
         """What the gameweek has scored so far, or None before anyone counted has played.
 
@@ -190,7 +219,7 @@ def _span(position: str) -> tuple[int, int]:
 
 @dataclass(frozen=True)
 class Lineup:
-    """A starting eleven, its captain, and the bench behind it."""
+    """A starting eleven, its armbands, and the bench behind it."""
 
     starters: list[Player]
     bench: list[Player]
@@ -198,25 +227,36 @@ class Lineup:
     formation: str
     """The shape in the game's own notation, outfielders only: '3-5-2'."""
 
-    @property
-    def points(self) -> float:
-        """Expected points with the captain counted twice."""
-        return points_with_captain(self.starters, self.captain)
+    points: float
+    """Expected points with the captain counted twice."""
+
+    vice: Player | None = None
 
 
-def points_with_captain(starters: list[Player], captain: Player | None) -> float:
+def points_with_captain(starters: list[Player], captain: Player | None, value: Value) -> float:
     """What an eleven expects, counting its captain twice.
 
     Comparing a captained total against an uncaptained one overstates the gap by
     roughly a captain's score, which is the largest single number on the page —
     so every comparison between two lineups has to go through here.
     """
-    total = sum(effective_points(p) for p in starters)
-    return round(total + (effective_points(captain) if captain else 0.0), 2)
+    total = sum(value(p) for p in starters)
+    return round(total + (value(captain) if captain else 0.0), 2)
 
 
-def best_lineup(squad: list[Player]) -> Lineup:
-    """The highest-expecting legal eleven from a fifteen.
+def armbands(starters: list[Player], value: Value) -> tuple[Player | None, Player | None]:
+    """The captain and vice: the two starters worth most, never one unlikely to start (`likely`).
+
+    The vice scores double only when the captain does not play, so he too has
+    to be somebody who will. Only where fewer than two starters are likely does
+    the rest of the eleven make up the pair, best first.
+    """
+    ranked = sorted(starters, key=lambda p: (not likely(p), -value(p), p.name))
+    return (ranked[0] if ranked else None), (ranked[1] if len(ranked) > 1 else None)
+
+
+def best_lineup(squad: list[Player], value: Value) -> Lineup:
+    """The highest-expecting legal eleven from a fifteen, by `value`.
 
     Searched over every legal formation rather than filled greedily: taking the
     best eleven players outright routinely produces an illegal shape, and
@@ -227,7 +267,7 @@ def best_lineup(squad: list[Player]) -> Lineup:
     for player in squad:
         by_position.setdefault(player.position, []).append(player)
     for players in by_position.values():
-        players.sort(key=lambda p: (-effective_points(p), -p.form, p.name))
+        players.sort(key=lambda p: (-value(p), -p.form, p.name))
 
     best: list[Player] = []
     best_total = -1.0
@@ -236,7 +276,7 @@ def best_lineup(squad: list[Player]) -> Lineup:
         if any(len(by_position.get(pos, [])) < count for pos, count in shape.items()):
             continue
         eleven = [p for pos, count in shape.items() for p in by_position[pos][:count]]
-        total = sum(effective_points(p) for p in eleven)
+        total = sum(value(p) for p in eleven)
         if total > best_total:
             best, best_total, best_shape = eleven, total, shape
 
@@ -245,26 +285,30 @@ def best_lineup(squad: list[Player]) -> Lineup:
         (p for p in squad if p.id not in starting_ids),
         # Goalkeepers can only be substituted for goalkeepers, so the reserve
         # keeper sits apart from the ordered outfield bench.
-        key=lambda p: (p.position != "GKP", -effective_points(p)),
+        key=lambda p: (p.position != "GKP", -value(p)),
     )
-    captain = max(best, key=effective_points) if best else None
+    captain, vice = armbands(best, value)
     shape = "-".join(str(best_shape.get(pos, 0)) for pos in ("DEF", "MID", "FWD")) if best_shape else ""
-    return Lineup(starters=best, bench=bench, captain=captain, formation=shape)
+    return Lineup(
+        starters=best,
+        bench=bench,
+        captain=captain,
+        vice=vice,
+        formation=shape,
+        points=points_with_captain(best, captain, value),
+    )
 
 
 @dataclass(frozen=True)
 class LineupChange:
-    """A player who should start, and the one they displace."""
+    """A player who should start, the one they displace, and what it gains."""
 
     start: Player
     drop: Player | None
-
-    @property
-    def gain(self) -> float:
-        return round(effective_points(self.start) - (effective_points(self.drop) if self.drop else 0.0), 2)
+    gain: float
 
 
-def lineup_changes(current_starters: list[Player], best: Lineup) -> list[LineupChange]:
+def lineup_changes(current_starters: list[Player], best: Lineup, value: Value) -> list[LineupChange]:
     """Every swap between the eleven as set and `best`, largest gain first.
 
     The set difference between the two elevens, paired so each swap is one a manager can
@@ -283,7 +327,10 @@ def lineup_changes(current_starters: list[Player], best: Lineup) -> list[LineupC
     going_out = [p for p in current_starters if p.id not in best_ids]
 
     def strongest_first(players: list[Player]) -> list[Player]:
-        return sorted(players, key=lambda p: (-effective_points(p), p.name))
+        return sorted(players, key=lambda p: (-value(p), p.name))
+
+    def change(start: Player, drop: Player | None) -> LineupChange:
+        return LineupChange(start=start, drop=drop, gain=round(value(start) - (value(drop) if drop else 0.0), 2))
 
     changes: list[LineupChange] = []
     unpaired_in: list[Player] = []
@@ -292,7 +339,7 @@ def lineup_changes(current_starters: list[Player], best: Lineup) -> list[LineupC
         ins = strongest_first([p for p in coming_in if p.position == position])
         outs = list(reversed(strongest_first([p for p in going_out if p.position == position])))
         pairs = min(len(ins), len(outs))
-        changes += [LineupChange(start=ins[i], drop=outs[i]) for i in range(pairs)]
+        changes += [change(ins[i], outs[i]) for i in range(pairs)]
         unpaired_in += ins[pairs:]
         unpaired_out += outs[pairs:]
 
@@ -301,8 +348,7 @@ def lineup_changes(current_starters: list[Player], best: Lineup) -> list[LineupC
     unpaired_in = strongest_first(unpaired_in)
     unpaired_out = list(reversed(strongest_first(unpaired_out)))
     changes += [
-        LineupChange(start=player, drop=unpaired_out[i] if i < len(unpaired_out) else None)
-        for i, player in enumerate(unpaired_in)
+        change(player, unpaired_out[i] if i < len(unpaired_out) else None) for i, player in enumerate(unpaired_in)
     ]
     kept = [c for c in changes if not (c.drop and c.drop.position == c.start.position and c.gain == 0)]
     return sorted(kept, key=lambda c: -c.gain)
@@ -349,12 +395,15 @@ def purchase_prices(
 
 @dataclass(frozen=True)
 class Transfer:
-    """Swapping one squad player for one who is not in the squad."""
+    """Swapping one squad player for one who is not in the squad, and what it gains."""
 
     out: Player
     incoming: Player
     sale: int
     """What the game pays for `out`, in tenths of a million: his selling price, not his price."""
+
+    gain: float
+    """What `incoming` is worth over `out`, by the value the transfer was weighed on."""
 
     @property
     def cost(self) -> int:
@@ -364,10 +413,6 @@ class Transfer:
         """
         return self.incoming.cost - self.sale
 
-    @property
-    def gain(self) -> float:
-        return round(effective_points(self.incoming) - effective_points(self.out), 2)
-
 
 def affordable_transfers(
     squad: list[Player],
@@ -376,16 +421,19 @@ def affordable_transfers(
     *,
     selling: dict[int, int],
     limit: int,
+    value: Value,
 ) -> list[Transfer]:
-    """The best single-player upgrades this squad can pay for, best gain first.
+    """The best single-player upgrades this squad can pay for, best gain by `value` first.
 
     `selling` is each squad player's selling price by element id; one it does not name
     sells at his current price.
 
     Only same-position swaps: FPL fixes how many of each position a squad holds,
-    so a midfielder can only ever be replaced by a midfielder.
+    so a midfielder can only ever be replaced by a midfielder. And never a fourth
+    player from one club (`MAX_PER_CLUB`), which the game refuses.
     """
     owned = {p.id for p in squad}
+    clubs = club_counts(squad)
     candidates: dict[str, list[Player]] = {}
     for player in market:
         if player.id not in owned and plays(player):
@@ -397,7 +445,14 @@ def affordable_transfers(
     best_by_target: dict[int, Transfer] = {}
     for out in squad:
         for incoming in candidates.get(out.position, []):
-            transfer = Transfer(out=out, incoming=incoming, sale=selling.get(out.id, out.cost))
+            if not room_at(clubs, incoming, out):
+                continue
+            transfer = Transfer(
+                out=out,
+                incoming=incoming,
+                sale=selling.get(out.id, out.cost),
+                gain=round(value(incoming) - value(out), 2),
+            )
             if transfer.cost > bank or transfer.gain <= 0:
                 continue
             existing = best_by_target.get(incoming.id)
@@ -415,3 +470,16 @@ def affordable_transfers(
         seen[transfer.out.id] = count + 1
         spread.append(transfer)
     return spread[:limit]
+
+
+def club_counts(squad: Iterable[Player]) -> dict[str, int]:
+    """How many of the squad each club supplies."""
+    counts: dict[str, int] = {}
+    for player in squad:
+        counts[player.team] = counts.get(player.team, 0) + 1
+    return counts
+
+
+def room_at(clubs: dict[str, int], incoming: Player, out: Player) -> bool:
+    """Whether `incoming` can replace `out` without a fourth player from his club (`MAX_PER_CLUB`)."""
+    return incoming.team == out.team or clubs.get(incoming.team, 0) < MAX_PER_CLUB

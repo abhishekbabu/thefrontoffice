@@ -15,6 +15,7 @@ from support.fpl import (
     LEAGUE_ID,
     MARKET,
     SQUAD_PLAYERS,
+    WITH_CITY,
     FakeFPL,
     game,
     player,
@@ -90,7 +91,7 @@ def test_the_prompt_shows_the_eleven_that_is_set_not_the_best_one() -> None:
 
 def test_the_bench_keeps_its_substitution_order() -> None:
     """Auto-subs come on in the order the manager listed, so it is a decision."""
-    bench = provider().build_context(LEAGUE_ID).prompt.split("BENCH (in substitution")[1].split("LINEUP CHANGES")[0]
+    bench = provider().build_context(LEAGUE_ID).prompt.split("BENCH (in substitution")[1].split("TO DO")[0]
     listed = [line.split()[1] for line in bench.splitlines() if line.startswith("- ")]
     assert listed == ["P2", "P12", "P14", "P15"]
 
@@ -144,11 +145,13 @@ def test_the_prompt_states_the_bank_in_the_games_own_units() -> None:
 
 
 def test_the_constraints_quantify_what_the_best_shape_would_add() -> None:
-    """The eleven as set expects 64.0; a 4-4-2 starting P15 for P7 expects 73.5."""
-    constraints = provider().build_context(LEAGUE_ID).constraints
+    """A 4-4-2 starting P15 for P7 is the best shape, at the total the header shows."""
+    context = provider(fixtures=WITH_CITY).build_context(LEAGUE_ID)
+    lineup = next(stat for stat in context.headline if stat.label == "Lineup")
+    best = lineup.value.split("best ")[1].removesuffix(" pts")
 
-    assert "4-4-2" in constraints
-    assert "9.5" in constraints
+    assert "4-4-2" in context.constraints
+    assert f"expecting {best}" in context.constraints
 
 
 def test_a_chip_played_last_gameweek_is_flagged() -> None:
@@ -282,9 +285,9 @@ def test_points_left_on_the_bench_are_the_figure_that_warns() -> None:
 
 
 def test_an_optimal_eleven_leaves_nothing_on_the_bench_to_report() -> None:
-    from thefrontoffice.adapters.outbound.competitions.premier_league.rules import best_lineup
+    from thefrontoffice.adapters.outbound.competitions.premier_league.rules import best_lineup, effective_points
 
-    best = best_lineup(list(SQUAD_PLAYERS.values()))
+    best = best_lineup(list(SQUAD_PLAYERS.values()), effective_points)
     # Captained, because FPL always is — and the comparison only holds between
     # two elevens that each count a captain twice.
     picks = [
@@ -294,7 +297,7 @@ def test_an_optimal_eleven_leaves_nothing_on_the_bench_to_report() -> None:
     picks += [Pick(element=p.id, position=i, multiplier=0) for i, p in enumerate(best.bench, start=12)]
     squad = Squad(gameweek=4, picks=picks, bank=30, value=1004)
 
-    context = FPLProvider(ENTRY_ID, client=FakeFPL(squad=squad)).build_context(LEAGUE_ID)
+    context = FPLProvider(ENTRY_ID, client=FakeFPL(squad=squad, fixtures=WITH_CITY)).build_context(LEAGUE_ID)
     lineup = next(stat for stat in context.headline if stat.label == "Lineup")
     assert lineup.tone == "neutral"
 
@@ -473,11 +476,15 @@ def test_the_market_excludes_what_you_already_own() -> None:
     assert not (owned & market)
 
 
-def test_the_market_is_ranked_on_the_games_own_projection() -> None:
-    """Which is what a transfer is actually decided on."""
-    values = [float(card.columns["xPts"]) for card in provider().free_agents(H2H_LEAGUE, PlayerQuery()).players]
+def test_the_market_is_ranked_on_worth_not_on_the_games_projection() -> None:
+    """P104 projects lower than P102, but at home to an easy side where P102 is away at a hard one."""
+    players = {**SQUAD_PLAYERS, **MARKET, 104: player(104, "FWD", 7.5, cost=60, team="ARS")}
+    market = provider(players=players).free_agents(H2H_LEAGUE, PlayerQuery()).players
+    worths = [card.values["Worth"] for card in market]
+    order = [card.player_id for card in market]
 
-    assert values == sorted(values, reverse=True)
+    assert worths == sorted(worths, reverse=True)
+    assert order.index("104") < order.index("102")
 
 
 def test_the_market_has_no_lineup_column() -> None:
@@ -709,3 +716,58 @@ def test_no_played_gameweek_is_rebuilt_for_a_backtest() -> None:
     fpl = provider()
     assert fpl.played_weeks(H2H_LEAGUE_ID) == []
     assert fpl.played_matchups(H2H_LEAGUE_ID, 3) == []
+
+
+# ── the to-do list in the prompt ────────────────────────────────────────
+
+
+def test_the_prompt_numbers_the_same_to_do_list_the_page_shows() -> None:
+    fake = provider(fixtures=WITH_CITY)
+    context = fake.build_context(LEAGUE_ID)
+    shown = fake.summary(LEAGUE_ID).actions or []
+
+    assert [task.key for task in context.tasks] == [item.key for item in shown]
+    assert all(f"T{i} " in context.prompt for i in range(1, len(context.tasks) + 1))
+
+
+def test_a_player_a_to_do_item_moves_is_listed_so_a_model_move_does_not_repeat_it() -> None:
+    context = provider(fixtures=WITH_CITY).build_context(LEAGUE_ID)
+
+    assert {"P15", "P7"} <= context.listed
+
+
+def test_every_squad_line_carries_his_worth_beside_fpls_projection() -> None:
+    context = provider(fixtures=WITH_CITY).build_context(LEAGUE_ID)
+
+    assert "worth 9.9" in context.roster_lines["P15"]  # 9.0 at home to a difficulty-2 side
+    assert "FPL xPts 9.0" in context.roster_lines["P15"]
+
+
+def test_the_header_names_the_captain_at_double_his_worth_with_his_vice() -> None:
+    assert _headline(provider(fixtures=WITH_CITY))["Captain"] == "P15 19.8 · vice P8"
+
+
+def test_a_search_puts_the_player_worth_more_first_however_few_own_him() -> None:
+    catalog = {
+        **SQUAD_PLAYERS,
+        200: replace(player(200, "DEF", 2.0, team="ARS"), name="Saliba", full_name="William Saliba", selected_by=30.0),
+        201: replace(player(201, "DEF", 6.0, team="LIV"), name="Salia", full_name="Vakhtang Salía", selected_by=0.1),
+    }
+
+    found = provider(players=catalog).search_players(H2H_LEAGUE_ID, "sali")
+
+    assert [r.player_id for r in found] == ["201", "200"]
+
+
+def test_a_tie_still_to_come_is_simulated_around_each_players_worth() -> None:
+    """GW4 is over, so the tie is GW5's: P8's range keeps its spread and moves to his worth a match."""
+    from thefrontoffice.adapters.outbound.competitions.premier_league import worth
+
+    fake = FakeFPL(finished=4, live={}, games={8: [game(3, 4), game(4, 12)]})
+    found = FPLProvider(ENTRY_ID, client=fake).matchup_input(H2H_LEAGUE_ID)
+    reading = worth.gather(fake, fake.upcoming_gameweek()).of(fake.get_players()[8])
+
+    assert found is not None and reading is not None and reading.per_match is not None
+    captain = next(o for o in found.mine if o.player_id == "8")
+    assert sum(captain.samples) / len(captain.samples) == pytest.approx(reading.per_match, abs=0.01)
+    assert captain.samples[1] == pytest.approx(3 * captain.samples[0], abs=0.05)  # 12 against 4, as he scored them

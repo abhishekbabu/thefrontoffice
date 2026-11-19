@@ -174,9 +174,26 @@ week goes to whoever wins more categories, level a tie. "High Score" leagues (on
 each player's best game scores) get no chance, and the wire is not priced.
 
 FPL's week is the gameweek being played until its last match ends ("final"),
-then the next one: your last picks at FPL's projection for it, against its
-deadline. Its swaps reach the best legal eleven's total, the armband included,
-pairing a keeper only with a keeper. Free transfers follow the game's rules: one
+then the next one: your last picks at each player's worth for it, against its
+deadline. A player's worth for a gameweek is, per match: his points per match
+over the last 5 finished gameweeks (a match he missed counts as nought, settled
+with 5 matches of his season average) beside an outlook, each ×1.1 to ×0.8 by
+fixture difficulty 2 to 5, plus a quarter from his underlying numbers (xG and xA
+at his position's rates, clean-sheet odds by difficulty, saves, bonus, the
+defensive-contribution points he has been earning). The outlook is FPL's
+`ep_next` where it differs from its form figure, else the underlying numbers
+(this season `ep_next` repeats form). Matches sum, so a double counts both and
+a blank is 0, × his chance of playing, ±10% for steady or rotated minutes
+(60+ every match, or a 45-minute swing). One live feed per gameweek covers every
+player, so form costs 5 cached requests. The eleven, the armband (never a player
+under 75%; a vice beside him), the market's sort and its Worth column all use
+it. Transfers use it summed over 4 gameweeks, a doubt recovering by half each
+week. The to-do list: a bench player over a starter (+0.5, or any gain where the
+starter is under 75% or blanks), the armband (+0.5), the first sub moved down
+when he won't play, up to 3 transfers within the bank and free transfers (+1.5
+over the 4, at most one −4 hit, only for a player in the best eleven and clearing
+the hit by 2), and a chip within 3 gameweeks of expiring, naming a double or
+blank for your clubs where the chip suits one. Free transfers follow the game's rules: one
 from GW2, one more a gameweek up to five, none spent or earned in a Wildcard or
 Free Hit week. Chips count per half (GW1/2-19, GW20-38), with the GW19 deadline
 named while a first-half chip is unplayed. The scout prices a transfer at the
@@ -195,7 +212,7 @@ the news under the day it was set. Defensive contribution (2025/26 scoring: 10
 CBIT for a defender, 12 CBIRT further forward) shows per 90 and in how many of
 his matches reached it. The market shows this gameweek's price move, net
 transfers and FPL's own price-change progress ("rise likely tonight" once its
-overnight projection passes 100%). Any player is found by name, most owned first.
+overnight projection passes 100%). Any player is found by name, most worth first, then most owned.
 
 A head-to-head FPL league's matchup header carries a win chance (10,000
 gameweeks): each player's points from every match he played in the last 8
@@ -203,7 +220,8 @@ gameweeks, drawn once per match his club has left (twice in a double, none in a
 blank), played with FPL's chance of playing or else how often he has played
 lately; the captain counts twice on the same draw. Auto-subs are approximated: a
 bench player counts with the chance enough starters ahead of him miss out, keeper
-for keeper. A gameweek to come uses the last published picks. Classic leagues get
+for keeper. A gameweek to come uses the last published picks, with each player's
+matches scaled so their mean is his worth a match he plays. Classic leagues get
 no chance.
 
 | | |

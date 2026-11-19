@@ -427,6 +427,13 @@ class LiveStat:
 
     points: int
     minutes: int
+    matches: int = 0
+    """His club's matches that gameweek: two in a double, none in a blank, whether he played or not."""
+
+    bonus: int = 0
+    defending: int = 0
+    """Points from defensive contributions: the 2025/26 award for enough clearances, blocks,
+    interceptions and tackles (and recoveries, beyond defenders) in a match."""
 
     @property
     def has_played(self) -> bool:

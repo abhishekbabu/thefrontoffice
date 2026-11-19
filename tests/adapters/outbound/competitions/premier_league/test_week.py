@@ -10,11 +10,13 @@ from support.fpl import (
     LEAGUE_ID,
     MARKET,
     SQUAD_PLAYERS,
+    WITH_CITY,
     FakeFPL,
     provider,
 )
 from support.summary import mine
 
+from thefrontoffice.adapters.outbound.competitions.premier_league import worth
 from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
@@ -36,9 +38,9 @@ H2H_LEAGUE = "950"
 
 
 def test_an_optimal_eleven_produces_no_change_recommendations() -> None:
-    from thefrontoffice.adapters.outbound.competitions.premier_league.rules import best_lineup
+    from thefrontoffice.adapters.outbound.competitions.premier_league.rules import best_lineup, effective_points
 
-    best = best_lineup(list(SQUAD_PLAYERS.values()))
+    best = best_lineup(list(SQUAD_PLAYERS.values()), effective_points)
     optimal = [Pick(element=p.id, position=i, multiplier=1) for i, p in enumerate(best.starters, start=1)]
     optimal += [Pick(element=p.id, position=i, multiplier=0) for i, p in enumerate(best.bench, start=12)]
     squad = Squad(gameweek=4, picks=optimal, bank=30, value=1004)
@@ -60,20 +62,21 @@ def test_the_summary_warns_on_a_doubtful_starter() -> None:
     assert spots["3"].tone == "warning"
 
 
-def test_the_summary_offers_the_swap_the_best_eleven_implies() -> None:
-    """P15 is the strongest forward and starts on the bench behind P7."""
-    swaps = provider().summary(LEAGUE_ID).swaps
+def test_the_summary_lists_the_swap_and_the_armband_the_best_eleven_implies() -> None:
+    """P15 is the strongest forward and starts on the bench behind P7; the to-do list carries both moves."""
+    summary = provider(fixtures=WITH_CITY).summary(LEAGUE_ID)
+    lineup = [(a.player_id, a.replaces) for a in summary.actions or [] if a.kind == "lineup"]
 
-    assert [(swap.start, swap.out) for swap in swaps] == [("P15", "P7"), ("Captain P15", "P8")]
+    assert lineup == [("15", "7"), ("15", "")]
+    assert summary.swaps == []
 
 
-def test_the_swaps_add_up_to_the_gap_the_header_shows() -> None:
-    """The eleven as set expects 64.0 and the best 73.5 — P15 for P7 (+8.5), the armband from P8 to P15 (+1.0)."""
-    summary = provider().summary(LEAGUE_ID)
-    gained = sum(float(swap.gain.removesuffix(" xPts")) for swap in summary.swaps)
+def test_the_header_compares_the_eleven_as_set_with_the_best_at_their_worth() -> None:
+    """Every ARS and MCI player is at home to a difficulty-2 side: a tenth over his projection.
+    The eleven as set expects 64.0 of projection and the best 73.5, each counting its captain twice."""
+    summary = provider(fixtures=WITH_CITY).summary(LEAGUE_ID)
 
-    assert _stats(summary)["Lineup"] == "64.0 · best 73.5 xPts"
-    assert round(gained, 1) == 9.5
+    assert _stats(summary)["Lineup"] == f"{64.0 * 1.1:.1f} · best {round(73.5 * 1.1, 2):.1f} pts"
 
 
 def test_the_summary_reports_a_blank_gameweek_on_the_player_not_just_the_club() -> None:
@@ -443,11 +446,14 @@ def test_once_the_gameweek_is_over_the_week_view_is_the_next_one() -> None:
 def test_the_next_gameweek_shows_the_squad_as_last_picked_at_its_projection() -> None:
     # ep_this is still GW4's; ep_next is the one for GW5.
     catalog = {pid: replace(p, expected_this=0.0) for pid, p in {**SQUAD_PLAYERS, **MARKET}.items()}
-    summary = provider(finished=4, live=FINISHED_LIVE, players=catalog).summary(H2H_LEAGUE)
+    fake = FakeFPL(finished=4, live=FINISHED_LIVE, players=catalog)
+    summary = FPLProvider(ENTRY_ID, client=fake).summary(H2H_LEAGUE)
+    value = worth.gather(fake, fake.upcoming_gameweek())
+    expected = sum(value(catalog[pick.element]) * pick.multiplier for pick in fake.squad.picks)
 
     assert mine(summary).detail == "GW4 picks"
     assert all(spot.scoring == "projected" for spot in mine(summary).lineup)
-    assert mine(summary).points == "64.0 proj"  # ep_next, the captain doubled
+    assert mine(summary).points == f"{expected:.1f} proj"  # each at his worth for GW5, the captain doubled
     assert summary.opponent is not None and summary.opponent.points.endswith(" proj")
 
 
@@ -502,3 +508,24 @@ def test_a_played_gameweek_without_its_history_reads_no_points_rather_than_nough
 
 def test_a_season_with_no_chips_issued_shows_no_chips() -> None:
     assert provider(chips=[]).summary(H2H_LEAGUE).boosts is None
+
+
+def test_the_week_carries_a_to_do_list_even_when_there_is_nothing_to_do() -> None:
+    """An empty list is an answer — nothing to do — where None would say nothing was computed."""
+    from thefrontoffice.adapters.outbound.competitions.premier_league.rules import best_lineup, effective_points
+
+    best = best_lineup(list(SQUAD_PLAYERS.values()), effective_points)
+    picks = [
+        Pick(
+            element=p.id,
+            position=i,
+            multiplier=2 if p is best.captain else 1,
+            is_captain=p is best.captain,
+            is_vice_captain=p is best.vice,
+        )
+        for i, p in enumerate(best.starters, start=1)
+    ]
+    picks += [Pick(element=p.id, position=i, multiplier=0) for i, p in enumerate(best.bench, start=12)]
+    squad = Squad(gameweek=4, picks=picks, bank=0, value=1004)
+
+    assert provider(squad=squad, fixtures=WITH_CITY, chips=[]).summary(LEAGUE_ID).actions == []
