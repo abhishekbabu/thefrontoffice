@@ -29,7 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Busy, QueryState } from "@/components/ui/state";
 import { StatGrid, StatList, StatStrip } from "@/components/ui/stat";
-import { LineupCard, SideCard, Swaps, underWay } from "@/components/ui/lineup";
+import { LineupCard, SideCard, underWay } from "@/components/ui/lineup";
 import { useDrawers } from "@/components/ui/drawers";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
@@ -274,18 +274,8 @@ export function ScoutPanel({
                 bench={shown.data.mine?.bench ?? []}
                 reserve={shown.data.mine?.reserve ?? []}
                 openSpots={shown.data.mine?.open_spots ?? 0}
-                swaps={shown.data.swaps}
                 onOpen={openPlayer}
               />
-            )}
-
-            {/* Shown beside the lineups when there is an opponent, since the
-              swaps then have no card of their own to live in. A competition
-              with a to-do list sends none: they are items on it. */}
-            {shown.data.opponent && shown.data.swaps.length > 0 && (
-              <Card>
-                <Swaps swaps={shown.data.swaps} />
-              </Card>
             )}
           </div>
 

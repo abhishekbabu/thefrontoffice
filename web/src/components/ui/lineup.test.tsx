@@ -10,7 +10,7 @@ function spot(player: string, mark = ""): Spot {
 describe("LineupCard", () => {
   it("shows an armband as a chip beside the name, not inside it", async () => {
     const { container } = await render(
-      <LineupCard title="You" lineup={[spot("Haaland", "C"), spot("Isak", "VC"), spot("Rice")]} bench={[]} swaps={[]} />,
+      <LineupCard title="You" lineup={[spot("Haaland", "C"), spot("Isak", "VC"), spot("Rice")]} bench={[]} />,
     );
 
     const names = [...container.querySelectorAll("span.truncate")].map((name) => name.textContent);
@@ -53,7 +53,7 @@ describe("open roster spots", () => {
   });
 
   it("shows the room even when nobody sits on the bench", async () => {
-    const { container } = await render(<LineupCard title="You" lineup={[spot("Starter")]} bench={[]} openSpots={1} swaps={[]} />);
+    const { container } = await render(<LineupCard title="You" lineup={[spot("Starter")]} bench={[]} openSpots={1} />);
 
     expect(container.textContent).toContain("Open roster spot");
     expect(container.textContent).not.toContain("Nobody on the bench.");

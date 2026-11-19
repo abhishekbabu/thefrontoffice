@@ -2228,8 +2228,6 @@ export interface components {
             headline: components["schemas"]["Stat"][];
             mine: components["schemas"]["Side"] | null;
             opponent: components["schemas"]["Side"] | null;
-            /** Swaps */
-            swaps: components["schemas"]["Swap"][];
             /** Actions */
             actions: components["schemas"]["Action"][] | null;
             /** Fixtures */
@@ -2249,22 +2247,6 @@ export interface components {
             categories: components["schemas"]["CategoryLine"][];
             /** @description Where this week sits in the season, for paging to another. None in a competition that shows only the week being played. */
             weeks: components["schemas"]["WeekRange"] | null;
-        };
-        /**
-         * Swap
-         * @description A change the numbers already imply, before anyone has judged them.
-         */
-        Swap: {
-            /** Start */
-            start: string;
-            /**
-             * Out
-             * @description Who comes out. Empty when a place was unfilled.
-             * @default
-             */
-            out: string;
-            /** Gain */
-            gain: string;
         };
         /**
          * TaskVerdict

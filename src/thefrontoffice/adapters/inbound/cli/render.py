@@ -82,11 +82,6 @@ def render_week(summary: Summary) -> str:
     if summary.opponent is not None:
         sides = (("You", summary.mine), ("Opponent", summary.opponent))
         parts[:0] = [f"{_INDENT}{label}: {_side(side)}" for label, side in sides if side is not None]
-    if summary.swaps:
-        parts.extend(["", f"{_INDENT}CHANGES THE PROJECTIONS IMPLY"])
-        parts.extend(
-            f"{_INDENT}   {swap.start} for {swap.out or 'an empty place'} ({swap.gain})" for swap in summary.swaps
-        )
     if summary.actions is None:
         return "\n".join(parts)
     shown = [action for action in summary.actions if not action.mark.hidden]

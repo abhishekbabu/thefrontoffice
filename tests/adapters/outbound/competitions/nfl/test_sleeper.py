@@ -960,11 +960,6 @@ def _one_out() -> FakeSleeper:
     return client
 
 
-def test_the_swaps_ride_on_the_to_do_list_alone() -> None:
-    """The list carries each swap as an item; a second copy beside it would say every one twice."""
-    assert nfl_provider(_one_out()).summary("L1").swaps == []
-
-
 def test_a_free_agent_is_priced_against_the_lineup_the_bench_would_already_make() -> None:
     """Against the lineup as set, he would be credited with filling a slot the bench fills anyway."""
     matchup = nfl_provider(_one_out()).matchup_input("L1", candidates=["rb9"])

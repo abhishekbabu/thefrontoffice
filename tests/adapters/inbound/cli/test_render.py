@@ -3,7 +3,7 @@
 from support.reports import MOCK_NBA_REPORT, MOCK_NBA_VERDICT
 
 from thefrontoffice.adapters.inbound.cli.render import render_scout_report, render_trade_verdict, render_week
-from thefrontoffice.domain.models import Move, ScoutReport, Side, Summary, Swap
+from thefrontoffice.domain.models import Move, ScoutReport, Side, Summary
 
 
 def _rec(**overrides: object) -> Move:
@@ -80,15 +80,6 @@ def test_empty_category_lists_render_as_a_dash() -> None:
     out = render_trade_verdict(v)
     lists = [line.split(":", 1)[1].strip() for line in out.splitlines() if line.strip().startswith(("Gained", "Lost"))]
     assert lists == ["—", "—"]
-
-
-def test_the_week_shows_the_changes_the_projections_imply_as_the_page_does() -> None:
-    """A competition with no to-do list sends its swaps to be shown; the terminal dropped them."""
-    out = render_week(
-        Summary(swaps=[Swap(start="Saka", out="Foden", gain="+2.1 xPts"), Swap(start="Isak", gain="+4.0")])
-    )
-
-    assert all(name in out for name in ("Saka", "Foden", "+2.1 xPts", "Isak"))
 
 
 def test_a_head_to_head_week_names_both_teams_and_their_points() -> None:
