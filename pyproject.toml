@@ -120,6 +120,8 @@ exclude_lines = [
     "raise NotImplementedError",
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
+    # A Protocol member's body: a type, never run.
+    "^\\s*\\.\\.\\.$",
 ]
 skip_empty = true
 show_missing = true
