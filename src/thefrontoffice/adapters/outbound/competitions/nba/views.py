@@ -430,8 +430,14 @@ def _projected(projected: ProjectedTotals, weights: Mapping[str, float] | None) 
         title="Projected line",
         note=f"{projected.games} game{'' if projected.games == 1 else 's'}",
         stats=[
-            *([Stat(label=FANTASY_POINTS, value=f"{points:.1f}")] if points is not None else []),
-            *(Stat(label=c.label, value=_figure(c, figures[c.label])) for c in CATEGORIES if c.label in figures),
+            *([Stat(label=FANTASY_POINTS, value=f"{points:.1f}", better="higher")] if points is not None else []),
+            # Each category says which way it improves, so a comparison can mark the better
+            # projection: the fewer turnovers, the more of everything else.
+            *(
+                Stat(label=c.label, value=_figure(c, figures[c.label]), better=c.better)
+                for c in CATEGORIES
+                if c.label in figures
+            ),
         ],
     )
 
