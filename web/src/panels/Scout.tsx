@@ -30,7 +30,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Busy, QueryState } from "@/components/ui/state";
 import { StatGrid, StatList, StatStrip } from "@/components/ui/stat";
 import { LineupCard, SideCard, Swaps, underWay } from "@/components/ui/lineup";
-import { usePlayerDrawer } from "@/components/ui/player";
+import { useDrawers } from "@/components/ui/drawers";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
 import {
@@ -41,6 +41,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Table, Td, Th } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { traded, type Comparing } from "@/components/ui/compare";
 
 /**
  * Judge again on arrival where the server says the week has moved on from the
@@ -85,7 +86,7 @@ export function ScoutPanel({
   competition: Competition;
   league: League;
 }) {
-  const { openPlayer, drawer } = usePlayerDrawer(competition, league);
+  const { openPlayer, openComparison, drawer } = useDrawers(competition, league);
 
   const ai = useCapabilities().data?.ai ?? false;
   const leagueApi = api.league(competition.key, league.league_id);
@@ -201,12 +202,13 @@ export function ScoutPanel({
                 actions={shown.data.actions}
                 suggested={report?.moves}
                 onOpen={openPlayer}
+                onCompare={openComparison}
                 onDecide={(decision) => decide.mutate(decision)}
                 deciding={decide.isPending}
                 detail={(action) =>
                   action.kind === "trade" &&
                   offers(competition, "trades") && (
-                    <BestTrade competition={competition} league={league} />
+                    <BestTrade competition={competition} league={league} onCompare={openComparison} />
                   )
                 }
                 footer={
@@ -337,24 +339,32 @@ export function ScoutPanel({
 export function BestTrade({
   competition,
   league,
+  onCompare,
 }: {
   competition: Competition;
   league: League;
+  /** Opens the trade's two sides side by side, as a row on the Trades page does. */
+  onCompare?: (comparing: Comparing) => void;
 }) {
   const trades = useQuery<Trades, Error>({
     queryKey: keys.trades(competition.key, league.league_id),
     queryFn: api.league(competition.key, league.league_id).trades,
   });
   const best = trades.data?.ideas[0];
+  const said = best && `Best: give ${best.giving.join(" and ")} for ${best.receiving.join(", ")} with ${best.team}`;
+  const open = best && onCompare ? traded(best, onCompare) : undefined;
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
       {trades.isLoading && <Busy>finding trades…</Busy>}
       {best && trades.data && (
         <>
-          <span>
-            Best: give {best.giving.join(" and ")} for{" "}
-            {best.receiving.join(", ")} with {best.team}
-          </span>
+          {open ? (
+            <button type="button" onClick={open} className="text-left underline-offset-2 hover:underline">
+              {said}
+            </button>
+          ) : (
+            <span>{said}</span>
+          )}
           <Badge variant="ok" appearance="pill" className="tabular-nums">
             {gain(best, trades.data.ranked_by, trades.data.measure)}
           </Badge>

@@ -315,6 +315,8 @@ class _Search:
             team_id=partner,
             giving=tuple(self._label(pid) for pid in give),
             receiving=(self._label(get),),
+            giving_ids=tuple(give),
+            receiving_ids=(get,),
             points=gain[0],
             their_points=theirs,
             playoff_points=gain[1] if self.playoffs else None,

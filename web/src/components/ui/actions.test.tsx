@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Action, MovePlayer, TaskVerdict } from "@/lib/api";
-import { ActionList, Compared, staleVerdicts } from "@/components/ui/actions";
+import { ActionList, Compared, opener, staleVerdicts } from "@/components/ui/actions";
 import { render, settle } from "@/test/render";
 
 function action(key: string, verdict: TaskVerdict | null = null, stale = false): Action {
@@ -169,5 +169,44 @@ describe("players compared", () => {
     const explained = [...container.querySelectorAll("[aria-label]")].map((el) => el.getAttribute("aria-label"));
     expect(explained).toEqual(["Value/g: A game's worth across the categories."]);
     expect(container.textContent).toContain("Weak inFG% .380FG% .380");
+  });
+});
+
+describe("what an item opens", () => {
+  const dike = player("in", "Chimere Dike", "free agent", ["66%", "9.88", "vs DAL"]);
+  const williams = player("out", "Antonio Williams", "bench", ["40%", "8.20", "vs KC"]);
+
+  it("opens the players a move weighs side by side, each said to be coming in or going out", () => {
+    const onOpen = vi.fn();
+    const onCompare = vi.fn();
+    const swap: Action = { ...action("dike"), player_id: dike.player_id, players: [dike, williams] };
+
+    opener(swap, onOpen, onCompare)!();
+
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onCompare).toHaveBeenCalledWith({
+      ids: ["Chimere Dike", "Antonio Williams"],
+      title: "Pick up dike",
+      tags: { "Chimere Dike": "In", "Antonio Williams": "Out" },
+    });
+  });
+
+  it("opens the one player an item is about, and nothing where it is about nobody", () => {
+    const onOpen = vi.fn();
+    const single: Action = { ...action("lions"), player_id: "DET", players: [] };
+
+    opener(single, onOpen, vi.fn())!();
+
+    expect(onOpen).toHaveBeenCalledWith("DET");
+    expect(opener(action("trade"), onOpen, vi.fn())).toBeUndefined();
+  });
+
+  it("falls back to the one player where the page cannot compare", () => {
+    const onOpen = vi.fn();
+    const swap: Action = { ...action("dike"), player_id: dike.player_id, players: [dike, williams] };
+
+    opener(swap, onOpen)!();
+
+    expect(onOpen).toHaveBeenCalledWith("Chimere Dike");
   });
 });

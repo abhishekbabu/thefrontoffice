@@ -1,9 +1,7 @@
 import { GitCompareArrows } from "lucide-react";
 import { Meta } from "@/components/ui/label";
-import { useNavigate } from "react-router-dom";
 import type { ActivityRow } from "@/lib/api";
-import { MAX_COMPARED, useCompared } from "@/lib/compare";
-import { href } from "@/lib/route";
+import { MAX_COMPARED } from "@/lib/compare";
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { ListCard, ListRow } from "@/components/ui/list";
@@ -35,23 +33,20 @@ export function MoveRow({ move, onOpen }: { move: ActivityRow; onOpen?: (move: A
  */
 export function MoveDrawer({
   move,
-  competition,
-  league,
   back,
   onClose,
   onOpenPlayer,
+  onCompare,
 }: {
   move: ActivityRow | null;
-  competition: string;
-  league: string;
   /** The drawer this one replaced, where there was one. */
   back?: Back;
   onClose: () => void;
   /** Swap to a player; the caller makes this move what his drawer goes back to. */
   onOpenPlayer: (id: string) => void;
+  /** Swap to a comparison of its players, which the caller likewise makes come back here. */
+  onCompare: (ids: string[]) => void;
 }) {
-  const compared = useCompared(competition, league);
-  const navigate = useNavigate();
   return (
     <SlideOver
       open={move !== null}
@@ -65,11 +60,7 @@ export function MoveDrawer({
           back={back}
           onClose={onClose}
           onOpen={onOpenPlayer}
-          onCompare={() => {
-            compared.set(move.moves.map((m) => m.player_id).filter(Boolean));
-            onClose();
-            navigate(href(competition, league, "compare"));
-          }}
+          onCompare={() => onCompare([...new Set(move.moves.map((m) => m.player_id).filter(Boolean))])}
         />
       )}
     </SlideOver>

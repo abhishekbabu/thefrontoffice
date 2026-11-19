@@ -2336,6 +2336,16 @@ export interface components {
             /** Receiving */
             receiving: string[];
             /**
+             * Giving Ids
+             * @description Who you give, by player id, in the order of `giving`: to open them.
+             */
+            giving_ids: string[];
+            /**
+             * Receiving Ids
+             * @description Who you get, by player id, in the order of `receiving`.
+             */
+            receiving_ids: string[];
+            /**
              * Playoffs
              * @description Your chance of a playoff place with the trade made.
              */

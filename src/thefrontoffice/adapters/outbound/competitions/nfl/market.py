@@ -171,6 +171,8 @@ def _with(
                     team_id=str(theirs.roster_id),
                     giving=tuple(_label(pid, state) for pid in give),
                     receiving=(_label(get, state),),
+                    giving_ids=tuple(give),
+                    receiving_ids=(get,),
                     points=per_week(mine_after, weeks.regular) - my_regular,
                     their_points=per_week(theirs_after, weeks.every) - their_now,
                     playoff_points=per_week(mine_after, weeks.playoffs) - my_playoffs if weeks.playoffs else None,

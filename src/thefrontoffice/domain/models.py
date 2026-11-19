@@ -1223,6 +1223,9 @@ class TradeOption:
     fixtures: tuple[Fixture, ...] = ()
     """Both teams' fixtures in each week the trade changes, replacing theirs in the season, where a
     week is decided on `Fixture.chances` rather than on scores."""
+    giving_ids: tuple[str, ...] = ()
+    receiving_ids: tuple[str, ...] = ()
+    """The same players by id, in the same order, for opening them."""
 
 
 TradeMeasure = Literal["points", "categories"]
@@ -1255,6 +1258,12 @@ class TradeIdea(BaseModel):
     team: str = Field(description="The manager to offer it to.")
     giving: list[str]
     receiving: list[str]
+    giving_ids: list[str] = Field(
+        default_factory=list, description="Who you give, by player id, in the order of `giving`: to open them."
+    )
+    receiving_ids: list[str] = Field(
+        default_factory=list, description="Who you get, by player id, in the order of `receiving`."
+    )
     playoffs: float = Field(description="Your chance of a playoff place with the trade made.")
     playoffs_change: float = Field(description="That chance less your chance without it.")
     their_playoffs_change: float = Field(description="The same for the other side: what you would hand a rival.")

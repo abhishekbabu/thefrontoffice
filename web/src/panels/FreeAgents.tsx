@@ -9,7 +9,7 @@ import type { SortState } from "@/components/ui/data-table";
 import { Busy, QueryState } from "@/components/ui/state";
 import { ToggleChip, ToggleGroup } from "@/components/ui/toggle";
 import { Tabs } from "@/components/ui/tabs";
-import { usePlayerDrawer } from "@/components/ui/player";
+import { useDrawers } from "@/components/ui/drawers";
 import { SearchInput } from "@/components/ui/input";
 import { Meta } from "@/components/ui/label";
 import { Verdict } from "@/components/ui/verdict";
@@ -54,7 +54,7 @@ export function withCalls(kept: PlayerCall[], made: PlayerCall[]): PlayerCall[] 
  * column header appears to ask.
  */
 export function FreeAgentsPanel({ competition, league }: { competition: Competition; league: League }) {
-  const { openPlayer, drawer } = usePlayerDrawer(competition, league);
+  const { openPlayer, drawer } = useDrawers(competition, league);
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState("");
   const [sort, setSort] = useState<SortState | null>(null);

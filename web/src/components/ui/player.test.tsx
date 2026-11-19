@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Capabilities, Competition, League, PlayerDetail } from "@/lib/api";
 import { keys } from "@/lib/queries";
-import { usePlayerDrawer } from "@/components/ui/player";
+import { useDrawers } from "@/components/ui/drawers";
 import { offlineClient, press, render, settle } from "@/test/render";
 import { playerDetail } from "@/test/players";
 
@@ -18,7 +18,7 @@ const ALLEN: PlayerDetail = playerDetail({
 });
 
 function Roster() {
-  const { openPlayer, drawer } = usePlayerDrawer(NFL, LEAGUE);
+  const { openPlayer, drawer } = useDrawers(NFL, LEAGUE);
   return (
     <>
       <button type="button" onClick={() => openPlayer(ALLEN.player_id)}>

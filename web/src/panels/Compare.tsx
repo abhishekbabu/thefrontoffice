@@ -1,19 +1,17 @@
 import { useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Plus, Star, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
 import { api, type CaptureStatus, type Competition, type League, type PlayerComparison, type PlayerRef } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { Card, CardHeader } from "@/components/ui/card";
-import { IconButton } from "@/components/ui/icon-button";
 import { SearchInput } from "@/components/ui/input";
-import { LABEL, Meta } from "@/components/ui/label";
+import { Meta } from "@/components/ui/label";
 import { ListRow } from "@/components/ui/list";
 import { Empty, QueryState } from "@/components/ui/state";
-import { Table, Td, Th } from "@/components/ui/table";
 import { LeagueHeader } from "@/components/ui/page-header";
-import { Chips, Portrait, usePlayerDrawer } from "@/components/ui/player";
-import { cn } from "@/lib/utils";
+import { useDrawers } from "@/components/ui/drawers";
+import { ComparisonGrid, useComparison } from "@/components/ui/compare";
 
 /**
  * Up to four players side by side.
@@ -22,16 +20,10 @@ import { cn } from "@/lib/utils";
  * name here where the competition can find players by name.
  */
 export function ComparePanel({ competition, league }: { competition: Competition; league: League }) {
-  const { openPlayer, drawer } = usePlayerDrawer(competition, league);
+  const { openPlayer, drawer } = useDrawers(competition, league);
   const compared = useCompared(competition.key, league.league_id);
-  const leagueApi = api.league(competition.key, league.league_id);
 
-  const comparison = useQuery<PlayerComparison, Error>({
-    queryKey: keys.compare(competition.key, league.league_id, compared.ids),
-    queryFn: () => leagueApi.compare(compared.ids),
-    enabled: compared.ids.length > 0,
-    placeholderData: keepPreviousData,
-  });
+  const comparison = useComparison(competition.key, league.league_id, compared.ids);
 
   return (
     <>
@@ -59,6 +51,7 @@ export function ComparePanel({ competition, league }: { competition: Competition
   );
 }
 
+/** The grid in a card, a column a player, each removable from the list. */
 function Grid({
   comparison,
   onOpen,
@@ -68,88 +61,16 @@ function Grid({
   onOpen: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
-  const { players, tables } = comparison;
   return (
-    <Card>
+    <Card className="overflow-x-auto">
       <CardHeader>
         <span>Compare</span>
         <span>
-          {players.length} of {MAX_COMPARED}
+          {comparison.players.length} of {MAX_COMPARED}
         </span>
       </CardHeader>
-      <Table>
-        <thead>
-          <tr>
-            <Th />
-            {players.map((p) => (
-              <Th key={p.player_id} className="min-w-40 normal-case tracking-normal">
-                <div className="flex items-start justify-between gap-2">
-                  <Portrait src={p.image_url} className="size-14" />
-                  <button type="button" onClick={() => onOpen(p.player_id)} className="min-w-0 flex-1 text-left">
-                    <div className="truncate font-sans text-[13.5px] font-semibold text-foreground">{p.name}</div>
-                    <Meta as="div" className="font-normal">
-                      {[p.position, p.team].filter(Boolean).join(" · ")}
-                    </Meta>
-                    {p.headline && (
-                      <div className="mt-1 font-mono text-[15px] font-semibold text-foreground tabular-nums">
-                        {p.headline}
-                      </div>
-                    )}
-                  </button>
-                  <IconButton label={`Remove ${p.name}`} icon={<X />} onClick={() => onRemove(p.player_id)} />
-                </div>
-                <Chips detail={p} className="mt-1" />
-              </Th>
-            ))}
-          </tr>
-        </thead>
-        {tables.map((table) => (
-          <tbody key={table.title}>
-            {/* The heading once, over its rows, rather than as a prefix on every label. */}
-            <tr>
-              <th
-                scope="colgroup"
-                colSpan={players.length + 1}
-                className={cn(LABEL, "border-b border-border bg-muted px-4 py-1.5 text-left")}
-              >
-                {table.title}
-              </th>
-            </tr>
-            {table.rows.map((row) => (
-              <tr key={row.label}>
-                <Td className="whitespace-nowrap text-muted-foreground">{row.label}</Td>
-                {row.values.map((value, i) => (
-                  <Cell key={`${row.label}-${i}`} value={value} absent={value === table.absent} best={row.best.includes(i)} />
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        ))}
-      </Table>
+      <ComparisonGrid comparison={comparison} onOpen={onOpen} onRemove={onRemove} />
     </Card>
-  );
-}
-
-/** One figure; the best of its row is set heavier, in the good color, and starred, so it reads without color too. */
-function Cell({ value, absent, best }: { value: string; absent: boolean; best: boolean }) {
-  return (
-    <Td
-      className={cn(
-        "font-mono text-[12.5px]",
-        absent && "text-muted-foreground/50",
-        best && "font-semibold text-ok",
-      )}
-    >
-      <span className="inline-flex items-center gap-1">
-        {value}
-        {best && (
-          <>
-            <Star className="size-3 fill-current" aria-hidden />
-            <span className="sr-only">best</span>
-          </>
-        )}
-      </span>
-    </Td>
   );
 }
 

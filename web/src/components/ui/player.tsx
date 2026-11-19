@@ -9,7 +9,7 @@ import { ExternalLink } from "@/components/ui/external-link";
 import { Empty, QueryState } from "@/components/ui/state";
 import { BackLink, SlideOver, type Back } from "@/components/ui/dialog";
 import { useShown } from "@/lib/screen";
-import { api, type Competition, type League, type ActivityRow, type PlayerDetail, type Stat, type StatTable } from "@/lib/api";
+import { api, type ActivityRow, type PlayerDetail, type Stat, type StatTable } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { toneText } from "@/lib/tone";
@@ -229,13 +229,14 @@ export function Portrait({ src, className }: { src: string; className?: string }
  * are already looking at, and closing it should put you back exactly there.
  * `playerId` of null is the closed state.
  */
-function PlayerPanel({
+export function PlayerPanel({
   competition,
   league,
   playerId,
   back,
   onClose,
   onPick,
+  onCompare,
 }: {
   competition: string;
   league: string;
@@ -244,6 +245,8 @@ function PlayerPanel({
   onClose: () => void;
   /** Open another player in this drawer: one picked from a move on his history. */
   onPick: (id: string, back?: Back) => void;
+  /** Compare the players of a move on his history, in a drawer of their own. */
+  onCompare: (ids: string[], back: Back) => void;
 }) {
   // Held so the panel still has someone to show on the way out. Reading
   // `playerId` directly would blank the contents for the length of the slide.
@@ -430,8 +433,6 @@ function PlayerPanel({
     </SlideOver>
     <MoveDrawer
       move={move}
-      competition={competition}
-      league={league}
       back={player.data ? { label: player.data.name, onBack: () => setMove(null) } : undefined}
       onClose={() => {
         setMove(null);
@@ -442,44 +443,12 @@ function PlayerPanel({
         setMove(null);
         onPick(id, backTo(from, () => setMove(from)));
       }}
+      onCompare={(ids) => {
+        const from = move!;
+        setMove(null);
+        onCompare(ids, backTo(from, () => setMove(from)));
+      }}
     />
     </>
   );
-}
-
-/**
- * The drawer, and the one piece of state that opens it.
- *
- * Every table in the app opens a player, and each panel was wiring the same
- * three things by hand: a nullable id, the callback that sets it, and a
- * `<PlayerPanel>` whose four props were identical everywhere. Forgetting the
- * `onClose` half leaves a drawer that opens and never shuts, which is exactly
- * the kind of mistake a repeated block invites.
- *
- * Returns the opener to hand to a table's `onOpen`, and the drawer to render.
- */
-export function usePlayerDrawer(competition: Competition, league: League) {
-  const [open, setOpen] = useState<{ id: string; back?: Back } | null>(null);
-  return {
-    /** Open a player; `back` is the drawer he replaced, which his own offers to return to. */
-    openPlayer: (id: string, back?: Back) => setOpen({ id, back }),
-    drawer: (
-      <PlayerPanel
-        competition={competition.key}
-        league={league.league_id}
-        playerId={open?.id ?? null}
-        back={
-          open?.back && {
-            label: open.back.label,
-            onBack: () => {
-              setOpen(null);
-              open.back!.onBack();
-            },
-          }
-        }
-        onClose={() => setOpen(null)}
-        onPick={(id, back) => setOpen({ id, back })}
-      />
-    ),
-  };
 }

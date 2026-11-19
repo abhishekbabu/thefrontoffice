@@ -11,7 +11,7 @@ import { signed } from "@/lib/format";
 import { Card, CardHeader } from "@/components/ui/card";
 import { RosterTable, useSortedRoster } from "@/components/ui/roster-table";
 import { CardNote, QueryState } from "@/components/ui/state";
-import { usePlayerDrawer } from "@/components/ui/player";
+import { useDrawers } from "@/components/ui/drawers";
 import { keys } from "@/lib/queries";
 import { LeagueHeader } from "@/components/ui/page-header";
 import { Label } from "@/components/ui/label";
@@ -25,7 +25,7 @@ import { Label } from "@/components/ui/label";
  * (`?team=4`), so a roster opened from the league table can be linked.
  */
 export function RostersPanel({ competition, league }: { competition: Competition; league: League }) {
-  const { openPlayer, drawer } = usePlayerDrawer(competition, league);
+  const { openPlayer, drawer } = useDrawers(competition, league);
   const leagueApi = api.league(competition.key, league.league_id);
   const [params, setParams] = useSearchParams();
 
