@@ -14,12 +14,15 @@ lots of random noise — which is what makes a "+2.8% to win" worth reading.
 import logging
 import random
 from collections.abc import Mapping, Sequence
+from functools import lru_cache
+from operator import add
 
 from thefrontoffice.application.results import quantile, result
 from thefrontoffice.domain.models import (
     Action,
     Calibration,
     CalibrationBucket,
+    CategoryMatchup,
     Forecast,
     LineupMove,
     MarginRange,
@@ -28,6 +31,8 @@ from thefrontoffice.domain.models import (
     PickupChance,
     PlayedMatchup,
     RangeScore,
+    ScoredCategory,
+    StatLines,
     urgency_rank,
 )
 from thefrontoffice.domain.ports import ForecastProvider
@@ -42,7 +47,12 @@ WORTH_A_ROW = 0.01
 
 
 def simulate(matchup: MatchupInput, simulations: int = SIMULATIONS) -> Forecast:
-    """Play the matchup `simulations` times, with and without each move."""
+    """Play the matchup `simulations` times, with and without each move.
+
+    A week won on categories is played out category by category instead (`categories`).
+    """
+    if matchup.categories is not None:
+        return categories(matchup.categories, matchup.seed, simulations)
     rng = random.Random(matchup.seed)
     everyone = (*matchup.mine, *matchup.theirs, *(o for m in matchup.moves for o in m.into))
     shared = _shared(everyone, matchup.seed, simulations)
@@ -92,6 +102,8 @@ def _draw(outcomes: Outcomes, rng: random.Random, simulations: int, shared: list
     ranged on his own, as tuning does — he rolls his share himself, so his
     range is the same whether or not his teammates are in the matchup.
     """
+    if outcomes.games != 1:
+        return _draw_games(outcomes, rng, simulations)
     # Hoisted out of the loop, which runs ten thousand times a player and a
     # page of free agents is fifty players. The dice are rolled in the same
     # order as ever, so every seed gives the answer it always gave.
@@ -114,6 +126,28 @@ def _draw(outcomes: Outcomes, rng: random.Random, simulations: int, shared: list
             game *= shared[i] if shared is not None else max(0.0, gauss(1.0, common))
         draws.append(floor + (remaining * game if played else 0.0))
     return draws
+
+
+def _draw_games(outcomes: Outcomes, rng: random.Random, simulations: int) -> list[float]:
+    """His week where it is several games, or none: each drawn on its own, then summed.
+
+    Every game of every week is drawn in one call and summed a week at a
+    time — a basketball week is two sides of a dozen players playing three
+    or four games each, and drawing them one by one is most of a page's wait.
+    Groups and a game under way are football's, and are not read here.
+    """
+    games, samples = outcomes.games, outcomes.samples
+    if games <= 0 or not samples:
+        return [outcomes.floor] * simulations
+    flat = rng.choices(samples, k=simulations * games)
+    weeks = [sum(flat[i : i + games]) for i in range(0, len(flat), games)]
+    if outcomes.projection_error:
+        gauss, error = rng.gauss, outcomes.projection_error
+        weeks = [week * max(0.0, gauss(1.0, error)) for week in weeks]
+    if outcomes.plays < 1.0:
+        random_, plays = rng.random, outcomes.plays
+        weeks = [week if random_() < plays else 0.0 for week in weeks]
+    return [outcomes.floor + week for week in weeks]
 
 
 def _totals(lineup: Sequence[Outcomes], draws: dict[str, list[float]], simulations: int) -> list[float]:
@@ -146,6 +180,72 @@ def _range(margins: list[float]) -> MarginRange:
         return round(quantile(ordered, share), 1) if ordered else 0.0
 
     return MarginRange(low=at(0.1), median=at(0.5), high=at(0.9))
+
+
+# ── a week won on categories ────────────────────────────────────────────
+
+
+CATEGORY_SIMULATIONS = 2_000
+"""Fewer weeks than a points matchup is played: each draws a box score of a dozen stats per
+game rather than one number, and two thousand still settle a chance to within about a point."""
+
+
+def categories(matchup: CategoryMatchup, seed: int = 0, simulations: int = CATEGORY_SIMULATIONS) -> Forecast:
+    """Play a category week `simulations` times: each category's chance, and the chance of winning more of them.
+
+    Every stat a player puts up in a simulated game comes from the same real
+    game, so the stats that move together — points, threes, shots — still do.
+    The margin is categories won less categories lost.
+    """
+    rng = random.Random(seed)
+    width = len(matchup.stats)
+    mine = _stat_totals(matchup.mine, matchup.board_mine, width, rng, simulations)
+    theirs = _stat_totals(matchup.theirs, matchup.board_theirs, width, rng, simulations)
+    index = {stat: i for i, stat in enumerate(matchup.stats)}
+    margins = [0.0] * simulations
+    chances = {}
+    for category in matchup.categories:
+        ours, other = _figures(category, index, mine), _figures(category, index, theirs)
+        results = [result(a, b) for a, b in zip(ours, other, strict=True)]
+        chances[category.name] = sum(results) / simulations if simulations else 0.5
+        margins = [m + 2 * r - 1 for m, r in zip(margins, results, strict=True)]
+    return Forecast(win=_win_rate(margins), margin=_range(margins), simulations=simulations, categories=chances)
+
+
+def _stat_totals(
+    lines: Sequence[StatLines], board: Sequence[float], width: int, rng: random.Random, simulations: int
+) -> list[list[float]]:
+    """Each stat's total in each simulated week, stat by stat: what is on the board, plus every game still to come."""
+    totals = [[board[s] if s < len(board) else 0.0] * simulations for s in range(width)]
+    for player in lines:
+        if player.games <= 0 or not player.samples:
+            continue
+        for _ in range(player.games):
+            picks = rng.choices(player.samples, k=simulations)
+            for s in range(width):
+                totals[s] = list(map(add, totals[s], [game[s] for game in picks], strict=True))
+    return totals
+
+
+def _figures(category: ScoredCategory, index: Mapping[str, int], totals: Sequence[Sequence[float]]) -> list[float]:
+    """One side's figure in each simulated week, turned so that more is always better.
+
+    A percentage with nothing attempted has no figure, which loses to any
+    figure and ties with none.
+    """
+    made = totals[index[category.made]]
+    attempts = totals[index[category.attempts]] if category.attempts else None
+    sign = -1.0 if category.fewer_wins else 1.0
+    places = category.places
+    figures = []
+    for week, value in enumerate(made):
+        if attempts is not None:
+            if not attempts[week]:
+                figures.append(float("-inf"))
+                continue
+            value /= attempts[week]
+        figures.append(sign * (round(value, places) if places is not None else value))
+    return figures
 
 
 # ── the to-do list, by the chance of winning ────────────────────────────
@@ -279,8 +379,23 @@ def score_ranges(played: list[tuple[Outcomes, float]], draws: int = 400, seed: i
     return RangeScore(players=count, inside=inside / count, below=below / count, above=above / count, loss=loss / count)
 
 
+REMEMBERED = 16
+"""Matchups whose forecast is kept, across requests: every page builds its engine afresh, a page reads
+the week's chance for its header and again for the season's, and a matchup unchanged since the last
+read is the same weeks played over again."""
+
+
+@lru_cache(maxsize=REMEMBERED)
+def remembered(matchup: MatchupInput) -> Forecast:
+    """`simulate`, kept by the matchup it was given: the same inputs and seed always give the same answer.
+
+    The forecast is shared between callers, which copy rather than change it.
+    """
+    return simulate(matchup)
+
+
 class ForecastEngine:
-    """A provider's matchup, simulated."""
+    """A provider's matchup, simulated — once for as long as the matchup stays as it is (`remembered`)."""
 
     def __init__(self, provider: ForecastProvider):
         self.provider = provider
@@ -290,7 +405,7 @@ class ForecastEngine:
         matchup = self.provider.matchup_input(league_id)
         if matchup is None:
             return None
-        return simulate(matchup), matchup
+        return remembered(matchup), matchup
 
     def pickups(self, league_id: str, player_ids: list[str]) -> list[PickupChance]:
         """What each of these free agents would do to this week's chance, started at his best.

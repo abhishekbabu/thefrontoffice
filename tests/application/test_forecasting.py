@@ -11,19 +11,24 @@ import pytest
 from support.simulation import FEW, FakeForecast, outcome
 
 from thefrontoffice.application.forecasting import (
+    REMEMBERED,
     WORTH_A_ROW,
     ForecastEngine,
     calibrate,
+    categories,
     pickup_chances,
     ranked,
     simulate,
 )
 from thefrontoffice.domain.models import (
     Action,
+    CategoryMatchup,
     LineupMove,
     MatchupInput,
     Outcomes,
     PlayedMatchup,
+    ScoredCategory,
+    StatLines,
 )
 
 
@@ -63,6 +68,42 @@ def test_a_game_already_over_counts_what_it_scored_and_nothing_more() -> None:
     forecast = simulate(_match([finished], [outcome("b", 11)]), FEW)
 
     assert forecast.win == 1.0 and forecast.margin.median == 1.0
+
+
+def test_a_week_of_several_games_sums_every_one_of_them() -> None:
+    three = Outcomes("a", "A", 30.0, (10.0,), games=3, floor=5.0)
+
+    forecast = simulate(_match([three], [outcome("b", 34)]), FEW)
+
+    assert forecast.win == 1.0 and forecast.margin.median == 1.0
+
+
+def test_a_player_with_no_games_left_adds_only_what_is_on_the_board() -> None:
+    idle = Outcomes("a", "A", 0.0, (50.0,), games=0, floor=20.0)
+
+    assert simulate(_match([idle], [outcome("b", 21)]), FEW).win == 0.0
+
+
+def test_the_weeks_of_a_player_with_several_games_spread_wider_than_one_game_and_never_go_below_nothing() -> None:
+    def spread(games: int) -> float:
+        margin = simulate(
+            _match([Outcomes("a", "A", 0.0, (0.0, 20.0), games=games, projection_error=0.2)], []), FEW
+        ).margin
+        return margin.high - margin.low
+
+    assert spread(4) > spread(1)
+    assert (
+        simulate(_match([Outcomes("a", "A", 0.0, (0.0, 20.0), games=4, projection_error=0.9)], []), FEW).margin.low >= 0
+    )
+
+
+def test_a_player_who_may_sit_out_the_whole_week_adds_nothing_when_he_does() -> None:
+    doubtful = Outcomes("a", "A", 30.0, (10.0,), games=3, plays=0.5)
+
+    forecast = simulate(_match([doubtful], [outcome("b", 1)]), FEW)
+
+    assert forecast.win == pytest.approx(0.5, abs=0.05)
+    assert forecast.margin.low == -1.0 and forecast.margin.high == 29.0
 
 
 def test_the_same_matchup_gives_the_same_answer_every_time() -> None:
@@ -359,6 +400,131 @@ def test_no_free_agents_is_no_simulation() -> None:
 
     assert ForecastEngine(wire).pickups("L1", []) == []
     assert wire.asked == []
+
+
+# ── a week won on categories ────────────────────────────────────────────
+
+STATS = ("fgm", "fga", "pts", "to")
+FG = ScoredCategory("FG%", "fgm", "fga", places=3)
+PTS = ScoredCategory("PTS", "pts")
+TO = ScoredCategory("TO", "to", fewer_wins=True)
+
+
+def _week(
+    mine: tuple[float, ...],
+    theirs: tuple[float, ...],
+    *,
+    scored: tuple[ScoredCategory, ...] = (FG, PTS, TO),
+    lines_mine: tuple[StatLines, ...] = (),
+    lines_theirs: tuple[StatLines, ...] = (),
+) -> CategoryMatchup:
+    return CategoryMatchup(STATS, scored, lines_mine, lines_theirs, mine, theirs)
+
+
+def test_a_side_ahead_in_every_category_with_nothing_left_wins_each_and_the_week() -> None:
+    forecast = categories(_week((50, 100, 120, 10), (40, 100, 100, 12)), simulations=FEW)
+
+    assert forecast.categories == {"FG%": 1.0, "PTS": 1.0, "TO": 1.0}
+    assert forecast.win == 1.0 and forecast.margin.median == 3.0
+
+
+def test_fewer_turnovers_wins_turnovers() -> None:
+    forecast = categories(_week((50, 100, 120, 14), (40, 100, 100, 12)), simulations=FEW)
+
+    assert forecast.categories["TO"] == 0.0
+    assert forecast.win == 1.0  # two categories of three
+
+
+def test_a_percentage_is_makes_over_attempts_and_ties_where_the_league_prints_it_level() -> None:
+    level = categories(_week((4781, 10000, 0, 0), (4779, 10000, 0, 0), scored=(FG,)), simulations=FEW)
+    exact = categories(
+        _week((4781, 10000, 0, 0), (4779, 10000, 0, 0), scored=(ScoredCategory("FG%", "fgm", "fga"),)),
+        simulations=FEW,
+    )
+
+    assert level.categories["FG%"] == 0.5
+    assert exact.categories["FG%"] == 1.0
+
+
+def test_a_percentage_with_nothing_attempted_loses_to_any_and_ties_with_none() -> None:
+    assert categories(_week((0, 0, 0, 0), (1, 10, 0, 0), scored=(FG,)), simulations=FEW).categories["FG%"] == 0.0
+    assert categories(_week((0, 0, 0, 0), (0, 0, 0, 0), scored=(FG,)), simulations=FEW).categories["FG%"] == 0.5
+
+
+def test_categories_won_level_with_categories_lost_is_a_tied_week() -> None:
+    forecast = categories(_week((0, 0, 120, 14), (0, 0, 100, 12), scored=(PTS, TO)), simulations=FEW)
+
+    assert forecast.win == 0.5 and forecast.margin.median == 0.0
+
+
+def test_the_games_still_to_come_can_turn_a_category() -> None:
+    """Behind by ten points with three games of twenty to come against nobody's: a sure comeback."""
+    scorer = StatLines("a", ((8.0, 16.0, 20.0, 1.0),), games=3)
+
+    forecast = categories(_week((0, 0, 90, 0), (0, 0, 100, 0), scored=(PTS,), lines_mine=(scorer,)), simulations=FEW)
+
+    assert forecast.categories["PTS"] == 1.0
+
+
+def test_the_stats_of_one_simulated_game_come_from_the_same_real_game() -> None:
+    """A shooter who either goes 10 of 10 or 0 of 10 never shoots 50% in a one-game week."""
+    streaky = StatLines("a", ((10.0, 10.0, 0.0, 0.0), (0.0, 10.0, 0.0, 0.0)), games=1)
+
+    forecast = categories(_week((0, 0, 0, 0), (5, 10, 0, 0), scored=(FG,), lines_mine=(streaky,)), simulations=FEW)
+
+    assert 0.4 < forecast.categories["FG%"] < 0.6
+    assert forecast.margin.low == -1.0 and forecast.margin.high == 1.0
+
+
+def test_a_player_with_no_games_or_no_line_adds_nothing() -> None:
+    idle = StatLines("a", ((0.0, 0.0, 50.0, 0.0),), games=0)
+    unknown = StatLines("b", (), games=3)
+
+    forecast = categories(_week((0, 0, 0, 0), (0, 0, 1, 0), scored=(PTS,), lines_mine=(idle, unknown)), simulations=FEW)
+
+    assert forecast.categories["PTS"] == 0.0
+
+
+def test_a_category_week_is_simulated_from_the_matchup_and_holds_still_between_reads() -> None:
+    lines = (StatLines("a", ((5.0, 10.0, 12.0, 2.0), (3.0, 9.0, 8.0, 1.0)), games=2),)
+    week = _week((10, 20, 30, 3), (11, 20, 34, 3), lines_mine=lines, lines_theirs=lines)
+    matchup = MatchupInput(mine=(), theirs=(), seed=3, categories=week)
+
+    first, second = simulate(matchup), simulate(matchup)
+
+    assert first == second
+    assert set(first.categories) == {"FG%", "PTS", "TO"}
+
+
+class _Fixed(FakeForecast):
+    """One matchup, the same every time it is asked for."""
+
+    def matchup(self, candidates: Sequence[str]) -> MatchupInput | None:
+        return _match([outcome("a", 0, 10, 20)], [outcome("b", 5, 15)])
+
+
+def test_an_unchanged_matchup_is_not_played_again_even_by_an_engine_built_for_the_next_page() -> None:
+    first, second = ForecastEngine(_Fixed()).forecast("L1"), ForecastEngine(_Fixed()).forecast("L1")
+
+    assert first is not None and second is not None
+    assert first[0] is second[0]
+
+
+class _Changing(FakeForecast):
+    """A matchup that is a different one each time it is asked for, as a live week is, until it comes round again."""
+
+    def matchup(self, candidates: Sequence[str]) -> MatchupInput | None:
+        return _match([outcome("a", 0, 10, 20)], [outcome("b", 5, 15)], seed=len(self.asked) % (REMEMBERED + 1))
+
+
+def test_a_matchup_is_played_again_once_newer_ones_have_pushed_it_out() -> None:
+    engine = ForecastEngine(_Changing())
+    reads = [engine.forecast("L1") for _ in range(REMEMBERED + 2)]
+
+    first, again = reads[0], reads[-1]
+    assert first is not None and again is not None
+    assert again[1] == first[1]
+    assert again[0] == first[0] and again[0] is not first[0]
 
 
 # ── teammates ───────────────────────────────────────────────────────────

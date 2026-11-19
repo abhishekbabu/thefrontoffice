@@ -16,6 +16,7 @@ from thefrontoffice.adapters.outbound.competitions import paging, places
 from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries, by_club, matched
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nba import actions, prompt, views
+from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
@@ -31,11 +32,13 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import SCOUTED, rul
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split, Teammates, conditions, reported
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
+from thefrontoffice.adapters.outbound.competitions.seeds import seed
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource, once
@@ -52,11 +55,14 @@ from thefrontoffice.domain.errors import (
     NotFoundError,
     PlayerNotFoundError,
     TeamNotFoundError,
+    UnsupportedError,
 )
 from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
     LeagueSchedule,
+    MatchupInput,
+    PlayedMatchup,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
@@ -512,6 +518,58 @@ class YahooNBAProvider:
             # A kept judgment's add of somebody another manager has since claimed is no move at all.
             movable=frozenset(p.name for p in (*rostered, *free_agents)),
         )
+
+    # ── the week, simulated ─────────────────────────────────────────
+
+    def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput | None:
+        """This week's matchup, ready to simulate (`forecast`): what each side has, and every game still to come.
+
+        None between seasons and in a week without an opponent — and for
+        `candidates`, since the wire is not priced in basketball: a pickup's
+        worth here turns on the add budget as much as on this week.
+
+        Raises:
+            UnsupportedError: the league scores something a box score here cannot build.
+            PlatformError: the schedule would not load.
+        """
+        league = self._league(league_id)
+        week = league.current_week
+        if candidates or not week:
+            return None
+        yahoo = self._yahoo_for(league)
+        team = yahoo.get_user_team()
+        found = yahoo.pairing(team.team_key, week)
+        if found is None:
+            return None
+        rules = yahoo.settings()
+        if rules.best_game:
+            raise UnsupportedError(league.name, "a forecast where only each player's best game scores")
+        mine, theirs = yahoo.roster(team.team_key), yahoo.roster(found.opponent.team_key)
+        week_left = nba_forecast.Week(
+            games=self._recent,
+            left=self.games.games_left(found.start, found.end),
+            returns=self._returns([*mine, *theirs], self._reports()),
+            weekly=rules.weekly_lineups,
+            seed=seed(league.league_key, week),
+        )
+        if not league.by_points:
+            return nba_forecast.categories(found, mine, theirs, week_left, rules.categories)
+        if not rules.weights:
+            raise UnsupportedError(league.name, "a forecast without the points its settings would sum")
+        return nba_forecast.points(found, mine, theirs, week_left, rules.weights)
+
+    def _recent(self, player: YahooPlayer) -> list[NBAGameLog]:
+        return self.form.recent_games(player.name)
+
+    def played_weeks(self, league_id: str) -> list[int]:
+        """None: a basketball week is not yet rebuilt as it stood before it began, so it is not backtested."""
+        return []
+
+    def played_matchups(
+        self, league_id: str, week: int, settings: Mapping[str, float] | None = None
+    ) -> list[PlayedMatchup]:
+        """None, for the reason `played_weeks` names none."""
+        return []
 
     # ── trades ──────────────────────────────────────────────────────
 

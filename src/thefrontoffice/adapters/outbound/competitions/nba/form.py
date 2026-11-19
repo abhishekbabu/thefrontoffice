@@ -91,6 +91,10 @@ class FormSource(Protocol):
         """Every game in the window, by player, and who each player is; empty where they would not load."""
         ...
 
+    def recent_games(self, full_name: str) -> list[NBAGameLog]:
+        """A player's last fifteen games, newest first; none where there are none."""
+        ...
+
 
 class SleeperNBAForm:
     """Recent form for basketball.
@@ -136,6 +140,17 @@ class SleeperNBAForm:
     def box_scores(self) -> BoxScores:
         """Every game in the window, by player, and who each player is; empty where they would not load."""
         return BoxScores(logs=self._game_logs(), players=self._players(), index=self._name_index())
+
+    def recent_games(self, full_name: str) -> list[NBAGameLog]:
+        """A player's last fifteen games, newest first, box score by box score — the run his form averages.
+
+        None where the catalog cannot place his name: an unmatched player
+        carries no games rather than borrowing someone else's.
+        """
+        player_id = self._name_index().lookup(full_name)
+        if player_id is None:
+            return []
+        return self._game_logs().get(player_id, [])[:RECENT_GAMES]
 
     # ── loading, once ───────────────────────────────────────────────
 

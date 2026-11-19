@@ -135,6 +135,8 @@ class FakeYahoo:
         """Your side of each week's scoreboard; every week against Their Team when None."""
         self.standings_error: Exception | None = None
         self.wire_error: Exception | None = None
+        self.weekly_lineups = False
+        self.best_game = False
 
     def get_user_team(self) -> YahooTeam:
         return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
@@ -191,6 +193,8 @@ class FakeYahoo:
             max_weekly_adds=self.max_weekly_adds,
             playoff_start_week=19,
             playoff_teams=6,
+            weekly_lineups=self.weekly_lineups,
+            best_game=self.best_game,
         )
 
     def pairing(self, team_key: str, week: int) -> Pairing | None:
@@ -300,7 +304,7 @@ class FakeSleeperNBA:
 
 
 class FakeNBA:
-    """Stands in for SleeperNBAForm and SleeperNBASchedule both: one player's form, one club's games, the box scores.
+    """Stands in for SleeperNBAForm and SleeperNBASchedule both: players' form and games, clubs' games, the box scores.
 
     A club's games left are its count in `games` whatever the window, or where `dated` lists its
     games' days, those inside the window asked about.
@@ -313,21 +317,31 @@ class FakeNBA:
         slate: list[ScheduledGame] | None = None,
         scores: BoxScores | None = None,
         dated: dict[str, list[date]] | None = None,
+        logs: dict[str, list[NBAGameLog]] | None = None,
     ) -> None:
         self.stats = stats or {}
         self.games = games or {}
         self.slate = slate or []
         self.scores = scores or BoxScores()
         self.dated = dated or {}
+        self.logs = logs or {}
+        """Each player's recent games by name, newest first."""
 
     def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
         return [g for g in self.slate if start_date.isoformat() <= g.date <= end_date.isoformat()]
+
+    def games_left(self, start_date: date, end_date: date, now: datetime | None = None) -> list[ScheduledGame]:
+        """Every game of the slate inside the window: whatever a test builds it with is still to come."""
+        return self.games_between(start_date, end_date)
 
     def get_player_stats(self, full_name: str) -> Any:
         return self.stats.get(full_name)
 
     def box_scores(self) -> BoxScores:
         return self.scores
+
+    def recent_games(self, full_name: str) -> list[NBAGameLog]:
+        return self.logs.get(full_name, [])
 
     def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
         club = team_abbr.upper()

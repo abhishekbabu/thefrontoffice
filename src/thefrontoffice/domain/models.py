@@ -741,6 +741,10 @@ class CategoryLine(BaseModel):
             "None where there is nothing yet to compare."
         ),
     )
+    win: float | None = Field(
+        default=None,
+        description="Your chance of winning the category by the week's end; None where the week is not forecast.",
+    )
 
 
 class Summary(BaseModel):
@@ -843,6 +847,10 @@ class Outcomes:
     simulated week. Taken out of his own share rather than added to it, so his range on
     its own is the same either way and only how it moves with his teammates changes."""
 
+    games: int = 1
+    """How many games he has left in the week, each drawn from `samples` on its own: one in
+    football, as many as his club plays in basketball, nought for a player who will not play."""
+
 
 @dataclass(frozen=True)
 class LineupMove:
@@ -869,6 +877,59 @@ class MatchupInput:
     theirs: tuple[Outcomes, ...]
     moves: tuple[LineupMove, ...] = ()
     seed: int = 0
+    categories: CategoryMatchup | None = None
+    """A week won category by category, simulated in place of `mine` and `theirs`, which are then empty."""
+
+
+@dataclass(frozen=True)
+class ScoredCategory:
+    """One category a week is won on, as the sum of one stat — or of one over another, for a percentage."""
+
+    name: str
+    made: str
+    """The stat summed; for a percentage, the makes."""
+
+    attempts: str = ""
+    """The stat `made` is divided by, which makes this a percentage."""
+
+    fewer_wins: bool = False
+    """Won by the side with less of it: turnovers."""
+
+    places: int | None = None
+    """Decimal places the league compares it to — a percentage printed '.478' ties at three. None compares exactly."""
+
+
+@dataclass(frozen=True)
+class StatLines:
+    """One player's week as figures: his recent games, each equally likely, and how many he has left."""
+
+    player_id: str
+    samples: tuple[tuple[float, ...], ...]
+    """Each a game's figures, in `CategoryMatchup.stats` order. Empty means he adds nothing."""
+
+    games: int
+    """How many games he plays in what is left of the week."""
+
+
+@dataclass(frozen=True)
+class CategoryMatchup:
+    """A week won category by category: what each side has so far, and each player's games still to come.
+
+    The matchup goes to whoever wins more categories, a level count a tie — one result for
+    the week, which is how a one-win league scores it and what a category league's week is
+    called won by.
+    """
+
+    stats: tuple[str, ...]
+    """The stats every figure below lists, in order."""
+
+    categories: tuple[ScoredCategory, ...]
+    mine: tuple[StatLines, ...]
+    theirs: tuple[StatLines, ...]
+    board_mine: tuple[float, ...]
+    """Each stat's total so far, in `stats` order."""
+
+    board_theirs: tuple[float, ...]
 
 
 @dataclass(frozen=True)
@@ -915,6 +976,10 @@ class Forecast(BaseModel):
     )
     best_move: str = Field(
         default="", description="The move that most raises the chance, if any does; empty otherwise."
+    )
+    categories: dict[str, float] = Field(
+        default_factory=dict,
+        description="Each category's name and your chance of winning it, in a week won on categories; empty otherwise.",
     )
 
 

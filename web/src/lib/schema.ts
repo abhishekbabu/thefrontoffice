@@ -938,6 +938,11 @@ export interface components {
              * @description Who is ahead in it, with the category's own direction read in (fewer turnovers wins). None where there is nothing yet to compare.
              */
             lead: ("mine" | "theirs" | "even") | null;
+            /**
+             * Win
+             * @description Your chance of winning the category by the week's end; None where the week is not forecast.
+             */
+            win: number | null;
         };
         /**
          * ChatRequest

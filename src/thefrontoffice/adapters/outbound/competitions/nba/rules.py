@@ -42,6 +42,9 @@ class Category:
     better: Better = "higher"
     """Which way a line improves in it: fewer turnovers, more of everything else."""
 
+    yahoo_shots: str = ""
+    """For a percentage, Yahoo's stat id for makes over attempts, which a matchup prints '109/218'."""
+
     @property
     def is_percentage(self) -> bool:
         return bool(self.attempts)
@@ -75,8 +78,8 @@ STEALS = Category("STL", "17", "stl", "s")
 BLOCKS = Category("BLK", "18", "blk", "b")
 # Tagged `tpm`, not `3pm`: "5" and "3pm" read as "53pm", to the model as to a person.
 THREES = Category("3PTM", "10", "tpm", "tpm")
-FIELD_GOALS = Category("FG%", "5", "fgm", "FG", attempts="fga")
-FREE_THROWS = Category("FT%", "8", "ftm", "FT", attempts="fta")
+FIELD_GOALS = Category("FG%", "5", "fgm", "FG", attempts="fga", yahoo_shots="9004003")
+FREE_THROWS = Category("FT%", "8", "ftm", "FT", attempts="fta", yahoo_shots="9007006")
 TURNOVERS = Category("TO", "19", "to", "to", better="lower")
 
 CATEGORIES = (POINTS, REBOUNDS, ASSISTS, STEALS, BLOCKS, THREES, FIELD_GOALS, FREE_THROWS, TURNOVERS)

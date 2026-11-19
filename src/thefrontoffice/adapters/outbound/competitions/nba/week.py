@@ -339,6 +339,14 @@ class ScheduleSource(Protocol):
         """
         ...
 
+    def games_left(self, start_date: date, end_date: date, now: datetime | None = None) -> list[ScheduledGame]:
+        """The games inside a matchup window still to tip off, in date order.
+
+        Raises:
+            PlatformError: the schedule would not load.
+        """
+        ...
+
 
 class SleeperNBASchedule:
     """The real games of a basketball matchup week, and how many each club has left.
@@ -402,6 +410,17 @@ class SleeperNBASchedule:
         games = {id(g): g for club in self._team_schedule().values() for g in club}.values()
         inside = [g for g in games if (day := parse_day(g.date)) is not None and start_date <= day <= end_date]
         return sorted(inside, key=lambda g: (g.date, g.away, g.home))
+
+    def games_left(self, start_date: date, end_date: date, now: datetime | None = None) -> list[ScheduledGame]:
+        """The games inside a matchup window still to tip off, in date order, counted as `get_remaining_games` counts.
+
+        Raises:
+            SleeperAPIError: the schedule would not load.
+        """
+        today = self._today(now)
+        return [
+            g for g in self.games_between(start_date, end_date) if self._is_remaining(g, start_date, end_date, today)
+        ]
 
     @staticmethod
     def _is_remaining(game: ScheduledGame, start: date, end: date, today: date) -> bool:

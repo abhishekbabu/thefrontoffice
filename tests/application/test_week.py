@@ -18,6 +18,8 @@ from thefrontoffice.application.week import WeekEngine
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import (
     Action,
+    CategoryLine,
+    CategoryMatchup,
     ItemState,
     LeagueSchedule,
     LineupMove,
@@ -26,6 +28,7 @@ from thefrontoffice.domain.models import (
     PlayerPage,
     PlayerQuery,
     Remembered,
+    ScoredCategory,
     ScoutReport,
     SeasonInput,
     Summary,
@@ -127,6 +130,30 @@ def test_a_verdict_on_an_item_that_has_changed_since_is_marked_stale() -> None:
     actions = {a.key: a for a in _engine(_Provider(), answers=answers).week("L1").summary.actions or []}
 
     assert (actions[SWAP.key].verdict, actions[SWAP.key].stale) == (AGREE, True)
+
+
+class _Categories(_Provider):
+    """A week won on categories, two of them, the first already decided and the second untouched by the forecast."""
+
+    def summary(self, league_id: str) -> Summary:
+        return Summary(
+            categories=[
+                CategoryLine(name="PTS", mine="120", theirs="100"),
+                CategoryLine(name="DD", mine="1", theirs="0"),
+            ]
+        )
+
+    def matchup(self, candidates: Sequence[str]) -> MatchupInput | None:
+        scored = (ScoredCategory("PTS", "pts"),)
+        week = CategoryMatchup(("pts",), scored, (), (), (120.0,), (100.0,))
+        return MatchupInput(mine=(), theirs=(), categories=week)
+
+
+def test_each_category_carries_the_chance_of_winning_it_where_the_forecast_played_it() -> None:
+    view = _engine(_Categories()).week("L1")
+
+    assert {line.name: line.win for line in view.summary.categories} == {"PTS": 1.0, "DD": None}
+    assert view.forecast is not None and view.forecast.win == 1.0
 
 
 def test_a_forecast_that_fails_still_leaves_the_week() -> None:

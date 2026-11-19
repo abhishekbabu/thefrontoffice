@@ -130,6 +130,17 @@ def test_a_name_that_cannot_be_matched_carries_no_form() -> None:
     assert _form(logs=_run(20)).get_player_stats("Someone Else Entirely") is None
 
 
+def test_a_players_recent_games_are_his_last_fifteen_box_scores_newest_first() -> None:
+    games = _form(logs=_run(20)).recent_games("Nikola Jokic")
+
+    assert len(games) == RECENT_GAMES
+    assert games[0].date == "2026-01-01"
+
+
+def test_a_name_that_cannot_be_matched_carries_no_games() -> None:
+    assert _form(logs=_run(20)).recent_games("Someone Else Entirely") == []
+
+
 def test_an_accented_name_still_matches() -> None:
     """Sleeper spells him Jokić; Yahoo does not."""
     form = SleeperNBAForm(

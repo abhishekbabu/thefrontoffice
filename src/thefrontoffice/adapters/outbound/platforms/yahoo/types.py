@@ -191,6 +191,12 @@ class LeagueSettings:
     playoff_teams: int = 0
     multiweek_final: bool = False
 
+    weekly_lineups: bool = False
+    """Whether a lineup is set once for the week rather than day by day: its starters play every game they have."""
+
+    best_game: bool = False
+    """Whether each player scores only his best game of the week — Yahoo's "High Score" points — not their sum."""
+
 
 @dataclass(frozen=True)
 class Pairing:

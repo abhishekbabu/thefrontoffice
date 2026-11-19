@@ -135,6 +135,15 @@ ESPN's return date), ±10% for steady or swinging minutes. The to-do list adds
 a bench start over a starter whose slot he fits, and up to two streams within
 the adds left, each with a drop — never from IL or the better half of the
 roster — all at a fifth more worth. Lineups are daily; starts are weekly.
+The NBA matchup header carries a win chance too: what each side has on Yahoo's
+scoreboard, plus every game its players have left, each drawn from one of their
+last 15 box scores (Sleeper). On a night more of a roster plays than its
+lineup holds, only the best count (all of today's starters' games where lineups
+are set weekly); a player ruled out plays none until ESPN's return date. A points
+league sums fantasy points (10,000 weeks, beside Yahoo's projection); a category
+league plays 2,000 weeks, shows each category's chance in a Win column, and the
+week goes to whoever wins more categories, level a tie. "High Score" leagues (only
+each player's best game scores) get no chance, and the wire is not priced.
 
 | | |
 | --- | --- |

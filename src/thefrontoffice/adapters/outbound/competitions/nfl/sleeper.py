@@ -39,7 +39,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl import (
     views,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
-from thefrontoffice.adapters.outbound.competitions.nfl.forecast import Forecasts, seed
+from thefrontoffice.adapters.outbound.competitions.nfl.forecast import Forecasts
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import current_lineup, optimal_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     FREE_AGENT,
@@ -73,6 +73,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     zero_projection,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.worth import lineup_value
+from thefrontoffice.adapters.outbound.competitions.seeds import seed
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.espn import types as espn
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource

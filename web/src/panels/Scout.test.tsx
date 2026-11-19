@@ -95,9 +95,9 @@ describe("Categories", () => {
       <Categories
         theirs="Rival"
         lines={[
-          { name: "PTS", mine: "520", theirs: "498", lead: "mine" },
-          { name: "BLK", mine: "12", theirs: "17", lead: "theirs" },
-          { name: "TO", mine: "-", theirs: "-", lead: null },
+          { name: "PTS", mine: "520", theirs: "498", lead: "mine", win: null },
+          { name: "BLK", mine: "12", theirs: "17", lead: "theirs", win: null },
+          { name: "TO", mine: "-", theirs: "-", lead: null, win: null },
         ]}
       />,
     );
@@ -106,6 +106,23 @@ describe("Categories", () => {
     expect(rows.find((r) => r.startsWith("PTS"))).toMatch(/You$/);
     expect(rows.find((r) => r.startsWith("BLK"))).toMatch(/Them$/);
     expect(rows.find((r) => r.startsWith("TO"))).toMatch(/—$/);
+    expect(container.textContent).not.toContain("Win");
+  });
+
+  it("gives each category's chance of winning where the week is forecast", async () => {
+    const { container } = await render(
+      <Categories
+        theirs="Rival"
+        lines={[
+          { name: "PTS", mine: "520", theirs: "498", lead: "mine", win: 0.734 },
+          { name: "DD", mine: "1", theirs: "0", lead: "mine", win: null },
+        ]}
+      />,
+    );
+    const rows = [...container.querySelectorAll("[class*=border-b]")].map((r) => r.textContent ?? "");
+
+    expect(rows.find((r) => r.startsWith("PTS"))).toMatch(/You73%$/);
+    expect(rows.find((r) => r.startsWith("DD"))).toMatch(/You—$/);
   });
 });
 
