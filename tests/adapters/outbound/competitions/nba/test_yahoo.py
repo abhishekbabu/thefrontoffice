@@ -24,7 +24,13 @@ from support.nba import yahoo_team as _yahoo_team
 from support.reports import MOCK_NBA_REPORT
 from support.stores import FakeAnswers
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, PlayerStats, SleeperNBAForm, nine_cat
+from thefrontoffice.adapters.outbound.competitions.nba.form import (
+    PACIFIC,
+    PlayerStats,
+    RecentForm,
+    SleeperNBAForm,
+    nine_cat,
+)
 from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
@@ -288,10 +294,10 @@ def test_a_game_time_decision_is_flagged_without_being_ruled_out() -> None:
     assert (card.columns["Status"], card.ruled_out) == ("GTD", False)
 
 
-def _form(**stats: float) -> PlayerStats:
-    """Fifteen identical games, run through the real nine-category line."""
-    games = [NBAGameLog(player_id="p", date=f"2026-01-{i + 1:02d}", opponent="BOS", stats=stats) for i in range(15)]
-    return PlayerStats(last_15=nine_cat(games))
+def _form(played: int = 15, **stats: float) -> PlayerStats:
+    """`played` identical games, run through the real nine-category line."""
+    games = [NBAGameLog(player_id="p", date=f"2026-01-{i + 1:02d}", opponent="BOS", stats=stats) for i in range(played)]
+    return PlayerStats(recent=RecentForm(games=played, line=nine_cat(games)))
 
 
 def test_the_drawer_shows_every_category_of_the_last_fifteen() -> None:
@@ -316,6 +322,26 @@ def test_the_drawer_shows_every_category_of_the_last_fifteen() -> None:
         "TO": "2.0",
     }
     assert detail.headline == "20.0"
+
+
+def test_the_drawer_says_how_many_games_a_short_run_averages() -> None:
+    """Twelve games in, the line is his last twelve, and saying fifteen would misstate it."""
+    yahoo = FakeYahoo(roster=[make_player("A B", key="ab")])
+
+    detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(played=12, pts=18)})).player("", "ab")
+
+    assert detail.headline == "18.0"
+    assert "12" in detail.headline_label and "12" in detail.groups[0].title
+
+
+def test_a_row_short_of_fifteen_games_still_carries_figures() -> None:
+    """Week five, most of a roster has fewer than fifteen games; a dash for each was the bug."""
+    yahoo = FakeYahoo(roster=[make_player("A B")])
+
+    card = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(played=7, pts=20)})).roster()[0]
+
+    assert card.columns["PTS"] == "20.0"
+    assert card.values["PTS"] == 20.0
 
 
 def test_a_table_row_carries_recent_form() -> None:

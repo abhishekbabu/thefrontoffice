@@ -13,7 +13,12 @@ from zoneinfo import ZoneInfo
 import pytest
 from support.nba import FakeSleeperNBA
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm, nine_cat
+from thefrontoffice.adapters.outbound.competitions.nba.form import (
+    MIN_FORM_GAMES,
+    RECENT_GAMES,
+    SleeperNBAForm,
+    nine_cat,
+)
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame
@@ -75,14 +80,48 @@ def test_a_window_is_reported_only_once_it_can_be_filled() -> None:
     stats = _form(logs=_run(7)).get_player_stats("Nikola Jokic")
 
     assert stats is not None
-    assert set(stats) == {"last_5"}
+    assert set(stats) == {"last_5", "recent"}
 
 
 def test_every_window_appears_once_there_are_enough_games() -> None:
     stats = _form(logs=_run(20)).get_player_stats("Nikola Jokic")
 
     assert stats is not None
-    assert set(stats) == {"last_5", "last_10", "last_15"}
+    assert set(stats) == {"last_5", "last_10", "last_15", "recent"}
+
+
+def test_the_recent_run_is_every_game_while_short_of_fifteen() -> None:
+    """Week five, most players have twelve-odd games; leaving them blank until
+    fifteen hid the form of nearly every roster."""
+    logs = {"p1": [_game(f"2026-01-{i + 1:02d}", pts=10 + i) for i in range(12)]}
+
+    stats = _form(logs=logs).get_player_stats("Nikola Jokic")
+
+    assert stats is not None
+    assert stats["recent"].games == 12
+    assert stats["recent"].line["PTS"] == pytest.approx(sum(range(10, 22)) / 12)
+
+
+def test_the_recent_run_stops_at_the_last_fifteen() -> None:
+    logs = {"p1": [_game(f"2026-01-{i + 1:02d}", pts=20 if i < RECENT_GAMES else 0) for i in range(20)]}
+
+    stats = _form(logs=logs).get_player_stats("Nikola Jokic")
+
+    assert stats is not None
+    assert stats["recent"] == (RECENT_GAMES, stats["last_15"])
+    assert stats["recent"].line["PTS"] == 20.0
+
+
+def test_a_player_under_the_minimum_games_carries_no_form() -> None:
+    """One or two games is a single night reported as a rate."""
+    assert _form(logs=_run(MIN_FORM_GAMES - 1)).get_player_stats("Nikola Jokic") is None
+
+
+def test_the_minimum_games_is_enough_for_a_recent_run() -> None:
+    stats = _form(logs=_run(MIN_FORM_GAMES)).get_player_stats("Nikola Jokic")
+
+    assert stats is not None
+    assert set(stats) == {"recent"}
 
 
 def test_a_player_with_no_games_has_no_form_rather_than_zeros() -> None:

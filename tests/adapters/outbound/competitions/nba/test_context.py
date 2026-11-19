@@ -6,7 +6,7 @@ from typing import Any
 from support.nba import FakeNBA, make_player
 
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
-from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats
+from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import Line
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import GameProjection
@@ -57,6 +57,23 @@ def test_stats_are_appended_when_available() -> None:
 
     assert "20.0" in line and "52.3" in line
     assert line != _line(make_player("A B"))
+
+
+def test_a_player_short_of_fifteen_games_also_carries_every_game_he_has() -> None:
+    """Twelve games in, his last ten alone would drop two of them."""
+    stats = PlayerStats(last_5=_stats(), last_10=_stats(), recent=RecentForm(games=12, line=_stats(PTS=31.0)))
+
+    line = _line(make_player("A B"), _builder(stats={"A B": stats}))
+
+    assert "L12" in line and "31.0" in line
+
+
+def test_a_full_window_is_not_repeated_as_the_widest_run() -> None:
+    stats = PlayerStats(last_15=_stats(), recent=RecentForm(games=15, line=_stats(PTS=31.0)))
+
+    line = _line(make_player("A B"), _builder(stats={"A B": stats}))
+
+    assert "31.0" not in line
 
 
 def test_players_without_stats_still_appear() -> None:

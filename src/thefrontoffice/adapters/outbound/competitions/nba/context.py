@@ -10,7 +10,7 @@ quantity behind it, which is why they are built together.
 from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
-from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource, PlayerStats, Window
+from thefrontoffice.adapters.outbound.competitions.nba.form import WINDOWS, FormSource, PlayerStats, Window
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
@@ -30,8 +30,14 @@ class PlayerContextBuilder:
 
     @staticmethod
     def _format_stats(stats: PlayerStats) -> str:
-        """Each recent window that can be filled, as one nine-category line."""
+        """Each recent window that can be filled, as one nine-category line.
+
+        A player short of fifteen games also carries every game he has, tagged
+        with its count — otherwise twelve games in reads as only his last ten.
+        """
         parts = [f"{tag}: {prompt.categories(stats[window])}" for window, tag in WINDOW_TAGS if window in stats]
+        if (recent := stats.get("recent")) and recent.games not in WINDOWS:
+            parts.append(f"L{recent.games}: {prompt.categories(recent.line)}")
         return " | ".join(parts) if parts else "No recent stats"
 
     def build_context_for_players(
