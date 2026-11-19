@@ -28,7 +28,7 @@ import { LineupCard, SideCard, Swaps, underWay } from "@/components/ui/lineup";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
-import { WeekStepper, useWeekParam } from "@/components/ui/week-stepper";
+import { WeekPane, WeekStepper, useWeekParam } from "@/components/ui/week-stepper";
 import { Label } from "@/components/ui/label";
 import { Table, Td, Th } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
@@ -141,7 +141,12 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       <QueryState query={shown} lines={4} />
 
       {shown.data && (
-        <div className="flex touch-pan-y flex-col gap-4 p-5" {...swipe}>
+        <WeekPane
+          week={shown.data.weeks?.week ?? 0}
+          pending={shown.isPlaceholderData}
+          className="flex touch-pan-y flex-col gap-4 p-5"
+          {...swipe}
+        >
           {judge.isError && <ErrorNote error={judge.error} className="m-0" />}
           {decide.isError && <ErrorNote error={decide.error} className="m-0" />}
           {shown.data.actions && (
@@ -251,7 +256,7 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
               No opponent this week
             </Badge>
           )}
-        </div>
+        </WeekPane>
       )}
       {drawer}
     </>

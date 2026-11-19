@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type * as React from "react";
-import { AnimatePresence, m } from "motion/react";
-import { fade, slideOver } from "@/lib/motion";
+import { AnimatePresence, m, useIsPresent } from "motion/react";
+import { backdrop, slideOver, type Swap } from "@/lib/motion";
 import { ChevronLeft, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { IconButton } from "@/components/ui/icon-button";
@@ -39,24 +39,29 @@ export function SlideOver({
   return (
     <AnimatePresence>
       {open && (
-        <m.div
-          key="slide-over"
-          variants={fade}
-          initial="hidden"
-          animate="shown"
-          exit="gone"
-          // max-w-none: mounted beside a page, where the page's width cap would otherwise reach it.
-          className="fixed inset-0 z-50 flex max-w-none justify-end bg-foreground/20"
-          onClick={onClose}
-          role="presentation"
-        >
-          <Panel label={label} onClose={onClose} className={className}>
-            {children}
-          </Panel>
-        </m.div>
+        <Panel key="slide-over" label={label} onClose={onClose} className={className}>
+          {children}
+        </Panel>
       )}
     </AnimatePresence>
   );
+}
+
+/**
+ * When a Back link was last followed: the drawer that closes and the one that
+ * reopens read it within a frame of the click, to swap the way Back goes.
+ */
+let backAt = Number.NEGATIVE_INFINITY;
+
+/**
+ * Whether the drawer `self` is replacing another, or being replaced by one,
+ * and which way. On arrival `self` is not yet on the page, so any drawer
+ * there is the one it replaces; on leaving, any other is the one replacing it.
+ */
+function swapping(self: Element | null): Swap {
+  const other = [...document.querySelectorAll("[data-drawer]")].some((drawer) => drawer !== self);
+  if (!other) return null;
+  return performance.now() - backAt < 300 ? "back" : "forward";
 }
 
 function Panel({
@@ -71,6 +76,11 @@ function Panel({
   children: React.ReactNode;
 }) {
   const panel = useRef<HTMLElement>(null);
+  // Read by the variants when they are resolved, not now: see `slideOver`.
+  const swap = () => swapping(panel.current);
+  // Leaving, it stops answering at once: a click meant for the drawer
+  // replacing it would otherwise land on this one's backdrop and close both.
+  const present = useIsPresent();
 
   // Mounted on open and unmounted on close, so this runs exactly once each way.
   useEffect(() => {
@@ -103,22 +113,42 @@ function Panel({
   };
 
   return (
-    <m.aside
-      ref={panel}
-      variants={slideOver}
-      initial="hidden"
-      animate="shown"
-      exit="gone"
-      role="dialog"
-      aria-modal="true"
-      aria-label={label}
-      tabIndex={-1}
-      onKeyDown={onKeyDown}
-      onClick={(e) => e.stopPropagation()}
-      className={cn("flex h-full w-full flex-col overflow-y-auto bg-popover shadow-lg outline-none", className)}
+    <div
+      // max-w-none: mounted beside a page, where the page's width cap would otherwise reach it.
+      className={cn("fixed inset-0 z-50 flex max-w-none justify-end", !present && "pointer-events-none")}
+      onClick={present ? onClose : undefined}
+      role="presentation"
     >
-      {children}
-    </m.aside>
+      {/* Its own layer rather than the ground the panel sits on, so it can
+          stay put while the panel is swapped for another. */}
+      <m.div
+        aria-hidden
+        custom={swap}
+        variants={backdrop}
+        initial="hidden"
+        animate="shown"
+        exit="gone"
+        className="absolute inset-0 bg-foreground/20"
+      />
+      <m.aside
+        ref={panel}
+        data-drawer
+        custom={swap}
+        variants={slideOver}
+        initial="hidden"
+        animate="shown"
+        exit="gone"
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        onClick={(e) => e.stopPropagation()}
+        className={cn("relative flex h-full w-full flex-col overflow-y-auto bg-popover shadow-lg outline-none", className)}
+      >
+        {children}
+      </m.aside>
+    </div>
   );
 }
 
@@ -164,7 +194,10 @@ export function BackLink({ back }: { back?: Back }) {
   return (
     <button
       type="button"
-      onClick={back.onBack}
+      onClick={() => {
+        backAt = performance.now();
+        back.onBack();
+      }}
       className="mb-1 flex max-w-full items-center gap-1 font-mono text-[11px] text-muted-foreground hover:text-foreground"
     >
       <ChevronLeft className="size-3.5 shrink-0" aria-hidden />

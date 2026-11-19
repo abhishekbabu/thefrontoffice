@@ -1,4 +1,6 @@
 import type * as React from "react";
+import { AnimatePresence, m } from "motion/react";
+import { fade } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { toneText } from "@/lib/tone";
 import type { Stat } from "@/lib/api";
@@ -30,17 +32,34 @@ export function StatStrip({ stats }: { stats: Stat[] }) {
               <Label>{stat.label}</Label>
               <div
                 className={cn(
-                  "mt-0.5 font-display text-[19px] font-semibold tracking-tight tabular-nums",
+                  "relative mt-0.5 font-display text-[19px] font-semibold tracking-tight tabular-nums",
                   toneText(stat.tone),
                 )}
               >
-                {stat.value}
+                <Changing value={stat.value} />
               </div>
             </div>
           ))}
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * A figure that crossfades when it changes — a week stepped, a score
+ * updated — rather than being swapped in a frame, and without rolling digits:
+ * the new value is to be read, not watched arriving. The old one is lifted out
+ * of the flow as it fades (`popLayout`), so the two never stack. Still on
+ * arrival: the page's own entrance covers that.
+ */
+function Changing({ value }: { value: string }) {
+  return (
+    <AnimatePresence initial={false} mode="popLayout">
+      <m.span key={value} variants={fade} initial="hidden" animate="shown" exit="gone" className="inline-block">
+        {value}
+      </m.span>
+    </AnimatePresence>
   );
 }
 

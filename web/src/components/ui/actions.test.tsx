@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Action, MovePlayer, TaskVerdict } from "@/lib/api";
 import { ActionList, staleVerdicts } from "@/components/ui/actions";
-import { render } from "@/test/render";
+import { render, settle } from "@/test/render";
 
 function action(key: string, verdict: TaskVerdict | null = null, stale = false): Action {
   return {
@@ -77,6 +77,36 @@ const player = (
     { label: "Proj", value: proj, tone: "neutral", url: "", better: null },
     { label: "Opp", value: opp, tone: "good", url: "", better: null },
   ],
+});
+
+describe("putting an item aside", () => {
+  it("takes it out of the list and under Hidden, and back again on restore", async () => {
+    const dismissed: Action = { ...action("b"), mark: { hidden: "dismissed", snoozed_until: null, resurfaced: false } };
+    const { container, rerender } = await render(<ActionList actions={[action("a"), action("b")]} />);
+    const listed = () => [...container.querySelectorAll("ol > li")].map((li) => li.textContent);
+
+    await rerender(<ActionList actions={[action("a"), dismissed]} />);
+    await settle();
+    expect(listed()).toHaveLength(1);
+    expect(listed()[0]).toContain("Pick up a");
+    expect(container.textContent).toContain("Hidden (1)");
+
+    await rerender(<ActionList actions={[action("a"), action("b")]} />);
+    await settle();
+    expect(listed()).toHaveLength(2);
+    expect(container.textContent).not.toContain("Hidden");
+  });
+
+  it("says nothing is left once the last item is put aside", async () => {
+    const dismissed: Action = { ...action("a"), mark: { hidden: "dismissed", snoozed_until: null, resurfaced: false } };
+    const { container, rerender } = await render(<ActionList actions={[action("a")]} />);
+
+    await rerender(<ActionList actions={[dismissed]} />);
+    await settle();
+
+    expect(container.querySelectorAll("ol > li")).toHaveLength(0);
+    expect(container.textContent).toContain("Nothing left.");
+  });
 });
 
 describe("a move between two players", () => {

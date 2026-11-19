@@ -9,7 +9,7 @@ import { DEFAULT_VIEW, LANDING, SETTINGS, VIEWS, VIEW_LABELS, type View, href, o
 import { useTheme } from "@/lib/useTheme";
 import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip } from "@/components/ui/tooltip";
-import { rise } from "@/lib/motion";
+import { pressable, rise } from "@/lib/motion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Empty, Loading } from "@/components/ui/state";
 import { ErrorNote } from "@/components/ui/error-note";
@@ -197,14 +197,20 @@ export default function App() {
         </div>
 
         {/* Always laid out from md up; below it, only while the menu is open,
-            dropped over the page rather than pushing it down. */}
+            dropped over the page rather than pushing it down. It drops in and
+            lifts out in CSS: `starting:` is where it opens from, and
+            `transition-discrete` holds it on screen while it fades before
+            `hidden` takes it away. Placed over the page whether open or not,
+            so closing it never drops it into the bar for the fade. */}
         <div
           id="rail"
           className={cn(
-            "flex-1 flex-col gap-6 md:flex",
+            "absolute inset-x-0 top-full flex-1 flex-col gap-6 border-b border-border bg-card px-3 pt-2 pb-4 shadow-lg max-md:max-h-[calc(100dvh-3.5rem)] max-md:overflow-y-auto",
+            "max-md:transition-[opacity,translate,display] max-md:transition-discrete max-md:duration-150 max-md:ease-out",
+            "md:static md:flex md:border-b-0 md:p-0 md:shadow-none",
             menuOpen
-              ? "absolute inset-x-0 top-full flex max-h-[calc(100dvh-3.5rem)] overflow-y-auto border-b border-border bg-card px-3 pt-2 pb-4 shadow-lg md:static md:max-h-none md:overflow-visible md:border-b-0 md:p-0 md:shadow-none"
-              : "hidden",
+              ? "flex motion-safe:starting:-translate-y-1 starting:opacity-0"
+              : "hidden opacity-0 motion-safe:-translate-y-1 md:translate-y-0 md:opacity-100",
           )}
         >
           {/* Competition, not sport: these are the NBA, the NFL and the Premier
@@ -315,7 +321,8 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
 /** One look for everything in the rail, whether it navigates or not. */
 function railItem(active?: boolean, disabled?: boolean, className?: string) {
   return cn(
-    "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[13.5px] transition-colors",
+    "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[13.5px]",
+    pressable,
     active ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted",
     disabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
     className,

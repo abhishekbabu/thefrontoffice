@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { LazyMotion, MotionConfig } from "motion/react";
+import { MotionProvider } from "@/lib/motion-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { assertPalettesResolve } from "@/themes/registry";
 import App from "@/App";
@@ -31,17 +31,12 @@ createRoot(document.getElementById("root")!).render(
           no animation code of their own, and the feature set arrives in a
           second chunk. It has to come from its own module: an import of
           `motion/react` from here resolves to this same bundle and never
-          splits. `strict` makes a stray
-          `motion.*` import — which would do exactly that — a runtime error.
-          `reducedMotion="user"` means every variant respects the OS setting
-          without a branch at any call site. */}
-      <LazyMotion features={() => import("@/lib/motion-features").then((mod) => mod.default)} strict>
-        <MotionConfig reducedMotion="user">
-          <TooltipProvider>
-            <App />
-          </TooltipProvider>
-        </MotionConfig>
-      </LazyMotion>
+          splits. */}
+      <MotionProvider features={() => import("@/lib/motion-features").then((mod) => mod.default)}>
+        <TooltipProvider>
+          <App />
+        </TooltipProvider>
+      </MotionProvider>
       </QueryClientProvider>
     </BrowserRouter>
   </StrictMode>,

@@ -1,8 +1,29 @@
 import { act } from "react";
 import { describe, expect, it } from "vitest";
 import type { WeekRange } from "@/lib/api";
-import { SWIPE_DISTANCE, WeekStepper, useSwipe } from "@/components/ui/week-stepper";
+import { SWIPE_DISTANCE, WeekPane, WeekStepper, useSwipe } from "@/components/ui/week-stepper";
 import { render } from "@/test/render";
+
+describe("WeekPane", () => {
+  const pane = (week: number, pending = false) => (
+    <WeekPane week={week} pending={pending}>
+      <p>week {week}</p>
+    </WeekPane>
+  );
+
+  it("holds the week it shows while the next is still loading, and changes once it arrives", async () => {
+    const { container, rerender } = await render(pane(3));
+    const first = container.querySelector("p")!.parentElement;
+
+    // The page keeps the last week's content up while the next loads.
+    await rerender(pane(4, true));
+    expect(container.querySelector("p")!.parentElement).toBe(first);
+
+    await rerender(pane(4));
+    expect(container.querySelector("p")!.parentElement).not.toBe(first);
+    expect(container.textContent).toBe("week 4");
+  });
+});
 
 const range = (week: number): WeekRange => ({ week, current: 10, first: 1, last: 16 });
 

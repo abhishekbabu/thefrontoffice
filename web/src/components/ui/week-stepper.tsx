@@ -1,5 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { m } from "motion/react";
+import { stepped } from "@/lib/motion";
 import { ChevronLeft, ChevronRight, Undo2 } from "lucide-react";
 import type { WeekRange } from "@/lib/api";
 import { IconButton } from "@/components/ui/icon-button";
@@ -57,6 +59,46 @@ export function WeekStepper({ range, onStep }: { range: WeekRange; onStep: (week
         disabled={week >= last}
       />
     </div>
+  );
+}
+
+/**
+ * A week's content, coming in from the side it was stepped toward: the next
+ * week from the right, the last from the left, the way the arrows point.
+ *
+ * `pending` while the week asked for is still loading and the last one is
+ * held on screen: the content changes when the new week's arrives, not before,
+ * so it moves once. Where there is no direction — the first week shown — it
+ * only fades in, over the placeholder it replaces.
+ */
+export function WeekPane({
+  week,
+  pending = false,
+  className,
+  children,
+  ...rest
+}: {
+  week: number;
+  pending?: boolean;
+  className?: string;
+  children: React.ReactNode;
+} & Partial<ReturnType<typeof useSwipe>>) {
+  // The previous week, kept in state and compared during render: React's way
+  // to derive from a change without an effect painting the old frame first.
+  const [seen, setSeen] = useState({ week, direction: 0 });
+  if (!pending && seen.week !== week) setSeen({ week, direction: Math.sign(week - seen.week) });
+  return (
+    <m.div
+      key={seen.week}
+      custom={seen.direction}
+      variants={stepped}
+      initial="hidden"
+      animate="shown"
+      className={className}
+      {...rest}
+    >
+      {children}
+    </m.div>
   );
 }
 

@@ -9,7 +9,7 @@ import { ListCard, ListHeading, ListRow } from "@/components/ui/list";
 import { Label, Meta } from "@/components/ui/label";
 import { Empty, QueryState } from "@/components/ui/state";
 import { LeagueHeader } from "@/components/ui/page-header";
-import { WeekStepper, useWeekParam } from "@/components/ui/week-stepper";
+import { WeekPane, WeekStepper, useWeekParam } from "@/components/ui/week-stepper";
 import { SlideOver, SlideOverHeader } from "@/components/ui/dialog";
 import { usePlayerDrawer } from "@/components/ui/player";
 
@@ -56,9 +56,14 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
       <QueryState query={browses ? (shown ? games : summary) : schedule} lines={6} />
       {rows && rows.length === 0 && <Empty title="No games this week" />}
       {rows && rows.length > 0 && (
-        <div className="touch-pan-y p-5" {...swipe}>
+        <WeekPane
+          week={shown?.week ?? 0}
+          pending={browses && games.isPlaceholderData}
+          className="touch-pan-y p-5"
+          {...swipe}
+        >
           <Games rows={rows} byes={byes} onOpen={setOpen} />
-        </div>
+        </WeekPane>
       )}
       <SlideOver
         open={open !== null}

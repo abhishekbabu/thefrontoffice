@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AnimatePresence, m } from "motion/react";
 import type * as React from "react";
 import { AlarmClock, EyeOff, MessageCircleQuestion, Undo2 } from "lucide-react";
 import type { Action, ItemDecision, Move, MovePlayer, Stat, TaskVerdict, Urgency } from "@/lib/api";
@@ -13,6 +14,7 @@ import { Verdict } from "@/components/ui/verdict";
 import { moment } from "@/lib/format";
 import { decisionTone, toneText, type Variant } from "@/lib/tone";
 import { clickable } from "@/lib/clickable";
+import { collapse, pressableRow } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { Label, Meta } from "@/components/ui/label";
 import { Disclosure } from "@/components/ui/disclosure";
@@ -83,14 +85,18 @@ export function ActionList({
           {count > 0 && <span>{count}</span>}
         </span>
       </CardHeader>
-      {count === 0 ? (
+      {count === 0 && (
         <CardNote>
           {hidden.length
             ? "Nothing left. The rest is hidden below."
             : "Nothing to do."}
         </CardNote>
-      ) : (
-        <ol className="flex flex-col">
+      )}
+      {/* Kept mounted when empty, so the last item dismissed closes up like
+          any other rather than vanishing with its list. Not on arrival: the
+          list is the first thing read, and is there at once. */}
+      <ol className="flex flex-col">
+        <AnimatePresence initial={false}>
           {shown.map((action) => {
             const controls = onDecide && action.key && (
               <Decide action={action} onDecide={onDecide} busy={deciding} />
@@ -140,8 +146,8 @@ export function ActionList({
               {move.metric && <Meta as="div" className="-mt-2">{move.metric}</Meta>}
             </Row>
           ))}
-        </ol>
-      )}
+        </AnimatePresence>
+      </ol>
       {hidden.length > 0 && <Hidden actions={hidden} onDecide={onDecide} busy={deciding} />}
     </Card>
   );
@@ -210,24 +216,36 @@ function Hidden({
   return (
     <Disclosure summary={`Hidden (${actions.length})`}>
       <ul className="flex flex-col pb-1">
-        {actions.map((action) => (
-          <li key={action.key} className="flex items-center gap-3 px-4 py-1.5 text-[12.5px]">
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">{action.title}</span>
-            <Meta className="shrink-0">
-              {action.mark.hidden === "snoozed" && action.mark.snoozed_until
-                ? `snoozed until ${moment(action.mark.snoozed_until)}`
-                : "dismissed"}
-            </Meta>
-            {onDecide && (
-              <IconButton
-                label="Restore"
-                icon={<Undo2 />}
-                disabled={busy}
-                onClick={() => onDecide({ key: action.key, decision: "restore" })}
-              />
-            )}
-          </li>
-        ))}
+        <AnimatePresence initial={false}>
+          {actions.map((action) => (
+            <m.li
+              key={action.key}
+              layout="position"
+              variants={collapse}
+              initial="hidden"
+              animate="shown"
+              exit="gone"
+            >
+              {/* The padding inside, so the row can close to nothing. */}
+              <div className="flex items-center gap-3 px-4 py-1.5 text-[12.5px]">
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">{action.title}</span>
+                <Meta className="shrink-0">
+                  {action.mark.hidden === "snoozed" && action.mark.snoozed_until
+                    ? `snoozed until ${moment(action.mark.snoozed_until)}`
+                    : "dismissed"}
+                </Meta>
+                {onDecide && (
+                  <IconButton
+                    label="Restore"
+                    icon={<Undo2 />}
+                    disabled={busy}
+                    onClick={() => onDecide({ key: action.key, decision: "restore" })}
+                  />
+                )}
+              </div>
+            </m.li>
+          ))}
+        </AnimatePresence>
       </ul>
     </Disclosure>
   );
@@ -260,10 +278,19 @@ function Row({
 }) {
   return (
     // The badge's width, shared with the indent that lines a row's verdict up under its title.
-    <li className="border-t border-border [--badge-column:5.5rem] first:border-t-0">
+    // Closes up as it leaves the list and opens as it returns; moves, rather
+    // than jumps, to a new place when the list is reordered.
+    <m.li
+      layout="position"
+      variants={collapse}
+      initial="hidden"
+      animate="shown"
+      exit="gone"
+      className="border-t border-border [--badge-column:5.5rem] first:border-t-0"
+    >
       <div
         {...clickable(open)}
-        className={cn("flex items-start gap-3 px-4 py-3", open && "cursor-pointer hover:bg-muted")}
+        className={cn("flex items-start gap-3 px-4 py-3", open && ["cursor-pointer hover:bg-muted", pressableRow])}
       >
         <Badge variant={badge.variant} appearance="status" className="mt-0.5 w-(--badge-column) shrink-0">
           {badge.label}
@@ -310,7 +337,7 @@ function Row({
       </div>
       {/* Outside the clickable area: a verdict or a thread is read, not opened. */}
       {children && <div className="px-4 pb-3 pl-[calc(var(--badge-column)+1.75rem)]">{children}</div>}
-    </li>
+    </m.li>
   );
 }
 
