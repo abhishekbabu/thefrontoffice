@@ -16,7 +16,8 @@ export function MoveRow({ move, onOpen }: { move: ActivityRow; onOpen?: (move: A
   return (
     <ListRow current={move.is_mine} onClick={onOpen && move.moves.length ? () => onOpen(move) : undefined}>
       <span className="w-16 shrink-0 font-mono text-[11px] text-muted-foreground">{move.when}</span>
-      <span className="w-48 shrink-0 truncate">{move.who}</span>
+      {/* Gives way on a narrow screen rather than pushing the badge out of the card. */}
+      <span className="w-48 min-w-0 truncate">{move.who}</span>
       <Badge variant="muted" appearance="label" className="shrink-0">
         {move.what}
       </Badge>

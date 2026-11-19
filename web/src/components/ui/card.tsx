@@ -12,7 +12,7 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       className={cn(
         "flex items-center justify-between gap-3 border-b border-border px-4 py-2.5",
-        "font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground",
+        "font-mono text-[12px] font-semibold uppercase tracking-[0.04em] text-muted-foreground",
         className,
       )}
       {...props}

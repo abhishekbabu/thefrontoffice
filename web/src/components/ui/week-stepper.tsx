@@ -35,7 +35,7 @@ export function WeekStepper({ range, onStep }: { range: WeekRange; onStep: (week
         </span>
         {/* Said, not only implied by the controls: which week this is relative to now. */}
         {week === current ? (
-          <Badge variant="muted" appearance="label" className="h-4 px-1.5 text-[9.5px]">
+          <Badge variant="muted" appearance="label" className="h-4 px-1.5 text-[10.5px]">
             this week
           </Badge>
         ) : (
@@ -43,7 +43,7 @@ export function WeekStepper({ range, onStep }: { range: WeekRange; onStep: (week
             variant="ghost"
             aria-label={`Back to this week (week ${current})`}
             onClick={() => onStep(current)}
-            className="h-4 gap-1 px-1.5 font-mono text-[9.5px] text-muted-foreground"
+            className="h-4 gap-1 px-1.5 font-mono text-[10.5px] text-muted-foreground"
           >
             <Undo2 className="size-2.5" />
             week {current}

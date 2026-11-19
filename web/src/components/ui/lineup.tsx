@@ -185,7 +185,7 @@ function SpotScore({ spot }: { spot: Spot }) {
         {played && (
           <span
             className={cn(
-              "font-mono text-[9.5px] uppercase tracking-wider",
+              "font-mono text-[10.5px] uppercase tracking-wide",
               spot.scoring === "live" ? "text-ok" : "text-muted-foreground",
             )}
           >

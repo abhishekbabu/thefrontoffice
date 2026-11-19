@@ -30,30 +30,35 @@ export function PageHeader({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-5 py-4">
-      <div className="flex min-w-0 items-center gap-3">
-        {leading}
-        <div className="min-w-0">
-          {/* On the name's own line rather than after the block: the meta line
-              is much the longer of the two, so a link placed after both drifts
-              out to the far right and stops reading as belonging to the name. */}
-          <div className="flex min-w-0 items-center gap-1">
-            <h1 className="truncate font-display text-[21px] font-semibold leading-tight tracking-tight">
-              {title}
-            </h1>
-            {href && (
-              <ExternalLink
-                href={href}
-                label={hrefLabel ?? "Open on the platform"}
-                className="h-6 shrink-0 px-1"
-              />
-            )}
+    // The bar spans the column; what is in it keeps to the page's width
+    // (`--page-max`), so the controls sit over the content they act on rather
+    // than at the far edge of a wide screen.
+    <header data-bleed className="sticky top-0 z-20 border-b border-border bg-background">
+      <div className="flex max-w-(--page-max) flex-wrap items-center justify-between gap-3 px-5 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {leading}
+          <div className="min-w-0">
+            {/* On the name's own line rather than after the block: the meta line
+                is much the longer of the two, so a link placed after both drifts
+                out to the far right and stops reading as belonging to the name. */}
+            <div className="flex min-w-0 items-center gap-1">
+              <h1 className="truncate font-display text-[21px] font-semibold leading-tight tracking-tight">
+                {title}
+              </h1>
+              {href && (
+                <ExternalLink
+                  href={href}
+                  label={hrefLabel ?? "Open on the platform"}
+                  className="h-6 shrink-0 px-1"
+                />
+              )}
+            </div>
+            {meta && <p className="mt-0.5 font-mono text-[12px] text-muted-foreground">{meta}</p>}
           </div>
-          {meta && <p className="mt-0.5 font-mono text-[12px] text-muted-foreground">{meta}</p>}
         </div>
+        {children}
       </div>
-      {children}
-    </div>
+    </header>
   );
 }
 
