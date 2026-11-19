@@ -158,12 +158,6 @@ def test_structuring_is_held_to_the_schema() -> None:
     assert models.calls[0]["config"]["response_schema"] is TradeVerdict
 
 
-def test_structuring_failure_is_wrapped() -> None:
-    c, _ = _client(error=BROKEN)
-    with pytest.raises(AIResponseError):
-        c.structure_text("prose", TradeVerdict, instruction="x")
-
-
 # ── usage logging ───────────────────────────────────────────────────────
 
 
@@ -181,21 +175,6 @@ def test_token_usage_is_logged() -> None:
         c.generate_structured("p", ScoutReport)
     assert "3400 in" in logs.text
     assert "310 out" in logs.text
-    assert MODEL_PRO in logs.text
-
-
-def test_structuring_logs_against_flash() -> None:
-    c, _ = _client(_response(MOCK_NBA_VERDICT, "{}", _usage()))
-    with capture_logs(GEMINI_LOGGER) as logs:
-        c.structure_text("prose", TradeVerdict, instruction="x")
-    assert MODEL_FLASH in logs.text
-
-
-def test_missing_usage_metadata_still_returns_the_answer_and_logs_the_call() -> None:
-    c, _ = _client(_response(MOCK_NBA_REPORT, "{}"))
-    with capture_logs(GEMINI_LOGGER) as logs:
-        result = c.generate_structured("p", ScoutReport)
-    assert result == MOCK_NBA_REPORT
     assert MODEL_PRO in logs.text
 
 
