@@ -10,6 +10,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATE
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame, SeasonState
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
+    LeagueSettings,
     Matchup,
     MatchupSide,
     Pairing,
@@ -18,7 +19,6 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Timeframe,
     YahooLeague,
     YahooPlayer,
-    YahooRules,
     YahooTeam,
 )
 
@@ -80,6 +80,8 @@ class FakeYahoo:
         teams: list[YahooTeam] | None = None,
         available: list[YahooPlayer] | None = None,
         roster_error: Exception | None = None,
+        weights: dict[str, float] | None = None,
+        max_weekly_adds: int | None = 3,
     ) -> None:
         self.roster_players = roster if roster is not None else [make_player("Roster One", selected_position="PF")]
         self.roster_error = roster_error
@@ -90,10 +92,13 @@ class FakeYahoo:
         self.matchup_fetches = 0
         self.league_teams = teams if teams is not None else DEFAULT_TEAMS
         self.available = available if available is not None else [make_player("Waiver One")]
+        self.weights = weights or {}
+        self.max_weekly_adds = max_weekly_adds
         self.week_stats: dict[int, tuple[dict[str, str], dict[str, str]]] = {}
         """Each side's categories by week, by Yahoo stat id: mine, then theirs."""
+        self.week_points: dict[int, tuple[tuple[str, str], tuple[str, str]]] = {}
+        """Each side's fantasy points by week, scored then projected: mine, then theirs."""
         self.pairings: list[int] = []
-        self.league_rules = YahooRules(scoring_type="headone", playoff_start_week=19, playoff_teams=6)
         self.season_weeks: dict[int, Pairing | None] | None = None
         """Your side of each week's scoreboard; every week against Their Team when None."""
         self.standings_error: Exception | None = None
@@ -117,9 +122,6 @@ class FakeYahoo:
             raise self.standings_error
         return self.league_teams
 
-    def rules(self) -> YahooRules:
-        return self.league_rules
-
     def season(self, team_key: str, weeks: list[int]) -> dict[int, Pairing | None]:
         if self.season_weeks is not None:
             return {week: self.season_weeks.get(week) for week in weeks}
@@ -142,9 +144,16 @@ class FakeYahoo:
             opponent_roster=[make_player("Their Star", position="C")],
         )
 
-    def stat_categories(self) -> list[StatCategory]:
-        """The nine categories, turnovers won by fewer, as a standard league's settings list them."""
-        return [StatCategory(c.yahoo_stat, c.label, fewer_wins=c is TURNOVERS) for c in CATEGORIES]
+    def settings(self) -> LeagueSettings:
+        """The nine categories, turnovers won by fewer, with the weights and add limit this was built with;
+        six teams make playoffs from week 19."""
+        return LeagueSettings(
+            categories=[StatCategory(c.yahoo_stat, c.label, fewer_wins=c is TURNOVERS) for c in CATEGORIES],
+            weights=self.weights,
+            max_weekly_adds=self.max_weekly_adds,
+            playoff_start_week=19,
+            playoff_teams=6,
+        )
 
     def pairing(self, team_key: str, week: int) -> Pairing | None:
         """Any week against Their Team, with the categories this was built with for it; 12 blocks to 17 otherwise."""
@@ -153,11 +162,14 @@ class FakeYahoo:
             return None
         start, end = self.matchup_dates
         mine, theirs = self.week_stats.get(week, ({BLOCKS.yahoo_stat: "12"}, {BLOCKS.yahoo_stat: "17"}))
+        (my_points, my_projected), (their_points, their_projected) = self.week_points.get(week, (("", ""), ("", "")))
         return Pairing(
             start=start,
             end=end,
-            mine=MatchupSide(team_key="t.1", name="My Team", points="", stats=mine),
-            opponent=MatchupSide(team_key="t.2", name="Their Team", points="", stats=theirs),
+            mine=MatchupSide(team_key="t.1", name="My Team", points=my_points, projected=my_projected, stats=mine),
+            opponent=MatchupSide(
+                team_key="t.2", name="Their Team", points=their_points, projected=their_projected, stats=theirs
+            ),
         )
 
     def fetch_top_by_stat(
@@ -181,8 +193,8 @@ class FakeYahoo:
         return [p for key in player_keys if (p := next((p for p in everyone if p.player_key == key), None))]
 
 
-def yahoo_league(key: str = "466.l.1", name: str = "One") -> YahooLeague:
-    return YahooLeague(league_key=key, name=name, league_type="head", current_week=5)
+def yahoo_league(key: str = "466.l.1", name: str = "One", scoring_type: str = "head") -> YahooLeague:
+    return YahooLeague(league_key=key, name=name, league_type="head", current_week=5, scoring_type=scoring_type)
 
 
 class FakeYahooAuth:
@@ -291,5 +303,5 @@ def nba_provider(
         nba=nba or FakeNBA(),
         sleeper=sleeper or FakeSleeperProjections(),
         espn=espn or FakeESPN(),
-        max_weekly_adds=3,
+        fallback_weekly_adds=3,
     )

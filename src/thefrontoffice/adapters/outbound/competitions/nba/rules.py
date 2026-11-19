@@ -112,3 +112,20 @@ Line = dict[str, float]
 def line(totals: Mapping[str, float], games: int = 1) -> Line:
     """Every category's figure over summed box scores, keyed by label."""
     return {c.label: value for c in CATEGORIES if (value := c.figure(totals, games)) is not None}
+
+
+COUNTED = {c.yahoo_stat: c for c in CATEGORIES if not c.is_percentage}
+"""The counting categories by Yahoo stat id: what a points league's weights can multiply."""
+
+
+def fantasy_points(figures: Mapping[str, float], weights: Mapping[str, float]) -> float | None:
+    """A points league's score for a line: each counting category's figure times its weight, summed.
+
+    Per game for a per-game line, a total for a projected one. `weights` is keyed by Yahoo stat
+    id, as the league's settings give them. None for an empty line, and for a league weighting
+    a stat no category here counts (field goals attempted, double-doubles): a sum missing one
+    of its terms would read as the real score.
+    """
+    if not figures or not weights or any(stat not in COUNTED for stat in weights):
+        return None
+    return sum(weight * figures.get(COUNTED[stat].label, 0.0) for stat, weight in weights.items())

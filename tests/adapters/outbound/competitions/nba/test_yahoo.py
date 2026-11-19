@@ -222,7 +222,7 @@ def _two_league_provider(auth: FakeYahooAuth | None = None) -> YahooNBAProvider:
         nba=FakeNBA(),
         sleeper=FakeSleeperProjections(),
         espn=FakeESPN(),
-        max_weekly_adds=3,
+        fallback_weekly_adds=3,
     )
 
 
@@ -859,3 +859,145 @@ def test_a_trade_is_priced_knowing_when_a_hurt_player_is_back() -> None:
     lines = [line for line in text.splitlines() if line.startswith("- Stephen Curry")]
     assert lines
     assert all("~22 Nov" in line for line in lines)
+
+
+# ── the add limit ───────────────────────────────────────────────────────
+
+
+def test_the_add_limit_is_the_leagues_own() -> None:
+    labels = {s.label: s.value for s in nba_provider(FakeYahoo(adds_used=1, max_weekly_adds=4)).summary("").headline}
+
+    assert labels["Adds left"] == "3 of 4"
+
+
+def test_a_league_naming_no_add_limit_falls_back_to_the_configured_one() -> None:
+    context = nba_provider(FakeYahoo(adds_used=1, max_weekly_adds=None)).build_context()
+
+    assert context.headline == [Stat(label="Adds left", value="2 of 3", tone="good")]
+
+
+# ── a points league ─────────────────────────────────────────────────────
+
+WEIGHTS = {"12": 1.0, "15": 1.2, "16": 1.5, "17": 3.0, "18": 3.0, "19": -1.0}
+"""A standard Yahoo points league's weights, by stat id: PTS, REB, AST, STL, BLK, TO."""
+
+POINTS_LEAGUE = yahoo_league(scoring_type="headpoint")
+
+
+def _points(yahoo: FakeYahoo | None = None, nba: FakeNBA | None = None) -> YahooNBAProvider:
+    return nba_provider(yahoo or FakeYahoo(weights=WEIGHTS), nba=nba, league=POINTS_LEAGUE)
+
+
+def test_a_points_week_is_scored_in_fantasy_points_with_no_category_table() -> None:
+    yahoo = FakeYahoo(weights=WEIGHTS)
+    yahoo.week_points[5] = (("349.90", "896.45"), ("575.80", "1107.37"))
+
+    summary = _points(yahoo).summary("")
+
+    headline = {s.label: (s.value, s.tone) for s in summary.headline}
+    assert headline["Live"] == ("349.90 – 575.80", "warning")
+    assert headline["Projected"] == ("896.45 – 1107.37", "warning")
+    assert "Categories" not in headline
+    assert summary.categories == []
+    assert summary.mine is not None and summary.opponent is not None
+    assert (summary.mine.points, summary.opponent.points) == ("349.90 pts · 896.45 proj", "575.80 pts · 1107.37 proj")
+
+
+def test_a_points_week_played_is_won_on_its_final_total() -> None:
+    yahoo = FakeYahoo(weights=WEIGHTS)
+    yahoo.week_points[3] = (("1185.50", "1192.10"), ("778.80", "917.22"))
+
+    week = _points(yahoo).week_of("", 3)
+
+    assert [(s.label, s.value, s.tone) for s in week.headline] == [("Final", "1185.50 – 778.80", "good")]
+
+
+def test_a_category_league_keeps_its_categories() -> None:
+    """A head-to-head categories league is scored as it always was, however Yahoo spells it."""
+    league = yahoo_league(scoring_type="headone")
+
+    summary = nba_provider(FakeYahoo(weights=WEIGHTS), league=league).summary("")
+
+    assert {s.label for s in summary.headline} >= {"Categories"}
+    assert len(summary.categories) == len(CATEGORIES)
+
+
+def test_a_points_league_with_no_weights_is_read_as_a_category_one() -> None:
+    """There is nothing to sum a player's line with, so no fantasy-point column claims one."""
+    card = nba_provider(FakeYahoo(), league=POINTS_LEAGUE).roster()[0]
+
+    assert "FPTS" not in card.columns
+
+
+def test_a_points_leagues_season_reads_each_weeks_fantasy_points() -> None:
+    """The league's scoring type, read once from the league list, settles how the schedule scores a week too."""
+    yahoo = FakeYahoo(weights=WEIGHTS)
+    yahoo.week_points[3] = (("1185.50", ""), ("778.80", ""))
+
+    season = _points(yahoo).schedule("").season
+
+    assert next(row.result for row in season if row.label == "Week 3") == "1185.50-778.80"
+
+
+def test_a_points_leagues_rows_carry_fantasy_points_a_game() -> None:
+    yahoo = FakeYahoo(weights=WEIGHTS, roster=[make_player("A B")])
+    form = FakeNBA(stats={"A B": _form(pts=20, reb=10, ast=4, stl=1, blk=2, to=3)})
+
+    card = _points(yahoo, form).roster()[0]
+
+    assert (card.columns["FPTS"], card.values["FPTS"]) == ("44.0", pytest.approx(44.0))
+
+
+def test_a_points_row_with_no_form_shows_a_dash() -> None:
+    card = (
+        _points(FakeYahoo(weights=WEIGHTS, available=[make_player("Free Man")]))
+        .free_agents("", PlayerQuery())
+        .players[0]
+    )
+
+    assert card.columns["FPTS"] == "—"
+    assert "FPTS" not in card.values
+
+
+def test_a_rivals_roster_in_a_points_league_carries_the_same_column() -> None:
+    card = _points().roster_of("", "t.2")[0]
+
+    assert "FPTS" in card.columns
+
+
+def test_a_points_leagues_drawer_is_headed_by_fantasy_points_a_game() -> None:
+    yahoo = FakeYahoo(weights=WEIGHTS, roster=[make_player("A B", key="ab")])
+    form = FakeNBA(stats={"A B": _form(pts=20, reb=10, ast=4, stl=1, blk=2, to=3)})
+
+    detail = _points(yahoo, form).player("", "ab")
+
+    assert (detail.headline, detail.headline_label) == ("44.0", "fpts/game, last 15")
+    assert {s.label: s.value for s in detail.groups[0].stats}["FPTS"] == "44.0"
+
+
+def test_a_points_drawer_without_form_says_so() -> None:
+    detail = _points(FakeYahoo(weights=WEIGHTS, roster=[make_player("A B", key="ab")])).player("", "ab")
+
+    assert (detail.headline, detail.headline_label) == ("", "No recent form")
+
+
+def test_a_points_leagues_scout_ranks_the_wire_by_fantasy_points_a_game() -> None:
+    wire = [make_player("Scorer", key="s"), make_player("Stopper", key="b"), make_player("Unknown", key="u")]
+    form = FakeNBA(stats={"Scorer": _form(pts=30), "Stopper": _form(pts=10, blk=5)})
+    yahoo = FakeYahoo(weights=WEIGHTS, available=wire, stat_leaders={"BLK": [make_player("Leader", key="l")]})
+
+    context = _points(yahoo, form).build_context()
+
+    assert list(context.candidate_lines) == ["Scorer", "Stopper"]  # 30 a game, then 25; no line, no rank
+    assert "PTS 1, REB 1.2" in context.prompt
+    assert "Top in" not in context.prompt  # categories lead nothing in a points league
+
+
+def test_a_points_leagues_trade_is_priced_in_fantasy_points() -> None:
+    yahoo = FakeYahoo(weights=WEIGHTS, search_results={"A B": [make_player("A B")]})
+    form = FakeNBA(stats={"A B": _form(played=12, pts=20)})
+
+    context = _points(yahoo, form).build_trade_context("", TradeProposal(giving=["A B"], receiving=[]))
+
+    assert "= 20.0 fpts" in context.prompt
+    assert "fantasy points" in context.situation

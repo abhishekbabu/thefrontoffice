@@ -9,7 +9,7 @@ from collections.abc import Mapping
 
 from thefrontoffice.adapters.outbound.competitions import brackets
 from thefrontoffice.adapters.outbound.competitions.dates import span
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import Pairing, YahooRules, YahooTeam
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import LeagueSettings, Pairing, YahooTeam
 from thefrontoffice.domain.models import Outcome, ScheduleRow, StandingRow, record
 
 BYE = "bye"
@@ -48,11 +48,18 @@ def table(teams: list[YahooTeam], mine: str) -> list[StandingRow]:
 
 
 def season(
-    weeks: Mapping[int, Pairing | None], rules: YahooRules, current: int, records: Mapping[str, str]
+    weeks: Mapping[int, Pairing | None],
+    rules: LeagueSettings,
+    current: int,
+    records: Mapping[str, str],
+    *,
+    points: bool,
 ) -> list[ScheduleRow]:
     """Your season, week by week: who you play, their record, and how it went.
 
-    `records` is each team's record by key, from the table.
+    `records` is each team's record by key, from the table. `points` is whether
+    the league is won on fantasy points (`YahooLeague.by_points`), whose score
+    a week then shows, rather than on categories.
     """
     rows = []
     for week, found in sorted(weeks.items()):
@@ -65,7 +72,7 @@ def season(
                 date=span(found.start, found.end) if found else "",
                 opponent=found.opponent.name if found else "",
                 detail=playoff or (records.get(found.opponent.team_key, "") if found else BYE),
-                result=_result(found, rules, week, current),
+                result=_result(found, week, current, points=points),
                 outcome=_outcome(found),
                 is_current=week == current,
                 playoffs=bool(playoff),
@@ -74,7 +81,7 @@ def season(
     return rows
 
 
-def _round(rules: YahooRules, week: int) -> str:
+def _round(rules: LeagueSettings, week: int) -> str:
     """The bracket round a week is, or empty for the regular season.
 
     A week from the playoff start that the bracket does not reach — a league
@@ -87,7 +94,7 @@ def _round(rules: YahooRules, week: int) -> str:
     return brackets.round_name(rounds, start, week) or "Playoffs"
 
 
-def _result(found: Pairing | None, rules: YahooRules, week: int, current: int) -> str:
+def _result(found: Pairing | None, week: int, current: int, *, points: bool) -> str:
     """The score in the league's terms — points, or categories won-lost-tied — once there is one.
 
     A week to come has no score, and nor has the week being played before anything is on the board.
@@ -95,7 +102,7 @@ def _result(found: Pairing | None, rules: YahooRules, week: int, current: int) -
     if found is None or week > current or found.status == "preevent":
         return ""
     mine, theirs = found.mine.points, found.opponent.points
-    if rules.points:
+    if points:
         return f"{mine}-{theirs}" if _amount(mine) or _amount(theirs) else ""
     won, lost, tied = int(_amount(mine)), int(_amount(theirs)), found.tied_categories
     return record(won, lost, tied) if won or lost or tied else ""

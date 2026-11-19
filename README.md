@@ -52,7 +52,7 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   matchup header shows the score once a game kicks off, and playoff odds as
   "99% win / 83% loss".
 - **Every week of the season**: page back to see what was played and forward to
-  see the projected lineups. FPL gameweeks and NBA category weeks work the same way.
+  see the projected lineups. FPL gameweeks and NBA weeks work the same way.
 - **Trades**: near-even offers that start for you, one a row: give, get, the
   partner and why he might accept, and what each does to your regular season,
   your playoff weeks, your total and your playoff odds. Ranked by the odds, or
@@ -108,6 +108,10 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 NFL has the deepest analysis. FPL and NBA share the matchup, schedule, fixtures,
 team and league pages. An NBA player's PTS/REB/AST average his last 15 games, or
 every game he has while fewer (the drawer says how many); under 3 games shows none.
+An NBA league is read as Yahoo scores it: a category league shows the categories,
+a points league its fantasy points scored and projected, with fantasy points a
+game (from the league's weights, over the same games) on player rows and the
+scout's free agents ranked by them. The add budget is the league's own.
 
 | | |
 | --- | --- |
@@ -220,7 +224,7 @@ Settings come from the environment or `.env`, and each is validated at startup.
 | `YAHOO_SOURCE` | `oauth` | `browser` reads Yahoo from the [browser sync](#yahoo-browser-sync) |
 | `YAHOO_CLIENT_ID` / `YAHOO_CLIENT_SECRET` | none | Enables NBA, read through OAuth |
 | `YAHOO_REDIRECT_URI` | `https://localhost:8080` | Must match the Yahoo app |
-| `YAHOO_MAX_WEEKLY_ADDS` | `3` | The NBA add budget |
+| `YAHOO_MAX_WEEKLY_ADDS` | `3` | The NBA add budget for a league whose Yahoo settings name none |
 | `GOOGLE_API_KEY` / `GROQ_API_KEY` / `OPENROUTER_API_KEY` | none | Model keys, tried in that order |
 | `GROQ_ANALYSIS_MODEL` / `GROQ_PARSING_MODEL` | `openai/gpt-oss-120b` / `-20b` | |
 | `OPENROUTER_ANALYSIS_MODEL` / `OPENROUTER_PARSING_MODEL` | `nvidia/nemotron-3.5-super-vl:free` | Any `:free` model with structured outputs |

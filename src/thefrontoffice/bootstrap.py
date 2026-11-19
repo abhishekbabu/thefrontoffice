@@ -420,7 +420,7 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
         nba=SleeperNBAForm(sleeper),
         sleeper=sleeper,
         espn=_espn_client(settings),
-        max_weekly_adds=settings.yahoo_max_weekly_adds,
+        fallback_weekly_adds=settings.yahoo_max_weekly_adds,
     )
 
 

@@ -383,37 +383,62 @@ def test_the_league_scores_the_categories_its_settings_list(tmp_path: Path) -> N
     )
     client, _ = _client(tmp_path, answers={"settings": settings})
 
-    assert [(c.stat_id, c.name, c.fewer_wins) for c in client.stat_categories()] == [
+    read = client.settings()
+
+    assert [(c.stat_id, c.name, c.fewer_wins) for c in read.categories] == [
         ("5", "FG%", False),
         ("19", "TO", True),
     ]
+    assert (read.weights, read.max_weekly_adds) == ({}, None)  # a category league naming no limit
 
 
-def test_the_settings_say_how_a_matchup_is_won_and_where_the_bracket_starts(tmp_path: Path) -> None:
+def test_a_points_league_carries_its_weights_and_its_add_limit(tmp_path: Path) -> None:
+    modifiers = "".join(
+        f"<stat><stat_id>{stat}</stat_id><value>{value}</value></stat>" for stat, value in (("15", "1.2"), ("19", "-1"))
+    )
     settings = (
-        "<fantasy_content><league><settings><scoring_type>headpoint</scoring_type><uses_playoff>1</uses_playoff>"
+        f"<fantasy_content><league><settings><stat_modifiers><stats>{modifiers}</stats></stat_modifiers>"
+        "<max_weekly_adds>4</max_weekly_adds></settings></league></fantasy_content>"
+    )
+    client, _ = _client(tmp_path, answers={"settings": settings})
+
+    read = client.settings()
+
+    assert (read.weights, read.max_weekly_adds) == ({"15": 1.2, "19": -1.0}, 4)
+
+
+def test_a_side_carries_yahoos_projected_final(tmp_path: Path) -> None:
+    client, _ = _client(tmp_path, answers={"scoreboard;week=2": scoreboard_xml(projected=("896.45", "1107.37"))})
+    found = client.pairing("t1", 2)
+
+    assert found is not None
+    assert (found.mine.points, found.mine.projected, found.opponent.projected) == ("50", "896.45", "1107.37")
+
+
+def test_the_settings_say_where_the_bracket_starts(tmp_path: Path) -> None:
+    settings = (
+        "<fantasy_content><league><settings><uses_playoff>1</uses_playoff>"
         "<playoff_start_week>19</playoff_start_week><num_playoff_teams>6</num_playoff_teams>"
         "<has_multiweek_championship>1</has_multiweek_championship></settings></league></fantasy_content>"
     )
     client, _ = _client(tmp_path, answers={"settings": settings})
 
-    rules = client.rules()
+    rules = client.settings()
 
-    assert (rules.scoring_type, rules.points) == ("headpoint", True)
     assert (rules.playoff_start_week, rules.playoff_teams, rules.multiweek_final) == (19, 6, True)
 
 
 def test_a_league_with_playoffs_off_has_no_bracket(tmp_path: Path) -> None:
     settings = (
-        "<fantasy_content><league><settings><scoring_type>headone</scoring_type><uses_playoff>0</uses_playoff>"
+        "<fantasy_content><league><settings><uses_playoff>0</uses_playoff>"
         "<playoff_start_week>19</playoff_start_week><num_playoff_teams>6</num_playoff_teams>"
         "</settings></league></fantasy_content>"
     )
     client, _ = _client(tmp_path, answers={"settings": settings})
 
-    rules = client.rules()
+    rules = client.settings()
 
-    assert (rules.points, rules.playoff_start_week, rules.playoff_teams) == (False, 0, 0)
+    assert (rules.playoff_start_week, rules.playoff_teams) == (0, 0)
 
 
 def test_the_table_is_read_from_the_standings_which_the_team_list_lacks(tmp_path: Path) -> None:

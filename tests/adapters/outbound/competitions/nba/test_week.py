@@ -1,10 +1,56 @@
-"""Tests for a category league's week as the page reads it: `nba/week.py`."""
+"""Tests for a basketball week as the page reads it: `nba/week.py`."""
 
 from support.nba import make_player
 
 from thefrontoffice.adapters.outbound.competitions.nba import week
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, FIELD_GOALS, POINTS, TURNOVERS
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, StatCategory
+
+
+def _side(points: str, projected: str = "") -> MatchupSide:
+    return MatchupSide(team_key="t", name="T", points=points, projected=projected, stats={})
+
+
+def test_a_points_week_being_played_is_scored_and_projected_in_fantasy_points() -> None:
+    stats = week.points(_side("349.90", "896.45"), _side("575.80", "1107.37"), "playing")
+
+    assert [(s.label, s.value, s.tone) for s in stats] == [
+        ("Live", "349.90 – 575.80", "warning"),
+        ("Projected", "896.45 – 1107.37", "warning"),
+    ]
+
+
+def test_a_points_week_played_is_final_with_no_projection() -> None:
+    stats = week.points(_side("1185.50", "1192.10"), _side("778.80", "917.22"), "played")
+
+    assert [(s.label, s.tone) for s in stats] == [("Final", "good")]
+
+
+def test_a_points_week_to_come_has_no_score() -> None:
+    assert week.points(_side("0.00", "862.79"), _side("0.00", "1116.92"), "to come") == []
+
+
+def test_a_points_score_that_is_not_a_number_is_left_out() -> None:
+    assert week.points(_side(""), _side(""), "playing") == []
+
+
+def test_a_level_points_week_pulls_the_eye_neither_way() -> None:
+    [score] = week.points(_side("100.00"), _side("100.00"), "played")
+
+    assert score.tone == "neutral"
+
+
+def test_a_sides_card_carries_what_it_scored_and_is_projected_to() -> None:
+    side = _side("349.90", "896.45")
+
+    assert week.total(side, "playing") == "349.90 pts · 896.45 proj"
+    assert week.total(side, "played") == "349.90 pts"
+    assert week.total(side, "to come") == "896.45 proj"
+
+
+def test_a_week_is_placed_against_the_one_being_played() -> None:
+    assert [week.stage(n, 5) for n in (4, 5, 6)] == ["played", "playing", "to come"]
+
 
 NINE = [
     StatCategory(c.yahoo_stat, c.label, fewer_wins=c is TURNOVERS) for c in (POINTS, BLOCKS, FIELD_GOALS, TURNOVERS)

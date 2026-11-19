@@ -9,6 +9,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     SCOUTED,
     THREES,
     TURNOVERS,
+    fantasy_points,
     line,
     stranded,
 )
@@ -75,3 +76,24 @@ def test_threes_are_tagged_so_the_count_cannot_run_into_the_tag() -> None:
 def test_an_injured_slot_refuses_only_what_yahoos_rules_say_it_refuses(slot: str, status: str, expected: bool) -> None:
     """A status the rules never mention is not flagged: a false "move him" costs more than a late one."""
     assert stranded(slot, status) is expected
+
+
+# ── a points league ─────────────────────────────────────────────────────
+
+WEIGHTS = {"12": 1.0, "15": 1.2, "16": 1.5, "17": 3.0, "18": 3.0, "19": -1.0}
+"""A standard Yahoo points league's weights, by stat id: PTS, REB, AST, STL, BLK, TO."""
+
+
+def test_fantasy_points_weigh_each_counting_category() -> None:
+    figures = {"PTS": 20.0, "REB": 10.0, "AST": 4.0, "STL": 1.0, "BLK": 2.0, "TO": 3.0, "FG%": 0.5}
+
+    assert fantasy_points(figures, WEIGHTS) == pytest.approx(20 + 12 + 6 + 3 + 6 - 3)
+
+
+def test_an_empty_line_scores_nothing_rather_than_zero() -> None:
+    assert fantasy_points({}, WEIGHTS) is None
+
+
+def test_a_weighted_stat_no_category_counts_leaves_no_score_rather_than_a_partial_one() -> None:
+    """Field goals attempted (stat 3) are weighted by some leagues and counted by no category here."""
+    assert fantasy_points({"PTS": 20.0}, {"12": 1.0, "3": -0.5}) is None
