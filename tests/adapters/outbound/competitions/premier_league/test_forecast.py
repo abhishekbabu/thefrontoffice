@@ -145,3 +145,21 @@ def test_the_logs_a_forecast_reads_are_everyone_once() -> None:
 def test_the_window_reaches_eight_gameweeks_back_and_never_before_the_first() -> None:
     assert recent_from(11) == 3
     assert recent_from(4) == 1
+
+
+def test_a_gameweek_to_come_centres_each_players_range_on_his_worth_a_match() -> None:
+    games = {8: [game(3, 2), game(4, 10)]}
+    centred = replace(week(games=games), expected={8: 9.0})
+
+    drawn = by_id(side(squad(captain=9), centred, "mine"))["8"][0]
+
+    assert drawn.samples == (3.0, 15.0)  # his own spread, around 9.0 rather than 6.0
+
+
+def test_a_player_with_no_matches_to_draw_from_draws_his_worth() -> None:
+    blank_log = {**SQUAD_PLAYERS, 8: replace(SQUAD_PLAYERS[8], points_per_game=0.0)}
+    centred = replace(week(), expected={8: 7.0})
+
+    drawn = by_id(side(squad(captain=9, catalog=blank_log), centred, "mine"))["8"][0]
+
+    assert drawn.samples == (7.0,)

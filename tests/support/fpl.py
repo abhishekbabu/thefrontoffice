@@ -104,6 +104,12 @@ MARKET = {
     103: player(103, "MID", 9.0, cost=60, team="LIV", status="i"),
 }
 
+WITH_CITY = [
+    Fixture(event=5, home="ARS", away="LIV", home_difficulty=2, away_difficulty=4),
+    Fixture(event=5, home="MCI", away="TOT", home_difficulty=2, away_difficulty=4),
+]
+"""The fake week with Manchester City playing too, so P15 and P2 are worth something: by default they blank."""
+
 DOUBTFUL_P3 = {**SQUAD_PLAYERS, 3: player(3, "DEF", 6.0, status="d", chance_of_playing=50), **MARKET}
 """The catalog with a starting defender doubtful: flagged, priced and started like anyone else."""
 
@@ -221,6 +227,8 @@ class FakeFPL:
         standings_error: Exception | None = None,
         live: dict[int, LiveStat] | None = None,
         live_error: Exception | None = None,
+        results: dict[int, dict[int, LiveStat]] | None = None,
+        results_error: Exception | None = None,
         chips: list[Chip] | None = None,
         chips_played: list[ChipPlay] | None = None,
         chips_error: Exception | None = None,
@@ -298,6 +306,9 @@ class FakeFPL:
         self.standings_error = standings_error
         self.live = live if live is not None else {}
         self.live_error = live_error
+        self.results = results or {}
+        self.results_error = results_error
+        self.results_requests: list[list[int]] = []
         self.chips = chips if chips is not None else list(DEFAULT_CHIPS)
         self.chips_played = chips_played or []
         self.chips_error = chips_error
@@ -387,6 +398,12 @@ class FakeFPL:
         if self.live_error:
             raise self.live_error
         return self.live
+
+    def get_results(self, gameweeks: list[int]) -> dict[int, dict[int, LiveStat]]:
+        self.results_requests.append(list(gameweeks))
+        if self.results_error:
+            raise self.results_error
+        return {week: self.results.get(week, {}) for week in gameweeks}
 
     def get_gameweeks(self) -> list[Gameweek]:
         return [

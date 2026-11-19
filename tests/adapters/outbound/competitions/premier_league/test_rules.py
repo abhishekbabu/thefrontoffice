@@ -13,16 +13,20 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
     Roster,
     Transfer,
     affordable_transfers,
+    armbands,
     best_lineup,
+    club_counts,
     effective_points,
     fixtures_by_club,
     formations,
     free_transfers,
+    likely,
     lineup_changes,
     plays,
     points_of,
     points_with_captain,
     purchase_prices,
+    room_at,
     roster,
     selling_price,
 )
@@ -89,7 +93,7 @@ def test_the_familiar_shapes_are_all_present() -> None:
 
 
 def test_the_best_eleven_is_legal() -> None:
-    lineup = best_lineup(FIFTEEN)
+    lineup = best_lineup(FIFTEEN, effective_points)
     assert len(lineup.starters) == STARTING_SIZE
     counts = {position: sum(p.position == position for p in lineup.starters) for position in FORMATION_LIMITS}
     for position, count in counts.items():
@@ -98,13 +102,13 @@ def test_the_best_eleven_is_legal() -> None:
 
 
 def test_the_best_eleven_leaves_the_weakest_four_out() -> None:
-    lineup = best_lineup(FIFTEEN)
+    lineup = best_lineup(FIFTEEN, effective_points)
     assert {p.id for p in lineup.bench} == {2, 6, 7, 12}
     assert lineup.formation == "3-4-3"
 
 
 def test_the_captain_is_the_highest_expecting_starter_and_counts_twice() -> None:
-    lineup = best_lineup(FIFTEEN)
+    lineup = best_lineup(FIFTEEN, effective_points)
     assert lineup.captain is not None and lineup.captain.id == 13
     assert lineup.points == 74.0  # 65.0 across the eleven, and the captain's 9.0 again
 
@@ -134,28 +138,28 @@ def test_taking_the_best_eleven_outright_would_be_illegal() -> None:
     )
     top_eleven = sorted(squad, key=lambda p: -p.expected_points)[:STARTING_SIZE]
     assert sum(p.position == "DEF" for p in top_eleven) < FORMATION_LIMITS["DEF"][0]
-    assert sum(p.position == "DEF" for p in best_lineup(squad).starters) == FORMATION_LIMITS["DEF"][0]
+    assert sum(p.position == "DEF" for p in best_lineup(squad, effective_points).starters) == FORMATION_LIMITS["DEF"][0]
 
 
 def test_a_ruled_out_star_is_benched_for_a_fit_squad_player() -> None:
     squad = [p for p in FIFTEEN if p.id != 8] + [player(8, "MID", 8.0, chance_of_playing=0)]
-    starters = {p.id for p in best_lineup(squad).starters}
+    starters = {p.id for p in best_lineup(squad, effective_points).starters}
     assert 8 not in starters
     assert 12 in starters
 
 
 def test_the_reserve_goalkeeper_sits_apart_from_the_outfield_bench() -> None:
     """Auto-subs can only replace a goalkeeper with a goalkeeper."""
-    assert best_lineup(FIFTEEN).bench[0].position == "GKP"
+    assert best_lineup(FIFTEEN, effective_points).bench[0].position == "GKP"
 
 
 def test_the_rest_of_the_bench_is_in_expected_points_order() -> None:
-    outfield = best_lineup(FIFTEEN).bench[1:]
+    outfield = best_lineup(FIFTEEN, effective_points).bench[1:]
     assert [p.expected_points for p in outfield] == sorted((p.expected_points for p in outfield), reverse=True)
 
 
 def test_a_squad_too_short_for_any_formation_yields_nothing() -> None:
-    lineup = best_lineup(squad_of(("GKP", 5.0), ("MID", 4.0)))
+    lineup = best_lineup(squad_of(("GKP", 5.0), ("MID", 4.0)), effective_points)
     assert lineup.starters == []
     assert lineup.captain is None
     assert lineup.points == 0.0
@@ -165,26 +169,26 @@ def test_a_squad_too_short_for_any_formation_yields_nothing() -> None:
 
 
 def test_no_changes_when_the_eleven_is_already_best() -> None:
-    best = best_lineup(FIFTEEN)
-    assert lineup_changes(best.starters, best) == []
+    best = best_lineup(FIFTEEN, effective_points)
+    assert lineup_changes(best.starters, best, effective_points) == []
 
 
 def test_a_change_pairs_the_player_coming_in_with_the_one_going_out() -> None:
-    best = best_lineup(FIFTEEN)
+    best = best_lineup(FIFTEEN, effective_points)
     current = [p for p in best.starters if p.id != 13] + [next(p for p in FIFTEEN if p.id == 12)]
 
-    changes = lineup_changes(current, best)
+    changes = lineup_changes(current, best, effective_points)
     assert [(c.start.id, c.drop.id if c.drop else None) for c in changes] == [(13, 12)]
     assert changes[0].gain == 7.5  # 9.0 coming in for 1.5
 
 
 def test_changes_are_ordered_by_what_they_gain() -> None:
-    best = best_lineup(FIFTEEN)
+    best = best_lineup(FIFTEEN, effective_points)
     current = [p for p in best.starters if p.id not in (11, 13)] + [
         next(p for p in FIFTEEN if p.id == 12),
         next(p for p in FIFTEEN if p.id == 7),
     ]
-    gains = [c.gain for c in lineup_changes(current, best)]
+    gains = [c.gain for c in lineup_changes(current, best, effective_points)]
     assert gains == sorted(gains, reverse=True)
 
 
@@ -218,10 +222,10 @@ SET_ELEVEN = {1, 3, 10, 11, 12, 20, 21, 22, 23, 24, 30}
 
 
 def test_a_keeper_is_only_ever_swapped_for_a_keeper() -> None:
-    best = best_lineup(KEEPERS_AND_BACKS)
+    best = best_lineup(KEEPERS_AND_BACKS, effective_points)
     current = [p for p in KEEPERS_AND_BACKS if p.id in SET_ELEVEN]
 
-    pairs = {(c.start.id, c.drop.id if c.drop else None) for c in lineup_changes(current, best)}
+    pairs = {(c.start.id, c.drop.id if c.drop else None) for c in lineup_changes(current, best, effective_points)}
 
     assert pairs == {(2, 1), (4, 3)}
 
@@ -240,9 +244,9 @@ def test_a_change_of_formation_swaps_across_positions_and_stays_legal_at_every_s
         player(31, "FWD", 4.0),
         player(32, "FWD", 3.0),
     ]
-    best = best_lineup(squad)
+    best = best_lineup(squad, effective_points)
     current = [p for p in squad if p.id in {1, 10, 11, 12, 13, 14, 20, 21, 22, 23, 30}]
-    changes = lineup_changes(current, best)
+    changes = lineup_changes(current, best, effective_points)
 
     assert sorted((c.start.position, c.drop.position if c.drop else "") for c in changes) == [
         ("FWD", "DEF"),
@@ -257,40 +261,46 @@ def test_a_change_of_formation_swaps_across_positions_and_stays_legal_at_every_s
 
 def test_the_swaps_listed_reach_the_best_elevens_total() -> None:
     """Nothing filtered on its own gain, so the list adds up to what the headline promises."""
-    best = best_lineup(KEEPERS_AND_BACKS)
+    best = best_lineup(KEEPERS_AND_BACKS, effective_points)
     current = [p for p in KEEPERS_AND_BACKS if p.id in SET_ELEVEN]
 
-    gained = sum(c.gain for c in lineup_changes(current, best))
+    gained = sum(c.gain for c in lineup_changes(current, best, effective_points))
 
-    assert round(gained, 2) == round(points_with_captain(best.starters, None) - points_with_captain(current, None), 2)
+    assert round(gained, 2) == round(
+        points_with_captain(best.starters, None, effective_points)
+        - points_with_captain(current, None, effective_points),
+        2,
+    )
 
 
 # ── transfers ───────────────────────────────────────────────────────────
 
 
 def test_a_transfer_prices_the_incoming_player_against_the_outgoing_sale() -> None:
-    transfer = Transfer(out=player(1, "MID", 3.0, cost=50), incoming=player(2, "MID", 6.0, cost=85), sale=48)
+    transfer = Transfer(out=player(1, "MID", 3.0, cost=50), incoming=player(2, "MID", 6.0, cost=85), sale=48, gain=3.0)
     assert transfer.cost == 37
-    assert transfer.gain == 3.0
 
 
 def test_a_cheaper_incoming_player_frees_money() -> None:
-    transfer = Transfer(out=player(1, "MID", 3.0, cost=85), incoming=player(2, "MID", 6.0, cost=50), sale=85)
+    transfer = Transfer(out=player(1, "MID", 3.0, cost=85), incoming=player(2, "MID", 6.0, cost=50), sale=85, gain=3.0)
     assert transfer.cost == -35
 
 
 def test_only_what_the_bank_can_pay_for_is_offered() -> None:
     squad = [player(1, "MID", 3.0, cost=50)]
     market = [player(2, "MID", 9.0, cost=120), player(3, "MID", 5.0, cost=55)]
-    assert [t.incoming.id for t in affordable_transfers(squad, market, bank=10, selling={}, limit=10)] == [3]
+    assert [
+        t.incoming.id
+        for t in affordable_transfers(squad, market, bank=10, selling={}, limit=10, value=effective_points)
+    ] == [3]
 
 
 def test_a_rise_kept_back_by_the_sell_on_fee_can_put_a_target_out_of_reach() -> None:
     """Priced at £5.5m he would fund the £6.0m target; he sells for £5.2m, so he cannot."""
     squad = [player(1, "MID", 3.0, cost=55)]
     market = [player(2, "MID", 9.0, cost=60)]
-    assert affordable_transfers(squad, market, bank=5, selling={}, limit=10)
-    assert affordable_transfers(squad, market, bank=5, selling={1: 52}, limit=10) == []
+    assert affordable_transfers(squad, market, bank=5, selling={}, limit=10, value=effective_points)
+    assert affordable_transfers(squad, market, bank=5, selling={1: 52}, limit=10, value=effective_points) == []
 
 
 # ── selling prices ──────────────────────────────────────────────────────
@@ -334,31 +344,31 @@ def test_a_swap_across_positions_is_never_offered() -> None:
     """A squad holds a fixed count of each position, so like replaces like."""
     squad = [player(1, "MID", 3.0, cost=50)]
     market = [player(2, "FWD", 9.0, cost=50)]
-    assert affordable_transfers(squad, market, bank=100, selling={}, limit=10) == []
+    assert affordable_transfers(squad, market, bank=100, selling={}, limit=10, value=effective_points) == []
 
 
 def test_a_player_already_in_the_squad_is_not_offered_back() -> None:
     squad = [player(1, "MID", 3.0, cost=50)]
-    assert affordable_transfers(squad, list(squad), bank=100, selling={}, limit=10) == []
+    assert affordable_transfers(squad, list(squad), bank=100, selling={}, limit=10, value=effective_points) == []
 
 
 def test_an_unavailable_target_is_not_offered() -> None:
     squad = [player(1, "MID", 3.0, cost=50)]
     market = [player(2, "MID", 9.0, cost=50, status="i")]
-    assert affordable_transfers(squad, market, bank=100, selling={}, limit=10) == []
+    assert affordable_transfers(squad, market, bank=100, selling={}, limit=10, value=effective_points) == []
 
 
 def test_a_downgrade_is_not_offered() -> None:
     squad = [player(1, "MID", 6.0, cost=50)]
     market = [player(2, "MID", 3.0, cost=50)]
-    assert affordable_transfers(squad, market, bank=100, selling={}, limit=10) == []
+    assert affordable_transfers(squad, market, bank=100, selling={}, limit=10, value=effective_points) == []
 
 
 def test_each_target_appears_once_against_whoever_it_most_improves() -> None:
     """Otherwise one premium striker fills the list opposite every forward."""
     squad = [player(1, "FWD", 2.0, cost=50), player(2, "FWD", 3.0, cost=50)]
     market = [player(9, "FWD", 9.0, cost=50)]
-    transfers = affordable_transfers(squad, market, bank=100, selling={}, limit=10)
+    transfers = affordable_transfers(squad, market, bank=100, selling={}, limit=10, value=effective_points)
     assert [(t.incoming.id, t.out.id) for t in transfers] == [(9, 1)]
 
 
@@ -368,7 +378,7 @@ def test_one_squad_player_cannot_monopolise_the_list() -> None:
     market = [player(10 + i, "MID", 8.0 - i * 0.1, cost=40) for i in range(8)]
     market.append(player(30, "DEF", 6.0, cost=40))
 
-    transfers = affordable_transfers(squad, market, bank=100, selling={}, limit=10)
+    transfers = affordable_transfers(squad, market, bank=100, selling={}, limit=10, value=effective_points)
     assert sum(t.out.id == 1 for t in transfers) == 3
     assert [t.incoming.id for t in transfers if t.out.id == 2] == [30]
 
@@ -376,7 +386,10 @@ def test_one_squad_player_cannot_monopolise_the_list() -> None:
 def test_the_best_upgrades_come_first() -> None:
     squad = [player(1, "MID", 1.0, cost=40), player(2, "DEF", 1.0, cost=40)]
     market = [player(10, "MID", 4.0, cost=40), player(11, "DEF", 9.0, cost=40)]
-    assert [t.incoming.id for t in affordable_transfers(squad, market, bank=100, selling={}, limit=10)] == [11, 10]
+    assert [
+        t.incoming.id
+        for t in affordable_transfers(squad, market, bank=100, selling={}, limit=10, value=effective_points)
+    ] == [11, 10]
 
 
 # ── comparing two elevens ───────────────────────────────────────────────
@@ -384,17 +397,17 @@ def test_the_best_upgrades_come_first() -> None:
 
 def test_a_captained_total_counts_its_captain_twice() -> None:
     starters = squad_of(("MID", 5.0), ("FWD", 8.0))
-    assert points_with_captain(starters, starters[1]) == 21.0
+    assert points_with_captain(starters, starters[1], effective_points) == 21.0
 
 
 def test_an_uncaptained_total_is_the_plain_sum() -> None:
     starters = squad_of(("MID", 5.0), ("FWD", 8.0))
-    assert points_with_captain(starters, None) == 13.0
+    assert points_with_captain(starters, None, effective_points) == 13.0
 
 
 def test_a_ruled_out_captain_adds_nothing() -> None:
     starters = [player(1, "MID", 5.0), player(2, "FWD", 8.0, chance_of_playing=0)]
-    assert points_with_captain(starters, starters[1]) == 5.0
+    assert points_with_captain(starters, starters[1], effective_points) == 5.0
 
 
 # ── who plays ───────────────────────────────────────────────────────────
@@ -414,7 +427,10 @@ def test_a_ruled_out_status_or_a_nought_percent_does_not_play() -> None:
 def test_a_doubtful_target_is_offered_as_a_transfer() -> None:
     squad = [player(1, "MID", 3.0, cost=50)]
     market = [player(2, "MID", 9.0, cost=50, status="d", chance_of_playing=75)]
-    assert [t.incoming.id for t in affordable_transfers(squad, market, bank=100, selling={}, limit=10)] == [2]
+    assert [
+        t.incoming.id
+        for t in affordable_transfers(squad, market, bank=100, selling={}, limit=10, value=effective_points)
+    ] == [2]
 
 
 # ── free transfers ──────────────────────────────────────────────────────
@@ -532,3 +548,61 @@ def test_a_club_with_no_match_is_a_blank_and_two_is_a_double() -> None:
 
     assert by_club["TOT"] == []
     assert [(m.club, m.difficulty, m.home) for m in by_club["ARS"]] == [("LIV", 2, True), ("MCI", 5, False)]
+
+
+# ── the armband ─────────────────────────────────────────────────────────
+
+
+def test_a_player_flagged_below_three_in_four_is_not_counted_on_to_start() -> None:
+    assert likely(player(1, "MID", 6.0))
+    assert likely(player(1, "MID", 6.0, status="d", chance_of_playing=75))
+    assert not likely(player(1, "MID", 6.0, status="d", chance_of_playing=50))
+    assert not likely(player(1, "MID", 6.0, status="i"))
+
+
+def test_the_armband_never_goes_to_a_starter_unlikely_to_play_however_much_he_is_worth() -> None:
+    doubtful = player(1, "FWD", 12.0, status="d", chance_of_playing=50)
+    starters = [doubtful, player(2, "MID", 7.0), player(3, "DEF", 5.0)]
+
+    assert armbands(starters, effective_points) == (starters[1], starters[2])
+
+
+def test_with_too_few_starters_likely_the_rest_make_up_the_pair_best_first() -> None:
+    starters = [player(1, "FWD", 12.0, status="d", chance_of_playing=50), player(2, "MID", 7.0)]
+
+    assert armbands(starters, effective_points) == (starters[1], starters[0])
+
+
+def test_the_best_eleven_names_a_vice_as_well_as_a_captain() -> None:
+    lineup = best_lineup(FIFTEEN, effective_points)
+
+    assert lineup.captain is not None and lineup.vice is not None
+    assert (lineup.captain.points_per_game, lineup.vice.points_per_game) == (9.0, 8.0)
+
+
+def test_the_vice_is_read_off_the_armband() -> None:
+    picks = [Pick(element=1, position=1, multiplier=1, is_vice_captain=True), Pick(element=2, position=2, multiplier=2)]
+    catalog = {1: player(1, "MID", 5.0), 2: player(2, "FWD", 6.0)}
+
+    assert roster(Squad(gameweek=4, picks=picks, bank=0, value=0), catalog).vice is catalog[1]
+
+
+def test_the_eleven_is_picked_on_the_value_it_is_given() -> None:
+    """The projection says the 9.0 forward captains; a value that rates the 1.5 midfielder higher captains him."""
+    lineup = best_lineup(FIFTEEN, lambda p: 20.0 if p.id == 12 else effective_points(p))
+
+    assert lineup.captain is not None and lineup.captain.id == 12
+
+
+# ── club places ─────────────────────────────────────────────────────────
+
+
+def test_no_transfer_brings_in_a_fourth_player_from_one_club() -> None:
+    squad = [player(i, "MID", 3.0, cost=50, team="LIV") for i in (1, 2, 3)] + [player(4, "MID", 3.0, team="ARS")]
+    market = [player(10, "MID", 9.0, cost=50, team="LIV")]
+
+    found = affordable_transfers(squad, market, bank=100, selling={}, limit=10, value=effective_points)
+
+    assert [t.out.team for t in found] == ["LIV"]  # only ever for one of his own club's three
+    assert club_counts(squad) == {"LIV": 3, "ARS": 1}
+    assert room_at({"LIV": 2}, market[0], squad[3])

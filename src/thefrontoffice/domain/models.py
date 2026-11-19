@@ -505,7 +505,9 @@ class Swap(BaseModel):
     gain: str
 
 
-ActionKind = Literal["lineup", "waiver", "trade"]
+ActionKind = Literal["lineup", "waiver", "trade", "transfer", "chip"]
+"""What a to-do item changes: the lineup, the roster by waiver or by trade, the squad by a transfer
+against the market, or a one-time chip spent."""
 
 Decision = Literal["AGREE", "OVERRULE", "WAIT"]
 """AGREE: make the move. OVERRULE: do not, whatever the numbers say. WAIT: it
@@ -553,8 +555,9 @@ class ItemMark(BaseModel):
 MoveSide = Literal["in", "out"]
 """Whether a move brings a player in or takes him out."""
 
-Held = Literal["starter", "bench", "reserve", "free agent"]
-"""Where a player stands to the manager: in his lineup, on his bench, in a reserve slot, or on the wire."""
+Held = Literal["starter", "bench", "reserve", "free agent", "market"]
+"""Where a player stands to the manager: in his lineup, on his bench, in a reserve slot, on the wire, or —
+in a game with no wire, where anybody can be bought — in the transfer market."""
 
 
 class MovePlayer(BaseModel):

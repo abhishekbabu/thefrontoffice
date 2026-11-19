@@ -44,6 +44,13 @@ def test_roster_rows_mark_the_captain_and_the_bench() -> None:
     assert rows["P3"]["Price"] == "£5.0m"
 
 
+def test_roster_rows_carry_each_players_worth_for_the_gameweek_to_come() -> None:
+    """P3 projects 6.0 at home to a difficulty-2 side; P15's club blanks."""
+    cards = {c.columns["Player"]: c for c in provider().roster(LEAGUE_ID)}
+
+    assert (cards["P3"].columns["Worth"], cards["P15"].columns["Worth"]) == ("6.6", "0.0")
+
+
 def test_roster_rows_report_a_doubt() -> None:
     cards = {c.columns["Player"]: c for c in provider(players=DOUBTFUL_P3).roster(LEAGUE_ID)}
     assert cards["P3"].columns["Status"] == "doubtful 50%"

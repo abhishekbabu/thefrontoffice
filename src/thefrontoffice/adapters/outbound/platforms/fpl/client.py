@@ -67,6 +67,8 @@ LIVE_TTL = timedelta(minutes=2)
 PLAYER_SUMMARY_TTL = timedelta(hours=1)
 # The season's fixture list moves only when a match is moved: what the weeks ahead are read from.
 SEASON_FIXTURES_TTL = timedelta(hours=1)
+# A gameweek over is over, bar a bonus point confirmed a day late.
+RESULTS_TTL = timedelta(hours=12)
 
 
 def _order(value: Any) -> int | None:
@@ -135,6 +137,54 @@ def _tie(match: dict[str, Any], entry_id: int) -> H2HMatch | None:
     return None
 
 
+def _trim_live(data: Any) -> dict[str, Any]:
+    """A live feed cut to what `_live` reads: of a megabyte, a few numbers a player."""
+    return {
+        "elements": [
+            {"id": e.get("id"), "stats": _kept_stats(e.get("stats") or {}), "explain": _kept_explain(e)}
+            for e in (data or {}).get("elements") or []
+        ]
+    }
+
+
+def _kept_stats(stats: dict[str, Any]) -> dict[str, Any]:
+    return {key: stats.get(key) for key in ("total_points", "minutes", "bonus")}
+
+
+def _kept_explain(element: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"stats": [s for s in match.get("stats") or [] if s.get("identifier") == "defensive_contribution"]}
+        for match in element.get("explain") or []
+    ]
+
+
+def _live(data: Any) -> dict[int, LiveStat]:
+    """Each player's line in a live feed, by element id.
+
+    `explain` holds one entry per match his club played, with or without him,
+    which is the only place a feed says a gameweek was a double or a blank for him.
+    """
+    live: dict[int, LiveStat] = {}
+    for element in (data or {}).get("elements") or []:
+        if element.get("id") is None:
+            continue
+        stats = element.get("stats") or {}
+        explain = element.get("explain") or []
+        live[int(element["id"])] = LiveStat(
+            points=int(stats.get("total_points") or 0),
+            minutes=int(stats.get("minutes") or 0),
+            matches=len(explain),
+            bonus=int(stats.get("bonus") or 0),
+            defending=sum(
+                int(s.get("points") or 0)
+                for match in explain
+                for s in match.get("stats") or []
+                if s.get("identifier") == "defensive_contribution"
+            ),
+        )
+    return live
+
+
 class FPLSource(Protocol):
     """What a provider reads the Fantasy Premier League game through. See `SleeperNFLSource` in platforms/sleeper/client.py for why it exists."""
 
@@ -182,6 +232,10 @@ class FPLSource(Protocol):
 
     def get_player_summaries(self, element_ids: Sequence[int]) -> Batch[int, PlayerSummary]:
         """Each player's season match by match and the seasons before; why each that would not load did not."""
+        ...
+
+    def get_results(self, gameweeks: list[int]) -> dict[int, dict[int, LiveStat]]:
+        """What every player did in each of `gameweeks`, which are over."""
         ...
 
     def get_players(self) -> dict[int, Player]:
@@ -308,16 +362,27 @@ class FPLClient:
         total, which is a different question from "how is my team doing".
         """
         data = self._api.cached(f"live_{gameweek}", f"{BASE_URL}/event/{gameweek}/live/", LIVE_TTL)
-        live: dict[int, LiveStat] = {}
-        for element in (data or {}).get("elements") or []:
-            if element.get("id") is None:
-                continue
-            stats = element.get("stats") or {}
-            live[int(element["id"])] = LiveStat(
-                points=int(stats.get("total_points") or 0),
-                minutes=int(stats.get("minutes") or 0),
-            )
-        return live
+        return _live(data)
+
+    def get_results(self, gameweeks: list[int]) -> dict[int, dict[int, LiveStat]]:
+        """What every player did in each of `gameweeks`, which are over: one request a gameweek, in parallel.
+
+        The same feed as `get_live`, kept trimmed and for longer, since a gameweek
+        over no longer moves. One request covers every player, which is what makes
+        recent form affordable for the whole market rather than one player at a time.
+
+        Raises:
+            FPLAPIError: a gameweek would not load — a hole in a run is not a run with nothing in it.
+        """
+        batch = self._api.cached_many(
+            {f"results_{week}": f"{BASE_URL}/event/{week}/live/" for week in gameweeks},
+            RESULTS_TTL,
+            keep=_trim_live,
+        ).rekeyed({week: f"results_{week}" for week in gameweeks})
+        if batch.failures:
+            missing = ", ".join(f"GW{week}" for week in sorted(batch.failures))
+            raise FPLAPIError(f"FPL results would not load for {missing}.")
+        return {week: _live(batch.values[week]) for week in gameweeks}
 
     def get_players(self) -> dict[int, Player]:
         """Every player in the game, keyed by element id."""

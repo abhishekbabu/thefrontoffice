@@ -18,6 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.league import 
 from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
     DEFENSIVE_THRESHOLDS,
     Roster,
+    Value,
     fixtures_by_club,
     plays,
 )
@@ -100,36 +101,41 @@ GAME_LOG_COLUMNS: dict[str, tuple[tuple[str, Callable[[PlayerGame], int]], ...]]
 # ── rows ────────────────────────────────────────────────────────────
 
 
-def squad_cards(squad: Roster) -> list[PlayerCard]:
-    """One table shape for any manager's fifteen."""
+def squad_cards(squad: Roster, value: Value) -> list[PlayerCard]:
+    """One table shape for any manager's fifteen, each at his worth for the gameweek to come (`value`)."""
     return [
         PlayerCard(
             player_id=str(player.id),
             ruled_out=not plays(player),
             columns={
-                **_market_columns(player),
+                **_market_columns(player, value),
                 SLOT_COLUMN: ("C" if pick.is_captain else "XI") if pick.is_starting else "BN",
             },
-            values=_market_values(player),
+            values=_market_values(player, value),
         )
         for pick, player in squad.picked
     ]
 
 
-def market_card(player: Player) -> PlayerCard:
+def market_card(player: Player, value: Value) -> PlayerCard:
     return PlayerCard(
         player_id=str(player.id),
         ruled_out=not plays(player),
-        columns=_market_columns(player),
-        values=_market_values(player),
+        columns=_market_columns(player, value),
+        values=_market_values(player, value),
     )
 
 
-def _market_values(player: Player) -> dict[str, float]:
+WORTH_COLUMN = "Worth"
+"""What he adds the gameweek to come (`worth.Worth.week`): what the market is sorted on."""
+
+
+def _market_values(player: Player, value: Value) -> dict[str, float]:
     """The numbers behind the formatted columns, so any of them can be
     sorted on. "£15.5m" sorted as text sits below "£9.0m"."""
     return {
         "Price": player.cost / 10,
+        WORTH_COLUMN: value(player),
         "xPts": player.expected_points,
         "Form": player.form,
         "Points": float(player.total_points),
@@ -138,12 +144,13 @@ def _market_values(player: Player) -> dict[str, float]:
     }
 
 
-def _market_columns(player: Player) -> dict[str, str]:
+def _market_columns(player: Player, value: Value) -> dict[str, str]:
     return {
         PLAYER_COLUMN: player.name,
         POSITION_COLUMN: player.position,
         "Club": player.team,
         "Price": as_millions(player.cost),
+        WORTH_COLUMN: f"{value(player):.1f}",
         "xPts": f"{player.expected_points:.1f}",
         "Form": f"{player.form:.1f}",
         "Points": str(player.total_points),
