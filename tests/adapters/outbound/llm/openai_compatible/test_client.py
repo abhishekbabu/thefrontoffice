@@ -14,7 +14,9 @@ import httpx2
 import openai
 import pytest
 from pydantic import BaseModel
+from support.logs import capture_logs
 
+from thefrontoffice.adapters.outbound.llm.openai_compatible import client as client_module
 from thefrontoffice.adapters.outbound.llm.openai_compatible.client import OpenAICompatibleClient
 from thefrontoffice.adapters.outbound.llm.openai_compatible.providers import Provider
 from thefrontoffice.domain.errors import AIKeyInvalidError, AIQuotaError, AIResponseError, AIUnavailableError
@@ -34,6 +36,8 @@ class Verdict(BaseModel):
     confidence: int
 
 
+LOGGER = client_module.__name__
+
 GOOD = json.dumps({"call": "start", "confidence": 3})
 
 
@@ -47,8 +51,10 @@ def _format_refused() -> openai.APIStatusError:
 
 
 class FakeCompletions:
-    def __init__(self, script: list[Any]) -> None:
+    def __init__(self, script: list[Any], usage: object = None) -> None:
         self.script = list(script)
+        self.usage = usage
+        """What every answer reports it spent, as the SDK's `usage`; None where the provider says nothing."""
         self.requests: list[dict[str, Any]] = []
 
     def create(self, **request: Any) -> Any:
@@ -59,11 +65,11 @@ class FakeCompletions:
         if isinstance(outcome, Exception):
             raise outcome
         message = SimpleNamespace(content=outcome)
-        return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=None)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=self.usage)
 
 
-def _model(*script: Any) -> tuple[OpenAICompatibleClient, FakeCompletions]:
-    completions = FakeCompletions(list(script))
+def _model(*script: Any, usage: object = None) -> tuple[OpenAICompatibleClient, FakeCompletions]:
+    completions = FakeCompletions(list(script), usage)
     sdk = SimpleNamespace(chat=SimpleNamespace(completions=completions))
     return OpenAICompatibleClient(PROVIDER, client=sdk), completions
 
@@ -176,6 +182,16 @@ def test_a_rate_limit_carries_how_long_the_provider_asked_to_wait() -> None:
     assert (raised.value.provider, raised.value.retry_after) == (PROVIDER.name, 12.0)
 
 
+def test_a_rate_limit_whose_wait_cannot_be_read_names_none() -> None:
+    """Retry-After may be an HTTP date; no wait is better than a wrong one, since the router then rests
+    the provider for its own default instead."""
+    model, _ = _model(_error(openai.RateLimitError, 429, **{"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"}))
+
+    with pytest.raises(AIQuotaError) as raised:
+        model.generate_structured("judge", Verdict)
+    assert raised.value.retry_after is None
+
+
 def test_a_request_too_large_for_the_free_tier_is_a_quota_not_a_failure() -> None:
     """Groq answers 413 when one request exceeds the tier's tokens a minute —
     another provider can take it, which is what a quota error says."""
@@ -231,3 +247,17 @@ def test_asking_for_search_still_opens_a_chat() -> None:
     reply = model.start_chat(enable_search=True).send_message("q")
 
     assert reply.text == "answer"
+
+
+# ── usage logging ───────────────────────────────────────────────────────
+
+
+def test_the_tokens_each_answer_spent_are_logged_with_its_model() -> None:
+    """A free tier is counted in tokens a minute; the log is the only record of what each call cost."""
+    usage = SimpleNamespace(prompt_tokens=3400, completion_tokens=310, total_tokens=3710)
+    model, _ = _model(GOOD, usage=usage)
+
+    with capture_logs(LOGGER) as logs:
+        model.generate_structured("judge", Verdict)
+
+    assert all(figure in logs.text for figure in ("3400 in", "310 out", "3710 total", PROVIDER.analysis_model))
