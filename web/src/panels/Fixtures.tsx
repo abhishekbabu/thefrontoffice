@@ -11,7 +11,7 @@ import { Empty, QueryState } from "@/components/ui/state";
 import { LeagueHeader } from "@/components/ui/page-header";
 import { WeekPane, WeekStepper, useWeekParam } from "@/components/ui/week-stepper";
 import { SlideOver, SlideOverHeader } from "@/components/ui/dialog";
-import { usePlayerDrawer } from "@/components/ui/player";
+import { useDrawers } from "@/components/ui/drawers";
 
 /**
  * The real games a fantasy week is made of, by kickoff, with whose players are in each and who has a bye.
@@ -25,7 +25,7 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
   const leagueApi = api.league(competition.key, league.league_id);
   const browses = competition.browses_weeks;
   const [open, setOpen] = useState<Match | null>(null);
-  const { openPlayer, drawer } = usePlayerDrawer(competition, league);
+  const { openPlayer, drawer } = useDrawers(competition, league);
 
   const summary = useQuery<Summary, Error>({
     queryKey: keys.summary(competition.key, league.league_id),

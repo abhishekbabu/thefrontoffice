@@ -9,6 +9,8 @@ const idea = (their_playoffs: number, their_points: number, over: Partial<TradeI
   team: "rival",
   giving: ["A"],
   receiving: ["B"],
+  giving_ids: ["a"],
+  receiving_ids: ["b"],
   playoffs: 0.9,
   playoffs_change: 0.01,
   their_playoffs_change: 0,

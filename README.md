@@ -110,6 +110,13 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   starred (fewest NBA turnovers, most of everything else). Searching a
   synced Yahoo league finds only the players the sync carried: every roster
   and the wire it read.
+  The same comparison opens in a drawer from anything that weighs players
+  against each other: a to-do item with two or more players (each marked In
+  or Out), a trade idea or the to-do list's best trade (Give and Get), and a
+  move in Activity or a player's history; a player in it opens with a Back
+  link to it, and it can be carried over to this page. A measure over each
+  player's latest games shares one row whatever his window ("82% (last 3)"
+  beside "46% (last 2)").
 - **Rosters**: any team's squad, yours by default, and the weeks ahead where
   somebody is out on a bye or hurt (one line when nobody is). NBA counts each of
   the next 4 weeks in games its daily lineups can start (active players playing

@@ -114,3 +114,14 @@ def test_headlines_are_not_compared_and_headers_carry_no_drawer() -> None:
 def test_one_to_four_players_compare(count: int) -> None:
     with pytest.raises(InvalidRequestError):
         comparison([_player(f"P{i}", "1") for i in range(count)])
+
+
+def test_a_measure_over_each_players_latest_games_shares_a_row_whatever_his_window() -> None:
+    rookie = _player("Tyson", "10.8", extra=[Stat(label="Snap share, last 2", value="46%", better="higher")])
+    starter = _player("Flournoy", "10.2", extra=[Stat(label="Snap share, last 3", value="82%", better="higher")])
+    back = _player("Pickens", "9.1", extra=[Stat(label="Snap share, last game", value="70%", better="higher")])
+
+    row = _rows(comparison([rookie, starter, back]), "Week 11")["Snap share, recent"]
+
+    assert row.values == ["46% (last 2)", "82% (last 3)", "70% (last game)"]
+    assert row.best == [1]

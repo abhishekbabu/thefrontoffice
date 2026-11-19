@@ -16,6 +16,7 @@ import { decisionTone, toneText, type Variant } from "@/lib/tone";
 import { clickable } from "@/lib/clickable";
 import { collapse, pressableRow } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import type { Comparing } from "@/components/ui/compare";
 import { Label, Meta } from "@/components/ui/label";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Linked } from "@/components/ui/stat";
@@ -55,6 +56,7 @@ export function ActionList({
   actions,
   suggested = [],
   onOpen,
+  onCompare,
   onDecide,
   deciding = false,
   aside,
@@ -64,6 +66,8 @@ export function ActionList({
   actions: Action[];
   suggested?: Move[];
   onOpen?: (id: string) => void;
+  /** Where an item weighs players against each other: open them side by side rather than one alone. */
+  onCompare?: (comparing: Comparing) => void;
   /** Dismiss, snooze or restore an item; absent where decisions cannot be kept. */
   onDecide?: (decision: ItemDecision) => void;
   deciding?: boolean;
@@ -115,7 +119,7 @@ export function ActionList({
                 evidence={action.evidence}
                 players={action.players}
                 detail={detail?.(action)}
-                open={action.player_id && onOpen ? () => onOpen(action.player_id) : undefined}
+                open={opener(action, onOpen, onCompare)}
               >
                 {action.mark.resurfaced && (
                   <Label as="div" className="mb-1.5">
@@ -152,6 +156,26 @@ export function ActionList({
       {hidden.length > 0 && <Hidden actions={hidden} onDecide={onDecide} busy={deciding} />}
     </Card>
   );
+}
+
+/**
+ * What a click on an item opens: the players it weighs, side by side, where
+ * it weighs more than one — a start-over-sit or an add-and-drop is a choice
+ * between them, and one drawer of one of them shows half of it — or else the
+ * player it is about.
+ */
+export function opener(
+  action: Action,
+  onOpen?: (id: string) => void,
+  onCompare?: (comparing: Comparing) => void,
+): (() => void) | undefined {
+  const players = action.players.filter((player) => player.player_id);
+  const ids = [...new Set(players.map((player) => player.player_id))];
+  if (ids.length > 1 && onCompare) {
+    const tags = Object.fromEntries(players.map((player) => [player.player_id, player.side === "in" ? "In" : "Out"]));
+    return () => onCompare({ ids, title: action.title, tags });
+  }
+  return action.player_id && onOpen ? () => onOpen(action.player_id) : undefined;
 }
 
 /**

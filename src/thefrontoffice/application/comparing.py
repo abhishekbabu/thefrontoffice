@@ -26,6 +26,9 @@ ABSENT = "—"
 
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
 
+_RECENT = re.compile(r"^(?P<measure>.+), (?P<window>last (?:game|\d+(?: games)?))$")
+"""A measure over a player's latest games, whose window is his own: 'Snap share, last 3'."""
+
 Figure = tuple[str, Better | None]
 """A value as shown, and which way it improves."""
 
@@ -90,10 +93,23 @@ def _figures(detail: PlayerDetail) -> dict[str, dict[str, Figure]]:
             continue
         for stat in group.stats:
             if not stat.url:
-                figures.setdefault(group.title, {})[stat.label] = (stat.value, stat.better)
+                label, value = _recent(stat.label, stat.value)
+                figures.setdefault(group.title, {})[label] = (value, stat.better)
     for table in detail.tables:
         if table.title.lower().startswith("by season") and table.columns:
             for row in table.rows:
                 if row.values:
                     figures.setdefault(f"{table.columns[0]} season", {})[row.label] = (row.values[0], row.better)
     return figures
+
+
+def _recent(label: str, value: str) -> tuple[str, str]:
+    """A measure over his latest games on one row whatever their number, the number moved into the value.
+
+    The window is each player's own — a rookie's last 2 against a starter's
+    last 3 — and as part of the label it put the same measure on two rows,
+    each with a dash where the other player's figure belonged.
+    """
+    if match := _RECENT.match(label):
+        return f"{match['measure']}, recent", f"{value} ({match['window']})"
+    return label, value

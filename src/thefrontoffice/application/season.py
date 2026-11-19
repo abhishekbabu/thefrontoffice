@@ -303,6 +303,8 @@ def _priced(market: TradeMarket, before: PlayoffOdds, option: TradeOption, names
         team=names.get(option.team_id, option.team_id),
         giving=list(option.giving),
         receiving=list(option.receiving),
+        giving_ids=list(option.giving_ids),
+        receiving_ids=list(option.receiving_ids),
         playoffs=after.playoffs,
         playoffs_change=after.playoffs - before.playoffs,
         their_playoffs_change=chance(after) - chance(before),

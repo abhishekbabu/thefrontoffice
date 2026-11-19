@@ -199,6 +199,8 @@ def _trade(
         team_id=team,
         giving=(name,),
         receiving=(get,),
+        giving_ids=(name.lower(),),
+        receiving_ids=(get.lower(),),
         points=mine - 100,
         their_points=theirs - 100,
         scoring=tuple(TeamWeek(t, w, mean, 20.0) for t, mean in (("a", mine), (team, theirs)) for w in weeks),
@@ -223,6 +225,12 @@ def test_a_trade_that_makes_you_stronger_raises_your_playoff_chance() -> None:
     [idea] = MarketEngine(_Market(_trade("b", mine=115, theirs=101))).trades("L1").ideas
 
     assert idea.playoffs_change > 0
+
+
+def test_an_idea_carries_its_players_ids_to_open_them_by() -> None:
+    [idea] = MarketEngine(_Market(_trade("b", mine=115, theirs=101))).trades("L1").ideas
+
+    assert (idea.giving_ids, idea.receiving_ids) == (["x"], ["y"])
 
 
 def test_a_trade_that_changes_nothing_is_not_offered() -> None:

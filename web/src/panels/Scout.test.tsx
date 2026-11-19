@@ -12,6 +12,8 @@ describe("the best trade under the deadline item", () => {
     team: "Rival",
     giving: ["Puka Nacua"],
     receiving: ["Bijan Robinson"],
+    giving_ids: ["4983"],
+    receiving_ids: ["9509"],
     playoffs: 0.9,
     playoffs_change: 0.02,
     their_playoffs_change: 0,

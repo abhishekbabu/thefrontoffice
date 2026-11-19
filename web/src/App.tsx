@@ -66,7 +66,7 @@ const WIDTH: Record<View, "reading" | "full" | "wide"> = {
   trades: "full",
   activity: "reading",
   league: "reading",
-  compare: "full",
+  compare: "reading",
 };
 
 export default function App() {

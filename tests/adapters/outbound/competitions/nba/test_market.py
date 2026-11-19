@@ -152,6 +152,12 @@ def test_a_full_roster_taking_two_for_one_drops_its_least_valuable_player() -> N
     assert roomy.their_points - full.their_points == pytest.approx(3 * VALUES["b3"])
 
 
+def test_a_trade_names_its_players_by_id_too_in_the_same_order() -> None:
+    trade = _two_for_one(_market(_league(wire=[_player("fa")], profiles=PAIRED)))
+
+    assert (trade.giving_ids, trade.receiving_ids) == (("m2", "m3"), ("b1",))
+
+
 def test_a_two_for_one_names_the_free_agent_for_the_spot_it_frees() -> None:
     market = _market(_league(wire=[_player("fa")], profiles=PAIRED))
 

@@ -5,7 +5,7 @@ import { keys } from "@/lib/queries";
 import { ListCard } from "@/components/ui/list";
 import { Empty, QueryState } from "@/components/ui/state";
 import { LeagueHeader } from "@/components/ui/page-header";
-import { usePlayerDrawer } from "@/components/ui/player";
+import { useDrawers } from "@/components/ui/drawers";
 import { MoveDrawer, MoveRow, backTo } from "@/components/ui/move";
 
 /**
@@ -36,7 +36,7 @@ export function ActivityPanel({ competition, league }: { competition: Competitio
 
 function Moves({ competition, league, rows }: { competition: Competition; league: League; rows: ActivityRow[] }) {
   const [open, setOpen] = useState<ActivityRow | null>(null);
-  const { openPlayer, drawer } = usePlayerDrawer(competition, league);
+  const { openPlayer, openComparison, drawer } = useDrawers(competition, league);
   return (
     <>
       <ListCard title="Recent activity" count={`${rows.length} moves`}>
@@ -46,13 +46,16 @@ function Moves({ competition, league, rows }: { competition: Competition; league
       </ListCard>
       <MoveDrawer
         move={open}
-        competition={competition.key}
-        league={league.league_id}
         onClose={() => setOpen(null)}
         onOpenPlayer={(id) => {
           const from = open!;
           setOpen(null);
           openPlayer(id, backTo(from, () => setOpen(from)));
+        }}
+        onCompare={(ids) => {
+          const from = open!;
+          setOpen(null);
+          openComparison({ ids }, backTo(from, () => setOpen(from)));
         }}
       />
       {drawer}

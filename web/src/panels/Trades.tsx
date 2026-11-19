@@ -10,6 +10,9 @@ import { CardNote } from "@/components/ui/state";
 import { keys } from "@/lib/queries";
 import { LeagueHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
+import { clickable } from "@/lib/clickable";
+import { useDrawers } from "@/components/ui/drawers";
+import { traded, type Comparing } from "@/components/ui/compare";
 
 /**
  * Half a point — of playoff chance, or of starters' points a week — below
@@ -24,12 +27,14 @@ type Measure = Trades["measure"];
 
 /** The trades worth offering, and the day trading closes where the league's settings name one. */
 export function TradesPanel({ competition, league }: { competition: Competition; league: League }) {
+  const { openComparison, drawer } = useDrawers(competition, league);
   return (
     <>
       <LeagueHeader league={league} />
       <div className="flex flex-col gap-4 p-5">
-        <TradeIdeas competition={competition} league={league} />
+        <TradeIdeas competition={competition} league={league} onCompare={openComparison} />
       </div>
+      {drawer}
     </>
   );
 }
@@ -81,7 +86,16 @@ const FIGURES: Record<Measure, { key: Figured; label: string; about: string }[]>
  * Fetched apart from the squad: each trade is a season played out thousands
  * of times, which is seconds the roster should not wait on.
  */
-function TradeIdeas({ competition, league }: { competition: Competition; league: League }) {
+function TradeIdeas({
+  competition,
+  league,
+  onCompare,
+}: {
+  competition: Competition;
+  league: League;
+  /** A row opens both sides of its trade side by side. */
+  onCompare: (comparing: Comparing) => void;
+}) {
   const trades = useQuery<Trades, Error>({
     queryKey: keys.trades(competition.key, league.league_id),
     queryFn: api.league(competition.key, league.league_id).trades,
@@ -127,7 +141,11 @@ function TradeIdeas({ competition, league }: { competition: Competition; league:
           </thead>
           <tbody>
             {ideas.map((idea) => (
-              <tr key={`${idea.team_id}-${idea.giving.join()}-${idea.receiving.join()}`}>
+              <tr
+                key={`${idea.team_id}-${idea.giving.join()}-${idea.receiving.join()}`}
+                {...clickable(traded(idea, onCompare))}
+                className={cn(idea.giving_ids.length + idea.receiving_ids.length > 1 && "cursor-pointer hover:bg-muted")}
+              >
                 <Td>
                   <Players names={idea.giving} pricing={pricing} />
                 </Td>

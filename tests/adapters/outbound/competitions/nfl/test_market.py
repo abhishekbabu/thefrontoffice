@@ -68,6 +68,12 @@ def test_a_spare_at_one_position_is_offered_for_what_they_have_at_another() -> N
     assert best.points > 0 and best.their_points > 0
 
 
+def test_a_trade_names_its_players_by_id_too_in_the_same_order() -> None:
+    best, *_ = _market(_client()).options
+
+    assert (best.giving_ids, best.receiving_ids) == (("qb2",), ("wr1",))
+
+
 def test_every_trade_offered_helps_your_lineup_and_the_best_for_you_comes_first() -> None:
     options = _market(_client()).options
 
