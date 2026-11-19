@@ -505,7 +505,7 @@ def test_a_free_agent_barely_ahead_of_a_starter_is_not_worth_a_claim() -> None:
 
 def test_a_starter_having_one_bad_week_is_not_replaced_by_a_free_agent() -> None:
     """Measured on his season as well: a star's poor matchup is not a reason to let him go."""
-    better = proj("fa1", "Free Receiver", "WR", 20.0, team="KC", opp="LV")
+    better = proj("fa1", "Free Receiver", "WR", 15.0, team="KC", opp="LV")
     client = _client(
         [QB, RB, WR, FLEX, BENCH_RB, better], ["qb", "rb", "wr", "te"], ["rb2"], game_lines=_season(FLEX, 25.0)
     )
@@ -548,7 +548,7 @@ def test_a_starter_whose_game_has_kicked_off_is_not_replaced() -> None:
 
 
 def _rising(player: WeeklyProjection) -> list[NFLGameLine]:
-    """Weeks 1 and 2: a part-timer, then most of the snaps in the two weeks played since."""
+    """Weeks 1 and 2: a part-timer on 4 points, then most of the snaps and 14 points in the two weeks played since."""
     return [
         NFLGameLine(
             player_id=player.player_id,
@@ -556,9 +556,9 @@ def _rising(player: WeeklyProjection) -> list[NFLGameLine]:
             team=player.team,
             opponent="LV",
             position=player.position,
-            stats={"off_snp": snaps, "tm_off_snp": 60, "pts_ppr": 4},
+            stats={"off_snp": snaps, "tm_off_snp": 60, "pts_ppr": points},
         )
-        for week, snaps in ((1, 15), (2, 18), (3, 50), (4, 50))
+        for week, snaps, points in ((1, 15, 4.0), (2, 18, 4.0), (3, 50, 14.0), (4, 50, 14.0))
     ]
 
 
@@ -591,6 +591,50 @@ def test_a_breakouts_evidence_leaves_the_role_change_to_its_reason() -> None:
 def test_a_growing_role_the_projection_has_given_up_on_is_left_alone() -> None:
     """Projected near nothing again usually means the starter is back."""
     free = proj("wr9", "Rising Receiver", "WR", 1.0, team="KC", opp="LV")
+
+    assert all(a.player_id != "wr9" for a in _actions(_with_free_agent(free)))
+
+
+def _teammate(pid: str, weeks: tuple[int, ...], team: str = "KC") -> list[NFLGameLine]:
+    """A regular receiver: four snaps in five in each of these weeks."""
+    return [
+        NFLGameLine(
+            player_id=pid,
+            week=week,
+            team=team,
+            opponent="LV",
+            position="WR",
+            stats={"off_snp": 48, "tm_off_snp": 60, "pts_ppr": 15.0},
+        )
+        for week in weeks
+    ]
+
+
+def _filling_in(status: str) -> list[Action]:
+    """The free agent's jump came in weeks 3 and 4, both of which KC's regular receiver missed."""
+    free = proj("wr9", "Rising Receiver", "WR", 8.0, team="KC", opp="LV")
+    client = _with_free_agent(free)
+    client.game_lines = [*(client.game_lines or []), *_teammate("wr7", (1, 2))]
+    catalog = client.players_catalog or {}
+    catalog["wr7"] = PlayerMeta(
+        player_id="wr7", name="Regular Receiver", position="WR", team="KC", injury_status=status
+    )
+    return [a for a in _actions(client) if a.player_id == "wr9"]
+
+
+def test_a_jump_while_a_regular_teammate_sat_is_no_pickup_once_he_is_due_back() -> None:
+    assert _filling_in("Questionable") == []
+
+
+def test_a_jump_while_a_regular_teammate_sat_is_a_pickup_while_he_is_ruled_out() -> None:
+    [action] = _filling_in("Out")
+
+    assert action.kind == "waiver"
+
+
+def test_a_growing_role_worth_less_than_every_starter_he_could_replace_is_no_pickup() -> None:
+    """Worth (10.67 + 6) / 2 = 8.33 against a 9-point flex: the role grew into less than you start already."""
+    free = proj("wr9", "Rising Receiver", "WR", 6.0, team="KC", opp="LV")
 
     assert all(a.player_id != "wr9" for a in _actions(_with_free_agent(free)))
 
@@ -707,6 +751,69 @@ def test_a_roster_with_a_spot_open_drops_nobody() -> None:
     [action] = [a for a in _actions(client) if a.kind == "waiver"]
 
     assert action.drop == ""
+
+
+def test_a_bench_player_whose_recent_games_were_fill_in_is_valued_beside_the_teammate_back() -> None:
+    """A part-timer on 1 a game beside KC's regular receiver, 13 the two weeks he sat; he plays this week, so 1 counts."""
+    filler = proj("wr3", "Fill-in Receiver", "WR", 6.0, team="KC", opp="LV")
+    cold_games = [replace(line, player_id="wr2") for line in _scored(filler, 5.0, 5.0, 5.0, 5.0, 5.0)]
+    client = _client(
+        [QB, _ruled_out(RB), WR, FLEX, proj("wr2", "Cold Receiver", "WR", 6.0, team="KC", opp="LV"), filler, BACKUP_QB]
+        + [FREE_RB],
+        ["qb", "rb", "wr", "te"],
+        ["wr2", "wr3", "qb2"],
+        game_lines=[
+            *_snapped(filler, 10, 10, 10, points=1.0),
+            *(replace(line, week=line.week + 3) for line in _snapped(filler, 50, 50, points=13.0)),
+        ]
+        + cold_games
+        + _scored(BACKUP_QB, 30.0, 30.0)
+        + _teammate("wr7", (1, 2, 3)),
+    )
+    client.week = 6
+    client.season_schedule = [*SCHEDULE, *(replace(game, week=6) for game in SCHEDULE[:3])]
+    catalog = client.players_catalog or {}
+    catalog["wr7"] = PlayerMeta(player_id="wr7", name="Regular Receiver", position="WR", team="KC")
+
+    [action] = [a for a in _actions(client) if a.kind == "waiver"]
+
+    assert action.drop == filler.player_id
+    assert "1.00/game" in action.reason
+
+
+def _snapped(player: WeeklyProjection, *snaps: float, points: float = 5.0) -> list[NFLGameLine]:
+    """`points` a game from week 1, on these snaps of 60."""
+    return [
+        NFLGameLine(
+            player_id=player.player_id,
+            week=week,
+            team=player.team,
+            opponent="LV",
+            position=player.position,
+            stats={"off_snp": snap, "tm_off_snp": 60, "pts_ppr": points},
+        )
+        for week, snap in enumerate(snaps, start=1)
+    ]
+
+
+def test_between_two_alike_on_points_the_one_whose_snaps_swing_goes() -> None:
+    swinging = proj("wr3", "Swinging Receiver", "WR", 6.0, team="KC", opp="LV")
+    # 'Cold Receiver' (wr2), also projected 6, on two thirds of the snaps every week.
+    steady = [replace(line, player_id="wr2") for line in _snapped(swinging, 40, 40, 40, 40, 40)]
+
+    action = _bench_pair(swinging, _snapped(swinging, 40, 10, 45, 12, 40) + steady)
+
+    assert action.drop == swinging.player_id
+
+
+def test_between_two_close_on_points_the_regular_stays() -> None:
+    """5 a game on five snaps in six against 5.30 on a third of them: the steady role outweighs the 0.30."""
+    regular = proj("wr3", "Regular Receiver", "WR", 6.0, team="KC", opp="LV")
+    part_timer = [replace(line, player_id="wr2") for line in _snapped(regular, 20, 20, 20, 20, 20, points=5.3)]
+
+    action = _bench_pair(regular, _snapped(regular, 50, 50, 50, 50, 50) + part_timer)
+
+    assert action.drop == "wr2"
 
 
 # A starting back at NYJ with his handcuff on the bench, and a quarterback ruled out with nobody behind him.
@@ -859,10 +966,11 @@ def test_a_stash_is_dropped_before_a_handcuff() -> None:
     assert "stash" in action.reason
 
 
-def _with_breakout(projected: float) -> list[Action]:
-    rising = proj("wr9", "Rising Receiver", "WR", projected, team="KC", opp="LV")
+def _with_breakout(projected: float, weak: WeeklyProjection = WEAK) -> list[Action]:
+    # Not at KC, where the weak receiver on your bench was a regular before the jump: his absence would explain it.
+    rising = proj("wr9", "Rising Receiver", "WR", projected, team="LV", opp="KC")
     client = _client(
-        [QB, RB, WR, FLEX, WEAK, ON_BYE, BACKUP_QB, rising],
+        [QB, RB, WR, FLEX, weak, ON_BYE, BACKUP_QB, rising],
         ["qb", "rb", "wr", "te"],
         ["wr2", "wr3", "qb2"],
         game_lines=_scored(WEAK, 4.0, 5.0)
@@ -884,6 +992,20 @@ def test_a_breakout_worth_more_than_the_weakest_on_the_bench_names_him_to_drop()
 def test_a_breakout_worth_less_than_anyone_on_the_bench_is_not_worth_a_spot() -> None:
     """Optional, unlike filling a hole: a flier is not worth a better player."""
     assert all(a.player_id != "wr9" for a in _with_breakout(3.0))
+
+
+def test_a_breakout_projected_above_his_drop_does_not_claim_the_projection_lags() -> None:
+    [action] = [a for a in _with_breakout(8.0) if a.player_id == "wr9"]
+
+    assert "lag" not in action.reason
+
+
+def test_a_breakout_projected_below_his_drop_says_the_projection_lags() -> None:
+    """Projected 8 against the drop's 9, but worth more on what he has done since the jump."""
+    [action] = [a for a in _with_breakout(8.0, weak=replace(WEAK, points=9.0)) if a.player_id == "wr9"]
+
+    assert action.drop == WEAK.player_id
+    assert "lag" in action.reason
 
 
 # ── starters riding on one game ─────────────────────────────────────────

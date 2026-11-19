@@ -130,10 +130,20 @@ class Trend:
         return f"{noun} {self.before:.0%}→{self.now:.0%}".replace("%→", "→")
 
 
+REGULAR = 0.5
+"""Snap share at which a teammate at his position is a regular: whose absence moves work to whoever is behind him."""
+
+RECEIVERS = frozenset({"WR", "TE"})
+"""Positions that share one pool of targets: a club's top target earner at either matters to both."""
+
+LEFT_EARLY = 0.30
+"""Snap share under which a teammate's game counts as missed: hurt early, or eased back in."""
+
+
 # The smallest jump that counts as a changed role, and the least he must now
 # have: a third-string back going from 2% to 12% of snaps has changed nothing.
 RISES = {
-    "snaps": (0.2, 0.5),
+    "snaps": (0.2, REGULAR),
     "targets": (0.1, 0.18),
     "carries": (6.0, 10.0),
 }
@@ -290,11 +300,16 @@ def _trends(lines: Sequence[GameLine], out: Collection[str]) -> dict[str, Trend]
     weeks ago is a role, by now, and the projection has long since read it.
 
     One big game is not a role. The jump counts once it has held for his last
-    two games, or at once when it has a cause: a teammate at his position, a
-    regular in the games before, did not play in it and is ruled out of the
-    next. The first waits a week on a real breakout; the second is the backup
-    handed the starter's snaps, worth knowing the week it happens — and worth
-    nothing once the starter is back.
+    two games, or at once when it has a cause: a regular teammate (see
+    `_absent`) missed it and is ruled out of the next. The first waits a week
+    on a real breakout; the second is the backup handed the starter's snaps,
+    worth knowing the week it happens.
+
+    Either way the jump is fill-in work, not a role, while a regular teammate
+    who missed every game of it is due back: not ruled out, and still with the
+    club. A receiver who played a fifth of the snaps all season and nine in ten
+    the two weeks the starter sat is the same receiver the week the starter
+    returns.
     """
     if not lines:
         return {}
@@ -304,6 +319,8 @@ def _trends(lines: Sequence[GameLine], out: Collection[str]) -> dict[str, Trend]
     for line in lines:
         if line.position in SNAP_POSITIONS and took_the_field(line):
             by_player[line.player_id].append(line)
+    for played in by_player.values():
+        played.sort(key=lambda line: line.week)
 
     def measures(line: GameLine) -> dict[str, float]:
         found = {}
@@ -335,31 +352,79 @@ def _trends(lines: Sequence[GameLine], out: Collection[str]) -> dict[str, Trend]
                 )
         return best
 
-    def vacated(line: GameLine, earlier: Sequence[GameLine]) -> bool:
-        """Whether a teammate at his position, a regular in the earlier weeks, missed this game and the next."""
-        weeks = {game.week for game in earlier}
-        floor = RISES["snaps"][1]
-        for teammate, played in by_player.items():
-            if teammate == line.player_id or teammate not in out or played[-1].position != line.position:
-                continue
-            mine = [game for game in played if game.team == line.team and game.week in weeks]
-            shares = [share for game in mine if (share := snap_share(game)) is not None]
-            if shares and sum(shares) / len(shares) >= floor and all(game.week != line.week for game in played):
-                return True
-        return False
+    def returning(teammate: str, team: str) -> bool:
+        """Whether a teammate is due back: not ruled out, and his latest game was for this club."""
+        return teammate not in out and by_player[teammate][-1].team == team
 
     trends = {}
     for player_id, played in by_player.items():
-        ordered = sorted(played, key=lambda line: line.week)
-        last = ordered[-1]
+        last = played[-1]
         if last.week != latest:
             continue
-        earlier = ordered[:-1][-ROLE_GAMES:]
-        held = jump(ordered[-2:], ordered[:-2][-ROLE_GAMES:]) if len(ordered) >= 2 else None
-        trend = held or (jump([last], earlier) if vacated(last, earlier) else None)
+        held = jump(played[-2:], played[:-2][-ROLE_GAMES:]) if len(played) >= 2 else None
+        if held is not None:
+            absent = _absent(by_player, played[-2:], played[:-2][-ROLE_GAMES:], team_targets)
+            trend = None if any(returning(mate, last.team) for mate in absent) else held
+        else:
+            earlier = played[:-1][-ROLE_GAMES:]
+            absent = _absent(by_player, [last], earlier, team_targets)
+            cause = absent and not any(returning(mate, last.team) for mate in absent)
+            trend = jump([last], earlier) if cause else None
         if trend is not None:
             trends[player_id] = trend
     return trends
+
+
+def _absent(
+    by_player: Mapping[str, Sequence[GameLine]],
+    recent: Sequence[GameLine],
+    earlier: Sequence[GameLine],
+    team_targets: Mapping[tuple[str, int], float],
+) -> list[str]:
+    """His regular teammates who missed every one of his recent games: whose work a jump in them may be.
+
+    A regular is a teammate at his position on `REGULAR` of the snaps in the
+    earlier games, or — for a receiver or tight end — the club's top target
+    earner at either in them, by his summed share of each game's targets. A game counts as missed where the teammate did
+    not take the field for the club or was on for under `LEFT_EARLY` of it.
+    """
+    me = recent[-1]
+    weeks = {line.week for line in earlier}
+    recent_weeks = {line.week for line in recent}
+    targets: dict[str, float] = defaultdict(float)
+    regulars: list[str] = []
+    for teammate, played in by_player.items():
+        mine = [game for game in played if game.team == me.team and game.week in weeks]
+        if not mine:
+            continue
+        shares = [share for game in mine if (share := snap_share(game)) is not None]
+        if (
+            teammate != me.player_id
+            and played[-1].position == me.position
+            and shares
+            and sum(shares) / len(shares) >= REGULAR
+        ):
+            regulars.append(teammate)
+        if me.position in RECEIVERS and played[-1].position in RECEIVERS:
+            targets[teammate] = sum(
+                game.stats.get("rec_tgt", 0.0) / team_targets[(game.team, game.week)]
+                for game in mine
+                if team_targets[(game.team, game.week)]
+            )
+    if targets:
+        top = max(targets, key=lambda teammate: targets[teammate])
+        if targets[top] and top != me.player_id and top not in regulars:
+            regulars.append(top)
+
+    def missed(teammate: str) -> bool:
+        there = {
+            game.week
+            for game in by_player[teammate]
+            if game.team == me.team and ((share := snap_share(game)) is None or share >= LEFT_EARLY)
+        }
+        return not (recent_weeks & there)
+
+    return [teammate for teammate in regulars if missed(teammate)]
 
 
 def misses(lines: Sequence[GameLine]) -> tuple[int, int]:

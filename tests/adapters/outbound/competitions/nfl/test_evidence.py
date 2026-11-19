@@ -229,6 +229,48 @@ def test_a_part_timer_missing_is_no_cause() -> None:
     assert "wr" not in gather(lines, SCORING, out={"depth"}).trends
 
 
+def _starter_missed_the_last_two_weeks(team: str = "KC") -> list[NFLGameLine]:
+    """A regular plays weeks 1 to 3 and misses 4 and 5, the two weeks the backup's jump holds."""
+    starter = [
+        game_line("starter", week, position="WR", team=team if week == 3 else "KC", off_snp=48, tm_off_snp=60)
+        for week in (1, 2, 3)
+    ]
+    return _snaps("wr", 0.1, 0.1, 0.1, 0.8, 0.9) + starter
+
+
+def test_a_held_jump_while_a_regular_teammate_sat_is_fill_in_work_once_he_is_due_back() -> None:
+    assert "wr" not in gather(_starter_missed_the_last_two_weeks(), SCORING).trends
+
+
+def test_a_held_jump_while_a_regular_teammate_sat_counts_while_he_is_ruled_out() -> None:
+    trend = gather(_starter_missed_the_last_two_weeks(), SCORING, out={"starter"}).trends["wr"]
+
+    assert (trend.measure, trend.games) == ("snaps", 2)
+
+
+def test_a_held_jump_after_a_regular_teammate_left_the_club_is_a_role() -> None:
+    """His last game was for another club: he is not coming back to take the snaps."""
+    assert "wr" in gather(_starter_missed_the_last_two_weeks(team="MIA"), SCORING).trends
+
+
+def test_a_held_jump_beside_a_teammate_who_played_one_of_the_games_is_a_role() -> None:
+    lines = [*_starter_missed_the_last_two_weeks(), game_line("starter", 5, position="WR", off_snp=48, tm_off_snp=60)]
+
+    assert "wr" in gather(lines, SCORING).trends
+
+
+def test_a_receivers_jump_while_the_clubs_top_target_earner_sat_is_fill_in_work() -> None:
+    """The tight end is no wide receiver, but his targets went somewhere."""
+    receiver = [
+        game_line("wr", week, position="WR", off_snp=share * 60, tm_off_snp=60, rec_tgt=targets)
+        for week, share, targets in ((1, 0.6, 1), (2, 0.6, 1), (3, 0.6, 1), (4, 0.6, 8), (5, 0.6, 8))
+    ]
+    tight_end = [game_line("te", week, position="TE", off_snp=50, tm_off_snp=60, rec_tgt=9) for week in (1, 2, 3)]
+
+    assert "wr" not in gather(receiver + tight_end, SCORING).trends
+    assert gather(receiver + tight_end, SCORING, out={"te"}).trends["wr"].measure == "targets"
+
+
 def test_a_jump_weeks_ago_is_a_role_by_now() -> None:
     """Somebody else played week 6; his jump in weeks 4 and 5 is old news the projection has read."""
     lines = _snaps("wr", 0.3, 0.35, 0.4, 0.8, 0.8) + _snaps("other", 0.5, 0.5, 0.5, 0.5, 0.5, 0.5)

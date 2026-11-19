@@ -192,6 +192,25 @@ def test_his_form_before_the_injury_counts_beside_a_modest_projection() -> None:
     assert [line.label for line in item.evidence] == ["IR1"]
 
 
+def _stash_on_snaps(*snaps: float) -> list[Action]:
+    """Five a game before the injury on these snaps of 60, 4.40 a week once back: (5 + 4.40) / 2 = 4.70 a week."""
+    client, espn = _client({"ir1": (4.4, 6)})
+    client.game_lines = [
+        game_line("ir1", week, team="KC", opponent="LV", off_snp=snap, tm_off_snp=60, pts_ppr=5.0)
+        for week, snap in enumerate(snaps, start=1)
+    ]
+    return _stashes(client, espn)
+
+
+def test_a_steady_role_before_the_injury_lifts_a_stash_over_the_bar() -> None:
+    """4.70 is short of the bench receiver's 6 less a point; a tenth more for a regular's snaps clears it."""
+    assert [item.player_id for item in _stash_on_snaps(50, 50)] == ["ir1"]
+
+
+def test_a_role_that_swung_before_the_injury_does_not() -> None:
+    assert _stash_on_snaps(10, 50) == []
+
+
 def test_a_roster_with_no_bench_to_drop_still_says_the_claim_needs_a_spot() -> None:
     starters_only = replace(LEAGUE, roster_positions=["QB", "RB", "WR", "FLEX"])
 
