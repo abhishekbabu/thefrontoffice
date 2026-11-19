@@ -423,6 +423,20 @@ class PlayerSearchProvider(Protocol):
 
 
 @runtime_checkable
+class PlayerTabProvider(Protocol):
+    """A competition whose player drawer reads some tabs only when they are opened (`PlayerDetail.deferred`)."""
+
+    def player_tab(self, league_id: str, player_id: str, tab: str) -> PlayerDetail:
+        """One deferred tab of a player's drawer: who he is, and only that tab's sections.
+
+        Raises:
+            PlayerNotFoundError: nothing in this league has that identifier.
+            NotFoundError: the drawer defers no tab of that name.
+        """
+        ...
+
+
+@runtime_checkable
 class SeasonProvider(Protocol):
     """A competition whose regular season can be simulated to its end.
 

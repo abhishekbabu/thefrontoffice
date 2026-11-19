@@ -39,6 +39,8 @@ export const keys = {
     [...inLeague(competition, league), "player-search", search] as const,
   player: (competition: string, league: string, player: string) =>
     [...inLeague(competition, league), "player", player] as const,
+  playerTab: (competition: string, league: string, player: string, tab: string) =>
+    [...inLeague(competition, league), "player", player, "tab", tab] as const,
   freeAgents: (competition: string, league: string) => [...inLeague(competition, league), "free-agents"] as const,
   freeAgentCalls: (competition: string, league: string) =>
     [...inLeague(competition, league), "free-agent-calls"] as const,

@@ -80,6 +80,40 @@ describe("the player drawer", () => {
     expect(dialog.textContent).not.toContain("Projected");
   });
 
+  it("offers a deferred tab before it is read, and shows what its own read holds once opened", async () => {
+    const lazy = playerDetail({
+      ...ALLEN,
+      tabs: ["This week", "Seasons", "News"],
+      deferred: ["Seasons", "News"],
+      groups: [{ title: "Week 11", tab: "", note: "", stats: [{ label: "Projected", value: "24.1", tone: "neutral", url: "", better: null, hint: "" }] }],
+    });
+    const seasons = playerDetail({
+      ...ALLEN,
+      tables: [{ title: "By season", tab: "Seasons", columns: ["2025-26"], rows: [{ label: "PTS", values: ["14.8"], tone: "neutral", better: "higher", best: [] }], absent: "N/A" }],
+    });
+    const client = offlineClient();
+    client.setQueryData<Capabilities>(keys.capabilities, { ai: false, limits: { judged: 10 } });
+    client.setQueryData(keys.player(NFL.key, LEAGUE.league_id, ALLEN.player_id), lazy);
+    client.setQueryData(keys.playerTab(NFL.key, LEAGUE.league_id, ALLEN.player_id, "Seasons"), seasons);
+    client.setQueryData(keys.playerTab(NFL.key, LEAGUE.league_id, ALLEN.player_id, "News"), playerDetail({ ...ALLEN }));
+    const { container } = await render(<Roster />, client);
+
+    container.querySelector("button")!.click();
+    await settle();
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const tabs = [...dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+
+    expect(tabs.map((t) => t.textContent)).toEqual(["This week", "Seasons", "News"]);
+    tabs[1]!.click();
+    await settle();
+    expect(dialog.textContent).toContain("2025-26");
+    expect(dialog.textContent).not.toContain("Projected");
+
+    tabs[2]!.click();
+    await settle();
+    expect(dialog.textContent).toContain("No news on record.");
+  });
+
   it("opens a move on his history the way Activity does", async () => {
     const traded = playerDetail({
       ...ALLEN,

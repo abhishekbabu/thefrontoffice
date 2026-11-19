@@ -52,6 +52,8 @@ from thefrontoffice.domain.models import (
     Slate,
     Stat,
     StatGroup,
+    StatRow,
+    StatTable,
     Summary,
     TradeMarket,
     TradeProposal,
@@ -1165,3 +1167,18 @@ def test_players_are_found_by_name_where_the_competition_can() -> None:
         {"player_id": "7", "name": "Found lamb", "detail": ""}
     ]
     assert _client().get("/api/nfl/leagues/900/players?search=lamb").status_code != 200
+
+
+class _Tabbed(_Comparable):
+    """A competition whose drawer reads its seasons only when they are opened."""
+
+    def player_tab(self, league_id: str, player_id: str, tab: str) -> PlayerDetail:
+        table = StatTable(title="By season", tab=tab, columns=["2025-26"], rows=[StatRow(label="PTS", values=["9"])])
+        return PlayerDetail(player_id=player_id, name="P", position="C", team="LAL", tables=[table])
+
+
+def test_a_deferred_tab_is_its_own_read_where_the_competition_defers_any() -> None:
+    body = _client(_Tabbed()).get("/api/nfl/leagues/900/players/7/tabs/Seasons").json()
+
+    assert [(t["title"], t["tab"]) for t in body["tables"]] == [("By season", "Seasons")]
+    assert _client(_Comparable()).get("/api/nfl/leagues/900/players/7/tabs/Seasons").status_code != 200

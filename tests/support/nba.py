@@ -10,7 +10,13 @@ from thefrontoffice.adapters.outbound.competitions.nba.form import BoxScores, Fo
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, TURNOVERS
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame, SeasonState
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
+    NBAGameLog,
+    NBASeason,
+    PlayerMeta,
+    ScheduledGame,
+    SeasonState,
+)
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Average,
     LeagueSettings,
@@ -24,6 +30,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     YahooLine,
     YahooPlayer,
     YahooTeam,
+    YahooTransaction,
 )
 
 
@@ -162,6 +169,10 @@ class FakeYahoo:
         """Every lookup of averages by key: the keys, and the spans."""
         self.positions: list[str] = []
         """The league's lineup slots."""
+        self.moves: list[YahooTransaction] = []
+        """The league's transactions, newest first."""
+        self.moves_error: Exception | None = None
+        self.moves_read = 0
 
     def get_user_team(self) -> YahooTeam:
         return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
@@ -285,6 +296,12 @@ class FakeYahoo:
         held = {p.player_key for p in self.roster(team_key)}
         return {k: v for k, v in self.lines.get(average, {}).items() if k in held}
 
+    def transactions(self) -> list[YahooTransaction]:
+        self.moves_read += 1
+        if self.moves_error:
+            raise self.moves_error
+        return self.moves
+
     def players(self, player_keys: list[str]) -> list[YahooPlayer]:
         """Anybody this league was built with, on a roster or not."""
         everyone = [
@@ -340,7 +357,11 @@ class FakeSleeperNBA:
         schedule: list[ScheduledGame] | None = None,
         catalog: dict[str, PlayerMeta] | None = None,
         error: Exception | None = None,
+        seasons: dict[str, dict[str, NBASeason]] | None = None,
     ) -> None:
+        self.seasons = seasons or {}
+        """Each season's totals, by season, then by Sleeper's id."""
+        self.season_error: Exception | None = None
         self.logs = logs or {}
         self.schedule = schedule or []
         self.catalog = catalog or {"p1": PlayerMeta(player_id="p1", name="Nikola Jokic", position="C", team="DEN")}
@@ -360,6 +381,11 @@ class FakeSleeperNBA:
         if self.error:
             raise self.error
         return self.catalog
+
+    def get_nba_season(self, season: str) -> dict[str, NBASeason]:
+        if self.season_error:
+            raise self.season_error
+        return self.seasons.get(season, {})
 
     def get_nba_state(self) -> SeasonState:
         return SeasonState(week=10, season="2026", season_type="regular")
@@ -383,7 +409,8 @@ class FakeNBA:
         unscheduled: list[date] | None = None,
     ) -> None:
         self.stats = stats or {}
-        self.games = games or {}
+        self.counts = games or {}
+        """Each club's games left, whatever the window."""
         self.slate = slate or []
         self.scores = scores or BoxScores()
         self.dated = dated or {}
@@ -391,6 +418,12 @@ class FakeNBA:
         """Each player's recent games by name, newest first."""
         self.pending = unscheduled or []
         """Days the NBA has yet to schedule, whatever the window: those inside it are the window's."""
+        self.profiles: dict[str, PlayerMeta] = {}
+        """Each player's catalog entry, by name."""
+        self.seasons: dict[tuple[str, str], NBASeason] = {}
+        """Each player's totals over a season, by name and season."""
+        self.season_error: Exception | None = None
+        self.seasons_read: list[str] = []
 
     def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
         return [g for g in self.slate if start_date.isoformat() <= g.date <= end_date.isoformat()]
@@ -411,11 +444,23 @@ class FakeNBA:
     def recent_games(self, full_name: str) -> list[NBAGameLog]:
         return self.logs.get(full_name, [])
 
+    def games(self, full_name: str) -> list[NBAGameLog]:
+        return self.logs.get(full_name, [])
+
+    def profile(self, full_name: str) -> PlayerMeta | None:
+        return self.profiles.get(full_name)
+
+    def season(self, full_name: str, season: str) -> NBASeason | None:
+        self.seasons_read.append(season)
+        if self.season_error:
+            raise self.season_error
+        return self.seasons.get((full_name, season))
+
     def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
         club = team_abbr.upper()
         if club in self.dated:
             return sum(1 for day in self.dated[club] if start_date <= day <= end_date)
-        return self.games.get(club, 0)
+        return self.counts.get(club, 0)
 
     def get_remaining_games_bulk(
         self, team_abbrs: list[str], start_date: date, end_date: date, now: datetime | None = None

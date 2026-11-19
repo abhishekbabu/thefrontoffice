@@ -24,6 +24,7 @@ from datetime import UTC, date, datetime
 from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex, normalize_name
+from thefrontoffice.adapters.outbound.competitions.news import PlayerNews
 from thefrontoffice.adapters.outbound.competitions.nfl import (
     actions,
     evidence,
@@ -478,7 +479,7 @@ class SleeperNFLProvider:
             evidence=evidence.Evidence()
             if browsing
             else self._evidence(season, week, league, phase.is_regular_season, players),
-            news=news.PlayerNews() if browsing else self._news(catalog),
+            news=PlayerNews() if browsing else self._news(catalog),
             injuries=reports,
             current=current if browsing else 0,
             is_regular_season=phase.is_regular_season,
@@ -577,7 +578,7 @@ class SleeperNFLProvider:
             return {}
         return {pid: entries[a.athlete_id] for pid, a in athletes.items() if a.athlete_id in entries}
 
-    def _news(self, players: dict[str, PlayerMeta]) -> news.PlayerNews:
+    def _news(self, players: dict[str, PlayerMeta]) -> PlayerNews:
         """Recent articles about every player, from each club's own feed."""
         clubs = sorted({espn_club(m.team) for m in players.values() if m.team != FREE_AGENT})
         try:
@@ -585,7 +586,7 @@ class SleeperNFLProvider:
         except ESPNAPIError as e:
             # Enrichment, like the evidence: the week stands without it.
             logger.warning(f"Continuing without player news: {e}")
-            return news.PlayerNews()
+            return PlayerNews()
         return news.attach(feeds, players, datetime.now(UTC))
 
     def summary(self, league_id: str) -> Summary:

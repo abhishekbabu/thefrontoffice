@@ -736,3 +736,19 @@ def test_a_season_is_priced_by_the_leagues_rules_and_kept_without_what_no_league
 def test_a_season_of_a_league_with_unknown_rules_reads_sleepers_own_figure(tmp_path: Path) -> None:
     client, _ = _client({"stats/nfl/regular/2025": SEASON_ROWS}, tmp_path)
     assert client.get_season_stats("2025", "pts_ppr", {})["k1"].scored("pts_ppr") == 140.0
+
+
+def test_a_basketball_season_keeps_each_player_who_played_in_totals_and_no_club(tmp_path: Path) -> None:
+    rows = {
+        "1970": {"gp": 64, "sp": 137340, "pts": 2143, "fgm": 693, "fga": 1457, "pos_rank_std": 1, "q1_pts": 500},
+        "TEAM_DEN": {"gp": 82, "pts": 10010},
+        "1408": {},
+    }
+    client, _ = _client({"stats/nba/regular/2025": rows}, tmp_path)
+
+    season = client.get_nba_season("2025")
+
+    assert set(season) == {"1970"}
+    star = season["1970"]
+    assert (star.games, star.minutes, star.position_rank) == (64, pytest.approx(2289.0), 1)
+    assert star.totals == {"pts": 2143.0, "fgm": 693.0, "fga": 1457.0}

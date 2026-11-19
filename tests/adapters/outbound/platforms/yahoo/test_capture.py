@@ -53,6 +53,7 @@ YAHOO = {
         team_xml("t1", "Mine", mine=True, standings=standings_xml(2, 1, 1, 0, "10")),
         team_xml("t2", "Theirs", standings=standings_xml(1, 2, 0, 0, "12")),
     ),
+    paths.transactions(KEY).path: "<fantasy_content><league><transactions/></league></fantasy_content>",
     **dict(
         zip(
             [read.path for read in paths.available(KEY, 50)],
@@ -122,6 +123,7 @@ def test_a_league_is_planned_from_its_held_list_before_its_teams_are_known(tmp_p
         paths.settings(KEY).path,
         paths.teams(KEY).path,
         paths.standings(KEY).path,
+        paths.transactions(KEY).path,
         *(read.path for read in paths.available(KEY, 50)),
         paths.available(KEY, 25, Timeframe.LAST_WEEK)[0].path,
         *(read.path for read in paths.leaders(KEY, GAME.leaders, GAME.per_stat).values()),

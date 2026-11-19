@@ -426,6 +426,67 @@ def test_a_roster_failure_is_ours_to_render_not_requests(tmp_path: Path) -> None
         client.roster("t.1")
 
 
+# ── transactions ────────────────────────────────────────────────────────
+
+
+def _moved_xml(key: str, name: str, kind: str, source: str, destination: str) -> str:
+    def end(side: str, value: str) -> str:
+        if value in ("freeagents", "waivers"):
+            return f"<{side}_type>{value}</{side}_type>"
+        return f"<{side}_type>team</{side}_type><{side}_team_name>{value}</{side}_team_name>"
+
+    return (
+        f"<player><player_key>{key}</player_key><name><full>{name}</full></name>"
+        "<editorial_team_abbr>LAC</editorial_team_abbr><display_position>C</display_position>"
+        f"<transaction_data><type>{kind}</type>{end('source', source)}{end('destination', destination)}"
+        "</transaction_data></player>"
+    )
+
+
+def _transaction_xml(kind: str, at: int, *players: str, status: str = "successful", extra: str = "") -> str:
+    return (
+        f"<transaction><type>{kind}</type><status>{status}</status><timestamp>{at}</timestamp>{extra}"
+        f"<players>{''.join(players)}</players></transaction>"
+    )
+
+
+def test_the_leagues_moves_are_one_read_each_player_with_where_he_went(tmp_path: Path) -> None:
+    xml = (
+        "<fantasy_content><league><transactions>"
+        + _transaction_xml(
+            "add/drop",
+            1795079686,
+            _moved_xml("478.p.1", "Brook Lopez", "add", "waivers", "Kalshi"),
+            _moved_xml("478.p.2", "De'Anthony Melton", "drop", "Kalshi", "waivers"),
+            extra="<faab_bid>4</faab_bid>",
+        )
+        + _transaction_xml("trade", 1793870734, _moved_xml("478.p.3", "RJ Barrett", "trade", "Giddey", "Justin"))
+        + "</transactions></league></fantasy_content>"
+    )
+    client, ctx = _client(tmp_path, xml)
+
+    claim, trade = client.transactions()
+
+    assert (claim.kind, claim.timestamp, claim.bid) == ("add/drop", 1795079686, "4")
+    added, dropped = claim.players
+    assert (added.name, added.kind, added.source, added.destination) == ("Brook Lopez", "add", "waivers", "Kalshi")
+    assert (dropped.kind, dropped.source, dropped.destination) == ("drop", "Kalshi", "waivers")
+    assert (trade.players[0].source, trade.players[0].destination) == ("Giddey", "Justin")
+    assert ctx.requests == [("transactions", "466.l.123")]
+
+
+def test_a_vetoed_trade_or_an_edit_moving_nobody_is_no_move(tmp_path: Path) -> None:
+    xml = (
+        "<fantasy_content><league><transactions>"
+        + _transaction_xml("trade", 2, _moved_xml("478.p.3", "RJ Barrett", "trade", "A", "B"), status="vetoed")
+        + "<transaction><type>commish</type><status>successful</status><timestamp>1</timestamp></transaction>"
+        + "</transactions></league></fantasy_content>"
+    )
+    client, _ = _client(tmp_path, xml)
+
+    assert client.transactions() == []
+
+
 # ── the matchup ─────────────────────────────────────────────────────────
 
 

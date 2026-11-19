@@ -7,7 +7,7 @@ checked with a pencil.
 import pytest
 from support.nfl import game_line, proj
 
-from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Matchup, gather, misses
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import gather, misses
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NFLGameLine
 
 SCORING = "pts_ppr"
@@ -113,31 +113,6 @@ def test_a_player_is_matched_against_this_weeks_opponent() -> None:
 
 def test_a_player_with_no_game_has_no_matchup() -> None:
     assert gather(_defenses(), SCORING).matchup(proj("x", "Idle", "RB", 0.0, opp="")) is None
-
-
-@pytest.mark.parametrize(
-    ("rank", "described", "tone"),
-    [
-        (1, "the most", "good"),
-        (8, "8th-most", "good"),
-        (9, "9th-most", "neutral"),
-        (11, "11th-most", "neutral"),
-        (22, "22nd-most", "neutral"),
-        (25, "25th-most", "warning"),
-        (32, "the fewest", "warning"),
-    ],
-)
-def test_a_matchup_reads_as_a_rank_and_is_toned_by_quarter(rank: int, described: str, tone: str) -> None:
-    matchup = Matchup(opponent="MIA", position="WR", allowed=20.0, rank=rank, defenses=32)
-
-    assert f"{described} to WRs" in matchup.describe()
-    assert matchup.tone == tone
-
-
-def test_a_defense_is_matched_against_the_offense_it_faces() -> None:
-    matchup = Matchup(opponent="TEN", position="DEF", allowed=9.0, rank=3, defenses=32)
-
-    assert "to defenses" in matchup.describe()
 
 
 # ── together ────────────────────────────────────────────────────────────

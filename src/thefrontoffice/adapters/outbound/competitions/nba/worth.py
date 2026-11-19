@@ -61,18 +61,45 @@ class Scale:
     sign: float
     """-1 for a category won by less (turnovers), else 1."""
 
-    centre: float
-    """Where his figure is counted from: the pool's average for a percentage, nought for a count."""
-
     spread: float
+    """The pool's standard deviation: of the figure for a count, of the impact (`impact`) for a percentage."""
+
     mean: float
-    """The pool's average, which says whether his figure is weak for the pool."""
+    """The pool's average figure: of a count, or its rate over all its attempts for a percentage."""
+
+    def impact(self, figures: Line) -> float | None:
+        """A percentage's pull on a team's rate: how far his rate sits from the pool's, times his attempts a game.
+
+        2 for 3 and 10 for 15 are both .667, and only the second moves a team's
+        FG% much. None for a count, or a line without the attempts to weigh it by.
+        """
+        category = BY_STAT[self.scored.stat_id]
+        if not category.is_percentage or category.label not in figures or category.attempted not in figures:
+            return None
+        return (figures[category.label] - self.mean) * figures[category.attempted]
+
+    def worth(self, figures: Line) -> float | None:
+        """What his figure adds, in spreads: a count from nought, a percentage by its impact. None without one."""
+        category = BY_STAT[self.scored.stat_id]
+        figure = self.impact(figures) if category.is_percentage else figures.get(category.label)
+        return None if figure is None else self.sign * figure / self.spread
+
+    def against_pool(self, figures: Line) -> float | None:
+        """How far his figure sits from the pool's average, in spreads; None without one."""
+        category = BY_STAT[self.scored.stat_id]
+        if category.is_percentage:
+            return self.worth(figures)
+        figure = figures.get(category.label)
+        return None if figure is None else self.sign * (figure - self.mean) / self.spread
 
 
 def scales(scored: Sequence[StatCategory], pool: Iterable[Line]) -> dict[str, Scale]:
     """Each category the league scores and this app has a figure for, by label, scaled across `pool`.
 
-    A category with no spread across the pool (one line, or all alike) scales nothing and is left out.
+    A percentage's average is the pool's makes over its attempts — every
+    attempt weighed alike, as a team's rate is built — and its spread is that
+    of each line's impact (`Scale.impact`). A category with no spread across
+    the pool (one line, or all alike) scales nothing and is left out.
     """
     lines = list(pool)
     found: dict[str, Scale] = {}
@@ -80,18 +107,20 @@ def scales(scored: Sequence[StatCategory], pool: Iterable[Line]) -> dict[str, Sc
         category = BY_STAT.get(scored_as.stat_id)
         if category is None:
             continue
-        figures = [figures[category.label] for figures in lines if category.label in figures]
+        sign = -1.0 if scored_as.fewer_wins else 1.0
+        if category.is_percentage:
+            weighed = [f for f in lines if category.label in f and f.get(category.attempted)]
+            tried = sum(f[category.attempted] for f in weighed)
+            if not tried:
+                continue
+            mean = sum(f[category.label] * f[category.attempted] for f in weighed) / tried
+            figures = [(f[category.label] - mean) * f[category.attempted] for f in weighed]
+        else:
+            figures = [f[category.label] for f in lines if category.label in f]
+            mean = statistics.fmean(figures) if figures else 0.0
         spread = statistics.pstdev(figures) if len(figures) > 1 else 0.0
-        if not spread:
-            continue
-        mean = statistics.fmean(figures)
-        found[category.label] = Scale(
-            scored=scored_as,
-            sign=-1.0 if scored_as.fewer_wins else 1.0,
-            centre=mean if category.is_percentage else 0.0,
-            spread=spread,
-            mean=mean,
-        )
+        if spread:
+            found[category.label] = Scale(scored=scored_as, sign=sign, spread=spread, mean=mean)
     return found
 
 
@@ -100,23 +129,20 @@ def category_value(scored: Sequence[StatCategory], pool: Iterable[Line]) -> Valu
 
     A counting category is his figure over the pool's standard deviation, so a
     block weighs what the scarcity of blocks says and a point what the plenty
-    of points says; a percentage is how far his rate sits above the pool's
-    average, in the same units. Counting from nought rather than from the
-    average keeps a game of anybody worth more than no game at all, which is
-    what multiplying by games left needs. A category won by less (turnovers)
-    counts against him. A category this app has no figure for (double-doubles)
-    counts nothing, and percentages are not weighted by attempts.
+    of points says. A percentage is his impact on a team's rate — how far his
+    rate sits from the pool's, times his attempts — over the spread of that
+    impact, so a big man going 3 for 4 a night does not outrank a scorer going
+    9 for 18. Counting from nought rather than from the average keeps a game of
+    anybody worth more than no game at all, which is what multiplying by games
+    left needs. A category won by less (turnovers) counts against him. A
+    category this app has no figure for (double-doubles) counts nothing.
     """
     found = scales(scored, pool)
 
     def value(figures: Line) -> float | None:
         if not figures or not found:
             return None
-        return sum(
-            scale.sign * (figures[label] - scale.centre) / scale.spread
-            for label, scale in found.items()
-            if label in figures
-        )
+        return sum(worth for scale in found.values() if (worth := scale.worth(figures)) is not None)
 
     return value
 
@@ -133,14 +159,13 @@ def weakest(figures: Line | None, found: Mapping[str, Scale]) -> list[StatCatego
 
     Read against the pool's average rather than from nought, so a guard's few
     blocks read as the shortfall they are; only those under it by `WEAK_BELOW`
-    of a spread, so an average line names none.
+    of a spread, so an average line names none. A percentage reads by its
+    impact, so a poor rate on few attempts is the small drag it is.
     """
     if not figures:
         return []
     below = {
-        label: z
-        for label, scale in found.items()
-        if label in figures and (z := scale.sign * (figures[label] - scale.mean) / scale.spread) <= WEAK_BELOW
+        label: z for label, scale in found.items() if (z := scale.against_pool(figures)) is not None and z <= WEAK_BELOW
     }
     return [found[label].scored for label in sorted(below, key=lambda label: below[label])[:WEAKEST]]
 

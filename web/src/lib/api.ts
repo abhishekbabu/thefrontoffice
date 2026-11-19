@@ -140,6 +140,9 @@ export function leagueApi(competition: string, league: string) {
   return {
     roster: (order: PlayerOrder = {}) => request<Ok<"roster">>(withQuery(`${base}/roster`, order)),
     player: (id: string) => request<Ok<"player">>(`${base}/players/${segment(id)}`),
+    /** One tab of his drawer read only when opened (`PlayerDetail.deferred`). */
+    playerTab: (id: string, tab: string) =>
+      request<Ok<"player_tab">>(`${base}/players/${segment(id)}/tabs/${segment(tab)}`),
     compare: (ids: string[]) =>
       request<Ok<"compare">>(`${base}/compare?${ids.map((id) => `ids=${encodeURIComponent(id)}`).join("&")}`),
     searchPlayers: (search: string) => request<Ok<"search_players">>(withQuery(`${base}/players`, { search })),

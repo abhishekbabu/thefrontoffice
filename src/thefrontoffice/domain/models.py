@@ -480,6 +480,13 @@ class PlayerDetail(BaseModel):
         description="Each league move he was part of, oldest first, as the league's activity shows it.",
     )
     moves_tab: str = Field(default="", description="Which tab his moves sit in, by name; empty for the first.")
+    deferred: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tabs whose sections are read only when opened, each from the player's tab route: they cost a "
+            "request the rest of the drawer does not. Offered whether or not they turn out to hold anything."
+        ),
+    )
 
 
 MAX_COMPARED = 4

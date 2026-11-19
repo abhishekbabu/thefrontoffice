@@ -97,6 +97,12 @@ def test_a_rosters_averages_are_one_read_for_the_team() -> None:
     assert not read.lookup
 
 
+def test_the_leagues_moves_are_one_read_kept_an_hour() -> None:
+    read = paths.transactions("466.l.1")
+
+    assert (read.path, read.ttl, read.lookup) == ("league/466.l.1/transactions", timedelta(hours=1), False)
+
+
 # ── how long each holds ─────────────────────────────────────────────────
 
 

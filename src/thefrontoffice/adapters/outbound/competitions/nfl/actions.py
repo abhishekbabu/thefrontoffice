@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from thefrontoffice.adapters.outbound.competitions.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl import views
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
     MIN_GAMES_FOR_AVERAGE,
@@ -39,7 +40,6 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     by_club,
     open_spots,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, THIS_WEEK, listed, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import Split
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import split as split_on

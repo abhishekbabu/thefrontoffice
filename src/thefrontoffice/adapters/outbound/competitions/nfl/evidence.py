@@ -15,9 +15,10 @@ from collections import defaultdict
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 
+from thefrontoffice.adapters.outbound.competitions import matchups
+from thefrontoffice.adapters.outbound.competitions.matchups import Matchup, Scored
 from thefrontoffice.adapters.outbound.competitions.nfl.model import GameLine, Projection
-from thefrontoffice.adapters.outbound.competitions.places import ordinal
-from thefrontoffice.domain.models import Stat, Tone
+from thefrontoffice.domain.models import Stat
 
 ROLE_GAMES = 3
 """Recent enough to catch a changed role, long enough that one game is not a role."""
@@ -157,45 +158,6 @@ RISES = {
     "targets": (0.1, 0.18),
     "carries": (6.0, 10.0),
 }
-
-
-@dataclass(frozen=True)
-class Matchup:
-    """How much one defense gives up to one position, against the rest."""
-
-    opponent: str
-    position: str
-    allowed: float
-    """Fantasy points per game, in the league's own scoring."""
-
-    rank: int
-    """1 is the defense that gives up the most: the softest matchup."""
-
-    defenses: int
-
-    @property
-    def tone(self) -> Tone:
-        """Good in the softest quarter, a warning in the toughest."""
-        if self.rank <= self.defenses // 4:
-            return "good"
-        if self.rank > self.defenses - self.defenses // 4:
-            return "warning"
-        return "neutral"
-
-    def describe(self) -> str:
-        """'vs MIA, 4th-most to RBs (24.1 a game)'."""
-        return f"vs {self.opponent}, {self.allowed_to()}"
-
-    def allowed_to(self) -> str:
-        """'4th-most to RBs (24.1 a game)': the defense's record, for a line that already says who it is."""
-        noun = "defenses" if self.position == "DEF" else f"{self.position}s"
-        if self.rank == 1:
-            rank = "the most"
-        elif self.rank == self.defenses:
-            rank = "the fewest"
-        else:
-            rank = f"{ordinal(self.rank)}-most"
-        return f"{rank} to {noun} ({self.allowed:.2f} a game)"
 
 
 @dataclass(frozen=True)
@@ -466,32 +428,10 @@ def misses(lines: Sequence[GameLine]) -> tuple[int, int]:
 
 
 def _allowed(lines: Sequence[GameLine], scoring: str) -> dict[tuple[str, str], Matchup]:
-    """Points each defense has given up per game to each position, ranked.
-
-    Per game rather than in total, because byes leave defenses with different
-    numbers of games. Every defense is ranked at every position, including
-    ones that have given a position nothing, which is a real and good record.
-    """
-    totals: dict[tuple[str, str], float] = defaultdict(float)
-    games: dict[str, set[int]] = defaultdict(set)
-    for line in lines:
-        totals[(line.opponent, line.position)] += line.stats.get(scoring, 0.0)
-        games[line.opponent].add(line.week)
-
-    positions = {line.position for line in lines}
-    allowed: dict[tuple[str, str], Matchup] = {}
-    for position in positions:
-        per_game = {defense: totals[(defense, position)] / len(weeks) for defense, weeks in games.items()}
-        ranked = sorted(per_game, key=lambda defense: -per_game[defense])
-        for rank, defense in enumerate(ranked, start=1):
-            allowed[(defense, position)] = Matchup(
-                opponent=defense,
-                position=position,
-                allowed=per_game[defense],
-                rank=rank,
-                defenses=len(ranked),
-            )
-    return allowed
+    """Points each defense has given up per game to each position, ranked (`matchups.allowed`)."""
+    return matchups.allowed(
+        Scored(line.opponent, line.position, line.week, line.stats.get(scoring, 0.0)) for line in lines
+    )
 
 
 def _total(lines: Sequence[GameLine], key: str) -> float:

@@ -46,6 +46,9 @@ class Category:
     yahoo_shots: str = ""
     """For a percentage, Yahoo's stat id for makes over attempts, which a matchup prints '109/218'."""
 
+    attempted: str = ""
+    """For a percentage, the label its attempts a game carry in a `Line`: 'FGA'. What weights the rate by volume."""
+
     @property
     def is_percentage(self) -> bool:
         return bool(self.attempts)
@@ -79,8 +82,8 @@ STEALS = Category("STL", "17", "stl", "s")
 BLOCKS = Category("BLK", "18", "blk", "b")
 # Tagged `tpm`, not `3pm`: "5" and "3pm" read as "53pm", to the model as to a person.
 THREES = Category("3PTM", "10", "tpm", "tpm")
-FIELD_GOALS = Category("FG%", "5", "fgm", "FG", attempts="fga", yahoo_shots="9004003")
-FREE_THROWS = Category("FT%", "8", "ftm", "FT", attempts="fta", yahoo_shots="9007006")
+FIELD_GOALS = Category("FG%", "5", "fgm", "FG", attempts="fga", yahoo_shots="9004003", attempted="FGA")
+FREE_THROWS = Category("FT%", "8", "ftm", "FT", attempts="fta", yahoo_shots="9007006", attempted="FTA")
 TURNOVERS = Category("TO", "19", "to", "to", better="lower")
 
 CATEGORIES = (POINTS, REBOUNDS, ASSISTS, STEALS, BLOCKS, THREES, FIELD_GOALS, FREE_THROWS, TURNOVERS)
@@ -173,12 +176,21 @@ def ruled_out(status: str) -> bool:
 
 
 Line = dict[str, float]
-"""Figures keyed by category label. A category with no figure is absent."""
+"""Figures keyed by category label, and each percentage's attempts a game by its `Category.attempted`.
+A category with no figure is absent."""
 
 
 def line(totals: Mapping[str, float], games: int = 1) -> Line:
-    """Every category's figure over summed box scores, keyed by label."""
-    return {c.label: value for c in CATEGORIES if (value := c.figure(totals, games)) is not None}
+    """Every category's figure over summed box scores, keyed by label, with each percentage's attempts a game.
+
+    The attempts ride along because a rate alone says nothing of its weight: a
+    player going 2 for 3 moves a team's FG% far less than one going 10 for 15.
+    """
+    figures = {c.label: value for c in CATEGORIES if (value := c.figure(totals, games)) is not None}
+    tried = {
+        c.attempted: totals.get(c.attempts, 0.0) / games for c in CATEGORIES if c.is_percentage and c.label in figures
+    }
+    return figures | (tried if games else {})
 
 
 COUNTED = {c.yahoo_stat: c for c in CATEGORIES if not c.is_percentage}

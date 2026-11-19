@@ -46,6 +46,8 @@ FINAL_TTL = timedelta(days=365)
 """A week closed and settled: it will never change, so it is never asked for again this season."""
 AVERAGES_TTL = timedelta(hours=3)
 """A player's averages move once a game night, and only for those who played in it."""
+TRANSACTIONS_TTL = timedelta(hours=1)
+"""The league's moves: one request carries the season's, read only when a player's history is opened."""
 PLAYED_TTL = timedelta(days=7)
 """A week once played stands, bar the stat corrections Yahoo makes in the days after it."""
 
@@ -127,6 +129,11 @@ def teams(league_key: str) -> YahooRead:
 def standings(league_key: str) -> YahooRead:
     """The table: the teams list carries none, so a reader built from it ranks nobody."""
     return YahooRead("standings", STANDINGS_TTL, league=league_key)
+
+
+def transactions(league_key: str) -> YahooRead:
+    """Every move the league has made this season, newest first: adds, drops and trades, in one response."""
+    return YahooRead("transactions", TRANSACTIONS_TTL, league=league_key)
 
 
 def roster(team_key: str) -> YahooRead:

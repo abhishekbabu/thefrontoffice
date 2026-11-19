@@ -86,12 +86,37 @@ def test_turnovers_count_against_him() -> None:
     assert careless < careful < 0
 
 
-def test_a_percentage_counts_from_the_pools_average() -> None:
-    pool = [{FIELD_GOALS.label: 0.40}, {FIELD_GOALS.label: 0.50}]
+FG = FIELD_GOALS.label
+FGA = FIELD_GOALS.attempted
+
+
+def test_a_percentage_counts_from_the_pools_rate_over_all_its_attempts() -> None:
+    """10 attempts at .400 and 10 at .500: the pool shoots .450, so a .450 shooter adds nothing."""
+    pool = [{FG: 0.40, FGA: 10.0}, {FG: 0.50, FGA: 10.0}]
     value = category_value(_scored(StatCategory(FIELD_GOALS.yahoo_stat, "FG%")), pool)
 
-    assert value({FIELD_GOALS.label: 0.45}) == pytest.approx(0.0)
-    assert (value({FIELD_GOALS.label: 0.50}) or 0) > 0
+    assert value({FG: 0.45, FGA: 12.0}) == pytest.approx(0.0)
+    assert (value({FG: 0.50, FGA: 12.0}) or 0) > 0
+
+
+def test_a_percentage_weighs_by_attempts_so_volume_beats_a_few_makes() -> None:
+    """3 for 4 a night moves a team's rate less than 9 for 16 does, though .750 is the better rate."""
+    pool = [{FG: 0.40, FGA: 10.0}, {FG: 0.50, FGA: 10.0}, {FG: 0.46, FGA: 15.0}]
+    value = category_value(_scored(StatCategory(FIELD_GOALS.yahoo_stat, "FG%")), pool)
+
+    few, many = value({FG: 0.75, FGA: 4.0}), value({FG: 0.5625, FGA: 16.0})
+
+    assert few is not None and many is not None
+    assert many > few > 0
+
+
+def test_a_rate_without_its_attempts_counts_nothing() -> None:
+    pool = [{FG: 0.40, FGA: 10.0}, {FG: 0.50, FGA: 10.0}, {POINTS.label: 10.0}]
+    value = category_value(
+        _scored(StatCategory(FIELD_GOALS.yahoo_stat, "FG%"), StatCategory(POINTS.yahoo_stat, "PTS")), pool
+    )
+
+    assert value({FG: 0.60, POINTS.label: 0.0}) == pytest.approx(0.0)
 
 
 def test_a_category_this_app_has_no_figure_for_counts_nothing() -> None:
@@ -151,17 +176,23 @@ SCORED = _scored(
     StatCategory(TURNOVERS.yahoo_stat, "TO", fewer_wins=True),
 )
 POOL = [
-    {FIELD_GOALS.label: 0.50, BLOCKS.label: 1.0, POINTS.label: 20.0, TURNOVERS.label: 1.0},
-    {FIELD_GOALS.label: 0.46, BLOCKS.label: 0.5, POINTS.label: 15.0, TURNOVERS.label: 1.5},
-    {FIELD_GOALS.label: 0.42, BLOCKS.label: 0.0, POINTS.label: 10.0, TURNOVERS.label: 2.0},
+    {FG: 0.50, FGA: 12.0, BLOCKS.label: 1.0, POINTS.label: 20.0, TURNOVERS.label: 1.0},
+    {FG: 0.46, FGA: 12.0, BLOCKS.label: 0.5, POINTS.label: 15.0, TURNOVERS.label: 1.5},
+    {FG: 0.42, FGA: 12.0, BLOCKS.label: 0.0, POINTS.label: 10.0, TURNOVERS.label: 2.0},
 ]
 
 
 def test_a_player_is_weak_where_he_sits_furthest_under_the_pools_average_worst_first() -> None:
     """A wild shooter who turns it over: those drag him, not the points he scores; more turnovers is worse."""
-    line = {FIELD_GOALS.label: 0.38, BLOCKS.label: 0.4, POINTS.label: 18.0, TURNOVERS.label: 3.0}
+    line = {FG: 0.38, FGA: 14.0, BLOCKS.label: 0.4, POINTS.label: 18.0, TURNOVERS.label: 3.0}
 
     assert [c.name for c in weakest(line, scales(SCORED, POOL))] == ["TO", "FG%"]
+
+
+def test_a_poor_rate_on_few_attempts_is_no_weakness() -> None:
+    line = {FG: 0.30, FGA: 1.0, BLOCKS.label: 0.5, POINTS.label: 15.0, TURNOVERS.label: 1.5}
+
+    assert weakest(line, scales(SCORED, POOL)) == []
 
 
 def test_an_average_line_is_weak_nowhere() -> None:
