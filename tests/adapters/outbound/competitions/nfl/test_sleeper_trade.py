@@ -4,7 +4,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
-from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeESPN, FakeSleeper, nfl_provider, proj
+from support.espn import FakeESPN
+from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (

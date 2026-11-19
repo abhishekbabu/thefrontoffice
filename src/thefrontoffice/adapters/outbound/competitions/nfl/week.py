@@ -17,9 +17,9 @@ from datetime import UTC, datetime
 from functools import cached_property
 
 from thefrontoffice.adapters.outbound.competitions.dates import day_month, parse_day, span, weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
-from thefrontoffice.adapters.outbound.competitions.nfl.injuries import PlayerInjuries
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     SWAP_BY,
     LineupChange,

@@ -81,7 +81,9 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Player pages**: tabs for this week, the game log, past seasons, league
   history (draft pick, then each add, drop and trade, opening in full as in
   Activity) and linked news. An injured NFL player shows ESPN's injury, its
-  estimated return week and the latest update. An NFL player's first tab leads
+  estimated return week and the latest update; an injured NBA player shows the
+  same with the return as a day, which his Status cell also gives on hover and
+  the NBA model is told. An NFL player's first tab leads
   with his last 5 weeks (points, snap share, targets, carries), and his
   projected line lists only what his position is played for.
 - **Compare**: up to four players side by side, added from any player page,
@@ -235,8 +237,9 @@ on disk.
 - **Platforms.** Sleeper runs the NFL leagues and supplies stats for both NFL
   and NBA. FPL comes from its public API, NBA leagues from Yahoo, and news and
   injuries from ESPN (joined to Sleeper by ESPN's id where Sleeper carries it,
-  else by full name within a club). ESPN's league-wide injury report keeps only
-  each club's latest 25 entries, so a player Sleeper has ruled out whom it has
+  else by full name within a club; joined to Yahoo's NBA players by full name
+  within a club alone, a name two players there share matching nobody). ESPN's
+  NFL injury report keeps only each club's latest 25 entries, so a player Sleeper has ruled out whom it has
   dropped is looked up on his own: his ESPN id from Sleeper or his club's ESPN
   roster, then his latest injury entry. Every response is cached on disk, and transient failures
   are retried. Football projections and stat lines are priced by each league's

@@ -11,10 +11,18 @@ from datetime import date, datetime
 
 from thefrontoffice.adapters.outbound.competitions import paging, places
 from thefrontoffice.adapters.outbound.competitions.dates import span
+from thefrontoffice.adapters.outbound.competitions.injuries import (
+    BODY_PART,
+    PlayerInjuries,
+    approximately,
+    by_club,
+    matched,
+)
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
+from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
 from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, FormSource, PlayerStats
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
@@ -29,6 +37,9 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     stranded,
 )
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
+from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
+from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
+from thefrontoffice.adapters.outbound.platforms.espn.types import NBA
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooGame
@@ -134,6 +145,7 @@ class YahooNBAProvider:
         yahoo_for: Callable[[YahooLeague], YahooSource],
         nba: FormSource,
         sleeper: SleeperProjectionSource,
+        espn: ESPNSource,
         max_weekly_adds: int,
     ):
         """Every collaborator from bootstrap, which is the one place a real client is built.
@@ -145,6 +157,7 @@ class YahooNBAProvider:
         self._yahoo_for = yahoo_for
         self.nba = nba
         self.sleeper = sleeper
+        self.espn = espn
         self.max_weekly_adds = max_weekly_adds
         self.context_builder = PlayerContextBuilder(self.nba)
         self._found: list[YahooLeague] | None = None
@@ -345,11 +358,12 @@ class YahooNBAProvider:
             remaining_games = self.nba.get_remaining_games_bulk(teams, start, end)
 
         projections = self._projection_index(start, end)
+        returns = self._returns([*rostered, *free_agents])
         roster_lines = self.context_builder.build_player_lines(
-            rostered, start, end, remaining_games=remaining_games, projections=projections
+            rostered, start, end, remaining_games=remaining_games, projections=projections, returns=returns
         )
         fa_lines = self.context_builder.build_player_lines(
-            free_agents, start, end, annotations, remaining_games, projections=projections
+            free_agents, start, end, annotations, remaining_games, projections=projections, returns=returns
         )
 
         schedule_context = prompt.schedule(week, remaining_games, projected=projections is not None)
@@ -388,13 +402,15 @@ class YahooNBAProvider:
 
         # Not enrichment: a trade is judged against the roster it changes, and
         # one judged without it is an answer to a different question.
+        rostered = yahoo.roster(my_team.team_key)
+        returns = self._returns([*rostered, *giving, *receiving])
         roster = self.context_builder.build_player_lines(
-            yahoo.roster(my_team.team_key), week.start if week else None, week.end if week else None
+            rostered, week.start if week else None, week.end if week else None, returns=returns
         )
 
         text = prompt.trade(
-            giving=self.context_builder.build_context_for_players(giving),
-            receiving=self.context_builder.build_context_for_players(receiving),
+            giving=self.context_builder.build_context_for_players(giving, returns=returns),
+            receiving=self.context_builder.build_context_for_players(receiving, returns=returns),
             week=week,
             roster="".join(roster.values()),
         )
@@ -446,9 +462,11 @@ class YahooNBAProvider:
         nobody does, and the column would be blank down its whole length.
         """
         slotted = any(p.slot for p in players)
+        returns = self._returns(players)
         cards = []
         for player in players:
             stats = self.nba.get_player_stats(player.name)
+            back = returns.get(player.player_key) if player.status else None
             cards.append(
                 PlayerCard(
                     player_id=player.player_key,
@@ -462,6 +480,7 @@ class YahooNBAProvider:
                         **{c.label: _recent(stats, c) for c in CARD_CATEGORIES},
                         STATUS_COLUMN: player.status,
                     },
+                    notes={STATUS_COLUMN: f"back {approximately(back)}"} if back else {},
                 )
             )
         return cards
@@ -476,6 +495,12 @@ class YahooNBAProvider:
         stats = self.nba.get_player_stats(player.name)
         points = _recent(stats, POINTS)
         run = _run(stats)
+        # ESPN's report where it has him, which says when he is back; Yahoo's
+        # status where it does not. Nothing for a healthy player.
+        hurt = self._injuries([player]).stats(player_id) or [
+            *([Stat(label="Status", value=player.status, tone="warning")] if player.status else []),
+            *([Stat(label=BODY_PART, value=player.injury_note)] if player.injury_note else []),
+        ]
         return PlayerDetail(
             player_id=player_id,
             name=player.name,
@@ -489,9 +514,30 @@ class YahooNBAProvider:
                 StatGroup(
                     title=run.capitalize() or "Recent form",
                     stats=[Stat(label=c.label, value=_recent(stats, c)) for c in CATEGORIES],
-                )
+                ),
+                *([StatGroup(title="Injury", stats=hurt)] if hurt else []),
             ],
         )
+
+    def _injuries(self, players: list[YahooPlayer]) -> PlayerInjuries:
+        """Each of `players` on ESPN's injury report, keyed by Yahoo's key, where it names him.
+
+        Yahoo carries no ESPN id, so the join is by full name within his club
+        alone, refusing a name two of them there share. ESPN's report is
+        enrichment: one that will not load leaves Yahoo's status standing alone.
+        """
+        try:
+            reports = self.espn.get_injuries(NBA)
+        except ESPNAPIError as e:
+            logger.warning(f"Continuing on Yahoo's injury statuses alone: {e}")
+            return PlayerInjuries()
+        clubs = by_club((espn_club(p.team), p.name, p.player_key) for p in players)
+        return PlayerInjuries(by_player=matched(reports, clubs, {}))
+
+    def _returns(self, players: list[YahooPlayer]) -> dict[str, date]:
+        """The day ESPN expects each of `players` back, keyed by Yahoo's key; nobody it gives none for."""
+        injuries = self._injuries(players)
+        return {p.player_key: back for p in players if (back := injuries.returns(p.player_key))}
 
     def _projection_index(self, start: date | None, end: date | None) -> ProjectionIndex | None:
         """Projected category totals for the matchup period, or None.

@@ -6,6 +6,8 @@ from datetime import date, datetime
 NFL = "football/nfl"
 """ESPN's path for a league: the sport, then the league within it."""
 
+NBA = "basketball/nba"
+
 
 @dataclass(frozen=True)
 class NewsArticle:

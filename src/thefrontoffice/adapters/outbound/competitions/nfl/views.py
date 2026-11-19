@@ -9,6 +9,7 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
+from thefrontoffice.adapters.outbound.competitions.injuries import BODY_PART
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, history, injuries
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, eligible_positions
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
@@ -623,9 +624,9 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
     ]
     # ESPN's report where it has him, which says when he is back; Sleeper's
     # designation where it does not. Nothing for a healthy player.
-    hurt = state.injuries.stats(player_id, schedule) or [
+    hurt = state.injuries.stats(player_id, lambda back: injuries.long_return(back, schedule)) or [
         *([Stat(label="Status", value=injury, tone="warning")] if injury else []),
-        *([Stat(label=injuries.BODY_PART, value=body)] if body else []),
+        *([Stat(label=BODY_PART, value=body)] if body else []),
     ]
     if hurt:
         groups.append(StatGroup(title="Injury", stats=hurt))

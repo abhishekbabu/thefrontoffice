@@ -9,7 +9,8 @@ from dataclasses import replace
 from datetime import UTC
 from typing import Any
 
-from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeESPN, FakeSleeper, game_line, nfl_provider, proj
+from support.espn import FakeESPN
+from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeSleeper, game_line, nfl_provider, proj
 from support.prompts import named_fields, schema_fields
 
 from thefrontoffice.adapters.outbound.competitions.nfl import prompt

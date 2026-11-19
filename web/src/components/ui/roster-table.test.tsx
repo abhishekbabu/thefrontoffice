@@ -28,4 +28,24 @@ describe("RosterTable", () => {
     expect([...noted].map((el) => el.getAttribute("aria-label"))).toEqual([`Bowers Q: ${note}`]);
     expect(container.textContent).toContain("—");
   });
+
+  it("gives a status badge its fuller reading, and leaves one without a note a plain badge", async () => {
+    const status = (id: string, value: string, notes: Record<string, string> = {}): PlayerCard => ({
+      ...card(id, "—", notes),
+      columns: { Player: id, Status: value },
+      roles: { Player: "player", Status: "status" },
+    });
+    const { container } = await render(
+      <RosterTable
+        players={[status("Curry", "O", { Status: "back ~22 Nov" }), status("Butler", "GTD")]}
+        empty={{ title: "Nobody" }}
+        sort={null}
+        onSort={() => {}}
+      />,
+    );
+
+    const noted = container.querySelectorAll<HTMLElement>("[tabindex='0'][aria-label]");
+    expect([...noted].map((el) => el.getAttribute("aria-label"))).toEqual(["O: back ~22 Nov"]);
+    expect(container.textContent).toContain("GTD");
+  });
 });

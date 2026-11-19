@@ -11,8 +11,9 @@ from pathlib import Path
 import pytest
 
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.competitions.nba.clubs import YAHOO_TO_ESPN
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
-from thefrontoffice.adapters.outbound.platforms.espn.types import NFL
+from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, NFL
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 
 pytestmark = pytest.mark.integration
@@ -52,3 +53,16 @@ def test_a_roster_names_each_player_with_an_id_his_own_injury_history_answers_to
     assert found, "nobody the report calls hurt has an entry of his own: the core API's shape has moved"
     assert all(r.status and r.updated for r in found.values())
     assert any(r.returns for r in found.values())
+
+
+def test_the_nba_report_carries_return_dates_under_the_club_spellings_basketball_maps(client: ESPNClient) -> None:
+    """Basketball joins by name within a club, so a club ESPN respells unmapped would match nobody on it."""
+    clubs = set(client.get_teams(NBA))
+    hurt = [r for r in client.get_injuries(NBA) if r.status != "Active"]
+
+    assert len(clubs) == 30
+    assert set(YAHOO_TO_ESPN.values()) <= clubs
+    assert not set(YAHOO_TO_ESPN) & clubs
+    assert hurt, "an NBA injury report with nobody hurt is a broken read, not a healthy league"
+    assert {r.club for r in hurt} <= clubs
+    assert any(r.returns for r in hurt)
