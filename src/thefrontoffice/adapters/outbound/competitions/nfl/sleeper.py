@@ -289,7 +289,7 @@ class SleeperNFLProvider:
             )
         ranked = views.cards(state, ids, starters=set(), wire=True, ahead=outlook.rest_of_season(self.client, state))
         if not view:
-            ranked = views.by_fit(ranked)
+            ranked = views.by_fit(state, ranked)
         if view == INJURED:
             ranked = views.with_returns(ranked, state, self.scoreboard.schedule(state.season))
         if adds:

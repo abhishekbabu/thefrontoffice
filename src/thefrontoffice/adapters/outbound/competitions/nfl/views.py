@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, history, injuries
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, best_upgrade
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, eligible_positions
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     FREE_AGENT,
     Game,
@@ -29,7 +29,9 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     FANTASY_POSITIONS,
     RULED_OUT_SHORT,
+    STREAMED,
     listed,
+    long_term,
     ruled_out,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
@@ -38,6 +40,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     projections_for,
     zero_projection,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.worth import plays, value
 from thefrontoffice.adapters.outbound.competitions.places import ordinal
 from thefrontoffice.domain.errors import PlatformError, PlayerNotFoundError
 from thefrontoffice.domain.models import (
@@ -358,9 +361,9 @@ class Fit:
     """How a free agent compares with the weakest starter he could replace: the gap, and against whom."""
 
     gain: float
-    """His projection less that starter's this week; his whole projection where the slot is empty."""
+    """His `worth.value` less that starter's; his whole value where the slot is empty, or its starter cannot play this week."""
     against: str
-    """Who he is measured against, 'over Josh Allen' or 'vs Josh Allen', or the empty slot, 'at FLEX, empty'."""
+    """Who he is measured against, 'over Josh Allen' or 'vs Josh Allen', or the slot he would fill, 'at FLEX, empty', 'for Josh Allen, out'."""
 
     def cell(self) -> str:
         """The gap alone, as a column has room for: '+2.10', '-8.44'."""
@@ -371,31 +374,72 @@ class Fit:
         return f"{self.cell()} {self.against}"
 
 
+def _standing(state: Week, slot: LineupSlot) -> float | None:
+    """What a starting slot holds this week, by `worth.value`; None where nobody in it can play: a hole."""
+    if slot.player is None or not plays(state, slot.player):
+        return None
+    return value(state, slot.player)
+
+
 def fit(state: Week, projection: Projection) -> Fit | None:
-    """How he compares with your weakest starter he could replace, either way.
+    """How he compares with your weakest starter he could replace, either way, both read by `worth.value`.
+
+    The figure the to-do list weighs a pickup by, not this week's projection:
+    a projection alone ranks the wire's kickers and defenses within a point
+    of yours above every useful back, and misses a fill-in's role ending.
+    Measured against the best lineup, so the bench has already made its
+    moves; a starter there who cannot play this week is a hole, and a
+    player who fills it gains his whole value.
 
     A shortfall is shown as plainly as a gain: in a deep league nobody on
-    the wire outprojects a starter, and which of them comes closest is
+    the wire outvalues a starter, and which of them comes closest is
     then the whole question — a column of blanks would answer none of it.
     None only where he could fill no slot at all.
     """
-    upgrade = best_upgrade(state.lineup, projection)
-    if upgrade is None:
+    eligible = [slot for slot in state.best if projection.position in eligible_positions(slot.slot)]
+    if not eligible:
         return None
-    gain, slot = upgrade
-    if slot.player is None:
+    standings = [(_standing(state, slot), slot) for slot in eligible]
+    held, slot = min(standings, key=lambda pair: float("-inf") if pair[0] is None else pair[0])
+    gain = round(value(state, projection) - (held or 0.0), 2)
+    starter = slot.player
+    if starter is None:
         return Fit(gain, f"at {slot.slot}, empty")
-    return Fit(gain, f"{'over' if gain > 0 else 'vs'} {slot.player.name}")
+    if held is None:
+        why = RULED_OUT_SHORT.get(starter.injury_status.upper(), "on bye")
+        return Fit(gain, f"for {starter.name}, {why}")
+    return Fit(gain, f"{'over' if gain > 0 else 'vs'} {starter.name}")
 
 
-def by_fit(rows: Sequence[PlayerCard]) -> list[PlayerCard]:
+def short_at(state: Week) -> set[str]:
+    """The streamed positions (`STREAMED`) where your best lineup has a hole this week: nobody, or nobody who can play."""
+    return {slot.slot for slot in state.best if slot.slot in STREAMED and _standing(state, slot) is None}
+
+
+def by_fit(state: Week, rows: Sequence[PlayerCard]) -> list[PlayerCard]:
     """The wire best fit first: the players who would most help this lineup lead, whatever their position.
 
     By projection alone a 1QB league's list opens on quarterbacks nobody can
-    start. Stable, so equal fits keep the projection's order, and a player who
+    start. Two kinds follow everyone else, still best fit first among
+    themselves, which is the order a position filter shows:
+
+    - kickers and defenses, unless your lineup is short there this week
+      (`short_at`): one on the wire is always within a point or two of
+      yours, so it would lead a list it rarely changes;
+    - a player out past this week (`long_term`): his worth is his season
+      average, which no slot of yours gets — he is the IR list's question.
+
+    Stable, so equal fits keep the projection's order, and a player who
     fits no slot goes last.
     """
-    return sorted(rows, key=lambda row: -row.values.get(FIT_COLUMN, float("-inf")))
+    short = short_at(state)
+
+    def key(row: PlayerCard) -> tuple[bool, float]:
+        position = row.columns.get(POSITION_COLUMN, "")
+        later = (position in STREAMED and position not in short) or long_term(row.columns.get(STATUS_COLUMN, ""))
+        return later, -row.values.get(FIT_COLUMN, float("-inf"))
+
+    return sorted(rows, key=key)
 
 
 def _role(projection: Projection, state: Week) -> list[Stat]:

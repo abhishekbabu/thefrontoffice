@@ -156,7 +156,8 @@ LEAGUE RULES:
     + NFL_READING_PLAYER_LINES
     + """
 - "Fits" compares an available player with the weakest starter he could replace: the gap in
-  projected points this week, positive where he would start.
+  value a game (recent form beside this week's projection, adjusted for usage), positive where
+  he is worth more. A starter on bye or ruled out counts as an empty slot.
 
 {situation}
 
