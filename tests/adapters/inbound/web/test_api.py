@@ -48,6 +48,7 @@ from thefrontoffice.domain.models import (
     PlayerRef,
     Remembered,
     SeasonInput,
+    Slate,
     Stat,
     StatGroup,
     Summary,
@@ -963,8 +964,8 @@ class _BrowsingProvider(_SummaryProvider):
 
         return Summary(window=f"Week {week}", weeks=WeekRange(week=week, current=10, first=1, last=16))
 
-    def games_of(self, league_id: str, week: int) -> list[Match]:
-        return [Match(label=f"Week {week}", home="BUF", away="MIA", detail="Final")]
+    def games_of(self, league_id: str, week: int) -> Slate:
+        return Slate(games=[Match(label=f"Week {week}", home="BUF", away="MIA", detail="Final")], byes=["KC"])
 
 
 def test_another_week_comes_back_with_where_it_sits_in_the_season() -> None:
@@ -983,9 +984,10 @@ def test_another_week_comes_back_with_where_it_sits_in_the_season() -> None:
 def test_a_weeks_real_games_come_back_by_number() -> None:
     from thefrontoffice.domain.models import Summary
 
-    [game] = _client(_BrowsingProvider(Summary())).get("/api/nfl-sleeper/leagues/L1/weeks/4/games").json()
+    body = _client(_BrowsingProvider(Summary())).get("/api/nfl-sleeper/leagues/L1/weeks/4/games").json()
+    [game] = body["games"]
 
-    assert (game["label"], game["detail"]) == ("Week 4", "Final")
+    assert (game["label"], game["detail"], body["byes"]) == ("Week 4", "Final", ["KC"])
 
 
 def test_a_competition_that_cannot_browse_weeks_refuses_as_it_does_trades(client: TestClient) -> None:

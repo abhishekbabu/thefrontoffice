@@ -27,8 +27,24 @@ describe("Season", () => {
     expect(rows.find((r) => r.includes("Week 10"))).toContain("live 119.24-103.90");
   });
 
-  it("puts the opponent's record in a chip beside their name", async () => {
-    const { container } = await render(<Season rows={[row("Week 3", { opponent: "Rival", detail: "4-6" })]} />);
+  it("puts the opponent's record now beside their name for a week still to be decided", async () => {
+    const { container } = await render(<Season rows={[row("Week 12", { opponent: "Rival", detail: "4-6" })]} />);
     expect(container.textContent).toContain("Rival4-6");
+    expect(container.querySelector("[aria-label='Record now 4-6']")).not.toBeNull();
+  });
+
+  it("shows no record for a week already decided, which would read as theirs at the time", async () => {
+    const played = row("Week 3", { opponent: "Rival", detail: "5-5", result: "140.19-132.14", outcome: "won" });
+    const { container } = await render(<Season rows={[played]} />);
+
+    expect(container.textContent).not.toContain("5-5");
+    expect(container.textContent).toContain("RivalW 140.19-132.14");
+  });
+
+  it("keeps a playoff round beside the opponent once the week is decided", async () => {
+    const final = row("Week 17", { opponent: "Rival", detail: "Final", playoffs: true, result: "1-2", outcome: "lost" });
+    const { container } = await render(<Season rows={[final]} />);
+
+    expect(container.textContent).toContain("RivalFinalL 1-2");
   });
 });

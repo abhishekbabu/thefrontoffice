@@ -100,7 +100,6 @@ from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
     LeagueSchedule,
-    Match,
     MatchupInput,
     Outcomes,
     Outlook,
@@ -113,6 +112,7 @@ from thefrontoffice.domain.models import (
     RangeSearch,
     SeasonInput,
     Side,
+    Slate,
     Summary,
     TeamRef,
     TradeMarket,
@@ -612,13 +612,17 @@ class SleeperNFLProvider:
         """Any week of the season as it was played or as it projects: both lineups, and no to-do list."""
         return self._summary(self._week(league_id, week), None)
 
-    def games_of(self, league_id: str, week: int) -> list[Match]:
-        """The real games of any week of the season, each with where it stands and whether you have anyone in it."""
+    def games_of(self, league_id: str, week: int) -> Slate:
+        """The real games of any week of the season, each with where it stands and who has players in it, and its byes."""
         state = self._week(league_id)
         if not 1 <= week <= max(season_end(state.league), state.week):
             raise NotFoundError(f"week {week} of the {state.season} season")
-        games = self.scoreboard.schedule(state.season).get(week, [])
-        return league.matches(state, games, self.scoreboard.week_board(state.season, week))
+        schedule = self.scoreboard.schedule(state.season)
+        games = schedule.get(week, [])
+        return Slate(
+            games=league.matches(state, games, self.scoreboard.week_board(state.season, week)),
+            byes=league.byes(schedule, week),
+        )
 
     def _summary(self, state: Week, to_do: list[Action] | None) -> Summary:
         live = self.scoreboard.live(state)

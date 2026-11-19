@@ -1,6 +1,6 @@
 import { act } from "react";
 import { describe, expect, it } from "vitest";
-import type { Competition, League, PlayerCard, TeamRef } from "@/lib/api";
+import type { Competition, League, Outlook, PlayerCard, TeamRef } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { RostersPanel } from "@/panels/Rosters";
 import { offlineClient, render, settle } from "@/test/render";
@@ -41,5 +41,34 @@ describe("Rosters", () => {
 
     expect(container.textContent).toContain("Nacua");
     expect(container.textContent).not.toContain("Lamb");
+  });
+
+  it("lists only the weeks somebody misses, and one line when nobody does", async () => {
+    const planning = { ...competition, plans_weeks: true } as Competition;
+    const week = (n: number, missing: string[] = []): Outlook["weeks"][number] => ({
+      week: n,
+      points: 120,
+      missing,
+      short_by: 0,
+      short: false,
+      fix: "",
+      gain: 0,
+    });
+    const show = async (outlook: Outlook) => {
+      const client = offlineClient();
+      client.setQueryData(keys.teams(competition.key, league.league_id), teams);
+      client.setQueryData([...keys.roster(competition.key, league.league_id), null], [card("a", "Lamb")]);
+      client.setQueryData(keys.weeksAhead(competition.key, league.league_id, ""), outlook);
+      return (await render(<RostersPanel competition={planning} league={league} />, client)).container.textContent;
+    };
+
+    const some = await show({ usual: 120, weeks: [week(12), week(13, ["Josh Allen (bye)"]), week(14)] });
+    expect(some).toContain("Week 13");
+    expect(some).not.toContain("Week 12");
+    expect(some).not.toContain("Week 14");
+
+    const none = await show({ usual: 120, weeks: [week(12), week(13), week(14)] });
+    expect(none).toContain("through week 14");
+    expect(none).not.toContain("Week 12");
   });
 });

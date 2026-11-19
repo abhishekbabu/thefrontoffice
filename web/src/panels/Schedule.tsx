@@ -4,7 +4,8 @@ import { api, type Competition, type League, type LeagueSchedule, type ScheduleR
 import { keys } from "@/lib/queries";
 import type { Variant } from "@/lib/tone";
 import { Badge } from "@/components/ui/badge";
-import { ListCard, ListRow } from "@/components/ui/list";
+import { ListCard, ListHeading, ListRow } from "@/components/ui/list";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Empty, QueryState } from "@/components/ui/state";
 import { LeagueHeader } from "@/components/ui/page-header";
 import { Label } from "@/components/ui/label";
@@ -51,27 +52,33 @@ export function Season({ rows }: { rows: ScheduleRow[] }) {
         <Fragment key={row.label}>
           {/* The bracket is a different competition from the weeks before it, so it reads as one. */}
           {row.playoffs && !rows[i - 1]?.playoffs && (
-            <Label as="div" className="border-t border-border bg-muted px-4 py-1.5">
-              Playoffs
-            </Label>
+            <ListHeading>Playoffs</ListHeading>
           )}
+          {/* Read left to right as one sentence: when, against whom, how it went, what else is on. */}
           <ListRow current={row.is_current}>
             <Label className="w-24 shrink-0">{row.label}</Label>
             <span className="w-32 shrink-0 font-mono text-[11px] text-muted-foreground">{row.date}</span>
-            <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="flex w-64 min-w-0 items-center gap-2">
               {row.opponent ? (
                 <>
                   <span className="truncate">{row.opponent}</span>
-                  {row.detail && (
-                    <Badge variant="muted" appearance="label" className="shrink-0 tabular-nums">
-                      {row.detail}
-                    </Badge>
-                  )}
+                  <Standing row={row} />
                 </>
               ) : (
                 <span className="text-muted-foreground">{row.detail || "—"}</span>
               )}
             </span>
+            {/* Won and lost are carried by the letter as well as the color: state
+                in color alone is state a colorblind reader cannot see. */}
+            {row.result && (
+              <Badge
+                variant={row.outcome ? OUTCOME[row.outcome].variant : "muted"}
+                appearance="pill"
+                className="shrink-0 tabular-nums"
+              >
+                {row.outcome ? OUTCOME[row.outcome].letter : row.is_current && "live"} {row.result}
+              </Badge>
+            )}
             {/* Said, not only shaded — the tint is reinforcement. */}
             {row.is_current && (
               <Badge variant="muted" appearance="label" className="shrink-0">
@@ -83,20 +90,33 @@ export function Season({ rows }: { rows: ScheduleRow[] }) {
                 {mark}
               </Badge>
             ))}
-            {/* Won and lost are carried by the letter as well as the color: state
-                in color alone is state a colorblind reader cannot see. */}
-            {row.result && (
-              <Badge
-                variant={row.outcome ? OUTCOME[row.outcome].variant : "muted"}
-                appearance="pill"
-                className="tabular-nums"
-              >
-                {row.outcome ? OUTCOME[row.outcome].letter : row.is_current && "live"} {row.result}
-              </Badge>
-            )}
           </ListRow>
         </Fragment>
       ))}
     </ListCard>
+  );
+}
+
+/**
+ * What the row says of the opponent beside their name: the playoff round, or their record.
+ *
+ * The record is the one they hold now, not the one they held that week, so a
+ * week already decided shows none: beside a result it would read as theirs
+ * at the time.
+ */
+function Standing({ row }: { row: ScheduleRow }) {
+  if (!row.detail || (!row.playoffs && row.outcome)) return null;
+  const badge = (
+    <Badge variant="muted" appearance="label" className="shrink-0 tabular-nums">
+      {row.detail}
+    </Badge>
+  );
+  if (row.playoffs) return badge;
+  return (
+    <Tooltip label="Their record now">
+      <span tabIndex={0} aria-label={`Record now ${row.detail}`} className="shrink-0">
+        {badge}
+      </span>
+    </Tooltip>
   );
 }

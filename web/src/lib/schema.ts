@@ -268,7 +268,7 @@ export interface paths {
         };
         /**
          * Games Of
-         * @description The real games of any week of the season, the week being played included.
+         * @description The real games of any week of the season, the week being played included, and its byes.
          */
         get: operations["games_of"];
         put?: never;
@@ -1561,6 +1561,22 @@ export interface components {
              * @description Players held in a slot that costs no roster spot and cannot start, such as injured reserve or taxi, in rows shaped like the bench's. Empty where the league has none.
              */
             reserve: components["schemas"]["Spot"][];
+        };
+        /**
+         * Slate
+         * @description The real games one fantasy week is made of, and the clubs with none in it.
+         */
+        Slate: {
+            /**
+             * Games
+             * @description In kickoff order.
+             */
+            games: components["schemas"]["Match"][];
+            /**
+             * Byes
+             * @description Clubs with no game that week, alphabetical; empty where every club plays, or none has played yet.
+             */
+            byes: string[];
         };
         /**
          * Spot
@@ -3117,7 +3133,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Match"][];
+                    "application/json": components["schemas"]["Slate"];
                 };
             };
             /** @description Bad Request */

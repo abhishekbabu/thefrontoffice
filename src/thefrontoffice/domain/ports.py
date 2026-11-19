@@ -16,7 +16,6 @@ from thefrontoffice.domain.models import (
     CompetitionContext,
     ItemState,
     LeagueSchedule,
-    Match,
     MatchupInput,
     Outcomes,
     Outlook,
@@ -29,6 +28,7 @@ from thefrontoffice.domain.models import (
     RangeSearch,
     Remembered,
     SeasonInput,
+    Slate,
     Summary,
     TeamRef,
     TradeMarket,
@@ -400,8 +400,8 @@ class WeekBrowsingProvider(Protocol):
         """
         ...
 
-    def games_of(self, league_id: str, week: int) -> list[Match]:
-        """The real games a week of the season is made of, the week being played included.
+    def games_of(self, league_id: str, week: int) -> Slate:
+        """The real games a week of the season is made of, the week being played included, and its byes.
 
         Raises:
             NotFoundError: the season has no such week.

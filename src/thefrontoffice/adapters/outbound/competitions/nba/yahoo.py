@@ -47,11 +47,11 @@ from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
     LeagueSchedule,
-    Match,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    Slate,
     StandingRow,
     Stat,
     StatGroup,
@@ -213,13 +213,13 @@ class YahooNBAProvider:
         roster = yahoo.roster(my_team.team_key) if week >= current else None
         return self._board(yahoo, league, my_team, week, roster)
 
-    def games_of(self, league_id: str, week: int) -> list[Match]:
+    def games_of(self, league_id: str, week: int) -> Slate:
         """The real games inside a matchup week, from Sleeper's schedule, marked where you have players.
 
         Yahoo publishes no NBA schedule through this SDK, but it does date each
         matchup week, and Sleeper's schedule fills those dates. A week your
         team has no matchup in carries no dates on Yahoo's scoreboard, so it
-        lists no games.
+        lists no games. Every club plays inside a matchup week, so none has a bye.
 
         Raises:
             NotFoundError: the season has no such week.
@@ -231,9 +231,9 @@ class YahooNBAProvider:
         team = yahoo.get_user_team()
         found = yahoo.pairing(team.team_key, week)
         if found is None:
-            return []
+            return Slate()
         roster = yahoo.roster(team.team_key)
-        return [nba_week.match(game, roster) for game in self.nba.games_between(found.start, found.end)]
+        return Slate(games=[nba_week.match(game, roster) for game in self.nba.games_between(found.start, found.end)])
 
     def _within(self, league: YahooLeague, week: int) -> int:
         """The week being played, once `week` is known to be one of the season's.

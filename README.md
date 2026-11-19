@@ -59,10 +59,14 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   a move in Activity, or by name. Figures sit under their heading (this week,
   projected line, this season), and the best of each comparable row is
   starred.
-- **Rosters**: any team's squad and weeks ahead, yours by default.
+- **Rosters**: any team's squad, yours by default, and the weeks ahead where
+  somebody is out on a bye or hurt (one line when nobody is).
+- **Schedule and Fixtures**: your season week by week, a future opponent with
+  their record now. A week's real games grouped by kickoff, each naming your
+  players and your opponent's in it, with the week's byes (FPL: blanks) on one
+  line; a game opens to them.
 - **League and Activity**: the table with PF, PA, FAAB left and waiver order,
-  and every recent move in full. A fixture opens to your players and your
-  opponent's in it.
+  and every recent move in full.
 - **AI, if you add a key**: a verdict on each to-do item and free agent, and an
   assistant that sees whatever's on screen. An agreement is a chip; only an
   overrule or a wait carries a reason.

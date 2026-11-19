@@ -42,6 +42,7 @@ export type ScoutReport = Schemas["ScoutReport"];
 export type Setting = Schemas["Setting"];
 export type SettingsGroup = Schemas["SettingsGroup"];
 export type Side = Schemas["Side"];
+export type Slate = Schemas["Slate"];
 export type CategoryLine = Schemas["CategoryLine"];
 export type Spot = Schemas["Spot"];
 export type Stat = Schemas["Stat"];

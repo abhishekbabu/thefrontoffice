@@ -219,24 +219,35 @@ def matches(state: Week, games: Sequence[Game], board: Mapping[str, ScoreboardGa
         espn = board.get(game.home)
         played = espn if espn and espn.state != "pre" else None
         clubs = (game.home, game.away)
-        players = [p for club in clubs for p in mine.get(club, [])]
-        yours = bool(players)
         rows.append(
             Match(
                 label=day(game.date),
                 home=game.home,
                 away=game.away,
-                detail=" · ".join(part for part in (played.label if played else "", "yours" if yours else "") if part),
-                tone="good" if yours else "neutral",
+                # Who has players in it is said by name, from `yours` and `theirs`.
+                detail=played.label if played else "",
                 home_score=played.home_score if played else None,
                 away_score=played.away_score if played else None,
                 kickoff=espn.kickoff if espn else None,
-                yours=players,
+                yours=[p for club in clubs for p in mine.get(club, [])],
                 theirs=[p for club in clubs for p in rivals.get(club, [])],
             )
         )
     # A game ESPN gave no time for goes after those it did, in the schedule's order.
     return sorted(rows, key=lambda m: m.kickoff or LATER)
+
+
+def byes(schedule: Mapping[int, Sequence[Game]], week: int) -> list[str]:
+    """The clubs with no game in a week, alphabetical: every club the season schedules, less the week's.
+
+    None for a week with no games listed at all, which is a schedule not
+    published rather than every club resting.
+    """
+    games = schedule.get(week, [])
+    if not games:
+        return []
+    clubs = {club for week_games in schedule.values() for g in week_games for club in (g.home, g.away)}
+    return sorted(clubs - {club for g in games for club in (g.home, g.away)})
 
 
 def _by_club(state: Week, team: Team) -> dict[str, list[PlayerRef]]:

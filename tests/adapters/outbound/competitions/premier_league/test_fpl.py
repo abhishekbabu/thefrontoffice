@@ -25,6 +25,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Chip,
     ChipPlay,
+    Club,
     Fixture,
     GameweekResult,
     LiveStat,
@@ -983,7 +984,21 @@ def test_a_gameweeks_matches_carry_their_score_once_kicked_off() -> None:
         ]
     )
     games = {
-        (m.home, m.away): (m.home_score, m.away_score) for m in FPLProvider(ENTRY_ID, client=fake).games_of("900", 3)
+        (m.home, m.away): (m.home_score, m.away_score)
+        for m in FPLProvider(ENTRY_ID, client=fake).games_of("900", 3).games
     }
 
     assert games == {("ARS", "LIV"): (2, 1), ("TOT", "CHE"): (None, None)}
+
+
+def test_a_gameweeks_blanks_are_the_clubs_with_no_match_in_it() -> None:
+    fake = FakeFPL(
+        clubs=[Club(short_name=c, name=c, code=i) for i, c in enumerate(("ARS", "TOT", "CHE", "LIV"))],
+        fixtures=[Fixture(event=3, home="ARS", away="LIV", home_difficulty=2, away_difficulty=4)],
+    )
+
+    assert FPLProvider(ENTRY_ID, client=fake).games_of("900", 3).byes == ["CHE", "TOT"]
+
+
+def test_a_gameweek_with_no_matches_listed_has_no_blanks_either() -> None:
+    assert FPLProvider(ENTRY_ID, client=FakeFPL(fixtures=[])).games_of("900", 3).byes == []

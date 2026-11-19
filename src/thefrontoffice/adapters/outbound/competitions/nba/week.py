@@ -123,7 +123,7 @@ def match(game: ScheduledGame, roster: Sequence[YahooPlayer]) -> Match:
         label=weekday_day_month(day) if day else game.date,
         home=game.home,
         away=game.away,
-        detail=" · ".join(part for part in (STATUS.get(game.status, ""), "yours" if yours else "") if part),
-        tone="good" if yours else "neutral",
+        # Who has players in it is said by name, from `yours`.
+        detail=STATUS.get(game.status, ""),
         yours=yours,
     )

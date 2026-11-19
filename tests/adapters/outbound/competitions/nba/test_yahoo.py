@@ -695,13 +695,13 @@ def test_a_weeks_real_games_are_those_inside_its_dates_marked_where_you_have_pla
         ScheduledGame(week=0, date="2026-02-10", home="LAL", away="GSW", status="complete"),
         ScheduledGame(week=0, date="2026-02-11", home="NYK", away="MIA"),
     ]
-    games = nba_provider(FakeYahoo(), nba=FakeNBA(slate=slate)).games_of("", 5)
+    games = nba_provider(FakeYahoo(), nba=FakeNBA(slate=slate)).games_of("", 5).games
 
-    assert [(g.away, g.home, g.tone) for g in games] == [("GSW", "LAL", "good"), ("MIA", "NYK", "neutral")]
+    assert [(g.away, g.home) for g in games] == [("GSW", "LAL"), ("MIA", "NYK")]
     assert "final" in games[0].detail
     assert [p.name for p in games[0].yours] == ["Roster One"]  # an LAL forward
     assert games[1].yours == []
 
 
 def test_a_week_with_no_matchup_has_no_dates_to_list_games_by() -> None:
-    assert nba_provider(FakeYahoo(matchup_dates=None)).games_of("", 5) == []
+    assert nba_provider(FakeYahoo(matchup_dates=None)).games_of("", 5).games == []

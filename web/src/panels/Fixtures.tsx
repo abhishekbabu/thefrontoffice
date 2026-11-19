@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api, type Competition, type League, type LeagueSchedule, type Match, type Summary } from "@/lib/api";
+import { api, type Competition, type League, type LeagueSchedule, type Match, type Slate, type Summary } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { kickoff } from "@/lib/format";
 import { toneText } from "@/lib/tone";
 import { cn } from "@/lib/utils";
-import { ListCard, ListRow } from "@/components/ui/list";
+import { ListCard, ListHeading, ListRow } from "@/components/ui/list";
+import { Label } from "@/components/ui/label";
 import { Empty, QueryState } from "@/components/ui/state";
 import { LeagueHeader } from "@/components/ui/page-header";
 import { WeekStepper, useWeekParam } from "@/components/ui/week-stepper";
@@ -13,7 +14,7 @@ import { SlideOver, SlideOverHeader } from "@/components/ui/dialog";
 import { usePlayerDrawer } from "@/components/ui/player";
 
 /**
- * The real games a fantasy week is made of, with the ones you have players in marked.
+ * The real games a fantasy week is made of, by kickoff, with whose players are in each and who has a bye.
  *
  * Where the competition pages through the season, so does this: the same
  * stepper, keys and swipe as the Matchup page, against the same range, read
@@ -33,7 +34,7 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
   });
   const { shown, step, swipe } = useWeekParam(browses ? (summary.data?.weeks ?? undefined) : undefined);
 
-  const games = useQuery<Match[], Error>({
+  const games = useQuery<Slate, Error>({
     queryKey: keys.games(competition.key, league.league_id, shown?.week ?? null),
     queryFn: () => leagueApi.gamesOf(shown!.week),
     enabled: browses && shown !== undefined,
@@ -45,7 +46,8 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
     enabled: !browses,
   });
 
-  const rows = browses ? games.data : schedule.data?.matches;
+  const rows = browses ? games.data?.games : schedule.data?.matches;
+  const byes = (browses && games.data?.byes) || [];
   return (
     <>
       <LeagueHeader league={league}>
@@ -55,7 +57,7 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
       {rows && rows.length === 0 && <Empty title="No games this week" />}
       {rows && rows.length > 0 && (
         <div className="touch-pan-y p-5" {...swipe}>
-          <Games rows={rows} onOpen={setOpen} />
+          <Games rows={rows} byes={byes} onOpen={setOpen} />
         </div>
       )}
       <SlideOver
@@ -111,31 +113,79 @@ function GameDetail({ game, onClose, onOpen }: { game: Match; onClose: () => voi
   );
 }
 
-export function Games({ rows, onOpen }: { rows: Match[]; onOpen?: (game: Match) => void }) {
+/** When a game starts: its kickoff in the viewer's zone where known, the day the schedule gives otherwise. */
+const slot = (game: Match) => (game.kickoff ? kickoff(game.kickoff) : game.label);
+
+/**
+ * The week's games under one heading per kickoff, so a time is said once
+ * rather than on every row of a Sunday. Rows arrive in kickoff order, so a
+ * slot is a run of them.
+ */
+export function Games({
+  rows,
+  byes = [],
+  onOpen,
+}: {
+  rows: Match[];
+  /** Clubs with no game this week. */
+  byes?: string[];
+  onOpen?: (game: Match) => void;
+}) {
   return (
     <ListCard title="Fixtures" count={`${rows.length} games`}>
-      {rows.map((row, i) => (
-        <ListRow
-          key={`${row.home}-${row.away}-${i}`}
-          // A game opens where somebody's players are in it: the rest have nothing to show.
-          onClick={onOpen && (row.yours.length || row.theirs.length) ? () => onOpen(row) : undefined}
-        >
-          <span className="w-36 shrink-0 font-mono text-[11px] text-muted-foreground">
-            {row.kickoff ? kickoff(row.kickoff) : row.label}
-          </span>
-          <span className="min-w-0 flex-1 font-mono text-[12.5px]">
-            <Side club={row.away} score={row.away_score} other={row.home_score} />{" "}
-            <span className="text-muted-foreground">at</span>{" "}
-            <Side club={row.home} score={row.home_score} other={row.away_score} />
-          </span>
-          {row.detail && (
-            <span className={cn("shrink-0 font-mono text-[11px]", toneText(row.tone, "text-muted-foreground"))}>
-              {row.detail}
-            </span>
-          )}
+      {byes.length > 0 && (
+        <ListRow>
+          <Label className="shrink-0">Byes</Label>
+          <span className="min-w-0 flex-1 font-mono text-[12px]">{byes.join(", ")}</span>
         </ListRow>
-      ))}
+      )}
+      {rows.map((row, i) => {
+        const before = rows[i - 1];
+        return (
+          <Fragment key={`${row.home}-${row.away}-${i}`}>
+            {(!before || slot(before) !== slot(row)) && <ListHeading>{slot(row)}</ListHeading>}
+            <ListRow
+              className="flex-col items-stretch gap-1"
+              // A game opens where somebody's players are in it: the rest have nothing to show.
+              onClick={onOpen && (row.yours.length || row.theirs.length) ? () => onOpen(row) : undefined}
+            >
+              <div className="flex items-baseline gap-3">
+                <span className="min-w-0 flex-1 font-mono text-[12.5px]">
+                  <Side club={row.away} score={row.away_score} other={row.home_score} />{" "}
+                  <span className="text-muted-foreground">at</span>{" "}
+                  <Side club={row.home} score={row.home_score} other={row.away_score} />
+                </span>
+                {row.detail && (
+                  <span className={cn("shrink-0 font-mono text-[11px]", toneText(row.tone, "text-muted-foreground"))}>
+                    {row.detail}
+                  </span>
+                )}
+              </div>
+              <Holders game={row} />
+            </ListRow>
+          </Fragment>
+        );
+      })}
     </ListCard>
+  );
+}
+
+/** Whose players are in a game, by name: yours, then your opponent's, each side labelled in words. */
+function Holders({ game }: { game: Match }) {
+  const sides = [
+    { label: "You", players: game.yours, tone: "" },
+    { label: "Opp", players: game.theirs, tone: "text-muted-foreground" },
+  ].filter((side) => side.players.length > 0);
+  if (sides.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[12px]">
+      {sides.map((side) => (
+        <span key={side.label} className="min-w-0">
+          <Label className="mr-1.5">{side.label}</Label>
+          <span className={side.tone}>{side.players.map((p) => p.name).join(", ")}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 

@@ -37,6 +37,41 @@ describe("Games", () => {
     expect(kickoff(iso)).toContain(new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }));
   });
 
+  it("says each kickoff once, over the games that share it", async () => {
+    const early = "2026-11-22T18:00:00Z";
+    const late = "2026-11-22T21:25:00Z";
+    const rows = [
+      game({ kickoff: early }),
+      game({ home: "DAL", away: "NYG", kickoff: early }),
+      game({ home: "SF", away: "SEA", kickoff: late }),
+    ];
+    const { container } = await render(<Games rows={rows} />);
+    const text = container.textContent ?? "";
+
+    expect(text.split(kickoff(early))).toHaveLength(2);
+    expect(text.split(kickoff(late))).toHaveLength(2);
+    expect(text.indexOf(kickoff(late))).toBeGreaterThan(text.indexOf("NYG at DAL"));
+  });
+
+  it("names whose players are in a game, yours apart from your opponent's", async () => {
+    const both = game({
+      yours: [{ player_id: "1", name: "Josh Allen", detail: "QB · starting" }],
+      theirs: [{ player_id: "2", name: "Tua Tagovailoa", detail: "QB · starting" }],
+    });
+    const { container } = await render(<Games rows={[both]} />);
+
+    expect(container.textContent).toContain("YouJosh Allen");
+    expect(container.textContent).toContain("OppTua Tagovailoa");
+  });
+
+  it("lists the week's byes on one line, and none where every club plays", async () => {
+    const withByes = await render(<Games rows={[game()]} byes={["KC", "LAR"]} />);
+    expect(withByes.container.textContent).toContain("ByesKC, LAR");
+
+    const without = await render(<Games rows={[game()]} />);
+    expect(without.container.textContent).not.toContain("Byes");
+  });
+
   it("opens a game only where somebody's players are in it", async () => {
     const opened: Match[] = [];
     const mine = game({ home: "DAL", yours: [{ player_id: "1", name: "Lamb", detail: "WR · starting" }] });
