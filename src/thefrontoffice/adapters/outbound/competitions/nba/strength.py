@@ -8,14 +8,14 @@ what a game of him gives (`Profile`): a points league's fantasy points, or a
 category league's box score — counting categories summed, a percentage as
 makes over attempts.
 
-Each figure carries its spread, so two sides' weeks give a chance of one
-taking a category from the other (`category_chances`): normal on the
-difference, which a week of thirty-odd games is near enough to. A week won on
-the most categories is then the chance of taking more than half of them
-(`week_chances`), the categories taken as independent — the stats that rise
-together, points and threes, are the one thing this gives away against the
-matchup forecast's box-score draws, which are too slow to repeat for every
-trade.
+Each figure carries its spread (`Uncertainty`, fitted to a season played: see
+`FITTED`), so two sides' weeks give a chance of one taking a category from the
+other (`category_chances`): normal on the difference, which a week of
+thirty-odd games is near enough to. A week won on the most categories is then
+the chance of taking more than half of them (`week_chances`) — not as if each
+were a coin of its own: a week a roster plays more than expected lifts its
+points, rebounds, threes and turnovers together, so the categories swing as
+one more often than independent coins would.
 """
 
 import math
@@ -23,13 +23,14 @@ import statistics
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
+from statistics import NormalDist
 
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
-from thefrontoffice.adapters.outbound.competitions.nba.forecast import FORM_ERROR
 from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     CATEGORIES,
     Category,
+    Line,
     amount,
     fantasy_points,
     line,
@@ -44,17 +45,98 @@ from thefrontoffice.domain.errors import UnsupportedError
 POINTS = "points"
 """The one figure a points league's week is: its fantasy points."""
 
-GAME_SPREAD = 0.4
-"""How far one game of a player strays from his average, as a share of it, where he has too few games of his own
-to measure: a twenty-point scorer's nights run from about twelve to twenty-eight."""
 
-MISSED = 0.1
-"""The share of his club's games a player sits out unforeseen — a rest night, a knock, a coach's call — which
-a schedule cannot show weeks ahead, and which moves a week's counts as much as his form does."""
+@dataclass(frozen=True)
+class Uncertainty:
+    """How far a week may stray from what its games add up to, beyond each game's own swing — by label: a
+    counting category, a percentage, or a points league's `POINTS`."""
 
-RATE_ERROR = 0.03
-"""How far a player's shooting over a week may sit off his recent rate beyond its own luck, as a share of it:
-a 47% shooter's form is 45.6 to 48.4 — a percentage moves far less than a count does."""
+    missed: float
+    """The share of his club's games a player sits out unforeseen — a rest night, a knock, a coach's call — which
+    a schedule cannot show weeks ahead: his week expects that much less, and swings with which games he misses."""
+
+    form: Mapping[str, float]
+    """Spread of a factor on a player's whole week in a count, for how far his last fifteen games may be off the
+    week to come — a new role, a hot or cold run — beyond how they varied among themselves."""
+
+    rate: Mapping[str, float]
+    """The same for a percentage's makes, as a share of them: a percentage moves far less than a count."""
+
+    game: Mapping[str, float]
+    """How far one game strays from his average, as a share of it, where he has too few games to measure."""
+
+    typical: Mapping[str, float] = field(default_factory=dict)
+    """A rostered player's game: each count's average, each percentage's rate, a points league's points."""
+
+    kept: Mapping[str, float] = field(default_factory=dict)
+    """The share of how far a player's line sits from `typical` that his weeks bear out: a line read off fifteen
+    games and a projection is partly luck, and a week regresses it toward the typical player's. None kept in
+    full."""
+
+    loadings: Mapping[str, float] = field(default_factory=dict)
+    """How strongly each category's margin moves with the one swing they share (`week_chances`), more of it
+    better; none takes the categories as independent."""
+
+    discounted: bool = True
+    """Whether a week's figures expect the games he will miss; the hand-set spreads before `FITTED` did not."""
+
+    def expected(self, label: str, figure: float) -> float:
+        """What a week bears out of a line's `figure` — a game's count, or a percentage's rate."""
+        if label not in self.kept:
+            return figure
+        typical = self.typical.get(label, 0.0)
+        return typical + self.kept[label] * (figure - typical)
+
+
+FITTED = Uncertainty(
+    missed=0.115,
+    form={POINTS: 0.22, "PTS": 0.24, "REB": 0.22, "AST": 0.28, "STL": 0.31, "BLK": 0.38, "3PTM": 0.29, "TO": 0.27},
+    rate={"FG%": 0.015, "FT%": 0.055},
+    game={POINTS: 0.31, "PTS": 0.39, "REB": 0.40, "AST": 0.49, "STL": 0.90, "BLK": 1.02, "3PTM": 0.69, "TO": 0.64},
+    typical={
+        POINTS: 31.0,
+        "PTS": 15.47,
+        "REB": 5.94,
+        "AST": 3.56,
+        "STL": 1.03,
+        "BLK": 0.61,
+        "3PTM": 1.66,
+        "FG%": 0.477,
+        "FT%": 0.793,
+        "TO": 1.87,
+    },
+    kept={
+        POINTS: 0.98,
+        "PTS": 1.0,
+        "REB": 0.91,
+        "AST": 1.03,
+        "STL": 0.79,
+        "BLK": 0.93,
+        "3PTM": 0.99,
+        "FG%": 0.84,
+        "FT%": 0.77,
+        "TO": 0.92,
+    },
+    loadings={
+        "PTS": 0.94,
+        "REB": 0.63,
+        "AST": 0.61,
+        "STL": 0.43,
+        "BLK": 0.30,
+        "3PTM": 0.61,
+        "FG%": 0.23,
+        "FT%": 0.06,
+        "TO": 0.54,
+    },
+)
+"""Fitted by `just calibrate-nba` (`nba/tuning.py`) on Sleeper's box scores and projections of the 2025-26
+regular season: 3,744 player-weeks over 24 Monday-to-Sunday weeks, each week's best 156 players (twelve rosters
+of thirteen) by their line — his last fifteen games beside Sleeper's projection a game — who were fit to play it.
+Each spread makes the variance a week projects match the squared misses, summed over every player-week as a
+roster sums its players; the loadings are the one factor that best explains how those misses moved together.
+Checked on leagues dealt from the 2026-27 weeks it never saw, it called categories at a Brier score of 0.188
+against the hand-set spreads' 0.193, and weeks at 0.206 against 0.213: a "95%" category came in 93%, not 88%."""
+
 
 ATTEMPTS = {"FG%": 10.0, "FT%": 3.0}
 """Shots a game a percentage is weighed by, for a player whose own attempts are unknown: a rotation player's."""
@@ -114,22 +196,43 @@ def scored(categories: Sequence[StatCategory]) -> tuple[Scored, ...]:
     return tuple(Scored(known[c.stat_id].label, c.fewer_wins, known[c.stat_id].is_percentage) for c in categories)
 
 
-def profile(reading: Reading, games: Sequence[NBAGameLog], weights: Mapping[str, float] | None) -> Profile:
+def profile(
+    reading: Reading,
+    games: Sequence[NBAGameLog],
+    weights: Mapping[str, float] | None,
+    uncertainty: Uncertainty = FITTED,
+) -> Profile:
     """A player's `Profile` from his reading — his form beside his projection — and his last games for the spread.
 
     A points league's game is his fantasy points nudged by his minutes, as his
-    worth is; a category league's is his line, its percentages weighed by the
-    attempts he has been taking.
+    worth is; a category league's is his line (`line_profile`).
     """
     value = game_value(reading) or 0.0
+    if weights is None:
+        return line_profile(value, reading.line or {}, games, uncertainty)
+    return points_profile(value, games, weights, uncertainty)
+
+
+def points_profile(
+    value: float, games: Sequence[NBAGameLog], weights: Mapping[str, float], uncertainty: Uncertainty = FITTED
+) -> Profile:
+    """A points league's game of a player worth `value` fantasy points, varying as his last `games` did."""
+    lines = [line(g.stats) for g in games]
+    nights = [p for figures in lines if (p := fantasy_points(figures, weights)) is not None]
+    if len(lines) >= MIN_FORM_GAMES and len(nights) == len(lines):
+        variance = statistics.pvariance(nights)
+    else:
+        variance = (uncertainty.game.get(POINTS, 0.0) * value) ** 2
+    return Profile(value=value, mean={POINTS: value}, variance={POINTS: variance})
+
+
+def line_profile(
+    value: float, figures: Line, games: Sequence[NBAGameLog], uncertainty: Uncertainty = FITTED
+) -> Profile:
+    """A category league's game of a player worth `value`: his line `figures`, its counts varying as his last
+    `games` did, its percentages weighed by the attempts he has been taking."""
     lines = [line(g.stats) for g in games]
     measured = len(lines) >= MIN_FORM_GAMES
-    if weights is not None:
-        mean = value
-        nights = [p for figures in lines if (p := fantasy_points(figures, weights)) is not None]
-        spread = statistics.pstdev(nights) if measured and len(nights) == len(lines) else GAME_SPREAD * mean
-        return Profile(value=value, mean={POINTS: mean}, variance={POINTS: spread**2})
-    figures = reading.line or {}
     means: dict[str, float] = {}
     variance: dict[str, float] = {}
     attempts: dict[str, float] = {}
@@ -146,9 +249,8 @@ def profile(reading: Reading, games: Sequence[NBAGameLog], weights: Mapping[str,
         else:
             means[category.label] = figures[category.label]
             own = [f.get(category.label, 0.0) for f in lines]
-            variance[category.label] = (
-                statistics.pvariance(own) if measured else (GAME_SPREAD * figures[category.label]) ** 2
-            )
+            share = uncertainty.game.get(category.label, 0.0)
+            variance[category.label] = statistics.pvariance(own) if measured else (share * figures[category.label]) ** 2
     return Profile(value=value, mean=means, variance=variance, attempts=attempts)
 
 
@@ -197,13 +299,19 @@ def started(
     return counts
 
 
-def week_totals(counts: Mapping[str, int], profiles: Mapping[str, Profile]) -> Totals:
-    """A side's week: each player's games times what a game of him gives, summed.
+def week_totals(
+    counts: Mapping[str, int], profiles: Mapping[str, Profile], uncertainty: Uncertainty = FITTED
+) -> Totals:
+    """A side's week: each player's games times what a game of him gives, summed — less the games he will miss
+    unforeseen (`Uncertainty.missed`), and his line drawn toward the typical player's as far as weeks bear it out
+    (`Uncertainty.kept`).
 
-    Its variance is each game's, each player's form on top (`forecast.FORM_ERROR`) — a factor on his whole
-    week, for how far his recent games may be off the week to come; `RATE_ERROR` on a percentage's makes, whose
-    attempts that factor would move with them — and the games he may sit out unforeseen (`MISSED`).
+    Its variance is each game's; whether he plays it; and his form (`Uncertainty.form`) — a factor on his whole
+    week, for how far his recent games may be off the week to come — or, on a percentage's makes, its own
+    (`Uncertainty.rate`), since his attempts would move with them.
     """
+    missed = uncertainty.missed
+    plays = 1 - missed if uncertainty.discounted else 1.0
     mean: dict[str, float] = {}
     variance: dict[str, float] = {}
     attempts: dict[str, float] = {}
@@ -212,14 +320,21 @@ def week_totals(counts: Mapping[str, int], profiles: Mapping[str, Profile]) -> T
         if found is None:
             continue
         for label, value in found.mean.items():
-            mean[label] = mean.get(label, 0.0) + games * value
             if label in found.attempts:
-                unforeseen = (RATE_ERROR * games * value) ** 2
+                taken = found.attempts[label]
+                game = uncertainty.expected(label, value / taken) * taken if taken else 0.0
+                expected = games * plays * game
+                unforeseen = (uncertainty.rate.get(label, 0.0) * expected) ** 2
             else:
-                unforeseen = (FORM_ERROR * games * value) ** 2 + games * MISSED * (1 - MISSED) * value**2
-            variance[label] = variance.get(label, 0.0) + games * found.variance.get(label, 0.0) + unforeseen
+                game = uncertainty.expected(label, value)
+                expected = games * plays * game
+                unforeseen = (uncertainty.form.get(label, 0.0) * expected) ** 2 + games * missed * (
+                    1 - missed
+                ) * game**2
+            mean[label] = mean.get(label, 0.0) + expected
+            variance[label] = variance.get(label, 0.0) + games * plays * found.variance.get(label, 0.0) + unforeseen
         for label, value in found.attempts.items():
-            attempts[label] = attempts.get(label, 0.0) + games * value
+            attempts[label] = attempts.get(label, 0.0) + games * plays * value
     return Totals(mean=mean, variance=variance, attempts=attempts)
 
 
@@ -252,11 +367,94 @@ def _chance(mine: Totals, theirs: Totals, category: Scored) -> float:
     return 0.5 * (1 + math.erf(lead / math.sqrt(2 * variance)))
 
 
-def week_chances(chances: Sequence[float]) -> tuple[float, float]:
+MOST_TOGETHER = 0.95
+"""The strongest a category may move with the shared swing: at one it would have no swing of its own left."""
+
+
+def loadings(categories: Iterable[Scored], uncertainty: Uncertainty = FITTED) -> tuple[float, ...]:
+    """How strongly winning each category moves with the swing they share, in the order given: turned for a
+    category won by less, since a big week that lifts the rest lifts its turnovers too."""
+    return tuple((-1.0 if c.fewer_wins else 1.0) * uncertainty.loadings.get(c.label, 0.0) for c in categories)
+
+
+def hermite(n: int) -> list[tuple[float, float]]:
+    """`n` points and weights that integrate a smooth function of a standard normal draw: the Gauss–Hermite
+    rule, its roots found by Newton's method from the usual first guesses, rescaled from `exp(-x²)` to the
+    normal's density."""
+    roots: list[float] = []
+    found: list[tuple[float, float]] = []
+    z = 0.0
+    for i in range((n + 1) // 2):
+        if i == 0:
+            z = math.sqrt(2 * n + 1) - 1.85575 * (2 * n + 1) ** -0.16667
+        elif i == 1:
+            z -= 1.14 * n**0.426 / z
+        elif i == 2:
+            z = 1.86 * z - 0.86 * roots[0]
+        elif i == 3:
+            z = 1.91 * z - 0.91 * roots[1]
+        else:
+            z = 2 * z - roots[i - 2]
+        slope = 1.0
+        for _ in range(100):
+            value, previous = math.pi**-0.25, 0.0
+            for j in range(1, n + 1):
+                value, previous = z * math.sqrt(2 / j) * value - math.sqrt((j - 1) / j) * previous, value
+            slope = math.sqrt(2 * n) * previous
+            step = value / slope
+            z -= step
+            if abs(step) < 1e-14:
+                break
+        roots.append(z)
+        weight = 2 / slope**2 / math.sqrt(math.pi)
+        found.append((z * math.sqrt(2), weight))
+        if 2 * i + 1 != n:
+            found.append((-z * math.sqrt(2), weight))
+    return sorted(found)
+
+
+SWINGS = hermite(12)
+"""Levels of the swing a week's categories share, each with its weight (`week_chances`): past ten a week's
+chance moves by under a tenth of a point."""
+
+
+def week_chances(chances: Sequence[float], together: Sequence[float] = ()) -> tuple[float, float]:
     """Your chance of taking more of these categories than they do, and theirs; a level split is the rest.
 
-    How many you take is the sum of independent chances, worked out exactly rather than drawn.
+    `together` are the categories' `loadings`: a week's margins share one swing — whose roster plays more, or
+    shoots hotter — and each moves with it that strongly, the rest of it its own. Read at each level of that
+    swing, the categories are independent, and how many you take is worked out exactly, then weighed over the
+    levels. With no loadings the categories are independent outright.
     """
+    if not any(together):
+        return _split(chances)
+    normal = NormalDist()
+    leads = [normal.inv_cdf(p) if 0.0 < p < 1.0 else None for p in chances]
+    win = loss = 0.0
+    for swing, weight in SWINGS:
+        given = [
+            p if lead is None else _below((lead + load * swing) / math.sqrt(1 - load**2))
+            for p, lead, load in zip(chances, leads, _padded(together, len(chances)), strict=True)
+        ]
+        taken, lost = _split(given)
+        win += weight * taken
+        loss += weight * lost
+    return win, loss
+
+
+def _padded(together: Sequence[float], n: int) -> list[float]:
+    found = [max(-MOST_TOGETHER, min(MOST_TOGETHER, load)) for load in together[:n]]
+    return found + [0.0] * (n - len(found))
+
+
+def _below(z: float) -> float:
+    """The standard normal's chance of falling below `z`."""
+    return 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
+
+def _split(chances: Sequence[float]) -> tuple[float, float]:
+    """Your chance of taking more than half of these independent categories, and theirs: how many you take is
+    the sum of independent chances, worked out exactly rather than drawn."""
     taken = [1.0]
     for chance in chances:
         taken = [

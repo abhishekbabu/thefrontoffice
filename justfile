@@ -64,6 +64,10 @@ tune *args:
 backtest *args:
     uv run python scripts/backtest.py {{ args }}
 
+# Fit basketball's category odds on last season and check them on this one (reads Sleeper, no login)
+calibrate-nba:
+    uv run python scripts/calibrate_nba.py
+
 # Report what this machine is configured for, and flag typo'd .env keys
 doctor:
     uv run python scripts/doctor.py

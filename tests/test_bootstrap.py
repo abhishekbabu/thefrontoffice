@@ -19,6 +19,7 @@ from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionE
 from thefrontoffice.domain.models import Action, CompetitionContext, ItemState, Summary, TradeProposal
 from thefrontoffice.domain.ports import (
     CompetitionProvider,
+    OddsTuning,
     OutlookProvider,
     TradeMarketProvider,
     TradeProvider,
@@ -170,6 +171,10 @@ def test_the_nba_entry_builds_its_provider_without_contacting_yahoo(tmp_path: Pa
     assert isinstance(provider, nba.provider())
     with pytest.raises(YahooLoginRequiredError):
         provider.list_leagues()
+
+
+def test_basketballs_odds_are_fitted_without_a_league_or_a_login(tmp_path: Path) -> None:
+    assert isinstance(bootstrap.odds_tuning(isolated_settings(tmp_path)), OddsTuning)
 
 
 # ── what a competition can do ───────────────────────────────────────────

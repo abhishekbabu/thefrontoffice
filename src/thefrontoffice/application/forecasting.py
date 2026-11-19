@@ -21,7 +21,6 @@ from thefrontoffice.application.results import quantile, result
 from thefrontoffice.domain.models import (
     Action,
     Calibration,
-    CalibrationBucket,
     CategoryMatchup,
     Forecast,
     LineupMove,
@@ -33,6 +32,7 @@ from thefrontoffice.domain.models import (
     RangeScore,
     ScoredCategory,
     StatLines,
+    calibration,
     urgency_rank,
 )
 from thefrontoffice.domain.ports import ForecastProvider
@@ -321,32 +321,7 @@ def pickup_chances(forecast: Forecast, matchup: MatchupInput) -> list[PickupChan
 
 def calibrate(played: list[PlayedMatchup], simulations: int = SIMULATIONS) -> Calibration:
     """Score the simulation on matchups already played: its chances against what happened."""
-    pairs = []
-    for game in played:
-        chance = simulate(game.matchup, simulations).win
-        pairs.append((chance, result(game.mine, game.theirs)))
-    if not pairs:
-        return Calibration(matchups=0, brier=0.0)
-
-    buckets = []
-    for low in (0.0, 0.2, 0.4, 0.6, 0.8):
-        high = low + 0.2
-        inside = [(c, o) for c, o in pairs if low <= c < high or (high >= 1.0 and c == 1.0)]
-        if inside:
-            buckets.append(
-                CalibrationBucket(
-                    low=low,
-                    high=high,
-                    matchups=len(inside),
-                    predicted=sum(c for c, _ in inside) / len(inside),
-                    won=sum(o for _, o in inside) / len(inside),
-                )
-            )
-    return Calibration(
-        matchups=len(pairs),
-        brier=sum((c - o) ** 2 for c, o in pairs) / len(pairs),
-        buckets=buckets,
-    )
+    return calibration([(simulate(game.matchup, simulations).win, result(game.mine, game.theirs)) for game in played])
 
 
 DECILES = tuple(i / 10 for i in range(1, 10))
