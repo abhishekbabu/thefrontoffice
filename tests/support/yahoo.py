@@ -66,17 +66,22 @@ def teams_xml(*teams: str) -> str:
     return f"<fantasy_content><league><teams>{''.join(teams)}</teams></league></fantasy_content>"
 
 
-def team_xml(key: str, name: str, *, mine: bool = False, adds: int = 0, standings: str = "") -> str:
+def league_standings_xml(*teams: str) -> str:
+    """A league's standings response: its teams under `standings`, each carrying `team_standings`."""
+    return f"<fantasy_content><league><standings><teams>{''.join(teams)}</teams></standings></league></fantasy_content>"
+
+
+def team_xml(key: str, name: str, *, mine: bool = False, adds: int = 0, standings: str = "", extra: str = "") -> str:
     owned = "<is_owned_by_current_login>1</is_owned_by_current_login>" if mine else ""
     return (
         f"<team><team_key>{key}</team_key><name>{name}</name>{owned}"
-        f"<roster_adds><value>{adds}</value></roster_adds>{standings}</team>"
+        f"<roster_adds><value>{adds}</value></roster_adds>{extra}{standings}</team>"
     )
 
 
-def standings_xml(rank: int, wins: int, losses: int, ties: int, points: str) -> str:
+def standings_xml(rank: int, wins: int, losses: int, ties: int, points: str, extra: str = "") -> str:
     return (
-        f"<team_standings><rank>{rank}</rank><points_for>{points}</points_for><outcome_totals>"
+        f"<team_standings><rank>{rank}</rank><points_for>{points}</points_for>{extra}<outcome_totals>"
         f"<wins>{wins}</wins><losses>{losses}</losses><ties>{ties}</ties></outcome_totals></team_standings>"
     )
 

@@ -16,6 +16,7 @@ import requests
 from support.http import NO_WAIT, http_error
 from support.yahoo import (
     FakeContext,
+    league_standings_xml,
     players_xml,
     roster_xml,
     rostered_xml,
@@ -386,6 +387,93 @@ def test_the_league_scores_the_categories_its_settings_list(tmp_path: Path) -> N
         ("5", "FG%", False),
         ("19", "TO", True),
     ]
+
+
+def test_the_settings_say_how_a_matchup_is_won_and_where_the_bracket_starts(tmp_path: Path) -> None:
+    settings = (
+        "<fantasy_content><league><settings><scoring_type>headpoint</scoring_type><uses_playoff>1</uses_playoff>"
+        "<playoff_start_week>19</playoff_start_week><num_playoff_teams>6</num_playoff_teams>"
+        "<has_multiweek_championship>1</has_multiweek_championship></settings></league></fantasy_content>"
+    )
+    client, _ = _client(tmp_path, answers={"settings": settings})
+
+    rules = client.rules()
+
+    assert (rules.scoring_type, rules.points) == ("headpoint", True)
+    assert (rules.playoff_start_week, rules.playoff_teams, rules.multiweek_final) == (19, 6, True)
+
+
+def test_a_league_with_playoffs_off_has_no_bracket(tmp_path: Path) -> None:
+    settings = (
+        "<fantasy_content><league><settings><scoring_type>headone</scoring_type><uses_playoff>0</uses_playoff>"
+        "<playoff_start_week>19</playoff_start_week><num_playoff_teams>6</num_playoff_teams>"
+        "</settings></league></fantasy_content>"
+    )
+    client, _ = _client(tmp_path, answers={"settings": settings})
+
+    rules = client.rules()
+
+    assert (rules.points, rules.playoff_start_week, rules.playoff_teams) == (False, 0, 0)
+
+
+def test_the_table_is_read_from_the_standings_which_the_team_list_lacks(tmp_path: Path) -> None:
+    standings = standings_xml(
+        1, 10, 2, 1, "812", extra="<points_against>700.5</points_against><playoff_seed>2</playoff_seed>"
+    )
+    waivers = "<waiver_priority>3</waiver_priority><faab_balance>73</faab_balance>"
+    client, ctx = _client(
+        tmp_path,
+        answers={
+            "standings": league_standings_xml(
+                team_xml("t.1", "Mine", mine=True, standings=standings, extra=waivers), team_xml("t.2", "Theirs")
+            )
+        },
+    )
+
+    mine, theirs = client.standings()
+
+    assert mine.standing == TeamStanding(
+        rank=1, wins=10, losses=2, ties=1, points_for="812", points_against="700.5", playoff_seed=2
+    )
+    assert (mine.is_mine, mine.waiver_priority, mine.faab_balance) == (True, 3, "73")
+    assert (theirs.standing, theirs.waiver_priority, theirs.faab_balance) == (None, 0, "")
+    assert ctx.requests == [("standings", "466.l.123")]
+
+
+SETTLED = (
+    "<fantasy_content><league><scoreboard><matchups><matchup>"
+    "<week_start>2026-03-08</week_start><week_end>2026-03-14</week_end><status>postevent</status>"
+    "<is_playoffs>1</is_playoffs><is_consolation>1</is_consolation><is_tied>0</is_tied>"
+    "<winner_team_key>t2</winner_team_key><stat_winners>"
+    "<stat_winner><stat_id>5</stat_id><winner_team_key>t2</winner_team_key></stat_winner>"
+    "<stat_winner><stat_id>12</stat_id><is_tied>1</is_tied></stat_winner>"
+    "<stat_winner><stat_id>18</stat_id><is_tied>1</is_tied></stat_winner>"
+    "</stat_winners><teams>"
+    "<team><team_key>t1</team_key><name>Mine</name><team_points><total>3</total></team_points></team>"
+    "<team><team_key>t2</team_key><name>Theirs</name><team_points><total>4</total></team_points></team>"
+    "</teams></matchup></matchups></scoreboard></league></fantasy_content>"
+)
+
+
+def test_a_settled_week_says_who_won_and_how_many_categories_neither_side_did(tmp_path: Path) -> None:
+    client, _ = _client(tmp_path, SETTLED)
+
+    found = client.pairing("t1", 19)
+
+    assert found is not None
+    assert (found.settled, found.winner, found.tied, found.tied_categories) == (True, "t2", False, 2)
+    assert (found.playoffs, found.consolation) == (True, True)
+
+
+def test_a_season_reads_every_weeks_scoreboard_and_a_week_without_you_is_none(tmp_path: Path) -> None:
+    empty = "<fantasy_content><league><scoreboard><matchups count='0'/></scoreboard></league></fantasy_content>"
+    client, ctx = _client(tmp_path, scoreboard_xml(), answers={"scoreboard;week=3": empty})
+
+    weeks = client.season("t1", [1, 2, 3])
+
+    assert [week for week, found in weeks.items() if found is not None] == [1, 2]
+    assert weeks[3] is None
+    assert sorted(ctx.queries) == [f"scoreboard;week={week}" for week in (1, 2, 3)]
 
 
 def test_between_seasons_there_is_no_week_to_ask_about(tmp_path: Path) -> None:

@@ -78,11 +78,17 @@ def teams(league_key: str) -> YahooRead:
     return YahooRead("teams", TEAMS_TTL, league=league_key)
 
 
+def standings(league_key: str) -> YahooRead:
+    """The table: the teams list carries none, so a reader built from it ranks nobody."""
+    return YahooRead("standings", TEAMS_TTL, league=league_key)
+
+
 def roster(team_key: str) -> YahooRead:
     return YahooRead(f"team/{team_key}/roster", ROSTER_TTL)
 
 
 def scoreboard(league_key: str, week: int) -> YahooRead:
+    """One week's matchups, every pairing in the league: the only place Yahoo lists a head-to-head season."""
     return YahooRead(f"scoreboard;week={week}", SCOREBOARD_TTL, league=league_key, keep_on_failure=True)
 
 

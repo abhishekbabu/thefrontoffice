@@ -36,6 +36,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATE
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
+from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooTeam
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.domain.errors import (
@@ -501,6 +502,34 @@ def test_without_your_row_in_the_table_the_season_has_no_figures_to_head_it() ->
     yahoo = FakeYahoo(teams=[_yahoo_team("Theirs", "t.2", rank=1, wins=1, losses=0)])
 
     assert nba_provider(yahoo).schedule("").headline == []
+
+
+def test_the_season_runs_every_week_from_the_scoreboards_with_the_bracket_named() -> None:
+    league = replace(yahoo_league(), start_week=1, end_week=21)
+
+    season = nba_provider(FakeYahoo(), league=league).schedule(league.league_key).season
+
+    assert [row.label for row in season] == [f"Week {week}" for week in range(1, 22)]
+    assert {row.opponent for row in season} == {"Their Team"}
+    assert season[0].detail == "5-1"
+    assert [row.detail for row in season[18:]] == ["Quarterfinals", "Semifinals", "Final"]
+    assert [row.label for row in season if row.is_current] == ["Week 5"]
+
+
+def test_between_seasons_there_is_a_table_and_no_weeks() -> None:
+    league = replace(yahoo_league(), current_week=None)
+
+    schedule = nba_provider(FakeYahoo(), league=league).schedule(league.league_key)
+
+    assert (len(schedule.standings), schedule.season) == (2, [])
+
+
+def test_a_sync_without_the_table_asks_for_the_sync_rather_than_showing_none() -> None:
+    yahoo = FakeYahoo()
+    yahoo.standings_error = YahooCaptureMissingError("no standings")
+
+    with pytest.raises(YahooCaptureMissingError):
+        nba_provider(yahoo).schedule("")
 
 
 def test_a_team_sent_without_standings_has_no_row_in_the_table() -> None:

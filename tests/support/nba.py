@@ -17,6 +17,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Timeframe,
     YahooLeague,
     YahooPlayer,
+    YahooRules,
     YahooTeam,
 )
 
@@ -91,6 +92,10 @@ class FakeYahoo:
         self.week_stats: dict[int, tuple[dict[str, str], dict[str, str]]] = {}
         """Each side's categories by week, by Yahoo stat id: mine, then theirs."""
         self.pairings: list[int] = []
+        self.league_rules = YahooRules(scoring_type="headone", playoff_start_week=19, playoff_teams=6)
+        self.season_weeks: dict[int, Pairing | None] | None = None
+        """Your side of each week's scoreboard; every week against Their Team when None."""
+        self.standings_error: Exception | None = None
 
     def get_user_team(self) -> YahooTeam:
         return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
@@ -105,6 +110,19 @@ class FakeYahoo:
 
     def teams(self) -> list[YahooTeam]:
         return self.league_teams
+
+    def standings(self) -> list[YahooTeam]:
+        if self.standings_error:
+            raise self.standings_error
+        return self.league_teams
+
+    def rules(self) -> YahooRules:
+        return self.league_rules
+
+    def season(self, team_key: str, weeks: list[int]) -> dict[int, Pairing | None]:
+        if self.season_weeks is not None:
+            return {week: self.season_weeks.get(week) for week in weeks}
+        return {week: self.pairing(team_key, week) for week in weeks}
 
     def fetch_available(self, count: int = 100) -> list[YahooPlayer]:
         return self.available[:count]

@@ -11,12 +11,14 @@ from pathlib import Path
 
 import pytest
 from support.yahoo import (
+    league_standings_xml,
     league_xml,
     leagues_xml,
     players_xml,
     roster_xml,
     rostered_xml,
     scoreboard_xml,
+    standings_xml,
     team_xml,
     teams_xml,
 )
@@ -45,6 +47,10 @@ YAHOO = {
     LIST: leagues_xml(league_xml(KEY, "Hoops", current=2, start=1, end=3)),
     paths.settings(KEY).path: "<fantasy_content><league><settings/></league></fantasy_content>",
     paths.teams(KEY).path: teams_xml(team_xml("t1", "Mine", mine=True), team_xml("t2", "Theirs")),
+    paths.standings(KEY).path: league_standings_xml(
+        team_xml("t1", "Mine", mine=True, standings=standings_xml(2, 1, 1, 0, "10")),
+        team_xml("t2", "Theirs", standings=standings_xml(1, 2, 0, 0, "12")),
+    ),
     paths.available(KEY, GAME.available).path: players_xml("Free Agent", "Waiver Wire"),
     **{read.path: players_xml("Shot Blocker") for read in paths.leaders(KEY, GAME.leaders, GAME.per_stat).values()},
     **{paths.scoreboard(KEY, week).path: scoreboard_xml(start=f"2026-01-0{week}") for week in (1, 2, 3)},
@@ -103,6 +109,7 @@ def test_a_league_is_planned_from_its_held_list_before_its_teams_are_known(tmp_p
     assert {step.path for step in steps if step.league == KEY} == {
         paths.settings(KEY).path,
         paths.teams(KEY).path,
+        paths.standings(KEY).path,
         paths.available(KEY, GAME.available).path,
         *(read.path for read in paths.leaders(KEY, GAME.leaders, GAME.per_stat).values()),
         *(paths.scoreboard(KEY, week).path for week in (1, 2, 3)),
@@ -149,6 +156,8 @@ def test_the_reader_reads_everything_it_needs_from_a_sweep(tmp_path: Path) -> No
     assert matchup is not None and matchup.opponent.name == "Theirs"
     assert [p.status for p in matchup.opponent_roster] == ["GTD"]
     assert yahoo.pairing("t1", 3) is not None
+    assert [(t.name, t.standing.rank if t.standing else 0) for t in yahoo.standings()] == [("Mine", 2), ("Theirs", 1)]
+    assert sorted(yahoo.season("t1", [1, 2, 3])) == [1, 2, 3]
     assert yahoo.stat_categories() == []
     assert [p.name for p in yahoo.fetch_available(GAME.available)] == ["Free Agent", "Waiver Wire"]
     assert {name: [p.name for p in found] for name, found in yahoo.fetch_top_by_stat(GAME.leaders, 5).items()} == {
@@ -166,6 +175,17 @@ def test_nothing_synced_yet_is_an_error_not_an_empty_league(tmp_path: Path) -> N
     assert caught.value.code == "capture_required"
     with pytest.raises(YahooCaptureMissingError):
         _capture(tmp_path).find_leagues("nba", SEASON)
+
+
+def test_a_sync_from_before_the_table_was_planned_asks_for_the_sync_again(tmp_path: Path) -> None:
+    capture = _capture(tmp_path)
+    _sweep(capture, {path: xml for path, xml in YAHOO.items() if path != paths.standings(KEY).path})
+    yahoo = YahooClient(LEAGUE, responses=capture)
+
+    with pytest.raises(YahooCaptureMissingError) as caught:
+        yahoo.standings()
+    assert caught.value.code == "capture_required"
+    assert paths.standings(KEY).path in str(caught.value)
 
 
 def test_a_week_the_last_sync_did_not_carry_is_an_error(tmp_path: Path) -> None:
