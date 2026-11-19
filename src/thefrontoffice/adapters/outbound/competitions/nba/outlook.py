@@ -24,10 +24,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 
-from thefrontoffice.adapters.outbound.competitions.dates import parse_day
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba.actions import droppable, streams_over
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, ruled_out
+from thefrontoffice.adapters.outbound.competitions.nba.strength import club_nights, nights
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, game_value
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
@@ -116,18 +116,12 @@ def _regulars(active: Sequence[YahooPlayer], readings: Mapping[str, Reading], sl
 
 def _club_days(club: str, window: Window) -> list[date]:
     """The days `club` plays inside the window."""
-    club = club.upper()
-    return [
-        day for g in window.games if club in (g.home.upper(), g.away.upper()) and (day := parse_day(g.date)) is not None
-    ]
+    return club_nights(club, window.games)
 
 
 def _days(player: YahooPlayer, window: Window, back: date | None) -> list[date]:
     """The days he can play inside the window: his club's; while ruled out, only those from his return, if any."""
-    days = _club_days(player.team, window)
-    if not ruled_out(player.status):
-        return days
-    return [day for day in days if back is not None and day >= back]
+    return nights(player, window.games, back)
 
 
 def _starts(active: Sequence[YahooPlayer], days: Mapping[str, list[date]], slots: int) -> int:

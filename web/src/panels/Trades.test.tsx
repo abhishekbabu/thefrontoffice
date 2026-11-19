@@ -30,6 +30,10 @@ describe("why the other manager might take a trade", () => {
   it("is his starters, while he is still chasing a place", () => {
     expect(theirCase(idea(0.4, 1.4))).toContain("+1.4");
   });
+
+  it("is the categories he expects to take, in a category league", () => {
+    expect(theirCase(idea(0.01, 0.12), "categories")).toBe("their cats +0.12 /wk");
+  });
 });
 
 describe("a player's pricing", () => {
@@ -60,7 +64,7 @@ describe("Trades", () => {
   it("names a pickup the trades share once, under the list", async () => {
     const { container } = await shown({
       ideas: [idea(0.4, 1.4), idea(0.4, 1.4, { team_id: "3", receiving: ["C"] })],
-      ranked_by: "playoffs_change",
+      ranked_by: "playoffs_change", measure: "points", deadline: null,
       pickup: "Chig Okonkwo (TE)",
     });
 
@@ -71,7 +75,7 @@ describe("Trades", () => {
   it("puts each trade on a row, with the regular season's cost beside the playoff gain it buys", async () => {
     const { container } = await shown({
       ideas: [idea(1, 1.7, { points: -3.0, playoff_points: 2.5, total: -1.5, playoffs_change: -0.003 })],
-      ranked_by: "total",
+      ranked_by: "total", measure: "points", deadline: null,
       pickup: "",
     });
 
@@ -84,10 +88,26 @@ describe("Trades", () => {
     expect(container.querySelector('th [aria-label="ordered by"]')?.closest("th")?.textContent).toContain("Total");
   });
 
+  it("counts a category league's figures in categories, and says when trading closes", async () => {
+    const { container } = await shown({
+      ideas: [idea(0.4, 0.12, { points: 0.07, playoff_points: -0.04, total: 0.92 })],
+      ranked_by: "playoffs_change",
+      measure: "categories",
+      deadline: "2027-02-25",
+      pickup: "",
+    });
+
+    const headers = [...container.querySelectorAll("thead th")].map((th) => th.textContent);
+    expect(headers.some((h) => h?.includes("cats"))).toBe(true);
+    const cells = [...container.querySelectorAll("tbody tr:first-child td")].map((td) => td.textContent);
+    expect(cells).toContain("+0.07");
+    expect(container.textContent).toContain("deadline");
+  });
+
   it("has no playoff column before the playoff weeks are projected", async () => {
     const { container } = await shown({
       ideas: [idea(0.4, 1.4, { playoff_points: null })],
-      ranked_by: "playoffs_change",
+      ranked_by: "playoffs_change", measure: "points", deadline: null,
       pickup: "",
     });
 

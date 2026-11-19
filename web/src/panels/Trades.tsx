@@ -17,7 +17,12 @@ import { cn } from "@/lib/utils";
  */
 export const NOTICEABLE = 0.5;
 
-/** The trades worth offering. The deadline is the Matchup to-do's and the Schedule's to say. */
+/** The same for a figure counted in categories: a tenth of one a week. */
+export const NOTICEABLE_CATEGORIES = 0.1;
+
+type Measure = Trades["measure"];
+
+/** The trades worth offering, and the day trading closes where the league's settings name one. */
 export function TradesPanel({ competition, league }: { competition: Competition; league: League }) {
   return (
     <>
@@ -31,17 +36,37 @@ export function TradesPanel({ competition, league }: { competition: Competition;
 
 type Figured = Trades["ranked_by"] | "points" | "playoff_points";
 
-/** The figures for you, each a column, with what each measures on hover. */
-const FIGURES: { key: Figured; label: string; about: string }[] = [
-  { key: "points", label: "Season /wk", about: "Your starters' points a week, rest of the regular season" },
-  { key: "playoff_points", label: "Playoffs /wk", about: "Your starters' points a playoff week" },
-  {
-    key: "total",
-    label: "Total",
-    about: "Your starters' points, rest of season: playoff weeks weighed by your odds",
-  },
-  { key: "playoffs_change", label: "Odds", about: "Your playoff chance, and where it ends up" },
-];
+/** The figures for you, each a column, with what each measures on hover: points, or categories expected. */
+const FIGURES: Record<Measure, { key: Figured; label: string; about: string }[]> = {
+  points: [
+    { key: "points", label: "Season /wk", about: "Your starters' points a week, rest of the regular season" },
+    { key: "playoff_points", label: "Playoffs /wk", about: "Your starters' points a playoff week" },
+    {
+      key: "total",
+      label: "Total",
+      about: "Your starters' points, rest of season: playoff weeks weighed by your odds",
+    },
+    { key: "playoffs_change", label: "Odds", about: "Your playoff chance, and where it ends up" },
+  ],
+  categories: [
+    {
+      key: "points",
+      label: "Season cats /wk",
+      about: "Categories you expect to win a week against each opponent, rest of the regular season",
+    },
+    {
+      key: "playoff_points",
+      label: "Playoffs cats /wk",
+      about: "Categories you expect to win a playoff week, against the field",
+    },
+    {
+      key: "total",
+      label: "Total cats",
+      about: "Categories you expect to win, rest of season: playoff weeks weighed by your odds",
+    },
+    { key: "playoffs_change", label: "Odds", about: "Your playoff chance, and where it ends up" },
+  ],
+};
 
 /**
  * The trades that would do most for you, with who to offer each to and why he might say yes.
@@ -64,13 +89,17 @@ function TradeIdeas({ competition, league }: { competition: Competition; league:
 
   const ideas = trades.data?.ideas;
   const ranked = trades.data?.ranked_by;
+  const measure = trades.data?.measure ?? "points";
   // Playoff weeks the platform has not projected yet have no column rather than one of dashes.
-  const figures = FIGURES.filter((f) => f.key !== "playoff_points" || ideas?.some((i) => i.playoff_points != null));
+  const figures = FIGURES[measure].filter(
+    (f) => f.key !== "playoff_points" || ideas?.some((i) => i.playoff_points != null),
+  );
   const pricing = priced(ideas ?? []);
+  const closes = trades.data?.deadline ? ` · deadline ${day(trades.data.deadline)}` : "";
   return (
     <ListCard
       title="Trades worth offering"
-      count={ideas ? `${ideas.length} found` : undefined}
+      count={ideas ? `${ideas.length} found${closes}` : undefined}
       loading={trades.isLoading}
       error={trades.error}
     >
@@ -108,11 +137,11 @@ function TradeIdeas({ competition, league }: { competition: Competition; league:
                 </Td>
                 <Td>
                   <span className="block whitespace-nowrap">{idea.team}</span>
-                  <Aside>{theirCase(idea)}</Aside>
+                  <Aside>{theirCase(idea, measure)}</Aside>
                 </Td>
                 {figures.map((f) => (
                   <Td key={f.key} className={cn("whitespace-nowrap text-right", f.key === ranked && "font-medium")}>
-                    <Figure idea={idea} figure={f.key} />
+                    <Figure idea={idea} figure={f.key} measure={measure} />
                   </Td>
                 ))}
               </tr>
@@ -153,7 +182,7 @@ function Players({ names, pricing }: { names: string[]; pricing: Map<string, str
 }
 
 /** One figure for you; a change is tinted only where it is noticeable, and its sign says it in text too. */
-function Figure({ idea, figure }: { idea: TradeIdea; figure: Figured }) {
+function Figure({ idea, figure, measure }: { idea: TradeIdea; figure: Figured; measure: Measure }) {
   if (figure === "playoffs_change") {
     const change = idea.playoffs_change * 100;
     return (
@@ -165,11 +194,22 @@ function Figure({ idea, figure }: { idea: TradeIdea; figure: Figured }) {
   }
   const value = figure === "points" ? idea.points : figure === "total" ? idea.total : idea.playoff_points;
   if (value == null) return <span className="text-muted-foreground">—</span>;
-  return <span className={tint(value)}>{signed(value)}</span>;
+  const categories = measure === "categories";
+  return (
+    <span className={tint(value, categories ? NOTICEABLE_CATEGORIES : NOTICEABLE)}>
+      {signed(value, categories ? 2 : 1)}
+    </span>
+  );
 }
 
-function tint(change: number): string {
-  return change >= NOTICEABLE ? "text-ok" : change <= -NOTICEABLE ? "text-warn" : "";
+function tint(change: number, noticeable = NOTICEABLE): string {
+  return change >= noticeable ? "text-ok" : change <= -noticeable ? "text-warn" : "";
+}
+
+/** "25 Feb": a date the server sends as ISO, read as the calendar day it names rather than a UTC midnight. */
+export function day(iso: string): string {
+  // A date and a time without a zone is local time; a bare date would be UTC, a day early west of it.
+  return new Date(`${iso}T00:00`).toLocaleDateString([], { day: "numeric", month: "short" });
 }
 
 /**
@@ -191,9 +231,11 @@ export function priced(ideas: TradeIdea[]): Map<string, string> {
 
 /**
  * Why the other manager might say yes: out of the race he weighs only worth,
- * and in it, his starters.
+ * and in it, his starters — or in a category league, the categories he
+ * expects to take, which every trade offered there raises.
  */
-export function theirCase(idea: TradeIdea): string {
+export function theirCase(idea: TradeIdea, measure: Measure = "points"): string {
+  if (measure === "categories") return `their cats ${signed(idea.their_points, 2)} /wk`;
   if (idea.their_playoffs < 0.05) return `out of the race, ${percent(idea.their_playoffs)}`;
   return `their starters ${signed(idea.their_points)} /wk`;
 }

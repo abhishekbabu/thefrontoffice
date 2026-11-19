@@ -18,6 +18,7 @@ from dataclasses import replace
 
 from thefrontoffice.application.results import WORTH, result
 from thefrontoffice.domain.models import (
+    Fixture,
     PlayoffOdds,
     SeasonInput,
     TeamOdds,
@@ -48,7 +49,8 @@ MIN_TRADE_CHANGE = 0.005
 """Half a point of playoff chance: less than that is a trade that changes nothing worth asking for."""
 
 MIN_THEIR_GAIN = 0.5
-"""Points a week their starters must gain: the least that reads as a reason for them to say yes."""
+"""Points a week their starters must gain: the least that reads as a reason for them to say yes.
+A market counted in another measure, or on another scale, names its own (`TradeMarket.least_their_gain`)."""
 
 OUT_OF_IT = 0.05
 """Their playoff chance below which a manager has no lineup left to improve, only what he gives and gets to weigh."""
@@ -60,7 +62,7 @@ reaches — since from there a few points of chance are worth less than a better
 
 MIN_TOTAL_GAIN = 3.0
 """Expected points over the rest of the season: less than about a point a playoff week is a trade
-not worth the asking."""
+not worth the asking. A market on another scale names its own (`TradeMarket.least_total_gain`)."""
 
 SHARED_FROM = 2
 """Trades naming the same pickup from which he is said once under the list rather than on each."""
@@ -82,11 +84,15 @@ def simulate_season(season: SeasonInput, simulations: int = SEASONS) -> PlayoffO
         offset = {team: gauss(0.0, season.strength_error) if season.strength_error else 0.0 for team in ids}
         this_week = ""
         for fixture in season.fixtures:
-            home, away = (
-                _score(scoring, team, fixture.week, gauss, offset[team]) for team in (fixture.home, fixture.away)
-            )
-            points[fixture.home] += home
-            points[fixture.away] += away
+            if fixture.chances is None:
+                home, away = (
+                    _score(scoring, team, fixture.week, gauss, offset[team]) for team in (fixture.home, fixture.away)
+                )
+                points[fixture.home] += home
+                points[fixture.away] += away
+            else:
+                # Won on categories: no score to add to points for, only who took the week.
+                home, away = _drawn(fixture.chances, rng.random())
             for team, share in ((fixture.home, result(home, away)), (fixture.away, result(away, home))):
                 wins[team] += share
             if fixture.week == season.week and season.mine in (fixture.home, fixture.away):
@@ -128,6 +134,16 @@ def _score(
     """One team's score in one simulated week: around its mean and this season's offset, never below nought."""
     mean, spread = scoring.get((team, week), (0.0, 0.0))
     return max(0.0, gauss(mean + offset, spread) if spread else mean + offset)
+
+
+def _drawn(chances: tuple[float, float], draw: float) -> tuple[float, float]:
+    """A week decided on chances, as the two scores a result reads: one to nought either way, or level."""
+    home_wins, away_wins = chances
+    if draw < home_wins:
+        return 1.0, 0.0
+    if draw < home_wins + away_wins:
+        return 0.0, 1.0
+    return 0.0, 0.0
 
 
 # ── this week, weighed in ───────────────────────────────────────────────────────
@@ -192,22 +208,26 @@ class MarketEngine:
                 return _total(market, option.points, option.playoff_points, before.playoffs)
             return option.points
 
+        their_least = MIN_THEIR_GAIN if market.least_their_gain is None else market.least_their_gain
         acceptable = [
             option
             for option in market.options
-            if option.their_points >= MIN_THEIR_GAIN or chances.get(option.team_id, 0.0) < OUT_OF_IT
+            if option.their_points >= their_least or chances.get(option.team_id, 0.0) < OUT_OF_IT
         ]
         tried = sorted(_per_team(acceptable, for_you), key=lambda option: -for_you(option))[:TRADES_TRIED]
         logger.info(f"Pricing {len(tried)} of {len(market.options)} trades against the playoff race")
         names = {t.team_id: t.name for t in market.season.teams}
         ideas = [_priced(market, before, option, names) for option in tried]
-        worth = [idea for idea in ideas if _worth_offering(idea)]
+        total_least = MIN_TOTAL_GAIN if market.least_total_gain is None else market.least_total_gain
+        worth = [idea for idea in ideas if _worth_offering(idea, total_least)]
         if safe:
             shown = sorted(worth, key=lambda idea: (-idea.total, -idea.playoffs_change))
         else:
             shown = sorted(worth, key=lambda idea: (-idea.playoffs_change, -idea.points))
         ranked_by: TradeRank = "total" if safe else "playoffs_change"
-        return _said_once(shown[:TRADES_SHOWN]).model_copy(update={"ranked_by": ranked_by})
+        return _said_once(shown[:TRADES_SHOWN]).model_copy(
+            update={"ranked_by": ranked_by, "measure": market.measure, "deadline": market.deadline}
+        )
 
 
 def _total(market: TradeMarket, points: float, playoff_points: float | None, chance: float) -> float:
@@ -255,19 +275,25 @@ def _per_team(options: list[TradeOption], key: Callable[[TradeOption], float]) -
     return kept
 
 
-def _worth_offering(idea: TradeIdea) -> bool:
-    """It raises your playoff chance, or your points over the rest of the season without costing you that
-    chance — and never a trade that loses you points both before the playoffs and in them."""
+def _worth_offering(idea: TradeIdea, total_least: float) -> bool:
+    """It raises your playoff chance, or your points over the rest of the season by `total_least` without
+    costing you that chance — and never a trade that loses you points both before the playoffs and in them."""
     if idea.points < 0 and idea.playoff_points is not None and idea.playoff_points < 0:
         return False
     if idea.playoffs_change >= MIN_TRADE_CHANGE:
         return True
-    return idea.total >= MIN_TOTAL_GAIN and idea.playoffs_change > -MIN_TRADE_CHANGE
+    return idea.total >= total_least and idea.playoffs_change > -MIN_TRADE_CHANGE
 
 
 def _priced(market: TradeMarket, before: PlayoffOdds, option: TradeOption, names: dict[str, str]) -> TradeIdea:
     season = market.season
-    after = simulate_season(replace(season, scoring=_with_rows(season.scoring, option.scoring)))
+    after = simulate_season(
+        replace(
+            season,
+            scoring=_with_rows(season.scoring, option.scoring),
+            fixtures=_with_fixtures(season.fixtures, option.fixtures),
+        )
+    )
 
     def chance(odds: PlayoffOdds) -> float:
         return next((t.playoffs for t in odds.teams if t.team_id == option.team_id), 0.0)
@@ -288,6 +314,12 @@ def _priced(market: TradeMarket, before: PlayoffOdds, option: TradeOption, names
         pickup=option.pickup,
         form=list(option.form),
     )
+
+
+def _with_fixtures(fixtures: tuple[Fixture, ...], rows: Iterable[Fixture]) -> tuple[Fixture, ...]:
+    """The season's fixtures with some replaced: the same matchups, their chances after a trade."""
+    replaced = {(row.week, row.home, row.away): row for row in rows}
+    return tuple(replaced.get((row.week, row.home, row.away), row) for row in fixtures)
 
 
 def _with_rows(scoring: tuple[TeamWeek, ...], rows: Iterable[TeamWeek]) -> tuple[TeamWeek, ...]:

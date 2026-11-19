@@ -1,8 +1,8 @@
-"""Tests for the shared trade-resolution policy."""
+"""Tests for the shared trade policy: resolving the players named, and what could be offered for one."""
 
 import pytest
 
-from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
+from thefrontoffice.adapters.outbound.competitions.trades import offers, resolve_sides
 from thefrontoffice.domain.errors import PlayerNotFoundError
 from thefrontoffice.domain.models import TradeProposal
 
@@ -50,3 +50,22 @@ def test_an_empty_side_resolves_to_an_empty_list() -> None:
     giving, receiving = resolve_sides(TradeProposal(giving=["Star QB"], receiving=[]), _resolve_one)
     assert giving == ["qb1"]
     assert receiving == []
+
+
+WORTH = {"star": 100.0, "good": 85.0, "half": 50.0, "other half": 40.0, "scrap": 5.0, "nothing": 0.0}
+
+
+def test_one_player_worth_near_what_is_asked_is_offered_alone() -> None:
+    assert ("good",) in offers(list(WORTH), WORTH.__getitem__, 100.0)
+
+
+def test_two_are_offered_only_where_neither_alone_is_enough() -> None:
+    """A pair with a player who would do alone is that player thrown away."""
+    offered = offers(list(WORTH), WORTH.__getitem__, 100.0)
+
+    assert ("half", "other half") in offered
+    assert not any(len(o) == 2 and ("star" in o or "good" in o) for o in offered)
+
+
+def test_nobody_worth_nothing_is_offered() -> None:
+    assert not any("nothing" in o for o in offers(list(WORTH), WORTH.__getitem__, 10.0))

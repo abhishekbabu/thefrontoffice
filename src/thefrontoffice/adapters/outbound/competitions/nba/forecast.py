@@ -23,8 +23,10 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     CATEGORIES,
     INJURED_SLOTS,
     Category,
+    amount,
     fantasy_points,
     line,
+    printed,
     ruled_out,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.week import BENCH
@@ -84,7 +86,7 @@ def points(
     def side(score: MatchupSide, roster: Sequence[YahooPlayer]) -> tuple[Outcomes, ...]:
         sampled = {p.player_key: _scored(week.games(p), weights) for p in roster}
         counts = starts(roster, week, slots, {key: _mean(s) for key, s in sampled.items()})
-        board = _number(score.points)
+        board = amount(score.points)
         return (
             Outcomes(f"board:{score.team_key}", score.name, board, (), floor=board, games=0),
             *(
@@ -169,11 +171,10 @@ def board(side: MatchupSide, used: Sequence[Category], stats: Sequence[str]) -> 
     """
     totals: dict[str, float] = {}
     for category in used:
+        made, taken = printed(side.stats, category)
+        totals[category.made] = made
         if category.is_percentage:
-            made, _, attempted = side.stats.get(category.yahoo_shots, "").partition("/")
-            totals[category.made], totals[category.attempts] = _number(made), _number(attempted)
-        else:
-            totals[category.made] = _number(side.stats.get(category.yahoo_stat, ""))
+            totals[category.attempts] = taken
     return tuple(totals.get(stat, 0.0) for stat in stats)
 
 
@@ -240,11 +241,3 @@ def _scored(games: Sequence[NBAGameLog], weights: Mapping[str, float]) -> list[f
 
 def _mean(values: Sequence[float]) -> float:
     return sum(values) / len(values) if values else 0.0
-
-
-def _number(printed: str) -> float:
-    """A figure as Yahoo prints it, as a number; nothing printed is nothing scored."""
-    try:
-        return float(printed)
-    except ValueError:
-        return 0.0

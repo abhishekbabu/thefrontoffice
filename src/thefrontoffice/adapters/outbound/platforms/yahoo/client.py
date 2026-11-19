@@ -260,6 +260,14 @@ class YahooSource(Protocol):
         """The team's head-to-head in each of `weeks`, None where it plays nobody."""
         ...
 
+    def matchups(self, weeks: list[int]) -> dict[int, list[Pairing]]:
+        """Every head-to-head in each of `weeks`, by week; none for a week whose pairings are not drawn yet."""
+        ...
+
+    def rosters(self, team_keys: list[str]) -> dict[str, list[YahooPlayer]]:
+        """The players each of these teams holds today, by team key."""
+        ...
+
     def settings(self) -> LeagueSettings:
         """How the league is scored, how often a team may add, and where its playoffs start."""
         ...
@@ -368,6 +376,21 @@ class YahooClient:
         return {
             int(week): readable("scoreboard", lambda raw=raw: find_matchup(parse(raw), team_key))
             for week, raw in raws.items()
+        }
+
+    def matchups(self, weeks: list[int]) -> dict[int, list[Pairing]]:
+        """Every head-to-head in each of `weeks`, each from its first team's side: the scoreboards `season` reads."""
+        raws = self._responses.many({str(week): self._scoreboard(week) for week in weeks})
+        return {
+            int(week): readable("scoreboard", lambda raw=raw: every_matchup(parse(raw))) for week, raw in raws.items()
+        }
+
+    def rosters(self, team_keys: list[str]) -> dict[str, list[YahooPlayer]]:
+        """Each team's roster today, by team key: the reads `roster` makes, fetched together."""
+        raws = self._responses.many({key: paths.roster(key) for key in team_keys})
+        return {
+            key: readable("roster", lambda raw=raw: player_list(parse(raw)["fantasy_content"]["team"]["roster"]))
+            for key, raw in raws.items()
         }
 
     def settings(self) -> LeagueSettings:
@@ -580,22 +603,36 @@ def find_matchup(scoreboard: Any, team_key: str) -> Pairing | None:
         sides = [_side(team) for team in _items(_node(matchup, "teams"), "team")[:2]]
         keys = [side.team_key for side in sides]
         if team_key in keys and len(sides) == 2:
-            mine, opponent = sides if keys[0] == team_key else sides[::-1]
-            return Pairing(
-                _day(_value(matchup, "week_start")),
-                _day(_value(matchup, "week_end")),
-                mine,
-                opponent,
-                status=_text(matchup, "status"),
-                winner=_text(matchup, "winner_team_key"),
-                tied=_text(matchup, "is_tied") == "1",
-                tied_categories=sum(
-                    _text(won, "is_tied") == "1" for won in _items(_node(matchup, "stat_winners"), "stat_winner")
-                ),
-                playoffs=_text(matchup, "is_playoffs") == "1",
-                consolation=_text(matchup, "is_consolation") == "1",
-            )
+            return _pairing(matchup, *(sides if keys[0] == team_key else sides[::-1]))
     return None
+
+
+def every_matchup(scoreboard: Any) -> list[Pairing]:
+    """Every matchup on a week's scoreboard, each from the side Yahoo lists first."""
+    matchups = scoreboard["fantasy_content"]["league"]["scoreboard"]["matchups"]
+    found = []
+    for matchup in _items(matchups, "matchup"):
+        sides = [_side(team) for team in _items(_node(matchup, "teams"), "team")[:2]]
+        if len(sides) == 2:
+            found.append(_pairing(matchup, *sides))
+    return found
+
+
+def _pairing(matchup: Any, mine: MatchupSide, opponent: MatchupSide) -> Pairing:
+    return Pairing(
+        _day(_value(matchup, "week_start")),
+        _day(_value(matchup, "week_end")),
+        mine,
+        opponent,
+        status=_text(matchup, "status"),
+        winner=_text(matchup, "winner_team_key"),
+        tied=_text(matchup, "is_tied") == "1",
+        tied_categories=sum(
+            _text(won, "is_tied") == "1" for won in _items(_node(matchup, "stat_winners"), "stat_winner")
+        ),
+        playoffs=_text(matchup, "is_playoffs") == "1",
+        consolation=_text(matchup, "is_consolation") == "1",
+    )
 
 
 def league_settings(league: Any) -> LeagueSettings:
@@ -618,7 +655,20 @@ def league_settings(league: Any) -> LeagueSettings:
         multiweek_final=_text(settings, "has_multiweek_championship") == "1",
         weekly_lineups=_text(league, "roster_type") == "week",
         best_game=_text(league, "is_highscore") == "1",
+        trade_end=_date_or_none(_value(settings, "trade_end_date")),
+        slots={
+            _text(slot, "position"): _number(slot, "count")
+            for slot in _items(_node(settings, "roster_positions"), "roster_position")
+        },
     )
+
+
+def _date_or_none(value: Any) -> date | None:
+    """A date the settings carry, or None where they carry none, or one that does not read as a date."""
+    try:
+        return date.fromisoformat(str(value)) if value else None
+    except ValueError:
+        return None
 
 
 def category_list(league: Any) -> list[StatCategory]:

@@ -6,6 +6,7 @@ without any sport's data.
 """
 
 from dataclasses import replace
+from datetime import date
 
 from support.simulation import FEW, odds_split
 
@@ -129,6 +130,34 @@ def test_this_week_is_weighed_by_the_weeks_own_forecast() -> None:
 
 def test_without_a_forecast_the_season_simulation_stands() -> None:
     assert chance_now(odds_split(0.9, 0.5), win=None) == 0.5
+
+
+# ── weeks won on categories ─────────────────────────────────────────────────────
+
+
+def test_a_week_won_on_categories_goes_to_whoever_its_chances_favour() -> None:
+    """No score is drawn for it: a certain week is a certain win, and points for stay as they were."""
+    season = _season([_team("a", 4), _team("b", 4)], [Fixture(8, "a", "b", chances=(1.0, 0.0))], {})
+
+    assert _odds(season) == {"a": 1.0, "b": 0.0}
+
+
+def test_a_week_level_on_categories_is_a_draw_for_both() -> None:
+    """Neither side can win it, so the half each takes leaves them level and the tiebreak decides."""
+    season = _season(
+        [_team("a", 4, points=10), _team("b", 4, points=20)], [Fixture(8, "a", "b", chances=(0.0, 0.0))], {}
+    )
+
+    assert _odds(season) == {"a": 0.0, "b": 1.0}
+
+
+def test_an_even_category_week_splits_the_place_evenly() -> None:
+    season = _season([_team("a", 4), _team("b", 4)], [Fixture(8, "a", "b", chances=(0.5, 0.5))], {})
+
+    odds = simulate_season(season, FEW)
+
+    assert 0.4 < odds.playoffs < 0.6
+    assert odds.with_win == 1.0 and odds.with_loss == 0.0
 
 
 class _Over:
@@ -381,3 +410,67 @@ def test_a_players_pricing_is_said_on_the_first_trade_he_is_in() -> None:
     ideas = MarketEngine(_Market(first, second)).trades("L1").ideas
 
     assert [i.form for i in ideas] == [[line], [other]]
+
+
+# ── a market on another scale ───────────────────────────────────────────────────
+
+
+def _category_trade(team: str, mine: float, *, their_gain: float = 0.3, total: float = 1.0) -> TradeOption:
+    """A trade with `team` that gives you `mine` of each remaining week against it, counted in categories."""
+    weeks = sorted({f.week for f in CATEGORY_RACE.fixtures})
+    return TradeOption(
+        team_id=team,
+        giving=("X",),
+        receiving=("Y",),
+        points=total / len(weeks),
+        their_points=their_gain,
+        scoring=(),
+        fixtures=tuple(Fixture(w, "a", team, chances=(mine, 1 - mine)) for w in weeks),
+    )
+
+
+CATEGORY_RACE = _season(
+    [_team("a", 5), _team("b", 5)],
+    [Fixture(w, "a", "b", chances=(0.5, 0.5)) for w in (10, 11, 12)],
+    {},
+)
+
+
+class _CategoryMarket:
+    def __init__(self, *options: TradeOption, their_least: float = 0.1, total_least: float = 0.5) -> None:
+        self.options = options
+        self.their_least, self.total_least = their_least, total_least
+
+    def trade_market(self, league_id: str) -> TradeMarket | None:
+        return TradeMarket(
+            season=CATEGORY_RACE,
+            options=self.options,
+            regular_weeks=3,
+            playoff_weeks=0,
+            measure="categories",
+            deadline=date(2027, 2, 25),
+            least_their_gain=self.their_least,
+            least_total_gain=self.total_least,
+        )
+
+
+def test_a_trade_won_on_categories_is_played_out_on_its_own_chances() -> None:
+    """The trade's fixtures replace the season's: certain weeks against the partner make a certain place."""
+    trades = MarketEngine(_CategoryMarket(_category_trade("b", mine=1.0))).trades("L1")
+
+    assert [round(i.playoffs, 2) for i in trades.ideas] == [1.0]
+
+
+def test_a_market_says_what_its_figures_count_and_when_trading_ends() -> None:
+    trades = MarketEngine(_CategoryMarket(_category_trade("b", mine=1.0))).trades("L1")
+
+    assert (trades.measure, trades.deadline) == ("categories", date(2027, 2, 25))
+
+
+def test_a_market_on_its_own_scale_sets_what_the_other_side_must_gain() -> None:
+    """A tenth of a category a week is reason enough in categories, though short of football's half-point."""
+    market = _CategoryMarket(_category_trade("b", mine=1.0, their_gain=0.2), their_least=0.1)
+    stingy = _CategoryMarket(_category_trade("b", mine=1.0, their_gain=0.2), their_least=0.5)
+
+    assert len(MarketEngine(market).trades("L1").ideas) == 1
+    assert MarketEngine(stingy).trades("L1").ideas == []

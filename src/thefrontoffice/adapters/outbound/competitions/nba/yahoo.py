@@ -18,7 +18,9 @@ from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nba import actions, prompt, views
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
+from thefrontoffice.adapters.outbound.competitions.nba import market as nba_market
 from thefrontoffice.adapters.outbound.competitions.nba import outlook as nba_outlook
+from thefrontoffice.adapters.outbound.competitions.nba import strength as nba_strength
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
@@ -29,7 +31,13 @@ from thefrontoffice.adapters.outbound.competitions.nba.context import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.projections import index_for
-from thefrontoffice.adapters.outbound.competitions.nba.rules import SCOUTED, position_filters, ruled_out
+from thefrontoffice.adapters.outbound.competitions.nba.rules import (
+    PACIFIC,
+    SCOUTED,
+    amount,
+    position_filters,
+    ruled_out,
+)
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split, Teammates, conditions, reported
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
@@ -46,6 +54,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource,
 from thefrontoffice.adapters.outbound.platforms.yahoo.paths import RECENT_AVERAGE
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Average,
+    LeagueSettings,
     Pairing,
     Timeframe,
     YahooLeague,
@@ -75,7 +84,9 @@ from thefrontoffice.domain.models import (
     PlayerRef,
     Slate,
     Summary,
+    TeamRecord,
     TeamRef,
+    TradeMarket,
     TradeProposal,
     WeekRange,
 )
@@ -110,6 +121,9 @@ LEADERS = {c.label: c.yahoo_stat for c in SCOUTED}
 """The stats the free-agent scout ranks the wire by, a request each."""
 
 LEADERS_PER_STAT = 10
+
+ONE_WIN = "headone"
+"""Yahoo's scoring type for a category league whose week counts as one win, to whoever takes more categories."""
 
 
 class YahooNBAProvider:
@@ -776,6 +790,109 @@ class YahooNBAProvider:
             weights=weights,
         )
         return CompetitionContext(prompt=text, situation=prompt.matchup(week, weights), roster_lines=roster)
+
+    def trade_market(self, league_id: str) -> TradeMarket | None:
+        """The rest of the season, and every trade near even in worth that improves your weeks (`market.build`).
+
+        None between seasons, once the regular season is over, and past the
+        trade deadline the league's settings name. A category league is
+        searched where a week counts as one win (Yahoo's "H2H Cat One"), which
+        is what its table and the season's simulation count.
+
+        Raises:
+            UnsupportedError: a league whose table counts every category, scores only a best game, or whose points
+                settings carry no weights.
+            PlatformError: the schedule would not load.
+        """
+        league = self._league(league_id)
+        current = league.current_week
+        if not current:
+            return None
+        yahoo = self._yahoo_for(league)
+        rules = yahoo.settings()
+        if not rules.playoff_start_week or current >= rules.playoff_start_week:
+            return None
+        if rules.trade_end is not None and datetime.now(PACIFIC).date() > rules.trade_end:
+            return None
+        categories = self._judged_on(league, rules)
+        mine = yahoo.get_user_team().team_key
+        standings = yahoo.standings()
+        drawn = yahoo.matchups(list(range(current, league.last_week(current) + 1)))
+        dates = nba_league.week_dates(drawn)
+        if current not in dates:
+            return None
+        rosters = yahoo.rosters([team.team_key for team in standings])
+        try:
+            wire = _wire(yahoo, STREAM_DEPTH)
+        except FrontOfficeError as e:
+            logger.warning(f"Pricing trades without the wire, which would not load: {e}")
+            wire = []
+        players = once(p for roster in [*rosters.values(), wire] for p in roster)
+        weights = self._weights(league, yahoo)
+        start, end = dates[current]
+        readings = self._readings(yahoo, weights, players, start, end)
+        returns = self._returns(players, self._reports())
+        weeks = [
+            nba_market.Week(
+                week=week,
+                days={
+                    p.player_key: frozenset(nba_strength.nights(p, games, returns.get(p.player_key))) for p in players
+                },
+                pairs=[(found.mine.team_key, found.opponent.team_key) for found in drawn.get(week, [])],
+            )
+            for week, (first, last) in sorted(dates.items())
+            for games in [
+                self.games.games_left(first, last) if week == current else self.games.games_between(first, last)
+            ]
+        ]
+        this_week = {
+            side.team_key: nba_strength.banked(side, categories, points=weights is not None)
+            for found in drawn.get(current, [])
+            for side in (found.mine, found.opponent)
+        }
+        return nba_market.build(
+            nba_market.League(
+                mine=mine,
+                teams=[
+                    TeamRecord(t.team_key, t.name, s.wins, s.losses, s.ties, amount(s.points_for))
+                    for t in standings
+                    if (s := t.standing) is not None
+                ],
+                rosters=rosters,
+                profiles={
+                    key: nba_strength.profile(reading, self._recent(reading.player), weights)
+                    for key, reading in readings.items()
+                },
+                weeks=weeks,
+                playoff_start=rules.playoff_start_week,
+                spots=rules.playoff_teams,
+                slots=rules.starting or nba_forecast.active_slots(*rosters.values()),
+                roster_size=rules.roster_size,
+                categories=categories,
+                banked=this_week,
+                wire=wire,
+                weekly=rules.weekly_lineups,
+                deadline=rules.trade_end,
+                seed=seed(league.league_key, current),
+            )
+        )
+
+    @staticmethod
+    def _judged_on(league: YahooLeague, rules: LeagueSettings) -> tuple[nba_strength.Scored, ...]:
+        """The categories a week is won on, none in a points league.
+
+        Raises:
+            UnsupportedError: a week the season's simulation cannot settle as one result.
+        """
+        if rules.best_game:
+            raise UnsupportedError(league.name, "a trade search where only each player's best game scores")
+        if league.by_points:
+            if not rules.weights:
+                raise UnsupportedError(league.name, "a trade search without the points its settings would sum")
+            return ()
+        if league.scoring_type != ONE_WIN:
+            raise UnsupportedError(league.name, "a trade search where every category counts in the table")
+        return nba_strength.scored(rules.categories)
 
     # ── players and teams ───────────────────────────────────────────
 

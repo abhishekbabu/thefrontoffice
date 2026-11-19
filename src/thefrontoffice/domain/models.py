@@ -9,7 +9,7 @@ summarize the plan. One renderer, one chat-seeding path and one UI serve them al
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
@@ -1049,6 +1049,9 @@ class Fixture:
     week: int
     home: str
     away: str
+    chances: tuple[float, float] | None = None
+    """The home side's chance of winning it and the away side's, a draw the rest, where a week is not
+    two scores compared — one won on the most categories. None where the teams' `TeamWeek` scores decide it."""
 
 
 @dataclass(frozen=True)
@@ -1210,6 +1213,13 @@ class TradeOption:
     """The free agent who fills the roster spot a two-for-one frees, where one helps."""
     form: tuple[Stat, ...] = ()
     """The players in it whose own games move their price off their projection, and why."""
+    fixtures: tuple[Fixture, ...] = ()
+    """Both teams' fixtures in each week the trade changes, replacing theirs in the season, where a
+    week is decided on `Fixture.chances` rather than on scores."""
+
+
+TradeMeasure = Literal["points", "categories"]
+"""What a trade's figures count: fantasy points, or the categories a side expects to win."""
 
 
 @dataclass(frozen=True)
@@ -1222,6 +1232,13 @@ class TradeMarket:
     """The regular-season weeks a trade changes: those after this one, whose lineups are not yet set."""
     playoff_weeks: int
     """The playoff weeks projected, which a trade's `playoff_points` is a week of."""
+    measure: TradeMeasure = "points"
+    deadline: date | None = None
+    """The last day the league takes a trade, where its settings name one."""
+    least_their_gain: float | None = None
+    """What a week the other side's lineup must gain for him to say yes, in `measure`; None for football's half-point."""
+    least_total_gain: float | None = None
+    """The least over the rest of the season a trade must add for you, in `measure`; None for football's three points."""
 
 
 class TradeIdea(BaseModel):
@@ -1235,7 +1252,8 @@ class TradeIdea(BaseModel):
     playoffs_change: float = Field(description="That chance less your chance without it.")
     their_playoffs_change: float = Field(description="The same for the other side: what you would hand a rival.")
     points: float = Field(
-        description="Your starters' projected points a week over the regular season left, with the trade less without it."
+        description="Your starters' projected points a week over the regular season left, with the trade less without "
+        "it — or, where `Trades.measure` is categories, the categories you expect to win a week."
     )
     their_points: float = Field(
         description="The same for theirs over every week left, which is the case for them saying yes."
@@ -1270,6 +1288,11 @@ class Trades(BaseModel):
     """The trades worth offering, best first, with what most of them share said once rather than on each."""
 
     ideas: list[TradeIdea] = Field(default_factory=list)
+    measure: TradeMeasure = Field(
+        default="points",
+        description="What each idea's figures for a lineup count: fantasy points, or expected categories won.",
+    )
+    deadline: date | None = Field(default=None, description="The last day the league takes a trade, where known.")
     ranked_by: TradeRank = Field(
         default="playoffs_change",
         description="The figure on each idea the list is ordered by: your playoff chance, or once that is "

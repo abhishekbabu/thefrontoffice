@@ -2327,7 +2327,7 @@ export interface components {
             their_playoffs_change: number;
             /**
              * Points
-             * @description Your starters' projected points a week over the regular season left, with the trade less without it.
+             * @description Your starters' projected points a week over the regular season left, with the trade less without it — or, where `Trades.measure` is categories, the categories you expect to win a week.
              */
             points: number;
             /**
@@ -2370,6 +2370,18 @@ export interface components {
         Trades: {
             /** Ideas */
             ideas: components["schemas"]["TradeIdea"][];
+            /**
+             * Measure
+             * @description What each idea's figures for a lineup count: fantasy points, or expected categories won.
+             * @default points
+             * @enum {string}
+             */
+            measure: "points" | "categories";
+            /**
+             * Deadline
+             * @description The last day the league takes a trade, where known.
+             */
+            deadline: string | null;
             /**
              * Ranked By
              * @description The figure on each idea the list is ordered by: your playoff chance, or once that is safe, your starters' expected points over the rest of the season.

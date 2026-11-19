@@ -32,20 +32,16 @@ difference.
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from itertools import combinations
 
 from thefrontoffice.adapters.outbound.competitions.nfl import form
 from thefrontoffice.adapters.outbound.competitions.nfl.league import SeasonModel, last_week, season_model
 from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Projection, Team, active
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, STREAMED
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Scoreboard, Week, lineup_for
+from thefrontoffice.adapters.outbound.competitions.trades import offers
 from thefrontoffice.domain.models import TeamWeek, TradeMarket, TradeOption
 
 logger = logging.getLogger(__name__)
-
-FAIR_SHARE = 0.8
-"""The least of what they give, in points over the waiver wire, that they must get back: a gap a
-better lineup can talk a manager into, and no wider."""
 
 
 @dataclass(frozen=True)
@@ -165,7 +161,7 @@ def _with(
     names = {pid: meta.name for pid in [*my_ids, *wanted] if (meta := state.players.get(pid))}
     options = []
     for get in wanted:
-        for give in _offers(my_ids, worth, worth(get)):
+        for give in offers(my_ids, worth, worth(get)):
             mine_after = [pid for pid in my_held if pid not in give] + [get]
             if per_week(mine_after, weeks.every) <= my_now:
                 continue
@@ -222,19 +218,6 @@ def _cached(model: SeasonModel, state: Week) -> Callable[[frozenset[str], int], 
         return seen[ids, week]
 
     return mean
-
-
-def _offers(my_ids: list[str], worth: Callable[[str], float], asked: float) -> list[tuple[str, ...]]:
-    """What you could give for a player worth `asked`: one who is enough alone, or two where neither is.
-
-    Two where one would do is a player thrown away, so a pair is offered only
-    when it takes both to come near what is asked.
-    """
-    enough = FAIR_SHARE * asked
-    alone: list[tuple[str, ...]] = [(pid,) for pid in my_ids if worth(pid) >= enough]
-    short = [pid for pid in my_ids if 0 < worth(pid) < enough]
-    pairs: list[tuple[str, ...]] = [p for p in combinations(short, 2) if worth(p[0]) + worth(p[1]) >= enough]
-    return alone + pairs
 
 
 def _pickup(model: SeasonModel, state: Week, weeks: _Weeks) -> Callable[[list[str], int], str]:
