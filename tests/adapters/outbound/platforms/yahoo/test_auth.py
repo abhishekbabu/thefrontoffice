@@ -8,7 +8,7 @@ import requests
 from support.http import NO_WAIT, http_error
 from support.yahoo import FakeContext
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooAPIError,
@@ -58,7 +58,7 @@ def _auth(
         redirect_uri=REDIRECT,
         authorize=authorize or Authorizations(),
         connect=_connect,
-        cache=JsonDiskCache(tmp_path / "cache"),
+        cache=DiskCache(tmp_path / "cache"),
         retry=NO_WAIT,
     )
 

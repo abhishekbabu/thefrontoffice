@@ -26,7 +26,7 @@ from support.yahoo import (
     teams_xml,
 )
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, YahooClient, translate
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
@@ -53,13 +53,13 @@ def _client(
     league: YahooLeague = LEAGUE,
 ) -> tuple[YahooClient, FakeContext]:
     ctx = FakeContext(response, error, answers)
-    live = LiveResponses(ctx, cache=JsonDiskCache(tmp_path / "cache"), retry=NO_WAIT)
+    live = LiveResponses(ctx, cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT)
     return YahooClient(league, responses=live), ctx
 
 
 def _stored(tmp_path: Path, path: str, xml: str, age: timedelta) -> None:
     """A response the cache already holds, kept `age` ago."""
-    JsonDiskCache(tmp_path / "cache").set(path, xml, now=datetime.now(UTC) - age)
+    DiskCache(tmp_path / "cache").set(path, xml, now=datetime.now(UTC) - age)
 
 
 # ── fetch_top_by_stat ───────────────────────────────────────────────────

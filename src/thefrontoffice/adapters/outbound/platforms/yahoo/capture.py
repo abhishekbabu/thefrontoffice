@@ -17,7 +17,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from xml.sax.saxutils import escape
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import (
     find_matchup,
@@ -80,7 +80,7 @@ class YahooCapture:
 
     def __init__(
         self,
-        cache: JsonDiskCache,
+        cache: DiskCache,
         *,
         games: Sequence[YahooGame],
         active: bool,

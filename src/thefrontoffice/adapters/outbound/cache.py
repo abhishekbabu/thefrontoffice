@@ -1,4 +1,4 @@
-"""One JSON cache on disk, the store every platform client and kept answer shares.
+"""One cache on disk, the store every platform client and kept answer shares.
 
 The platforms differ in transport — three are plain public JSON, one is behind
 a vendor SDK — but they want the same thing from a cache: keep the last answer,
@@ -7,30 +7,42 @@ TTL chosen from how fast that endpoint actually moves: Sleeper asks callers to
 fetch its ~14MB catalog at most once a day, while a live score is stale in
 minutes.
 
-A cache is a **directory** and each key is its own file inside it. The
-alternative, one document holding every entry, makes storing the smallest value
-cost a rewrite of the largest: a trimmed player catalog is megabytes sitting
-beside a scoreboard of a few kilobytes, and every write re-encoded the lot.
-Per-key files also mean reading one entry never parses the others, and two
-writers only collide when they are storing the same key.
+A cache is a **directory** holding one SQLite database, `cache.sqlite3`, with a
+row per key: the value as zlib-compressed JSON and the aware UTC instant it was
+stored. One database per directory rather than one for the app, so each setting
+that moves a cache still moves all of it, and a platform's megabytes of churn
+never share a file — or a corruption — with the manager's kept answers.
 
-Every write goes to a temporary file that is then renamed over the target, so a
-process killed mid-write leaves the previous entry intact rather than a
-half-written one. Nothing here is precious — the truth lives at the platform,
-and a lost or unreadable entry costs one refetch — but a cache that corrupts
-itself on Ctrl-C makes the next run slow for no reason.
+SQLite gives what a file per key had to build by hand, and what it could not:
+an upsert is atomic, so a process killed mid-write leaves the previous entry
+rather than half of one; storing the smallest value never rewrites the largest;
+and writes from several threads or processes are serialised by the database,
+WAL letting readers go on meanwhile. Compression makes the store about seven
+times smaller than the JSON it holds, and costs a read about a tenth of its
+parse.
 
-What has been read is held in memory, which is not safe to write from several
-threads at once: a caller fetching in parallel stores on one thread.
+Each thread reads through a connection of its own, because a web server reads
+from several, and this instance's writes go through one lock so they queue here
+rather than spin on the database's. What has been read is held in memory, so a
+second look at a key costs nothing.
+
+A directory the JSON-file-per-key cache wrote is adopted rather than ignored:
+its files are named by a digest of the key, which cannot be read back to one,
+so an entry moves into the database the first time its key is looked up, keeping
+the time it was stored. That matters for what is not a cache at all — kept
+answers, dismissed to-do items, a captured Yahoo sync — and costs a platform
+cache nothing it would not have refetched. `clear` removes what was never adopted.
 """
 
 import hashlib
 import json
 import logging
-import os
 import re
-import tempfile
+import sqlite3
+import threading
+import zlib
 from collections.abc import Callable
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -40,21 +52,35 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+DATABASE = "cache.sqlite3"
+"""The database each cache directory holds."""
+
+BUSY_TIMEOUT = timedelta(seconds=10)
+"""How long a write waits on another process's before giving up and keeping the value in memory."""
+
+COMPRESSION_LEVEL = 1
+"""zlib's fastest: already about 7x smaller than the JSON on real caches, where its default
+level saves another quarter for well over twice the time spent on every write."""
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS entries (
+    key TEXT PRIMARY KEY,
+    value BLOB NOT NULL,
+    stored_at TEXT NOT NULL
+)
+"""
+
+_UPSERT = """
+INSERT INTO entries (key, value, stored_at) VALUES (?, ?, ?)
+ON CONFLICT (key) DO UPDATE SET value = excluded.value, stored_at = excluded.stored_at
+"""
+
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 _SLUG_LIMIT = 60
-"""Long enough to recognise an entry by eye, short enough to stay inside the
-path limits Windows still enforces once a deep repo path is prefixed."""
 
 
-def _filename(key: str) -> str:
-    """A portable filename for `key`, unique to the exact key.
-
-    The digest does the work; the slug is only a label, so that a human looking
-    in the directory can tell `players_nfl` from a mini-league table. Keys carry
-    what filenames cannot — the dots in a Yahoo league key, the spaces and
-    punctuation of a player search, and case that macOS and Windows fold
-    together — so correctness rests on the digest alone.
-    """
+def _legacy_filename(key: str) -> str:
+    """The file the JSON-file-per-key cache kept `key` in: a slug to read by eye, a digest to be unique."""
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
     slug = _UNSAFE.sub("-", key)[:_SLUG_LIMIT].strip("-.")
     return f"{slug}-{digest}.json" if slug else f"{digest}.json"
@@ -74,23 +100,134 @@ class Hit:
     stored_at: datetime
 
 
-class JsonDiskCache:
-    """Namespaced JSON values on disk, one file per key."""
+def _instant(text: object) -> datetime | None:
+    """A stored timestamp as an aware instant, or None where it cannot be placed on a timeline."""
+    if not isinstance(text, str):
+        return None
+    try:
+        stored_at = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return stored_at if stored_at.tzinfo is not None else None
+
+
+_prepared: set[Path] = set()
+_preparing = threading.Lock()
+
+
+def _prepare(path: Path) -> None:
+    """Put the database at `path` in WAL mode with its table, once per process.
+
+    Switching the journal mode takes a lock SQLite does not wait for through
+    its busy handler, so connections opened at once — a burst of threads each
+    making its first — fail with "database is locked" rather than queue; on
+    Windows, whose file locks are mandatory, nearly every time. So one thread
+    does it, under a lock, before any connection is handed out. WAL is a
+    property of the file, so it outlives the connection that set it; a failure
+    is not remembered, so the next connection tries again.
+    """
+    with _preparing:
+        if path in _prepared:
+            return
+        with closing(sqlite3.connect(path, timeout=BUSY_TIMEOUT.total_seconds(), isolation_level=None)) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute(_SCHEMA)
+        _prepared.add(path)
+
+
+def _open(path: Path) -> sqlite3.Connection:
+    """A connection to the database at `path`, prepared first if this process has not yet.
+
+    The table is asked for again on every connection — a no-op that takes no
+    lock once it exists — so a database deleted under a running server is
+    recreated rather than refusing every write. Opened with
+    `check_same_thread=False` though only one thread uses it, so that
+    `_Connection` may close it from whichever thread collects it.
+    """
+    _prepare(path)
+    db = sqlite3.connect(path, timeout=BUSY_TIMEOUT.total_seconds(), isolation_level=None, check_same_thread=False)
+    try:
+        db.execute("PRAGMA synchronous=NORMAL")
+        db.execute(_SCHEMA)
+    except sqlite3.Error:
+        db.close()
+        raise
+    return db
+
+
+class _Connection:
+    """One thread's connection, closed when the thread or the cache that opened it goes.
+
+    Closed explicitly rather than left to the collector, which warns about an
+    unclosed connection.
+    """
+
+    def __init__(self, db: sqlite3.Connection) -> None:
+        self.db = db
+
+    def __del__(self) -> None:
+        self.db.close()
+
+
+class DiskCache:
+    """Namespaced JSON values on disk, one SQLite database per directory."""
 
     def __init__(self, path: Path) -> None:
-        """`path` is the directory the entries live in; it is created on write."""
+        """`path` is the directory the database lives in; it is created on write."""
         self._dir = path
-        self._entries: dict[str, dict[str, Any]] = {}
+        self._db = path / DATABASE
+        self._entries: dict[str, Hit] = {}
+        self._local = threading.local()
+        self._write_lock = threading.Lock()
 
-    def _read(self, key: str) -> dict[str, Any] | None:
-        """The stored envelope for `key`, from memory or else from its own file.
+    def _connection(self, *, create: bool) -> sqlite3.Connection | None:
+        """This thread's connection, or None where there is no database to read or none can be made.
 
-        Entries are held once read, so a second look at the same key costs
-        nothing without loading the whole directory up front.
+        A read never creates the database: a first run looks before anything
+        has been written, and a misconfigured path should not sprout a file.
         """
-        if key in self._entries:
-            return self._entries[key]
-        path = self._dir / _filename(key)
+        held: _Connection | None = getattr(self._local, "connection", None)
+        if held is not None:
+            return held.db
+        if not create and not self._db.exists():
+            return None
+        try:
+            self._dir.mkdir(parents=True, exist_ok=True)
+            held = _Connection(_open(self._db))
+        except (OSError, sqlite3.Error) as e:
+            logger.warning(f"Could not open cache database {self._db}: {e}")
+            return None
+        self._local.connection = held
+        return held.db
+
+    def _load(self, key: str) -> Hit | None:
+        """What the database holds for `key`, adopting a file the old cache left for it."""
+        row: tuple[object, object] | None = None
+        db = self._connection(create=False)
+        if db is not None:
+            try:
+                row = db.execute("SELECT value, stored_at FROM entries WHERE key = ?", (key,)).fetchone()
+            except sqlite3.Error as e:
+                logger.warning(f"Could not read cache entry {key!r} from {self._db}: {e}")
+        if row is None:
+            return self._adopt(key)
+        blob, stored = row
+        stored_at = _instant(stored)
+        try:
+            if stored_at is None or not isinstance(blob, bytes):
+                raise ValueError("not an entry this cache wrote")
+            return Hit(json.loads(zlib.decompress(blob)), stored_at)
+        except (zlib.error, ValueError) as e:
+            logger.warning(f"Discarding unreadable cache entry {key!r} in {self._db}: {e}")
+            return None
+
+    def _adopt(self, key: str) -> Hit | None:
+        """The entry the JSON-file-per-key cache kept for `key`, moved into the database.
+
+        The file goes only once the row is written, so a database that cannot
+        be written loses nothing; one that cannot be read is left for `clear`.
+        """
+        path = self._dir / _legacy_filename(key)
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
@@ -98,51 +235,42 @@ class JsonDiskCache:
         except (OSError, ValueError) as e:
             logger.warning(f"Discarding unreadable cache entry {path}: {e}")
             return None
-        if not isinstance(raw, dict) or "stored_at" not in raw or "value" not in raw:
+        if not isinstance(raw, dict) or "value" not in raw or (stored_at := _instant(raw.get("stored_at"))) is None:
             return None
-        self._entries[key] = raw
-        return raw
+        if self._write(key, raw["value"], stored_at):
+            path.unlink(missing_ok=True)
+        return Hit(raw["value"], stored_at)
 
-    def _write(self, key: str, entry: dict[str, Any]) -> None:
-        """Replace `key`'s file atomically.
+    def _write(self, key: str, value: Any, stored_at: datetime) -> bool:
+        """Upsert `key`'s row; whether it was persisted.
 
-        The temporary file is made in the destination directory rather than the
-        system's: `os.replace` is only atomic within a single filesystem, and
-        the temp directory is routinely a different one.
+        Serialised before the database is touched, so a value that is not JSON
+        raises without leaving a file behind.
         """
-        path = self._dir / _filename(key)
-        temp: Path | None = None
+        blob = zlib.compress(json.dumps(value).encode("utf-8"), COMPRESSION_LEVEL)
+        db = self._connection(create=True)
+        if db is None:
+            return False
         try:
-            self._dir.mkdir(parents=True, exist_ok=True)
-            handle, name = tempfile.mkstemp(dir=self._dir, prefix=".tmp-")
-            temp = Path(name)
-            with os.fdopen(handle, "w", encoding="utf-8") as f:
-                json.dump(entry, f)
-            os.replace(temp, path)
-            temp = None
-        except OSError as e:
+            with self._write_lock:
+                db.execute(_UPSERT, (key, blob, stored_at.astimezone(UTC).isoformat()))
+        except sqlite3.Error as e:
             # Best effort: a cache we cannot persist still works for this run.
-            logger.warning(f"Could not write cache entry {path}: {e}")
-        finally:
-            # Also covers a value that turned out not to be serialisable, which
-            # is a bug worth raising but not worth leaving a stray file over.
-            if temp is not None:
-                temp.unlink(missing_ok=True)
+            logger.warning(f"Could not write cache entry {key!r} to {self._db}: {e}")
+            return False
+        return True
 
     def lookup(self, key: str, ttl: timedelta, now: datetime | None = None) -> Hit | None:
         """What is stored for `key` within `ttl` of `now`, or None if absent or stale — never for a stored null."""
-        entry = self._read(key)
-        if entry is None:
+        hit = self._entries.get(key)
+        if hit is None:
+            hit = self._load(key)
+            if hit is None:
+                return None
+            self._entries[key] = hit
+        if (now or datetime.now(UTC)) - hit.stored_at > ttl:
             return None
-        try:
-            stored_at = datetime.fromisoformat(entry["stored_at"])
-        except TypeError, ValueError:
-            return None
-        if stored_at.tzinfo is None:
-            return None  # no zone, so it cannot be placed on a timeline
-        if (now or datetime.now(UTC)) - stored_at > ttl:
-            return None
-        return Hit(entry["value"], stored_at)
+        return hit
 
     def get(self, key: str, ttl: timedelta, now: datetime | None = None) -> Any | None:
         """The value stored for `key` within `ttl`, or None.
@@ -155,10 +283,9 @@ class JsonDiskCache:
 
     def set(self, key: str, value: Any, now: datetime | None = None) -> None:
         """Store `value` under `key` and persist it."""
-        stored_at = (now or datetime.now(UTC)).isoformat()
-        entry = {"stored_at": stored_at, "value": value}
-        self._entries[key] = entry
-        self._write(key, entry)
+        stored_at = (now or datetime.now(UTC)).astimezone(UTC)
+        self._write(key, value, stored_at)
+        self._entries[key] = Hit(value, stored_at)
 
     def cached(self, key: str, ttl: timedelta, fetch: Callable[[], T], now: datetime | None = None) -> T:
         """The stored value for `key`, calling `fetch` only when it is stale.
@@ -178,12 +305,19 @@ class JsonDiskCache:
     def clear(self) -> None:
         """Forget every entry, in memory and on disk.
 
-        Only files this cache could have written are removed, never the
-        directory itself — a misconfigured path should cost nothing, and
-        deleting a tree because a setting pointed somewhere unexpected is not a
-        risk a cache needs to take.
+        The rows go and the database stays, with any file the old cache left
+        that was never adopted — and nothing else, never the directory itself:
+        a misconfigured path should cost nothing, and deleting a tree because a
+        setting pointed somewhere unexpected is not a risk a cache needs to take.
         """
         self._entries = {}
+        db = self._connection(create=False)
+        if db is not None:
+            try:
+                with self._write_lock:
+                    db.execute("DELETE FROM entries")
+            except sqlite3.Error as e:
+                logger.warning(f"Could not clear cache database {self._db}: {e}")
         try:
             stale = list(self._dir.glob("*.json"))
         except OSError:

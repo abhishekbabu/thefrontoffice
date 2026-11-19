@@ -7,7 +7,7 @@ as long as a fantasy week's answers can mean anything.
 
 from datetime import timedelta
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.storage import scopes
 from thefrontoffice.domain.models import Remembered
 from thefrontoffice.domain.ports import AnswerStore, TModel
@@ -16,7 +16,7 @@ KEEP_FOR = timedelta(days=7)
 
 
 class DiskAnswerStore(AnswerStore):
-    def __init__(self, cache: JsonDiskCache) -> None:
+    def __init__(self, cache: DiskCache) -> None:
         self._cache = cache
 
     def latest(self, scope: str, schema: type[TModel]) -> Remembered[TModel] | None:

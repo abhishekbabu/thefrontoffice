@@ -23,7 +23,7 @@ from support.yahoo import (
     teams_xml,
 )
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
 from thefrontoffice.adapters.outbound.platforms.yahoo.capture import (
     CAPTURE_TTL,
@@ -72,7 +72,7 @@ YAHOO = {
 
 
 def _capture(tmp_path: Path, *, active: bool = True) -> YahooCapture:
-    return YahooCapture(JsonDiskCache(tmp_path / "cache"), games=(GAME,), active=active)
+    return YahooCapture(DiskCache(tmp_path / "cache"), games=(GAME,), active=active)
 
 
 def _hand_over(capture: YahooCapture, *responses: CapturedResponse, profile: int = 200) -> CaptureReceipt:
@@ -228,7 +228,7 @@ def test_a_week_the_last_sync_did_not_carry_is_an_error(tmp_path: Path) -> None:
 
 
 def test_a_capture_older_than_its_ttl_no_longer_stands_in_for_yahoo(tmp_path: Path) -> None:
-    cache = JsonDiskCache(tmp_path / "cache")
+    cache = DiskCache(tmp_path / "cache")
     cache.set(paths.teams(KEY).path, YAHOO[paths.teams(KEY).path], now=datetime.now(UTC) - CAPTURE_TTL * 2)
 
     with pytest.raises(YahooCaptureMissingError):
@@ -316,7 +316,7 @@ def test_ready_only_once_a_recent_sync_has_stored_something(tmp_path: Path) -> N
     _sweep(capture)
     capture.ensure_captured()
 
-    JsonDiskCache(tmp_path / "cache").set(SYNCED, 1, now=datetime.now(UTC) - CAPTURE_TTL - timedelta(days=1))
+    DiskCache(tmp_path / "cache").set(SYNCED, 1, now=datetime.now(UTC) - CAPTURE_TTL - timedelta(days=1))
     with pytest.raises(YahooCaptureMissingError):
         _capture(tmp_path).ensure_captured()
 
@@ -339,7 +339,7 @@ def test_the_status_says_when_it_last_synced_and_which_leagues_it_holds(tmp_path
 
 
 def test_read_with_the_session_cookie_the_status_says_how_that_is_going(tmp_path: Path) -> None:
-    cache = JsonDiskCache(tmp_path / "cache")
+    cache = DiskCache(tmp_path / "cache")
     state = SessionState(cache, "A1=cookie")
     state.refused()
     state.record()

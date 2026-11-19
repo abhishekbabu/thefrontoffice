@@ -18,7 +18,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     POSITIONS,
@@ -185,7 +185,7 @@ class FPLSource(Protocol):
 class FPLClient:
     """Read-only access to the Fantasy Premier League game."""
 
-    def __init__(self, *, cache: JsonDiskCache, retry: RetryPolicy, session: Any = None) -> None:
+    def __init__(self, *, cache: DiskCache, retry: RetryPolicy, session: Any = None) -> None:
         self._api = JsonApiClient(
             name="FPL",
             cache=cache,

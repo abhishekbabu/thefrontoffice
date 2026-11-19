@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import YAHOO_TO_ESPN
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
 from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, NFL
@@ -22,7 +22,7 @@ pytestmark = pytest.mark.integration
 @pytest.fixture
 def client(tmp_path: Path) -> ESPNClient:
     """A client whose cache is thrown away, so each run really hits the API."""
-    return ESPNClient(cache=JsonDiskCache(tmp_path / "cache"), retry=RetryPolicy())
+    return ESPNClient(cache=DiskCache(tmp_path / "cache"), retry=RetryPolicy())
 
 
 def test_the_injury_report_still_carries_athlete_ids_and_return_dates(client: ESPNClient) -> None:

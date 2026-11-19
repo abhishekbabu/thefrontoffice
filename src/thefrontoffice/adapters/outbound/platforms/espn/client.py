@@ -31,7 +31,7 @@ from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import Any, Protocol
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError, ESPNUnavailableError
 from thefrontoffice.adapters.outbound.platforms.espn.types import Athlete, InjuryReport, NewsArticle, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
@@ -86,7 +86,7 @@ class ESPNSource(Protocol):
 class ESPNClient:
     """Read-only access to ESPN's per-club news, live scoreboard and injury report."""
 
-    def __init__(self, *, cache: JsonDiskCache, retry: RetryPolicy, session: Any = None) -> None:
+    def __init__(self, *, cache: DiskCache, retry: RetryPolicy, session: Any = None) -> None:
         self._api = JsonApiClient(
             name="ESPN",
             cache=cache,

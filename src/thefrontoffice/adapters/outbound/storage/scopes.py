@@ -10,7 +10,7 @@ under the current one, so no kept judgment or dismissal is lost to the rename.
 from datetime import timedelta
 from typing import Any
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.application.answers import parts
 from thefrontoffice.application.answers import scope as make_scope
 
@@ -36,7 +36,7 @@ def former(scope: str) -> str | None:
     return make_scope(kind, old, *about) if old is not None else None
 
 
-def read(cache: JsonDiskCache, scope: str, keep_for: timedelta) -> Any | None:
+def read(cache: DiskCache, scope: str, keep_for: timedelta) -> Any | None:
     """What `cache` holds for `scope`, falling back once to its former spelling and refiling it.
 
     Only a scope with nothing at all under it falls back: one emptied since —

@@ -16,7 +16,7 @@ from dataclasses import asdict
 from datetime import timedelta
 from typing import Any, Protocol
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.http import Batch, JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
@@ -199,7 +199,7 @@ IR_SETTINGS = {
 class SleeperClient:
     """Read-only access to Sleeper's fantasy and NFL data."""
 
-    def __init__(self, *, cache: JsonDiskCache, retry: RetryPolicy, session: Any = None) -> None:
+    def __init__(self, *, cache: DiskCache, retry: RetryPolicy, session: Any = None) -> None:
         self._api = JsonApiClient(
             name="Sleeper",
             cache=cache,
