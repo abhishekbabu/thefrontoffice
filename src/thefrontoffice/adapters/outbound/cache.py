@@ -40,6 +40,7 @@ import logging
 import re
 import sqlite3
 import threading
+import weakref
 import zlib
 from collections.abc import Callable
 from contextlib import closing
@@ -158,15 +159,18 @@ def _open(path: Path) -> sqlite3.Connection:
 class _Connection:
     """One thread's connection, closed when the thread or the cache that opened it goes.
 
-    Closed explicitly rather than left to the collector, which warns about an
-    unclosed connection.
+    Closed by a `weakref.finalize` on this holder rather than its `__del__`.
+    A cache freed as part of a reference cycle takes the connection down with
+    it, and the collector runs the finalizers of a cycle in no set order: a
+    `__del__` here could come after SQLite's own, which then finds the
+    connection open and warns. A finalize callback runs before any of them,
+    and holds the connection itself, so it is never garbage until closed. It
+    also closes what is still open as the interpreter exits.
     """
 
     def __init__(self, db: sqlite3.Connection) -> None:
         self.db = db
-
-    def __del__(self) -> None:
-        self.db.close()
+        weakref.finalize(self, db.close)
 
 
 class DiskCache:

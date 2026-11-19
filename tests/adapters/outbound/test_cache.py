@@ -6,10 +6,12 @@ and threads, and that what the JSON-file-per-key cache before it kept — kept
 answers among it — is not lost to the move.
 """
 
+import gc
 import json
 import logging
 import sqlite3
 import threading
+import warnings
 import zlib
 from contextlib import closing
 from datetime import UTC, datetime, timedelta, timezone
@@ -435,3 +437,20 @@ def test_a_failed_fetch_is_not_cached_as_though_it_were_an_answer(tmp_path: Path
         cache.cached("k", timedelta(hours=1), _boom)
 
     assert cache.get("k", timedelta(hours=1)) is None
+
+
+def test_a_cache_collected_in_a_reference_cycle_closes_its_database(tmp_path: Path) -> None:
+    """A cache freed with the cycle it sits in goes with every connection it opened closed, rather than
+    leaving SQLite to find them open as the collector tears them down in whatever order it likes."""
+    for n in range(20):
+        cache = DiskCache(tmp_path / f"cache-{n}")
+        cache.set("k", n)
+        cycle: list[object] = [cache]
+        cycle.append(cycle)
+    del cache, cycle
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        gc.collect()
+
+    assert [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)] == []
