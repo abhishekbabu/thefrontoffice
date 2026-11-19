@@ -141,15 +141,28 @@ def test_a_sweep_fetches_every_teams_roster_once_the_team_list_is_held(tmp_path:
     assert sorted(fetched) == sorted(YAHOO)
 
 
-def test_a_finished_week_already_held_is_not_asked_for_again(tmp_path: Path) -> None:
-    capture = _capture(tmp_path)
+def test_a_sync_asks_only_for_what_has_gone_stale_since_the_last(tmp_path: Path) -> None:
+    """Ten minutes on, only the week being played has moved: settled and future weeks, settings and rosters hold."""
+    cache = DiskCache(tmp_path / "cache")
+    capture = YahooCapture(cache, games=(GAME,), active=True)
     _sweep(capture)
+    earlier = datetime.now(UTC) - timedelta(minutes=10)
+    for path, body in YAHOO.items():
+        cache.set(path, body, now=earlier)
 
     planned = {step.path for step in capture.plan([KEY]).steps}
 
-    assert paths.scoreboard(KEY, 1).path not in planned
-    assert {paths.scoreboard(KEY, 2).path, paths.scoreboard(KEY, 3).path} <= planned
-    assert paths.played_roster("t1", 1).path not in planned
+    assert planned == {LIST, paths.scoreboard(KEY, 2).path}
+
+
+def test_a_sync_still_takes_what_it_was_planned_once_it_has_been_refreshed_meanwhile(tmp_path: Path) -> None:
+    """A plan is made before the browser fetches; a copy that turned fresh in between is still the app's to take."""
+    capture = _capture(tmp_path)
+    _sweep(capture)
+
+    receipt = _hand_over(capture, _answer(paths.settings(KEY).path, YAHOO))
+
+    assert (receipt.stored, receipt.errors) == (1, [])
 
 
 def test_a_week_played_is_planned_as_both_rosters_of_your_matchup_once_its_scoreboard_is_held(tmp_path: Path) -> None:

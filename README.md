@@ -119,7 +119,7 @@ game (from the league's weights, over the same games) on player rows and the
 scout's free agents ranked by them. The add budget is the league's own. NBA's
 free agents are Yahoo's top 300 by season rank and top 100 by last week's,
 taken in turn so the week's risers sit beside the season's best (16 requests
-of 25 players, fetched together and cached for 30 minutes).
+of 25 players: each ranking's first page cached for 30 minutes, the rest for 6 hours).
 NBA free agents get the same "Without" column, and every NBA drawer a Teammates
 group: a club regular (28+ minutes a game over his last 15, or its top usage
 player) who is out or day-to-day (Yahoo's status where his Yahoo row is on the
@@ -247,11 +247,29 @@ works again at once.
 
 - **What it does.** The server GETs the same paths the browser sync plans from
   `https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/` with your cookie and
-  browser-like headers, and caches each under the same key a sync would, with
-  the normal TTLs (scoreboard 2 minutes, rosters and teams an hour). Switching
-  between `session` and `browser` keeps what either fetched. Before trusting a
-  league list it checks your profile, since a signed-out session gets an empty
-  list rather than a refusal.
+  browser-like headers, and caches each under the same key a sync would.
+  Switching between `session` and `browser` keeps what either fetched. Before
+  trusting a league list it checks your profile, since a signed-out session gets
+  an empty list rather than a refusal.
+- **How hard it asks.** Every request is yours, so the server keeps to a budget
+  shared by the whole process: 2 requests a second after a burst of 4, at most 2
+  in flight, and identical requests in flight at once share one. A 429, Yahoo's
+  999 or a 5xx is retried with backoff, waiting at least as long as a
+  `Retry-After` says (one asking for more than 20 seconds isn't retried). Three
+  failures in a row pause every Yahoo request for 2 minutes (or for the
+  `Retry-After`), and a refused cookie pauses them for 10, so a dead session
+  doesn't hammer Yahoo. The same budget applies to `oauth`, on Yahoo's API host.
+- **What it keeps, and for how long.** A settled week's scoreboard is kept for
+  the season, last week's for 6 hours while stat corrections land, and weeks to
+  come for 7 days. The week being played is kept 2 minutes while an NBA game can
+  be on (09:00 to 01:00 Pacific, on a day Sleeper's schedule has games) and 30
+  minutes otherwise. Settings are kept a day, teams, standings, rosters and the
+  league list an hour. A copy past its time but within twice it is served at
+  once and refreshed on one background thread, so a page never waits on Yahoo for
+  something it read recently. Rivals' rosters and the deep wire are fetched only
+  by the pages that show them. With 5 leagues, opening every NBA page costs about
+  200 requests cold, nothing within the same couple of minutes, and about 400 a
+  day for 5 visits.
 - **The cookie is a password.** It's stored in the local `.env` and grants read
   access to your Yahoo account until it expires. Settings and `just doctor`
   only report whether it's set; it's never logged, never sent to Logfire
@@ -283,8 +301,9 @@ reads only the sync in this mode and never calls Yahoo, and a sync older than
   uses) with your Yahoo session, and posts the response bodies to
   `/api/yahoo/capture`. It repeats until nothing new is planned: league lists,
   then each league's settings, teams, standings, scoreboards and free agents, then
-  rosters. A sync from before a page's data was planned (the NBA table, or the
-  deeper NBA wire)
+  rosters. Anything the app holds fresh by the TTLs above (a settled week,
+  today's settings) is left out, and the bookmark fetches two at a time. A sync
+  from before a page's data was planned (the NBA table, or the deeper NBA wire)
   shows "run the sync again" on that page rather than an empty one.
 - **What leaves the browser.** Only response bodies. Your Yahoo cookies stay in
   the browser and are attached to Yahoo's requests alone; the app accepts no

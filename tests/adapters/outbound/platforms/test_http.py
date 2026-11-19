@@ -325,3 +325,25 @@ def test_a_batch_hands_back_a_value_or_raises_why_it_is_missing() -> None:
     with pytest.raises(SleeperAPIError) as raised:
         batch.value(2)
     assert raised.value is down
+
+
+def test_a_batch_can_age_each_key_by_its_own_ttl(tmp_path: Path) -> None:
+    """A season's scoreboards: an hour-old settled week holds, an hour-old live one does not."""
+    cache = DiskCache(tmp_path / "cache")
+    hour_ago = datetime.now(UTC) - timedelta(hours=1)
+    cache.set("settled", "old", now=hour_ago)
+    cache.set("live", "old", now=hour_ago)
+    fetched: list[str] = []
+
+    def fetch(key: str) -> str:
+        fetched.append(key)
+        return "new"
+
+    batch = fetch_many(
+        cache,
+        {key: (lambda key=key: fetch(key)) for key in ("settled", "live")},
+        {"settled": timedelta(days=365), "live": timedelta(minutes=2)},
+    )
+
+    assert batch.values == {"settled": "old", "live": "new"}
+    assert fetched == ["live"]

@@ -110,6 +110,16 @@ def test_a_season_of_scoreboards_is_fetched_in_one_batch(tmp_path: Path) -> None
     assert len(frontend.requests) == 3
 
 
+def test_yahoos_999_is_retried_and_then_read_as_yahoo_asking_for_fewer_requests(tmp_path: Path) -> None:
+    """`requests` raises on no status past 599, so the reader names Yahoo's own rate limit itself."""
+    frontend = FakeFrontend(statuses={"/teams": 999})
+    reader, _, _ = _reader(tmp_path, frontend)
+
+    with pytest.raises(YahooUnavailableError, match="999"):
+        YahooClient(LEAGUE, responses=reader).teams()
+    assert len(frontend.requests) == NO_WAIT.attempts
+
+
 # ── finding the leagues ─────────────────────────────────────────────────
 
 

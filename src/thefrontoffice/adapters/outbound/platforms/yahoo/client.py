@@ -25,7 +25,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooAuthError,
     YahooUnavailableError,
 )
-from thefrontoffice.adapters.outbound.platforms.yahoo.paths import YahooRead
+from thefrontoffice.adapters.outbound.platforms.yahoo.paths import ScoreboardPace, YahooRead
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     LeagueSettings,
     Matchup,
@@ -116,6 +116,12 @@ class YahooResponses(Protocol):
         ...
 
 
+class Refresh(Protocol):
+    """Fetches a key again behind the caller's back, and stores it: how a stale copy is served without a wait."""
+
+    def refresh(self, key: str, fetch: Callable[[], Any]) -> None: ...
+
+
 class LiveResponses:
     """Yahoo's answers, asked of Yahoo through the SDK and kept in our own cache.
 
@@ -123,15 +129,35 @@ class LiveResponses:
     pickle by read-modify-write, so concurrent writes clobber each other, and
     its `_load` takes no expiry at all — waiver leaders cached once stayed
     cached until the file was deleted.
+
+    Given a `refresher`, a copy past its TTL but within `YahooRead.servable` is
+    served at once and fetched again in the background; without one, every
+    expired read waits on Yahoo.
     """
 
-    def __init__(self, context: YahooContext, *, cache: DiskCache, retry: RetryPolicy) -> None:
+    def __init__(
+        self, context: YahooContext, *, cache: DiskCache, retry: RetryPolicy, refresher: Refresh | None = None
+    ) -> None:
         self._context = context
         self._cache = cache
         self._retry = retry
+        self._refresher = refresher
 
     def _fetch(self, read: YahooRead) -> str:
         return request(self._retry, lambda: self._context.make_request(read.query, league=read.league or False))
+
+    def _held(self, read: YahooRead) -> str | None:
+        """The copy to serve without waiting: fresh, or stale within bounds with a refresh started behind it."""
+        hit = self._cache.lookup(read.path, read.ttl)
+        if hit is not None:
+            return hit.value
+        if self._refresher is None:
+            return None
+        stale = self._cache.lookup(read.path, read.servable)
+        if stale is None:
+            return None
+        self._refresher.refresh(read.path, lambda: self._fetch(read))
+        return stale.value
 
     def raw(self, read: YahooRead) -> str:
         """`read` from the cache while it holds, from Yahoo once it does not.
@@ -139,9 +165,9 @@ class LiveResponses:
         A read that keeps its copy on failure — the scoreboard — falls back to
         the stored one, stale but usable, when the refresh fails.
         """
-        hit = self._cache.lookup(read.path, read.ttl)
-        if hit is not None:
-            return hit.value
+        held = self._held(read)
+        if held is not None:
+            return held
         try:
             value = self._fetch(read)
         except FrontOfficeError as e:
@@ -154,15 +180,16 @@ class LiveResponses:
         return value
 
     def many(self, reads: Mapping[str, YahooRead]) -> dict[str, str]:
-        """Each read, the misses fetched concurrently: run one after another they were the dominant latency."""
-        if not reads:
-            return {}
-        ttl = min(read.ttl for read in reads.values())
-        fetches = {read.path: (lambda read=read: self._fetch(read)) for read in reads.values()}
-        batch = fetch_many(self._cache, fetches, ttl)
+        """Each read, each by its own TTL, the misses fetched concurrently: run one after another they were the
+        dominant latency."""
+        held = {read.path: value for read in reads.values() if (value := self._held(read)) is not None}
+        missing = {read.path: read for read in reads.values() if read.path not in held}
+        fetches = {path: (lambda read=read: self._fetch(read)) for path, read in missing.items()}
+        batch = fetch_many(self._cache, fetches, {path: read.ttl for path, read in missing.items()})
         for error in batch.failures.values():
             raise error
-        return {name: batch.values[read.path] for name, read in reads.items()}
+        found = held | batch.values
+        return {name: found[read.path] for name, read in reads.items()}
 
 
 class YahooSource(Protocol):
@@ -231,9 +258,15 @@ class YahooSource(Protocol):
 class YahooClient:
     """Reads one Yahoo league, from whichever `YahooResponses` it is handed."""
 
-    def __init__(self, league: YahooLeague, *, responses: YahooResponses) -> None:
+    def __init__(self, league: YahooLeague, *, responses: YahooResponses, pace: ScoreboardPace | None = None) -> None:
+        """`pace` says when the week being played can be moving; without one it is always read as moving."""
         self.league = league
         self._responses = responses
+        self._pace = pace
+
+    def _scoreboard(self, week: int) -> YahooRead:
+        live = self._pace.live() if self._pace is not None else True
+        return paths.scoreboard(self.league.league_key, week, self.league.current_week, live=live)
 
     def _players(self, raw: Any, count: int | None = None) -> list[YahooPlayer]:
         """A league's players response, read; a league listing none is an empty answer."""
@@ -302,7 +335,7 @@ class YahooClient:
 
         Every week's scoreboard in one batch, fetched concurrently where they are fetched at all.
         """
-        raws = self._responses.many({str(week): paths.scoreboard(self.league.league_key, week) for week in weeks})
+        raws = self._responses.many({str(week): self._scoreboard(week) for week in weeks})
         return {
             int(week): readable("scoreboard", lambda raw=raw: find_matchup(parse(raw), team_key))
             for week, raw in raws.items()
@@ -376,7 +409,7 @@ class YahooClient:
             YahooAuthError: the app is not authorized for Fantasy Sports.
             YahooAPIError: Yahoo could not be reached, or answered unreadably.
         """
-        raw = self._responses.raw(paths.scoreboard(self.league.league_key, week))
+        raw = self._responses.raw(self._scoreboard(week))
         return readable("scoreboard", lambda: find_matchup(parse(raw), team_key))
 
 

@@ -363,3 +363,40 @@ def test_read_with_the_session_the_sync_status_reports_the_session(tmp_path: Pat
 
     assert session.status().session is not None
     assert browser.status().session is None
+
+
+# ── the request budget ──────────────────────────────────────────────────
+
+
+def test_every_reader_of_one_host_shares_one_pace_and_each_cookie_its_own_breaker() -> None:
+    """Providers are built per request, so a budget held by any one of them would pace nothing."""
+    from thefrontoffice.adapters.outbound.platforms.yahoo import paths
+
+    first, again = (
+        bootstrap._yahoo_budget_for(paths.FRONTEND, COOKIE),
+        bootstrap._yahoo_budget_for(paths.FRONTEND, COOKIE),
+    )
+    fresh = bootstrap._yahoo_budget_for(paths.FRONTEND, "A1=fresh")
+    api = bootstrap._yahoo_budget_for(paths.API, COOKIE)
+
+    assert first.throttle is again.throttle is fresh.throttle
+    assert first.breaker is again.breaker
+    assert fresh.breaker is not first.breaker
+    assert api.throttle is not first.throttle
+
+
+def test_background_refreshes_for_one_cache_share_one_worker(tmp_path: Path) -> None:
+    assert bootstrap._yahoo_refresher(str(tmp_path)) is bootstrap._yahoo_refresher(str(tmp_path))
+
+
+def test_an_nba_scoreboard_is_live_only_in_game_hours_on_a_day_with_games() -> None:
+    from dataclasses import replace
+    from datetime import UTC, datetime
+
+    def live(utc_hour: int, games_on: bool) -> bool:
+        moment = datetime(2026, 11, 19, utc_hour, tzinfo=UTC)
+        return replace(bootstrap._nba_pace(lambda _: games_on), clock=lambda: moment).live()
+
+    assert live(3, games_on=True)  # 19:00 Pacific
+    assert not live(3, games_on=False)
+    assert not live(12, games_on=True)  # 04:00 Pacific

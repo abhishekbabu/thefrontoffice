@@ -1,7 +1,16 @@
 """Tests for the Yahoo paths every reader and the capture name a response by."""
 
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+import pytest
+
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
+from thefrontoffice.adapters.outbound.platforms.yahoo.paths import ScoreboardPace
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import PlayerStatus, Timeframe
+from thefrontoffice.domain.errors import PlatformError
+
+PACIFIC = ZoneInfo("America/Los_Angeles")
 
 
 def test_a_league_read_is_kept_under_the_path_yahoo_serves_it_at() -> None:
@@ -69,3 +78,91 @@ def test_a_week_played_is_read_with_each_players_line_over_it_and_kept_long() ->
 
     assert read.path == "team/466.l.1.t.2/roster;week=3/players/stats;type=week;week=3"
     assert read.ttl > paths.ROSTER_TTL
+
+
+# ── how long each holds ─────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("week", "live", "ttl"),
+    [
+        (5, True, paths.SCOREBOARD_TTL),
+        (5, False, paths.QUIET_SCOREBOARD_TTL),
+        (4, True, paths.SETTLING_TTL),
+        (2, True, paths.FINAL_TTL),
+        (6, True, paths.AHEAD_TTL),
+    ],
+    ids=["playing-live", "playing-quiet", "last-week", "settled", "to-come"],
+)
+def test_a_scoreboard_holds_as_long_as_its_week_can_still_change(week: int, live: bool, ttl: timedelta) -> None:
+    assert paths.scoreboard("466.l.1", week, current=5, live=live).ttl == ttl
+
+
+def test_a_scoreboard_with_no_week_being_played_known_is_read_as_that_week() -> None:
+    assert paths.scoreboard("466.l.1", 2).ttl == paths.SCOREBOARD_TTL
+
+
+def test_the_top_of_the_wire_is_asked_for_oftener_than_the_rest() -> None:
+    first, second = paths.available("466.l.1", 50)
+
+    assert (first.ttl, second.ttl) == (paths.LEADERS_TTL, paths.DEEP_TTL)
+
+
+def test_a_copy_is_servable_while_a_fresh_one_is_fetched_for_one_ttl_more() -> None:
+    assert paths.roster("466.l.1.t.1").servable == 2 * paths.ROSTER_TTL
+
+
+# ── when a scoreboard can be moving ─────────────────────────────────────
+
+
+def _pace(at: str, games_on: object = None) -> ScoreboardPace:
+    clock = datetime.fromisoformat(at).replace(tzinfo=PACIFIC).astimezone(UTC)
+    days = games_on if callable(games_on) else (lambda _: True)
+    return ScoreboardPace(PACIFIC, time(9), time(1), games_on=days, clock=lambda: clock)
+
+
+@pytest.mark.parametrize(
+    ("at", "live"),
+    [
+        ("2026-11-19T08:59", False),
+        ("2026-11-19T09:00", True),
+        ("2026-11-19T19:30", True),
+        ("2026-11-20T00:59", True),
+        ("2026-11-20T01:00", False),
+        ("2026-11-20T04:00", False),
+    ],
+    ids=["before-tipoff", "first-tipoff", "evening", "past-midnight", "last-whistle", "small-hours"],
+)
+def test_a_scoreboard_is_live_only_inside_game_hours(at: str, live: bool) -> None:
+    assert _pace(at).live() is live
+
+
+def test_the_hours_past_midnight_belong_to_the_day_they_opened_on() -> None:
+    asked: list[date] = []
+
+    def games_on(day: date) -> bool:
+        asked.append(day)
+        return True
+
+    _pace("2026-11-20T00:30", games_on).live()
+
+    assert asked == [date(2026, 11, 19)]
+
+
+def test_a_day_without_games_is_quiet_all_day() -> None:
+    assert _pace("2026-11-26T19:00", lambda _: False).live() is False
+
+
+def test_a_schedule_that_will_not_load_reads_the_scoreboard_as_live() -> None:
+    def broken(_: date) -> bool:
+        raise PlatformError("schedule down")
+
+    assert _pace("2026-11-19T19:00", broken).live() is True
+
+
+def test_hours_that_close_the_same_day_they_open() -> None:
+    clock = datetime(2026, 11, 19, 15, tzinfo=UTC)
+    pace = ScoreboardPace(UTC, time(12), time(18), clock=lambda: clock)
+
+    assert pace.live() is True
+    assert ScoreboardPace(UTC, time(16), time(18), clock=lambda: clock).live() is False

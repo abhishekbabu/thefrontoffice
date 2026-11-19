@@ -55,8 +55,13 @@ class Batch[K, V]:
         )
 
 
-def fetch_many(cache: DiskCache, fetches: Mapping[str, Callable[[], Any]], ttl: timedelta) -> Batch[str, Any]:
+def fetch_many(
+    cache: DiskCache, fetches: Mapping[str, Callable[[], Any]], ttl: timedelta | Mapping[str, timedelta]
+) -> Batch[str, Any]:
     """Each key's cached value, fetching only the misses and those in parallel.
+
+    `ttl` holds for every key, or is each key's own where the keys age
+    differently — a season's scoreboards, of which only the current week moves.
 
     A season of weekly matchups is eighteen independent requests, and run one
     after another they are most of the wait on a page that is otherwise
@@ -71,7 +76,7 @@ def fetch_many(cache: DiskCache, fetches: Mapping[str, Callable[[], Any]], ttl: 
     batch: Batch[str, Any] = Batch()
     misses: dict[str, Callable[[], Any]] = {}
     for key, fetch in fetches.items():
-        hit = cache.lookup(key, ttl)
+        hit = cache.lookup(key, ttl if isinstance(ttl, timedelta) else ttl[key])
         if hit is None:
             misses[key] = fetch
         else:
