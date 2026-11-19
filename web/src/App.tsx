@@ -1,7 +1,7 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Moon, Settings, Sun, Trophy } from "lucide-react";
+import { Menu, Moon, Settings, Sun, Trophy, X } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
 import { api, type League, type Competition } from "@/lib/api";
 import { keys, useCapabilities } from "@/lib/queries";
@@ -49,11 +49,23 @@ const PANELS: Record<View, (props: PanelProps) => React.ReactNode> = {
   compare: ComparePanel,
 };
 
+/**
+ * Views that keep the whole column rather than the page's readable width
+ * (`--page-max` in index.css). Free agents is a table of fifteen-odd columns
+ * that already truncates its headings at full width; capped, it would
+ * truncate its figures too.
+ */
+const WIDE: ReadonlySet<View> = new Set(["free-agents"]);
+
 export default function App() {
   const { mode, setMode } = useTheme();
   const navigate = useNavigate();
   const path = useLocation().pathname;
   const route = parse(path);
+  // The address the phone menu was opened at, rather than a flag: following a
+  // link in it changes the address, which closes it with no effect to run.
+  const [menuAt, setMenuAt] = useState<string | null>(null);
+  const menuOpen = menuAt === path;
 
   const competitions = useQuery({ queryKey: keys.competitions, queryFn: api.competitions });
 
@@ -117,7 +129,13 @@ export default function App() {
    * scroll position each time anything in the shell changed.
    */
   function shell() {
-    if (route.page === "settings") return <SettingsPanel onBack={() => navigate(LANDING)} />;
+    if (route.page === "settings") {
+      return (
+        <div data-page="capped">
+          <SettingsPanel onBack={() => navigate(LANDING)} />
+        </div>
+      );
+    }
     if (competitions.isSuccess && usable.length === 0) return <NothingConnected competitions={competitions.data} />;
 
     if (route.page !== "competition") {
@@ -136,7 +154,13 @@ export default function App() {
     // report headed "Huge Euge RR FF", with FPL's figures in the strip.
     const Panel = PANELS[view];
     return (
-      <m.div key={`${active.key}:${league.league_id}:${view}`} variants={rise} initial="hidden" animate="shown">
+      <m.div
+        key={`${active.key}:${league.league_id}:${view}`}
+        data-page={WIDE.has(view) ? "wide" : "capped"}
+        variants={rise}
+        initial="hidden"
+        animate="shown"
+      >
         <Panel competition={active} league={league} />
       </m.div>
     );
@@ -146,79 +170,104 @@ export default function App() {
     // Fixed to the viewport, with each column scrolling on its own. A single
     // page scroll takes the rail with it, so the competition you are on and the
     // way back leave the screen exactly when a long table makes you want them.
-    <div className="grid h-full grid-cols-[13rem_minmax(0,1fr)] overflow-hidden">
-      <nav className="flex flex-col gap-6 overflow-y-auto border-r border-border bg-card px-3 py-4">
-        <Link
-          to={LANDING}
-          aria-label="Back to all leagues"
-          className="flex items-center gap-2.5 rounded-md px-1 py-1 text-left transition-colors hover:bg-muted"
-        >
-          <span className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground">
-            <Trophy className="size-3.5" strokeWidth={2.25} aria-hidden />
-          </span>
-          <span className="font-display text-[15px] font-semibold tracking-tight">The Front Office</span>
-        </Link>
-
-        {/* Competition, not sport: these are the NBA, the NFL and the Premier
-            League. "League" is taken by the group below, which holds the
-            fantasy leagues you actually play in. */}
-        <Group label="Competition">
-          {competitions.isLoading && <Skeleton className="mx-2 h-7" />}
-          {(competitions.data ?? []).map((s) => {
-            // Two platforms under one sport need telling apart; one does not.
-            const label = (sportCounts[s.sport] ?? 0) > 1 ? s.label : s.name;
-            return !s.blocked ? (
-              <RailLink key={s.key} to={`/${s.key}`} active={s.key === active?.key}>
-                {label}
-              </RailLink>
-            ) : (
-              <RailBlocked key={s.key} reason={s.blocked?.detail ?? ""}>
-                {label}
-                <span className="font-mono text-[10px] opacity-60">{s.configured ? "blocked" : "off"}</span>
-              </RailBlocked>
-            );
-          })}
-        </Group>
-
-        {/* Only once there is a league to address: a tab that cannot be linked
-            to yet would render as a control that does nothing. */}
-        {active && league && (
-          <Group label="View">
-            {VIEWS.filter((v) => offers(active, v)).map((v) => (
-              <RailLink key={v} to={href(active.key, league.league_id, v)} active={v === view}>
-                {VIEW_LABELS[v]}
-              </RailLink>
-            ))}
-          </Group>
-        )}
-
-        {active && (leagues.data?.length ?? 0) > 1 && (
-          <Group label="League">
-            {leagues.data!.map((l) => (
-              <RailLink
-                key={l.league_id}
-                to={href(active.key, l.league_id, view)}
-                active={l.league_id === league?.league_id}
-              >
-                <span className="truncate">{l.name}</span>
-              </RailLink>
-            ))}
-          </Group>
-        )}
-
-        <div className="mt-auto flex items-center gap-1">
-          <RailLink className="flex-1" to={SETTINGS} active={route.page === "settings"}>
-            <span className="flex items-center gap-2">
-              <Settings className="size-3.5" aria-hidden />
-              Settings
+    //
+    // On a phone the rail is a bar over the page instead, its links behind a
+    // menu button: beside the page it left a 390px screen 180px for content.
+    <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden md:grid-cols-[13rem_minmax(0,1fr)] md:grid-rows-1">
+      <nav className="relative z-30 flex flex-col border-b border-border bg-card px-3 py-2 md:gap-6 md:overflow-y-auto md:border-r md:border-b-0 md:py-4">
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            to={LANDING}
+            aria-label="Back to all leagues"
+            className="flex items-center gap-2.5 rounded-md px-1 py-1 text-left transition-colors hover:bg-muted"
+          >
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground">
+              <Trophy className="size-3.5" strokeWidth={2.25} aria-hidden />
             </span>
-          </RailLink>
+            <span className="font-display text-[15px] font-semibold tracking-tight">The Front Office</span>
+          </Link>
           <IconButton
-            label={mode === "dark" ? "Switch to light" : "Switch to dark"}
-            side="top"
-            icon={mode === "dark" ? <Sun /> : <Moon />}
-            onClick={() => setMode(mode === "dark" ? "light" : "dark")}
+            className="md:hidden"
+            label={menuOpen ? "Close menu" : "Menu"}
+            aria-expanded={menuOpen}
+            aria-controls="rail"
+            icon={menuOpen ? <X /> : <Menu />}
+            onClick={() => setMenuAt(menuOpen ? null : path)}
           />
+        </div>
+
+        {/* Always laid out from md up; below it, only while the menu is open,
+            dropped over the page rather than pushing it down. */}
+        <div
+          id="rail"
+          className={cn(
+            "flex-1 flex-col gap-6 md:flex",
+            menuOpen
+              ? "absolute inset-x-0 top-full flex max-h-[calc(100dvh-3.5rem)] overflow-y-auto border-b border-border bg-card px-3 pt-2 pb-4 shadow-lg md:static md:max-h-none md:overflow-visible md:border-b-0 md:p-0 md:shadow-none"
+              : "hidden",
+          )}
+        >
+          {/* Competition, not sport: these are the NBA, the NFL and the Premier
+              League. "League" is taken by the group below, which holds the
+              fantasy leagues you actually play in. */}
+          <Group label="Competition">
+            {competitions.isLoading && <Skeleton className="mx-2 h-7" />}
+            {(competitions.data ?? []).map((s) => {
+              // Two platforms under one sport need telling apart; one does not.
+              const label = (sportCounts[s.sport] ?? 0) > 1 ? s.label : s.name;
+              return !s.blocked ? (
+                <RailLink key={s.key} to={`/${s.key}`} active={s.key === active?.key}>
+                  {label}
+                </RailLink>
+              ) : (
+                <RailBlocked key={s.key} reason={s.blocked?.detail ?? ""}>
+                  {label}
+                  <span className="font-mono text-[10px] opacity-60">{s.configured ? "blocked" : "off"}</span>
+                </RailBlocked>
+              );
+            })}
+          </Group>
+
+          {/* Only once there is a league to address: a tab that cannot be linked
+              to yet would render as a control that does nothing. */}
+          {active && league && (
+            <Group label="View">
+              {VIEWS.filter((v) => offers(active, v)).map((v) => (
+                <RailLink key={v} to={href(active.key, league.league_id, v)} active={v === view}>
+                  {VIEW_LABELS[v]}
+                </RailLink>
+              ))}
+            </Group>
+          )}
+
+          {active && (leagues.data?.length ?? 0) > 1 && (
+            <Group label="League">
+              {leagues.data!.map((l) => (
+                <RailLink
+                  key={l.league_id}
+                  to={href(active.key, l.league_id, view)}
+                  active={l.league_id === league?.league_id}
+                >
+                  <span className="truncate">{l.name}</span>
+                </RailLink>
+              ))}
+            </Group>
+          )}
+
+          <div className="mt-auto flex items-center gap-1">
+            <RailLink className="flex-1" to={SETTINGS} active={route.page === "settings"}>
+              <span className="flex items-center gap-2">
+                <Settings className="size-3.5" aria-hidden />
+                Settings
+              </span>
+            </RailLink>
+            <IconButton
+              label={mode === "dark" ? "Switch to light" : "Switch to dark"}
+              side="top"
+              icon={mode === "dark" ? <Sun /> : <Moon />}
+              onClick={() => setMode(mode === "dark" ? "light" : "dark")}
+            />
+          </div>
         </div>
       </nav>
 

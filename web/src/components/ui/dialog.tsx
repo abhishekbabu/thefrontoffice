@@ -45,7 +45,8 @@ export function SlideOver({
           initial="hidden"
           animate="shown"
           exit="gone"
-          className="fixed inset-0 z-50 flex justify-end bg-foreground/20"
+          // max-w-none: mounted beside a page, where the page's width cap would otherwise reach it.
+          className="fixed inset-0 z-50 flex max-w-none justify-end bg-foreground/20"
           onClick={onClose}
           role="presentation"
         >

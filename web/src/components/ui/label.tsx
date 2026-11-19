@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
  * keeps it from competing with the data beside it. One size and one tracking
  * everywhere: written inline, it drifted to four of each.
  */
-export const LABEL = "font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground";
+export const LABEL = "font-mono text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground";
 
 type Tag = "span" | "div" | "p" | "h3" | "summary";
 

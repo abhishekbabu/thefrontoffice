@@ -105,6 +105,18 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* The readable width of a page. Left to the viewport, a wide screen pulled a
+   week's result 1200px away from the opponent it was against. Capped on each
+   piece of a page except a band marked `data-bleed` (the header, the stat
+   strip), which spans the column so its rule reaches the edge — its contents
+   take the same cap, so a title and its controls line up with the body below.
+   `:where` keeps this at zero specificity: any utility on the element wins,
+   which is how a full-screen overlay mounted beside the page keeps its width.
+   A view whose table needs the room opts out in the shell (`WIDE` in App.tsx). */
+:root { --page-max: 75rem; }
+[data-page="wide"] { --page-max: none; }
+:where([data-page]) > :where(:not([data-bleed])) { max-width: var(--page-max); }
+
 /* Digits line up in columns nearly everywhere in this app, so tabular figures
    are the default for the mono face rather than something each table opts into. */
 .font-mono, code, kbd, samp, pre { font-variant-numeric: tabular-nums; }

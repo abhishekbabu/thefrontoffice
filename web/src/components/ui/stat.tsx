@@ -16,25 +16,29 @@ import { Label } from "@/components/ui/label";
 export function StatStrip({ stats }: { stats: Stat[] }) {
   if (!stats.length) return null;
   return (
-    <div className="flex flex-wrap border-b border-border">
-      {stats.map((stat) => (
-        <div
-          key={stat.label}
-          // Not on the last: a divider with nothing after it reads as an empty
-          // cell stretching to the edge.
-          className="min-w-[7rem] border-border px-5 py-2.5 [&:not(:last-child)]:border-r"
-        >
-          <Label>{stat.label}</Label>
+    // A band under the header, so it spans the column like the header does,
+    // its rule reaching the edge while the figures keep to the page's width.
+    <div data-bleed className="border-b border-border">
+      <div className="flex max-w-(--page-max) flex-wrap">
+        {stats.map((stat) => (
           <div
-            className={cn(
-              "mt-0.5 font-display text-[19px] font-semibold tracking-tight tabular-nums",
-              toneText(stat.tone),
-            )}
+            key={stat.label}
+            // Not on the last: a divider with nothing after it reads as an empty
+            // cell stretching to the edge.
+            className="min-w-[7rem] border-border px-5 py-2.5 [&:not(:last-child)]:border-r"
           >
-            {stat.value}
+            <Label>{stat.label}</Label>
+            <div
+              className={cn(
+                "mt-0.5 font-display text-[19px] font-semibold tracking-tight tabular-nums",
+                toneText(stat.tone),
+              )}
+            >
+              {stat.value}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
