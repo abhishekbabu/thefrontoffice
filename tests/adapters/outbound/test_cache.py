@@ -7,6 +7,7 @@ answers among it — is not lost to the move.
 """
 
 import json
+import logging
 import sqlite3
 import threading
 import zlib
@@ -16,10 +17,14 @@ from pathlib import Path
 
 import pytest
 from support.cache import stored_text
+from support.logs import capture_logs
 
 from thefrontoffice.adapters.outbound.cache import DATABASE, DiskCache, _legacy_filename
 
 HOUR = timedelta(hours=1)
+THREADS = 32
+ATTEMPTS = 50
+"""A race lost a few times in a hundred on macOS and nearly always on Windows needs a few goes to show."""
 T0 = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
 
 
@@ -175,6 +180,21 @@ def test_a_file_that_is_not_a_database_costs_persistence_not_the_run(tmp_path: P
     c.clear()
 
 
+def test_a_database_damaged_after_it_was_prepared_costs_persistence_not_the_run(tmp_path: Path) -> None:
+    directory = tmp_path / "cache"
+    DiskCache(directory).set("k", "v", now=T0)
+    for path in directory.iterdir():
+        path.unlink()
+    (directory / DATABASE).write_text("not a database", encoding="utf-8")
+
+    with capture_logs("thefrontoffice.adapters.outbound.cache", logging.WARNING) as logs:
+        c = DiskCache(directory)
+        c.set("k2", "v2", now=T0)
+
+    assert "Could not open cache database" in logs.text
+    assert c.get("k2", HOUR, now=T0) == "v2"
+
+
 def test_a_database_another_process_has_dropped_from_is_a_miss(tmp_path: Path) -> None:
     directory = tmp_path / "cache"
     c = DiskCache(directory)
@@ -197,22 +217,80 @@ def test_unwritable_path_does_not_raise(tmp_path: Path) -> None:
 
 
 def test_writes_from_many_threads_all_land(tmp_path: Path) -> None:
-    """The web server reads and writes from several threads at once."""
-    directory = tmp_path / "cache"
+    """The web server reads and writes from several threads at once, each opening its first connection together.
+
+    Every thread's first connection used to switch the new database to WAL at
+    once, which SQLite refuses rather than queues: the losers kept their value
+    in memory only, and on Windows that was nearly all of them.
+    """
+    with capture_logs("thefrontoffice.adapters.outbound.cache", logging.WARNING) as logs:
+        landed = [_store_together(tmp_path / f"cache{attempt}") for attempt in range(ATTEMPTS)]
+
+    assert logs.text == ""
+    assert landed == [list(range(THREADS))] * ATTEMPTS
+
+
+def _store_together(directory: Path) -> list[object]:
+    """`THREADS` threads each storing one key in a new cache at the same instant; what a fresh one reads back."""
     c = DiskCache(directory)
+    start = threading.Barrier(THREADS)
 
     def _store(n: int) -> None:
+        start.wait()
         c.set(f"k{n}", n, now=T0)
-        assert c.get(f"k{n}", HOUR, now=T0) == n
 
-    threads = [threading.Thread(target=_store, args=(n,)) for n in range(16)]
+    threads = [threading.Thread(target=_store, args=(n,)) for n in range(THREADS)]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
-
     fresh = DiskCache(directory)
-    assert [fresh.get(f"k{n}", HOUR, now=T0) for n in range(16)] == list(range(16))
+    return [fresh.get(f"k{n}", HOUR, now=T0) for n in range(THREADS)]
+
+
+def test_a_write_that_cannot_persist_says_so(tmp_path: Path) -> None:
+    """Kept in memory for the run, but never silently: a dropped write is a warning naming the key."""
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+
+    with capture_logs("thefrontoffice.adapters.outbound.cache", logging.WARNING) as logs:
+        DiskCache(blocker / "sub").set("k", "v", now=T0)
+
+    assert "Could not open cache database" in logs.text
+
+
+def test_a_database_another_process_holds_is_waited_for_not_dropped(tmp_path: Path) -> None:
+    """Another process preparing or writing the same new database is waited on, not taken for an unwritable one."""
+    directory = tmp_path / "cache"
+    directory.mkdir()
+    holder = sqlite3.connect(directory / DATABASE, isolation_level=None, check_same_thread=False)
+    holder.execute("BEGIN EXCLUSIVE")
+    release = threading.Timer(0.2, holder.close)
+    release.start()
+
+    with capture_logs("thefrontoffice.adapters.outbound.cache", logging.WARNING) as logs:
+        DiskCache(directory).set("k", "v", now=T0)
+    release.join()
+
+    assert logs.text == ""
+    assert DiskCache(directory).get("k", HOUR, now=T0) == "v"
+
+
+def test_a_database_deleted_under_a_running_cache_is_made_again(tmp_path: Path) -> None:
+    """`just clean-data` while the server runs: the next connection recreates the table rather than failing."""
+    directory = tmp_path / "cache"
+    DiskCache(directory).set("k", "v", now=T0)
+    for path in directory.iterdir():
+        path.unlink()
+
+    def _store() -> None:
+        DiskCache(directory).set("k2", "v2", now=T0)
+
+    thread = threading.Thread(target=_store)
+    thread.start()
+    thread.join()
+
+    assert DiskCache(directory).get("k2", HOUR, now=T0) == "v2"
 
 
 def test_clear_empties_the_cache(tmp_path: Path) -> None:

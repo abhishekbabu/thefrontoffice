@@ -42,6 +42,7 @@ import sqlite3
 import threading
 import zlib
 from collections.abc import Callable
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -110,15 +111,42 @@ def _instant(text: object) -> datetime | None:
     return stored_at if stored_at.tzinfo is not None else None
 
 
-def _open(path: Path) -> sqlite3.Connection:
-    """A connection to the database at `path` in WAL mode, creating its table on first use.
+_prepared: set[Path] = set()
+_preparing = threading.Lock()
 
-    Opened with `check_same_thread=False` though only one thread uses it, so that
+
+def _prepare(path: Path) -> None:
+    """Put the database at `path` in WAL mode with its table, once per process.
+
+    Switching the journal mode takes a lock SQLite does not wait for through
+    its busy handler, so connections opened at once — a burst of threads each
+    making its first — fail with "database is locked" rather than queue; on
+    Windows, whose file locks are mandatory, nearly every time. So one thread
+    does it, under a lock, before any connection is handed out. WAL is a
+    property of the file, so it outlives the connection that set it; a failure
+    is not remembered, so the next connection tries again.
+    """
+    with _preparing:
+        if path in _prepared:
+            return
+        with closing(sqlite3.connect(path, timeout=BUSY_TIMEOUT.total_seconds(), isolation_level=None)) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute(_SCHEMA)
+        _prepared.add(path)
+
+
+def _open(path: Path) -> sqlite3.Connection:
+    """A connection to the database at `path`, prepared first if this process has not yet.
+
+    The table is asked for again on every connection — a no-op that takes no
+    lock once it exists — so a database deleted under a running server is
+    recreated rather than refusing every write. Opened with
+    `check_same_thread=False` though only one thread uses it, so that
     `_Connection` may close it from whichever thread collects it.
     """
+    _prepare(path)
     db = sqlite3.connect(path, timeout=BUSY_TIMEOUT.total_seconds(), isolation_level=None, check_same_thread=False)
     try:
-        db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=NORMAL")
         db.execute(_SCHEMA)
     except sqlite3.Error:
