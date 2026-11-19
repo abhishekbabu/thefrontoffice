@@ -5,7 +5,7 @@ package touches the SDK's objects — which get their attributes by `setattr` at
 runtime and promise none of them.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
 
@@ -43,6 +43,10 @@ class Timeframe(StrEnum):
     LAST_MONTH = "lastmonth"
 
 
+POINTS_SCORING = frozenset({"headpoint", "point"})
+"""Yahoo's scoring types for a league scored in fantasy points: head-to-head, or over the season."""
+
+
 @dataclass(frozen=True)
 class MatchupSide:
     """One team's side of a head-to-head week."""
@@ -50,10 +54,13 @@ class MatchupSide:
     team_key: str
     name: str
     points: str
-    """Yahoo's score for the side, as it prints it: categories won, in a category league."""
+    """Yahoo's score for the side, as it prints it: categories won in a category league, fantasy points in a points one."""
 
     stats: dict[str, str]
     """Yahoo stat id -> the side's value, as Yahoo prints it."""
+
+    projected: str = ""
+    """Yahoo's projected final score, as it prints it; empty where it gives none, as in a category league."""
 
 
 @dataclass(frozen=True)
@@ -71,6 +78,15 @@ class YahooLeague:
     start_week: int | None = None
     end_week: int | None = None
     """The season's first and last matchup weeks, playoffs included; None where Yahoo sent neither."""
+
+    scoring_type: str = ""
+    """How Yahoo scores the league: 'head' or 'headone' by categories, 'headpoint' by fantasy points,
+    'roto' by season-long category ranks."""
+
+    @property
+    def by_points(self) -> bool:
+        """Whether a week is won on fantasy points, summed from the league's weights, rather than on categories."""
+        return self.scoring_type in POINTS_SCORING
 
     @property
     def first_week(self) -> int:
@@ -153,6 +169,30 @@ class StatCategory:
 
 
 @dataclass(frozen=True)
+class LeagueSettings:
+    """What a league's settings say about how it is scored, how often a team may add, and how its season ends.
+
+    Whether a week is won on points or categories is the league's `scoring_type`,
+    read once from the league list (`YahooLeague.by_points`), not from here.
+    """
+
+    categories: list[StatCategory] = field(default_factory=list)
+    """The categories it scores, in the order its settings list them."""
+
+    weights: dict[str, float] = field(default_factory=dict)
+    """Yahoo stat id -> fantasy points per unit, in a points league; empty in a category one."""
+
+    max_weekly_adds: int | None = None
+    """Adds a team may make in a week; None where the settings name no limit."""
+
+    playoff_start_week: int = 0
+    """Zero for a league with no playoffs."""
+
+    playoff_teams: int = 0
+    multiweek_final: bool = False
+
+
+@dataclass(frozen=True)
 class Pairing:
     """One week's head-to-head as the scoreboard has it: its dates, and each side's categories."""
 
@@ -177,25 +217,6 @@ class Pairing:
     @property
     def settled(self) -> bool:
         return self.status == "postevent"
-
-
-@dataclass(frozen=True)
-class YahooRules:
-    """What a league's settings say about how its season is scored and how it ends."""
-
-    scoring_type: str = ""
-    """'head' or 'headone' for categories, 'headpoint' for points, 'roto'."""
-
-    playoff_start_week: int = 0
-    """Zero for a league with no playoffs."""
-
-    playoff_teams: int = 0
-    multiweek_final: bool = False
-
-    @property
-    def points(self) -> bool:
-        """Whether a matchup is won on fantasy points rather than on categories."""
-        return self.scoring_type == "headpoint"
 
 
 @dataclass(frozen=True)

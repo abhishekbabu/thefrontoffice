@@ -158,7 +158,7 @@ def test_the_reader_reads_everything_it_needs_from_a_sweep(tmp_path: Path) -> No
     assert yahoo.pairing("t1", 3) is not None
     assert [(t.name, t.standing.rank if t.standing else 0) for t in yahoo.standings()] == [("Mine", 2), ("Theirs", 1)]
     assert sorted(yahoo.season("t1", [1, 2, 3])) == [1, 2, 3]
-    assert yahoo.stat_categories() == []
+    assert yahoo.settings().categories == []
     assert [p.name for p in yahoo.fetch_available(GAME.available)] == ["Free Agent", "Waiver Wire"]
     assert {name: [p.name for p in found] for name, found in yahoo.fetch_top_by_stat(GAME.leaders, 5).items()} == {
         "PTS": ["Shot Blocker"],

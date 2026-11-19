@@ -27,19 +27,22 @@ class PlayerContextBuilder:
     reading two formats and inferring which is which.
     """
 
-    def __init__(self, nba_client: FormSource):
+    def __init__(self, nba_client: FormSource, weights: Mapping[str, float] | None = None):
+        """`weights` are a points league's, by Yahoo stat id: each line then closes on its fantasy points."""
         self.nba = nba_client
+        self.weights = weights
 
-    @staticmethod
-    def _format_stats(stats: PlayerStats) -> str:
+    def _format_stats(self, stats: PlayerStats) -> str:
         """Each recent window that can be filled, as one nine-category line.
 
         A player short of fifteen games also carries every game he has, tagged
         with its count — otherwise twelve games in reads as only his last ten.
         """
-        parts = [f"{tag}: {prompt.categories(stats[window])}" for window, tag in WINDOW_TAGS if window in stats]
+        parts = [
+            f"{tag}: {prompt.scored(stats[window], self.weights)}" for window, tag in WINDOW_TAGS if window in stats
+        ]
         if (recent := stats.get("recent")) and recent.games not in WINDOWS:
-            parts.append(f"L{recent.games}: {prompt.categories(recent.line)}")
+            parts.append(f"L{recent.games}: {prompt.scored(recent.line, self.weights)}")
         return " | ".join(parts) if parts else "No recent stats"
 
     def build_context_for_players(
@@ -114,7 +117,7 @@ class PlayerContextBuilder:
             if stats_dict:
                 line += f": {self._format_stats(stats_dict)}"
             if projections is not None and (projected := projections.lookup(p.name)):
-                line += f" | PROJ {projected.games}G {prompt.categories(projected.line)}"
+                line += f" | PROJ {projected.games}G {prompt.scored(projected.line, self.weights)}"
             lines[p.name] = line + "\n"
 
         return lines

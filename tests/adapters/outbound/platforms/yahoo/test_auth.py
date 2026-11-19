@@ -189,7 +189,7 @@ def test_leagues_are_looked_up_by_game_code_and_season(tmp_path: Path) -> None:
 def test_a_league_carries_its_kind_and_the_week_it_is_in(tmp_path: Path) -> None:
     extra = (
         "<league_type>private</league_type><current_week>7</current_week>"
-        "<start_week>1</start_week><end_week>21</end_week>"
+        "<start_week>1</start_week><end_week>21</end_week><scoring_type>headpoint</scoring_type>"
     )
     context = FakeContext(_games(f"<games><game><leagues>{_league('466.l.1', 'One', extra)}</leagues></game></games>"))
 
@@ -197,6 +197,7 @@ def test_a_league_carries_its_kind_and_the_week_it_is_in(tmp_path: Path) -> None
 
     assert (league.league_type, league.current_week) == ("private", 7)
     assert (league.start_week, league.end_week) == (1, 21)
+    assert league.by_points
 
 
 def test_a_league_between_seasons_has_no_current_week(tmp_path: Path) -> None:

@@ -1,9 +1,13 @@
-"""A category league's week, as the matchup page reads it: each category, each side, and the score.
+"""A basketball week, as the matchup page reads it: each side, and the score.
 
-Yahoo's scoreboard carries each side's totals by stat id, as it prints them;
-these read them into the shared shapes. Who leads a category is worked out
-here rather than taken from Yahoo's own winners, so a week still being
-played reads the same way as one that has finished.
+A category league is scored category by category. Yahoo's scoreboard carries
+each side's totals by stat id, as it prints them; these read them into the
+shared shapes. Who leads a category is worked out here rather than taken from
+Yahoo's own winners, so a week still being played reads the same way as one
+that has finished.
+
+A points league is scored in fantasy points, which Yahoo totals for each side
+and projects to the week's end; the categories behind them win nothing.
 """
 
 from collections.abc import Mapping, Sequence
@@ -12,7 +16,7 @@ from typing import Literal
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, ruled_out
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooPlayer
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, StatCategory, YahooPlayer
 from thefrontoffice.domain.models import CategoryLine, Match, PlayerRef, Side, Spot, Stat, Tone
 
 BENCH = "BN"
@@ -70,6 +74,45 @@ def headline(score: tuple[int, int, int]) -> Stat:
 def written(score: tuple[int, int, int]) -> str:
     """'5-3-1': won, lost, level."""
     return "-".join(str(n) for n in score)
+
+
+Stage = Literal["played", "playing", "to come"]
+"""Where a week sits against the one being played."""
+
+
+def stage(week: int, current: int) -> Stage:
+    return "played" if week < current else "playing" if week == current else "to come"
+
+
+def points(mine: MatchupSide, theirs: MatchupSide, when: Stage) -> list[Stat]:
+    """A points week's score in fantasy points, as Yahoo totals them, and its projected final while games are left.
+
+    A week to come has no score, only a projection, which each side's card
+    carries already. Toned by who is ahead, since the week is won on the total.
+    """
+    stats: list[Stat] = []
+    if when != "to come" and (score := _versus(mine.points, theirs.points)):
+        stats.append(score.model_copy(update={"label": "Final" if when == "played" else "Live"}))
+    if when == "playing" and (projected := _versus(mine.projected, theirs.projected)):
+        stats.append(projected.model_copy(update={"label": "Projected"}))
+    return stats
+
+
+def _versus(mine: str, theirs: str) -> Stat | None:
+    """Two totals side by side, toned for yours; None where either is not a number."""
+    try:
+        margin = float(mine) - float(theirs)
+    except ValueError:
+        return None
+    tone: Tone = "good" if margin > 0 else "warning" if margin < 0 else "neutral"
+    return Stat(label="", value=f"{mine} – {theirs}", tone=tone)
+
+
+def total(side: MatchupSide, when: Stage) -> str:
+    """One side's fantasy points as its card heads them: scored, then Yahoo's projection while games are left."""
+    scored = f"{side.points} pts" if side.points and when != "to come" else ""
+    projected = f"{side.projected} proj" if side.projected and when != "played" else ""
+    return " · ".join(part for part in (scored, projected) if part)
 
 
 def side(name: str, detail: str, points: str, roster: Sequence[YahooPlayer] | None) -> Side:

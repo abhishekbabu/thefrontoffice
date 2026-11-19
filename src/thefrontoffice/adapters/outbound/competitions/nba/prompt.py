@@ -4,8 +4,9 @@ The provider gathers; this renders. Nothing here fetches.
 """
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 
-from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
+from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, COUNTED, fantasy_points
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup
 
 OPPONENT_KEY_PLAYERS = 12
@@ -16,11 +17,7 @@ You are an elite NBA Fantasy General Manager and data analyst.
 Your goal is to provide a concise, high-impact "Scout Report" for a fantasy basketball league.
 
 LEAGUE RULES:
-- This is a Category League ({categories}).
-- Victory is determined by winning the majority of categories (e.g., 5-4 in a 9-cat league).
-- STRATEGY: Prioritize categories that are "CLOSE" (either winning or losing by a small margin).
-- DO NOT chase categories that are lost by a landslide.
-- Focus on securing a 5-4 or 6-3 win; the exact score doesn't matter as much as the win.
+{league_rules}
 
 CURRENT ROSTER (with Real-World Stats):
 - NOTE: Players marked with "[IN IL SPOT]" are currently in Injured Reserve slots and DO NOT take up an active roster spot. You can recommend dropping them ONLY if the replacement player is also injured and can be placed in that IL spot.
@@ -33,24 +30,23 @@ MATCHUP CONTEXT:
 
 {trans_context}
 
-TOP FREE AGENTS BY CATEGORY (Last 7 Days):
+TOP FREE AGENTS {free_agent_basis}:
 {fas_str}
 
 YOUR TASK:
-1. Analyze the matchup: Identify "Close" categories where a small boost could flip the category in our favor or secure a slim lead. Use specific category names (e.g., "trailing in BLK by 5").
+1. {analysis}
 2. Compare the underperformers on the current roster with the high-upside players on the waiver wire using the provided stats.
 3. {recommendation_instructions}
 4. For each recommendation, provide:
-    - **Reasoning**: Why this player helps specifically in the "Close" categories identified. Factor in remaining games — players with MORE games left in the matchup period offer more stat production potential.
+    - **Reasoning**: {reasoning} Factor in remaining games — players with MORE games left in the matchup period offer more stat production potential.
     - **Drop Target**: Suggest a specific player from the current roster to drop, with a clear justification (e.g., redundant stats, poor recent form, fewer games remaining, or non-active status).
 5. Use a professional, tactical tone. Avoid flowery prose.
 
 Return your analysis in the required structured form. Guidance for the fields:
-- situation: name specific categories and margins (e.g. "trailing in BLK by 5"), and say
-  which are worth contesting. Ignore categories lost by a landslide.
-- focus: only the categories genuinely in play, e.g. ['BLK', 'FG%'].
+- situation: {situation}
+- focus: {focus}
 - moves: exactly three, most valuable first. Put the games the player has left in `metric`,
-  from the schedule data above (e.g. "4 games left, 2.1 blk"). Use action ADD when adds remain,
+  from the schedule data above (e.g. "{metric_example}"). Use action ADD when adds remain,
   paired with the player it `replaces`; MONITOR when they do not, with `replaces` left empty.
 - Keep every field tactical and specific. No filler, no restating the inputs.
 """
@@ -74,14 +70,14 @@ NBA_TRADE_PROMPT = """
 ## 4. Analysis Instructions
 Act as a ruthless specific NBA Fantasy General Manager. Analyze this trade for my team.
 compare the two sides based on:
-1. **Statistical Impact**: Net change in categories (L15/L30 days).
+1. **Statistical Impact**: {impact}
 2. **Schedule Advantage**: Who has more games in the playoff weeks?
 3. **Shutdown Risk**: Are any of the players receiving at risk of being shut down by tanking teams? Warning if so.
 4. **Roster Awareness**: DO NOT recommend acquiring players that are already on my Current Roster.
 5. **Verdict**: Should I accept, reject, or counter?
 
 Return the evaluation in the required structured form. Field guidance:
-- gains / losses: short labels in this league's own currency (categories here, e.g. ['REB', 'BLK']).
+- gains / losses: short labels in this league's own currency ({currency}).
 - impact: the net change, referencing recent form.
 - schedule: how the remaining games compare, especially through the fantasy playoff weeks.
 - risk: availability risk on the incoming side — shutdowns on tanking teams, injury designations.
@@ -91,23 +87,132 @@ Return the evaluation in the required structured form. Field guidance:
 NO_MATCHUP = "No head-to-head matchup this week."
 
 
+@dataclass(frozen=True)
+class Scoring:
+    """How a league is won, in each place the prompts have to say it."""
+
+    rules: str
+    free_agent_basis: str
+    analysis: str
+    reasoning: str
+    situation: str
+    focus: str
+    metric_example: str
+    impact: str
+    currency: str
+
+
+CATEGORY_LEAGUE = Scoring(
+    rules=(
+        f"- This is a Category League ({', '.join(c.label for c in CATEGORIES)}).\n"
+        "- Victory is determined by winning the majority of categories (e.g., 5-4 in a 9-cat league).\n"
+        '- STRATEGY: Prioritize categories that are "CLOSE" (either winning or losing by a small margin).\n'
+        "- DO NOT chase categories that are lost by a landslide.\n"
+        "- Focus on securing a 5-4 or 6-3 win; the exact score doesn't matter as much as the win."
+    ),
+    free_agent_basis="BY CATEGORY (Last 7 Days)",
+    analysis=(
+        'Analyze the matchup: Identify "Close" categories where a small boost could flip the category '
+        'in our favor or secure a slim lead. Use specific category names (e.g., "trailing in BLK by 5").'
+    ),
+    reasoning='Why this player helps specifically in the "Close" categories identified.',
+    situation=(
+        'name specific categories and margins (e.g. "trailing in BLK by 5"), and say\n'
+        "  which are worth contesting. Ignore categories lost by a landslide."
+    ),
+    focus="only the categories genuinely in play, e.g. ['BLK', 'FG%'].",
+    metric_example="4 games left, 2.1 blk",
+    impact="Net change in categories (L15/L30 days).",
+    currency="categories here, e.g. ['REB', 'BLK']",
+)
+
+
+def points_league(weights: Mapping[str, float]) -> Scoring:
+    """How a points league is won, under its own weights."""
+    return Scoring(
+        rules=(
+            f"- This is a Points League: every stat scores its weight ({weighting(weights)}).\n"
+            "- Victory is determined by the higher fantasy-point total for the week. "
+            "Categories win nothing by themselves.\n"
+            '- A line ending "= N fpts" gives fantasy points under these weights: per game in a recent '
+            "window, the period's total after PROJ.\n"
+            "- STRATEGY: maximize fantasy points over the games left — games times points per game. "
+            "A deficit the projection cannot close needs more games, not a specialist."
+        ),
+        free_agent_basis="BY FANTASY POINTS PER GAME (Last 15 Games, or every game while fewer)",
+        analysis=(
+            "Analyze the matchup: the fantasy-point margin now and as projected, and how many points "
+            'the games left could still swing (e.g., "trailing by 226, projected to lose by 211").'
+        ),
+        reasoning="How many fantasy points this player adds over the games left, against the player dropped.",
+        situation=(
+            'the fantasy-point margin, scored and projected (e.g. "trailing by 226, projected\n'
+            '  to lose by 211"), and whether the games left can close it.'
+        ),
+        focus="what wins the points, e.g. ['games left', 'BLK at 3 pts'].",
+        metric_example="4 games left, 38.5 fpts/g",
+        impact="Net change in fantasy points per game (L15/L30 days).",
+        currency="fantasy points per game here, e.g. ['+6.5 fpts/g']",
+    )
+
+
+def scoring(weights: Mapping[str, float] | None) -> Scoring:
+    """A points league's wording where the league has weights; a category league's otherwise."""
+    return points_league(weights) if weights else CATEGORY_LEAGUE
+
+
+def _stat_label(stat: str) -> str:
+    """A Yahoo stat id by the label a line tags it with, where this app counts it."""
+    return COUNTED[stat].label if stat in COUNTED else f"stat {stat}"
+
+
+def weighting(weights: Mapping[str, float]) -> str:
+    """'PTS 1, REB 1.2, TO -1': each weighted stat and what one of it scores."""
+    return ", ".join(f"{_stat_label(stat)} {weight:g}" for stat, weight in weights.items())
+
+
 def categories(line: Mapping[str, float]) -> str:
     """A nine-category line in prompt shape: '25.3p 10.1r ... FG48.2% FT80.0% 2.1to'."""
     return " ".join(c.tagged(line[c.label]) for c in CATEGORIES if c.label in line)
 
 
-def matchup(week: Matchup | None) -> str:
-    """The head-to-head as the model reads it: the score, each category side by side, their threats."""
+def scored(line: Mapping[str, float], weights: Mapping[str, float] | None) -> str:
+    """A line in prompt shape, closed by its fantasy points where the league scores them."""
+    points = fantasy_points(line, weights) if weights else None
+    return categories(line) + (f" = {points:.1f} fpts" if points is not None else "")
+
+
+def matchup(week: Matchup | None, weights: Mapping[str, float] | None = None) -> str:
+    """The head-to-head as the model reads it: the score, each stat side by side, their threats.
+
+    In a points league the score is fantasy points, beside Yahoo's projected
+    final, and the stats listed are the ones the league weights, each with its weight.
+    """
     if week is None:
         return NO_MATCHUP
     mine, theirs = week.mine.stats, week.opponent.stats
+    threats = ", ".join(f"{p.name} ({p.position})" for p in week.opponent_roster[:OPPONENT_KEY_PLAYERS])
+    opponent = f"\nCURRENT MATCHUP: Playing against {week.opponent.name}"
+    if weights:
+        breakdown = "".join(
+            f"\n- {_stat_label(stat)}: {mine.get(stat, 'N/A')} vs {theirs.get(stat, 'N/A')} (x{weight:g})"
+            for stat, weight in weights.items()
+        )
+        projected = (
+            f"\nPROJECTED FINAL (Yahoo): You {week.mine.projected} - {week.opponent.projected} Opponent"
+            if week.mine.projected and week.opponent.projected
+            else ""
+        )
+        return (
+            f"{opponent}\nMATCHUP SCORE (fantasy points): You {week.mine.points} - {week.opponent.points} Opponent"
+            f"{projected}\nSTAT TOTALS BEHIND THE POINTS (Us vs Opponent, weight):{breakdown}"
+            f"\nOPPONENT KEY PLAYERS: {threats}"
+        )
     breakdown = "".join(
         f"\n- {c.label}: {mine.get(c.yahoo_stat, 'N/A')} vs {theirs.get(c.yahoo_stat, 'N/A')}" for c in CATEGORIES
     )
-    threats = ", ".join(f"{p.name} ({p.position})" for p in week.opponent_roster[:OPPONENT_KEY_PLAYERS])
     return (
-        f"\nCURRENT MATCHUP: Playing against {week.opponent.name}"
-        f"\nMATCHUP SCORE: You {week.mine.points} - {week.opponent.points} Opponent"
+        f"{opponent}\nMATCHUP SCORE: You {week.mine.points} - {week.opponent.points} Opponent"
         f"\nCATEGORY BREAKDOWN (Us vs Opponent):{breakdown}"
         f"\nOPPONENT KEY PLAYERS: {threats}"
     )
@@ -137,7 +242,7 @@ def schedule(week: Matchup | None, remaining_games: Mapping[str, int], projected
     """Whether projections stand behind the lines, then each club's games left in the period."""
     note = (
         "PROJECTIONS: lines marked PROJ carry projected totals for this matchup period — "
-        "games, then the nine categories. Prefer them to recent form when the two disagree, "
+        "games, then the categories. Prefer them to recent form when the two disagree, "
         "since they already account for the schedule and expected minutes.\n"
         "- The bracketed [NG left] is how many games the player's TEAM has left. The PROJ "
         "game count is how many that PLAYER is expected to play. A player whose PROJ count "
@@ -164,22 +269,37 @@ def scout(
     schedule_context: str,
     trans_context: str,
     adds_left: int,
+    weights: Mapping[str, float] | None = None,
 ) -> str:
+    """The scout's prompt, worded for how the league is won: `weights` for a points league, None for categories."""
+    league = scoring(weights)
     return NBA_SCOUT_PROMPT.format(
-        categories=", ".join(c.label for c in CATEGORIES),
+        league_rules=league.rules,
         roster_str=roster,
-        matchup_context=matchup(week),
+        matchup_context=matchup(week, weights),
+        free_agent_basis=league.free_agent_basis,
         fas_str=free_agents,
         schedule_context=schedule_context,
         trans_context=trans_context,
+        analysis=league.analysis,
         recommendation_instructions=recommendation(adds_left),
+        reasoning=league.reasoning,
+        situation=league.situation,
+        focus=league.focus,
+        metric_example=league.metric_example,
     )
 
 
-def trade(*, giving: str, receiving: str, week: Matchup | None, roster: str) -> str:
+def trade(
+    *, giving: str, receiving: str, week: Matchup | None, roster: str, weights: Mapping[str, float] | None = None
+) -> str:
+    """The trade prompt, in the league's currency: `weights` for a points league, None for categories."""
+    league = scoring(weights)
     return NBA_TRADE_PROMPT.format(
         giving_str=giving,
         receiving_str=receiving,
-        matchup_context=matchup(week),
+        matchup_context=matchup(week, weights),
         roster_str=roster,
+        impact=league.impact,
+        currency=league.currency,
     )

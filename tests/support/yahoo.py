@@ -99,17 +99,21 @@ def rostered_xml(name: str, slot: str, status: str = "", note: str = "") -> str:
     )
 
 
-def _side_xml(key: str, name: str, points: str, blocks: str) -> str:
+def _side_xml(key: str, name: str, points: str, blocks: str, projected: str = "") -> str:
+    forecast = f"<team_projected_points><total>{projected}</total></team_projected_points>" if projected else ""
     return (
         f"<team><team_key>{key}</team_key><name>{name}</name><team_points><total>{points}</total></team_points>"
-        f"<team_stats><stats><stat><stat_id>18</stat_id><value>{blocks}</value></stat></stats></team_stats></team>"
+        f"{forecast}<team_stats><stats><stat><stat_id>18</stat_id><value>{blocks}</value></stat></stats></team_stats></team>"
     )
 
 
-def scoreboard_xml(start: str = "2026-02-09", end: str = "2026-02-15") -> str:
+def scoreboard_xml(start: str = "2026-02-09", end: str = "2026-02-15", projected: tuple[str, str] = ("", "")) -> str:
+    mine, theirs = (
+        _side_xml("t1", "Mine", "50", "12", projected[0]),
+        _side_xml("t2", "Theirs", "60", "17", projected[1]),
+    )
     matchup = (
-        f"<matchup><week_start>{start}</week_start><week_end>{end}</week_end>"
-        f"<teams>{_side_xml('t1', 'Mine', '50', '12')}{_side_xml('t2', 'Theirs', '60', '17')}</teams></matchup>"
+        f"<matchup><week_start>{start}</week_start><week_end>{end}</week_end><teams>{mine}{theirs}</teams></matchup>"
     )
     return (
         f"<fantasy_content><league><scoreboard><matchups>{matchup}</matchups></scoreboard></league></fantasy_content>"

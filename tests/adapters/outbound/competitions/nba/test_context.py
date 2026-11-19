@@ -146,3 +146,21 @@ def test_projections_reach_the_joined_lines_too() -> None:
         [make_player("A B")], START, END, projections=ProjectionIndex(rows, START, END)
     )
     assert "25.0" in out
+
+
+def test_in_a_points_league_each_window_and_projection_closes_on_its_fantasy_points() -> None:
+    """Points a game in a recent window, the period's total after PROJ: two games of 25 at one a point."""
+    rows = [
+        GameProjection(player_id="ab", name="A B", team="LAL", opponent="BOS", date=day, stats={"pts": 25})
+        for day in ("2026-02-10", "2026-02-12")
+    ]
+    form = {"A B": PlayerStats(last_5=_stats())}
+    builder = PlayerContextBuilder(FakeNBA(stats=form), weights={"12": 1.0})
+
+    out = builder.build_context_for_players(
+        [make_player("A B")], START, END, projections=ProjectionIndex(rows, START, END)
+    )
+
+    assert "= 20.0 fpts" in out  # the window's twenty a game
+    assert "= 50.0 fpts" in out  # the period's two projected games
+    assert "fpts" not in _builder(stats=form).build_context_for_players([make_player("A B")])

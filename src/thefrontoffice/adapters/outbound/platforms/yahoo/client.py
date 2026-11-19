@@ -27,6 +27,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
 )
 from thefrontoffice.adapters.outbound.platforms.yahoo.paths import YahooRead
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
+    LeagueSettings,
     Matchup,
     MatchupSide,
     Pairing,
@@ -35,7 +36,6 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Timeframe,
     YahooLeague,
     YahooPlayer,
-    YahooRules,
     YahooTeam,
 )
 from thefrontoffice.domain.errors import FrontOfficeError, TeamNotFoundError
@@ -215,16 +215,12 @@ class YahooSource(Protocol):
         """Every team in the league, each with its place in the table."""
         ...
 
-    def rules(self) -> YahooRules:
-        """How the league scores a matchup, and where its playoffs start."""
-        ...
-
     def season(self, team_key: str, weeks: list[int]) -> dict[int, Pairing | None]:
         """The team's head-to-head in each of `weeks`, None where it plays nobody."""
         ...
 
-    def stat_categories(self) -> list[StatCategory]:
-        """The categories the league scores, in the order its settings list them."""
+    def settings(self) -> LeagueSettings:
+        """How the league is scored, how often a team may add, and where its playoffs start."""
         ...
 
 
@@ -285,11 +281,6 @@ class YahooClient:
         raw = self._responses.raw(paths.standings(self.league.league_key))
         return readable("standings", lambda: team_list(parse(raw)["fantasy_content"]["league"]["standings"]))
 
-    def rules(self) -> YahooRules:
-        """How the league scores a matchup, and where its playoffs start, from its settings."""
-        raw = self._responses.raw(paths.settings(self.league.league_key))
-        return readable("league settings", lambda: rules_of(parse(raw)["fantasy_content"]["league"]))
-
     def season(self, team_key: str, weeks: list[int]) -> dict[int, Pairing | None]:
         """The team's head-to-head in each of `weeks`, None where it plays nobody.
 
@@ -301,17 +292,17 @@ class YahooClient:
             for week, raw in raws.items()
         }
 
-    def stat_categories(self) -> list[StatCategory]:
-        """The categories the league scores, in the order its settings list them.
+    def settings(self) -> LeagueSettings:
+        """How the league is scored, how often a team may add and where its playoffs start, as its settings say.
 
-        Display-only stats (FGM/A beside FG%) are left out: they score nothing.
+        Display-only stats (FGM/A beside FG%) are left out of the categories: they score nothing.
 
         Raises:
             YahooAuthError: the app is not authorized for Fantasy Sports.
             YahooAPIError: Yahoo could not be reached, or answered unreadably.
         """
         raw = self._responses.raw(paths.settings(self.league.league_key))
-        return readable("league settings", lambda: category_list(parse(raw)["fantasy_content"]["league"]))
+        return readable("league settings", lambda: league_settings(parse(raw)["fantasy_content"]["league"]))
 
     def get_user_team(self) -> YahooTeam:
         """Identify the team owned by the current user.
@@ -482,12 +473,20 @@ def find_matchup(scoreboard: Any, team_key: str) -> Pairing | None:
     return None
 
 
-def rules_of(league: Any) -> YahooRules:
-    """How a league's `settings` score a matchup and end its season; a league with playoffs off has no bracket."""
+def league_settings(league: Any) -> LeagueSettings:
+    """A league's `settings`: its categories, its points weights, its weekly add limit and its bracket.
+
+    A league with playoffs off has no bracket.
+    """
     settings = _node(league, "settings")
     playoffs = _text(settings, "uses_playoff") == "1"
-    return YahooRules(
-        scoring_type=_text(settings, "scoring_type"),
+    return LeagueSettings(
+        categories=category_list(league),
+        weights={
+            _text(stat, "stat_id"): float(_text(stat, "value"))
+            for stat in _items(_node(settings, "stat_modifiers", "stats"), "stat")
+        },
+        max_weekly_adds=_whole(settings, "max_weekly_adds"),
         playoff_start_week=_number(settings, "playoff_start_week") if playoffs else 0,
         playoff_teams=_number(settings, "num_playoff_teams") if playoffs else 0,
         multiweek_final=_text(settings, "has_multiweek_championship") == "1",
@@ -513,6 +512,7 @@ def _side(data: Any) -> MatchupSide:
         team_key=_text(data, "team_key"),
         name=_text(data, "name"),
         points=_text(data, "team_points", "total"),
+        projected=_text(data, "team_projected_points", "total"),
         stats={_text(s, "stat_id"): _text(s, "value") for s in _items(_node(data, "team_stats", "stats"), "stat")},
     )
 
@@ -535,13 +535,14 @@ def _league(data: Any) -> YahooLeague:
         league_key=_text(data, "league_key"),
         name=_text(data, "name"),
         league_type=_text(data, "league_type"),
-        current_week=_week(data, "current_week"),
-        start_week=_week(data, "start_week"),
-        end_week=_week(data, "end_week"),
+        current_week=_whole(data, "current_week"),
+        start_week=_whole(data, "start_week"),
+        end_week=_whole(data, "end_week"),
+        scoring_type=_text(data, "scoring_type"),
     )
 
 
-def _week(data: Any, name: str) -> int | None:
-    """A week number the league carries, or None where it carries none."""
+def _whole(data: Any, name: str) -> int | None:
+    """A whole number the league carries — a week, a limit — or None where it carries none."""
     week = _value(data, name)
     return int(week) if week not in (None, "") else None
