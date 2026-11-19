@@ -55,3 +55,11 @@ def test_only_a_competition_with_a_browser_sync_says_it_syncs() -> None:
     synced = replace(plain, capture=lambda: FakeCapture())
 
     assert (data.competition(plain).syncs, data.competition(synced).syncs) == (False, True)
+
+
+def test_a_competition_says_what_it_calls_a_week() -> None:
+    """FPL's rounds are gameweeks, and its pages should say so rather than borrow the NFL's word."""
+    plain = entry(FakeCompetition())
+
+    assert data.competition(plain).week_word == "week"
+    assert data.competition(replace(plain, week_word="gameweek")).week_word == "gameweek"

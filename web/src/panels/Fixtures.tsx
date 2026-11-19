@@ -52,10 +52,10 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
   return (
     <>
       <LeagueHeader league={league}>
-        {shown && <WeekStepper range={shown} onStep={step} />}
+        {shown && <WeekStepper range={shown} onStep={step} word={competition.week_word} />}
       </LeagueHeader>
       <QueryState query={browses ? (shown ? games : summary) : schedule} lines={6} />
-      {rows && rows.length === 0 && <Empty title="No games this week" />}
+      {rows && rows.length === 0 && <Empty title={`No games this ${competition.week_word ?? "week"}`} />}
       {rows && rows.length > 0 && (
         <WeekPane
           week={shown?.week ?? 0}

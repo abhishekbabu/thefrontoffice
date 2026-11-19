@@ -117,6 +117,9 @@ class CompetitionEntry:
     are both read off these, so the two cannot name different settings.
     """
 
+    week_word: str = "week"
+    """What the competition calls a round, lowercase: 'gameweek' in FPL. The pages say it wherever they name one."""
+
     login: Callable[[], AccountLogin] | None = None
     """Its platform's browser login, where it has one: offered under the platform's name."""
 
@@ -556,6 +559,7 @@ def registry(settings: AppSettings = process_settings) -> Registry:
                 build=_build_fpl,
                 settings=settings,
                 needs=("fpl_entry_id",),
+                week_word="gameweek",
             ),
         )
     )

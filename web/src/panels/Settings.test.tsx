@@ -5,7 +5,17 @@ import { keys } from "@/lib/queries";
 import { SettingsPanel } from "@/panels/Settings";
 import { offlineClient, render } from "@/test/render";
 
-const YAHOO: SettingsGroup = { title: "NBA on Yahoo", note: "", section: "platforms", platform: "yahoo", settings: [] };
+const group = (title: string, section: SettingsGroup["section"], platform = "", settings: Setting[] = []): SettingsGroup => ({
+  title,
+  note: "",
+  section,
+  platform,
+  switch: "",
+  modes: {},
+  settings,
+});
+
+const YAHOO = group("NBA on Yahoo", "platforms", "yahoo");
 
 async function settingsWith(status: CaptureStatus, groups: SettingsGroup[] = [YAHOO]) {
   const client = offlineClient();
@@ -42,23 +52,23 @@ describe("Yahoo status", () => {
     expect(card).toContain("Never synced");
   });
 
-  it("says when it last ran, and which leagues it holds", async () => {
+  it("says when it last ran, and how many leagues it holds, in its status", async () => {
     const synced = new Date();
     synced.setHours(9, 5);
-    const { card } = await settingsWith({ active: true, synced_at: synced.toISOString(), leagues: ["Hoops", "Dunks"], session: null });
+    const { container } = await settingsWith({
+      active: true,
+      synced_at: synced.toISOString(),
+      leagues: ["Hoops", "Dunks"],
+      session: null,
+    });
 
-    expect(card).toMatch(/Last synced 0?9:05/);
-    expect(card).toContain("Hoops · Dunks");
-    expect(card).not.toContain("is oauth");
+    const header = container.querySelector("[data-group=yahoo] > :first-child")?.textContent ?? "";
+    expect(header).toMatch(/2 leagues · last synced 0?9:05/);
+    expect(container.textContent).not.toContain("Hoops");
   });
 
-  it("says the sync is not read while Yahoo is read through OAuth", async () => {
-    const { card } = await settingsWith({ active: false, synced_at: null, leagues: [], session: null });
-    expect(card).toContain("is oauth");
-  });
-
-  it("says how to copy the session cookie, and where it goes", async () => {
-    const { card } = await settingsWith({ active: false, synced_at: null, leagues: [], session: null });
+  it("says how to copy the session cookie, and where it goes, while read with one", async () => {
+    const { card } = await settingsWith({ active: false, synced_at: null, leagues: [], session: { fetched_at: null, expired: false } });
     expect(card).toContain("pub-api-ro.fantasysports.yahoo.com");
     expect(card).toContain("YAHOO_SESSION_COOKIE");
   });
@@ -74,7 +84,6 @@ describe("Yahoo status", () => {
     });
 
     expect(card).toMatch(/Last fetched 0?9:05/);
-    expect(card).not.toContain("is oauth");
   });
 
   it("read with the session, says it expired in words", async () => {
@@ -90,22 +99,28 @@ describe("Yahoo status", () => {
   });
 });
 
-function setting(key: string, kind: Setting["kind"], value: string, choices: string[] = []): Setting {
-  return { key, field: key.toLowerCase(), secret: false, present: true, kind, choices, value, shadowed: false, effective: value };
+function setting(key: string, kind: Setting["kind"], value: string, choices: string[] = [], mode = ""): Setting {
+  return {
+    key,
+    field: key.toLowerCase(),
+    secret: false,
+    present: true,
+    kind,
+    choices,
+    value,
+    shadowed: false,
+    effective: value,
+    mode,
+    hint: "",
+  };
 }
 
 const GROUPS: SettingsGroup[] = [
-  {
-    title: "NBA on Yahoo",
-    note: "",
-    section: "platforms",
-    platform: "yahoo",
-    settings: [
-      setting("YAHOO_SOURCE", "choice", "oauth", ["oauth", "browser", "session"]),
-      setting("LOG_LEVEL", "choice", "INFO", ["DEBUG", "INFO", "WARNING"]),
-      setting("DEBUG_MODE", "boolean", "false"),
-    ],
-  },
+  group("NBA on Yahoo", "platforms", "yahoo", [
+    setting("YAHOO_SOURCE", "choice", "oauth", ["oauth", "browser", "session"]),
+    setting("LOG_LEVEL", "choice", "INFO", ["DEBUG", "INFO", "WARNING"]),
+    setting("DEBUG_MODE", "boolean", "false"),
+  ]),
 ];
 
 /** Settings with the fixed-value fields, and every PUT the page sends recorded. */
@@ -199,8 +214,8 @@ describe("Layout", () => {
   it("runs from the accounts read to what is rarely touched", async () => {
     const { container } = await settingsWith({ active: false, synced_at: null, leagues: [], session: null }, [
       YAHOO,
-      { title: "Model providers", note: "", section: "ai", platform: "", settings: [] },
-      { title: "Tracing", note: "", section: "advanced", platform: "", settings: [] },
+      group("Model providers", "ai"),
+      group("Tracing", "advanced"),
     ]);
 
     expect([...container.querySelectorAll("h2")].map((h) => h.textContent)).toEqual([
@@ -209,5 +224,61 @@ describe("Layout", () => {
       "Appearance",
       "Advanced",
     ]);
+  });
+});
+
+describe("A group read more than one way", () => {
+  const SWITCHED: SettingsGroup = {
+    ...group("NBA on Yahoo", "platforms", "yahoo", [
+      setting("YAHOO_SOURCE", "choice", "session", ["oauth", "browser", "session"]),
+      setting("YAHOO_SESSION_COOKIE", "text", "", [], "session"),
+      setting("YAHOO_CLIENT_ID", "text", "", [], "oauth"),
+      { ...setting("YAHOO_MAX_WEEKLY_ADDS", "integer", "3"), hint: "fallback only" },
+    ]),
+    switch: "YAHOO_SOURCE",
+    modes: { oauth: "needs a developer app", browser: "run the bookmark", session: "reads your cookie" },
+  };
+  const session = { active: false, synced_at: null, leagues: [], session: { fetched_at: null, expired: false } };
+
+  async function switched() {
+    const { container } = await settingsWith(session, [SWITCHED]);
+    const card = container.querySelector<HTMLElement>("[data-group=yahoo]")!;
+    const other = () => [...card.querySelectorAll("details")].find((d) => d.textContent?.startsWith("Other methods"));
+    const shown = (key: string) => [...card.querySelectorAll("code")].some((c) => c.textContent === key && !other()?.contains(c));
+    const chip = (text: string) =>
+      [...card.querySelectorAll<HTMLButtonElement>("[aria-label=YAHOO_SOURCE] button")].find((c) => c.textContent === text)!;
+    return { card, other, shown, chip };
+  }
+
+  it("spells out only the way chosen, and folds the others' fields away", async () => {
+    const { card, other, shown } = await switched();
+
+    expect(card.textContent).toContain("reads your cookie");
+    expect(card.textContent).not.toContain("needs a developer app");
+    expect(shown("YAHOO_SESSION_COOKIE")).toBe(true);
+    expect(shown("YAHOO_CLIENT_ID")).toBe(false);
+    expect(other()?.textContent).toContain("YAHOO_CLIENT_ID");
+  });
+
+  it("shows what a way needs as soon as it is pressed, before it is saved", async () => {
+    const { card, chip, other, shown } = await switched();
+
+    await act(async () => chip("oauth").click());
+
+    expect(card.textContent).toContain("needs a developer app");
+    expect(shown("YAHOO_CLIENT_ID")).toBe(true);
+    expect(other()?.textContent).toContain("YAHOO_SESSION_COOKIE");
+  });
+
+  it("shows only the chosen way's steps", async () => {
+    const { card } = await switched();
+    const visible = [...card.querySelectorAll("details:not(.hidden) > summary")].map((s) => s.textContent);
+
+    expect(visible).toEqual(["Session cookie", "Other methods"]);
+  });
+
+  it("says what a setting does where it carries a hint", async () => {
+    const { card } = await switched();
+    expect(card.textContent).toContain("fallback only");
   });
 });

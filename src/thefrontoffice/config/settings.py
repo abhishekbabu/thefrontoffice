@@ -37,6 +37,27 @@ class Group:
     platform: str = ""
     """The platform these settings read, where they read one: its status sits beside them."""
 
+    switch: str = ""
+    """The field choosing how the platform is read, where there is more than one way: the
+    settings marked with a `Mode` matter only while it reads theirs."""
+
+    modes: tuple[tuple[str, str], ...] = ()
+    """What to know about each of the switch's values, in its own order: shown for the one chosen."""
+
+
+@dataclass(frozen=True)
+class Mode:
+    """Marks a setting needed only while its group's switch reads `value`: the rest of the time it is noise."""
+
+    value: str
+
+
+@dataclass(frozen=True)
+class Hint:
+    """What a setting does, where its name alone would mislead: shown under it."""
+
+    text: str
+
 
 @dataclass(frozen=True)
 class Secret:
@@ -55,11 +76,19 @@ LOCAL = Local()
 
 YAHOO = Group(
     "NBA on Yahoo",
-    "OAuth needs a Yahoo developer app with Fantasy Sports read access and redirect URI "
-    "https://localhost:8080, which Yahoo reviews before it answers. Until then, set YAHOO_SOURCE to session "
-    "and paste your cookie, or to browser and use the bookmark.",
+    "",
     "platforms",
     "yahoo",
+    switch="yahoo_source",
+    modes=(
+        (
+            "oauth",
+            "Needs a Yahoo developer app with Fantasy Sports read access and redirect URI "
+            "https://localhost:8080, which Yahoo reviews before it answers. Until then, use session or browser.",
+        ),
+        ("browser", "The sync bookmark, run on a Yahoo Fantasy page, sends your leagues here."),
+        ("session", "This server reads Yahoo with your signed-in session cookie."),
+    ),
 )
 SLEEPER = Group("NFL on Sleeper", "No key needed: just the username your leagues are under.", "platforms", "sleeper")
 FPL = Group(
@@ -125,16 +154,18 @@ class AppSettings(BaseSettings):
     Fantasy page, or this server fetching Yahoo's own frontend host with your
     session cookie. Neither of those needs a client id or secret."""
 
-    yahoo_session_cookie: Annotated[str | None, YAHOO, SECRET] = None
+    yahoo_session_cookie: Annotated[str | None, YAHOO, SECRET, Mode("session")] = None
     """The Cookie header a signed-in Yahoo Fantasy page sends, for YAHOO_SOURCE=session.
     Reads your Yahoo account until it expires; signing out of Yahoo revokes it."""
 
-    yahoo_client_id: Annotated[str | None, YAHOO, SECRET] = None
-    yahoo_client_secret: Annotated[str | None, YAHOO, SECRET] = None
-    yahoo_redirect_uri: Annotated[str, YAHOO] = "https://localhost:8080"
+    yahoo_client_id: Annotated[str | None, YAHOO, SECRET, Mode("oauth")] = None
+    yahoo_client_secret: Annotated[str | None, YAHOO, SECRET, Mode("oauth")] = None
+    yahoo_redirect_uri: Annotated[str, YAHOO, Mode("oauth")] = "https://localhost:8080"
     yahoo_token_file: Annotated[str, ADVANCED, LOCAL] = ".yahoofantasy"
     yahoo_cache_dir: Annotated[str, ADVANCED, LOCAL] = ".yahoo_cache"
-    yahoo_max_weekly_adds: Annotated[int, YAHOO] = Field(default=3, ge=0)
+    yahoo_max_weekly_adds: Annotated[
+        int, YAHOO, Hint("Only for a league whose own weekly add limit Yahoo doesn't report.")
+    ] = Field(default=3, ge=0)
 
     # ── Sleeper (fantasy football) ──────────────────────────────────────
     # Sleeper needs no credentials; the username is only used to find leagues.
@@ -234,6 +265,16 @@ def is_secret(field: str) -> bool:
 def is_local(field: str) -> bool:
     """Whether a setting names a path on this machine."""
     return any(isinstance(mark, Local) for mark in AppSettings.model_fields[field].metadata)
+
+
+def mode(field: str) -> str:
+    """The switch's value a setting is needed under, or empty where it is needed whatever the switch reads."""
+    return next((mark.value for mark in AppSettings.model_fields[field].metadata if isinstance(mark, Mode)), "")
+
+
+def hint(field: str) -> str:
+    """What a setting does, where it says so, or empty."""
+    return next((mark.text for mark in AppSettings.model_fields[field].metadata if isinstance(mark, Hint)), "")
 
 
 def group(field: str) -> Group:

@@ -36,6 +36,9 @@ class Competition(BaseModel):
     name: str
     """The competition without its platform, for wherever only one platform carries it."""
 
+    week_word: str
+    """What it calls a round, lowercase — 'week', or 'gameweek' in FPL — for the stepper and every week label."""
+
     judges_wire: bool
     """Whether its free agents can be judged — offered only where it is."""
 
@@ -79,6 +82,7 @@ def competition(entry: CompetitionEntry) -> Competition:
         platform=entry.platform,
         label=entry.label,
         name=entry.name,
+        week_word=entry.week_word,
         judges_wire=entry.can(WireProvider),
         plans_weeks=entry.can(OutlookProvider),
         browses_weeks=entry.can(WeekBrowsingProvider),

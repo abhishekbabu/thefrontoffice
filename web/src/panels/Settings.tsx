@@ -17,7 +17,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Label, META } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
-import { CardNote, QueryState } from "@/components/ui/state";
+import { QueryState } from "@/components/ui/state";
 import { ToggleChip, ToggleGroup } from "@/components/ui/toggle";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -135,6 +135,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
  * One group's settings in a card: what they unlock, then a row each. A
  * platform's status sits in the header and its how-to under the rows, beside
  * the settings they are about rather than in a card of their own.
+ *
+ * Where the group has a switch — how Yahoo is read — only the way chosen is
+ * spelled out: its note, its fields, its how-to. The other ways' fields fold
+ * under "Other methods", kept rather than dropped so a value set there is
+ * still in reach. Chosen means as pressed, saved or not, so pressing a way
+ * shows at once what it needs.
  */
 function GroupCard({
   group,
@@ -151,40 +157,67 @@ function GroupCard({
     queryFn: () => api.captureStatus("yahoo"),
     enabled: yahoo,
   });
+  const switched = group.settings.find((setting) => setting.key === group.switch);
+  const chosen = switched ? (drafts[switched.key] ?? switched.effective) : "";
+  const needed = (setting: Setting) => !setting.mode || setting.mode === chosen;
+  const others = group.settings.filter((setting) => !needed(setting));
+  const note = [group.note, group.modes[chosen]].filter(Boolean);
+  const row = (setting: Setting) => (
+    <Row key={setting.key} setting={setting} draft={drafts[setting.key]} onChange={onEdit(setting)} />
+  );
   return (
     <Card data-group={group.platform || undefined}>
       <CardHeader>
         <span>{group.title}</span>
         {yahoo && status.data && <YahooState status={status.data} />}
       </CardHeader>
-      {group.note && <p className="max-w-[70ch] px-4 pt-3 text-[13px] leading-relaxed text-muted-foreground">{group.note}</p>}
-      <div className="flex flex-col px-4 py-1">
-        {group.settings.map((setting) => (
-          <Row key={setting.key} setting={setting} draft={drafts[setting.key]} onChange={onEdit(setting)} />
-        ))}
-      </div>
+      {note.map((text) => (
+        <p key={text} className="max-w-[70ch] px-4 pt-3 text-[13px] leading-relaxed text-muted-foreground">
+          {text}
+        </p>
+      ))}
+      <div className="flex flex-col px-4 py-1">{group.settings.filter(needed).map(row)}</div>
       {yahoo && status.isError && <ErrorNote error={status.error} className="mx-4 mt-0 mb-4" />}
-      {yahoo && status.data && <YahooHowTo status={status.data} />}
+      {yahoo && status.data && <YahooHowTo status={status.data} mode={chosen || readBy(status.data)} />}
+      {others.length > 0 && (
+        <Disclosure summary="Other methods">
+          <div className="flex flex-col px-4 pb-2">{others.map(row)}</div>
+        </Disclosure>
+      )}
     </Card>
   );
 }
 
-/** How reading Yahoo is going, said in the header's corner: in words, with the tone only to find it. */
+/** How Yahoo is read as the server last saw it, for a page that has no switch to ask. */
+function readBy(status: CaptureStatus): string {
+  return status.session ? "session" : status.active ? "browser" : "oauth";
+}
+
+/**
+ * How reading Yahoo is going, said in the header's corner: in words, with the tone only to find it.
+ *
+ * Leads with how many leagues were read, once any were — "5 leagues · last
+ * fetched 02:07 AM" — rather than listing them on a line of their own.
+ */
 export function yahooState(status: CaptureStatus): { text: string; variant: Variant } {
-  const { session } = status;
+  const { session, leagues } = status;
+  const read = (when: string) =>
+    leagues.length ? `${leagues.length} league${leagues.length === 1 ? "" : "s"} · ${when}` : capitalized(when);
   if (session) {
     if (session.expired) return { text: "Session expired", variant: "warn" };
     return session.fetched_at
-      ? { text: `Last fetched ${moment(session.fetched_at)}`, variant: "ok" }
+      ? { text: read(`last fetched ${moment(session.fetched_at)}`), variant: "ok" }
       : { text: "Not fetched yet", variant: "muted" };
   }
   if (status.active) {
     return status.synced_at
-      ? { text: `Last synced ${moment(status.synced_at)}`, variant: "ok" }
+      ? { text: read(`last synced ${moment(status.synced_at)}`), variant: "ok" }
       : { text: "Never synced", variant: "muted" };
   }
   return { text: "Reading OAuth", variant: "muted" };
 }
+
+const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 function YahooState({ status }: { status: CaptureStatus }) {
   const { text, variant } = yahooState(status);
@@ -196,15 +229,15 @@ function YahooState({ status }: { status: CaptureStatus }) {
 }
 
 /**
- * The two ways to read Yahoo while Yahoo's API refuses the app: the server
- * fetching with a pasted session cookie, or the bookmark run on a Yahoo page.
- * Each is open while it is the source in use and not yet working.
+ * How to set up the way Yahoo is read, for the way chosen only: the session
+ * cookie to paste, or the bookmark to run on a Yahoo page. OAuth needs no
+ * steps beyond its note. Open while it is the source in use and not yet working.
  *
  * The bookmark's link is set on the element rather than rendered: React refuses a
  * `javascript:` href, which is the only kind a bookmark can run. Clicking it
  * here does nothing — it runs on Yahoo's page, after being dragged away.
  */
-function YahooHowTo({ status }: { status: CaptureStatus }) {
+function YahooHowTo({ status, mode }: { status: CaptureStatus; mode: string }) {
   const link = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
     link.current?.setAttribute("href", bookmarklet(window.location.origin));
@@ -213,8 +246,11 @@ function YahooHowTo({ status }: { status: CaptureStatus }) {
   const steps = "max-w-[70ch] list-decimal pl-5";
   return (
     <>
-      {!!status.leagues.length && <CardNote>Synced: {status.leagues.join(" · ")}</CardNote>}
-      <Disclosure summary="Session cookie" open={Boolean(session && (session.expired || !session.fetched_at))}>
+      <Disclosure
+        summary="Session cookie"
+        open={Boolean(session && (session.expired || !session.fetched_at))}
+        className={cn(mode !== "session" && "hidden")}
+      >
         <div className="flex flex-col gap-2 px-4 pb-4 text-[13px] leading-relaxed text-muted-foreground">
           {session?.expired && <p className="text-foreground">Yahoo refused the cookie. Paste a fresh one.</p>}
           <ol className={steps}>
@@ -223,13 +259,16 @@ function YahooHowTo({ status }: { status: CaptureStatus }) {
               Pick a request to <code className="font-mono text-[12px]">pub-api-ro.fantasysports.yahoo.com</code> →
               Request Headers → cookie, and copy the value.
             </li>
-            <li>Paste it into YAHOO_SESSION_COOKIE above and set YAHOO_SOURCE to session.</li>
+            <li>Paste it into YAHOO_SESSION_COOKIE above.</li>
           </ol>
         </div>
       </Disclosure>
-      <Disclosure summary="Sync bookmark" open={status.active && !status.synced_at}>
+      <Disclosure
+        summary="Sync bookmark"
+        open={status.active && !status.synced_at}
+        className={cn(mode !== "browser" && "hidden")}
+      >
         <div className="flex flex-col items-start gap-2 px-4 pb-4 text-[13px] leading-relaxed text-muted-foreground">
-          {!status.active && !session && <p>YAHOO_SOURCE is oauth: set it to browser to read the sync.</p>}
           <a
             ref={link}
             draggable
@@ -300,7 +339,7 @@ function Row({
   const Wrapper = setting.kind === "boolean" || setting.kind === "choice" ? "div" : "label";
   return (
     <Wrapper className="grid grid-cols-1 items-center gap-1.5 border-b border-border/45 py-2.5 last:border-b-0 sm:grid-cols-[16rem_minmax(0,42rem)] sm:gap-4">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <code className="break-all font-mono text-[12px] text-foreground">{setting.key}</code>
         {draft !== undefined && (
           <Badge variant="info" appearance="status">
@@ -319,6 +358,7 @@ function Row({
             </Badge>
           </Tooltip>
         )}
+        {setting.hint && <span className="basis-full text-[12px] text-muted-foreground">{setting.hint}</span>}
       </div>
       <Control setting={setting} draft={draft} onChange={onChange} />
     </Wrapper>

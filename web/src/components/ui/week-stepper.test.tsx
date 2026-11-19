@@ -62,6 +62,15 @@ describe("WeekStepper", () => {
     expect(steps).toEqual([10]);
   });
 
+  it("calls the week what the competition calls it", async () => {
+    const { container } = await render(<WeekStepper range={range(4)} onStep={() => {}} word="gameweek" />);
+
+    expect(container.querySelector("[aria-live]")?.textContent).toBe("Gameweek 4");
+    expect(button(container, "Gameweek 5")).not.toBeNull();
+    expect(button(container, "Back to this gameweek (gameweek 10)")).not.toBeNull();
+    expect(container.textContent).not.toMatch(/\bweek\b/i);
+  });
+
   it("goes no further than the season does", async () => {
     const start = await render(stepping(1).ui);
     expect(button(start.container, "Week 0").disabled).toBe(true);
