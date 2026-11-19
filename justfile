@@ -134,12 +134,11 @@ lint-web:
 api-types:
     cd web && pnpm api-types
 
-# Lint, typecheck, test and build the front end — this is what CI runs
+# Lint and typecheck (one Oxlint pass), test and build the front end — this is what CI runs
 check-web: web-install lint-web
     # The generated API types must match the server: a model changed in
     # Python and not regenerated fails here, not as an undefined at runtime.
     cd web && pnpm api-types --check
-    cd web && pnpm exec tsc -b
     cd web && pnpm test
     # Builds because the bundle budget is checked by the build and nothing
     # else. Without this the recipe passes on a change CI then rejects.
