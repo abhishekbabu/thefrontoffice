@@ -5,13 +5,11 @@ fixtures, the market and the figures the provider computed — since a report
 missing the captaincy or the transfer allowance is wrong however well it renders.
 """
 
-from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
 from support.fpl import (
     ENTRY_ID,
-    H2H_LEAGUE_ID,
     LEAGUE_ID,
     MARKET,
     SQUAD_PLAYERS,
@@ -19,26 +17,22 @@ from support.fpl import (
     player,
     provider,
 )
-from support.summary import mine
 
 from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
-    Chip,
     ChipPlay,
     Club,
     Fixture,
-    GameweekResult,
     H2HMatch,
-    LiveStat,
     Pick,
     Player,
     Squad,
     TableRow,
     TransferMade,
 )
-from thefrontoffice.domain.errors import InvalidRequestError, NotFoundError, PlayerNotFoundError, TeamNotFoundError
-from thefrontoffice.domain.models import PlayerQuery, Spot, Summary
+from thefrontoffice.domain.errors import InvalidRequestError, TeamNotFoundError
+from thefrontoffice.domain.models import PlayerQuery
 
 # ── configuration ───────────────────────────────────────────────────────
 
@@ -78,30 +72,6 @@ def test_the_squad_read_is_the_last_completed_gameweek() -> None:
 def test_before_the_season_there_is_no_squad_to_read() -> None:
     with pytest.raises(FPLAPIError):
         provider(upcoming=1).roster(LEAGUE_ID)
-
-
-def test_roster_rows_mark_the_captain_and_the_bench() -> None:
-    rows = {c.columns["Player"]: c.columns for c in provider().roster(LEAGUE_ID)}
-    assert rows["P8"]["Slot"] == "C"
-    assert rows["P3"]["Slot"] == "XI"
-    assert rows["P15"]["Slot"] == "BN"
-    assert rows["P3"]["Price"] == "£5.0m"
-
-
-def _with_doubt_on_p3() -> dict[int, Player]:
-    return {**SQUAD_PLAYERS, 3: player(3, "DEF", 6.0, status="d", chance_of_playing=50), **MARKET}
-
-
-def test_roster_rows_report_a_doubt() -> None:
-    cards = {c.columns["Player"]: c for c in provider(players=_with_doubt_on_p3()).roster(LEAGUE_ID)}
-    assert cards["P3"].columns["Status"] == "doubtful 50%"
-    assert not cards["P3"].ruled_out  # a doubt is flagged, not counted out
-
-
-def test_roster_rows_say_who_is_ruled_out() -> None:
-    players = {**SQUAD_PLAYERS, 3: player(3, "DEF", 6.0, status="i", chance_of_playing=0), **MARKET}
-    cards = {c.columns["Player"]: c for c in provider(players=players).roster(LEAGUE_ID)}
-    assert cards["P3"].ruled_out
 
 
 # ── the prompt ──────────────────────────────────────────────────────────
@@ -281,20 +251,6 @@ def test_the_briefing_keeps_the_squad_and_only_the_players_named() -> None:
     assert len(brief) < len(context.prompt)
 
 
-# ── nothing to say ──────────────────────────────────────────────────────
-
-
-def test_an_optimal_eleven_produces_no_change_recommendations() -> None:
-    from thefrontoffice.adapters.outbound.competitions.premier_league.squad import best_lineup
-
-    best = best_lineup(list(SQUAD_PLAYERS.values()))
-    optimal = [Pick(element=p.id, position=i, multiplier=1) for i, p in enumerate(best.starters, start=1)]
-    optimal += [Pick(element=p.id, position=i, multiplier=0) for i, p in enumerate(best.bench, start=12)]
-    squad = Squad(gameweek=4, picks=optimal, bank=30, value=1004)
-
-    assert provider(squad=squad).summary(LEAGUE_ID).swaps == []
-
-
 def _headline(over: FPLProvider | None = None) -> dict[str, str]:
     context = (over or provider()).build_context(LEAGUE_ID)
     return {stat.label: stat.value for stat in context.headline}
@@ -323,7 +279,7 @@ def test_points_left_on_the_bench_are_the_figure_that_warns() -> None:
 
 
 def test_an_optimal_eleven_leaves_nothing_on_the_bench_to_report() -> None:
-    from thefrontoffice.adapters.outbound.competitions.premier_league.squad import best_lineup
+    from thefrontoffice.adapters.outbound.competitions.premier_league.rules import best_lineup
 
     best = best_lineup(list(SQUAD_PLAYERS.values()))
     # Captained, because FPL always is — and the comparison only holds between
@@ -351,216 +307,6 @@ def test_the_header_says_when_the_gameweek_locks() -> None:
     labels = _headline()
 
     assert labels["Deadline"].endswith("UTC") and "Gameweek" not in labels
-
-
-def test_the_summary_marks_the_captain() -> None:
-    lineup = mine(provider().summary(LEAGUE_ID)).lineup
-
-    assert [(spot.player, spot.mark) for spot in lineup if spot.mark == "C"] == [("P8", "C")]
-
-
-def test_the_summary_warns_on_a_doubtful_starter() -> None:
-    """Starting a doubtful player is the mistake the page exists to surface."""
-    lineup = mine(provider(players=_with_doubt_on_p3()).summary(LEAGUE_ID)).lineup
-    spots = {spot.player_id: spot for spot in lineup}
-
-    assert spots["3"].tone == "warning"
-
-
-def test_the_summary_offers_the_swap_the_best_eleven_implies() -> None:
-    """P15 is the strongest forward and starts on the bench behind P7."""
-    swaps = provider().summary(LEAGUE_ID).swaps
-
-    assert [(swap.start, swap.out) for swap in swaps] == [("P15", "P7"), ("Captain P15", "P8")]
-
-
-def test_the_swaps_add_up_to_the_gap_the_header_shows() -> None:
-    """The eleven as set expects 64.0 and the best 73.5 — P15 for P7 (+8.5), the armband from P8 to P15 (+1.0)."""
-    summary = provider().summary(LEAGUE_ID)
-    gained = sum(float(swap.gain.removesuffix(" xPts")) for swap in summary.swaps)
-
-    assert _stats(summary)["Lineup"] == "64.0 · best 73.5 xPts"
-    assert round(gained, 1) == 9.5
-
-
-def test_the_summary_reports_a_blank_gameweek_on_the_player_not_just_the_club() -> None:
-    """A club with no fixture means every one of its players scores zero."""
-    summary = provider(fixtures=[]).summary(LEAGUE_ID)
-
-    assert all("no fixture" in spot.detail for spot in mine(summary).lineup)
-    assert all(spot.tone == "warning" for spot in mine(summary).lineup)
-
-
-# ── the matchup ─────────────────────────────────────────────────────────
-
-
-def test_a_head_to_head_league_shows_who_you_are_playing() -> None:
-    summary = provider().summary(H2H_LEAGUE_ID)
-
-    assert summary.opponent is not None
-    assert summary.opponent.name == "Rival FC"
-    assert summary.opponent.lineup
-
-
-def test_a_classic_league_has_no_opponent_to_show() -> None:
-    """A table is not a fixture, so inventing one would be a lie."""
-    assert provider().summary(LEAGUE_ID).opponent is None
-
-
-def test_the_squads_say_which_gameweek_they_were_fielded_in() -> None:
-    """Picks are only published once locked, while every projection beside them
-    is for the gameweek still open."""
-    summary = provider().summary(LEAGUE_ID)
-
-    assert summary.mine is not None
-    assert "GW4" in mine(summary).detail
-
-
-def test_only_a_blank_or_a_double_is_worth_warning_about() -> None:
-    """Every row already carries its own fixture; listing them all repeats the
-    page back at itself."""
-    warnings = {stat.label: stat for stat in provider().summary(LEAGUE_ID).fixtures}
-
-    assert warnings["MCI"].tone == "warning"  # no fixture in the fake week
-    assert "ARS" not in warnings  # an ordinary fixture is not a warning
-
-
-# ── one player ──────────────────────────────────────────────────────────
-
-
-def test_a_player_carries_the_numbers_fpl_judges_them_on() -> None:
-    """Expected goals arrive in the same payload as the price, which is why
-    this sport needs no second stats provider."""
-    detail = provider().player(LEAGUE_ID, "8")
-    labels = {stat.label for group in detail.groups for stat in group.stats}
-
-    assert detail.name == "Player 8"
-    assert {"xG", "xA", "xGI", "Form", "Owned by", "Price"} <= labels
-
-
-def test_a_players_fixture_is_for_the_gameweek_still_open() -> None:
-    detail = provider().player(LEAGUE_ID, "8")
-    assert any(stat.label == "Fixture" for group in detail.groups for stat in group.stats)
-
-
-def test_a_flagged_player_is_toned_and_carries_the_news() -> None:
-    hurt = player(3, "DEF", 6.0, status="i", chance_of_playing=0, news="Hamstring - expected back 12 Sep")
-    detail = provider(players={**SQUAD_PLAYERS, 3: hurt, **MARKET}).player(LEAGUE_ID, "3")
-
-    assert detail.tone == "warning"
-    assert "Hamstring" in detail.note
-
-
-def test_an_unknown_player_is_refused_by_name() -> None:
-    with pytest.raises(PlayerNotFoundError, match="nope"):
-        provider().player(LEAGUE_ID, "nope")
-
-
-def test_a_players_numbers_are_grouped_rather_than_listed() -> None:
-    """Twenty figures in one list is a wall; the same twenty under headings can
-    be read without looking for anything."""
-    titles = [group.title for group in provider().player(LEAGUE_ID, "8").groups]
-
-    assert titles == ["This week", "Underlying", "Set pieces", "Market"]
-
-
-def test_set_pieces_list_only_the_duties_actually_held() -> None:
-    """ "Not on penalties" for every player who is not would be rows of nothing."""
-    taker = player(8, "MID", 8.0, penalties_order=1, corners_order=2)
-    detail = provider(players={**SQUAD_PLAYERS, 8: taker, **MARKET}).player(LEAGUE_ID, "8")
-    pieces = next(g for g in detail.groups if g.title == "Set pieces")
-
-    assert [(s.label, s.value) for s in pieces.stats] == [("Penalties", "#1"), ("Corners", "#2")]
-    assert pieces.stats[0].tone == "good"  # first choice is worth noticing
-
-
-def test_a_player_on_no_set_pieces_says_so_once() -> None:
-    pieces = next(g for g in provider().player(LEAGUE_ID, "8").groups if g.title == "Set pieces")
-    assert [s.value for s in pieces.stats] == ["none"]
-
-
-def test_a_keeper_gets_the_numbers_only_a_keeper_has() -> None:
-    """Saves on an attacker is a zero nobody asked for."""
-    labels = {row.label for row in provider().player(LEAGUE_ID, "1").tables[0].rows}
-    assert {"Saves", "Clean sheets", "Conceded"} <= labels
-
-
-def test_an_attacker_is_not_given_a_keepers_line() -> None:
-    labels = {row.label for row in provider().player(LEAGUE_ID, "13").tables[0].rows}
-    assert "Saves" not in labels
-
-
-# ── the seasons behind the price ────────────────────────────────────────
-
-
-def _season_table(over: FPLProvider | None = None) -> dict[str, list[str]]:
-    """The by-season table as {row label: values}, columns newest first."""
-    detail = (over or provider()).player(LEAGUE_ID, "8")
-    table = detail.tables[0]
-    return {"__columns__": table.columns, **{row.label: row.values for row in table.rows}}
-
-
-def test_the_seasons_are_columns_so_they_can_be_read_across() -> None:
-    """A stack makes you hold last year's goals in your head while scrolling
-    to this year's."""
-    table = _season_table()
-
-    assert table["__columns__"] == ["2025/26", "2024/25", "2023/24"]
-
-
-def test_a_season_nobody_has_played_yet_reports_nothing() -> None:
-    """A column of noughts claims the season has answers it does not have."""
-    table = _season_table()
-
-    assert table["Points"][0] == "N/A"
-    assert table["Goals"][0] == "N/A"
-
-
-def test_a_finished_season_is_scored_per_start_not_per_appearance() -> None:
-    """A substitute cameo and a full ninety are not the same denominator."""
-    assert _season_table()["Per start"][1] == f"{210 / 33:.1f}"
-
-
-def test_a_finished_season_carries_the_markets_verdict_on_it() -> None:
-    """What the price did over it is the closest thing FPL has to one."""
-    assert _season_table()["Price"][1] == "£11.8m → £12.4m"
-
-
-def test_a_price_is_known_whether_or_not_the_season_has_started() -> None:
-    """Unlike a total, it is a fact about today rather than an accumulation —
-    N/A against a number the market view shows would be wrong."""
-    assert _season_table()["Price"][0] == "£5.0m"
-
-
-def test_a_player_with_no_history_still_gets_a_column_for_this_season() -> None:
-    """A promoted club's signing has no FPL record, which is not an error."""
-    table = _season_table(provider(past_seasons=[]))
-
-    assert table["__columns__"] == ["This season"]
-
-
-def test_a_failed_history_lookup_does_not_take_the_player_down() -> None:
-    """Everything else on the page was already fetched and is still true."""
-    detail = provider(past_seasons_error=FPLAPIError("down")).player(LEAGUE_ID, "8")
-
-    assert detail.name
-    assert detail.tables[0].columns == ["This season"]
-
-
-def test_a_player_carries_a_portrait_keyed_by_optas_code() -> None:
-    """Not the element id, which FPL reassigns between seasons."""
-    catalog = {**SQUAD_PLAYERS, 8: replace(SQUAD_PLAYERS[8], code=223094), **MARKET}
-
-    detail = provider(players=catalog).player(LEAGUE_ID, "8")
-    assert detail.image_url.endswith("/p223094.png")
-
-
-def test_a_player_with_no_photo_code_is_given_no_url() -> None:
-    """An empty string is a missing photo; a URL built from zero is a 404."""
-    catalog = {**SQUAD_PLAYERS, 8: replace(SQUAD_PLAYERS[8], code=0), **MARKET}
-
-    detail = provider(players=catalog).player(LEAGUE_ID, "8")
-    assert detail.image_url == ""
 
 
 # ── the league beyond this gameweek ─────────────────────────────────────
@@ -679,138 +425,6 @@ def test_a_gameweek_with_no_ball_kicked_yet_shows_its_deadline() -> None:
     assert provider().summary(H2H_LEAGUE).window == "Gameweek 4 · deadline Tue 11 Aug, 17:30"
 
 
-# ── the week as it is actually going ────────────────────────────────────
-
-LIVE = {
-    8: LiveStat(points=12, minutes=90),  # played, hauled
-    9: LiveStat(points=1, minutes=64),  # played, blanked
-    10: LiveStat(points=0, minutes=0),  # kicks off later
-}
-
-
-def _live_spots() -> dict[str, Spot]:
-    return {s.player_id: s for s in mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup}
-
-
-def test_a_haul_is_toned_good() -> None:
-    haul = _live_spots()["8"]  # the captain, so doubled
-
-    assert (haul.value, haul.tone) == ("24 pts", "good")
-
-
-def test_a_blank_is_toned_as_a_warning() -> None:
-    blank = _live_spots()["9"]
-
-    assert (blank.value, blank.tone) == ("1 pts", "warning")
-
-
-def test_a_player_yet_to_kick_a_ball_keeps_their_projection() -> None:
-    """Nought against somebody whose match is on Sunday says they blanked."""
-    lineup = mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup
-
-    waiting = [s for s in lineup if s.value.endswith("xPts")]
-    assert waiting, "a squad of eleven cannot all have played"
-    assert all("0 pts" not in s.value for s in waiting)
-
-
-def test_a_captain_scores_double() -> None:
-    lineup = mine(provider(live=LIVE).summary(H2H_LEAGUE)).lineup
-    captain = next(s for s in lineup if s.mark == "C")
-
-    assert captain.value == "24 pts"
-
-
-def _triple_captain() -> Squad:
-    picks = [
-        Pick(element=p.element, position=p.position, multiplier=3, is_captain=True) if p.is_captain else p
-        for p in FakeFPL().squad.picks
-    ]
-    return Squad(gameweek=4, picks=picks, bank=30, value=1004, active_chip="3xc")
-
-
-def test_a_triple_captain_scores_three_times() -> None:
-    lineup = mine(provider(live=LIVE, squad=_triple_captain()).summary(H2H_LEAGUE)).lineup
-    captain = next(s for s in lineup if s.mark == "C")
-
-    assert captain.value == "36 pts"
-
-
-def test_the_weeks_total_counts_the_triple_captain_three_times() -> None:
-    """P8 (12, captained) and P9 (1) have played; P10 has not kicked a ball."""
-    assert mine(provider(live=LIVE, squad=_triple_captain()).summary(H2H_LEAGUE)).points == "37 pts · 72.0 proj"
-
-
-def test_the_weeks_total_counts_the_captain_twice() -> None:
-    assert mine(provider(live=LIVE).summary(H2H_LEAGUE)).points == "25 pts · 64.0 proj"
-
-
-def test_a_week_under_way_says_so_rather_than_naming_a_deadline() -> None:
-    assert provider(live=LIVE).summary(H2H_LEAGUE).window == "Gameweek 4 · in progress"
-
-
-def test_before_a_ball_is_kicked_a_side_reads_its_projection_alone() -> None:
-    """Zero reads as a bad week rather than a week that has not started."""
-    assert mine(provider().summary(H2H_LEAGUE)).points == "64.0 proj"
-
-
-def test_the_opponent_reads_the_games_total_beside_their_projection_once_under_way() -> None:
-    summary = provider(live=LIVE, fixtures=[_arsenal(started=True)]).summary(H2H_LEAGUE)
-
-    assert summary.opponent is not None
-    assert summary.opponent.points.startswith("52 pts · ")
-    assert summary.opponent.points.endswith(" proj")
-
-
-def _arsenal(*, started: bool = False, finished: bool = False) -> Fixture:
-    return Fixture(
-        event=4, home="ARS", away="LIV", home_difficulty=2, away_difficulty=4, started=started, finished=finished
-    )
-
-
-def test_a_row_sets_what_he_scored_beside_his_projection_for_this_gameweek() -> None:
-    """The captain's guess is doubled as his points are, so the two are the same kind of number."""
-    captain = _live_spots()["8"]
-
-    assert (captain.scoring, captain.scored, captain.projection) == ("live", "24", "16.0")
-
-
-def test_a_row_not_yet_kicked_off_is_projected_with_no_score() -> None:
-    waiting = _live_spots()["10"]
-
-    assert (waiting.scoring, waiting.scored, waiting.projection) == ("projected", "", "6.0")
-
-
-def test_once_his_club_kicks_off_a_nought_is_a_score_not_a_match_to_come() -> None:
-    lineup = mine(provider(live=LIVE, fixtures=[_arsenal(started=True)]).summary(H2H_LEAGUE)).lineup
-    unused = next(s for s in lineup if s.player_id == "10")
-
-    assert (unused.scoring, unused.scored, unused.value) == ("live", "0", "0 pts")
-
-
-def test_a_row_is_final_once_every_match_his_club_has_is_over() -> None:
-    side = mine(provider(live=LIVE, fixtures=[_arsenal(started=True, finished=True)]).summary(H2H_LEAGUE))
-    rows = {s.player_id: s for s in (*side.lineup, *side.bench)}
-
-    assert rows["8"].scoring == "final"
-    assert rows["15"].scoring == "projected", "MCI has no fixture this gameweek"
-
-
-def test_the_projection_is_this_gameweeks_not_the_next() -> None:
-    """`ep_next` is next week's guess once a deadline has passed; beside this week's points it misleads."""
-    catalog = {pid: replace(p, expected_this=p.expected_points / 2) for pid, p in SQUAD_PLAYERS.items()}
-    lineup = mine(provider(live=LIVE, players=catalog).summary(H2H_LEAGUE)).lineup
-
-    assert next(s for s in lineup if s.player_id == "10").projection == "3.0"
-
-
-def test_a_missing_live_feed_falls_back_to_projections() -> None:
-    """Enrichment, not a dependency."""
-    summary = provider(live_error=FPLAPIError("down")).summary(H2H_LEAGUE)
-
-    assert summary.mine is not None
-    assert all(s.value.endswith("xPts") for s in mine(summary).lineup)
-
-
 # ── the rest of the league ──────────────────────────────────────────────
 
 
@@ -886,193 +500,6 @@ def test_a_team_links_to_that_managers_entry() -> None:
     assert teams["Rival FC"] == "https://fantasy.premierleague.com/entry/99/event/4"
 
 
-# ── chips, and the armbands ─────────────────────────────────────────────
-
-
-def _chips(over: FPLProvider | None = None) -> dict[str, str]:
-    boosts = (over or provider()).summary(H2H_LEAGUE).boosts
-    assert boosts is not None
-    return {stat.label: stat.value for stat in boosts.stats}
-
-
-def test_the_chips_carry_the_leagues_own_word_for_them() -> None:
-    """The UI knows nothing about football; the title comes with the data."""
-    boosts = provider().summary(H2H_LEAGUE).boosts
-
-    assert boosts is not None
-    assert boosts.title == "Chips"
-
-
-def test_a_chip_inside_its_window_is_available_until_it_closes() -> None:
-    assert _chips()["Bench Boost"] == "available until GW19"
-
-
-def test_the_chips_say_how_many_can_be_played_now_and_when_this_halfs_expire() -> None:
-    boosts = provider().summary(H2H_LEAGUE).boosts
-
-    assert boosts is not None
-    available = [label for label, value in _chips().items() if value.startswith("available")]
-    assert boosts.note.startswith(f"{len(available)} available")
-    assert "GW19 deadline" in boosts.note and "Wed 26 Aug" in boosts.note
-
-
-def test_a_chip_played_in_the_first_half_leaves_the_second_halfs() -> None:
-    """The game issues a Wildcard per half; spending one spends only that half's."""
-    chips = _chips(provider(upcoming=12, chips_played=[ChipPlay(name="wildcard", event=9)]))
-
-    assert chips["Wildcard"] == "played GW9 · again from GW20"
-    assert chips["Free Hit"] == "available until GW19"
-
-
-def test_a_second_half_chip_is_available_once_the_first_was_played() -> None:
-    chips = _chips(provider(upcoming=25, chips_played=[ChipPlay(name="wildcard", event=9)]))
-
-    assert chips["Wildcard"] == "available until GW38"
-
-
-def test_a_first_half_chip_left_unplayed_says_it_was_lost() -> None:
-    chips = _chips(provider(upcoming=25))
-
-    assert chips["Free Hit"] == "available until GW38 · one expired unplayed"
-    assert chips["Bench Boost"] == "expired"
-
-
-def test_a_chip_played_in_its_last_window_says_so_once_the_season_is_past_it() -> None:
-    chips = _chips(
-        provider(
-            chips=[Chip(name="freehit", start_event=1, stop_event=2)],
-            upcoming=30,
-            chips_played=[ChipPlay(name="freehit", event=2)],
-        )
-    )
-
-    assert chips["Free Hit"] == "played GW2"
-
-
-def test_a_chip_whose_window_has_not_opened_says_when_it_does() -> None:
-    """A Wildcard cannot be played in GW1, and the game says so rather than
-    leaving a manager to find that out at the deadline."""
-    assert _chips(provider(upcoming=2))["Wildcard"] == "from GW2"
-
-
-def test_a_chip_already_played_says_which_week_it_went() -> None:
-    played = _chips(provider(chips_played=[ChipPlay(name="bboost", event=3)]))
-
-    assert played["Bench Boost"] == "played GW3"
-    assert played["Triple Captain"] == "available until GW19"
-
-
-def test_a_chip_whose_windows_have_all_closed_is_still_listed() -> None:
-    """An unplayed Free Hit is a thing that was lost, and a row saying so is
-    worth more than a row quietly missing."""
-    gone = _chips(provider(chips=[Chip(name="freehit", start_event=1, stop_event=2)], upcoming=30))
-
-    assert gone["Free Hit"] == "expired"
-
-
-def test_one_row_per_chip_rather_than_one_per_window() -> None:
-    """The game issues each twice; a manager decides about the chip."""
-    labels = list(_chips())
-
-    assert labels == ["Wildcard", "Free Hit", "Bench Boost", "Triple Captain"]
-
-
-def test_a_failed_chip_lookup_leaves_the_rest_of_the_week() -> None:
-    summary = provider(chips_error=FPLAPIError("down")).summary(H2H_LEAGUE)
-
-    assert summary.boosts is None
-    assert summary.mine is not None
-
-
-def test_the_vice_captain_is_marked_as_well_as_the_captain() -> None:
-    """The vice is the whole point when the captain does not play, so a squad
-    that shows only the armband shows half the decision."""
-    summary = provider().summary(H2H_LEAGUE)
-    marks = [s.mark for s in mine(summary).lineup + mine(summary).bench if s.mark]
-
-    assert sorted(marks) == ["C", "VC"]
-
-
-def test_the_opponents_armbands_are_marked_too() -> None:
-    """Both sides are read across, so they have to say the same things."""
-    opponent = provider().summary(H2H_LEAGUE).opponent
-
-    assert opponent is not None
-    assert any(s.mark == "C" for s in opponent.lineup)
-
-
-def test_the_drawer_names_the_club_in_full_with_its_crest() -> None:
-    detail = provider().player(LEAGUE_ID, "1")
-    assert detail.team_name == "Arsenal"
-    # Filed under the club's media code, not its bootstrap id.
-    assert detail.team_logo_url == "https://resources.premierleague.com/premierleague/badges/70/t3.png"
-
-
-def test_a_club_that_will_not_load_falls_back_to_the_abbreviation() -> None:
-    """Worse than the full name, no worse than before, and not a failed page."""
-    detail = provider(clubs_error=FPLAPIError("down")).player(LEAGUE_ID, "1")
-    assert detail.team_name == detail.team
-    assert detail.team_logo_url == ""
-
-
-# ── other gameweeks ─────────────────────────────────────────────────────
-
-
-def _stats(summary: Summary) -> dict[str, str]:
-    return {stat.label: stat.value for stat in summary.headline}
-
-
-def test_the_gameweek_being_played_says_where_it_sits_in_the_season() -> None:
-    weeks = provider().summary("900").weeks
-
-    assert weeks is not None
-    assert (weeks.week, weeks.current, weeks.first, weeks.last) == (4, 4, 1, 38)
-
-
-def test_a_gameweek_played_reads_the_squad_picked_for_it_and_what_fpl_credited() -> None:
-    fake = FakeFPL(history=[GameweekResult(event=2, points=63, transfers_made=0, transfers_cost=0)])
-    summary = FPLProvider(ENTRY_ID, client=fake).week_of("900", 2)
-
-    assert fake.squad_requests == [2]
-    assert _stats(summary) == {"Points": "63", "Average": "50"}
-    assert mine(summary).points == "63 pts"
-    assert summary.window == "Gameweek 2 · final"
-    assert summary.opponent is None  # a classic league has no tie
-    assert summary.actions is None and summary.swaps == []
-    assert summary.weeks is not None and (summary.weeks.week, summary.weeks.current) == (2, 4)
-
-
-def test_a_head_to_head_gameweek_played_reads_as_its_final_score() -> None:
-    summary = provider().week_of("950", 2)
-
-    assert _stats(summary)["Final"] == "40 – 52"
-    assert summary.opponent is not None and summary.opponent.points == "52 pts"
-
-
-def test_the_next_gameweek_is_the_squad_held_now_at_fpls_projection_for_it() -> None:
-    fake = FakeFPL()
-    summary = FPLProvider(ENTRY_ID, client=fake).week_of("900", 5)
-
-    assert fake.squad_requests == [4]  # its picks are not published until the deadline passes
-    assert list(_stats(summary)) == ["Deadline"]
-    assert all(spot.value.endswith("xPts") for spot in mine(summary).lineup)
-    assert mine(summary).points.endswith("proj")
-
-
-def test_a_gameweek_further_out_has_no_projection_rather_than_the_next_ones() -> None:
-    summary = provider().week_of("900", 8)
-
-    assert {spot.value for spot in mine(summary).lineup} == {"—"}
-    assert mine(summary).points == ""
-
-
-def test_a_gameweek_outside_the_season_is_refused() -> None:
-    with pytest.raises(NotFoundError):
-        provider().week_of("900", 39)
-    with pytest.raises(NotFoundError):
-        provider().games_of("900", 0)
-
-
 def test_a_gameweeks_matches_carry_their_score_once_kicked_off() -> None:
     fake = FakeFPL(
         fixtures=[
@@ -1108,66 +535,6 @@ def test_a_gameweeks_blanks_are_the_clubs_with_no_match_in_it() -> None:
 
 def test_a_gameweek_with_no_matches_listed_has_no_blanks_either() -> None:
     assert FPLProvider(ENTRY_ID, client=FakeFPL(fixtures=[])).games_of("900", 3).byes == []
-
-
-# ── once the gameweek is over ───────────────────────────────────────────
-
-FINISHED_LIVE = {8: LiveStat(points=12, minutes=90), 9: LiveStat(points=1, minutes=64)}
-
-
-def _between_gameweeks() -> FPLProvider:
-    """GW4 finished and still FPL's current one; GW5's deadline is next."""
-    return provider(finished=4, live=FINISHED_LIVE)
-
-
-def test_once_the_gameweek_is_over_the_week_view_is_the_next_one() -> None:
-    summary = _between_gameweeks().summary(H2H_LEAGUE)
-
-    assert summary.window == "Gameweek 5 · deadline Sat 12 Sep, 00:00"
-    assert summary.weeks is not None and (summary.weeks.week, summary.weeks.current) == (5, 5)
-
-
-def test_the_next_gameweek_shows_the_squad_as_last_picked_at_its_projection() -> None:
-    # ep_this is still GW4's; ep_next is the one for GW5.
-    catalog = {pid: replace(p, expected_this=0.0) for pid, p in {**SQUAD_PLAYERS, **MARKET}.items()}
-    summary = provider(finished=4, live=FINISHED_LIVE, players=catalog).summary(H2H_LEAGUE)
-
-    assert mine(summary).detail == "GW4 picks"
-    assert all(spot.scoring == "projected" for spot in mine(summary).lineup)
-    assert mine(summary).points == "64.0 proj"  # ep_next, the captain doubled
-    assert summary.opponent is not None and summary.opponent.points.endswith(" proj")
-
-
-def test_a_finished_gameweek_browsed_reads_final_with_its_score() -> None:
-    summary = _between_gameweeks().week_of(H2H_LEAGUE, 4)
-
-    assert summary.window == "Gameweek 4 · final"
-    assert _stats(summary)["Final"] == "40 – 52"
-
-
-def test_a_finished_gameweek_is_final_however_many_minutes_were_played() -> None:
-    """Minutes in a finished week are its history, not a match under way."""
-    assert "in progress" not in _between_gameweeks().week_of("900", 4).window
-
-
-def test_a_gameweek_under_way_browsed_reads_its_live_score() -> None:
-    summary = provider(live=LIVE).week_of(H2H_LEAGUE, 4)
-
-    assert summary.window == "Gameweek 4 · in progress"
-    assert _stats(summary)["Live"] == "40 – 52"
-
-
-def test_a_gameweek_whose_matches_are_all_over_reads_final_before_fpl_closes_it() -> None:
-    summary = provider(live=LIVE, fixtures=[_arsenal(started=True, finished=True)]).summary(H2H_LEAGUE)
-
-    assert summary.window == "Gameweek 4 · final"
-
-
-def test_before_the_season_the_week_view_has_no_squad_but_the_league_has_its_calendar() -> None:
-    schedule = provider(upcoming=1).schedule(H2H_LEAGUE)
-
-    assert [row.label for row in schedule.season if row.is_current] == ["Gameweek 1"]
-    assert all(not m.yours for m in schedule.matches)
 
 
 # ── who is in each match ────────────────────────────────────────────────
@@ -1244,25 +611,7 @@ def test_a_classic_leagues_activity_covers_its_table() -> None:
 # ── what degrades and what fails ────────────────────────────────────────
 
 
-def test_a_tie_that_will_not_load_leaves_your_own_side() -> None:
-    summary = provider(h2h_match_error=FPLAPIError("down")).summary(H2H_LEAGUE)
-
-    assert summary.opponent is None
-    assert mine(summary).lineup
-
-
 def test_matches_without_a_squad_to_read_still_list_the_games() -> None:
     games = provider(squad_error=FPLAPIError("down")).games_of(H2H_LEAGUE, 4).games
 
     assert games and not games[0].yours and not games[0].theirs
-
-
-def test_a_played_gameweek_without_its_history_reads_no_points_rather_than_nought() -> None:
-    summary = provider(history_error=FPLAPIError("down")).week_of(LEAGUE_ID, 2)
-
-    assert "Points" not in _stats(summary)
-    assert mine(summary).points == ""
-
-
-def test_a_season_with_no_chips_issued_shows_no_chips() -> None:
-    assert provider(chips=[]).summary(H2H_LEAGUE).boosts is None

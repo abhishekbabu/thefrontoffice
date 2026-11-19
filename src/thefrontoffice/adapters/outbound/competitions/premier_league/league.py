@@ -14,7 +14,7 @@ from typing import Literal
 
 from thefrontoffice.adapters.outbound.competitions.dates import at_time
 from thefrontoffice.adapters.outbound.competitions.places import ordinal
-from thefrontoffice.adapters.outbound.competitions.premier_league.squad import TRANSFER_CHIPS, Roster
+from thefrontoffice.adapters.outbound.competitions.premier_league.rules import TRANSFER_CHIPS, Roster
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (

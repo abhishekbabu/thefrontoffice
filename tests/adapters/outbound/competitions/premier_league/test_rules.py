@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 
 from support.fpl import player
 
-from thefrontoffice.adapters.outbound.competitions.premier_league.squad import (
+from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
     MAX_FREE_TRANSFERS,
     Roster,
     Transfer,
