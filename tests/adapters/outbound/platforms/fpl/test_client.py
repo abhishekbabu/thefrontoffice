@@ -37,6 +37,7 @@ BOOTSTRAP = {
             "element_type": 3,
             "team": 1,
             "now_cost": 95,
+            "cost_change_start": 5,
             "ep_next": "6.4",
             "ep_this": "5.1",
             "form": "5.2",
@@ -131,10 +132,24 @@ FIXTURES = [
     },
 ]
 
+TRANSFERS = [
+    {
+        "element_in": 10,
+        "element_in_cost": 92,
+        "element_out": 11,
+        "element_out_cost": 150,
+        "entry": 77,
+        "event": 2,
+        "time": "2026-08-20T19:45:16.885751Z",
+    },
+    {"element_in": 10, "element_out": 11, "event": None, "time": "2026-08-20T19:45:16Z"},
+]
+
 ROUTES = {
     "bootstrap-static": BOOTSTRAP,
     "/entry/77/event/": PICKS,
     "/entry/77/history/": HISTORY,
+    "/entry/77/transfers/": TRANSFERS,
     "/entry/77/": ENTRY,
     "/fixtures/": FIXTURES,
 }
@@ -480,3 +495,20 @@ def test_a_manager_who_has_played_none_has_none(tmp_path: Path) -> None:
     )
 
     assert client.get_chips_played(7) == []
+
+
+# ── transfers and what they cost ────────────────────────────────────────
+
+
+def test_a_transfer_carries_its_purchase_price_and_aware_time(client: FPLClient) -> None:
+    [transfer] = client.get_transfers(77)
+
+    assert (transfer.element_in, transfer.element_in_cost, transfer.element_out, transfer.event) == (10, 92, 11, 2)
+    assert transfer.time.tzinfo is not None and transfer.time.date().isoformat() == "2026-08-20"
+
+
+def test_a_player_carries_his_opening_price_where_the_catalog_says(client: FPLClient) -> None:
+    players = client.get_players()
+
+    assert players[10].start_cost == 90  # £9.5m now, up £0.5m on the season
+    assert players[11].start_cost is None

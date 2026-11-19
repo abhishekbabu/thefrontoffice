@@ -21,6 +21,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Player,
     Squad,
     TableRow,
+    TransferMade,
 )
 
 
@@ -209,8 +210,24 @@ class FakeFPL:
         clubs: list[Club] | None = None,
         clubs_error: Exception | None = None,
         players: dict[int, Player] | None = None,
+        finished: int = 0,
+        transfers: dict[int, list[TransferMade]] | None = None,
+        transfers_error: Exception | None = None,
+        h2h_match: H2HMatch | None = None,
+        h2h_match_error: Exception | None = None,
+        squad_error: Exception | None = None,
+        history_error: Exception | None = None,
     ) -> None:
+        self.h2h_match_error = h2h_match_error
+        self.squad_error = squad_error
+        self.history_error = history_error
         self.players = players
+        self.finished = finished
+        self.transfers = transfers or {}
+        self.transfers_error = transfers_error
+        self.h2h_match = h2h_match or H2HMatch(
+            opponent_entry=99, opponent_name="Rival FC", my_points=40, opponent_points=52
+        )
         self.clubs = (
             clubs
             if clubs is not None
@@ -285,6 +302,8 @@ class FakeFPL:
 
     def get_squad(self, entry_id: int, gameweek: int) -> Squad:
         self.squad_requests.append(gameweek)
+        if self.squad_error:
+            raise self.squad_error
         return self.squad
 
     def get_players(self) -> dict[int, Player]:
@@ -296,10 +315,19 @@ class FakeFPL:
         return self.past_seasons
 
     def get_history(self, entry_id: int) -> list[GameweekResult]:
+        if self.history_error:
+            raise self.history_error
         return self.history
 
     def get_h2h_match(self, league_id: int, entry_id: int, gameweek: int) -> H2HMatch | None:
-        return H2HMatch(opponent_entry=99, opponent_name="Rival FC", my_points=40, opponent_points=52)
+        if self.h2h_match_error:
+            raise self.h2h_match_error
+        return self.h2h_match
+
+    def get_transfers(self, entry_id: int) -> list[TransferMade]:
+        if self.transfers_error:
+            raise self.transfers_error
+        return self.transfers.get(entry_id, [])
 
     def get_fixtures(self, gameweek: int) -> list[Fixture]:
         if self.fixtures_error:
@@ -338,6 +366,7 @@ class FakeFPL:
                 # The one being played is the one before the next deadline,
                 # which is the whole distinction this fake exists to model.
                 is_current=i == self.upcoming - 1,
+                finished=i <= self.finished,
                 average_score=50,
             )
             for i in range(1, 39)

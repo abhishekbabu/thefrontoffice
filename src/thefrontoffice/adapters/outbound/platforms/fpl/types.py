@@ -148,6 +148,10 @@ class Player:
     """Opta's own id, which the photo CDN is keyed by. Distinct from `id`, the
     element number, which is reassigned between seasons."""
 
+    start_cost: int | None = None
+    """His price when the season opened, in tenths of a million: what a squad picked before
+    the first deadline paid for him. None where the catalog does not say."""
+
     @property
     def availability(self) -> str:
         """A short flag for the prompt, empty when the player is fully fit."""
@@ -399,6 +403,20 @@ class Chip:
 
     def covers(self, gameweek: int) -> bool:
         return self.start_event <= gameweek <= self.stop_event
+
+
+@dataclass(frozen=True)
+class TransferMade:
+    """One transfer a manager made: who came in at what price, who went out, and when."""
+
+    element_in: int
+    element_in_cost: int
+    """What he was bought for, in tenths of a million: the price his selling price is figured from."""
+
+    element_out: int
+    event: int
+    time: datetime
+    """Aware UTC."""
 
 
 @dataclass(frozen=True)

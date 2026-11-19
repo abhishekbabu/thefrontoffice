@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     FORMATION_LIMITS,
     STARTING_SIZE,
+    ChipPlay,
     Fixture,
     GameweekResult,
     LiveStat,
@@ -28,6 +29,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Pick,
     Player,
     Squad,
+    TransferMade,
 )
 
 RULED_OUT = frozenset({"i", "s", "u", "n"})
@@ -35,10 +37,13 @@ RULED_OUT = frozenset({"i", "s", "u", "n"})
 among them: a doubt is flagged, priced and started like anyone else."""
 
 MAX_FREE_TRANSFERS = 5
-"""Free transfers roll over, capped at five. Not exposed by the public API."""
+"""Free transfers bank up to five: one, plus the game's `max_extra_free_transfers` of four."""
 
 TRANSFER_HIT = 4
 """Points deducted per transfer beyond the free allowance."""
+
+TRANSFER_CHIPS = frozenset({"wildcard", "freehit"})
+"""Chips whose week's transfers are free and leave the banked allowance where it was."""
 
 
 def plays(player: Player) -> bool:
@@ -60,23 +65,32 @@ def effective_points(player: Player) -> float:
     return player.expected_points if plays(player) else 0.0
 
 
-def free_transfers(history: list[GameweekResult], upcoming: int) -> int:
+def free_transfers(history: list[GameweekResult], upcoming: int, *, chips: Iterable[ChipPlay]) -> int:
     """How many free transfers are available going into gameweek `upcoming`.
 
     The public API does not expose this — only `my-team`, which needs a login —
-    but it is fully determined by the rules and by transfers already made. One
-    is earned per gameweek, unused ones roll over, and the total is capped.
+    but it is fully determined by the rules and by transfers already made:
+
+    - The squad is picked free for the manager's first gameweek, and the first free
+      transfer arrives for the one after it.
+    - Each later gameweek adds one, after its own transfers are spent; a hit takes the
+      bank to nought, never below. The bank is capped at five.
+    - A Wildcard or Free Hit week spends nothing and adds nothing: the bank carries
+      over unchanged — the game's rule since 2024/25, which the hits charged in real
+      histories bear out week for week.
 
     Falls back to a single transfer when the history is missing, which is the
     floor: it is never wrong in the manager's favor.
     """
-    played = {row.event: row for row in history}
-    available = 1
-    for event in range(1, upcoming):
-        row = played.get(event)
-        if row is None:
+    chip_weeks = {chip.event for chip in chips if chip.name in TRANSFER_CHIPS}
+    played = sorted((row for row in history if row.event < upcoming), key=lambda row: row.event)
+    if not played:
+        return 1
+    available = 1  # earned by the first gameweek, which the squad itself was picked for
+    for row in played[1:]:
+        if row.event in chip_weeks:
             continue
-        available = min(MAX_FREE_TRANSFERS, max(1, available - row.transfers_made + 1))
+        available = min(MAX_FREE_TRANSFERS, max(0, available - row.transfers_made) + 1)
     return available
 
 
@@ -246,22 +260,86 @@ class LineupChange:
 
 
 def lineup_changes(current_starters: list[Player], best: Lineup) -> list[LineupChange]:
-    """What to change to reach `best`, largest gain first."""
+    """Every swap between the eleven as set and `best`, largest gain first.
+
+    The set difference between the two elevens, paired so each swap is one a manager can
+    make: a keeper only for a keeper, and like for like wherever a position has someone
+    on each side. What is left changes the formation — a defender in, a midfielder out —
+    and always brings in a position the best eleven holds more of for one it holds fewer
+    of, so every swap, made in any order, leaves a legal eleven.
+
+    Nothing is filtered on its own gain: a swap that loses a little can be the one that
+    makes room for a bigger one, and together they add up to the best eleven's total.
+    A same-position swap that changes nothing is left out, since it reaches no further.
+    """
     current_ids = {p.id for p in current_starters}
     best_ids = {p.id for p in best.starters}
+    coming_in = [p for p in best.starters if p.id not in current_ids]
+    going_out = [p for p in current_starters if p.id not in best_ids]
 
-    coming_in = sorted((p for p in best.starters if p.id not in current_ids), key=effective_points, reverse=True)
-    going_out = sorted((p for p in current_starters if p.id not in best_ids), key=effective_points)
+    def strongest_first(players: list[Player]) -> list[Player]:
+        return sorted(players, key=lambda p: (-effective_points(p), p.name))
 
-    changes = [
-        LineupChange(start=player, drop=going_out[i] if i < len(going_out) else None)
-        for i, player in enumerate(coming_in)
+    changes: list[LineupChange] = []
+    unpaired_in: list[Player] = []
+    unpaired_out: list[Player] = []
+    for position in FORMATION_LIMITS:
+        ins = strongest_first([p for p in coming_in if p.position == position])
+        outs = list(reversed(strongest_first([p for p in going_out if p.position == position])))
+        pairs = min(len(ins), len(outs))
+        changes += [LineupChange(start=ins[i], drop=outs[i]) for i in range(pairs)]
+        unpaired_in += ins[pairs:]
+        unpaired_out += outs[pairs:]
+
+    # Each position left over is in surplus on one side only, so any pairing across
+    # them moves one place from a position with spare to one short of it.
+    unpaired_in = strongest_first(unpaired_in)
+    unpaired_out = list(reversed(strongest_first(unpaired_out)))
+    changes += [
+        LineupChange(start=player, drop=unpaired_out[i] if i < len(unpaired_out) else None)
+        for i, player in enumerate(unpaired_in)
     ]
-    return [c for c in changes if c.gain > 0]
+    kept = [c for c in changes if not (c.drop and c.drop.position == c.start.position and c.gain == 0)]
+    return sorted(kept, key=lambda c: -c.gain)
 
 
 MAX_OPTIONS_PER_PLAYER = 3
 """How many replacements to list for any one outgoing player."""
+
+
+def selling_price(bought: int, now: int) -> int:
+    """What the game pays for a player, in tenths of a million.
+
+    A fall is passed on in full; a rise is halved, rounded down to the tenth — the
+    game's `transfers_sell_on_fee` of 50%. Bought at £7.5m and now £7.8m, he sells for £7.6m.
+    """
+    if now <= bought:
+        return now
+    return bought + (now - bought) // 2
+
+
+def purchase_prices(
+    owned: Iterable[Player], transfers: list[TransferMade], chips: Iterable[ChipPlay]
+) -> dict[int, int]:
+    """What each owned player was bought for, by element id.
+
+    The latest transfer that brought him in names its price. A Free Hit week's transfers
+    are undone at the next deadline, so they price nobody. A player never transferred in
+    was in the squad picked before the first deadline, at the season's opening price —
+    and where the catalog does not carry that, his current price stands in.
+    """
+    free_hit_weeks = {chip.event for chip in chips if chip.name == "freehit"}
+    bought: dict[int, TransferMade] = {}
+    for transfer in transfers:
+        if transfer.event in free_hit_weeks:
+            continue
+        latest = bought.get(transfer.element_in)
+        if latest is None or transfer.time > latest.time:
+            bought[transfer.element_in] = transfer
+    return {
+        p.id: bought[p.id].element_in_cost if p.id in bought else (p.start_cost if p.start_cost is not None else p.cost)
+        for p in owned
+    }
 
 
 @dataclass(frozen=True)
@@ -270,17 +348,16 @@ class Transfer:
 
     out: Player
     incoming: Player
+    sale: int
+    """What the game pays for `out`, in tenths of a million: his selling price, not his price."""
 
     @property
     def cost(self) -> int:
         """What the swap costs from the bank, in tenths of a million.
 
-        Negative when the incoming player is cheaper, which frees money.
-        Selling price can be below the current price when a player has risen
-        since purchase, but the purchase price is only in `my-team`, so this is
-        the optimistic bound and the prompt says so.
+        Negative when the incoming player is cheaper than the sale brings in, which frees money.
         """
-        return self.incoming.cost - self.out.cost
+        return self.incoming.cost - self.sale
 
     @property
     def gain(self) -> float:
@@ -292,9 +369,13 @@ def affordable_transfers(
     market: list[Player],
     bank: int,
     *,
+    selling: dict[int, int],
     limit: int,
 ) -> list[Transfer]:
     """The best single-player upgrades this squad can pay for, best gain first.
+
+    `selling` is each squad player's selling price by element id; one it does not name
+    sells at his current price.
 
     Only same-position swaps: FPL fixes how many of each position a squad holds,
     so a midfielder can only ever be replaced by a midfielder.
@@ -311,7 +392,7 @@ def affordable_transfers(
     best_by_target: dict[int, Transfer] = {}
     for out in squad:
         for incoming in candidates.get(out.position, []):
-            transfer = Transfer(out=out, incoming=incoming)
+            transfer = Transfer(out=out, incoming=incoming, sale=selling.get(out.id, out.cost))
             if transfer.cost > bank or transfer.gain <= 0:
                 continue
             existing = best_by_target.get(incoming.id)

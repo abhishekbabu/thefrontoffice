@@ -68,8 +68,8 @@ FIXTURES THIS GAMEWEEK FOR THE CLUBS YOU OWN:
 {fixtures_str}
 
 AFFORDABLE TRANSFERS (best upgrade per squad player, within the bank):
-- Prices are current prices. Your actual selling price can be lower if a player has risen
-  since you bought them, so treat the cost as the optimistic case.
+- Each cost is the incoming price less the outgoing player's selling price, which keeps only
+  half of any rise since he was bought.
 {transfers_str}
 
 TOP AVAILABLE PLAYERS BY EXPECTED POINTS (not in your squad):
@@ -102,6 +102,7 @@ def build(
     catalog: dict[int, Player],
     allowance: int,
     fixtures: dict[str, list[Opponent]],
+    selling: dict[int, int],
 ) -> CompetitionContext:
     """The scouting prompt, and the parts it was assembled from."""
     squad, players, current_starters = roster.squad, roster.players, roster.starters
@@ -118,7 +119,7 @@ def build(
     market_lines = {p.name: _market_line(p) for p in market if p.id not in owned}
     market_lines = dict(list(market_lines.items())[:MARKET_LIMIT])
 
-    transfers = affordable_transfers(players, market, squad.bank, limit=TRANSFER_LIMIT)
+    transfers = affordable_transfers(players, market, squad.bank, selling=selling, limit=TRANSFER_LIMIT)
 
     situation = _situation(entry, league_id, squad, upcoming.name, upcoming.average_score)
     constraints = _constraints(squad, allowance, best, current_points)
@@ -240,7 +241,7 @@ def _changes_lines(changes: list[LineupChange]) -> str:
         return "- None; the eleven as set is already the best legal shape.\n"
     return "".join(
         f"- START {c.start.name} ({c.start.position}) for "
-        f"{c.drop.name if c.drop else 'an empty place'}: +{c.gain:.1f} xPts\n"
+        f"{c.drop.name if c.drop else 'an empty place'}: {c.gain:+.1f} xPts\n"
         for c in changes
     )
 
@@ -250,7 +251,7 @@ def _transfer_lines(transfers: list[Transfer]) -> str:
         return "- (nothing in the bank buys an upgrade)\n"
     return "".join(
         f"- {t.incoming.name} ({t.incoming.position}, {t.incoming.team}, {as_millions(t.incoming.cost)}) "
-        f"for {t.out.name} ({as_millions(t.out.cost)}): +{t.gain:.1f} xPts, "
+        f"for {t.out.name} (sells for {as_millions(t.sale)}): +{t.gain:.1f} xPts, "
         f"{'costs' if t.cost > 0 else 'frees'} {as_millions(abs(t.cost))}\n"
         for t in transfers
     )
