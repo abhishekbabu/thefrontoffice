@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Spot } from "@/lib/api";
-import { LineupCard, SideCard } from "@/components/ui/lineup";
+import { LineupCard, SideCard, underWay } from "@/components/ui/lineup";
 import { render } from "@/test/render";
 
 function spot(player: string, mark = ""): Spot {
@@ -57,5 +57,49 @@ describe("open roster spots", () => {
 
     expect(container.textContent).toContain("Open roster spot");
     expect(container.textContent).not.toContain("Nobody on the bench.");
+  });
+});
+
+describe("the points column", () => {
+  const scored = (player: string, scoring: Spot["scoring"], points = ""): Spot => ({
+    ...spot(player),
+    scoring,
+    scored: points,
+    projection: "10.0",
+  });
+  const side = (...lineup: Spot[]) => ({ name: "Mine", detail: "", points: "", lineup, bench: [], reserve: [], open_spots: 0 });
+
+  it("is not drawn before any game of the week kicks off", async () => {
+    const { container } = await render(<SideCard side={side(scored("Waiting", "projected"))} label="You" />);
+
+    expect(container.textContent).toContain("Proj");
+    expect(container.textContent).not.toContain("Pts");
+    expect(container.textContent).not.toContain("—");
+  });
+
+  it("is drawn once one has, with a dash for a player still to play", async () => {
+    const { container } = await render(
+      <SideCard side={side(scored("Playing", "live", "12.4"), scored("Waiting", "projected"))} label="You" />,
+    );
+
+    expect(container.textContent).toContain("Pts");
+    expect(container.textContent).toContain("12.4");
+    expect(container.textContent).toContain("—");
+  });
+
+  it("follows the caller where only the other side's game is under way", async () => {
+    const { container } = await render(<SideCard side={side(scored("Waiting", "projected"))} label="You" started />);
+
+    expect(container.textContent).toContain("Pts");
+  });
+});
+
+describe("underWay", () => {
+  it("is true from the first live or final score on either side", () => {
+    const quiet = { name: "", detail: "", points: "", lineup: [spot("A")], bench: [], reserve: [], open_spots: 0 };
+    const done = { ...quiet, bench: [{ ...spot("B"), scoring: "final" as const }] };
+
+    expect(underWay(quiet, null)).toBe(false);
+    expect(underWay(quiet, done)).toBe(true);
   });
 });

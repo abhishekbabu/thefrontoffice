@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type * as React from "react";
 import { AlarmClock, EyeOff, MessageCircleQuestion, Undo2 } from "lucide-react";
-import type { Action, ItemDecision, Move, Stat, TaskVerdict, Urgency } from "@/lib/api";
+import type { Action, ItemDecision, Move, MovePlayer, Stat, TaskVerdict, Urgency } from "@/lib/api";
 import { SNOOZES } from "@/lib/snooze";
 import { askAssistant } from "@/lib/screen";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Linked } from "@/components/ui/stat";
+import { Table, Td, Th } from "@/components/ui/table";
 
 /** Said in words as well as color, so the order survives without the hue. */
 const URGENCY: Record<Urgency, { label: string; variant: Variant }> = {
@@ -54,6 +55,7 @@ export function ActionList({
   deciding = false,
   aside,
   footer,
+  detail,
 }: {
   actions: Action[];
   suggested?: Move[];
@@ -65,6 +67,8 @@ export function ActionList({
   aside?: React.ReactNode;
   /** Under each row, for what a caller hangs off an item; handed the row's own controls to place. */
   footer?: (action: Action, controls: React.ReactNode) => React.ReactNode;
+  /** Inside a row, under its reason: what only the caller can fetch about the item — the best trade on offer. */
+  detail?: (action: Action) => React.ReactNode;
 }) {
   const shown = actions.filter((action) => !action.mark.hidden);
   const hidden = actions.filter((action) => action.mark.hidden);
@@ -101,6 +105,8 @@ export function ActionList({
                 when={action.when}
                 chance={action.chance}
                 evidence={action.evidence}
+                players={action.players}
+                detail={detail?.(action)}
                 open={action.player_id && onOpen ? () => onOpen(action.player_id) : undefined}
               >
                 {action.mark.resurfaced && (
@@ -236,6 +242,8 @@ function Row({
   when,
   chance = null,
   evidence = [],
+  players = [],
+  detail,
   open,
   children,
 }: {
@@ -246,6 +254,9 @@ function Row({
   /** What the move does to the chance of winning, where it was simulated. */
   chance?: Stat | null;
   evidence?: Action["evidence"];
+  /** Who the move brings in and takes out, compared figure by figure; empty where it moves one player. */
+  players?: MovePlayer[];
+  detail?: React.ReactNode;
   open?: () => void;
   children?: React.ReactNode;
 }) {
@@ -259,43 +270,97 @@ function Row({
         <Badge variant={badge.variant} appearance="status" className="mt-0.5 w-(--badge-column) shrink-0">
           {badge.label}
         </Badge>
-        <div className="min-w-0 flex-1">
+        {/* Beside the title on a wide screen; under it on a phone, where a
+            corner column squeezes the title to a word a line. */}
+        <div className="grid min-w-0 flex-1 grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-3">
           <div className="text-[13.5px] font-medium">{title}</div>
-          <div className="mt-0.5 text-[12.5px] text-muted-foreground">{reason}</div>
-          {evidence.length > 0 && (
-            <ul className="mt-1.5 flex flex-col gap-1">
-              {evidence.map((line, i) => (
-                <li key={`${line.label}-${i}`} className="flex items-baseline gap-2 text-[12px] text-muted-foreground">
-                  {/* The rank is in the words; the dot only lets a
-                      soft or tough matchup be found at a glance. */}
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "size-1.5 shrink-0 -translate-y-px rounded-full bg-border",
-                      line.tone === "good" && "bg-ok",
-                      line.tone === "warning" && "bg-warn",
-                    )}
-                  />
-                  <span>
-                    <span className="font-medium text-foreground">{line.label}</span>{" "}
-                    <Linked url={line.url}>{line.value}</Linked>
-                  </span>
-                </li>
-              ))}
-            </ul>
+          {(when || chance) && (
+            <span className="flex flex-wrap gap-x-2 pt-0.5 font-mono text-[11px] text-muted-foreground sm:row-span-2 sm:max-w-[11rem] sm:flex-col sm:flex-nowrap sm:items-end sm:gap-0.5 sm:text-right">
+              {/* The sign is in the words; the color only lets a cost be found at a glance. */}
+              {chance && <span className={cn("font-semibold", toneText(chance.tone))}>{chance.value}</span>}
+              {when}
+            </span>
           )}
+          <div className="min-w-0 sm:col-start-1">
+            <div className="mt-0.5 text-[12.5px] text-muted-foreground">{reason}</div>
+            {players.length > 1 && <Compared players={players} />}
+            {evidence.length > 0 && (
+              <ul className="mt-1.5 flex flex-col gap-1">
+                {evidence.map((line, i) => (
+                  <li key={`${line.label}-${i}`} className="flex items-baseline gap-2 text-[12px] text-muted-foreground">
+                    {/* The rank is in the words; the dot only lets a
+                        soft or tough matchup be found at a glance. */}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-1.5 shrink-0 -translate-y-px rounded-full bg-border",
+                        line.tone === "good" && "bg-ok",
+                        line.tone === "warning" && "bg-warn",
+                      )}
+                    />
+                    <span>
+                      <span className="font-medium text-foreground">{line.label}</span>{" "}
+                      <Linked url={line.url}>{line.value}</Linked>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {detail && <div className="mt-1.5">{detail}</div>}
+          </div>
         </div>
-        {(when || chance) && (
-          <span className="flex max-w-[11rem] shrink-0 flex-col items-end gap-0.5 pt-0.5 text-right font-mono text-[11px] text-muted-foreground">
-            {/* The sign is in the words; the color only lets a cost be found at a glance. */}
-            {chance && <span className={cn("font-semibold", toneText(chance.tone))}>{chance.value}</span>}
-            {when}
-          </span>
-        )}
       </div>
       {/* Outside the clickable area: a verdict or a thread is read, not opened. */}
       {children && <div className="px-4 pb-3 pl-[calc(var(--badge-column)+1.75rem)]">{children}</div>}
     </li>
+  );
+}
+
+/**
+ * The players a move swaps, side by side: one column each, one row per figure.
+ *
+ * The server sends every player the same rows in the same order, so a row
+ * is read across rather than two sentences being read and held in the head.
+ * In and out are said in words over each column; a tone colors only a
+ * figure whose words already say what it means — an easy matchup, a status.
+ */
+export function Compared({ players }: { players: MovePlayer[] }) {
+  const rows = players[0]?.figures.map((figure) => figure.label) ?? [];
+  return (
+    <Table className="mt-2 w-auto text-[12px]">
+      <thead>
+        <tr>
+          <Th className="px-0 py-1.5" />
+          {players.map((player) => (
+            <Th key={`${player.side}-${player.player_id}`} className="px-3 py-1.5 align-bottom">
+              <span className="block">{player.side === "in" ? "In" : "Out"}</span>
+              <span className="block truncate font-sans text-[12.5px] font-medium normal-case tracking-normal text-foreground">
+                {player.name}
+              </span>
+              <span className="block font-normal normal-case tracking-normal">{player.held}</span>
+            </Th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((label, i) => (
+          <tr key={label}>
+            <Td className="whitespace-nowrap px-0 py-1 font-mono text-[11px] text-muted-foreground">{label}</Td>
+            {players.map((player) => {
+              const figure = player.figures[i];
+              return (
+                <Td
+                  key={`${player.side}-${player.player_id}`}
+                  className={cn("px-3 py-1 font-mono", toneText(figure?.tone ?? "neutral", "text-foreground"))}
+                >
+                  {figure?.value ?? "—"}
+                </Td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </Table>
   );
 }
 

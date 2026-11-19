@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Action, TaskVerdict } from "@/lib/api";
+import type { Action, MovePlayer, TaskVerdict } from "@/lib/api";
 import { ActionList, staleVerdicts } from "@/components/ui/actions";
 import { render } from "@/test/render";
 
@@ -16,6 +16,7 @@ function action(key: string, verdict: TaskVerdict | null = null, stale = false):
     drop: "",
     win_change: null,
     evidence: [],
+    players: [],
     verdict,
     stale,
     mark: { hidden: null, snoozed_until: null, resurfaced: false },
@@ -56,6 +57,59 @@ describe("ActionList verdicts", () => {
     );
 
     expect(container.textContent?.toLowerCase()).not.toContain("stale");
+  });
+});
+
+const player = (
+  side: MovePlayer["side"],
+  name: string,
+  held: MovePlayer["held"],
+  [snaps, proj, opp]: [string, string, string],
+): MovePlayer => ({
+  side,
+  player_id: name,
+  name,
+  position: "WR",
+  team: "TEN",
+  held,
+  figures: [
+    { label: "Snap% (L3)", value: snaps, tone: "neutral", url: "", better: null },
+    { label: "Proj", value: proj, tone: "neutral", url: "", better: null },
+    { label: "Opp", value: opp, tone: "good", url: "", better: null },
+  ],
+});
+
+describe("a move between two players", () => {
+  const dike = player("in", "Chimere Dike", "free agent", ["66%", "9.88", "vs DAL, 6th-easiest"]);
+  const swap: Action = {
+    ...action("dike"),
+    players: [dike, player("out", "Antonio Williams", "bench", ["40%", "8.20", "vs KC, 2nd-toughest"])],
+  };
+
+  it("lines the two players up in columns, each figure on its own row read across", async () => {
+    const { container } = await render(<ActionList actions={[swap]} />);
+    const rows = [...container.querySelectorAll("tbody tr")].map((row) =>
+      [...row.querySelectorAll("td")].map((cell) => cell.textContent),
+    );
+
+    expect(rows).toEqual([
+      ["Snap% (L3)", "66%", "40%"],
+      ["Proj", "9.88", "8.20"],
+      ["Opp", "vs DAL, 6th-easiest", "vs KC, 2nd-toughest"],
+    ]);
+  });
+
+  it("says which way each player goes and where he stands, in words", async () => {
+    const { container } = await render(<ActionList actions={[swap]} />);
+    const heads = [...container.querySelectorAll("thead th")].map((cell) => cell.textContent);
+
+    expect(heads).toEqual(["", "InChimere Dikefree agent", "OutAntonio Williamsbench"]);
+  });
+
+  it("keeps a move of one player compact, with no table", async () => {
+    const { container } = await render(<ActionList actions={[{ ...action("one"), players: [dike] }]} />);
+
+    expect(container.querySelector("table")).toBeNull();
   });
 });
 

@@ -11,16 +11,20 @@ import {
   type League,
   type ScoutReport,
   type Summary,
+  type TradeIdea,
+  type Trades,
 } from "@/lib/api";
+import { Link } from "react-router-dom";
 import { keys, useCapabilities } from "@/lib/queries";
-import { moment } from "@/lib/format";
+import { moment, percentPoints, signed } from "@/lib/format";
+import { href, offers } from "@/lib/route";
 import { ActionList, WhyButton, staleVerdicts } from "@/components/ui/actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Busy, QueryState } from "@/components/ui/state";
 import { StatGrid, StatList, StatStrip } from "@/components/ui/stat";
-import { LineupCard, SideCard, Swaps } from "@/components/ui/lineup";
+import { LineupCard, SideCard, Swaps, underWay } from "@/components/ui/lineup";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
@@ -146,6 +150,10 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
               onOpen={openPlayer}
               onDecide={(decision) => decide.mutate(decision)}
               deciding={decide.isPending}
+              detail={(action) =>
+                action.kind === "trade" &&
+                offers(competition, "trades") && <BestTrade competition={competition} league={league} />
+              }
               footer={
                 ai
                   ? (action, controls) =>
@@ -181,8 +189,19 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
 
           {shown.data.opponent ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <SideCard side={shown.data.mine} label="You" onOpen={openPlayer} />
-              <SideCard side={shown.data.opponent} label="Opponent" onOpen={openPlayer} />
+              {/* Both sides draw a points column from the week's first kickoff on either, so they stay aligned. */}
+              <SideCard
+                side={shown.data.mine}
+                label="You"
+                onOpen={openPlayer}
+                started={underWay(shown.data.mine, shown.data.opponent)}
+              />
+              <SideCard
+                side={shown.data.opponent}
+                label="Opponent"
+                onOpen={openPlayer}
+                started={underWay(shown.data.mine, shown.data.opponent)}
+              />
             </div>
           ) : (
             <LineupCard
@@ -236,6 +255,51 @@ export function ScoutPanel({ competition, league }: { competition: Competition; 
       {drawer}
     </>
   );
+}
+
+/**
+ * The best trade the Trades page has, under the deadline item: an item that
+ * says only "trade" leaves you to go and find out what. Read from the same
+ * query as that page, so it is computed once for both, and linked to it for
+ * the rest. The gain shown is the figure that page orders by, so "best"
+ * means the same thing in both places. Its absence is said, tersely: no
+ * offer is an answer.
+ */
+export function BestTrade({ competition, league }: { competition: Competition; league: League }) {
+  const trades = useQuery<Trades, Error>({
+    queryKey: keys.trades(competition.key, league.league_id),
+    queryFn: api.league(competition.key, league.league_id).trades,
+  });
+  const best = trades.data?.ideas[0];
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
+      {trades.isLoading && <Busy>finding trades…</Busy>}
+      {best && trades.data && (
+        <>
+          <span>
+            Best: give {best.giving.join(" and ")} for {best.receiving.join(", ")} with {best.team}
+          </span>
+          <Badge variant="ok" appearance="pill" className="tabular-nums">
+            {gain(best, trades.data.ranked_by)}
+          </Badge>
+        </>
+      )}
+      {trades.data && !best && <span className="text-muted-foreground">No trades worth offering.</span>}
+      <Link
+        to={href(competition.key, league.league_id, "trades")}
+        className="font-mono text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      >
+        All trades
+      </Link>
+    </div>
+  );
+}
+
+/** What a trade gains you on the figure the list is ranked by, in words: '+2.1 playoff /wk', 'playoff odds +4.0 pts'. */
+export function gain(idea: TradeIdea, ranked: Trades["ranked_by"]): string {
+  if (ranked === "playoffs_change") return `playoff odds ${percentPoints(idea.playoffs_change)}`;
+  if (ranked === "playoff_points" && idea.playoff_points != null) return `${signed(idea.playoff_points)} playoff /wk`;
+  return `${signed(idea.points)} /wk`;
 }
 
 /**

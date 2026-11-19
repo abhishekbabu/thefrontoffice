@@ -322,8 +322,8 @@ def test_with_nothing_played_the_lines_are_the_projection_alone() -> None:
     assert all(line.count("\n") == 1 for line in _context().roster_lines.values())
 
 
-def test_a_to_do_item_carries_its_evidence_into_the_prompt() -> None:
-    """The model is asked to overrule on role and matchup, so it has to see them."""
+def test_a_to_do_item_carries_its_players_and_their_figures_into_the_prompt() -> None:
+    """The model is asked to overrule on role and matchup, so it has to see them, and whose each player is."""
     lines = [
         NFLGameLine(
             player_id=pid,
@@ -349,8 +349,10 @@ def test_a_to_do_item_carries_its_evidence_into_the_prompt() -> None:
     context = nfl_provider(client).build_context("L1")
 
     [task] = context.tasks
-    assert task.evidence
-    assert all(line.value in context.prompt for line in task.evidence)
+    assert task.players
+    # Each player with where he stands, so a model cannot read the one on the bench as a starter.
+    assert all(player.text() in context.prompt for player in task.players)
+    assert {player.held for player in task.players} == {"bench", "starter"}
 
 
 def test_each_player_line_carries_his_latest_news() -> None:

@@ -645,6 +645,11 @@ export interface components {
              * @description What the move rests on beyond the projection, one line per player it involves — the matchup and the role behind the number. Empty where nothing has been played yet.
              */
             evidence: components["schemas"]["Stat"][];
+            /**
+             * Players
+             * @description Who the move brings in and takes out, figure by figure, for a side-by-side reading. Empty where it moves one player or none: `evidence` says what it rests on then.
+             */
+            players: components["schemas"]["MovePlayer"][];
             /** @description The model's judgement, once a report has been run. None before, and for an item it skipped. */
             verdict: components["schemas"]["TaskVerdict"] | null;
             /**
@@ -662,7 +667,7 @@ export interface components {
              * @description What this item currently says, so a verdict on an older version of it reads as stale.
              *
              *     Everything a judgement rested on and nothing it produced: the move,
-             *     the reason, the deadline and the evidence — not the verdict itself.
+             *     the reason, the deadline, the evidence and the figures compared — not the verdict itself.
              */
             readonly fingerprint: string;
         };
@@ -1087,6 +1092,47 @@ export interface components {
              *     Written here, once, so a page and a terminal phrase a move alike.
              */
             readonly title: string;
+        };
+        /**
+         * MovePlayer
+         * @description One player a to-do item moves, with the figures it is weighed on.
+         *
+         *     Every player on an item carries the same rows in the same order, so the
+         *     player coming in and the one going out read side by side as data — never
+         *     parsed out of a sentence.
+         */
+        MovePlayer: {
+            /**
+             * Side
+             * @description Whether the move brings him in or takes him out.
+             * @enum {string}
+             */
+            side: "in" | "out";
+            /** Player Id */
+            player_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Position
+             * @default
+             */
+            position: string;
+            /**
+             * Team
+             * @description His real-world club.
+             * @default
+             */
+            team: string;
+            /**
+             * Held
+             * @enum {string}
+             */
+            held: "starter" | "bench" | "reserve" | "free agent";
+            /**
+             * Figures
+             * @description The rows he is compared on, labelled alike for every player on the item; '—' where he has none.
+             */
+            figures: components["schemas"]["Stat"][];
         };
         /**
          * Outlook

@@ -310,9 +310,9 @@ def _wire_line(player: Projection, state: Week, fit: str) -> str:
 
 
 def task_line(position: int, task: Action) -> str:
-    """One to-do item as the model reads it: its id, the move, why, and what it rests on."""
+    """One to-do item as the model reads it: its id, the move, why, who it moves and where each stands, and what it rests on."""
     when = f" ({task.when})" if task.when else ""
-    evidence = "".join(f"    {line.label}: {line.value}\n" for line in task.evidence)
+    evidence = "".join(f"    {line}\n" for line in task.lines())
     return f"- {task_id(position)} [{task.urgency}, {task.kind}] {task.title}{when}. {task.reason}\n{evidence}"
 
 

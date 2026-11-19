@@ -27,6 +27,7 @@ export type LeagueSchedule = Schemas["LeagueSchedule"];
 export type LoginState = Schemas["LoginState"];
 export type Match = Schemas["Match"];
 export type Move = Schemas["Move"];
+export type MovePlayer = Schemas["MovePlayer"];
 export type Outlook = Schemas["Outlook"];
 export type Judgment = Schemas["Judgment"];
 export type PlayerCall = Schemas["PlayerCall"];
