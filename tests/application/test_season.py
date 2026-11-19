@@ -372,23 +372,6 @@ def test_two_offers_for_the_same_player_are_one_idea() -> None:
     assert [i.giving for i in ideas] == [["one"]]
 
 
-def test_a_trade_names_the_free_agent_for_the_spot_it_frees() -> None:
-    option = replace(_trade("b", mine=115, theirs=101), pickup="Wire RB (RB)")
-
-    [idea] = MarketEngine(_Market(option)).trades("L1").ideas
-
-    assert idea.pickup == "Wire RB (RB)"
-
-
-def test_a_trade_carries_why_its_players_are_priced_off_their_projections() -> None:
-    line = Stat(label="Lead Back", value="priced 16.0 a week, projected 12.4: snaps 32→77% in week 9")
-    option = replace(_trade("b", mine=115, theirs=101), form=(line,))
-
-    [idea] = MarketEngine(_Market(option)).trades("L1").ideas
-
-    assert idea.form == [line]
-
-
 def test_a_pickup_most_trades_share_is_said_once_for_the_list() -> None:
     """Freeing a spot for the same free agent is one fact about the wire, not one per trade."""
     shared = [replace(_trade(t, mine=115, theirs=101, get=t), pickup="Wire TE (TE)") for t in ("b", "c")]

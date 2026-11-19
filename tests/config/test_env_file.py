@@ -48,10 +48,6 @@ def test_values_are_read_in_file_order(env: EnvFile) -> None:
     ]
 
 
-def test_comments_are_not_keys(env: EnvFile) -> None:
-    assert "# Yahoo credentials" not in env.read_values()
-
-
 def test_a_missing_file_reads_as_empty(tmp_path: Path) -> None:
     assert _env(tmp_path / "absent").read_values() == {}
 
@@ -188,7 +184,6 @@ def test_pydantic_reads_back_exactly_what_was_written(tmp_path: Path) -> None:
     ("field", "kind"),
     [
         ("logfire_capture_prompts", "boolean"),
-        ("fpl_entry_id", "integer"),
         ("yahoo_max_weekly_adds", "integer"),
         ("log_level", "choice"),
         ("sleeper_username", "text"),

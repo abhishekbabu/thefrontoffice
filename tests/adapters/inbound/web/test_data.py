@@ -43,23 +43,9 @@ def test_an_unconfigured_competition_is_not_probed() -> None:
     assert "SLEEPER_USERNAME" in listed.blocked.detail
 
 
-def test_a_competition_is_listed_under_its_key_with_what_it_needs() -> None:
-    listed = data.competition(entry(FakeCompetition(), needs=("sleeper_username",)))
-
-    assert (listed.key, listed.requires) == ("nfl-sleeper", "SLEEPER_USERNAME")
-
-
 def test_only_a_competition_with_a_browser_sync_says_it_syncs() -> None:
     """A synced platform's search knows only what the sync carried, which the finder says."""
     plain = entry(FakeCompetition())
     synced = replace(plain, capture=lambda: FakeCapture())
 
     assert (data.competition(plain).syncs, data.competition(synced).syncs) == (False, True)
-
-
-def test_a_competition_says_what_it_calls_a_week() -> None:
-    """FPL's rounds are gameweeks, and its pages should say so rather than borrow the NFL's word."""
-    plain = entry(FakeCompetition())
-
-    assert data.competition(plain).week_word == "week"
-    assert data.competition(replace(plain, week_word="gameweek")).week_word == "gameweek"

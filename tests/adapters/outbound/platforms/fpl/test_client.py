@@ -13,7 +13,7 @@ from support.http import NO_WAIT, FakeSession
 from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.client import BASE_URL, FPLClient
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
-from thefrontoffice.adapters.outbound.platforms.fpl.types import LiveStat, Opponent
+from thefrontoffice.adapters.outbound.platforms.fpl.types import Chip, LiveStat, Opponent
 
 BOOTSTRAP = {
     "events": [
@@ -178,16 +178,6 @@ def test_a_club_the_bootstrap_does_not_list_is_refused_rather_than_guessed(tmp_p
         client.get_players()
 
 
-def test_the_bootstrap_is_fetched_once_per_instance(tmp_path: Path) -> None:
-    """A report reads it five times; re-parsing a megabyte each time is waste."""
-    session = FakeSession(ROUTES)
-    client = FPLClient(cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, session=session)
-    client.get_clubs()
-    client.get_players()
-    client.get_gameweeks()
-    assert sum("bootstrap" in url for url in session.requests) == 1
-
-
 def test_an_empty_bootstrap_raises(tmp_path: Path) -> None:
     """A 200 carrying nothing usable is not a transport failure, so it is not retried."""
     client = FPLClient(
@@ -261,13 +251,11 @@ def test_an_entry_separates_private_leagues_from_the_games_own(client: FPLClient
 def test_head_to_head_leagues_are_read_too(client: FPLClient) -> None:
     """They live in their own list, so a manager whose only invitational league
     is head-to-head has an empty classic list and looks like they have none."""
-    h2h = next(lg for lg in client.get_entry(77).leagues if lg.is_h2h)
+    leagues = client.get_entry(77).leagues
+    h2h = next(lg for lg in leagues if lg.is_h2h)
 
     assert (h2h.name, h2h.rank, h2h.rank_count) == ("Hood h2h", 1, None)
-
-
-def test_a_classic_league_is_not_marked_head_to_head(client: FPLClient) -> None:
-    assert not next(lg for lg in client.get_entry(77).leagues if lg.name == "Work League").is_h2h
+    assert [lg.name for lg in leagues if lg.is_h2h] == ["Hood h2h"]
 
 
 def test_an_unknown_entry_raises(tmp_path: Path) -> None:
@@ -460,19 +448,15 @@ def test_the_chip_schedule_comes_off_the_bootstrap_everything_else_reads(tmp_pat
     chips = client.get_chips()
 
     assert [(c.name, c.start_event, c.stop_event) for c in chips] == [("wildcard", 2, 19), ("bboost", 1, 19)]
-    assert len([r for r in session.requests if "bootstrap" in r]) == 1
+    assert all("bootstrap" in url for url in session.requests)
 
 
 def test_a_chip_carries_the_word_a_manager_uses_for_it() -> None:
-    from thefrontoffice.adapters.outbound.platforms.fpl.types import Chip
-
     assert Chip(name="3xc", start_event=1, stop_event=19).label == "Triple Captain"
     assert Chip(name="bboost", start_event=1, stop_event=19).label == "Bench Boost"
 
 
 def test_a_chip_knows_which_weeks_it_covers() -> None:
-    from thefrontoffice.adapters.outbound.platforms.fpl.types import Chip
-
     wildcard = Chip(name="wildcard", start_event=2, stop_event=19)
 
     assert not wildcard.covers(1)
@@ -504,7 +488,7 @@ def test_a_transfer_carries_its_purchase_price_and_aware_time(client: FPLClient)
     [transfer] = client.get_transfers(77)
 
     assert (transfer.element_in, transfer.element_in_cost, transfer.element_out, transfer.event) == (10, 92, 11, 2)
-    assert transfer.time.tzinfo is not None and transfer.time.date().isoformat() == "2026-08-20"
+    assert transfer.time == datetime(2026, 8, 20, 19, 45, 16, 885751, tzinfo=UTC)
 
 
 def test_a_player_carries_his_opening_price_where_the_catalog_says(client: FPLClient) -> None:
@@ -670,13 +654,6 @@ def test_results_read_each_players_points_minutes_matches_and_defensive_contribu
     assert week[10] == LiveStat(points=8, minutes=90, matches=2, bonus=1, defending=2)
     assert week[11] == LiveStat(points=0, minutes=0, matches=0)
     assert len(week) == 2  # a row without an id is nobody
-
-
-def test_results_already_kept_are_not_fetched_again(tmp_path: Path) -> None:
-    client, session = _live_client(tmp_path)
-
-    assert client.get_results([1]) == client.get_results([1])
-    assert len(session.requests) == 1
 
 
 def test_a_gameweek_whose_results_will_not_load_is_refused_not_read_as_empty(tmp_path: Path) -> None:

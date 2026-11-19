@@ -12,67 +12,40 @@ from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy, is_tra
 # ── classification ──────────────────────────────────────────────────────
 
 
-def test_network_failures_are_transient() -> None:
-    """A stalled connection is how most rate limiting presents."""
-    assert is_transient(requests.exceptions.Timeout())
-    assert is_transient(requests.exceptions.ConnectTimeout())
-    assert is_transient(requests.exceptions.ReadTimeout())
-    assert is_transient(requests.exceptions.ConnectionError())
-    assert is_transient(requests.exceptions.ChunkedEncodingError())
+@pytest.mark.parametrize(
+    "error",
+    [
+        http_error(503),
+        http_error(429),
+        http_error(999),
+        requests.exceptions.Timeout(),
+        requests.exceptions.ConnectionError(),
+        requests.exceptions.ChunkedEncodingError(),
+    ],
+    ids=["server-error", "rate-limited", "yahoo-denied", "timeout", "refused", "dropped-mid-response"],
+)
+def test_every_transient_failure_is_an_outage(error: Exception) -> None:
+    """One classification: what is worth retrying is what, once retries run out, says to wait.
+
+    Yahoo's frontend hosts answer 999 where an API would answer 429.
+    """
+    assert is_transient(error)
+    assert outage(error)
 
 
-def test_server_errors_are_transient() -> None:
-    assert is_transient(http_error(500))
-    assert is_transient(http_error(503))
-
-
-def test_client_errors_are_not() -> None:
-    """Retrying a 404 burns the budget on a request that will fail identically."""
-    assert not is_transient(http_error(400))
-    assert not is_transient(http_error(404))
-
-
-def test_rate_limiting_is_transient() -> None:
-    """Every platform here says "come back later" with a 429."""
-    assert is_transient(http_error(429))
-
-
-def test_yahoos_own_denial_is_rate_limiting_too() -> None:
-    """Yahoo's frontend hosts answer 999 where an API would answer 429."""
-    assert outage(http_error(999)) == "it answered 999"
-
-
-def test_an_http_error_without_a_response_is_not_transient() -> None:
-    assert not is_transient(requests.exceptions.HTTPError())
-
-
-def test_unrelated_exceptions_are_not_transient() -> None:
-    """A changed payload shape will not fix itself."""
-    assert not is_transient(KeyError("leagueSchedule"))
-    assert not is_transient(ValueError("bad literal"))
-
-
-# ── what an outage is ──────────────────────────────────────────────────
+@pytest.mark.parametrize("status", [503, 429, 999])
+def test_an_outage_answered_with_a_status_names_it(status: int) -> None:
+    assert str(status) in outage(http_error(status))
 
 
 @pytest.mark.parametrize(
-    ("error", "said"),
-    [
-        (http_error(503), "it answered 503"),
-        (http_error(429), "it answered 429"),
-        (requests.exceptions.Timeout(), "it timed out"),
-        (requests.exceptions.ConnectionError(), "the connection failed"),
-        (requests.exceptions.ChunkedEncodingError(), "the connection failed"),
-    ],
-    ids=["server-error", "rate-limited", "timeout", "refused", "dropped-mid-response"],
+    "error",
+    [http_error(400), http_error(404), requests.exceptions.HTTPError(), KeyError("leagueSchedule"), ValueError("x")],
+    ids=["400", "404", "no-response", "changed-shape", "bad-literal"],
 )
-def test_every_transient_failure_is_an_outage_named_in_a_few_words(error: Exception, said: str) -> None:
-    """One classification: what is worth retrying is what, once retries run out, says to wait."""
-    assert outage(error) == said
-
-
-@pytest.mark.parametrize("error", [http_error(404), requests.exceptions.HTTPError(), ValueError("bad json")])
-def test_a_permanent_failure_is_no_outage(error: Exception) -> None:
+def test_a_permanent_failure_is_neither_retried_nor_an_outage(error: Exception) -> None:
+    """Retrying a 404 or a changed payload burns the budget on a request that will fail identically."""
+    assert not is_transient(error)
     assert outage(error) == ""
 
 

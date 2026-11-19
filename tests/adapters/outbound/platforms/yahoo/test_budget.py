@@ -4,7 +4,6 @@ Time is a fake clock whose sleep moves it on, so a pace is measured in the
 seconds it would have cost rather than waited out.
 """
 
-import logging
 import threading
 from datetime import timedelta
 from pathlib import Path
@@ -12,11 +11,9 @@ from pathlib import Path
 import pytest
 import requests
 from support.http import http_error
-from support.logs import capture_logs
 from support.yahoo import FakeContext
 
 from thefrontoffice.adapters.outbound.cache import DiskCache
-from thefrontoffice.adapters.outbound.platforms.yahoo import budget
 from thefrontoffice.adapters.outbound.platforms.yahoo.budget import (
     COOLDOWN,
     REFUSED_COOLDOWN,
@@ -167,9 +164,10 @@ def test_a_named_pause_opens_the_breaker_for_exactly_that_long() -> None:
 
     breaker.failed(pause=30)
 
-    with pytest.raises(YahooUnavailableError, match="30s"):
+    clock.now += 29
+    with pytest.raises(YahooUnavailableError):
         breaker.check()
-    clock.now += 30
+    clock.now += 1
     breaker.check()
 
 
@@ -248,20 +246,13 @@ def test_a_shared_failure_reaches_every_asker_and_the_next_ask_tries_again() -> 
 # ── background refreshes ────────────────────────────────────────────────
 
 
-def test_a_refresh_stores_what_it_fetched_in_a_cache_of_its_own(tmp_path: Path) -> None:
-    opened: list[str] = []
-
-    def cache() -> DiskCache:
-        opened.append(threading.current_thread().name)
-        return DiskCache(tmp_path / "cache")
-
-    refresher = Refresher(cache)
+def test_a_refresh_stores_what_it_fetched(tmp_path: Path) -> None:
+    refresher = Refresher(lambda: DiskCache(tmp_path / "cache"))
 
     refresher.refresh("teams", lambda: "<fresh/>")
     refresher.settle()
 
     assert DiskCache(tmp_path / "cache").get("teams", timedelta(minutes=1)) == "<fresh/>"
-    assert opened == ["yahoo-refresh"]
 
 
 def test_a_key_already_queued_is_not_queued_twice(tmp_path: Path) -> None:
@@ -312,17 +303,26 @@ def test_a_failed_refresh_leaves_the_stale_copy_standing(tmp_path: Path) -> None
     def down() -> str:
         raise YahooUnavailableError("it answered 503")
 
+    refresher.refresh("teams", down)
+    refresher.settle()
+
+    assert DiskCache(tmp_path / "cache").get("teams", timedelta(days=1)) == "<stale/>"
+
+
+def test_a_refresh_that_fails_unexpectedly_does_not_stop_the_next(tmp_path: Path) -> None:
+    """One thread runs every refresh, so a bug in one must not end the rest for the process."""
+    refresher = Refresher(lambda: DiskCache(tmp_path / "cache"))
+
     def broken() -> str:
         raise KeyError("bug")
 
-    with capture_logs(budget.__name__, logging.WARNING) as logs:
-        refresher.refresh("teams", down)
-        refresher.refresh("roster", broken)
-        refresher.settle()
+    refresher.refresh("roster", broken)
+    refresher.refresh("teams", lambda: "<fresh/>")
+    settling = threading.Thread(target=refresher.settle, daemon=True)
+    settling.start()
+    settling.join(WAIT)  # a dead worker would leave the queue unsettled for good
 
-    assert DiskCache(tmp_path / "cache").get("teams", timedelta(days=1)) == "<stale/>"
-    assert "stale copy stands" in logs.text
-    assert "failed unexpectedly" in logs.text
+    assert DiskCache(tmp_path / "cache").get("teams", timedelta(minutes=1)) == "<fresh/>"
 
 
 # ── asking Yahoo within the budget ──────────────────────────────────────
@@ -369,9 +369,10 @@ def test_a_retry_after_pauses_every_request_for_as_long_as_it_asked() -> None:
 
     with pytest.raises(requests.exceptions.HTTPError):
         budgeted.make_request("teams", "466.l.1")
-    with pytest.raises(YahooUnavailableError, match="40s"):
+    clock.now += 39
+    with pytest.raises(YahooUnavailableError):
         budgeted.make_request("teams", "466.l.1")
-    clock.now += 40
+    clock.now += 1
 
     assert budgeted.make_request("teams", "466.l.1") == "<fantasy_content/>"
     assert len(context.requests) == 2

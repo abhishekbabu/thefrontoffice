@@ -139,16 +139,13 @@ def test_yahoo_is_not_ready_until_a_token_is_cached(tmp_path: Path) -> None:
 # ── building a provider ─────────────────────────────────────────────────
 
 
-def test_the_nfl_entry_builds_its_provider(tmp_path: Path) -> None:
-    nfl = _registry(tmp_path, sleeper_username="someone").find("nfl")
+@pytest.mark.parametrize(
+    ("key", "setting"), [("nfl", {"sleeper_username": "someone"}), ("premier-league", {"fpl_entry_id": 77})]
+)
+def test_a_configured_entry_builds_its_provider(tmp_path: Path, key: str, setting: dict[str, object]) -> None:
+    found = _registry(tmp_path, **setting).find(key)
 
-    assert isinstance(nfl.open(), nfl.provider())
-
-
-def test_the_premier_league_entry_builds_its_provider(tmp_path: Path) -> None:
-    fpl = _registry(tmp_path, fpl_entry_id=77).find("premier-league")
-
-    assert isinstance(fpl.open(), fpl.provider())
+    assert isinstance(found.open(), found.provider())
 
 
 def test_fpl_calls_its_weeks_gameweeks_and_the_others_weeks(tmp_path: Path) -> None:

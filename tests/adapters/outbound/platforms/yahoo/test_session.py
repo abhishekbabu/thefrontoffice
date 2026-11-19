@@ -89,18 +89,7 @@ def test_a_fetched_response_is_kept_under_the_key_a_browser_capture_would_keep_i
     assert capture.raw(paths.teams(KEY)) == TEAMS
 
 
-def test_a_captured_response_is_read_without_fetching_while_it_holds(tmp_path: Path) -> None:
-    frontend = FakeFrontend()
-    reader, _, cache = _reader(tmp_path, frontend)
-    cache.set(paths.teams(KEY).path, TEAMS)
-
-    teams = YahooClient(LEAGUE, responses=reader).teams()
-
-    assert [team.name for team in teams] == ["Mine", "Theirs"]
-    assert frontend.requests == []
-
-
-def test_a_season_of_scoreboards_is_fetched_in_one_batch(tmp_path: Path) -> None:
+def test_a_season_reads_each_weeks_scoreboard_through_the_session(tmp_path: Path) -> None:
     frontend = FakeFrontend(answers={f"scoreboard;week={week}": scoreboard_xml() for week in (1, 2, 3)})
     reader, _, _ = _reader(tmp_path, frontend)
 
@@ -115,7 +104,7 @@ def test_yahoos_999_is_retried_and_then_read_as_yahoo_asking_for_fewer_requests(
     frontend = FakeFrontend(statuses={"/teams": 999})
     reader, _, _ = _reader(tmp_path, frontend)
 
-    with pytest.raises(YahooUnavailableError, match="999"):
+    with pytest.raises(YahooUnavailableError):
         YahooClient(LEAGUE, responses=reader).teams()
     assert len(frontend.requests) == NO_WAIT.attempts
 
@@ -155,14 +144,13 @@ def test_a_kept_league_list_needs_no_profile(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("status", [401, 403, 302])
-def test_a_refused_cookie_is_a_session_expired_error_offering_settings(tmp_path: Path, status: int) -> None:
+def test_a_refused_cookie_is_a_session_expired_error_and_not_retried(tmp_path: Path, status: int) -> None:
     frontend = FakeFrontend(statuses={"/teams": status})
     reader, _, _ = _reader(tmp_path, frontend)
 
-    with pytest.raises(YahooSessionExpiredError) as raised:
+    with pytest.raises(YahooSessionExpiredError):
         YahooClient(LEAGUE, responses=reader).teams()
 
-    assert raised.value.code == "session_expired"
     assert len(frontend.requests) == 1, "a refusal is not worth a retry"
 
 

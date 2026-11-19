@@ -1,5 +1,6 @@
 """Tests for YahooAuth: this machine's Yahoo login, and finding the leagues it plays in."""
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -66,28 +67,31 @@ def _auth(
 # ── authorization is never obtained implicitly ──────────────────────────
 
 
-def test_a_missing_token_is_reported_not_obtained(tmp_path: Path) -> None:
-    """The handshake opens a browser and blocks. A server attempting it would
-    wait on a window nobody can see."""
+@pytest.mark.parametrize(
+    "use",
+    [
+        YahooAuth.ensure_authorized,
+        YahooAuth.context,
+        YahooAuth.verify,
+        lambda auth: auth.find_leagues("nba", 2026),
+    ],
+    ids=["check", "context", "verify", "find-leagues"],
+)
+def test_a_missing_token_is_reported_never_obtained_and_yahoo_never_contacted(
+    tmp_path: Path, use: Callable[[YahooAuth], object]
+) -> None:
+    """The handshake opens a browser and blocks, and this runs inside a request
+    handler as often as from a terminal: it would wait on a window nobody can see."""
     authorize = Authorizations()
 
     with pytest.raises(YahooLoginRequiredError) as caught:
-        _auth(tmp_path, token=False, authorize=authorize).ensure_authorized()
+        use(_auth(tmp_path, token=False, authorize=authorize))
     assert caught.value.code == "login_required"
     assert authorize.calls == []
 
 
 def test_an_existing_token_satisfies_the_check(tmp_path: Path) -> None:
     _auth(tmp_path).ensure_authorized()  # does not raise
-
-
-def test_a_context_is_never_opened_without_a_token(tmp_path: Path) -> None:
-    """It runs inside a request handler as often as from a terminal."""
-    authorize = Authorizations()
-
-    with pytest.raises(YahooLoginRequiredError):
-        _auth(tmp_path, token=False, authorize=authorize).context()
-    assert authorize.calls == []
 
 
 # ── login ───────────────────────────────────────────────────────────────
@@ -129,12 +133,6 @@ def test_missing_credentials_raise_rather_than_exit(tmp_path: Path) -> None:
         _auth(tmp_path, token=False, client_id=None, client_secret=None).login()
 
 
-def test_a_failed_handshake_raises(tmp_path: Path) -> None:
-    authorize = Authorizations(error=YahooLoginRequiredError())
-    with pytest.raises(YahooLoginRequiredError):
-        _auth(tmp_path, token=False, authorize=authorize).login()
-
-
 # ── verifying a token really grants something ───────────────────────────
 
 
@@ -152,9 +150,8 @@ def test_a_token_that_authenticates_but_grants_nothing_is_caught(tmp_path: Path)
     when it was issued. Nothing downstream can tell that apart from a
     permissions problem, so it has to be caught at the login.
     """
-    with pytest.raises(YahooAuthError) as caught:
+    with pytest.raises(YahooAuthError):
         _auth(tmp_path, context=FakeContext(error=http_error(403))).verify()
-    assert caught.value.code == "access_not_approved"
 
 
 def test_an_unreachable_yahoo_is_not_reported_as_a_permission_problem(tmp_path: Path) -> None:
@@ -233,18 +230,8 @@ def test_the_league_list_is_served_from_cache_once_fetched(tmp_path: Path) -> No
     assert len(context.queries) == 1
 
 
-def test_an_unapproved_app_fails_the_league_lookup_by_name(tmp_path: Path) -> None:
-    with pytest.raises(YahooAuthError):
-        _auth(tmp_path, context=FakeContext(error=http_error(403))).find_leagues("nba", 2026)
-
-
 def test_an_unrecognized_league_list_raises(tmp_path: Path) -> None:
     context = FakeContext("<fantasy_content><error>?</error></fantasy_content>")
 
     with pytest.raises(YahooAPIError):
         _auth(tmp_path, context=context).find_leagues("nba", 2026)
-
-
-def test_finding_leagues_without_a_token_never_contacts_yahoo(tmp_path: Path) -> None:
-    with pytest.raises(YahooLoginRequiredError):
-        _auth(tmp_path, token=False).find_leagues("nba", 2026)

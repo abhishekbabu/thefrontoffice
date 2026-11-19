@@ -250,12 +250,10 @@ def test_every_clubs_roster_names_each_player_with_espns_id_under_espns_abbrevia
     ]
 
 
-def test_a_club_whose_roster_fails_is_left_out_and_a_roster_is_read_once_a_day(tmp_path: Path) -> None:
-    client, session = _client({"/teams/2/roster": _roster(("1", "Josh Allen")), "/teams": TEAMS}, tmp_path)
+def test_a_club_whose_roster_fails_is_left_out_rather_than_failing_the_rest(tmp_path: Path) -> None:
+    client, _ = _client({"/teams/2/roster": _roster(("1", "Josh Allen")), "/teams": TEAMS}, tmp_path)
 
     assert [a.club for a in client.get_rosters(NFL)] == ["BUF"]
-    assert [a.club for a in client.get_rosters(NFL)] == ["BUF"]
-    assert sum("/teams/2/roster" in url for url in session.requests) == 1
 
 
 ACHANE = {

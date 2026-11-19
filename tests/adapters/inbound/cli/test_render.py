@@ -35,23 +35,18 @@ def test_recommendations_are_numbered_in_order() -> None:
     assert out.index(f"1. {titles[0]}") < out.index(f"2. {titles[1]}") < out.index(f"3. {titles[2]}")
 
 
-def test_monitor_entries_render_without_a_drop() -> None:
-    """With 0 adds left the model returns MONITOR entries and no drop target."""
-    watch = _rec(action="MONITOR", replaces="", replaces_rationale="")
+def test_a_move_with_no_drop_target_carries_no_drop_reasoning() -> None:
+    """With 0 adds left the model returns MONITOR entries and no drop target; a stray reason would name nobody."""
+    watch = _rec(action="MONITOR", replaces="", replaces_rationale="Left over.")
     out = render_scout_report(ScoutReport(situation="No adds left.", focus=["BLK"], moves=[watch], strategy="Hold."))
     assert watch.title in out
-    assert "drop" not in out
-
-
-def test_a_move_is_worded_as_the_page_words_it() -> None:
-    """One phrasing for a move, read off the model, so a terminal and a page cannot disagree."""
-    move = _rec()
-    assert move.title in render_scout_report(ScoutReport(situation="x", focus=[], moves=[move], strategy="y"))
+    assert "Left over." not in out
 
 
 def test_empty_target_list_is_stated_explicitly() -> None:
-    report = ScoutReport(situation="x", focus=[], moves=[], strategy="y")
-    assert "(none returned)" in render_scout_report(report)
+    """Rather than a heading with nothing under it, which reads as a rendering fault."""
+    out = render_scout_report(ScoutReport(situation="x", focus=[], moves=[], strategy="y"))
+    assert out.split("MOVES")[1].split("STRATEGY")[0].strip()
 
 
 def test_long_prose_is_wrapped_not_truncated() -> None:
@@ -83,8 +78,8 @@ def test_empty_category_lists_render_as_a_dash() -> None:
         strategy="st",
     )
     out = render_trade_verdict(v)
-    assert "Gained: —" in out
-    assert "Lost:   —" in out
+    lists = [line.split(":", 1)[1].strip() for line in out.splitlines() if line.strip().startswith(("Gained", "Lost"))]
+    assert lists == ["—", "—"]
 
 
 def test_the_week_shows_the_changes_the_projections_imply_as_the_page_does() -> None:

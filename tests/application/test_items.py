@@ -67,23 +67,13 @@ def test_the_order_of_the_list_is_kept() -> None:
 # ── keeping decisions ───────────────────────────────────────────────────
 
 
-def _decisions() -> tuple[ItemDecisions, FakeItemStates]:
-    store = FakeItemStates()
-    return ItemDecisions(store, clock=lambda: NOW), store
-
-
-def test_a_dismissal_is_kept_against_the_item_as_it_read() -> None:
-    decisions, _ = _decisions()
-
-    decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="dismiss", fingerprint=SWAP.fingerprint))
-
-    [swap, _bye] = decisions.apply("NFL", "L1", [SWAP, BYE])
-    assert swap.mark.hidden == "dismissed"
+def _decisions() -> ItemDecisions:
+    return ItemDecisions(FakeItemStates(), clock=lambda: NOW)
 
 
 def test_a_decision_answers_with_the_item_as_it_now_reads() -> None:
     """What the page shows the moment it is made, with no second reading of the week."""
-    decisions, _ = _decisions()
+    decisions = _decisions()
 
     mark = decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="dismiss", fingerprint=SWAP.fingerprint))
 
@@ -91,7 +81,7 @@ def test_a_decision_answers_with_the_item_as_it_now_reads() -> None:
 
 
 def test_a_later_decision_replaces_an_earlier_one() -> None:
-    decisions, _ = _decisions()
+    decisions = _decisions()
     decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="dismiss", fingerprint=SWAP.fingerprint))
 
     decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="snooze", until=NOW + timedelta(hours=1)))
@@ -101,7 +91,7 @@ def test_a_later_decision_replaces_an_earlier_one() -> None:
 
 
 def test_restoring_forgets_the_decision() -> None:
-    decisions, _ = _decisions()
+    decisions = _decisions()
     decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="dismiss", fingerprint=SWAP.fingerprint))
 
     assert decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="restore")) == ItemMark()
@@ -109,7 +99,7 @@ def test_restoring_forgets_the_decision() -> None:
 
 
 def test_a_snooze_is_kept_in_utc_whatever_offset_it_arrived_with() -> None:
-    decisions, _ = _decisions()
+    decisions = _decisions()
     pacific = timezone(timedelta(hours=-7))
 
     mark = decisions.decide(
@@ -120,14 +110,14 @@ def test_a_snooze_is_kept_in_utc_whatever_offset_it_arrived_with() -> None:
 
 
 def test_a_snooze_into_the_past_is_refused() -> None:
-    decisions, _ = _decisions()
+    decisions = _decisions()
 
     with pytest.raises(ItemDecisionError):
         decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="snooze", until=NOW - timedelta(hours=1)))
 
 
 def test_decisions_are_kept_per_league() -> None:
-    decisions, _ = _decisions()
+    decisions = _decisions()
     decisions.decide("NFL", "L1", ItemDecision(key=SWAP.key, decision="dismiss", fingerprint=SWAP.fingerprint))
 
     assert decisions.apply("NFL", "L2", [SWAP]) == [SWAP]
