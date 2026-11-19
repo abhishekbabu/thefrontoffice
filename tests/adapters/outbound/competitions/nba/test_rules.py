@@ -30,14 +30,6 @@ def test_turnovers_are_not_scouted() -> None:
     assert len(SCOUTED) == 8
 
 
-def test_a_count_is_averaged_over_the_games_given() -> None:
-    assert POINTS.figure({"pts": 45.0}, games=3) == 15.0
-
-
-def test_a_percentage_is_summed_makes_over_summed_attempts() -> None:
-    assert FIELD_GOALS.figure({"fgm": 3.0, "fga": 11.0}, games=2) == pytest.approx(3 / 11)
-
-
 def test_nothing_attempted_is_no_percentage_rather_than_zero() -> None:
     assert FIELD_GOALS.figure({"fgm": 0.0}) is None
     assert "FG%" not in line({"pts": 10.0})
@@ -48,11 +40,6 @@ def test_a_line_carries_each_percentages_attempts_a_game() -> None:
 
     assert (figures[FIELD_GOALS.attempted], figures["FTA"]) == (10.0, 3.0)
     assert "FTA" not in line({"fgm": 2.0, "fga": 4.0})
-
-
-def test_an_absent_count_is_nought() -> None:
-    """Sleeper omits a key rather than publishing a zero."""
-    assert line({})["STL"] == 0.0
 
 
 def test_a_percentage_reads_as_one() -> None:

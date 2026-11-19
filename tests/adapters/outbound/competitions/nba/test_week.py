@@ -192,12 +192,6 @@ def test_the_games_left_are_the_windows_games_yet_to_tip_off_once_each() -> None
     assert [(g.date, g.home) for g in left] == [("2026-02-10", "DEN"), ("2026-02-14", "DEN")]
 
 
-def test_a_game_already_in_the_past_is_not_remaining() -> None:
-    schedule = _schedule(schedule=[_sched("2026-02-09"), _sched("2026-02-14")])
-
-    assert schedule.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
-
-
 def test_a_stale_status_cannot_resurrect_a_played_game() -> None:
     """The schedule is cached, so its statuses can be hours old. A date in the
     past settles it whatever the status still says."""

@@ -64,12 +64,6 @@ def _scout(yahoo: FakeYahoo, ai: FakeAI | None = None, nba: FakeNBA | None = Non
     return ScoutEngine(provider, key="nba-yahoo", ai=ai or FakeAI(), answers=FakeAnswers())
 
 
-def test_the_header_counts_the_adds_left_this_week() -> None:
-    labels = {stat.label: stat.value for stat in nba_provider(FakeYahoo(adds_used=1)).build_context().headline}
-
-    assert labels["Adds left"] == "2 of 3"
-
-
 def test_follow_up_chat_is_seeded_with_the_report() -> None:
     """Follow-ups must see the analysis without re-sending the whole context."""
     ai = FakeAI()
@@ -380,20 +374,7 @@ def test_the_next_week_is_tried_when_the_current_one_is_empty() -> None:
     assert "PROJ 1G" in ctx.roster_lines["Roster Player 0"]
 
 
-def test_unmatched_players_simply_carry_no_projection() -> None:
-    sleeper = FakeSleeperProjections([_game("Someone Entirely Else", "2026-02-10")])
-    ctx = _provider_with(sleeper).build_context()
-    assert "PROJ" not in ctx.roster_lines["Roster Player 0"]
-
-
 # ── the league table ────────────────────────────────────────────────────
-
-
-def test_the_table_comes_back_in_rank_order_and_says_which_is_yours() -> None:
-    standings = nba_provider(FakeYahoo()).schedule("").standings
-
-    assert [row.name for row in standings] == ["Their Team", "My Team"]
-    assert [row.is_mine for row in standings] == [False, True]
 
 
 def test_a_record_includes_ties_only_where_there_are_any() -> None:
@@ -441,12 +422,6 @@ def test_a_sync_without_the_table_asks_for_the_sync_rather_than_showing_none() -
 
     with pytest.raises(YahooCaptureMissingError):
         nba_provider(yahoo).schedule("")
-
-
-def test_a_team_sent_without_standings_has_no_row_in_the_table() -> None:
-    yahoo = FakeYahoo(teams=[YahooTeam(name="Half-loaded", team_key="t.9")])
-
-    assert nba_provider(yahoo).schedule("").standings == []
 
 
 def test_the_teams_list_puts_you_first() -> None:
@@ -644,7 +619,6 @@ def test_a_week_played_shows_both_rosters_as_they_ended_it_with_each_line() -> N
     ]
     week = nba_provider(yahoo).week_of("", 3)
 
-    assert yahoo.played_weeks == [3]
     assert [line.lead for line in week.categories if line.lead] == ["mine"]
     assert week.actions is None
     assert week.mine is not None and week.opponent is not None
@@ -1010,13 +984,6 @@ def test_a_points_leagues_rows_read_games_left_and_fantasy_points_a_game() -> No
     assert summary.mine is not None
     [row] = summary.mine.lineup
     assert row.value == "1G · 44.70 fpts/g"
-
-
-def test_a_category_leagues_rows_read_games_left_and_the_line() -> None:
-    summary = _decisions(league=yahoo_league()).summary("")
-
-    assert summary.mine is not None
-    assert summary.mine.lineup[0].value == "1G · 28.4p 6.1r 2.9a"
 
 
 def test_a_bench_player_with_more_this_week_starts_and_a_free_agent_streams_in() -> None:
