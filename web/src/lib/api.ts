@@ -52,7 +52,6 @@ export type StatTable = Schemas["StatTable"];
 export type Subject = Schemas["Subject"];
 export type WeekRange = Schemas["WeekRange"];
 export type Summary = Schemas["Summary"];
-export type Swap = Schemas["Swap"];
 export type TaskVerdict = Schemas["TaskVerdict"];
 export type TeamRef = Schemas["TeamRef"];
 export type TradeIdea = Schemas["TradeIdea"];

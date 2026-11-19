@@ -515,14 +515,6 @@ class PlayerRef(BaseModel):
     detail: str = Field(default="", description="Position, club and owner: 'WR · DAL · Rival'.")
 
 
-class Swap(BaseModel):
-    """A change the numbers already imply, before anyone has judged them."""
-
-    start: str
-    out: str = Field(default="", description="Who comes out. Empty when a place was unfilled.")
-    gain: str
-
-
 ActionKind = Literal["lineup", "waiver", "trade", "transfer", "chip"]
 """What a to-do item changes: the lineup, the roster by waiver or by trade, the squad by a transfer
 against the market, or a one-time chip spent."""
@@ -779,11 +771,6 @@ class Summary(BaseModel):
     mine: Side | None = None
     opponent: Side | None = None
     """Absent when the week has no fixture, which is not a nil-nil scoreline."""
-
-    swaps: list[Swap] = Field(default_factory=list)
-    """Changes the projections imply, where the competition has no to-do list to carry them:
-    one that has lists them there, as items, and sends none here. Exact, and the report's
-    job is to endorse or overrule them rather than to find them."""
 
     actions: list[Action] | None = None
     """What to do about the week, most urgent first. None where a competition

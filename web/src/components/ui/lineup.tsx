@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CardNote } from "@/components/ui/state";
-import type { Side, Spot, Stat, Swap } from "@/lib/api";
+import type { Side, Spot, Stat } from "@/lib/api";
 import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 import { Label, Meta } from "@/components/ui/label";
@@ -21,7 +21,6 @@ export function LineupCard({
   bench,
   reserve = [],
   openSpots = 0,
-  swaps,
   onOpen,
 }: {
   title: string;
@@ -29,7 +28,6 @@ export function LineupCard({
   bench: Spot[];
   reserve?: Spot[];
   openSpots?: number;
-  swaps: Swap[];
   onOpen?: (id: string) => void;
 }) {
   if (!lineup.length && !bench.length) return null;
@@ -57,28 +55,7 @@ export function LineupCard({
           )}
         </div>
       </div>
-
-      {swaps.length > 0 && <Swaps swaps={swaps} className="border-t border-border" />}
     </Card>
-  );
-}
-
-/**
- * Changes the projections imply — exact, not suggested: a report's job is to
- * endorse or overrule these, not to discover them.
- */
-export function Swaps({ swaps, className }: { swaps: Swap[]; className?: string }) {
-  return (
-    <div className={className}>
-      <ListHeading>Projected swaps</ListHeading>
-      {swaps.map((swap) => (
-        <div key={swap.start} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-4 py-2 text-[13px]">
-          <span className="font-medium">{swap.start}</span>
-          <span className="text-muted-foreground">for {swap.out || "empty slot"}</span>
-          <span className="ml-auto font-mono text-[12px] text-ok">{swap.gain}</span>
-        </div>
-      ))}
-    </div>
   );
 }
 
