@@ -95,12 +95,37 @@ class PlayerInjuries:
         report = self.of(player_id)
         if report is None:
             return []
-        stats = [Stat(label="Status", value=report.status, tone="warning")]
-        if report.injury:
-            stats.append(Stat(label=BODY_PART, value=report.injury))
-        if report.returns:
-            stats.append(Stat(label="Back", value=back(report.returns)))
-        # A row ESPN filled by hand says only the status again.
-        if report.comment and report.comment.casefold() != report.status.casefold():
-            stats.append(Stat(label=weekday_day_month(report.updated.date()), value=report.comment, url=report.url))
-        return stats
+        return injury_stats(
+            report.status,
+            injury=report.injury,
+            returns=report.returns,
+            comment=report.comment,
+            updated=report.updated.date(),
+            url=report.url,
+            back=back,
+        )
+
+
+def injury_stats(
+    status: str,
+    *,
+    injury: str = "",
+    returns: date | None = None,
+    comment: str = "",
+    updated: date | None = None,
+    url: str = "",
+    back: Callable[[date], str] = approximately,
+) -> list[Stat]:
+    """An Injury group's figures, the same whoever reported it: the status, what is hurt, when he is back as
+    `back` reads the day, and the latest word under the day it was said.
+
+    A word that says only the status again is left out, as ESPN's hand-filled rows do.
+    """
+    stats = [Stat(label="Status", value=status, tone="warning")]
+    if injury:
+        stats.append(Stat(label=BODY_PART, value=injury))
+    if returns:
+        stats.append(Stat(label="Back", value=back(returns)))
+    if comment and comment.casefold() != status.casefold():
+        stats.append(Stat(label=weekday_day_month(updated) if updated else "Latest", value=comment, url=url))
+    return stats

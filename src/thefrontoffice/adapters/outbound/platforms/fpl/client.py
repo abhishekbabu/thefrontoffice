@@ -15,6 +15,7 @@ and everything it holds can be derived from the public history instead — see
 """
 
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
@@ -35,11 +36,13 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     PastSeason,
     Pick,
     Player,
+    PlayerGame,
+    PlayerSummary,
     Squad,
     TableRow,
     TransferMade,
 )
-from thefrontoffice.adapters.outbound.platforms.http import JsonApiClient
+from thefrontoffice.adapters.outbound.platforms.http import Batch, JsonApiClient
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.timestamps import parse_utc
 
@@ -59,9 +62,11 @@ ENTRY_TTL = timedelta(minutes=10)
 HISTORY_TTL = timedelta(hours=1)
 # The only figure here that moves while somebody is watching it.
 LIVE_TTL = timedelta(minutes=2)
-# A finished season cannot change, and the current one only moves when a match
-# is played, so this is the slowest-moving thing the client reads.
-PLAYER_HISTORY_TTL = timedelta(hours=12)
+# A player's own page: the seasons before cannot change, but this season's log gains a
+# row with every match he plays, and a log a match behind is the one thing it must not be.
+PLAYER_SUMMARY_TTL = timedelta(hours=1)
+# The season's fixture list moves only when a match is moved: what the weeks ahead are read from.
+SEASON_FIXTURES_TTL = timedelta(hours=1)
 
 
 def _order(value: Any) -> int | None:
@@ -86,6 +91,19 @@ def _number(value: Any, default: float = 0.0) -> float:
         return float(value)
     except TypeError, ValueError:
         return default
+
+
+def _when(value: Any) -> datetime | None:
+    """An instant the API may leave null or empty, as aware UTC."""
+    return parse_utc(str(value)) if value else None
+
+
+def _price_tonight(projections: Any) -> float | None:
+    """Where FPL projects a player's price progress after the next overnight update: its offset-0 projection."""
+    for row in projections or []:
+        if isinstance(row, dict) and row.get("offset") == 0 and row.get("projected_percent") is not None:
+            return _number(row["projected_percent"])
+    return None
 
 
 def _club(short_names: dict[int, str], club_id: Any) -> str:
@@ -162,12 +180,16 @@ class FPLSource(Protocol):
         """What every player has done in the gameweek being played."""
         ...
 
-    def get_past_seasons(self, element_id: int) -> list[PastSeason]:
-        """Every finished season this player has a record for, oldest first."""
+    def get_player_summaries(self, element_ids: Sequence[int]) -> Batch[int, PlayerSummary]:
+        """Each player's season match by match and the seasons before; why each that would not load did not."""
         ...
 
     def get_players(self) -> dict[int, Player]:
         """Every player in the game, keyed by element id."""
+        ...
+
+    def get_season_fixtures(self) -> list[Fixture]:
+        """Every match of the season, in one list: the weeks ahead read from it."""
         ...
 
     def get_squad(self, entry_id: int, gameweek: int) -> Squad:
@@ -351,6 +373,12 @@ class FPLClient:
                 expected_goal_involvements=_number(e.get("expected_goal_involvements")),
                 expected_goals_conceded=_number(e.get("expected_goals_conceded")),
                 ict_index=_number(e.get("ict_index")),
+                news_added=_when(e.get("news_added")),
+                defensive_contribution=int(e.get("defensive_contribution") or 0),
+                defensive_contribution_per_90=_number(e.get("defensive_contribution_per_90")),
+                price_progress=_number(e.get("price_change_percent")),
+                price_tonight=_price_tonight(e.get("price_change_projections")),
+                price_locked_until=_when(e.get("price_change_locked_until")),
             )
         return players
 
@@ -428,36 +456,28 @@ class FPLClient:
             active_chip=str(data.get("active_chip") or ""),
         )
 
-    def get_past_seasons(self, element_id: int) -> list[PastSeason]:
-        """Every finished season this player has a record for, oldest first.
+    def get_player_summaries(self, element_ids: Sequence[int]) -> Batch[int, PlayerSummary]:
+        """Each player's season match by match and the seasons before; why each that would not load did not.
 
-        A separate request per player rather than part of the catalog, which is
-        why it is made only when someone actually opens one.
+        A request per player rather than part of the catalog, made only for the
+        players a page names — the one opened, or the two squads a forecast plays —
+        and in parallel. A promoted club's signing has no past seasons at all.
         """
-        data = self._api.cached(
-            f"player_history_{element_id}",
-            f"{BASE_URL}/element-summary/{element_id}/",
-            PLAYER_HISTORY_TTL,
+        short_names = self._short_names()
+        keys = {pid: f"player_summary_{pid}" for pid in dict.fromkeys(element_ids)}
+        batch = self._api.cached_many(
+            {key: f"{BASE_URL}/element-summary/{pid}/" for pid, key in keys.items()},
+            PLAYER_SUMMARY_TTL,
+            keep=_summary_kept,
         )
-        return [
-            PastSeason(
-                season=str(row.get("season_name") or ""),
-                total_points=int(row.get("total_points") or 0),
-                minutes=int(row.get("minutes") or 0),
-                starts=int(row.get("starts") or 0),
-                goals=int(row.get("goals_scored") or 0),
-                assists=int(row.get("assists") or 0),
-                clean_sheets=int(row.get("clean_sheets") or 0),
-                goals_conceded=int(row.get("goals_conceded") or 0),
-                saves=int(row.get("saves") or 0),
-                bonus=int(row.get("bonus") or 0),
-                expected_goals=_number(row.get("expected_goals")),
-                expected_assists=_number(row.get("expected_assists")),
-                start_cost=int(row.get("start_cost") or 0),
-                end_cost=int(row.get("end_cost") or 0),
+        rekeyed = batch.rekeyed(keys)
+        summaries: Batch[int, PlayerSummary] = Batch(failures=dict(rekeyed.failures))
+        for pid, data in rekeyed.values.items():
+            summaries.values[pid] = PlayerSummary(
+                games=[_game(row, short_names) for row in data.get("history") or [] if row.get("round")],
+                past=[_past_season(row) for row in data.get("history_past") or []],
             )
-            for row in data.get("history_past") or []
-        ]
+        return summaries
 
     def _history(self, entry_id: int) -> dict[str, Any]:
         """The one payload behind a manager's gameweeks and the chips they spent."""
@@ -585,8 +605,21 @@ class FPLClient:
 
     def get_fixtures(self, gameweek: int) -> list[Fixture]:
         """Every match in one gameweek, with both difficulty ratings."""
-        short_names = self._short_names()
         data = self._api.cached(f"fixtures_{gameweek}", f"{BASE_URL}/fixtures/?event={gameweek}", FIXTURES_TTL)
+        return self._fixtures(data)
+
+    def get_season_fixtures(self) -> list[Fixture]:
+        """Every match of the season, in one list: the weeks ahead read from it.
+
+        One request for all 380 rather than one per gameweek, trimmed of the
+        per-match player stats that are most of its size. A match not yet given
+        a gameweek — postponed, waiting on a cup run — has none.
+        """
+        data = self._api.cached("fixtures_season", f"{BASE_URL}/fixtures/", SEASON_FIXTURES_TTL, keep=_fixtures_kept)
+        return self._fixtures(data)
+
+    def _fixtures(self, data: Any) -> list[Fixture]:
+        short_names = self._short_names()
         return [
             Fixture(
                 event=None if f.get("event") is None else int(f["event"]),
@@ -605,3 +638,89 @@ class FPLClient:
             )
             for f in data or []
         ]
+
+
+_FIXTURE_FIELDS = (
+    "event",
+    "team_h",
+    "team_a",
+    "team_h_difficulty",
+    "team_a_difficulty",
+    "kickoff_time",
+    "started",
+    "finished",
+    "finished_provisional",
+    "team_h_score",
+    "team_a_score",
+)
+
+
+def _fixtures_kept(raw: Any) -> list[dict[str, Any]]:
+    """A fixture list without the per-match player stats, which no reader here reads."""
+    return [{k: f.get(k) for k in _FIXTURE_FIELDS} for f in raw or [] if isinstance(f, dict)]
+
+
+_GAME_FIELDS = (
+    "round",
+    "opponent_team",
+    "was_home",
+    "total_points",
+    "minutes",
+    "goals_scored",
+    "assists",
+    "clean_sheets",
+    "goals_conceded",
+    "saves",
+    "bonus",
+    "defensive_contribution",
+    "expected_goals",
+    "expected_assists",
+)
+
+
+def _summary_kept(raw: Any) -> dict[str, Any]:
+    """A player's page without its upcoming fixtures — the season list has them — or the match fields left unread."""
+    data = raw if isinstance(raw, dict) else {}
+    return {
+        "history": [{k: row.get(k) for k in _GAME_FIELDS} for row in data.get("history") or []],
+        "history_past": data.get("history_past") or [],
+    }
+
+
+def _game(row: dict[str, Any], short_names: dict[int, str]) -> PlayerGame:
+    return PlayerGame(
+        event=int(row["round"]),
+        opponent=_club(short_names, row.get("opponent_team")),
+        home=bool(row.get("was_home")),
+        points=int(row.get("total_points") or 0),
+        minutes=int(row.get("minutes") or 0),
+        goals=int(row.get("goals_scored") or 0),
+        assists=int(row.get("assists") or 0),
+        clean_sheets=int(row.get("clean_sheets") or 0),
+        goals_conceded=int(row.get("goals_conceded") or 0),
+        saves=int(row.get("saves") or 0),
+        bonus=int(row.get("bonus") or 0),
+        defensive_contribution=int(row.get("defensive_contribution") or 0),
+        expected_goals=_number(row.get("expected_goals")),
+        expected_assists=_number(row.get("expected_assists")),
+    )
+
+
+def _past_season(row: dict[str, Any]) -> PastSeason:
+    return PastSeason(
+        season=str(row.get("season_name") or ""),
+        total_points=int(row.get("total_points") or 0),
+        minutes=int(row.get("minutes") or 0),
+        starts=int(row.get("starts") or 0),
+        goals=int(row.get("goals_scored") or 0),
+        assists=int(row.get("assists") or 0),
+        clean_sheets=int(row.get("clean_sheets") or 0),
+        goals_conceded=int(row.get("goals_conceded") or 0),
+        saves=int(row.get("saves") or 0),
+        bonus=int(row.get("bonus") or 0),
+        expected_goals=_number(row.get("expected_goals")),
+        expected_assists=_number(row.get("expected_assists")),
+        start_cost=int(row.get("start_cost") or 0),
+        end_cost=int(row.get("end_cost") or 0),
+        defensive_contribution=int(row.get("defensive_contribution") or 0),
+    )

@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { api, type League, type Competition, type Outlook, type TeamRef } from "@/lib/api";
+import { Table, Td, Th } from "@/components/ui/table";
+import { clickable } from "@/lib/clickable";
 import { ToggleChip, ToggleGroup } from "@/components/ui/toggle";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Badge } from "@/components/ui/badge";
@@ -74,7 +76,12 @@ export function RostersPanel({ competition, league }: { competition: Competition
       {roster.data && (
         <div className="flex flex-col gap-4 p-5">
           {competition.plans_weeks && (
-            <WeeksAhead competition={competition} league={league} team={yours ? "" : selected!.team_id} />
+            <WeeksAhead
+              competition={competition}
+              league={league}
+              team={yours ? "" : selected!.team_id}
+              onOpen={openPlayer}
+            />
           )}
           <Card>
             <CardHeader>
@@ -114,11 +121,30 @@ export function RostersPanel({ competition, league }: { competition: Competition
  * has yet to finish scheduling is provisional: its count is a floor. A week
  * counts projected points, or in basketball the games the daily lineups can start.
  */
-function WeeksAhead({ competition, league, team }: { competition: Competition; league: League; team: string }) {
+function WeeksAhead({
+  competition,
+  league,
+  team,
+  onOpen,
+}: {
+  competition: Competition;
+  league: League;
+  team: string;
+  onOpen: (id: string) => void;
+}) {
   const outlook = useQuery<Outlook, Error>({
     queryKey: keys.weeksAhead(competition.key, league.league_id, team),
     queryFn: () => api.league(competition.key, league.league_id).weeksAhead(team),
   });
+  // A competition that reads its weeks ahead as fixtures — FPL — sends a grid instead of weeks.
+  if (outlook.data && outlook.data.run_weeks.length > 0) {
+    const runs = outlook.data.runs;
+    return (
+      <ListCard title="Weeks ahead" count={runs.length ? `${runs.length} to watch` : undefined}>
+        <FixtureGrid outlook={outlook.data} onOpen={onOpen} />
+      </ListCard>
+    );
+  }
 
   const weeks = outlook.data?.weeks;
   const flagged = weeks?.filter(
@@ -179,5 +205,84 @@ function WeeksAhead({ competition, league, team }: { competition: Competition; l
         </ListRow>
       ))}
     </ListCard>
+  );
+}
+
+/** FPL's 1-5 fixture difficulty as a badge's tone; the number is printed too, so it is not color alone. */
+function difficultyTone(difficulty: number): "ok" | "muted" | "warn" | "fail" {
+  return difficulty <= 2 ? "ok" : difficulty === 3 ? "muted" : difficulty === 4 ? "warn" : "fail";
+}
+
+/**
+ * Each listed player's next gameweeks, a column a week: opponent, home or away,
+ * and difficulty. Only a player with something to act on gets a row — a blank,
+ * a double, a hard run, a doubt — and the weeks a blank or double lands on the
+ * squad are named above; everybody else is one line.
+ */
+function FixtureGrid({ outlook, onOpen }: { outlook: Outlook; onOpen: (id: string) => void }) {
+  const weeks = outlook.run_weeks;
+  const last = weeks[weeks.length - 1];
+  return (
+    <>
+      {outlook.warnings.map((w) => (
+        <ListRow key={`${w.label}-${w.value}`} className="items-baseline gap-3">
+          <Label className="w-20 shrink-0">{w.label}</Label>
+          <span className={w.tone === "warning" ? "text-warn" : w.tone === "good" ? "text-ok" : undefined}>
+            {w.value}
+          </span>
+        </ListRow>
+      ))}
+      {outlook.runs.length > 0 && (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Player</Th>
+              {weeks.map((week) => (
+                <Th key={week} className="px-2 text-center">
+                  GW{week}
+                </Th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {outlook.runs.map((run) => (
+              <tr
+                key={run.player_id}
+                className="cursor-pointer hover:bg-muted/50"
+                {...clickable(() => onOpen(run.player_id), { role: null })}
+              >
+                <Td>
+                  <div className="font-medium">{run.player}</div>
+                  <div className="text-[11.5px] text-muted-foreground">
+                    {run.detail} · {run.flags.join(" · ")}
+                  </div>
+                </Td>
+                {run.weeks.map((week) => (
+                  <Td key={week.week} className="px-2">
+                    <div className="flex flex-col items-center gap-1">
+                      {week.games.length === 0 ? (
+                        <Badge variant="fail">blank</Badge>
+                      ) : (
+                        week.games.map((game, i) => (
+                          <Badge key={i} variant={difficultyTone(game.difficulty)}>
+                            {game.opponent} {game.home ? "H" : "A"} {game.difficulty}
+                          </Badge>
+                        ))
+                      )}
+                    </div>
+                  </Td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      {outlook.clear > 0 && (
+        <CardNote>
+          {outlook.runs.length ? `${outlook.clear} others` : `All ${outlook.clear}`}: no blanks, doubles or hard
+          runs through GW{last}.
+        </CardNote>
+      )}
+    </>
   );
 }

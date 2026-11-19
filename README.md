@@ -90,7 +90,7 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   with his last 5 weeks (points, snap share, targets, carries), and his
   projected line lists only what his position is played for.
 - **Compare**: up to four players side by side, added from any player page,
-  a move in Activity, or by name (NFL and NBA). Figures sit under their heading (this week,
+  a move in Activity, or by name (NFL, NBA and FPL). Figures sit under their heading (this week,
   projected line, this season), and the best of each comparable row is
   starred (fewest NBA turnovers, most of everything else). Searching a
   synced Yahoo league finds only the players the sync carried: every roster
@@ -104,7 +104,10 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   at the to-do list's margin, one week each, none in a league without adds.
   A week the NBA has yet to finish scheduling (the Cup knockouts) is marked
   provisional: its count is a floor, so it is never short or light, streams
-  nothing, and stays out of the median.
+  nothing, and stays out of the median. FPL's weeks ahead are a fixture grid
+  over the next 5 gameweeks: opponent, H/A and FPL's 1-5 difficulty, for only
+  the players with a blank, a double, 3+ fixtures rated 4+, or a doubt; each
+  gameweek a blank or double lands on the squad names who.
 - **Schedule and Fixtures**: your season week by week, a future opponent with
   their record now. A week's real games grouped by kickoff, each naming your
   players and your opponent's in it, with the week's byes (FPL: blanks) on one
@@ -180,6 +183,28 @@ named while a first-half chip is unplayed. The scout prices a transfer at the
 outgoing player's selling price (half of any rise since he was bought, from his
 transfers), and Activity lists each member's transfers over the last three
 gameweeks, one row per manager per gameweek.
+
+An FPL player's drawer has four tabs: the week (fixture, xPts, form, his
+position's underlying numbers, set pieces, and the market), his game log from
+`element-summary` (newest first, in what his position scores: clean sheets and
+saves for a keeper, defensive contribution outfield), the next 5 gameweeks'
+fixtures, and his seasons. A flagged player gets the Injury group the other
+sports show (Suspension, or Availability for a departure): status, what is hurt,
+the return FPL's news gives ("Expected back 28 Nov" reads "~28 Nov · GW13") and
+the news under the day it was set. Defensive contribution (2025/26 scoring: 10
+CBIT for a defender, 12 CBIRT further forward) shows per 90 and in how many of
+his matches reached it. The market shows this gameweek's price move, net
+transfers and FPL's own price-change progress ("rise likely tonight" once its
+overnight projection passes 100%). Any player is found by name, most owned first.
+
+A head-to-head FPL league's matchup header carries a win chance (10,000
+gameweeks): each player's points from every match he played in the last 8
+gameweeks, drawn once per match his club has left (twice in a double, none in a
+blank), played with FPL's chance of playing or else how often he has played
+lately; the captain counts twice on the same draw. Auto-subs are approximated: a
+bench player counts with the chance enough starters ahead of him miss out, keeper
+for keeper. A gameweek to come uses the last published picks. Classic leagues get
+no chance.
 
 | | |
 | --- | --- |

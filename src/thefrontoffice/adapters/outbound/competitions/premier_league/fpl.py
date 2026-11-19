@@ -14,13 +14,17 @@ report already recommends.
 
 How a gameweek is gathered lives in `week.py`, how a player reads in
 `views.py`, the season and the table in `league.py`, the model's text in
-`prompt.py` and the rules of the game in `rules.py`; this is the port.
+`prompt.py` and the rules of the game in `rules.py`; the gameweeks ahead in
+`outlook.py`, a head-to-head tie as the simulation reads it in `forecast.py`,
+and a player's news in `news.py`. This is the port.
 """
 
 import logging
+from collections.abc import Mapping, Sequence
 
 from thefrontoffice.adapters.outbound.competitions import paging
-from thefrontoffice.adapters.outbound.competitions.premier_league import league, prompt, views
+from thefrontoffice.adapters.outbound.competitions.names import normalize_name
+from thefrontoffice.adapters.outbound.competitions.premier_league import forecast, league, outlook, prompt, views
 from thefrontoffice.adapters.outbound.competitions.premier_league import week as fpl_week
 from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
     Roster,
@@ -29,17 +33,22 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
     purchase_prices,
     selling_price,
 )
+from thefrontoffice.adapters.outbound.competitions.seeds import seed
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
-from thefrontoffice.adapters.outbound.platforms.fpl.types import MiniLeague
+from thefrontoffice.adapters.outbound.platforms.fpl.types import MiniLeague, as_millions
 from thefrontoffice.domain.errors import PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     CompetitionContext,
     LeagueSchedule,
+    MatchupInput,
+    Outlook,
+    PlayedMatchup,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    PlayerRef,
     Slate,
     Summary,
     TeamRef,
@@ -133,6 +142,31 @@ class FPLProvider:
         if player is None:
             raise PlayerNotFoundError([player_id])
         return views.detail(self.client, player)
+
+    def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
+        """Anyone in the game whose name holds `text`, the most owned first.
+
+        The whole catalog is already in hand — every player rides on the one
+        bootstrap payload — so finding one costs no request. FPL has no owner to
+        name: any number of managers can hold the same player.
+        """
+        wanted = normalize_name(text)
+        if len(wanted) < 2:
+            return []
+        found = [
+            p
+            for p in self.client.get_players().values()
+            if wanted in normalize_name(p.full_name) or wanted in normalize_name(p.name)
+        ]
+        found.sort(key=lambda p: (-p.selected_by, -p.total_points))
+        return [
+            PlayerRef(
+                player_id=str(p.id),
+                name=p.full_name or p.name,
+                detail=f"{p.position} · {p.team} · {as_millions(p.cost)}",
+            )
+            for p in found[:limit]
+        ]
 
     def roster(self, league_id: str) -> list[PlayerCard]:
         """The squad in full, with the season numbers a week view leaves out."""
@@ -239,6 +273,69 @@ class FPLProvider:
         # The season's figures head the league view, which is the question they answer.
         headline = prompt.season_headline(self.client.get_entry(entry_id), league_id)
         return schedule.model_copy(update={"headline": headline})
+
+    def weeks_ahead(self, league_id: str, team_id: str = "") -> Outlook:
+        """A squad's next gameweeks as fixtures (`outlook`), yours where `team_id` is empty.
+
+        From the gameweek still open to the next deadline; none once the season has run out.
+
+        Raises:
+            TeamNotFoundError: `team_id` is no FPL entry.
+        """
+        if team_id and not team_id.isdigit():
+            raise TeamNotFoundError(team_id)
+        squad = self._roster(int(team_id) if team_id else self.entry_id)
+        gameweeks = self.client.get_gameweeks()
+        upcoming = self.client.upcoming_gameweek()
+        last = max((g.id for g in gameweeks), default=upcoming.id)
+        # The last gameweek stays "upcoming" once the season is over: nothing is ahead then.
+        weeks = [] if all(g.finished for g in gameweeks) else outlook.weeks_from(upcoming.id, last)
+        return outlook.outlook(squad, self.client.get_season_fixtures(), weeks)
+
+    # ── the tie, simulated ──────────────────────────────────────────
+
+    def matchup_input(self, league_id: str, candidates: Sequence[str] = ()) -> MatchupInput | None:
+        """The gameweek in focus's head-to-head tie, ready to simulate (`forecast`).
+
+        None in a classic league, which has no tie to win, in a gameweek without
+        one, and for `candidates`: the market is not priced, since a transfer
+        is weighed over the weeks ahead rather than one tie.
+        """
+        if candidates:
+            return None
+        mini_league = self._find_league(league_id, self.entry_id)
+        if mini_league is None or not mini_league.is_h2h:
+            return None
+        gameweek = fpl_week.focus(self.client)
+        found = fpl_week.tie(self.client, league_id, self.entry_id, gameweek.id)
+        if found is None:
+            return None
+        latest = fpl_week.picked(self.client).id
+        squad_week = min(gameweek.id, latest)
+        mine = fpl_week.squad_of(self.client, self.entry_id, squad_week)
+        theirs = fpl_week.squad_of(self.client, found.opponent_entry, squad_week)
+        to_come = gameweek.id > latest
+        logs = self.client.get_player_summaries(forecast.everyone(mine, theirs))
+        week = forecast.Gameweek(
+            fixtures=fixtures_by_club(
+                self.client.get_fixtures(gameweek.id), (p.team for p in (*mine.players, *theirs.players))
+            ),
+            games={pid: summary.games for pid, summary in logs.values.items()},
+            live={} if to_come else fpl_week.live_points(self.client, gameweek.id),
+            recent_from=forecast.recent_from(gameweek.id),
+            to_come=to_come,
+        )
+        return forecast.matchup(mine, theirs, week, seed(league_id, self.entry_id, gameweek.id))
+
+    def played_weeks(self, league_id: str) -> list[int]:
+        """None: a gameweek is not yet rebuilt as it stood before its deadline, so it is not backtested."""
+        return []
+
+    def played_matchups(
+        self, league_id: str, week: int, settings: Mapping[str, float] | None = None
+    ) -> list[PlayedMatchup]:
+        """None, for the reason `played_weeks` names none."""
+        return []
 
     # ── context ─────────────────────────────────────────────────────
 

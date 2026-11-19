@@ -66,6 +66,7 @@ describe("Rosters", () => {
     };
 
     const some = await show({
+      ...NO_GRID,
       usual: 120,
       measure: "proj",
       weeks: [week(12), week(13, ["Josh Allen (bye)"]), week(14)],
@@ -74,7 +75,7 @@ describe("Rosters", () => {
     expect(some).not.toContain("Week 12");
     expect(some).not.toContain("Week 14");
 
-    const none = await show({ usual: 120, measure: "proj", weeks: [week(12), week(13), week(14)] });
+    const none = await show({ ...NO_GRID, usual: 120, measure: "proj", weeks: [week(12), week(13), week(14)] });
     expect(none).toContain("through week 14");
     expect(none).not.toContain("Week 12");
   });
@@ -99,6 +100,7 @@ describe("Rosters", () => {
     client.setQueryData([...keys.roster(competition.key, league.league_id), null], [card("a", "Brunson")]);
     client.setQueryData(keys.weeksAhead(competition.key, league.league_id, ""), {
       usual: 40.5,
+      ...NO_GRID,
       measure: "games",
       weeks: [
         week(6),
@@ -119,4 +121,40 @@ describe("Rosters", () => {
     expect(text).toContain("Week 9");
     expect(text).toContain("provisional");
   });
+
+  it("shows FPL's weeks ahead as a fixture grid of only the players to watch", async () => {
+    const fpl = { key: "premier-league-fpl", plans_weeks: true } as Competition;
+    const client = offlineClient();
+    client.setQueryData(keys.teams(fpl.key, league.league_id), teams);
+    client.setQueryData([...keys.roster(fpl.key, league.league_id), null], [card("a", "Haaland")]);
+    client.setQueryData(keys.weeksAhead(fpl.key, league.league_id, ""), {
+      usual: null,
+      measure: "proj",
+      weeks: [],
+      run_weeks: [11, 12],
+      runs: [
+        {
+          player_id: "a",
+          player: "Haaland",
+          detail: "FWD · MCI",
+          weeks: [
+            { week: 11, games: [{ opponent: "ARS", home: false, difficulty: 5 }] },
+            { week: 12, games: [] },
+          ],
+          flags: ["blank GW12"],
+        },
+      ],
+      clear: 14,
+      warnings: [{ label: "GW12", value: "1 blank: Haaland", tone: "warning", url: "", better: null }],
+    } satisfies Outlook);
+    const text = (await render(<RostersPanel competition={fpl} league={league} />, client)).container.textContent;
+
+    expect(text).toContain("1 to watch");
+    expect(text).toContain("ARS A 5");
+    expect(text).toContain("blank GW12");
+    expect(text).toContain("1 blank: Haaland");
+    expect(text).toContain("14 others: no blanks, doubles or hard runs through GW12.");
+  });
 });
+
+const NO_GRID = { run_weeks: [], runs: [], clear: 0, warnings: [] };

@@ -1,10 +1,11 @@
 """The Fantasy Premier League game, standing in: a player built from the few fields a rule turns on,
 and a client serving one manager's season."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 
 from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
+from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Chip,
     ChipPlay,
@@ -19,10 +20,13 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     PastSeason,
     Pick,
     Player,
+    PlayerGame,
+    PlayerSummary,
     Squad,
     TableRow,
     TransferMade,
 )
+from thefrontoffice.adapters.outbound.platforms.http import Batch
 
 
 def player(
@@ -37,6 +41,7 @@ def player(
     chance_of_playing: int | None = None,
     penalties_order: int | None = None,
     corners_order: int | None = None,
+    news_added: datetime | None = None,
 ) -> Player:
     """A player whose form, points a game and expected points are all `points`, so one number sets him."""
     return Player(
@@ -58,7 +63,13 @@ def player(
         chance_of_playing=chance_of_playing,
         penalties_order=penalties_order,
         corners_order=corners_order,
+        news_added=news_added,
     )
+
+
+def game(event: int, points: int, minutes: int = 90, opponent: str = "LIV", **stats: int) -> PlayerGame:
+    """One match in a player's log: `points` in `minutes` against `opponent` at home."""
+    return PlayerGame(event=event, opponent=opponent, home=True, points=points, minutes=minutes, **stats)
 
 
 ENTRY_ID = 77
@@ -200,7 +211,10 @@ class FakeFPL:
         points_on_bench: int = 0,
         squad: Squad | None = None,
         past_seasons: list[PastSeason] | None = None,
-        past_seasons_error: Exception | None = None,
+        games: dict[int, list[PlayerGame]] | None = None,
+        summaries_error: Exception | None = None,
+        season_fixtures: list[Fixture] | None = None,
+        season_fixtures_error: Exception | None = None,
         h2h_season: dict[int, H2HMatch] | None = None,
         h2h_season_error: Exception | None = None,
         standings: list[TableRow] | None = None,
@@ -241,7 +255,11 @@ class FakeFPL:
         )
         self.clubs_error = clubs_error
         self.past_seasons = past_seasons if past_seasons is not None else list(DEFAULT_PAST_SEASONS)
-        self.past_seasons_error = past_seasons_error
+        self.games = games or {}
+        self.summaries_error = summaries_error
+        self.season_fixtures = season_fixtures
+        self.season_fixtures_error = season_fixtures_error
+        self.summary_requests: list[list[int]] = []
         self.leagues = (
             leagues
             if leagues is not None
@@ -312,10 +330,20 @@ class FakeFPL:
     def get_players(self) -> dict[int, Player]:
         return self.players if self.players is not None else {**SQUAD_PLAYERS, **MARKET}
 
-    def get_past_seasons(self, element_id: int) -> list[PastSeason]:
-        if self.past_seasons_error:
-            raise self.past_seasons_error
-        return self.past_seasons
+    def get_player_summaries(self, element_ids: Sequence[int]) -> Batch[int, PlayerSummary]:
+        self.summary_requests.append(list(element_ids))
+        batch: Batch[int, PlayerSummary] = Batch()
+        for pid in element_ids:
+            if self.summaries_error is not None:
+                batch.failures[pid] = FPLAPIError(str(self.summaries_error))
+            else:
+                batch.values[pid] = PlayerSummary(games=self.games.get(pid, []), past=self.past_seasons)
+        return batch
+
+    def get_season_fixtures(self) -> list[Fixture]:
+        if self.season_fixtures_error:
+            raise self.season_fixtures_error
+        return self.season_fixtures if self.season_fixtures is not None else self.fixtures
 
     def get_history(self, entry_id: int) -> list[GameweekResult]:
         if self.history_error:

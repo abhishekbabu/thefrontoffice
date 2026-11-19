@@ -11,7 +11,7 @@ import pytest
 from support.http import NO_WAIT, FakeSession
 
 from thefrontoffice.adapters.outbound.cache import DiskCache
-from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLClient
+from thefrontoffice.adapters.outbound.platforms.fpl.client import BASE_URL, FPLClient
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import Opponent
 
@@ -512,3 +512,122 @@ def test_a_player_carries_his_opening_price_where_the_catalog_says(client: FPLCl
 
     assert players[10].start_cost == 90  # £9.5m now, up £0.5m on the season
     assert players[11].start_cost is None
+
+
+# ── a player's own page, and the season's fixtures ──────────────────────
+
+SUMMARY = {
+    "fixtures": [{"event": 3, "team_h": 1, "team_a": 2, "is_home": True, "difficulty": 4}],
+    "history": [
+        {
+            "round": 1,
+            "opponent_team": 2,
+            "was_home": False,
+            "total_points": 12,
+            "minutes": 90,
+            "goals_scored": 1,
+            "assists": 1,
+            "defensive_contribution": 4,
+            "expected_goals": "0.81",
+            "bps": 40,
+        },
+        {"round": 2, "opponent_team": 2, "was_home": True, "total_points": 0, "minutes": 0},
+    ],
+    "history_past": [
+        {
+            "season_name": "2025/26",
+            "total_points": 209,
+            "minutes": 2750,
+            "starts": 30,
+            "goals_scored": 3,
+            "assists": 5,
+            "clean_sheets": 18,
+            "goals_conceded": 20,
+            "saves": 0,
+            "bonus": 30,
+            "expected_goals": "2.94",
+            "expected_assists": "1.75",
+            "start_cost": 60,
+            "end_cost": 73,
+            "defensive_contribution": 277,
+        }
+    ],
+}
+
+
+def test_a_players_page_reads_his_season_match_by_match_and_the_seasons_before(tmp_path: Path) -> None:
+    session = FakeSession({**ROUTES, "/element-summary/10/": SUMMARY})
+    client = FPLClient(cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, session=session)
+
+    summary = client.get_player_summaries([10]).value(10)
+
+    first, missed = summary.games
+    assert (first.event, first.opponent, first.home, first.points, first.goals, first.assists) == (
+        1,
+        "MCI",
+        False,
+        12,
+        1,
+        1,
+    )
+    assert (first.defensive_contribution, first.expected_goals) == (4, 0.81)
+    assert not missed.played  # a nought with no minutes is a match missed
+    assert [(s.season, s.defensive_contribution, s.end_cost) for s in summary.past] == [("2025/26", 277, 73)]
+
+
+def test_several_players_pages_are_fetched_once_each_and_kept(tmp_path: Path) -> None:
+    session = FakeSession({**ROUTES, "/element-summary/10/": SUMMARY, "/element-summary/11/": SUMMARY})
+    client = FPLClient(cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, session=session)
+
+    assert set(client.get_player_summaries([10, 11, 10]).values) == {10, 11}
+    client.get_player_summaries([10, 11])
+    assert sum("element-summary" in url for url in session.requests) == 2
+
+
+def test_a_page_that_will_not_load_is_reported_as_missing_not_empty(tmp_path: Path) -> None:
+    """A player with no log yet and a player whose log failed are different answers."""
+    client = FPLClient(cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, session=FakeSession(ROUTES))
+
+    batch = client.get_player_summaries([10])
+    with pytest.raises(FPLAPIError):
+        batch.value(10)
+
+
+def test_the_seasons_fixtures_come_in_one_request(tmp_path: Path) -> None:
+    heavy = [{**f, "stats": [{"identifier": "goals_scored", "a": [], "h": []}]} for f in FIXTURES]
+    session = FakeSession({**ROUTES, "/fixtures/": heavy})
+    client = FPLClient(cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, session=session)
+
+    fixtures = client.get_season_fixtures()
+
+    assert [(f.event, f.home, f.away) for f in fixtures] == [(3, "ARS", "MCI"), (None, "MCI", "ARS"), (3, "MCI", "ARS")]
+    assert [url for url in session.requests if "fixtures" in url] == [f"{BASE_URL}/fixtures/"]
+
+
+def test_a_player_carries_his_news_time_defensive_contribution_and_price_pressure(tmp_path: Path) -> None:
+    saka = {
+        **BOOTSTRAP["elements"][0],
+        "news_added": "2026-11-16T19:00:05.154377Z",
+        "defensive_contribution": 91,
+        "defensive_contribution_per_90": "9.1",
+        "price_change_percent": "96.8",
+        "price_change_projections": [
+            {"offset": 1, "projected_percent": "98.3", "likelihood": 4},
+            {"offset": 0, "projected_percent": "102.3", "likelihood": 5},
+        ],
+        "price_change_locked_until": "2026-11-21T18:35:54Z",
+    }
+    session = FakeSession({**ROUTES, "bootstrap-static": {**BOOTSTRAP, "elements": [saka]}})
+    player = FPLClient(cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, session=session).get_players()[10]
+
+    assert player.news_added == datetime(2026, 11, 16, 19, 0, 5, 154377, tzinfo=UTC)
+    assert (player.defensive_contribution, player.defensive_contribution_per_90) == (91, 9.1)
+    assert (player.price_progress, player.price_tonight) == (96.8, 102.3)
+    assert player.price_locked_until == datetime(2026, 11, 21, 18, 35, 54, tzinfo=UTC)
+
+
+def test_a_player_with_no_news_or_projection_carries_none(client: FPLClient) -> None:
+    player = client.get_players()[11]
+    assert player.news_added is None
+    assert player.price_tonight is None
+    assert player.price_locked_until is None

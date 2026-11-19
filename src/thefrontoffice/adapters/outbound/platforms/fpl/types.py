@@ -152,6 +152,24 @@ class Player:
     """His price when the season opened, in tenths of a million: what a squad picked before
     the first deadline paid for him. None where the catalog does not say."""
 
+    news_added: datetime | None = None
+    """When `news` was last set, aware UTC; None where there is no news."""
+
+    defensive_contribution: int = 0
+    """Clearances, blocks, interceptions and tackles (and recoveries for a midfielder or forward)
+    this season: what the game's defensive-contribution points, new in 2025/26, are counted from."""
+
+    defensive_contribution_per_90: float = 0.0
+
+    price_progress: float = 0.0
+    """How far he is towards his next price move (`price_change_percent`): a rise at +100, a fall at -100."""
+
+    price_tonight: float | None = None
+    """Where FPL projects that progress after the next overnight price update; None where it projects nothing."""
+
+    price_locked_until: datetime | None = None
+    """Until when his price cannot move, aware UTC: a move has just happened. None while it can."""
+
     @property
     def availability(self) -> str:
         """A short flag for the prompt, empty when the player is fully fit."""
@@ -347,12 +365,55 @@ class PastSeason:
     expected_assists: float
     start_cost: int
     end_cost: int
+    defensive_contribution: int = 0
+    """Nought before 2025/26, when the game began scoring it."""
 
     @property
     def points_per_game(self) -> float:
         """Per start rather than per appearance: a substitute cameo and a full
         ninety are not the same denominator, and starts is what FPL records."""
         return self.total_points / self.starts if self.starts else 0.0
+
+
+@dataclass(frozen=True)
+class PlayerGame:
+    """One match his club has played this season while he was on its books, as his log records it.
+
+    Every match is a row, a ninety minutes on the bench included: a nought with no
+    minutes is a game missed, which is half of what a log is read for.
+    """
+
+    event: int
+    opponent: str
+    """Three letters, as a fixture names a club."""
+
+    home: bool
+    points: int
+    minutes: int
+    goals: int = 0
+    assists: int = 0
+    clean_sheets: int = 0
+    goals_conceded: int = 0
+    saves: int = 0
+    bonus: int = 0
+    defensive_contribution: int = 0
+    expected_goals: float = 0.0
+    expected_assists: float = 0.0
+
+    @property
+    def played(self) -> bool:
+        return self.minutes > 0
+
+
+@dataclass(frozen=True)
+class PlayerSummary:
+    """What one player's own page holds beyond the catalog: this season match by match, and the seasons before."""
+
+    games: list[PlayerGame] = field(default_factory=list)
+    """Oldest first."""
+
+    past: list[PastSeason] = field(default_factory=list)
+    """Oldest first."""
 
 
 @dataclass(frozen=True)

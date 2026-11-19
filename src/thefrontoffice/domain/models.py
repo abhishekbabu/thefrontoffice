@@ -1108,6 +1108,34 @@ class WeekAhead(BaseModel):
     gain: float = Field(default=0.0, description="What that pickup adds to the week, in its competition's measure.")
 
 
+class Opposition(BaseModel):
+    """One match a club plays in a week to come, as a fixture grid cell reads it."""
+
+    opponent: str = Field(description="The club faced, as a table spells it: 'ARS'.")
+    home: bool
+    difficulty: int = Field(description="The league's own 1-5 rating of the match for the club facing it; 5 hardest.")
+
+
+class FixtureWeek(BaseModel):
+    """One week of a player's run: no match is a blank, two a double."""
+
+    week: int
+    games: list[Opposition] = Field(default_factory=list)
+
+
+class FixtureRun(BaseModel):
+    """One player's matches over the weeks ahead, with why the row is worth a look."""
+
+    player_id: str
+    player: str
+    detail: str = Field(default="", description="Position and club: 'MID · LIV'.")
+    weeks: list[FixtureWeek] = Field(description="One per week the grid covers, in order, a blank included.")
+    flags: list[str] = Field(
+        default_factory=list,
+        description="What earns the row its place, in words: 'blank GW14', 'double GW15', '3 hard', 'injured'.",
+    )
+
+
 class Outlook(BaseModel):
     """The next few weeks for your roster, soonest first, each measured against the same usual week."""
 
@@ -1123,6 +1151,22 @@ class Outlook(BaseModel):
         ),
     )
     weeks: list[WeekAhead] = Field(default_factory=list)
+    run_weeks: list[int] = Field(
+        default_factory=list,
+        description=(
+            "The weeks a fixture grid covers, soonest first — where the competition projects its weeks "
+            "ahead as fixtures rather than as lineups. Empty otherwise."
+        ),
+    )
+    runs: list[FixtureRun] = Field(
+        default_factory=list,
+        description="The players whose run has something to act on — a blank, a double, a hard stretch, a doubt.",
+    )
+    clear: int = Field(default=0, description="Players on the roster whose run has nothing to flag, left off `runs`.")
+    warnings: list[Stat] = Field(
+        default_factory=list,
+        description="Each week a blank or a double lands on the roster, naming who: 'GW14' — '3 blank: Saka, Rice, Raya'.",
+    )
 
 
 @dataclass(frozen=True)
