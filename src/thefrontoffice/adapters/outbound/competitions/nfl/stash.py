@@ -23,7 +23,8 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, NFLSou
 from thefrontoffice.adapters.outbound.competitions.nfl.outlook import weeks_left
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import last_regular_week, season_end
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
-from thefrontoffice.adapters.outbound.competitions.nfl.worth import FORM_WEIGHT, usage, worth
+from thefrontoffice.adapters.outbound.competitions.nfl.worth import usage, worth
+from thefrontoffice.adapters.outbound.competitions.worth import blend
 from thefrontoffice.domain.models import Action, Stat
 
 STASH_FROM = 40.0
@@ -84,7 +85,7 @@ def to_do(
             continue
         recent = _form(state, pid)
         outlook = rest / len(projected)
-        value = (outlook if recent is None else FORM_WEIGHT * recent + (1 - FORM_WEIGHT) * outlook) * usage(state, pid)
+        value = (blend(recent, outlook) or 0.0) * usage(state, pid)
         if bar is not None and value < bar - COMPARABLE_BY:
             continue
         valued.append((value, pid, week, rest))

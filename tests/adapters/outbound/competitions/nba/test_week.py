@@ -14,6 +14,7 @@ from support.nba import FakeSleeperNBA, make_player
 from thefrontoffice.adapters.outbound.competitions.nba import week
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, FIELD_GOALS, PACIFIC, POINTS, TURNOVERS
 from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASchedule
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, StatCategory
@@ -224,3 +225,20 @@ def test_a_failed_schedule_raises_for_one_club_and_leaves_every_club_unknown_in_
     with pytest.raises(SleeperAPIError):
         schedule.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW)
     assert schedule.get_remaining_games_bulk(["DEN"], WINDOW_START, WINDOW_END, now=NOW) == {}
+
+
+def test_a_row_reads_his_games_left_and_a_games_value_with_his_status_beside_his_club() -> None:
+    player = make_player("Hurt Guard", position="PG", team="GSW", key="hg", status="O", selected_position="PG")
+    reading = Reading(player=player, line={POINTS.label: 20.0}, per_game=39.4, games=0)
+
+    [row] = week.side("Mine", "", "", [player], {"hg": reading}, by_points=True).lineup
+
+    assert (row.value, row.detail, row.tone) == ("0G · 39.4 fpts/g", "PG · GSW · O", "warning")
+
+
+def test_a_row_with_no_reading_shows_his_status() -> None:
+    player = make_player("Unknown", status="GTD", selected_position="BN")
+
+    [row] = week.side("Mine", "", "", [player]).bench
+
+    assert (row.value, row.detail) == ("GTD", "PF · LAL")

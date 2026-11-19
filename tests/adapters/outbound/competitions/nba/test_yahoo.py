@@ -36,7 +36,7 @@ from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import Timeframe, YahooTeam
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Timeframe, YahooLeague, YahooTeam
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.domain.errors import (
     InvalidRequestError,
@@ -920,3 +920,114 @@ def test_a_points_leagues_trade_is_priced_in_fantasy_points() -> None:
 
     assert "= 20.0 fpts" in context.prompt
     assert "fantasy points" in context.situation
+
+
+# ── the week's decisions ────────────────────────────────────────────────
+
+
+def _line(pts: float, reb: float = 5.0, ast: float = 3.0, blk: float = 0.5) -> PlayerStats:
+    """Ten identical games of this line, with steady-enough minutes to leave his worth un-nudged."""
+    games = [
+        NBAGameLog(
+            player_id="p",
+            date=f"2026-01-{i + 1:02d}",
+            opponent="BOS",
+            stats={"pts": pts, "reb": reb, "ast": ast, "blk": blk},
+        )
+        for i in range(10)
+    ]
+    return PlayerStats(recent=RecentForm(games=10, line=nine_cat(games)), minutes=(28.0,) * 10)
+
+
+STARTER = make_player("Starter", "PF", "LAL", key="starter", selected_position="PF")
+BENCHED = make_player("Benched", "PF", "BOS", key="benched", selected_position="BN")
+SPARE = make_player("Spare", "C", "MIA", key="spare", selected_position="BN")
+STREAMER = make_player("Streamer", "SF", "NYK", key="streamer")
+WEEK_FORM = {"Starter": _line(30), "Benched": _line(24), "Spare": _line(8), "Streamer": _line(12)}
+WEEK_GAMES = {"LAL": 1, "BOS": 3, "MIA": 1, "NYK": 4}
+
+
+def _decisions(league: YahooLeague = POINTS_LEAGUE, **extra: Any) -> YahooNBAProvider:
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS, **extra)
+    return nba_provider(yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES), league=league)
+
+
+def test_a_points_leagues_rows_read_games_left_and_fantasy_points_a_game() -> None:
+    summary = _decisions().summary("")
+
+    assert summary.mine is not None
+    [row] = summary.mine.lineup
+    assert row.value.startswith("1G · ") and row.value.endswith(" fpts/g")
+
+
+def test_a_category_leagues_rows_read_games_left_and_the_line() -> None:
+    summary = _decisions(league=yahoo_league()).summary("")
+
+    assert summary.mine is not None
+    assert summary.mine.lineup[0].value == "1G · 30.0p 5.0r 3.0a"
+
+
+def test_a_bench_player_with_more_this_week_starts_and_a_free_agent_streams_in() -> None:
+    actions = _decisions().summary("").actions
+
+    assert actions is not None
+    assert [a.key for a in actions] == ["start:benched:starter", "stream:streamer:spare"]
+    start, stream = actions
+    assert [(p.name, p.held) for p in start.players] == [("Benched", "bench"), ("Starter", "starter")]
+    assert stream.drop == "spare"
+
+
+def test_with_no_adds_left_nothing_streams() -> None:
+    actions = _decisions(adds_used=3).summary("").actions
+
+    assert actions is not None
+    assert [a.key.split(":")[0] for a in actions] == ["start"]
+
+
+def test_a_hurt_player_counts_only_the_games_from_his_return() -> None:
+    week = (date(2026, 11, 16), date(2026, 11, 22))
+    dated = {"GSW": [date(2026, 11, 18), date(2026, 11, 21), date(2026, 11, 22)]}
+    hurt = replace(CURRY, slot="PG")
+
+    def row(espn: FakeESPN) -> str:
+        yahoo = FakeYahoo(roster=[hurt], weights=WEIGHTS, matchup_dates=week)
+        summary = nba_provider(
+            yahoo, nba=FakeNBA(stats={"Stephen Curry": _line(30)}, dated=dated), league=POINTS_LEAGUE, espn=espn
+        ).summary("")
+        assert summary.mine is not None
+        return summary.mine.lineup[0].value
+
+    assert row(ESPN_REPORT).startswith("1G")  # back the 22nd, the week's last game
+    assert row(FakeESPN()).startswith("0G")  # out, and nobody says when he is back
+
+
+def test_a_week_to_come_reads_each_players_games_in_it() -> None:
+    week = _decisions(league=replace(POINTS_LEAGUE, end_week=21)).week_of("", 6)
+
+    assert week.mine is not None
+    assert week.mine.lineup[0].value.startswith("1G")
+    assert week.actions is None
+
+
+def test_the_model_reads_each_players_week_and_judges_the_same_list_the_page_shows() -> None:
+    provider = _decisions()
+
+    context, summary = provider.build_context(), provider.summary("")
+
+    assert [t.key for t in context.tasks] == [a.key for a in summary.actions or []]
+    [benched] = [line for line in context.prompt.splitlines() if line.startswith("- Benched")]
+    assert "WEEK: 3G" in benched
+    assert "T1" in context.prompt and "Streamer" in context.prompt
+    assert context.listed == frozenset({"Benched", "Starter", "Streamer", "Spare"})
+    assert context.worth["Benched"] > context.worth["Spare"]
+
+
+def test_a_wire_that_will_not_load_leaves_the_weeks_rows_and_starts_standing() -> None:
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+    yahoo.wire_error = YahooCaptureMissingError("players")
+    provider = nba_provider(yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES), league=POINTS_LEAGUE)
+
+    summary = provider.summary("")
+
+    assert [a.key for a in summary.actions or []] == ["start:benched:starter"]
+    assert summary.mine is not None and summary.mine.lineup[0].value.startswith("1G")

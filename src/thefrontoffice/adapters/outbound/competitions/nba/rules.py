@@ -107,6 +107,30 @@ def stranded(slot: str, status: str) -> bool:
     return status.upper() in NOT_TAKEN.get(slot.upper(), frozenset())
 
 
+SLOT_TAKES: dict[str, frozenset[str]] = {
+    "G": frozenset({"PG", "SG"}),
+    "F": frozenset({"SF", "PF"}),
+    "GF": frozenset({"PG", "SG", "SF", "PF"}),
+    "G/F": frozenset({"PG", "SG", "SF", "PF"}),
+    "FC": frozenset({"SF", "PF", "C"}),
+    "F/C": frozenset({"SF", "PF", "C"}),
+}
+"""The positions each combined lineup slot takes; any other slot takes its own position, and
+`UTIL` takes anybody. Yahoo prints a player's eligibility as 'PG,SG'."""
+
+ANYBODY = "UTIL"
+"""The lineup slot any active player may fill."""
+
+
+def fits(slot: str, positions: str) -> bool:
+    """Whether a player eligible at `positions` ('PG,SG') may fill lineup slot `slot`."""
+    slot = slot.upper()
+    held = {p.strip().upper() for p in positions.split(",") if p.strip()}
+    if slot == ANYBODY:
+        return bool(held)
+    return bool(held & SLOT_TAKES.get(slot, frozenset({slot})))
+
+
 RULED_OUT = frozenset({"O", "INJ", "SUSP", "IL", "IL+", "NA"})
 """Yahoo's statuses for a player who will not play: out, injured, suspended, on
 the injured list, not active. Game-time and day-to-day decisions are absent —

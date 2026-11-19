@@ -3,6 +3,7 @@
 Covered through the provider, which hands each view the player's recent run.
 """
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 
 import pytest
@@ -10,7 +11,9 @@ from support.espn import FakeESPN
 from support.nba import FakeNBA, FakeYahoo, make_player, nba_provider, toronto
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
-from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
+from thefrontoffice.adapters.outbound.competitions.nba.rules import ASSISTS, BLOCKS, CATEGORIES, POINTS, REBOUNDS
+from thefrontoffice.adapters.outbound.competitions.nba.views import cell, compared
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
@@ -215,3 +218,36 @@ def test_a_drawer_with_no_teammate_out_has_no_teammates_group() -> None:
     provider = nba_provider(FakeYahoo(roster=[make_player("A B", key="ab")]), nba=FakeNBA(scores=toronto()))
 
     assert "Teammates" not in [g.title for g in provider.player("", "ab").groups]
+
+
+READING = Reading(
+    player=make_player("A B"),
+    line={POINTS.label: 22.1, REBOUNDS.label: 8.3, ASSISTS.label: 4.0, BLOCKS.label: 1.0},
+    per_game=41.5,
+    games=3,
+)
+
+
+def test_a_points_league_row_reads_games_left_and_fantasy_points_a_game() -> None:
+    assert cell(READING, by_points=True) == "3G · 41.5 fpts/g"
+
+
+def test_a_category_league_row_reads_games_left_and_the_line_a_row_has_room_for() -> None:
+    assert cell(READING, by_points=False) == "3G · 22.1p 8.3r 4.0a"
+
+
+def test_a_row_without_a_schedule_reads_the_game_alone() -> None:
+    assert cell(replace(READING, games=None), by_points=True) == "41.5 fpts/g"
+
+
+def test_players_compared_carry_the_same_rows_with_a_dash_where_one_has_none() -> None:
+    known, unknown = replace(READING, minutes=30.0), replace(READING, per_game=None, games=None)
+
+    rows = [
+        [(f.label, f.value) for f in p.figures]
+        for p in compared([("in", "bench", known), ("out", "starter", unknown)], True)
+    ]
+
+    assert [label for label, _ in rows[0]] == [label for label, _ in rows[1]]
+    assert dict(rows[0])["Week"] == "124.5"
+    assert dict(rows[1])["Week"] == "—"

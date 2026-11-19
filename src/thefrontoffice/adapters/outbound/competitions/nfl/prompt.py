@@ -12,6 +12,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection, 
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews, dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import STREAMED, listed, scoring_label
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
+from thefrontoffice.adapters.outbound.competitions.tasks import task_lines
 from thefrontoffice.domain.models import Action, CompetitionContext, Stat, task_id
 
 AVAILABLE_PLAYER_LIMIT = 25
@@ -205,7 +206,7 @@ def build(
         for slot in state.lineup
     )
     bench_str = "".join(held_line(p, state) for p in state.sitting) or "- (none)\n"
-    tasks_str = "".join(task_line(i, task) for i, task in enumerate(tasks, start=1)) or (
+    tasks_str = task_lines(tasks) or (
         "- None. Nothing in league state needs deciding: the lineup is the best legal one and nobody "
         "in it is ruled out.\n"
     )
@@ -314,13 +315,6 @@ def _wire_line(player: Projection, state: Week, fit: str) -> str:
     """One candidate as the model reads him: his id, his line, and how he fits."""
     line = player_line(player, state.evidence, state.news, bullet=f"- [id {player.player_id}] ")
     return line + (f"  fits: {fit}\n" if fit else "")
-
-
-def task_line(position: int, task: Action) -> str:
-    """One to-do item as the model reads it: its id, the move, why, who it moves and where each stands, and what it rests on."""
-    when = f" ({task.when})" if task.when else ""
-    evidence = "".join(f"    {line}\n" for line in task.lines())
-    return f"- {task_id(position)} [{task.urgency}, {task.kind}] {task.title}{when}. {task.reason}\n{evidence}"
 
 
 def headline(state: Week, kicked_off: bool = False, over: bool = False) -> list[Stat]:

@@ -21,6 +21,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOT
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split
 from thefrontoffice.adapters.outbound.competitions.nba.views import points
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 
 WINDOW_TAGS: tuple[tuple[Window, str], ...] = (("last_5", "L5"), ("last_10", "L10"), ("last_15", "L15"))
@@ -126,6 +127,7 @@ class PlayerContextBuilder:
         projections: ProjectionIndex | None = None,
         returns: Mapping[str, date] | None = None,
         splits: Callable[[YahooPlayer], Sequence[Split]] | None = None,
+        readings: Mapping[str, Reading] | None = None,
     ) -> dict[str, str]:
         """Same as build_context_for_players, keyed by player name.
 
@@ -133,6 +135,9 @@ class PlayerContextBuilder:
         carries the recommended free agents rather than all thirty. `splits`
         closes each line on his figures without each regular teammate who is
         hurt or lately sat out, and with him (`teammates.Split.prompt`).
+        `readings`
+        are each player's week by Yahoo's key, closing his line on his worth
+        (`prompt.week_line`), which the to-do list is weighed on too.
         """
         if not players:
             return {}
@@ -171,6 +176,8 @@ class PlayerContextBuilder:
                 line += f" | PROJ {projected.games}G {prompt.scored(projected.line, self.weights)}"
             for split in splits(p) if splits else ():
                 line += f" | {split.prompt()}"
+            if readings and (reading := readings.get(p.player_key)):
+                line += prompt.week_line(reading)
             lines[p.name] = line + "\n"
 
         return lines

@@ -134,6 +134,7 @@ class FakeYahoo:
         self.season_weeks: dict[int, Pairing | None] | None = None
         """Your side of each week's scoreboard; every week against Their Team when None."""
         self.standings_error: Exception | None = None
+        self.wire_error: Exception | None = None
 
     def get_user_team(self) -> YahooTeam:
         return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
@@ -162,6 +163,8 @@ class FakeYahoo:
     def fetch_available(self, depths: Mapping[Timeframe, int]) -> dict[Timeframe, list[YahooPlayer]]:
         """`available` by season rank and `risers` by the last week's, each as deep as asked; nothing by any other."""
         self.wire_depths = depths
+        if self.wire_error:
+            raise self.wire_error
         by = {Timeframe.SEASON: self.available, Timeframe.LAST_WEEK: self.risers}
         return {sort_type: by.get(sort_type, [])[:depth] for sort_type, depth in depths.items()}
 
@@ -297,7 +300,11 @@ class FakeSleeperNBA:
 
 
 class FakeNBA:
-    """Stands in for SleeperNBAForm and SleeperNBASchedule both: one player's form, one club's games, the box scores."""
+    """Stands in for SleeperNBAForm and SleeperNBASchedule both: one player's form, one club's games, the box scores.
+
+    A club's games left are its count in `games` whatever the window, or where `dated` lists its
+    games' days, those inside the window asked about.
+    """
 
     def __init__(
         self,
@@ -305,11 +312,13 @@ class FakeNBA:
         games: dict[str, int] | None = None,
         slate: list[ScheduledGame] | None = None,
         scores: BoxScores | None = None,
+        dated: dict[str, list[date]] | None = None,
     ) -> None:
         self.stats = stats or {}
         self.games = games or {}
         self.slate = slate or []
         self.scores = scores or BoxScores()
+        self.dated = dated or {}
 
     def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
         return [g for g in self.slate if start_date.isoformat() <= g.date <= end_date.isoformat()]
@@ -321,12 +330,15 @@ class FakeNBA:
         return self.scores
 
     def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
-        return self.games.get(team_abbr.upper(), 0)
+        club = team_abbr.upper()
+        if club in self.dated:
+            return sum(1 for day in self.dated[club] if start_date <= day <= end_date)
+        return self.games.get(club, 0)
 
     def get_remaining_games_bulk(
         self, team_abbrs: list[str], start_date: date, end_date: date, now: datetime | None = None
     ) -> dict[str, int]:
-        return {t.upper(): self.games.get(t.upper(), 0) for t in team_abbrs}
+        return {t.upper(): self.get_remaining_games(t, start_date, end_date) for t in team_abbrs}
 
 
 def nba_provider(
