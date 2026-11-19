@@ -28,12 +28,17 @@ export function TradesPanel({ competition, league }: { competition: Competition;
   );
 }
 
-type Ranked = Trades["ranked_by"];
+type Figured = Trades["ranked_by"] | "points" | "playoff_points";
 
 /** The figures for you, each a column, with what each measures on hover. */
-const FIGURES: { key: Ranked; label: string; about: string }[] = [
+const FIGURES: { key: Figured; label: string; about: string }[] = [
   { key: "points", label: "Season /wk", about: "Your starters' points a week, rest of the regular season" },
   { key: "playoff_points", label: "Playoffs /wk", about: "Your starters' points a playoff week" },
+  {
+    key: "total",
+    label: "Total",
+    about: "Your starters' points, rest of season: playoff weeks weighed by your odds",
+  },
   { key: "playoffs_change", label: "Odds", about: "Your playoff chance, and where it ends up" },
 ];
 
@@ -43,9 +48,9 @@ const FIGURES: { key: Ranked; label: string; about: string }[] = [
  * A table, one trade a row, because the trades are compared with each other:
  * what each gives, gets, and does for you, read down a column. Ordered by the
  * server on the figure that matters most where you stand — your playoff chance
- * on the bubble, your playoff lineup once that is safe — and that column says
- * so. A trade can cost the regular season for the playoffs; both columns show,
- * so the cost is in view beside the gain.
+ * on the bubble, your points over the rest of the season once that is safe —
+ * and that column says so. A trade can cost the regular season for the
+ * playoffs; both columns show, so the cost is in view beside the gain.
  *
  * Fetched apart from the squad: each trade is a season played out thousands
  * of times, which is seconds the roster should not wait on.
@@ -151,7 +156,7 @@ function Players({ names, pricing }: { names: string[]; pricing: Map<string, str
 }
 
 /** One figure for you; a change is tinted only where it is noticeable, and its sign says it in text too. */
-function Figure({ idea, figure }: { idea: TradeIdea; figure: Ranked }) {
+function Figure({ idea, figure }: { idea: TradeIdea; figure: Figured }) {
   if (figure === "playoffs_change") {
     const change = idea.playoffs_change * 100;
     return (
@@ -161,7 +166,7 @@ function Figure({ idea, figure }: { idea: TradeIdea; figure: Ranked }) {
       </>
     );
   }
-  const value = figure === "points" ? idea.points : idea.playoff_points;
+  const value = figure === "points" ? idea.points : figure === "total" ? idea.total : idea.playoff_points;
   if (value == null) return <span className="text-muted-foreground">—</span>;
   return <span className={tint(value)}>{signed(value)}</span>;
 }

@@ -2042,6 +2042,11 @@ export interface components {
              */
             playoff_points: number | null;
             /**
+             * Total
+             * @description Your starters' expected points over the rest of the season, with the trade less without it: every regular-season week left, and each playoff week weighed by your chance of being in it.
+             */
+            total: number;
+            /**
              * Their Playoffs
              * @description Their chance of a playoff place before the trade: out of it, they have only worth to weigh.
              * @default 0
@@ -2068,11 +2073,11 @@ export interface components {
             ideas: components["schemas"]["TradeIdea"][];
             /**
              * Ranked By
-             * @description The figure on each idea the list is ordered by: your playoff chance, or once that is safe, your starters' points in the playoff weeks — or the regular season's where those are not projected.
+             * @description The figure on each idea the list is ordered by: your playoff chance, or once that is safe, your starters' expected points over the rest of the season.
              * @default playoffs_change
              * @enum {string}
              */
-            ranked_by: "playoffs_change" | "points" | "playoff_points";
+            ranked_by: "playoffs_change" | "total";
             /**
              * Pickup
              * @description The free agent most of the two-for-ones would add to the spot they free; an idea names its own pickup only where it is someone else.

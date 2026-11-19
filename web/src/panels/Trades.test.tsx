@@ -15,6 +15,7 @@ const idea = (their_playoffs: number, their_points: number, over: Partial<TradeI
   points: 1,
   their_points,
   playoff_points: 3,
+  total: 11,
   their_playoffs,
   pickup: "",
   form: [],
@@ -69,8 +70,8 @@ describe("Trades", () => {
 
   it("puts each trade on a row, with the regular season's cost beside the playoff gain it buys", async () => {
     const { container } = await shown({
-      ideas: [idea(1, 1.7, { points: -3.0, playoff_points: 2.5, playoffs_change: -0.003 })],
-      ranked_by: "playoff_points",
+      ideas: [idea(1, 1.7, { points: -3.0, playoff_points: 2.5, total: -1.5, playoffs_change: -0.003 })],
+      ranked_by: "total",
       pickup: "",
     });
 
@@ -78,8 +79,9 @@ describe("Trades", () => {
     expect(cells.slice(0, 2)).toEqual(["A", "B"]);
     expect(cells).toContain("−3.0");
     expect(cells).toContain("+2.5");
+    expect(cells).toContain("−1.5");
     // The column the list is ordered by is marked as such.
-    expect(container.querySelector('th [aria-label="ordered by"]')?.closest("th")?.textContent).toContain("Playoffs");
+    expect(container.querySelector('th [aria-label="ordered by"]')?.closest("th")?.textContent).toContain("Total");
   });
 
   it("has no playoff column before the playoff weeks are projected", async () => {
@@ -89,6 +91,8 @@ describe("Trades", () => {
       pickup: "",
     });
 
-    expect(container.querySelectorAll("thead th")).toHaveLength(5);
+    const headers = [...container.querySelectorAll("thead th")].map((th) => th.textContent);
+    expect(headers).toHaveLength(6);
+    expect(headers.some((h) => h?.includes("Playoffs"))).toBe(false);
   });
 });
