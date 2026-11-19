@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label, META } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { CardNote, QueryState } from "@/components/ui/state";
-import { ToggleChip } from "@/components/ui/toggle";
+import { ToggleChip, ToggleGroup } from "@/components/ui/toggle";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -265,20 +265,22 @@ function Appearance() {
         <span className="font-normal normal-case tracking-normal">This browser only</span>
       </CardHeader>
       <div role="group" aria-label="Palette" className="flex flex-wrap gap-2 p-4">
-        {PALETTES.map((p) => (
-          <ToggleChip
-            key={p.id}
-            pressed={p.id === palette}
-            onClick={() => setPalette(p.id)}
-            className="h-auto gap-2.5 py-2 text-left"
-          >
-            <span className="size-4 shrink-0 rounded-full border border-border" style={{ background: p.swatch }} />
-            <span>
-              <span className="block text-[13px] font-medium leading-tight">{p.label}</span>
-              <span className="block font-mono text-[10px] opacity-70">{p.hint}</span>
-            </span>
-          </ToggleChip>
-        ))}
+        <ToggleGroup>
+          {PALETTES.map((p) => (
+            <ToggleChip
+              key={p.id}
+              pressed={p.id === palette}
+              onClick={() => setPalette(p.id)}
+              className="h-auto gap-2.5 py-2 text-left"
+            >
+              <span className="size-4 shrink-0 rounded-full border border-border" style={{ background: p.swatch }} />
+              <span>
+                <span className="block text-[13px] font-medium leading-tight">{p.label}</span>
+                <span className="block font-mono text-[10px] opacity-70">{p.hint}</span>
+              </span>
+            </ToggleChip>
+          ))}
+        </ToggleGroup>
       </div>
     </Card>
   );
@@ -348,16 +350,18 @@ function Control({
         : setting.choices.map((choice) => ({ value: choice, label: choice }));
     return (
       <div role="group" aria-label={setting.key} className="flex flex-wrap gap-1.5">
-        {options.map((option) => (
-          <ToggleChip
-            key={option.value}
-            pressed={option.value === current}
-            onClick={() => onChange(option.value)}
-            className={cn("h-8", setting.kind === "choice" && "font-mono text-[12.5px]")}
-          >
-            {option.label}
-          </ToggleChip>
-        ))}
+        <ToggleGroup>
+          {options.map((option) => (
+            <ToggleChip
+              key={option.value}
+              pressed={option.value === current}
+              onClick={() => onChange(option.value)}
+              className={cn("h-8", setting.kind === "choice" && "font-mono text-[12.5px]")}
+            >
+              {option.label}
+            </ToggleChip>
+          ))}
+        </ToggleGroup>
       </div>
     );
   }

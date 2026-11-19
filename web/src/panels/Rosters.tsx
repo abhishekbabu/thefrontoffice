@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { api, type League, type Competition, type Outlook, type TeamRef } from "@/lib/api";
-import { ToggleChip } from "@/components/ui/toggle";
+import { ToggleChip, ToggleGroup } from "@/components/ui/toggle";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Badge } from "@/components/ui/badge";
 import { ListCard, ListRow } from "@/components/ui/list";
@@ -56,14 +56,16 @@ export function RostersPanel({ competition, league }: { competition: Competition
       <LeagueHeader league={league} />
       {(teams.data?.length ?? 0) > 1 && (
         <div className="flex flex-wrap gap-1.5 px-5 pt-5">
-          {teams.data!.map((t) => (
-            <ToggleChip key={t.team_id} pressed={t.team_id === selected?.team_id} onClick={() => pick(t)}>
-              <span className="max-w-[14rem] truncate">{t.name}</span>
-              {t.is_mine && (
-                <span className="font-mono text-[10px] uppercase tracking-[0.08em] opacity-70">you</span>
-              )}
-            </ToggleChip>
-          ))}
+          <ToggleGroup>
+            {teams.data!.map((t) => (
+              <ToggleChip key={t.team_id} pressed={t.team_id === selected?.team_id} onClick={() => pick(t)}>
+                <span className="max-w-[14rem] truncate">{t.name}</span>
+                {t.is_mine && (
+                  <span className="font-mono text-[10px] uppercase tracking-[0.08em] opacity-70">you</span>
+                )}
+              </ToggleChip>
+            ))}
+          </ToggleGroup>
         </div>
       )}
 

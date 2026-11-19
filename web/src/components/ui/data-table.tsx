@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { m } from "motion/react";
-import { list, listItem } from "@/lib/motion";
+import { list, listItem, pressableRow } from "@/lib/motion";
 import { Table, Td, Th } from "@/components/ui/table";
 import { Tooltip } from "@/components/ui/tooltip";
 import { clickable } from "@/lib/clickable";
@@ -166,7 +166,7 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
             key={row.player_id}
             variants={listItem}
             {...clickable(onSelect && (() => onSelect(row)), { role: null })}
-            className={cn("hover:bg-muted", onSelect && "cursor-pointer")}
+            className={cn("transition-colors duration-150 hover:bg-muted", onSelect && ["cursor-pointer", pressableRow])}
           >
             {columns.map((column) => {
               const value = row.columns[column] ?? "";

@@ -7,7 +7,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { RosterTable, toOrder } from "@/components/ui/roster-table";
 import type { SortState } from "@/components/ui/data-table";
 import { Busy, QueryState } from "@/components/ui/state";
-import { ToggleChip } from "@/components/ui/toggle";
+import { ToggleChip, ToggleGroup } from "@/components/ui/toggle";
 import { Tabs } from "@/components/ui/tabs";
 import { usePlayerDrawer } from "@/components/ui/player";
 import { SearchInput } from "@/components/ui/input";
@@ -162,16 +162,18 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
                   differ per competition, and a list here would be a fourth place to
                   edit. Off the unfiltered pool, so choosing one does not
                   remove the others. */}
-              {page.data.positions.map((p) => (
-                <ToggleChip
-                  key={p}
-                  pressed={position === p}
-                  onClick={() => reset(setPosition)(position === p ? "" : p)}
-                  className="font-mono text-[11px] uppercase tracking-[0.06em]"
-                >
-                  {p}
-                </ToggleChip>
-              ))}
+              <ToggleGroup>
+                {page.data.positions.map((p) => (
+                  <ToggleChip
+                    key={p}
+                    pressed={position === p}
+                    onClick={() => reset(setPosition)(position === p ? "" : p)}
+                    className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                  >
+                    {p}
+                  </ToggleChip>
+                ))}
+              </ToggleGroup>
               {filtered && (
                 <IconButton
                   label="Clear filters"

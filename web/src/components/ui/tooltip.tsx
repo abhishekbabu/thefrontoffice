@@ -35,7 +35,10 @@ export function Tooltip({
         <RadixTooltip.Content
           side={side}
           sideOffset={6}
-          className="z-50 max-w-xs rounded-md border border-border bg-popover px-2.5 py-1.5 text-[12.5px] leading-snug text-popover-foreground shadow-md"
+          // Grows out of the control it names, from the side Radix placed it
+          // on. Not when it follows the pointer from a neighbouring control
+          // (`instant-open`): sweeping along a toolbar should not pulse.
+          className="z-50 max-w-xs origin-(--radix-tooltip-content-transform-origin) animate-[tooltip-in_120ms_cubic-bezier(0.22,1,0.36,1)] rounded-md border border-border bg-popover px-2.5 py-1.5 text-[12.5px] leading-snug text-popover-foreground shadow-md data-[state=instant-open]:animate-none data-[state=closed]:animate-[tooltip-out_80ms_ease-in_forwards]"
         >
           {label}
           <RadixTooltip.Arrow className="fill-border" />

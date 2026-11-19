@@ -11,8 +11,9 @@ import { afterEach } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { LazyMotion, MotionGlobalConfig } from "motion/react";
+import { MotionGlobalConfig } from "motion/react";
 import features from "@/lib/motion-features";
+import { MotionProvider } from "@/lib/motion-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 // Tells React this is a test environment, so `act` flushes as it would in one.
@@ -49,9 +50,9 @@ export async function render(ui: ReactNode, client: QueryClient = offlineClient(
   const wrap = (node: ReactNode) => (
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <LazyMotion features={features}>
+        <MotionProvider features={features}>
           <TooltipProvider>{node}</TooltipProvider>
-        </LazyMotion>
+        </MotionProvider>
       </MemoryRouter>
     </QueryClientProvider>
   );
