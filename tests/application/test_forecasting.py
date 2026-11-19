@@ -155,6 +155,43 @@ def test_rows_keep_their_urgency_and_sort_within_it_by_what_they_add() -> None:
     assert [a.key for a in actions] == [SWAP.key, lesser.key, DEADLINE.key]
 
 
+# A swap the lineup already makes: X is in, W was benched for him. Written as its undoing.
+MADE = LineupMove(key="x<w", title="Start W over X", out=("x",), into=(outcome("w", 0, 5, 10),), made=True)
+
+
+def _made_matchup(*moves: LineupMove) -> MatchupInput:
+    """Yours already starts X, in W's place."""
+    return _match([outcome("x", 20, 25, 30), outcome("m", 0, 30)], [outcome("t", 10, 20, 30)], *moves)
+
+
+def test_a_swap_already_made_carries_what_undoing_it_would_cost() -> None:
+    matchup = _made_matchup(MADE)
+    forecast = simulate(matchup, FEW)
+
+    [swap] = ranked([SWAP], forecast, matchup) or []
+
+    assert swap.win_change == forecast.win - forecast.moves[MADE.key]
+    assert swap.win_change is not None and swap.win_change > 0
+
+
+def test_undoing_a_swap_already_made_is_never_the_move_to_suggest() -> None:
+    """Even where the range likes the benched player more: the lineup chose on more than the range."""
+    better_undone = LineupMove(key="x<w", title="Start W over X", out=("x",), into=(outcome("w", 50, 60),), made=True)
+    matchup = _made_matchup(better_undone)
+
+    forecast = simulate(matchup, FEW)
+
+    assert forecast.moves[better_undone.key] > forecast.win
+    assert forecast.best_move == ""
+    assert ranked([DEADLINE], forecast, matchup) == [DEADLINE]
+
+
+def test_a_swap_already_made_is_no_pickup_chance() -> None:
+    matchup = _made_matchup(MADE)
+
+    assert pickup_chances(simulate(matchup, FEW), matchup) == []
+
+
 def test_a_competition_without_a_to_do_list_still_has_none() -> None:
     matchup = _match([outcome("a", 10)], [outcome("b", 5)])
 

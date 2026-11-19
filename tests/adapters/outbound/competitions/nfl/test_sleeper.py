@@ -665,19 +665,22 @@ def _paired() -> FakeSleeper:
     return client
 
 
-def test_the_matchup_to_simulate_has_both_lineups() -> None:
+def test_the_matchup_to_simulate_is_the_lineup_the_app_recommends_against_theirs_as_set() -> None:
+    """Yours starts only qb1; the bench back the to-do list puts in the empty slot is in the forecast too."""
     matchup = nfl_provider(_paired()).matchup_input("L1")
 
     assert matchup is not None
-    assert [o.player_id for o in matchup.mine] == ["qb1"]
+    assert sorted(o.player_id for o in matchup.mine) == ["qb1", "rb1"]
     assert [o.player_id for o in matchup.theirs] == ["rb2"]
 
 
-def test_a_bench_player_who_can_fill_an_empty_slot_is_a_move_to_price() -> None:
+def test_a_swap_the_recommended_lineup_makes_is_priced_by_undoing_it() -> None:
     matchup = nfl_provider(_paired()).matchup_input("L1")
 
     assert matchup is not None
-    assert any(m.into[0].player_id == "rb1" and m.out == () for m in matchup.moves)
+    [made] = [m for m in matchup.moves if m.made]
+    assert (made.out, made.into) == (("rb1",), ())
+    assert not any(m.into and m.into[0].player_id == "rb1" for m in matchup.moves)
 
 
 def test_a_week_with_no_opponent_has_nothing_to_simulate() -> None:

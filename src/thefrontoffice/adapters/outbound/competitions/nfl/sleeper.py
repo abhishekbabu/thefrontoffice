@@ -39,12 +39,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.forecast import Forecasts, seed
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
-    current_lineup,
-    lineup_changes,
-    lineup_points,
-    optimal_lineup,
-)
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import current_lineup, optimal_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     FREE_AGENT,
     Game,
@@ -55,7 +50,6 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Trending,
     active,
     fielded,
-    let_go,
     open_spots,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
@@ -77,6 +71,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     weeks_played,
     zero_projection,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.worth import lineup_value
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.espn import types as espn
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
@@ -476,14 +471,6 @@ class SleeperNFLProvider:
         roster = self._mine(rosters, league_id)
         browsing = week != current
         projected = projections_for(fielded(roster), projections, players)
-        # Nobody starts from an injured-reserve or taxi slot without a move first.
-        startable = projections_for([*active(roster), *let_go(roster)], projections, players)
-
-        slots = league.starting_slots
-        lineup = current_lineup(slots, roster.starter_ids, projected)
-        best = optimal_lineup(slots, startable)
-        current_points = round(lineup_points(lineup), 2)
-        best_points = round(lineup_points(best), 2)
 
         return Week(
             evidence=evidence.Evidence()
@@ -503,12 +490,8 @@ class SleeperNFLProvider:
             projections=projections,
             players=players,
             projected=projected,
-            lineup=lineup,
-            best=best,
-            changes=lineup_changes(slots, roster.starter_ids, startable),
-            current_points=current_points,
-            best_points=best_points,
-            on_bench=round(best_points - current_points, 2),
+            lineup=current_lineup(league.starting_slots, roster.starter_ids, projected),
+            rank=lineup_value,
         )
 
     def _records_before(

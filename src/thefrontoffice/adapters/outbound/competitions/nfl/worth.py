@@ -1,6 +1,7 @@
 """What a player is worth to a lineup: the one figure every decision about him weighs.
 
-Split from the to-do list because more than it reads him by: who to drop, who
+Split from the to-do list because more than it reads him by: who to start
+(`lineup_value`, which the week's best lineup is solved on), who to drop, who
 to pick up, who to stash, and how a free agent fits your lineup on the wire
 (`views.fit`). One reading, so the page and the list never rank him two ways.
 """
@@ -114,3 +115,11 @@ def value(state: Week, player: Projection) -> float:
     """His `worth`, or his season average where there is nothing to read it from: what both sides of a move are weighed by."""
     found = worth(state, player)
     return season_average(state.evidence, player) if found is None else found
+
+
+def lineup_value(state: Week, player: Projection) -> float:
+    """What this week's best lineup weighs him by: his `value` in a week he `plays`, nought in one he does not.
+
+    A bye or a ruling leaves his value at his season, which no slot scores this week.
+    """
+    return value(state, player) if plays(state, player) else 0.0

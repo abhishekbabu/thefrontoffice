@@ -1,13 +1,17 @@
 """Optimal lineup selection.
 
-Deliberately not delegated to the model. "Which legal lineup maximises projected
-points" is a constraint-satisfaction problem with an exact answer; asking an LLM
-would introduce error into the one part of the football report that has none.
-The model's job is judgement — is the projection trustworthy, is the matchup
-bad, is the injury real — not arithmetic.
+Deliberately not delegated to the model. "Which legal lineup maximises what its
+players are worth" is a constraint-satisfaction problem with an exact answer;
+asking an LLM would introduce error into the one part of the football report
+that has none. The model's job is judgement — is the projection trustworthy,
+is the matchup bad, is the injury real — not arithmetic.
+
+What a player is worth is the caller's `Rank`: this week's lineup weighs him
+by `worth.lineup_value`, while a week ahead, which has no form to read, by his
+projection (`projected`).
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection
@@ -26,19 +30,37 @@ class LineupSlot:
         return self.player.points if self.player else 0.0
 
 
+Rank = Callable[[Projection], float]
+"""What a lineup weighs a player by: the higher, the sooner he starts."""
+
+
+def projected(player: Projection) -> float:
+    """His projection: the `Rank` of a week with nothing else to read him by."""
+    return player.points
+
+
+SWAP_BY = 1.0
+"""What a bench player must be worth over the starter he would replace for the swap to be listed.
+
+A point of `worth.value`: under it the two are a coin flip, and a list that
+reorders the lineup on every refresh of the numbers teaches nobody anything.
+A swap for a starter who scores nothing — ruled out, on bye — is never a near tie.
+"""
+
+
 def eligible_positions(slot: str) -> tuple[str, ...]:
     return FLEX_ELIGIBILITY.get(slot, (slot,))
 
 
-def optimal_lineup(slots: list[str], players: Sequence[Projection]) -> list[LineupSlot]:
-    """Assign the highest-projecting legal lineup.
+def optimal_lineup(slots: list[str], players: Sequence[Projection], rank: Rank = projected) -> list[LineupSlot]:
+    """Assign the highest-ranked legal lineup.
 
     Slots are filled in order of how restrictive they are — a QB slot before a
     FLEX, a FLEX before a SUPER_FLEX. Filling the loose slots first would let a
     SUPER_FLEX take the only quarterback and leave the QB slot empty, which is
     the classic way a naive greedy assignment goes wrong.
     """
-    available = sorted(players, key=lambda p: p.points, reverse=True)
+    available = sorted(players, key=rank, reverse=True)
     order = sorted(range(len(slots)), key=lambda i: (len(eligible_positions(slots[i])), i))
 
     taken: set[str] = set()
@@ -68,16 +90,21 @@ class LineupChange:
     slot: str
     start: Projection
     bench: Projection | None
-
-    @property
-    def gain(self) -> float:
-        return round(self.start.points - (self.bench.points if self.bench else 0.0), 2)
+    gain: float
+    """What the swap adds, by the `Rank` the lineup was solved on."""
 
 
 def lineup_changes(
-    slots: list[str], current_starter_ids: list[str], players: Sequence[Projection]
+    slots: list[str],
+    current_starter_ids: Sequence[str],
+    players: Sequence[Projection],
+    rank: Rank = projected,
+    margin: float = 0.0,
 ) -> list[LineupChange]:
     """What to change to reach the optimal lineup, as swaps that can each be made, best gain first.
+
+    Only swaps that gain at least `margin` (`SWAP_BY`, for this week's), unless
+    the starter going out is worth nothing this week or the slot is empty.
 
     Compares by player rather than by slot: shuffling the same players between a
     RB and a FLEX slot is not a start/sit decision and should not be reported as
@@ -86,20 +113,22 @@ def lineup_changes(
     to start a running back over his only tight end, which no platform allows,
     and hid the tight-end swap the change actually needed.
     """
-    best = optimal_lineup(slots, players)
+    best = optimal_lineup(slots, players, rank)
     best_ids = {s.player.player_id for s in best if s.player}
     current_ids = set(current_starter_ids)
     by_id = {p.player_id: p for p in players}
 
     lineup = [by_id[pid] for pid in current_starter_ids if pid in by_id]
-    coming_in = sorted((s for s in best if s.player and s.player.player_id not in current_ids), key=lambda s: -s.points)
-    going_out = sorted((by_id[pid] for pid in current_ids - best_ids if pid in by_id), key=lambda p: p.points)
+    coming_in = sorted(
+        ((s.slot, s.player) for s in best if s.player and s.player.player_id not in current_ids),
+        key=lambda pair: -rank(pair[1]),
+    )
+    going_out = sorted((by_id[pid] for pid in current_ids - best_ids if pid in by_id), key=rank)
 
     changes = []
-    for slot in coming_in:
-        assert slot.player is not None
-        out = next((p for p in going_out if fits(slots, [q for q in lineup if q is not p] + [slot.player])), None)
-        if out is None and not fits(slots, [*lineup, slot.player]):
+    for slot, player in coming_in:
+        out = next((p for p in going_out if fits(slots, [q for q in lineup if q is not p] + [player])), None)
+        if out is None and not fits(slots, [*lineup, player]):
             # No single swap brings him in; the change needs several at once,
             # which the page cannot phrase as one row. Rare, and left out
             # rather than shown as a swap that cannot be made.
@@ -107,12 +136,16 @@ def lineup_changes(
         if out is not None:
             going_out.remove(out)
             lineup = [q for q in lineup if q is not out]
-        lineup.append(slot.player)
-        changes.append(LineupChange(slot=slot.slot, start=slot.player, bench=out))
-    # A swap that loses points is not a recommendation. It arises when a slot
-    # holds someone ineligible for it, making the replacement forced rather than
-    # an upgrade.
-    return sorted((c for c in changes if c.gain > 0), key=lambda c: c.gain, reverse=True)
+        lineup.append(player)
+        gain = round(rank(player) - (rank(out) if out else 0.0), 2)
+        changes.append(LineupChange(slot=slot, start=player, bench=out, gain=gain))
+    # A swap that loses is not a recommendation. It arises when a slot holds
+    # someone ineligible for it, making the replacement forced rather than an upgrade.
+    return sorted(
+        (c for c in changes if c.gain > 0 and (c.gain >= margin or c.bench is None or rank(c.bench) <= 0)),
+        key=lambda c: c.gain,
+        reverse=True,
+    )
 
 
 def current_lineup(slots: list[str], starter_ids: list[str], players: Sequence[Projection]) -> list[LineupSlot]:

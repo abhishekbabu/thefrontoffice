@@ -11,7 +11,7 @@ which of the two it is showing.
 """
 
 import logging
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import cached_property
@@ -20,7 +20,14 @@ from thefrontoffice.adapters.outbound.competitions.dates import day_month, parse
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.injuries import PlayerInjuries
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, LineupSlot, optimal_lineup
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
+    SWAP_BY,
+    LineupChange,
+    LineupSlot,
+    lineup_changes,
+    lineup_points,
+    optimal_lineup,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     COMPLETE,
     Game,
@@ -93,11 +100,9 @@ class Week:
     players: Mapping[str, PlayerInfo]
     projected: Sequence[Projection]
     lineup: list[LineupSlot]
-    best: list[LineupSlot]
-    changes: list[LineupChange]
-    current_points: float
-    best_points: float
-    on_bench: float
+    rank: Callable[[Week, Projection], float]
+    """What the best lineup weighs a player by: `worth.lineup_value`, which reads the
+    week, so it is handed the week rather than held by it."""
 
     rosters: Sequence[Team] = ()
     """Every team in the league, yours among them, each starting the lineup it set for this week."""
@@ -144,6 +149,40 @@ class Week:
         a decision. It only means something once others do have one.
         """
         return any(p.opponent for p in self.projected)
+
+    def ranked(self, player: Projection) -> float:
+        """What the best lineup weighs him by (`rank`)."""
+        return self.rank(self, player)
+
+    @cached_property
+    def startable(self) -> list[Projection]:
+        """Who the best lineup is chosen from: everyone fielded but a player in an injured-reserve or taxi slot,
+        who starts nowhere without a move first."""
+        return [p for p in self.projected if p.player_id not in self.roster.reserve_ids]
+
+    @cached_property
+    def best(self) -> list[LineupSlot]:
+        """The legal lineup worth most, by `rank`: the one every decision measures yours against."""
+        return optimal_lineup(self.league.starting_slots, self.startable, self.ranked)
+
+    @cached_property
+    def changes(self) -> list[LineupChange]:
+        """The swaps that reach `best` from your lineup, each worth at least `SWAP_BY`, best first."""
+        return lineup_changes(self.league.starting_slots, self.roster.starter_ids, self.startable, self.ranked, SWAP_BY)
+
+    @property
+    def current_points(self) -> float:
+        """What your lineup as set projects."""
+        return lineup_points(self.lineup)
+
+    @property
+    def best_points(self) -> float:
+        """What `best` projects: it is chosen by worth, so it can project less than your lineup."""
+        return lineup_points(self.best)
+
+    @property
+    def on_bench(self) -> float:
+        return round(self.best_points - self.current_points, 2)
 
     @cached_property
     def starter_ids(self) -> set[str]:

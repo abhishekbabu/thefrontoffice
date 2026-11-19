@@ -211,12 +211,14 @@ def _lineup(
         if not why:
             continue
 
-        # The projection solve only benches a starter somebody outscores, and
-        # Sleeper can still project a player it has ruled out. Whoever is
-        # fit and eligible is the cover then, whatever the numbers say.
+        # The solve only benches a starter somebody is worth more than, and a
+        # bench worth nothing this week leaves him in. Whoever is fit and
+        # eligible is the cover then, whatever the numbers say.
         if change is None or change.start.player_id in moved:
             cover = _bench_cover(state, slot.slot, started, moved)
-            change = LineupChange(slot=slot.slot, start=cover, bench=player) if cover else None
+            change = (
+                LineupChange(slot=slot.slot, start=cover, bench=player, gain=state.ranked(cover)) if cover else None
+            )
 
         if change is not None:
             moved.update({change.start.player_id, *([player.player_id] if player else [])})
@@ -258,7 +260,7 @@ def _lineup(
 
     for change in open_changes:
         if change.start.player_id not in moved and not (change.bench and change.bench.player_id in moved):
-            reason = f"+{change.gain:.2f} proj pts.{_caveat(change.start)}"
+            reason = f"{_worth_over(state, change)}{_caveat(change.start)}"
             both = [change.start, *([change.bench] if change.bench else [])]
             items.append(
                 Item("swap", _swap(change, "soon", reason, kickoff, _evidence(state, both), key=_swap_key(change)))
@@ -266,8 +268,14 @@ def _lineup(
     return items
 
 
+def _worth_over(state: Week, change: LineupChange) -> str:
+    """'Worth 12.87 vs Tyson's 11.49.' — the figures the best lineup chose between, as a teammate check states them."""
+    against = f" vs {surname(change.bench.name)}'s {state.ranked(change.bench):.2f}" if change.bench else ""
+    return f"Worth {state.ranked(change.start):.2f}{against}."
+
+
 def _bench_cover(state: Week, slot: str, started: set[str], moved: set[str]) -> Projection | None:
-    """The best bench player who can play `slot` this week and is still free to move."""
+    """The bench player worth most who can play `slot` this week and is still free to move."""
     return max(
         (
             p
@@ -277,7 +285,7 @@ def _bench_cover(state: Week, slot: str, started: set[str], moved: set[str]) -> 
             and p.position in eligible_positions(slot)
             and not _cannot_play(p, state.scheduled)
         ),
-        key=lambda p: p.points,
+        key=state.ranked,
         default=None,
     )
 
