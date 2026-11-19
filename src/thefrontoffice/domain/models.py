@@ -1030,10 +1030,19 @@ class TradeIdea(BaseModel):
     )
 
 
+TradeRank = Literal["playoffs_change", "points", "playoff_points"]
+"""Which of a `TradeIdea`'s figures for you a list of them is ordered by."""
+
+
 class Trades(BaseModel):
     """The trades worth offering, best first, with what most of them share said once rather than on each."""
 
     ideas: list[TradeIdea] = Field(default_factory=list)
+    ranked_by: TradeRank = Field(
+        default="playoffs_change",
+        description="The figure on each idea the list is ordered by: your playoff chance, or once that is "
+        "safe, your starters' points in the playoff weeks — or the regular season's where those are not projected.",
+    )
     pickup: str = Field(
         default="",
         description="The free agent most of the two-for-ones would add to the spot they free; an idea "

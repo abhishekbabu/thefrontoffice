@@ -31,10 +31,16 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   "99% win / 83% loss".
 - **Every week of the season**: page back to see what was played and forward to
   see the projected lineups. FPL gameweeks and NBA category weeks work the same way.
-- **Trades**: near-even offers that start for you, ranked by what they do to
-  your playoff odds, each with why the other manager might accept. A pickup
-  most trades share, and each player's pricing note, is said once.
-- **Free agents**: ranked by projection and fit, with rest-of-season points
+- **Trades**: near-even offers that start for you, one a row: give, get, the
+  partner and why he might accept, and what each does to your regular season,
+  your playoff weeks and your playoff odds. Ranked by the odds, or once those
+  are 80%+ by the playoff weeks (so a trade can cost the regular season for
+  December); the ranked column is marked. Pricing notes are on hover; a pickup
+  most trades share is said once.
+- **Free agents**: best fit first (points over the weakest starter he would
+  replace, who on hover), so a 1QB league's list does not open on quarterbacks;
+  the Win column shows only where a pickup moves this week's odds by half a
+  point or more. With projection and rest-of-season points
   (next week through the fantasy final — the bracket's last week from
   `playoff_teams` and Sleeper's `playoff_round_type`, capped at week 18 — byes
   as zero; this week alone once none is left), snap and target share over the last 3 games, a

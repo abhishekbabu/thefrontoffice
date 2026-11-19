@@ -7,6 +7,7 @@ and the provider is the place a week is gathered, not drawn.
 
 import logging
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, history, injuries
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, best_upgrade
@@ -262,13 +263,56 @@ def cards(
         rest = ahead.get(player_id, 0.0) if ahead is not None else None
         # The teammate whose absence he would gain most from, first; the rest are in the drawer.
         split = next(iter(hurt.splits(meta)), None) if hurt else None
+        identity = {PLAYER_COLUMN: meta.name, POSITION_COLUMN: meta.position, "Team": meta.team}
+        proj = f"{projection.points:.2f}" if projection else "0.00"
+        ros = {ROS_COLUMN: f"{rest:.1f}"} if rest is not None else {}
+        # Through the zero-point fallback, which carries his ruling
+        # where Sleeper has published no projection for him.
+        versus = _versus(projection or zero_projection(player_id, meta), state.scheduled, "—")
+        depth_cell = str(depth) if depth else "—"
+        columns = (
+            # Read left to right as a pickup is weighed: who he is, what he is
+            # worth to you, how he is used, and then the week's context.
+            {
+                **identity,
+                FIT_COLUMN: fitted.cell() if fitted else "—",
+                "Proj": proj,
+                **ros,
+                SNAP_COLUMN: share(snaps),
+                TARGET_COLUMN: share(targets),
+                # Sorts by the size of the jump.
+                TREND_COLUMN: trend.short() if trend else "—",
+                WITHOUT_COLUMN: split.cell() if split else "—",
+                "Opponent": versus,
+                STATUS_COLUMN: injury,
+                "Depth": depth_cell,
+            }
+            if wire
+            else {
+                **identity,
+                SLOT_COLUMN: _slot(player_id, starters, reserve),
+                "Proj": proj,
+                **ros,
+                "Opponent": versus,
+                "Depth": depth_cell,
+                # Years in the league tell a roster apart; on the wire the
+                # usage beside it says more about a pickup, in the room.
+                "Exp": f"{meta.years_exp}y",
+                STATUS_COLUMN: injury,
+            }
+        )
         rows.append(
             PlayerCard(
                 player_id=player_id,
                 ruled_out=ruled_out(injury),
-                notes={WITHOUT_COLUMN: split.note()} if split else {},
+                # Who a fit is measured against, on hover: the cell has room for the gap alone.
+                notes={
+                    **({FIT_COLUMN: fitted.against} if fitted else {}),
+                    **({WITHOUT_COLUMN: split.note()} if split else {}),
+                },
+                columns=columns,
                 values={
-                    **({FIT_COLUMN: fitted[0]} if fitted else {}),
+                    **({FIT_COLUMN: fitted.gain} if fitted else {}),
                     **({TREND_COLUMN: trend.rise} if trend else {}),
                     **({SNAP_COLUMN: snaps} if snaps is not None else {}),
                     **({TARGET_COLUMN: targets} if targets is not None else {}),
@@ -276,27 +320,6 @@ def cards(
                     "Proj": projection.points if projection else 0.0,
                     "Depth": float(depth) if depth else 0.0,
                     **({} if wire else {"Exp": float(meta.years_exp)}),
-                },
-                columns={
-                    PLAYER_COLUMN: meta.name,
-                    POSITION_COLUMN: meta.position,
-                    "Team": meta.team,
-                    **({} if wire else {SLOT_COLUMN: _slot(player_id, starters, reserve)}),
-                    "Proj": f"{projection.points:.2f}" if projection else "0.00",
-                    **({ROS_COLUMN: f"{rest:.1f}"} if rest is not None else {}),
-                    **({FIT_COLUMN: fitted[1] if fitted else "—"} if wire else {}),
-                    **({SNAP_COLUMN: share(snaps), TARGET_COLUMN: share(targets)} if wire else {}),
-                    # Sorts by the size of the jump.
-                    **({TREND_COLUMN: trend.short() if trend else "—"} if wire else {}),
-                    **({WITHOUT_COLUMN: split.cell() if split else "—"} if wire else {}),
-                    # Through the zero-point fallback, which carries his ruling
-                    # where Sleeper has published no projection for him.
-                    "Opponent": _versus(projection or zero_projection(player_id, meta), state.scheduled, "—"),
-                    "Depth": str(depth) if depth else "—",
-                    # Years in the league tell a roster apart; on the wire the
-                    # usage beside it says more about a pickup, in the room.
-                    **({} if wire else {"Exp": f"{meta.years_exp}y"}),
-                    STATUS_COLUMN: injury,
                 },
             )
         )
@@ -316,7 +339,25 @@ def _headline_label(projection: Projection | None, scheduled: bool, week: int) -
     return f"Not projected in week {week}"
 
 
-def fit(state: Week, projection: Projection) -> tuple[float, str] | None:
+@dataclass(frozen=True)
+class Fit:
+    """How a free agent compares with the weakest starter he could replace: the gap, and against whom."""
+
+    gain: float
+    """His projection less that starter's this week; his whole projection where the slot is empty."""
+    against: str
+    """Who he is measured against, 'over Josh Allen' or 'vs Josh Allen', or the empty slot, 'at FLEX, empty'."""
+
+    def cell(self) -> str:
+        """The gap alone, as a column has room for: '+2.10', '-8.44'."""
+        return f"{self.gain:+.2f}"
+
+    def text(self) -> str:
+        """The gap and against whom, as the model reads it: '-8.44 vs Josh Allen'."""
+        return f"{self.cell()} {self.against}"
+
+
+def fit(state: Week, projection: Projection) -> Fit | None:
     """How he compares with your weakest starter he could replace, either way.
 
     A shortfall is shown as plainly as a gain: in a deep league nobody on
@@ -329,8 +370,18 @@ def fit(state: Week, projection: Projection) -> tuple[float, str] | None:
         return None
     gain, slot = upgrade
     if slot.player is None:
-        return gain, f"+{gain:.2f} at {slot.slot}, empty"
-    return (gain, f"+{gain:.2f} over {slot.player.name}") if gain > 0 else (gain, f"{gain:.2f} vs {slot.player.name}")
+        return Fit(gain, f"at {slot.slot}, empty")
+    return Fit(gain, f"{'over' if gain > 0 else 'vs'} {slot.player.name}")
+
+
+def by_fit(rows: Sequence[PlayerCard]) -> list[PlayerCard]:
+    """The wire best fit first: the players who would most help this lineup lead, whatever their position.
+
+    By projection alone a 1QB league's list opens on quarterbacks nobody can
+    start. Stable, so equal fits keep the projection's order, and a player who
+    fits no slot goes last.
+    """
+    return sorted(rows, key=lambda row: -row.values.get(FIT_COLUMN, float("-inf")))
 
 
 def _role(projection: Projection, state: Week) -> list[Stat]:

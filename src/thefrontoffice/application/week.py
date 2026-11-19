@@ -60,8 +60,7 @@ class WirePage:
     page: PlayerPage
     chances: list[PickupChance] = field(default_factory=list)
     priced: bool = False
-    """Whether the page was put to the forecast at all: a page priced to no effect — every game
-    under way — still has a chance column to show, with nothing in it."""
+    """Whether the page was put to the forecast at all, as against priced to no effect — every game under way."""
 
 
 class WeekEngine:

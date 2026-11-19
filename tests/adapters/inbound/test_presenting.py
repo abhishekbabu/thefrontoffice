@@ -167,11 +167,22 @@ def test_each_priced_item_says_what_it_does_to_the_chance_in_words_and_tone() ->
     assert unpriced.chance is None
 
 
-def test_a_page_priced_to_no_effect_still_has_its_column() -> None:
-    """Every game under way leaves nobody to price; the column says so rather than vanishing."""
-    page = _wire(_Wire("a"))
+def test_a_page_where_no_pickup_moves_the_chance_noticeably_has_no_chance_column() -> None:
+    """A column of "no change" and ±0.2% is one to read past."""
+    chances = [
+        PickupChance(player_id="a", win_change=0.002, title=""),
+        PickupChance(player_id="b", win_change=-0.004, title=""),
+    ]
 
-    assert page.players[0].columns[presenting.WIN_COLUMN] == "—"
+    for page in (_wire(_Wire("a", "b", chances=chances)), _wire(_Wire("a"))):
+        assert presenting.WIN_COLUMN not in page.players[0].columns
+
+
+def test_sorting_by_the_chance_keeps_its_column_however_small() -> None:
+    chances = [PickupChance(player_id="a", win_change=0.001, title="")]
+    page = _wire(_Wire("a", chances=chances), PlayerQuery(sort=presenting.WIN_COLUMN))
+
+    assert page.players[0].values[presenting.WIN_COLUMN] == 0.001
 
 
 def test_a_page_never_priced_has_no_chance_column() -> None:
