@@ -56,7 +56,7 @@ YAHOO = Group(
     "NBA on Yahoo",
     "From a Yahoo developer app with Fantasy Sports read permission and redirect URI https://localhost:8080. "
     "Yahoo also reviews each application before granting API access. Authorizing is a button on the "
-    "competition itself, once.",
+    "competition itself, once. Until Yahoo approves the app, set YAHOO_SOURCE to browser and use the sync bookmark.",
 )
 AI = Group(
     "AI",
@@ -108,6 +108,11 @@ class AppSettings(BaseSettings):
     """Where the to-do items you dismissed or snoozed are remembered, per league."""
 
     # ── Yahoo ───────────────────────────────────────────────────────────
+    yahoo_source: Annotated[Literal["oauth", "browser"], YAHOO] = "oauth"
+    """Where Yahoo is read from: its API through this machine's OAuth login, or
+    the sync bookmark run on a Yahoo Fantasy page while Yahoo has not approved
+    the app. Browser needs no client id or secret."""
+
     yahoo_client_id: Annotated[str | None, YAHOO, SECRET] = None
     yahoo_client_secret: Annotated[str | None, YAHOO, SECRET] = None
     yahoo_redirect_uri: Annotated[str, YAHOO] = "https://localhost:8080"

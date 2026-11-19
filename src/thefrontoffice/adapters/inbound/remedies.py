@@ -69,6 +69,10 @@ REMEDIES: dict[ErrorCode, Remedy] = {
     # A platform that is down: waiting is the remedy, and asking again is the
     # one thing a page can do about it.
     "platform_unavailable": Remedy(action="retry", label="Try again"),
+    # The sync bookmark lives on the Settings page, beside when it last ran.
+    "capture_required": Remedy(
+        action="settings", label=SETTINGS, command="Run the sync bookmark from Settings in the web app."
+    ),
 }
 
 

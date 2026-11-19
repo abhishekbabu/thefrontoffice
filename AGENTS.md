@@ -53,13 +53,13 @@ outgrows one file splits the same way each time — `week.py` (state), `views.py
 `platforms/yahoo/`, which reads it into its own `types.py`. There is no `type: ignore` anywhere —
 fix the type, the fake or the port instead, and disable no check globally.
 
-**Yahoo.** Responses go through our own `JsonDiskCache`, not the SDK's store:
-`make_request` is the only fetch that parallelises safely and the vendor's
-`_load` takes no expiry. `_load_or_fetch` survives for the scoreboard alone: a short
-`persist_ttl` refreshes it, and a failed refresh falls back to the persisted copy.
-Cache writes stay on one thread. The SDK raises requests' own
-exceptions, which escape as a 500 unless passed through `yahoo.client.call` (retry, then `translate`).
+**Yahoo.** Responses go through our own `JsonDiskCache`, keyed by Yahoo path (`yahoo/paths.py`), not the
+SDK's store: `make_request` is the only fetch that parallelises safely and the vendor's `_load` takes no expiry.
+The scoreboard alone serves its stored copy when a refresh fails. Cache writes stay on one thread. The SDK raises
+requests' own exceptions, which escape as a 500 unless passed through `yahoo.client.call` (retry, then `translate`).
 `YahooAuth` logs in and finds leagues — never implicitly: non-interactive callers use `ensure_authorized`.
+`YAHOO_SOURCE=browser` reads what the sync bookmark captured (`yahoo/capture.py`), which plans from `paths.py`:
+a new read goes there, never as a path string of its own, or the bookmark never fetches it.
 
 **Chat history is resent every turn.** Seed follow-ups with a briefing, not the
 generation prompt, and say what was left out.

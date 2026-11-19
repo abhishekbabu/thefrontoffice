@@ -72,6 +72,15 @@ class YahooLeague:
     end_week: int | None = None
     """The season's first and last matchup weeks, playoffs included; None where Yahoo sent neither."""
 
+    @property
+    def first_week(self) -> int:
+        """The season's first matchup week."""
+        return self.start_week or 1
+
+    def last_week(self, current: int) -> int:
+        """The season's last matchup week, and never before `current`, the week being played."""
+        return max(self.end_week or current, current)
+
 
 @dataclass(frozen=True)
 class YahooPlayer:

@@ -265,3 +265,47 @@ def test_a_dismissal_kept_under_the_competitions_old_label_still_hides_its_item(
     week = wiring.week(wiring.registry.find("nfl"), _OneItem()).week("L1")
 
     assert [a.mark.hidden for a in week.summary.actions or []] == ["dismissed"]
+
+
+# ── Yahoo from the browser sync ─────────────────────────────────────────
+
+
+def test_read_from_the_browser_yahoo_needs_no_app_credentials(tmp_path: Path) -> None:
+    nba = _registry(tmp_path, yahoo_source="browser").find("nba")
+
+    assert nba.is_configured()
+    assert nba.requires == ""
+
+
+def test_switching_to_the_browser_sync_counts_without_a_restart(tmp_path: Path) -> None:
+    settings = isolated_settings(tmp_path)
+    nba = bootstrap.registry(settings).find("nba")
+
+    settings.yahoo_source = "browser"
+
+    assert nba.is_configured()
+
+
+def test_read_from_the_browser_yahoo_is_not_ready_until_a_sync_has_run(tmp_path: Path) -> None:
+    from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
+
+    with pytest.raises(YahooCaptureMissingError):
+        _registry(tmp_path, yahoo_source="browser").find("nba").check_ready()
+
+
+def test_read_from_the_browser_the_nba_provider_reads_the_capture_not_yahoo(tmp_path: Path) -> None:
+    """No token is cached, so reaching for the OAuth login would raise that instead."""
+    from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
+
+    nba = _registry(tmp_path, yahoo_source="browser").find("nba")
+
+    with pytest.raises(YahooCaptureMissingError):
+        nba.open().list_leagues()
+
+
+def test_only_yahoo_offers_a_browser_sync_and_it_plans_its_league_list(tmp_path: Path) -> None:
+    captures = _registry(tmp_path).captures()
+
+    assert list(captures) == ["yahoo"]
+    [step] = captures["yahoo"]().plan([]).steps
+    assert "game_codes=nba" in step.path

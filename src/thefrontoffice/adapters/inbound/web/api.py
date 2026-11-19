@@ -37,6 +37,7 @@ from thefrontoffice.adapters.inbound import presenting
 from thefrontoffice.adapters.inbound.conversation import Conversation, Turn
 from thefrontoffice.adapters.inbound.remedies import ErrorBody
 from thefrontoffice.adapters.inbound.web import data
+from thefrontoffice.adapters.inbound.web.capture import CaptureGate
 from thefrontoffice.application import comparing
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
 from thefrontoffice.bootstrap import CompetitionEntry, Wiring
@@ -54,6 +55,10 @@ from thefrontoffice.domain.errors import (
 )
 from thefrontoffice.domain.models import (
     MAX_COMPARED,
+    Capture,
+    CapturePlan,
+    CaptureReceipt,
+    CaptureStatus,
     ItemDecision,
     ItemMark,
     Judgment,
@@ -76,6 +81,7 @@ from thefrontoffice.domain.models import (
 )
 from thefrontoffice.domain.ports import (
     AccountLogin,
+    BrowserCapture,
     CompetitionProvider,
     LeagueRef,
     OutlookProvider,
@@ -278,6 +284,7 @@ def create_app(wiring: Wiring, *, dist: Path = DIST, max_chats: int = MAX_CHATS)
         body = ErrorBody.of(NotFoundError(f"{request.method} {request.url.path}"))
         return JSONResponse(status_code=exc.status_code, content=body.model_dump())
 
+    app.add_middleware(CaptureGate)
     _register_routes(app, wiring, _Chats(max_chats))
     _serve_frontend(app, dist)
     return app
@@ -301,6 +308,11 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         if platform not in logins:
             raise NotFoundError(f"a login to {platform!r}")
         return logins[platform]
+
+    def _capture(platform: str) -> BrowserCapture:
+        if platform not in wiring.captures:
+            raise NotFoundError(f"a browser sync for {platform!r}")
+        return wiring.captures[platform]()
 
     def _open(key: str) -> tuple[CompetitionEntry, CompetitionProvider]:
         """The entry a route names, and its provider."""
@@ -363,6 +375,26 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         so progress is reported through the companion GET.
         """
         return _login(platform).start()
+
+    @app.get("/api/{platform}/capture", response_model=CaptureStatus)
+    def capture_status(platform: str) -> CaptureStatus:
+        """When the platform's browser sync last stored anything, for Settings to say beside the bookmark."""
+        return _capture(platform).status()
+
+    @app.get("/api/{platform}/capture/plan", response_model=CapturePlan)
+    def capture_plan(platform: str, leagues: str = "") -> CapturePlan:
+        """What the sync bookmark should fetch next, for the comma-separated league keys it has found so far.
+
+        Called from the platform's own page, so the bookmark knows nothing of
+        what the app reads: it fetches what this says, hands it back, and asks
+        again until there is nothing new to fetch.
+        """
+        return _capture(platform).plan([key for key in leagues.split(",") if key])
+
+    @app.post("/api/{platform}/capture", response_model=CaptureReceipt)
+    def ingest_capture(platform: str, capture: Capture) -> CaptureReceipt:
+        """Store what the sync bookmark fetched before replying: the hand-over is the only copy."""
+        return _capture(platform).ingest(capture)
 
     @app.get("/api/{competition}/leagues", response_model=list[LeagueRef])
     def list_leagues(competition: str) -> list[LeagueRef]:

@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type Setting, type SettingsGroup } from "@/lib/api";
+import { api, type CaptureStatus, type Setting, type SettingsGroup } from "@/lib/api";
+import { bookmarklet } from "@/lib/bookmarklet";
+import { moment } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Input, Select } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -68,6 +70,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       {settings.data && (
         <div className="flex flex-col gap-4 p-5">
           <Appearance />
+          <YahooSync />
           {settings.data.map((group) => (
             <Card key={group.title}>
               <CardHeader>
@@ -130,6 +133,50 @@ function Appearance() {
             </span>
           </ToggleChip>
         ))}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The bookmark that reads Yahoo through a Yahoo page while Yahoo's API refuses
+ * the app, and when it last ran.
+ *
+ * Its link is set on the element rather than rendered: React refuses a
+ * `javascript:` href, which is the only kind a bookmark can run. Clicking it
+ * here does nothing — it runs on Yahoo's page, after being dragged away.
+ */
+function YahooSync() {
+  const status = useQuery<CaptureStatus, Error>({ queryKey: keys.capture("yahoo"), queryFn: () => api.captureStatus("yahoo") });
+  const link = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    link.current?.setAttribute("href", bookmarklet(window.location.origin));
+  }, []);
+  const synced = status.data?.synced_at;
+
+  return (
+    <Card>
+      <CardHeader>
+        <span>Yahoo sync</span>
+        <span className="normal-case tracking-normal">{synced ? `Last synced ${moment(synced)}` : "Never synced"}</span>
+      </CardHeader>
+      <div className="flex flex-col gap-2 p-4 text-[13px] leading-relaxed text-muted-foreground">
+        <a
+          ref={link}
+          draggable
+          onClick={(e) => e.preventDefault()}
+          className="self-start rounded-md border border-border bg-secondary px-3 py-1.5 font-medium text-secondary-foreground"
+        >
+          Sync Yahoo
+        </a>
+        <ol className="max-w-[70ch] list-decimal pl-5">
+          <li>Drag the button to your bookmarks bar.</li>
+          <li>Open any Yahoo Fantasy Basketball page and click the bookmark.</li>
+          <li>Allow local network access once when Chrome asks.</li>
+        </ol>
+        {status.data && !status.data.active && <p>YAHOO_SOURCE is oauth: set it to browser to read the sync.</p>}
+        {!!status.data?.leagues.length && <p>{status.data.leagues.join(" · ")}</p>}
+        {status.isError && <ErrorNote error={status.error} />}
       </div>
     </Card>
   );

@@ -3,7 +3,11 @@
 from urllib.parse import urlparse
 
 from thefrontoffice.adapters.inbound import remedies
-from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAuthError, YahooLoginRequiredError
+from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
+    YahooAuthError,
+    YahooCaptureMissingError,
+    YahooLoginRequiredError,
+)
 from thefrontoffice.domain.errors import AccessNotApprovedError, LoginRequiredError, UnknownCompetitionError
 
 EVERY = [*remedies.REMEDIES.values(), *remedies.LOGINS.values(), *remedies.APPROVALS.values()]
@@ -29,6 +33,12 @@ def test_a_missing_login_offers_the_login_of_the_platform_that_needs_it() -> Non
     fix = remedies.remedy(YahooLoginRequiredError())
 
     assert fix is not None and (fix.action, fix.platform) == ("authorize", "yahoo")
+
+
+def test_a_missing_browser_sync_sends_you_to_settings_where_the_bookmark_is() -> None:
+    fix = remedies.remedy(YahooCaptureMissingError())
+
+    assert fix is not None and fix.action == "settings"
 
 
 def test_a_platform_with_no_login_to_offer_has_no_remedy() -> None:

@@ -130,7 +130,8 @@ Add credentials in the app's **Settings** page or in `.env`. The page writes
 - **Premier League**: the number in your points page URL,
   `fantasy.premierleague.com/entry/<THIS>/event/1`, as `FPL_ENTRY_ID`.
 - **NBA**: a [Yahoo developer app](https://developer.yahoo.com/apps/), then
-  `just yahoo-login` (see [Yahoo access](#yahoo-access)).
+  `just yahoo-login` (see [Yahoo access](#yahoo-access)). Until Yahoo approves
+  the app, use the [browser sync](#yahoo-browser-sync) instead.
 - **Analysis (optional)**: a free key from
   [Gemini](https://aistudio.google.com/app/apikey),
   [Groq](https://console.groq.com/keys) or
@@ -169,6 +170,38 @@ If every Fantasy endpoint answers **403**, one of these is missing:
   authorize. A token keeps the grant it was issued with, so fix the permission,
   then run `just yahoo-login --force`.
 
+### Yahoo browser sync
+
+While Yahoo hasn't approved the app, read Yahoo the way Yahoo's own pages do.
+Set `YAHOO_SOURCE=browser` (no client id or secret needed), then in
+**Settings → Yahoo sync**:
+
+1. Drag **Sync Yahoo** to your bookmarks bar.
+2. Open any Yahoo Fantasy Basketball page, signed in, and click the bookmark.
+3. The first time, Chrome asks whether the page may reach devices on your local
+   network. Allow it: that's how the page reaches the app on `127.0.0.1`.
+
+A banner on the page shows progress and the result (`Synced 5 leagues`). Run it
+again whenever you want fresh data; Settings shows when it last ran. The app
+reads only the sync in this mode and never calls Yahoo, and a sync older than
+30 days is refused as stale.
+
+- **What it does.** The bookmark asks the app what to fetch, fetches it from
+  `pub-api-ro.fantasysports.yahoo.com` (the read-only host Yahoo's frontend
+  uses) with your Yahoo session, and posts the response bodies to
+  `/api/yahoo/capture`. It repeats until nothing new is planned: league lists,
+  then each league's settings, teams, scoreboards and free agents, then rosters.
+- **What leaves the browser.** Only response bodies. Your Yahoo cookies stay in
+  the browser and are attached to Yahoo's requests alone; the app accepts no
+  other field and stores nothing but the bodies.
+- **Who can call it.** Only pages on `https://*.fantasysports.yahoo.com` may
+  call the sync routes cross-origin (including Chrome's private-network
+  preflight). Every other origin gets a 403. Posts are capped at 48 MB.
+- **Temporary.** This uses Yahoo's undocumented frontend API. It's read-only and
+  may break without notice. Switching back is `YAHOO_SOURCE=oauth`.
+- The bookmark targets the app it was dragged from (`http://127.0.0.1:8000` by
+  default). If you move the app to another port, drag it again.
+
 ## Configuration
 
 Settings come from the environment or `.env`, and each is validated at startup.
@@ -177,7 +210,8 @@ Settings come from the environment or `.env`, and each is validated at startup.
 | --- | --- | --- |
 | `SLEEPER_USERNAME` | none | Enables NFL |
 | `FPL_ENTRY_ID` | none | Enables FPL |
-| `YAHOO_CLIENT_ID` / `YAHOO_CLIENT_SECRET` | none | Enables NBA |
+| `YAHOO_SOURCE` | `oauth` | `browser` reads Yahoo from the [browser sync](#yahoo-browser-sync) |
+| `YAHOO_CLIENT_ID` / `YAHOO_CLIENT_SECRET` | none | Enables NBA, read through OAuth |
 | `YAHOO_REDIRECT_URI` | `https://localhost:8080` | Must match the Yahoo app |
 | `YAHOO_MAX_WEEKLY_ADDS` | `3` | The NBA add budget |
 | `GOOGLE_API_KEY` / `GROQ_API_KEY` / `OPENROUTER_API_KEY` | none | Model keys, tried in that order |

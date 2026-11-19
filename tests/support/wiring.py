@@ -18,6 +18,11 @@ from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import AppSettings
 from thefrontoffice.domain.errors import PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
+    Capture,
+    CapturePlan,
+    CaptureReceipt,
+    CaptureStatus,
+    CaptureStep,
     CompetitionContext,
     LeagueSchedule,
     PlayerCard,
@@ -145,23 +150,48 @@ class FakeLogin:
         self.verified.set()
 
 
+class FakeCapture:
+    """Stands in for a platform's browser sync: plans one step per league asked for, and records each hand-over."""
+
+    def __init__(self, status: CaptureStatus | None = None) -> None:
+        self.ingested: list[Capture] = []
+        self._status = status or CaptureStatus(active=True)
+
+    def plan(self, leagues: Sequence[str]) -> CapturePlan:
+        steps = [
+            CaptureStep(path="leagues"),
+            *(CaptureStep(path=f"league/{key}/settings", league=key) for key in leagues),
+        ]
+        return CapturePlan(base="https://example.test/", probe="profile", steps=steps)
+
+    def ingest(self, capture: Capture) -> CaptureReceipt:
+        self.ingested.append(capture)
+        return CaptureReceipt(stored=len(capture.responses))
+
+    def status(self) -> CaptureStatus:
+        return self._status
+
+
 def wiring(
     *entries: CompetitionEntry,
     ai: AnalysisModel | None = None,
     answers: AnswerStore | None = None,
     states: FakeItemStates | None = None,
     login: FakeLogin | None = None,
+    capture: FakeCapture | None = None,
     registry: Sequence[CompetitionEntry] = (),
     env: EnvFile | None = None,
 ) -> Wiring:
     """A wiring over `entries` (or a whole `registry`'s), with fakes for everything else."""
     model = ai or FakeAI()
     account = login or FakeLogin()
+    sync = capture or FakeCapture()
     return Wiring(
         registry=Registry(tuple(registry) or entries),
         model=lambda: model,
         answers=answers or FakeAnswers(),
         decisions=ItemDecisions(states or FakeItemStates()),
         logins={"yahoo": lambda: account},
+        captures={"yahoo": lambda: sync},
         env=env or EnvFile(ABSENT, settings=AppSettings(_env_file=None)),
     )

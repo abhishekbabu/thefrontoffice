@@ -1,7 +1,8 @@
-"""Yahoo's failures, as the rest of the app sees them — including the two its login can fix."""
+"""Yahoo's failures, as the rest of the app sees them — including the two its login can fix, and the browser sync's."""
 
 from thefrontoffice.domain.errors import (
     AccessNotApprovedError,
+    CaptureRequiredError,
     LoginRequiredError,
     PlatformError,
     PlatformUnavailableError,
@@ -53,3 +54,10 @@ class YahooLoginRequiredError(LoginRequiredError):
 
     def __init__(self, detail: str = "") -> None:
         super().__init__(detail or "Yahoo is not authorized on this machine yet.")
+
+
+class YahooCaptureMissingError(CaptureRequiredError, YahooAPIError):
+    """Yahoo is read from the browser sync, and the last one did not carry what was asked."""
+
+    def __init__(self, detail: str = "") -> None:
+        super().__init__(detail or "No Yahoo sync yet. Run the sync bookmark from Settings on a Yahoo Fantasy page.")

@@ -37,6 +37,7 @@ from thefrontoffice.domain.ports import (
     AccountLogin,
     AnalysisModel,
     AnswerStore,
+    BrowserCapture,
     CompetitionProvider,
     ContextProvider,
     ForecastProvider,
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
     from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
     from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
     from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
+    from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooCapture
     from thefrontoffice.adapters.outbound.storage.answers import DiskAnswerStore
 
 logger = logging.getLogger(__name__)
@@ -103,8 +105,9 @@ class CompetitionEntry:
     settings: AppSettings
     """What it is configured and built from, read when asked, so a value saved in Settings counts at once."""
 
-    needs: tuple[str, ...]
-    """The settings fields it cannot run without, by field name.
+    needs: tuple[str, ...] | Callable[[], tuple[str, ...]]
+    """The settings fields it cannot run without, by field name — or how to read
+    them off the settings as they stand, where another setting decides.
 
     Whether it is configured and what the 'not configured' message asks for
     are both read off these, so the two cannot name different settings.
@@ -112,6 +115,9 @@ class CompetitionEntry:
 
     login: Callable[[], AccountLogin] | None = None
     """Its platform's browser login, where it has one: offered under the platform's name."""
+
+    capture: Callable[[], BrowserCapture] | None = None
+    """Its platform's browser sync, where it can be read that way: offered under the platform's name."""
 
     check_ready: Callable[[], None] = lambda: None
     """Raise if the competition is configured but cannot be used yet.
@@ -123,14 +129,18 @@ class CompetitionEntry:
     every page load.
     """
 
+    def needed(self) -> tuple[str, ...]:
+        """The settings fields it needs as the settings stand now."""
+        return self.needs() if callable(self.needs) else self.needs
+
     def is_configured(self) -> bool:
         """Whether every setting it needs is set."""
-        return all(_present(getattr(self.settings, field)) for field in self.needs)
+        return all(_present(getattr(self.settings, field)) for field in self.needed())
 
     @property
     def requires(self) -> str:
         """What to put in .env to enable it, as the variables a user types: 'YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET'."""
-        return " and ".join(env_var(field) for field in self.needs)
+        return " and ".join(env_var(field) for field in self.needed())
 
     @property
     def key(self) -> str:
@@ -225,6 +235,10 @@ class Registry:
         """Each platform that logs in through a browser, by the platform's name in its entries."""
         return {entry.platform: entry.login for entry in self.entries if entry.login is not None}
 
+    def captures(self) -> dict[str, Callable[[], BrowserCapture]]:
+        """Each platform that can be read from a browser sync, by the platform's name in its entries."""
+        return {entry.platform: entry.capture for entry in self.entries if entry.capture is not None}
+
 
 def _present(value: object) -> bool:
     """Whether a setting holds a value: a blank one is as good as unset."""
@@ -288,6 +302,32 @@ def _yahoo_auth(settings: AppSettings, cache: JsonDiskCache) -> YahooAuth:
 def yahoo_auth(settings: AppSettings = process_settings) -> YahooAuth:
     """This machine's Yahoo login: for the entry points that log in and check the grant."""
     return _yahoo_auth(settings, _disk_cache(settings.yahoo_cache_dir))
+
+
+def _yahoo_capture(settings: AppSettings) -> YahooCapture:
+    """Yahoo as the sync bookmark captured it, into the cache the live reader keeps its responses in."""
+    from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YAHOO_GAME
+    from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooCapture
+
+    return YahooCapture(
+        _disk_cache(settings.yahoo_cache_dir), games=(YAHOO_GAME,), active=settings.yahoo_source == "browser"
+    )
+
+
+YAHOO_CREDENTIALS = ("yahoo_client_id", "yahoo_client_secret")
+
+
+def _yahoo_needs(settings: AppSettings) -> tuple[str, ...]:
+    """Yahoo's OAuth app credentials, which the browser sync has no use for."""
+    return () if settings.yahoo_source == "browser" else YAHOO_CREDENTIALS
+
+
+def _yahoo_ready(settings: AppSettings) -> None:
+    """A sync recent enough to read in browser mode; a cached token otherwise, which is a file this can just look for."""
+    if settings.yahoo_source == "browser":
+        _yahoo_capture(settings).ensure_captured()
+    else:
+        yahoo_auth(settings).ensure_authorized()
 
 
 def env_file(settings: AppSettings = process_settings, path: Path = PROJECT_ROOT / ".env") -> EnvFile:
@@ -360,15 +400,23 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
     as not.
     """
     from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm
-    from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
+    from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
+    from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, YahooClient, YahooResponses
 
     settings = entry.settings
-    cache, retry = _disk_cache(settings.yahoo_cache_dir), _retry()
-    auth = _yahoo_auth(settings, cache)
+    leagues: YahooLeagueSource
+    responses: Callable[[], YahooResponses]
+    if settings.yahoo_source == "browser":
+        capture = _yahoo_capture(settings)
+        leagues, responses = capture, lambda: capture
+    else:
+        cache, retry = _disk_cache(settings.yahoo_cache_dir), _retry()
+        auth = _yahoo_auth(settings, cache)
+        leagues, responses = auth, lambda: LiveResponses(auth.context(), cache=cache, retry=retry)
     sleeper = _sleeper_client(settings)
     return _nba()(
-        auth=auth,
-        yahoo_for=lambda league: YahooClient(league, context=auth.context(), cache=cache, retry=retry),
+        auth=leagues,
+        yahoo_for=lambda league: YahooClient(league, responses=responses()),
         nba=SleeperNBAForm(sleeper),
         sleeper=sleeper,
         max_weekly_adds=settings.yahoo_max_weekly_adds,
@@ -388,10 +436,10 @@ def registry(settings: AppSettings = process_settings) -> Registry:
                 provider=_nba,
                 build=_build_nba,
                 settings=settings,
-                needs=("yahoo_client_id", "yahoo_client_secret"),
+                needs=lambda: _yahoo_needs(settings),
                 login=lambda: yahoo_auth(settings),
-                # Yahoo also needs a cached token, which is a file this can just look for.
-                check_ready=lambda: yahoo_auth(settings).ensure_authorized(),
+                capture=lambda: _yahoo_capture(settings),
+                check_ready=lambda: _yahoo_ready(settings),
             ),
             CompetitionEntry(
                 sport="football",
@@ -473,6 +521,9 @@ class Wiring:
     logins: Mapping[str, Callable[[], AccountLogin]]
     """Each platform that logs in through a browser, by the platform's name in its entries."""
 
+    captures: Mapping[str, Callable[[], BrowserCapture]]
+    """Each platform that can be read from a browser sync, by the platform's name in its entries."""
+
     env: EnvFile
     """The configuration, as the Settings page reads and edits it."""
 
@@ -530,5 +581,6 @@ def wiring(settings: AppSettings = process_settings, env: Path = PROJECT_ROOT / 
         answers=_answer_store(settings),
         decisions=_item_decisions(settings),
         logins=competitions.logins(),
+        captures=competitions.captures(),
         env=env_file(settings, env),
     )

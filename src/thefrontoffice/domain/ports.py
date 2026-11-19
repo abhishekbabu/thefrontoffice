@@ -13,6 +13,10 @@ from typing import Protocol, TypedDict, TypeVar, runtime_checkable
 from pydantic import BaseModel
 
 from thefrontoffice.domain.models import (
+    Capture,
+    CapturePlan,
+    CaptureReceipt,
+    CaptureStatus,
     CompetitionContext,
     ItemState,
     LeagueSchedule,
@@ -458,4 +462,29 @@ class AccountLogin(Protocol):
 
     def verify(self) -> None:
         """Confirm the grant permits a read, raising where it does not."""
+        ...
+
+
+class BrowserCapture(Protocol):
+    """A platform read from what a script on its own pages fetched with the person's session.
+
+    The app plans what it needs, the browser fetches it and hands the bodies
+    over, and the app stores them where its reader looks. Nothing of the
+    session crosses: no cookie and no token, only response bodies.
+    """
+
+    def plan(self, leagues: Sequence[str]) -> CapturePlan:
+        """What to fetch next: the account's league lists, and everything `leagues` needs that can be planned yet."""
+        ...
+
+    def ingest(self, capture: Capture) -> CaptureReceipt:
+        """Store each response the app asked for, before answering — the hand-over is the only copy.
+
+        Raises:
+            InvalidRequestError: the browser was not signed in when it fetched them.
+        """
+        ...
+
+    def status(self) -> CaptureStatus:
+        """When the capture last stored anything, and which leagues it holds."""
         ...

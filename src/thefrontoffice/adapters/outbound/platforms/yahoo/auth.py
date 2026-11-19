@@ -6,26 +6,17 @@ league, and finding those leagues is the first thing done with it.
 
 import logging
 from collections.abc import Callable
-from datetime import timedelta
 from pathlib import Path
 from typing import Protocol
 
 from thefrontoffice.adapters.outbound.cache import JsonDiskCache
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
-from thefrontoffice.adapters.outbound.platforms.yahoo.client import (
-    YahooContext,
-    call,
-    league_list,
-    parse,
-    readable,
-    request,
-)
+from thefrontoffice.adapters.outbound.platforms.yahoo import paths
+from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, YahooContext, call, leagues_in
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooLoginRequiredError
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague
 
 logger = logging.getLogger(__name__)
-
-LEAGUES_TTL = timedelta(hours=1)
 
 Authorize = Callable[[str, str, str], None]
 """The interactive handshake: client id, client secret and redirect URI in, a token persisted."""
@@ -151,13 +142,5 @@ class YahooAuth:
             YahooAuthError: the app is not authorized for Fantasy Sports.
             YahooAPIError: Yahoo could not be reached, or answered unreadably.
         """
-        context = self.context()
-        query = f"users;use_login=1/games;game_codes={game_code};seasons={season}/leagues"
-        raw = self._cache.cached(
-            f"leagues_{game_code}_{season}",
-            LEAGUES_TTL,
-            lambda: request(self._retry, lambda: context.make_request(query)),
-        )
-        # No game for the season (`<games count="0"/>`) and a game with no
-        # leagues in it both mean the login plays nowhere.
-        return readable("league list", lambda: league_list(parse(raw)["fantasy_content"]["users"]["user"]["games"]))
+        live = LiveResponses(self.context(), cache=self._cache, retry=self._retry)
+        return leagues_in(live.raw(paths.leagues(game_code, season)))
