@@ -192,7 +192,11 @@ Each NBA lineup row, both teams, shows games left this week and a game's value
 worth this week is that game's value (his recent run blended with Sleeper's
 projection, in fantasy points or across the scored categories, each counted in
 its spread over the players read) × games left (none while ruled out, or from
-ESPN's return date), ±10% for steady or swinging minutes. The to-do list adds
+ESPN's return date), ±10% for steady or swinging minutes. Sleeper's projection
+joins Yahoo by name and club: a player Sleeper projects nothing (ruled out), a
+match on another club, or a projection over 2.5× his recent run either way (with
+a gap of 6 PTS, 4 REB, 3 AST or 1.5 3PTM a game) carries none, and he is read on
+form alone. The to-do list adds
 a bench start over a starter whose slot he fits, and up to two streams (from
 the wire's top 50 by season and top 25 by last week, three requests) within
 the adds left, each with a drop — never from IL or the better half of the

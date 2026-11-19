@@ -309,7 +309,9 @@ class YahooNBAProvider:
         returns = self._returns(unique, self._reports())
         provisional = bool(self.games.unscheduled(start, end))
         stats = {p.player_key: self.form.get_player_stats(p.name) for p in unique}
-        projected = {p.player_key: projections.lookup(p.name) if projections else None for p in unique}
+        projected = {
+            p.player_key: projections.find(p.name, p.team, stats[p.player_key]) if projections else None for p in unique
+        }
         per_game = (
             nba_worth.per_game(stats[p.player_key], projected[p.player_key]) for p in unique if p.player_key in pool
         )
@@ -1141,13 +1143,10 @@ class YahooNBAProvider:
             logger.warning(f"Showing {player.name}'s week without its games: {e}")
             fixtures = []
         projections = index_for(self.sleeper, start, end)
-        projected = projections.lookup(player.name) if projections else None
+        stats = self.form.get_player_stats(player.name)
+        projected = projections.find(player.name, player.team, stats) if projections else None
         value = self._week_valuer(yahoo, weights, found)
-        reading = (
-            nba_worth.read(player, self.form.get_player_stats(player.name), projected, value, games, provisional, back)
-            if value
-            else None
-        )
+        reading = nba_worth.read(player, stats, projected, value, games, provisional, back) if value else None
         matchup = None
         if fixtures and profile:
             opponent = fixtures[0].away if fixtures[0].home == club else fixtures[0].home
@@ -1173,15 +1172,12 @@ class YahooNBAProvider:
                 *_wire(yahoo, STREAM_DEPTH),
             ]
             projections = index_for(self.sleeper, found.start, found.end)
-            lines = [
-                line
-                for p in once(pool)
-                if (
-                    line := nba_worth.per_game(
-                        self.form.get_player_stats(p.name), projections.lookup(p.name) if projections else None
-                    )
-                )
-            ]
+            lines: list[Line] = []
+            for p in once(pool):
+                stats = self.form.get_player_stats(p.name)
+                projected = projections.find(p.name, p.team, stats) if projections else None
+                if line := nba_worth.per_game(stats, projected):
+                    lines.append(line)
             return _valuer(yahoo, None, lines)[0]
         except FrontOfficeError as e:
             logger.warning(f"Showing the drawer without a value a game: {e}")

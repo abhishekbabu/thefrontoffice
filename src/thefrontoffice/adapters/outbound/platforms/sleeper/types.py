@@ -192,6 +192,7 @@ class GameProjection:
     date: str
     """ISO date of the game, used to select the games inside a matchup period."""
     stats: dict[str, float]
+    """Empty for a game Sleeper lists him in but projects nothing for: he is ruled out."""
 
 
 # The stats a season row is shown by, and so the columns of the season table.

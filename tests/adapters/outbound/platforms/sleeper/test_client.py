@@ -421,7 +421,6 @@ def test_nba_projections_are_per_game_with_a_date(tmp_path: Path) -> None:
     """A category league sums the games inside its matchup period."""
     client, _ = _client({"projections/nba": NBA_PROJECTION_PAYLOAD}, tmp_path)
     rows = client.get_nba_projections("2026", 12)
-    assert len(rows) == 1
     assert rows[0].name == "Star Center"
     assert rows[0].date == "2026-01-05"  # truncated from the ISO timestamp
     assert rows[0].opponent == "BOS"
@@ -436,9 +435,11 @@ def test_nba_projection_requests_cover_every_position(tmp_path: Path) -> None:
         assert f"position[]={position}" in url
 
 
-def test_players_without_a_points_projection_are_omitted(tmp_path: Path) -> None:
+def test_a_player_projected_nothing_is_kept_with_no_stats(tmp_path: Path) -> None:
+    """He is still a known name, so the join can refuse his namesake's line rather than borrow it."""
     client, _ = _client({"projections/nba": NBA_PROJECTION_PAYLOAD}, tmp_path)
-    assert all(r.player_id != "2" for r in client.get_nba_projections("2026", 12))
+    unprojected = next(r for r in client.get_nba_projections("2026", 12) if r.player_id == "2")
+    assert (unprojected.name, unprojected.stats) == ("No Proj", {})
 
 
 def test_out_of_season_yields_no_projections(tmp_path: Path) -> None:
