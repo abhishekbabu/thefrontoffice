@@ -28,6 +28,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.client import (
 )
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooCaptureMissingError
 from thefrontoffice.adapters.outbound.platforms.yahoo.paths import YahooRead
+from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague, YahooPlayer, YahooTeam
 from thefrontoffice.domain.errors import InvalidRequestError
 from thefrontoffice.domain.models import (
@@ -40,9 +41,6 @@ from thefrontoffice.domain.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-BASE = "https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/"
-"""The read-only host Yahoo's own pages fetch from: it answers their session cookie, and nothing writes through it."""
 
 CAPTURE_TTL = timedelta(days=30)
 """How long a captured response stands in for Yahoo. Long, because nothing
@@ -79,16 +77,25 @@ class YahooGame:
 class YahooCapture:
     """Plans a browser sync, stores what it hands over, and answers the reader from it."""
 
-    def __init__(self, cache: JsonDiskCache, *, games: Sequence[YahooGame], active: bool) -> None:
+    def __init__(
+        self,
+        cache: JsonDiskCache,
+        *,
+        games: Sequence[YahooGame],
+        active: bool,
+        session: SessionState | None = None,
+    ) -> None:
         """
         Args:
             cache: the same cache the live reader keeps Yahoo's responses in.
             games: what each competition on Yahoo reads.
             active: whether the app reads Yahoo from here rather than its API.
+            session: how reading with the session cookie is going, where the app reads Yahoo that way.
         """
         self._cache = cache
         self._games = tuple(games)
         self._active = active
+        self._session = session
 
     # ── answering the reader ─────────────────────────────────────────────
 
@@ -232,7 +239,7 @@ class YahooCapture:
                 if league.league_key in wanted:
                     reads = self._reads(game, league)
                     steps.extend(CaptureStep(path=read.path, league=league.league_key) for read in reads)
-        return CapturePlan(base=BASE, probe=paths.PROFILE, steps=steps)
+        return CapturePlan(base=paths.FRONTEND, probe=paths.PROFILE, steps=steps)
 
     # ── storing ──────────────────────────────────────────────────────────
 
@@ -294,6 +301,7 @@ class YahooCapture:
             active=self._active,
             synced_at=synced.stored_at if synced else None,
             leagues=[league.name for game in self._games for league in self._leagues(game)],
+            session=self._session.status() if self._session is not None else None,
         )
 
 

@@ -73,6 +73,10 @@ REMEDIES: dict[ErrorCode, Remedy] = {
     "capture_required": Remedy(
         action="settings", label=SETTINGS, command="Run the sync bookmark from Settings in the web app."
     ),
+    # The session cookie is a setting: a fresh one pasted there is the whole fix.
+    "session_expired": Remedy(
+        action="settings", label=SETTINGS, command="Paste a fresh session cookie into .env (see the README)."
+    ),
 }
 
 

@@ -309,3 +309,57 @@ def test_only_yahoo_offers_a_browser_sync_and_it_plans_its_league_list(tmp_path:
     assert list(captures) == ["yahoo"]
     [step] = captures["yahoo"]().plan([]).steps
     assert "game_codes=nba" in step.path
+
+
+# ── Yahoo with the session cookie ───────────────────────────────────────
+
+COOKIE = "A1=session-cookie"
+
+
+def test_read_with_the_session_yahoo_needs_the_cookie_and_no_app_credentials(tmp_path: Path) -> None:
+    without = _registry(tmp_path, yahoo_source="session").find("nba")
+    with_cookie = _registry(tmp_path, yahoo_source="session", yahoo_session_cookie=COOKIE).find("nba")
+
+    assert not without.is_configured()
+    assert without.requires == "YAHOO_SESSION_COOKIE"
+    assert with_cookie.is_configured()
+
+
+def test_read_with_the_session_yahoo_is_not_ready_once_yahoo_refused_that_cookie(tmp_path: Path) -> None:
+    from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooSessionExpiredError
+    from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
+
+    settings = isolated_settings(tmp_path, yahoo_source="session", yahoo_session_cookie=COOKIE)
+    nba = bootstrap.registry(settings).find("nba")
+    nba.check_ready()
+    state = SessionState(JsonDiskCache(Path(settings.yahoo_cache_dir)), COOKIE)
+    state.refused()
+    state.record()
+
+    with pytest.raises(YahooSessionExpiredError):
+        nba.check_ready()
+    assert nba.blocker() is not None
+    settings.yahoo_session_cookie = "A1=fresh"
+    nba.check_ready()
+
+
+def test_read_with_the_session_the_nba_provider_reads_what_is_kept_under_yahoos_paths(tmp_path: Path) -> None:
+    """No token is cached and no frontend answers, so either would fail; the kept league list answers."""
+    from support.yahoo import league_xml, leagues_xml
+
+    settings = isolated_settings(tmp_path, yahoo_source="session", yahoo_session_cookie=COOKIE)
+    registry = bootstrap.registry(settings)
+    [step] = registry.captures()["yahoo"]().plan([]).steps
+    JsonDiskCache(Path(settings.yahoo_cache_dir)).set(step.path, leagues_xml(league_xml("466.l.9", "Kept")))
+
+    leagues = registry.find("nba").open().list_leagues()
+
+    assert [league.name for league in leagues] == ["Kept"]
+
+
+def test_read_with_the_session_the_sync_status_reports_the_session(tmp_path: Path) -> None:
+    session = _registry(tmp_path, yahoo_source="session", yahoo_session_cookie=COOKIE).captures()["yahoo"]()
+    browser = _registry(tmp_path, yahoo_source="browser").captures()["yahoo"]()
+
+    assert session.status().session is not None
+    assert browser.status().session is None

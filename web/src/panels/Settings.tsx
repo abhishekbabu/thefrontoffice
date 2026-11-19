@@ -139,10 +139,10 @@ function Appearance() {
 }
 
 /**
- * The bookmark that reads Yahoo through a Yahoo page while Yahoo's API refuses
- * the app, and when it last ran.
+ * The two ways to read Yahoo while Yahoo's API refuses the app, and how each is going:
+ * the server fetching with a pasted session cookie, or the bookmark run on a Yahoo page.
  *
- * Its link is set on the element rather than rendered: React refuses a
+ * The bookmark's link is set on the element rather than rendered: React refuses a
  * `javascript:` href, which is the only kind a bookmark can run. Clicking it
  * here does nothing — it runs on Yahoo's page, after being dragged away.
  */
@@ -153,28 +153,56 @@ function YahooSync() {
     link.current?.setAttribute("href", bookmarklet(window.location.origin));
   }, []);
   const synced = status.data?.synced_at;
+  const session = status.data?.session;
 
   return (
     <Card>
       <CardHeader>
         <span>Yahoo sync</span>
-        <span className="normal-case tracking-normal">{synced ? `Last synced ${moment(synced)}` : "Never synced"}</span>
+        <span className="normal-case tracking-normal">
+          {session
+            ? session.expired
+              ? "Session expired"
+              : session.fetched_at
+                ? `Last fetched ${moment(session.fetched_at)}`
+                : "Not fetched yet"
+            : synced
+              ? `Last synced ${moment(synced)}`
+              : "Never synced"}
+        </span>
       </CardHeader>
-      <div className="flex flex-col gap-2 p-4 text-[13px] leading-relaxed text-muted-foreground">
-        <a
-          ref={link}
-          draggable
-          onClick={(e) => e.preventDefault()}
-          className="self-start rounded-md border border-border bg-secondary px-3 py-1.5 font-medium text-secondary-foreground"
-        >
-          Sync Yahoo
-        </a>
-        <ol className="max-w-[70ch] list-decimal pl-5">
-          <li>Drag the button to your bookmarks bar.</li>
-          <li>Open any Yahoo Fantasy Basketball page and click the bookmark.</li>
-          <li>Allow local network access once when Chrome asks.</li>
-        </ol>
-        {status.data && !status.data.active && <p>YAHOO_SOURCE is oauth: set it to browser to read the sync.</p>}
+      <div className="flex flex-col gap-4 p-4 text-[13px] leading-relaxed text-muted-foreground">
+        <section className="flex flex-col gap-2">
+          <h3 className="font-medium text-foreground">Session cookie</h3>
+          <ol className="max-w-[70ch] list-decimal pl-5">
+            <li>On a Yahoo Fantasy page in Dia or Chrome, open DevTools → Network.</li>
+            <li>
+              Pick any request to <code className="font-mono text-[12px]">pub-api-ro.fantasysports.yahoo.com</code> →
+              Request Headers → cookie → copy the value.
+            </li>
+            <li>Paste it into YAHOO_SESSION_COOKIE below and set YAHOO_SOURCE to session.</li>
+          </ol>
+          {session?.expired && <p className="text-foreground">Yahoo refused the cookie. Paste a fresh one.</p>}
+        </section>
+        <section className="flex flex-col gap-2">
+          <h3 className="font-medium text-foreground">Bookmark</h3>
+          <a
+            ref={link}
+            draggable
+            onClick={(e) => e.preventDefault()}
+            className="self-start rounded-md border border-border bg-secondary px-3 py-1.5 font-medium text-secondary-foreground"
+          >
+            Sync Yahoo
+          </a>
+          <ol className="max-w-[70ch] list-decimal pl-5">
+            <li>Drag the button to your bookmarks bar.</li>
+            <li>Open any Yahoo Fantasy Basketball page and click the bookmark.</li>
+            <li>Allow local network access once when Chrome asks.</li>
+          </ol>
+          {status.data && !status.data.active && !session && (
+            <p>YAHOO_SOURCE is oauth: set it to browser to read the sync.</p>
+          )}
+        </section>
         {!!status.data?.leagues.length && <p>{status.data.leagues.join(" · ")}</p>}
         {status.isError && <ErrorNote error={status.error} />}
       </div>

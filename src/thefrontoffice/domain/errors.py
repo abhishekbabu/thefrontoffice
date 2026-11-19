@@ -12,6 +12,7 @@ ErrorCode = Literal[
     "error",
     "platform_unavailable",
     "capture_required",
+    "session_expired",
     "unknown_competition",
     "not_configured",
     "unsupported",
@@ -95,6 +96,16 @@ class CaptureRequiredError(PlatformError):
     """
 
     code = "capture_required"
+
+
+class SessionExpiredError(PlatformError):
+    """The app reads a platform with the person's own browser session, and the platform no longer accepts it.
+
+    The session was signed out or timed out; nothing but a fresh one fixes it,
+    so retrying is pointless and the remedy is replacing it.
+    """
+
+    code = "session_expired"
 
 
 class UnknownCompetitionError(FrontOfficeError):

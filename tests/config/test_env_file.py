@@ -226,6 +226,20 @@ def test_a_secret_is_described_by_its_presence_alone(tmp_path: Path) -> None:
     assert "super-secret-value" not in described.model_dump_json()
 
 
+def test_the_yahoo_session_cookie_is_a_secret_written_back_exactly_and_never_read_out(tmp_path: Path) -> None:
+    """A browser's Cookie header carries semicolons, spaces and equals signs, and grants the account."""
+    cookie = 'A1=d=QZXQ&S=x; T=z=wq"vw; B=3'
+    env = EnvFile(tmp_path / ".env", settings=AppSettings(_env_file=None))
+
+    env.write_values({"YAHOO_SESSION_COOKIE": cookie})
+
+    assert env.settings.yahoo_session_cookie == cookie
+    groups = "".join(group.model_dump_json() for group in env.groups())
+    assert "QZXQ" not in groups and 'wq"vw' not in groups
+    described = env.describe("yahoo_session_cookie", cookie)
+    assert (described.secret, described.present, described.value, described.effective) == (True, True, "", "")
+
+
 def test_a_non_secret_carries_what_the_file_holds(env: EnvFile) -> None:
     assert env.describe("sleeper_username", "abhibeast").value == "abhibeast"
 

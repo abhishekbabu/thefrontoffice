@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
     from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
     from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooCapture
+    from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
     from thefrontoffice.adapters.outbound.storage.answers import DiskAnswerStore
 
 logger = logging.getLogger(__name__)
@@ -304,13 +305,25 @@ def yahoo_auth(settings: AppSettings = process_settings) -> YahooAuth:
     return _yahoo_auth(settings, _disk_cache(settings.yahoo_cache_dir))
 
 
+def _yahoo_session(settings: AppSettings, cache: JsonDiskCache) -> SessionState | None:
+    """How reading with the session cookie is going, where Yahoo is read that way and a cookie is set."""
+    from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
+
+    cookie = settings.yahoo_session_cookie
+    return SessionState(cache, cookie) if settings.yahoo_source == "session" and cookie else None
+
+
 def _yahoo_capture(settings: AppSettings) -> YahooCapture:
     """Yahoo as the sync bookmark captured it, into the cache the live reader keeps its responses in."""
     from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YAHOO_GAME
     from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooCapture
 
+    cache = _disk_cache(settings.yahoo_cache_dir)
     return YahooCapture(
-        _disk_cache(settings.yahoo_cache_dir), games=(YAHOO_GAME,), active=settings.yahoo_source == "browser"
+        cache,
+        games=(YAHOO_GAME,),
+        active=settings.yahoo_source == "browser",
+        session=_yahoo_session(settings, cache),
     )
 
 
@@ -318,16 +331,28 @@ YAHOO_CREDENTIALS = ("yahoo_client_id", "yahoo_client_secret")
 
 
 def _yahoo_needs(settings: AppSettings) -> tuple[str, ...]:
-    """Yahoo's OAuth app credentials, which the browser sync has no use for."""
-    return () if settings.yahoo_source == "browser" else YAHOO_CREDENTIALS
+    """Yahoo's OAuth app credentials, which the browser sync has no use for, or the session cookie."""
+    match settings.yahoo_source:
+        case "browser":
+            return ()
+        case "session":
+            return ("yahoo_session_cookie",)
+        case _:
+            return YAHOO_CREDENTIALS
 
 
 def _yahoo_ready(settings: AppSettings) -> None:
-    """A sync recent enough to read in browser mode; a cached token otherwise, which is a file this can just look for."""
-    if settings.yahoo_source == "browser":
-        _yahoo_capture(settings).ensure_captured()
-    else:
-        yahoo_auth(settings).ensure_authorized()
+    """A sync recent enough to read in browser mode; a cookie Yahoo has not refused in session mode;
+    a cached token otherwise, which is a file this can just look for."""
+    match settings.yahoo_source:
+        case "browser":
+            _yahoo_capture(settings).ensure_captured()
+        case "session":
+            session = _yahoo_session(settings, _disk_cache(settings.yahoo_cache_dir))
+            if session is not None:
+                session.ensure_accepted()
+        case _:
+            yahoo_auth(settings).ensure_authorized()
 
 
 def env_file(settings: AppSettings = process_settings, path: Path = PROJECT_ROOT / ".env") -> EnvFile:
@@ -403,6 +428,7 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
     from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASchedule
     from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, YahooClient, YahooResponses
+    from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionResponses, SessionState, YahooSession
 
     settings = entry.settings
     leagues: YahooLeagueSource
@@ -410,6 +436,11 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
     if settings.yahoo_source == "browser":
         capture = _yahoo_capture(settings)
         leagues, responses = capture, lambda: capture
+    elif settings.yahoo_source == "session":
+        cache, cookie = _disk_cache(settings.yahoo_cache_dir), _required(settings.yahoo_session_cookie, entry)
+        state = SessionState(cache, cookie)
+        session = SessionResponses(YahooSession(cookie, state=state), state=state, cache=cache, retry=_retry())
+        leagues, responses = session, lambda: session
     else:
         cache, retry = _disk_cache(settings.yahoo_cache_dir), _retry()
         auth = _yahoo_auth(settings, cache)

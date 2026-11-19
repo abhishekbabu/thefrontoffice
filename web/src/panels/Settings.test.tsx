@@ -16,7 +16,7 @@ async function settingsWith(status: CaptureStatus) {
 
 describe("Yahoo sync", () => {
   it("offers the bookmark, built to call back the app it is served from", async () => {
-    const { container } = await settingsWith({ active: true, synced_at: null, leagues: [] });
+    const { container } = await settingsWith({ active: true, synced_at: null, leagues: [], session: null });
     const link = [...container.querySelectorAll("a")].find((a) => a.textContent === "Sync Yahoo");
 
     const href = link?.getAttribute("href") ?? "";
@@ -25,23 +25,55 @@ describe("Yahoo sync", () => {
   });
 
   it("says it has never run before the first sync", async () => {
-    const { card } = await settingsWith({ active: true, synced_at: null, leagues: [] });
+    const { card } = await settingsWith({ active: true, synced_at: null, leagues: [], session: null });
     expect(card).toContain("Never synced");
   });
 
   it("says when it last ran, and which leagues it holds", async () => {
     const synced = new Date();
     synced.setHours(9, 5);
-    const { card } = await settingsWith({ active: true, synced_at: synced.toISOString(), leagues: ["Hoops", "Dunks"] });
+    const { card } = await settingsWith({ active: true, synced_at: synced.toISOString(), leagues: ["Hoops", "Dunks"], session: null });
 
     expect(card).toMatch(/Last synced 0?9:05/);
     expect(card).toContain("Hoops · Dunks");
-    expect(card).not.toContain("YAHOO_SOURCE");
+    expect(card).not.toContain("is oauth");
   });
 
   it("says the sync is not read while Yahoo is read through OAuth", async () => {
-    const { card } = await settingsWith({ active: false, synced_at: null, leagues: [] });
-    expect(card).toContain("YAHOO_SOURCE");
+    const { card } = await settingsWith({ active: false, synced_at: null, leagues: [], session: null });
+    expect(card).toContain("is oauth");
+  });
+
+  it("says how to copy the session cookie, and where it goes", async () => {
+    const { card } = await settingsWith({ active: false, synced_at: null, leagues: [], session: null });
+    expect(card).toContain("pub-api-ro.fantasysports.yahoo.com");
+    expect(card).toContain("YAHOO_SESSION_COOKIE");
+  });
+
+  it("read with the session, says when it last fetched", async () => {
+    const fetched = new Date();
+    fetched.setHours(9, 5);
+    const { card } = await settingsWith({
+      active: false,
+      synced_at: null,
+      leagues: [],
+      session: { fetched_at: fetched.toISOString(), expired: false },
+    });
+
+    expect(card).toMatch(/Last fetched 0?9:05/);
+    expect(card).not.toContain("is oauth");
+  });
+
+  it("read with the session, says it expired in words", async () => {
+    const { card } = await settingsWith({
+      active: false,
+      synced_at: null,
+      leagues: [],
+      session: { fetched_at: null, expired: true },
+    });
+
+    expect(card).toContain("Session expired");
+    expect(card).toContain("Paste a fresh one");
   });
 });
 
@@ -54,7 +86,7 @@ const GROUPS: SettingsGroup[] = [
     title: "General",
     note: "",
     settings: [
-      setting("YAHOO_SOURCE", "choice", "oauth", ["oauth", "browser"]),
+      setting("YAHOO_SOURCE", "choice", "oauth", ["oauth", "browser", "session"]),
       setting("LOG_LEVEL", "choice", "INFO", ["DEBUG", "INFO", "WARNING"]),
       setting("DEBUG_MODE", "boolean", "false"),
     ],
@@ -64,7 +96,7 @@ const GROUPS: SettingsGroup[] = [
 /** Settings with the fixed-value fields, and every PUT the page sends recorded. */
 async function fixedValues() {
   const saved: Record<string, string>[] = [];
-  const capture: CaptureStatus = { active: false, synced_at: null, leagues: [] };
+  const capture: CaptureStatus = { active: false, synced_at: null, leagues: [], session: null };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (path: string, init?: RequestInit) => {

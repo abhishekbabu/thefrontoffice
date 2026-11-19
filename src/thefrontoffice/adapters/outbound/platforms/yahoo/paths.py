@@ -1,9 +1,10 @@
 """Every request the app makes of Yahoo, and how long its answer holds.
 
 Built in one place so that everything naming a Yahoo response names it alike:
-the reader asks for it, the browser capture plans and stores it, and both key
-the cache by its path — the path Yahoo serves it at, below `/fantasy/v2/`, on
-the API host and on the host Yahoo's own pages read.
+the reader asks for it, the browser capture plans and stores it, the session
+reader fetches it, and all of them key the cache by its path — the path Yahoo
+serves it at, below `/fantasy/v2/`, on the API host and on the host Yahoo's own
+pages read.
 """
 
 from collections.abc import Mapping
@@ -25,6 +26,9 @@ SETTINGS_TTL = timedelta(hours=12)
 SCOREBOARD_TTL = timedelta(minutes=2)
 """The scoreboard drives the "which categories are close" analysis and goes
 stale within a game night."""
+
+FRONTEND = "https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/"
+"""The read-only host Yahoo's own pages fetch from: it answers their session cookie, and nothing writes through it."""
 
 PROFILE = "users;use_login=1/profile"
 """Who is signed in: 401 without a session, so a capture checks it before anything else."""
@@ -53,12 +57,17 @@ class YahooRead:
     @property
     def path(self) -> str:
         """Where Yahoo serves it, and the key it is kept under."""
-        return f"league/{self.league}/{self.query}" if self.league else self.query
+        return served_at(self.query, self.league)
 
     @property
     def lookup(self) -> bool:
         """Whether it asks for players by key or by name, which no plan can know in advance."""
         return bool(self.player_keys or self.search)
+
+
+def served_at(query: str, league: str = "") -> str:
+    """Where Yahoo serves `query`: below `league/<key>/` where it names a league, as the SDK asks for it."""
+    return f"league/{league}/{query}" if league else query
 
 
 def leagues(game_code: str, season: int) -> YahooRead:
