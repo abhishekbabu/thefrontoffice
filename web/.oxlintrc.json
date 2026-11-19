@@ -1,0 +1,80 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Lint rules for the front end. Deliberately short: `tsc` already rejects
+  // unused variables, bad imports and wrong types, and the production build a
+  // Tailwind class that resolves to nothing. Every rule past Oxlint's
+  // correctness set is here because something actually went wrong.
+  "plugins": ["typescript", "react", "oxc", "vitest"],
+  "categories": { "correctness": "error" },
+  "options": { "typeAware": true },
+  "ignorePatterns": ["dist/**", ".shots/**", "scripts/**", "src/lib/schema.ts"],
+  "jsPlugins": [
+    "./lint/front-office.ts",
+    { "name": "landmines-testing", "specifier": "@interfere/landmines/testing" },
+    { "name": "landmines-structure", "specifier": "@interfere/landmines/structure" }
+  ],
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    // A component declared inside another is a new function every render, so
+    // React sees a new element type and remounts the subtree. A `Shell` inside
+    // `App` once meant every panel refetched and lost its scroll position
+    // whenever anything above it changed, and nothing failed.
+    "react/static-components": "error",
+    // The React Compiler's own checks are in Oxlint's react correctness set
+    // too: `refs`, `set-state-in-effect`, `purity` and the rest.
+
+    "front-office/semantic-color": "error",
+    "front-office/no-native-title": "error",
+
+    // `m` components carry no animation code of their own; the feature set
+    // arrives in a second chunk after first paint. Importing `motion` itself,
+    // or a feature bundle, pulls the whole library into the entry bundle,
+    // which is what check-bundle budgets.
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "motion/react",
+            "importNames": ["motion", "domAnimation", "domMax"],
+            "message": "Use `m` with LazyMotion, or the whole library lands in the entry bundle."
+          }
+        ]
+      }
+    ],
+
+    // Type-aware: the promise and `any` mistakes tsc lets through.
+    "typescript/await-thenable": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+
+    // Tests that cannot lie (https://github.com/interfere-inc/landmines).
+    "landmines-testing/no-test-doubles": "error",
+    "landmines-testing/no-fixed-sleep": "error",
+    "landmines-testing/no-flake-masking": "error",
+    "landmines-testing/no-unsignaled-poll": "error",
+    "landmines-structure/colocated-tests": "error",
+    "landmines-structure/test-file-names": "error"
+  },
+  "overrides": [
+    {
+      // The rule's own tests hold the very strings it exists to reject.
+      "files": ["lint/*.test.ts"],
+      "rules": { "front-office/semantic-color": "off" }
+    },
+    {
+      "files": ["src/lib/motion-features.ts"],
+      "rules": { "no-restricted-imports": "off" }
+    }
+  ]
+}

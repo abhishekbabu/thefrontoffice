@@ -32,7 +32,7 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
       {schedule.data && schedule.data.standings.length === 0 && <Empty title="No table" />}
       {schedule.data && schedule.data.standings.length > 0 && (
         <div className="p-5">
-          <Standings rows={schedule.data.standings} onOpen={(id) => navigate(`${rosters}?team=${encodeURIComponent(id)}`)} />
+          <Standings rows={schedule.data.standings} onOpen={(id) => void navigate(`${rosters}?team=${encodeURIComponent(id)}`)} />
         </div>
       )}
     </>

@@ -43,7 +43,7 @@ export function RemedyAction({ remedy }: { remedy: Remedy }) {
       return <LoginButton label={remedy.label} platform={remedy.platform} />;
     case "settings":
       return (
-        <Button variant="outline" onClick={() => navigate(SETTINGS)}>
+        <Button variant="outline" onClick={() => void navigate(SETTINGS)}>
           {remedy.label}
         </Button>
       );
@@ -51,7 +51,7 @@ export function RemedyAction({ remedy }: { remedy: Remedy }) {
       // Everything is asked again: whatever else failed on this page failed
       // on the same outage.
       return (
-        <Button variant="outline" onClick={() => queryClient.invalidateQueries()}>
+        <Button variant="outline" onClick={() => void queryClient.invalidateQueries()}>
           {remedy.label}
         </Button>
       );
@@ -89,7 +89,7 @@ function LoginButton({ label, platform }: { label: string; platform: string }) {
     // Everything about this competition failed on the missing authorization;
     // none of those answers are worth keeping now that it exists. Polling
     // stops on its own once the status is no longer running.
-    queryClient.invalidateQueries();
+    void queryClient.invalidateQueries();
   }, [state.data?.status, queryClient]);
 
   const status = state.data?.status;

@@ -55,7 +55,7 @@ describe("a player's pricing", () => {
 
 describe("Trades", () => {
   const competition = { key: "nfl-sleeper" } as Competition;
-  const league = { league_id: "T1", name: "Sunday Money", detail: "", url: "" } as League;
+  const league: League = { league_id: "T1", name: "Sunday Money", detail: "", url: "" };
 
   async function shown(trades: Trades) {
     const client = offlineClient();

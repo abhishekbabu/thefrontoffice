@@ -13,7 +13,7 @@ async function row(open?: () => void, inside = false) {
 
 describe("a clickable row", () => {
   it("opens on Enter and on Space, as a button does", async () => {
-    const open = vi.fn();
+    const open = vi.fn<() => void>();
     const target = await row(open);
 
     await press(target, "Enter");
@@ -30,7 +30,7 @@ describe("a clickable row", () => {
   });
 
   it("leaves the keys of a control inside it to that control", async () => {
-    const open = vi.fn();
+    const open = vi.fn<() => void>();
     const target = await row(open, true);
 
     await press(target.querySelector("input")!, " ");

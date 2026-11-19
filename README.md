@@ -510,7 +510,12 @@ The backend is Python with FastAPI, organised as ports and adapters:
 - `bootstrap.py` is the only module that names a concrete class.
 
 The front end in `web/` is React, Vite, TanStack Query and Tailwind. Its API
-types are generated from the backend.
+types are generated from the backend. It is linted by Oxlint (`web/.oxlintrc.json`),
+type-aware through `tsrs`: its correctness rules (the React Compiler's included),
+the promise and `any` checks, landmines' rules against tests that mock what they
+test or wait on the clock, and the app's own rules in `web/lint/` (semantic colors
+only, no native `title` tooltips). Tests answer the app's requests with MSW
+(`web/src/test/server.ts`); a request no handler answers fails the test.
 
 Architecture rules and conventions for contributors and coding agents are in
 [`AGENTS.md`](AGENTS.md).

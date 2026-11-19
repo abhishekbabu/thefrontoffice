@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useRef } from "react";
+import { useKept } from "@/lib/useKept";
 import { useNavigate } from "react-router-dom";
 import { Maximize2, Star, X } from "lucide-react";
 import { api, type PlayerComparison, type TradeIdea } from "@/lib/api";
@@ -187,9 +187,7 @@ export function ComparisonDrawer({
   onOpenPlayer: (id: string, label: string) => void;
 }) {
   // Held so the drawer still has someone to show while it slides out.
-  const last = useRef<Comparing>({ ids: [] });
-  if (comparing) last.current = comparing;
-  const shown = comparing ?? last.current;
+  const shown = useKept(comparing) ?? { ids: [] };
   const ids = shown.ids.slice(0, MAX_COMPARED);
 
   const comparison = useComparison(competition, league, ids);
@@ -216,7 +214,7 @@ export function ComparisonDrawer({
           onClick={() => {
             compared.set(ids);
             onClose();
-            navigate(href(competition, league, "compare"));
+            void navigate(href(competition, league, "compare"));
           }}
         />
       </SlideOverHeader>

@@ -50,7 +50,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       setDrafts({});
       // Everything downstream depends on configuration: which sports appear,
       // which leagues they hold. Drop it all rather than guess what moved.
-      queryClient.invalidateQueries();
+      void queryClient.invalidateQueries();
     },
   });
 

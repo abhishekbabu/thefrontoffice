@@ -123,12 +123,12 @@ export default function App() {
     if (competitions.data && !active) {
       // A competition nobody can play: a typo, or one whose credentials have
       // gone. Only once the list has arrived — before that they all look alike.
-      navigate(LANDING, { replace: true });
+      void navigate(LANDING, { replace: true });
       return;
     }
     if (!active || !league) return;
     const settled = href(active.key, league.league_id, view);
-    if (settled !== path) navigate(settled, { replace: true });
+    if (settled !== path) void navigate(settled, { replace: true });
   }, [route.page, path, competitions.data, active, league, view, navigate]);
 
   /**
@@ -144,7 +144,7 @@ export default function App() {
     if (route.page === "settings") {
       return (
         <div data-page="reading">
-          <SettingsPanel onBack={() => navigate(LANDING)} />
+          <SettingsPanel onBack={() => void navigate(LANDING)} />
         </div>
       );
     }
@@ -152,7 +152,7 @@ export default function App() {
 
     if (route.page !== "competition") {
       return competitions.isSuccess ? (
-        <Landing competitions={competitions.data} onPick={(picked, l) => navigate(href(picked.key, l.league_id))} />
+        <Landing competitions={competitions.data} onPick={(picked, l) => void navigate(href(picked.key, l.league_id))} />
       ) : (
         <Loading />
       );

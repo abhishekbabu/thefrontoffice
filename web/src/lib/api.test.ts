@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { failure, isExpired, leagueApi } from "@/lib/api";
+import { http, HttpResponse } from "msw";
+import { server } from "@/test/server";
 
 describe("reading a failed response", () => {
   it("carries the server's sentence, code and remedy as they are", () => {
@@ -24,16 +26,14 @@ describe("reading a failed response", () => {
 /** The paths `ask` requested, each answered with an empty list. */
 async function pathsAsked(ask: () => Promise<unknown>): Promise<string[]> {
   const asked: string[] = [];
-  const original = globalThis.fetch;
-  globalThis.fetch = (async (path: string) => {
-    asked.push(path);
-    return new Response("[]");
-  }) as typeof fetch;
-  try {
-    await ask();
-  } finally {
-    globalThis.fetch = original;
-  }
+  server.use(
+    http.get("*", ({ request }) => {
+      const url = new URL(request.url);
+      asked.push(url.pathname + url.search);
+      return HttpResponse.json([]);
+    }),
+  );
+  await ask();
   return asked;
 }
 

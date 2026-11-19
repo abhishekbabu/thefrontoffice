@@ -123,7 +123,9 @@ function typing(target: EventTarget | null): boolean {
 function useArrowKeys(onLeft: () => void, onRight: () => void) {
   // Read through a ref so the listener is attached once, not on every week.
   const handlers = useRef({ onLeft, onRight });
-  handlers.current = { onLeft, onRight };
+  useEffect(() => {
+    handlers.current = { onLeft, onRight };
+  });
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || typing(event.target)) return;

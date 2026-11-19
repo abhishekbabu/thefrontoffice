@@ -103,10 +103,11 @@ export function failure(body: unknown, status: string): ApiError {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
-  });
+  // A header the caller sets wins; JSON is only the default. Built as Headers
+  // because `init.headers` may be one, or pairs, neither of which spreads.
+  const headers = new Headers(init?.headers);
+  if (!headers.has("content-type")) headers.set("content-type", "application/json");
+  const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
     throw failure(await response.json().catch(() => null), `${response.status} ${response.statusText}`);
   }

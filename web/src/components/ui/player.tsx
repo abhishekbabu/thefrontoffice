@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useState } from "react";
+import { useKept } from "@/lib/useKept";
 import { GitCompareArrows, X } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
 import { fade, list, listItem, portrait } from "@/lib/motion";
@@ -250,9 +251,7 @@ export function PlayerPanel({
 }) {
   // Held so the panel still has someone to show on the way out. Reading
   // `playerId` directly would blank the contents for the length of the slide.
-  const last = useRef("");
-  if (playerId) last.current = playerId;
-  const shown = playerId ?? last.current;
+  const shown = useKept(playerId) ?? "";
 
   const compared = useCompared(competition, league);
   const player = useQuery<PlayerDetail, Error>({

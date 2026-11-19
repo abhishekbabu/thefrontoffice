@@ -59,7 +59,7 @@ describe("a slide-over", () => {
   });
 
   it("closes on Escape and hands focus back to what opened it", async () => {
-    const onClose = vi.fn();
+    const onClose = vi.fn<() => void>();
     const { opener, dialog } = await opened(onClose);
 
     await press(dialog!, "Escape");

@@ -6,7 +6,9 @@ import { prePaintScript } from "@/themes/prepaint";
 function paint(stored: Record<string, string>) {
   localStorage.clear();
   for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value);
-  new Function(prePaintScript())();
+  // Evaluated from text on purpose: the page's head runs it as source.
+  // oxlint-disable-next-line typescript/no-implied-eval
+  (new Function(prePaintScript()) as () => void)();
   return document.documentElement;
 }
 
