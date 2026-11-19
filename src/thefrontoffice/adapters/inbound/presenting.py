@@ -33,6 +33,10 @@ NO_CHANGE = 0.0005
 """Below a twentieth of a point, a change in the chance of winning reads as none:
 "+0.0%" claims a direction the simulation cannot tell apart from noise."""
 
+NOTICEABLE_WIN = 0.005
+"""Half a point of the chance of winning: the least a pickup on the page must move it by for the wire to show the
+column at all."""
+
 
 def win_change(change: float) -> str:
     """'+2.8%', '−0.4%', or 'no change': what a move does to the chance of winning."""
@@ -98,10 +102,16 @@ def wire(engine: Wire, league_id: str, query: PlayerQuery) -> PlayerPage:
     a minute nobody waits — so it cannot rank the pool: sorting by it asks the
     competition for its own ranking, which puts the likeliest to help first,
     and orders that page by the chance, by the rule every list is ordered by.
+
+    Shown only where it says something (`NOTICEABLE_WIN`): most pickups never
+    reach this week's lineup, and a column of "no change" and ±0.2% is a
+    column to read past. Kept while it is the sort, so the sort has its header.
     """
     asked = query.model_copy(update={"sort": ""}) if query.sort == WIN_COLUMN else query
     view = engine.wire(league_id, asked)
     if not view.priced:
+        return view.page
+    if query.sort != WIN_COLUMN and all(abs(c.win_change) < NOTICEABLE_WIN for c in view.chances):
         return view.page
     by_player: dict[str, PickupChance] = {c.player_id: c for c in view.chances}
     cards = []

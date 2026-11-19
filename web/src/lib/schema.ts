@@ -2005,6 +2005,13 @@ export interface components {
             /** Ideas */
             ideas: components["schemas"]["TradeIdea"][];
             /**
+             * Ranked By
+             * @description The figure on each idea the list is ordered by: your playoff chance, or once that is safe, your starters' points in the playoff weeks — or the regular season's where those are not projected.
+             * @default playoffs_change
+             * @enum {string}
+             */
+            ranked_by: "playoffs_change" | "points" | "playoff_points";
+            /**
              * Pickup
              * @description The free agent most of the two-for-ones would add to the spot they free; an idea names its own pickup only where it is someone else.
              * @default

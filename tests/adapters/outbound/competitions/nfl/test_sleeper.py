@@ -596,9 +596,38 @@ def test_a_free_agent_short_of_every_starter_says_by_how_much() -> None:
         "wr1": PlayerMeta(player_id="wr1", name="Star WR", position="WR", team="BUF"),
     }
 
-    fits = _available(client)["wr9"]["Fits"]
+    [card] = [c for c in nfl_provider(client).free_agents("L1", PlayerQuery()).players if c.player_id == "wr9"]
 
-    assert fits.startswith("-6.0") and "Star WR" in fits
+    assert card.values["Fits"] == -6.0
+    # The cell holds the gap; who it is measured against is on hover.
+    assert "Star WR" not in card.columns["Fits"] and "Star WR" in card.notes["Fits"]
+
+
+def test_the_wire_leads_with_who_would_help_your_lineup_not_the_biggest_projection() -> None:
+    """A quarterback outprojecting your own is still worth less than a receiver for an empty slot."""
+    client = FakeSleeper(
+        projections={
+            **DEFAULT_PROJECTIONS,
+            "qb9": proj("qb9", "Free QB", "QB", 25.0),
+            "qb8": proj("qb8", "Backup QB", "QB", 16.0),
+        }
+    )
+    client.players_catalog = {
+        **client.get_nfl_players(),
+        "qb9": PlayerMeta(player_id="qb9", name="Free QB", position="QB", team="NYJ"),
+        "qb8": PlayerMeta(player_id="qb8", name="Backup QB", position="QB", team="MIA"),
+    }
+
+    order = list(_available(client))
+
+    assert order.index("wr9") < order.index("qb9") < order.index("qb8")
+
+
+def test_the_wire_reads_identity_then_value_then_usage_then_context() -> None:
+    columns = list(_available(FakeSleeper(projections=DEFAULT_PROJECTIONS))["wr9"])
+
+    assert columns[:6] == ["Player", "Pos", "Team", "Fits", "Proj", "ROS"]
+    assert columns.index("Snap%") < columns.index("Without") < columns.index("Opponent") < columns.index("Status")
 
 
 def test_the_wire_sorts_by_fit_across_the_whole_pool() -> None:

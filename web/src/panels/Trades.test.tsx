@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Competition, League, TradeIdea, Trades } from "@/lib/api";
 import { keys } from "@/lib/queries";
-import { changes, theirCase, TradesPanel } from "@/panels/Trades";
+import { priced, theirCase, TradesPanel } from "@/panels/Trades";
 import { offlineClient, render } from "@/test/render";
 
 const idea = (their_playoffs: number, their_points: number, over: Partial<TradeIdea> = {}): TradeIdea => ({
@@ -31,17 +31,18 @@ describe("why the other manager might take a trade", () => {
   });
 });
 
-describe("what a trade does for you", () => {
-  it("says the playoff chance and the regular season where each moves noticeably", () => {
-    const said = changes(idea(0.4, 1.4, { playoffs_change: 0.012, points: 1.3 }));
+describe("a player's pricing", () => {
+  it("is found on every trade he is in, under the name the trade lists him by", () => {
+    const form = [{ label: "Matthew Golden", value: "priced 18.5", tone: "neutral" as const, url: "" }];
+    const ideas = [
+      idea(0.4, 1.4, { giving: ["Matthew Golden (WR)"], form }),
+      idea(0.4, 1.4, { giving: ["Matthew Golden (WR)", "C (RB)"] }),
+    ];
 
-    expect(said).toHaveLength(2);
-    expect(said[0]).toContain("+1.2");
-    expect(said[1]).toContain("+1.3");
-  });
+    const pricing = priced(ideas);
 
-  it("leaves out a change under half a point", () => {
-    expect(changes(idea(0.4, 1.4, { playoffs_change: 0.0004, points: 0.2 }))).toEqual([]);
+    expect(pricing.get("Matthew Golden (WR)")).toBe("priced 18.5");
+    expect(pricing.has("C (RB)")).toBe(false);
   });
 });
 
@@ -49,16 +50,45 @@ describe("Trades", () => {
   const competition = { key: "nfl-sleeper" } as Competition;
   const league = { league_id: "T1", name: "Sunday Money", detail: "", url: "" } as League;
 
-  it("names a pickup the trades share once, under the list", async () => {
+  async function shown(trades: Trades) {
     const client = offlineClient();
-    const trades: Trades = {
-      ideas: [idea(0.4, 1.4), idea(0.4, 1.4, { team_id: "3", receiving: ["C"] })],
-      pickup: "Chig Okonkwo (TE)",
-    };
     client.setQueryData(keys.trades(competition.key, league.league_id), trades);
-    const { container } = await render(<TradesPanel competition={competition} league={league} />, client);
+    return render(<TradesPanel competition={competition} league={league} />, client);
+  }
+
+  it("names a pickup the trades share once, under the list", async () => {
+    const { container } = await shown({
+      ideas: [idea(0.4, 1.4), idea(0.4, 1.4, { team_id: "3", receiving: ["C"] })],
+      ranked_by: "playoffs_change",
+      pickup: "Chig Okonkwo (TE)",
+    });
 
     expect(container.textContent?.split("Chig Okonkwo")).toHaveLength(2);
     expect(container.textContent).not.toContain("deadline");
+  });
+
+  it("puts each trade on a row, with the regular season's cost beside the playoff gain it buys", async () => {
+    const { container } = await shown({
+      ideas: [idea(1, 1.7, { points: -3.0, playoff_points: 2.5, playoffs_change: -0.003 })],
+      ranked_by: "playoff_points",
+      pickup: "",
+    });
+
+    const cells = [...container.querySelectorAll("tbody tr:first-child td")].map((td) => td.textContent);
+    expect(cells.slice(0, 2)).toEqual(["A", "B"]);
+    expect(cells).toContain("−3.0");
+    expect(cells).toContain("+2.5");
+    // The column the list is ordered by is marked as such.
+    expect(container.querySelector('th [aria-label="ordered by"]')?.closest("th")?.textContent).toContain("Playoffs");
+  });
+
+  it("has no playoff column before the playoff weeks are projected", async () => {
+    const { container } = await shown({
+      ideas: [idea(0.4, 1.4, { playoff_points: null })],
+      ranked_by: "playoffs_change",
+      pickup: "",
+    });
+
+    expect(container.querySelectorAll("thead th")).toHaveLength(5);
   });
 });

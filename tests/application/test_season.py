@@ -256,8 +256,30 @@ def test_a_team_already_safe_is_offered_what_helps_its_playoff_lineup() -> None:
 
     ideas = MarketEngine(_Market(now, later, season=SAFE_SEASON)).trades("L1").ideas
 
-    assert [i.giving for i in ideas] == [["for December"], ["for now"]]
+    trades = MarketEngine(_Market(now, later, season=SAFE_SEASON)).trades("L1")
+    assert [i.giving for i in trades.ideas] == [["for December"], ["for now"]]
     assert ideas[0].playoff_points == 6.0
+    # The list says which figure it is ordered by, so the page can mark that column.
+    assert trades.ranked_by == "playoff_points"
+
+
+def test_a_safe_team_without_playoff_projections_is_ranked_on_the_regular_season() -> None:
+    # Safe, at about 85%, but with a place still to lose.
+    season = _season(
+        [_team("a", 7), _team("b", 5), _team("c", 2)],
+        [
+            Fixture(10, "a", "b"),
+            Fixture(11, "a", "c"),
+            Fixture(11, "b", "c"),
+            Fixture(12, "b", "c"),
+            Fixture(12, "a", "c"),
+        ],
+        {"a": 100, "b": 100, "c": 100},
+    )
+
+    trades = MarketEngine(_Market(_trade("c", mine=115, theirs=101, season=season), season=season)).trades("L1")
+
+    assert trades.ideas and trades.ranked_by == "points"
 
 
 def test_a_team_on_the_bubble_is_offered_its_playoff_chance_before_its_december() -> None:
@@ -265,9 +287,10 @@ def test_a_team_on_the_bubble_is_offered_its_playoff_chance_before_its_december(
     december = _trade("b", mine=100, theirs=101, name="for December", playoff=6.0, get="later")
     now = _trade("c", mine=110, theirs=101, name="for now", playoff=1.0, get="now")
 
-    ideas = MarketEngine(_Market(december, now)).trades("L1").ideas
+    trades = MarketEngine(_Market(december, now)).trades("L1")
 
-    assert [i.giving for i in ideas] == [["for now"], ["for December"]]
+    assert [i.giving for i in trades.ideas] == [["for now"], ["for December"]]
+    assert trades.ranked_by == "playoffs_change"
 
 
 def test_two_offers_for_the_same_player_are_one_idea() -> None:

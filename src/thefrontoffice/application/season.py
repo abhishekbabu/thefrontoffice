@@ -24,6 +24,7 @@ from thefrontoffice.domain.models import (
     TeamWeek,
     TradeIdea,
     TradeOption,
+    TradeRank,
     Trades,
     outcome,
 )
@@ -201,7 +202,11 @@ class MarketEngine:
             shown = sorted(worth, key=lambda idea: (-for_you(idea), -idea.playoffs_change))
         else:
             shown = sorted(worth, key=lambda idea: (-idea.playoffs_change, -for_you(idea)))
-        return _said_once(shown[:TRADES_SHOWN])
+        ranked_by: TradeRank = "playoffs_change"
+        if safe:
+            projected = all(idea.playoff_points is not None for idea in shown)
+            ranked_by = "playoff_points" if projected else "points"
+        return _said_once(shown[:TRADES_SHOWN]).model_copy(update={"ranked_by": ranked_by})
 
 
 def _said_once(ideas: list[TradeIdea]) -> Trades:

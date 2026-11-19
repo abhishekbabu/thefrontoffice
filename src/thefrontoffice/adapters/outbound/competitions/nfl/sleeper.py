@@ -255,7 +255,7 @@ class SleeperNFLProvider:
         return roster
 
     def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
-        """Everyone nobody in the league holds, best projection first.
+        """Everyone nobody in the league holds, the best fit for your lineup first (`views.by_fit`).
 
         The catalog is twelve thousand players and all but a couple of hundred
         are free, so the pool is cut to the positions a fantasy league actually
@@ -288,6 +288,8 @@ class SleeperNFLProvider:
                 key=lambda pid: state.injuries.returns(pid) or date.max,
             )
         ranked = views.cards(state, ids, starters=set(), wire=True, ahead=outlook.rest_of_season(self.client, state))
+        if not view:
+            ranked = views.by_fit(ranked)
         if view == INJURED:
             ranked = views.with_returns(ranked, state, self.scoreboard.schedule(state.season))
         if adds:
@@ -360,7 +362,7 @@ class SleeperNFLProvider:
             raise PlayerNotFoundError(unavailable)
 
         candidates = {p.player_id: p for p in projections_for(player_ids, state.projections, state.players)}
-        fits = {pid: fit[1] for pid, p in candidates.items() if (fit := views.fit(state, p))}
+        fits = {pid: fit.text() for pid, p in candidates.items() if (fit := views.fit(state, p))}
         return prompt.wire(state, candidates, fits)
 
     @staticmethod
