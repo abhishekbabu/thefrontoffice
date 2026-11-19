@@ -1190,8 +1190,11 @@ export interface components {
              * @description Each player's header, in the order asked: name, club, the one figure, owner. No groups or tables.
              */
             players: components["schemas"]["PlayerDetail"][];
-            /** @description A row per measure, a column per player, in the order of `players`. */
-            table: components["schemas"]["StatTable"];
+            /**
+             * Tables
+             * @description One per heading the measures came under — 'Week 11', 'Projected line', '2026 season' — each a row per measure and a column per player, in the order of `players`.
+             */
+            tables: components["schemas"]["StatTable"][];
         };
         /**
          * PlayerDetail
@@ -1716,6 +1719,11 @@ export interface components {
              * @default
              */
             url: string;
+            /**
+             * Better
+             * @description Which way this figure improves; null where it does not compare, like an opponent or a college.
+             */
+            better: ("higher" | "lower") | null;
         };
         /**
          * StatGroup
@@ -1760,6 +1768,16 @@ export interface components {
              * @enum {string}
              */
             tone: "neutral" | "good" | "warning";
+            /**
+             * Better
+             * @description Which way this measure improves; null where it does not.
+             */
+            better: ("higher" | "lower") | null;
+            /**
+             * Best
+             * @description The cells holding the best figure, by index — set only on a comparison, and only where at least two figures compare and they differ.
+             */
+            best: number[];
         };
         /**
          * StatTable

@@ -69,6 +69,9 @@ action takes nobody out, so a counterpart the model named anyway is not read as 
 
 
 Tone = Literal["neutral", "good", "warning"]
+
+Better = Literal["higher", "lower"]
+"""Which way a figure improves, so one set beside another can be judged: most yards, fewest fumbles."""
 """Whether a figure should pull the eye. Named so a provider computing one can
 say so in its signature rather than returning a bare string."""
 
@@ -92,6 +95,10 @@ class Stat(BaseModel):
     url: str = Field(
         default="",
         description="Where the figure comes from, to open: the article a headline is from. Empty for most.",
+    )
+    better: Better | None = Field(
+        default=None,
+        description="Which way this figure improves; null where it does not compare, like an opponent or a college.",
     )
 
 
@@ -345,6 +352,14 @@ class StatRow(BaseModel):
         )
     )
     tone: Tone = "neutral"
+    better: Better | None = Field(default=None, description="Which way this measure improves; null where it does not.")
+    best: list[int] = Field(
+        default_factory=list,
+        description=(
+            "The cells holding the best figure, by index — set only on a comparison, and only where at "
+            "least two figures compare and they differ."
+        ),
+    )
 
 
 class StatTable(BaseModel):
@@ -466,7 +481,12 @@ class PlayerComparison(BaseModel):
     players: list[PlayerDetail] = Field(
         description="Each player's header, in the order asked: name, club, the one figure, owner. No groups or tables."
     )
-    table: StatTable = Field(description="A row per measure, a column per player, in the order of `players`.")
+    tables: list[StatTable] = Field(
+        description=(
+            "One per heading the measures came under — 'Week 11', 'Projected line', '2026 season' — each a row "
+            "per measure and a column per player, in the order of `players`."
+        )
+    )
 
 
 class PlayerRef(BaseModel):

@@ -17,26 +17,35 @@ describe("Compare", () => {
     window.localStorage.setItem(`compare:${competition.key}:${league.league_id}`, JSON.stringify(["1", "2"]));
     const comparison: PlayerComparison = {
       players: [header("1", "Lamb", "Rival"), header("2", "Nacua")],
-      table: {
-        title: "Compared",
-        tab: "",
-        columns: ["Lamb", "Nacua"],
-        rows: [{ label: "Week 11 · Projected", values: ["18.2", "17.9"], tone: "neutral" }],
-        absent: "—",
-      },
+      tables: [
+        {
+          title: "Week 11",
+          tab: "",
+          columns: ["Lamb", "Nacua"],
+          rows: [
+            { label: "Targets a game", values: ["8.1", "9.4"], tone: "neutral", better: "higher", best: [1] },
+            { label: "Opponent", values: ["vs MIA", "vs NYJ"], tone: "neutral", better: null, best: [] },
+          ],
+          absent: "—",
+        },
+      ],
     };
     const client = offlineClient();
     client.setQueryData(keys.compare(competition.key, league.league_id, ["1", "2"]), comparison);
     client.setQueryData(keys.compare(competition.key, league.league_id, ["1"]), {
       players: [comparison.players[0]],
-      table: { ...comparison.table, columns: ["Lamb"], rows: [] },
+      tables: [],
     });
     const { container } = await render(<ComparePanel competition={competition} league={league} />, client);
 
     const text = container.textContent ?? "";
     expect(text).toContain("Lamb");
     expect(text).toContain("Rival");
-    expect(text).toMatch(/Week 11 · Projected18\.217\.9/);
+    // The heading once, over its rows, not as a prefix on each label.
+    expect(text).toMatch(/Week 11Targets a game8\.19\.4best/);
+    expect(text).not.toContain("Week 11 ·");
+    // Only the better figure is marked, and only in a row that compares.
+    expect(text.match(/best/g)).toHaveLength(1);
 
     await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Remove Nacua"]')!.click());
     await settle();
