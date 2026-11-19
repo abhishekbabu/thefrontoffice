@@ -869,6 +869,17 @@ def test_between_two_alike_on_points_the_one_whose_snaps_swing_goes() -> None:
     assert action.drop == swinging.player_id
 
 
+def test_a_role_ramping_up_to_his_most_snaps_is_not_read_as_one_that_swings() -> None:
+    """A debut's snaps climb too soon for a trend. 5.30 a game on 10, 20 then 45 snaps against 5.00 on a
+    steady third: without the tenth off, the climber is worth (5.30 + 6) / 2 = 5.65 to 5.50."""
+    rising = proj("wr3", "Rising Receiver", "WR", 6.0, team="KC", opp="LV")
+    steady = [replace(line, player_id="wr2") for line in _snapped(rising, 20, 20, 20, 20, 20)]
+
+    action = _bench_pair(rising, _snapped(rising, 10, 10, 10, 20, 45, points=5.3) + steady)
+
+    assert action.drop == "wr2"
+
+
 def test_between_two_close_on_points_the_regular_stays() -> None:
     """5 a game on five snaps in six against 5.30 on a third of them: the steady role outweighs the 0.30."""
     regular = proj("wr3", "Regular Receiver", "WR", 6.0, team="KC", opp="LV")
@@ -1134,12 +1145,20 @@ def _snaps(player_id: str, team: str, position: str, share: float) -> list[NFLGa
     ]
 
 
-def _behind(status: str, *, his_share: float = 0.9, mine: float = 0.4, of: str = "wr2") -> list[Action]:
-    """What the list says about Bench Receiver (KC) — or another of yours, `of` — while Star Wideout,
-    a teammate on nobody's roster here, is `status`."""
+def _behind(
+    status: str,
+    *,
+    his_share: float = 0.9,
+    mine: float = 0.4,
+    of: str = "wr2",
+    bench: float = 6.0,
+    starters: tuple[str, ...] = ("qb", "rb", "wr", "te"),
+) -> list[Action]:
+    """What the list says about Bench Receiver (KC), projected `bench` — or another of yours, `of` — while
+    Star Wideout, a teammate on nobody's roster here, is `status`. Both played weeks 1 and 2, his 10 a game."""
     client = _client(
-        [QB, RB, WR, FLEX, BENCH_WR],
-        ["qb", "rb", "wr", "te"],
+        [QB, RB, WR, FLEX, replace(BENCH_WR, points=bench)],
+        list(starters),
         ["wr2"],
         game_lines=_snaps("star", "KC", "WR", his_share) + _snaps("wr2", "KC", "WR", mine),
     )
@@ -1193,6 +1212,63 @@ def test_a_teammate_already_ruled_out_still_names_whose_work_grows() -> None:
 
     assert action.player_id == "wr2"
     assert "Star Wideout" in action.title
+
+
+def test_a_bench_player_who_would_not_beat_the_starter_even_with_the_teammate_out_is_no_start() -> None:
+    """Worth (10 + 1) / 2 = 5.50, a fifth more is 6.60, against Ty End's 9: there is no start to make."""
+    assert _behind("Questionable", bench=1.0) == []
+
+
+def test_a_bench_player_with_no_starter_to_replace_has_no_teammate_check() -> None:
+    """The flex is empty, which the lineup's own item fills; a bench player is never told to 'keep' his seat."""
+    assert _behind("Questionable", starters=("qb", "rb", "wr")) == []
+
+
+def test_a_starter_a_bench_player_beats_even_with_the_teammate_out_is_not_kept_in() -> None:
+    """Wade Receiver's 14, a fifth more, is 16.80; Bench Receiver is worth (10 + 30) / 2 = 20 at his slot."""
+    assert _behind("Questionable", bench=30.0, of="wr") == []
+
+
+def test_a_starter_worth_more_than_any_bench_player_with_the_teammate_out_is_kept_in() -> None:
+    [action] = _behind("Questionable", of="wr")
+
+    assert "Wade Receiver" in action.title and "Star Wideout" in action.title
+    assert "16.80" in action.reason and "8.00" in action.reason
+
+
+def _without_star(before: float, after: float) -> list[Action]:
+    """Bench Receiver (projected 6) in week 5: `before` a game in weeks 1 and 2, which Star Wideout
+    (questionable) missed, and `after` in weeks 3 and 4 beside him."""
+    lines = [
+        replace(line, week=week, stats={**line.stats, "pts_ppr": points})
+        for week, points in ((1, before), (2, before), (3, after), (4, after))
+        for line in _snaps("wr2", "KC", "WR", 0.4)[:1]
+    ] + [replace(line, week=line.week + 2) for line in _snaps("star", "KC", "WR", 0.9)]
+    client = _client([QB, RB, WR, FLEX, BENCH_WR], ["qb", "rb", "wr", "te"], ["wr2"], game_lines=lines)
+    client.week = 5
+    client.season_schedule = [*SCHEDULE, *(replace(game, week=5) for game in SCHEDULE[:3])]
+    client.players_catalog = {
+        **(client.players_catalog or {}),
+        "star": PlayerMeta(
+            player_id="star", name="Star Wideout", position="WR", team="KC", injury_status="Questionable"
+        ),
+    }
+    return [a for a in _actions(client) if a.key.startswith("teammate:wr2:")]
+
+
+def test_a_bench_player_who_scored_less_without_the_teammate_is_no_start() -> None:
+    """Form (2 + 14 + 14) / 3 = 10 would pass with a fifth more (9.60 against 9); without him he
+    scored 2 a game, worth (2 + 6) / 2 = 4."""
+    assert _without_star(2.0, 14.0) == []
+
+
+def test_a_bench_player_who_scored_more_without_the_teammate_is_a_start_on_those_games() -> None:
+    """Form (14 + 2 + 2) / 3 = 6 would fail even with a fifth more (7.20 against 9); without him
+    he scored 14 a game, worth (14 + 6) / 2 = 10."""
+    [action] = _without_star(14.0, 2.0)
+
+    assert [p.name for p in action.players] == ["Bench Receiver", "Ty End"]
+    assert "14.00" in action.reason and "10.00" in action.reason
 
 
 def test_a_depth_player_sitting_moves_nothing() -> None:

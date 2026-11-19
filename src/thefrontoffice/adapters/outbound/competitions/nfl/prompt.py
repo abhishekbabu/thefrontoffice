@@ -67,8 +67,13 @@ BENCH:
 
 TO DO — WHAT LEAGUE STATE ALREADY SAYS NEEDS DECIDING:
 - Computed exactly from the league, not estimated: starters who cannot play, empty slots, swaps
-  the bench allows, byes ahead, the trade deadline, a hurt free agent to hold in an empty IR slot.
-  The manager sees this list; your verdicts appear beside it, so judge these items rather than
+  the bench allows, byes ahead, the trade deadline, a hurt free agent to hold in an empty IR slot,
+  and a bench player to start if a listed teammate sits.
+- "Worth" in an item blends recent points a game with this week's projection, nudged by snap
+  share. A teammate item is listed only where your player's worth with that teammate out — read
+  from his own games without him where there are two or more — beats the starter he would
+  replace; one that would not was weighed and left off, so never recommend that start on the absence alone.
+- The manager sees this list; your verdicts appear beside it, so judge these items rather than
   restating them.
 {tasks_str}
 
