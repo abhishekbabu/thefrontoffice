@@ -1066,6 +1066,10 @@ class TradeMarket:
 
     season: SeasonInput
     options: tuple[TradeOption, ...]
+    regular_weeks: int
+    """The regular-season weeks a trade changes: those after this one, whose lineups are not yet set."""
+    playoff_weeks: int
+    """The playoff weeks projected, which a trade's `playoff_points` is a week of."""
 
 
 class TradeIdea(BaseModel):
@@ -1087,6 +1091,10 @@ class TradeIdea(BaseModel):
     playoff_points: float | None = Field(
         default=None, description="Your starters' projected points a playoff week, with the trade less without it."
     )
+    total: float = Field(
+        description="Your starters' expected points over the rest of the season, with the trade less without it: "
+        "every regular-season week left, and each playoff week weighed by your chance of being in it."
+    )
     their_playoffs: float = Field(
         default=0.0,
         description="Their chance of a playoff place before the trade: out of it, they have only worth to weigh.",
@@ -1102,7 +1110,7 @@ class TradeIdea(BaseModel):
     )
 
 
-TradeRank = Literal["playoffs_change", "points", "playoff_points"]
+TradeRank = Literal["playoffs_change", "total"]
 """Which of a `TradeIdea`'s figures for you a list of them is ordered by."""
 
 
@@ -1113,7 +1121,7 @@ class Trades(BaseModel):
     ranked_by: TradeRank = Field(
         default="playoffs_change",
         description="The figure on each idea the list is ordered by: your playoff chance, or once that is "
-        "safe, your starters' points in the playoff weeks — or the regular season's where those are not projected.",
+        "safe, your starters' expected points over the rest of the season.",
     )
     pickup: str = Field(
         default="",

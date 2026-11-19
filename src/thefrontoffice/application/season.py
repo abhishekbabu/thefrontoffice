@@ -23,6 +23,7 @@ from thefrontoffice.domain.models import (
     TeamOdds,
     TeamWeek,
     TradeIdea,
+    TradeMarket,
     TradeOption,
     TradeRank,
     Trades,
@@ -53,11 +54,13 @@ OUT_OF_IT = 0.05
 """Their playoff chance below which a manager has no lineup left to improve, only what he gives and gets to weigh."""
 
 SAFE = 0.8
-"""Your playoff chance above which a trade is for the playoffs themselves, which the table's
-simulation never reaches: from there a few points of chance are worth less than a better lineup in December."""
+"""Your playoff chance above which a trade is for the points it adds over the rest of the season —
+the regular season's weeks for seeding and a bye, the playoff weeks the table's simulation never
+reaches — since from there a few points of chance are worth less than a better lineup."""
 
-MIN_PLAYOFF_GAIN = 1.0
-"""Projected points a playoff week: less than that is a trade not worth the asking."""
+MIN_TOTAL_GAIN = 3.0
+"""Expected points over the rest of the season: less than about a point a playoff week is a trade
+not worth the asking."""
 
 SHARED_FROM = 2
 """Trades naming the same pickup from which he is said once under the list rather than on each."""
@@ -169,8 +172,9 @@ class MarketEngine:
         A manager will take a trade near even in worth if it helps his
         starters, or if he has no playoff place left to chase. Which do most
         for you depends on where you stand: a team on the bubble needs its
-        playoff chance, and a team already safe needs its lineup in the
-        playoff weeks, which the season's simulation never plays.
+        playoff chance, and a team already safe needs points — in the regular
+        season left, for its seed, and in the playoff weeks, which the season's
+        simulation never plays.
 
         Every trade is played out over the same seasons as the league without
         it — one seed, the same draws in the same order — so the difference is
@@ -183,9 +187,9 @@ class MarketEngine:
         chances = {t.team_id: t.playoffs for t in before.teams}
         safe = before.playoffs >= SAFE
 
-        def for_you(option: TradeOption | TradeIdea) -> float:
-            if safe and option.playoff_points is not None:
-                return option.playoff_points
+        def for_you(option: TradeOption) -> float:
+            if safe:
+                return _total(market, option.points, option.playoff_points, before.playoffs)
             return option.points
 
         acceptable = [
@@ -196,17 +200,25 @@ class MarketEngine:
         tried = sorted(_per_team(acceptable, for_you), key=lambda option: -for_you(option))[:TRADES_TRIED]
         logger.info(f"Pricing {len(tried)} of {len(market.options)} trades against the playoff race")
         names = {t.team_id: t.name for t in market.season.teams}
-        ideas = [_priced(market.season, before, option, names) for option in tried]
+        ideas = [_priced(market, before, option, names) for option in tried]
         worth = [idea for idea in ideas if _worth_offering(idea)]
         if safe:
-            shown = sorted(worth, key=lambda idea: (-for_you(idea), -idea.playoffs_change))
+            shown = sorted(worth, key=lambda idea: (-idea.total, -idea.playoffs_change))
         else:
-            shown = sorted(worth, key=lambda idea: (-idea.playoffs_change, -for_you(idea)))
-        ranked_by: TradeRank = "playoffs_change"
-        if safe:
-            projected = all(idea.playoff_points is not None for idea in shown)
-            ranked_by = "playoff_points" if projected else "points"
+            shown = sorted(worth, key=lambda idea: (-idea.playoffs_change, -idea.points))
+        ranked_by: TradeRank = "total" if safe else "playoffs_change"
         return _said_once(shown[:TRADES_SHOWN]).model_copy(update={"ranked_by": ranked_by})
+
+
+def _total(market: TradeMarket, points: float, playoff_points: float | None, chance: float) -> float:
+    """Points a week over the season left, summed: each regular-season week, and each playoff week
+    weighed by the chance of playing in it.
+
+    The playoff weeks count at the playoff chance alone, not shrinking round
+    by round: a later round is less likely to be reached, but it is the one
+    the title is decided in, and the two are taken to cancel.
+    """
+    return points * market.regular_weeks + chance * (playoff_points or 0.0) * market.playoff_weeks
 
 
 def _said_once(ideas: list[TradeIdea]) -> Trades:
@@ -244,13 +256,17 @@ def _per_team(options: list[TradeOption], key: Callable[[TradeOption], float]) -
 
 
 def _worth_offering(idea: TradeIdea) -> bool:
-    """It raises your playoff chance, or it makes your playoff lineup better without costing you that chance."""
+    """It raises your playoff chance, or your points over the rest of the season without costing you that
+    chance — and never a trade that loses you points both before the playoffs and in them."""
+    if idea.points < 0 and idea.playoff_points is not None and idea.playoff_points < 0:
+        return False
     if idea.playoffs_change >= MIN_TRADE_CHANGE:
         return True
-    return (idea.playoff_points or 0.0) >= MIN_PLAYOFF_GAIN and idea.playoffs_change > -MIN_TRADE_CHANGE
+    return idea.total >= MIN_TOTAL_GAIN and idea.playoffs_change > -MIN_TRADE_CHANGE
 
 
-def _priced(season: SeasonInput, before: PlayoffOdds, option: TradeOption, names: dict[str, str]) -> TradeIdea:
+def _priced(market: TradeMarket, before: PlayoffOdds, option: TradeOption, names: dict[str, str]) -> TradeIdea:
+    season = market.season
     after = simulate_season(replace(season, scoring=_with_rows(season.scoring, option.scoring)))
 
     def chance(odds: PlayoffOdds) -> float:
@@ -267,6 +283,7 @@ def _priced(season: SeasonInput, before: PlayoffOdds, option: TradeOption, names
         points=option.points,
         their_points=option.their_points,
         playoff_points=option.playoff_points,
+        total=_total(market, option.points, option.playoff_points, after.playoffs),
         their_playoffs=chance(before),
         pickup=option.pickup,
         form=list(option.form),

@@ -910,7 +910,7 @@ class _SeasonProvider(_SummaryProvider):
         season = SeasonInput(teams=teams, fixtures=(Fixture(8, "1", "2"),), scoring=even, spots=1, mine="1", week=7)
         rows = (TeamWeek("1", 8, 120.0, 20.0), TeamWeek("2", 8, 100.0, 20.0))
         option = TradeOption("2", ("A (QB)",), ("B (WR)",), points=20.0, their_points=1.0, scoring=rows)
-        return TradeMarket(season=season, options=(option,))
+        return TradeMarket(season=season, options=(option,), regular_weeks=1, playoff_weeks=0)
 
     def schedule(self, league_id: str) -> LeagueSchedule:
         from thefrontoffice.domain.models import LeagueSchedule, StandingRow

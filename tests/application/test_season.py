@@ -178,15 +178,16 @@ def _trade(
 
 
 class _Market:
-    def __init__(self, *options: TradeOption, season: SeasonInput = RACE) -> None:
+    def __init__(self, *options: TradeOption, season: SeasonInput = RACE, regular_weeks: int = 3) -> None:
         self.options = options
         self.season = season
+        self.regular_weeks = regular_weeks
 
     def season_input(self, league_id: str) -> SeasonInput | None:
         return self.season
 
     def trade_market(self, league_id: str) -> TradeMarket | None:
-        return TradeMarket(season=self.season, options=self.options)
+        return TradeMarket(season=self.season, options=self.options, regular_weeks=self.regular_weeks, playoff_weeks=3)
 
 
 def test_a_trade_that_makes_you_stronger_raises_your_playoff_chance() -> None:
@@ -249,18 +250,49 @@ SAFE_SEASON = _season(
 )
 
 
-def test_a_team_already_safe_is_offered_what_helps_its_playoff_lineup() -> None:
-    """The table cannot move for it, so the regular season's points say nothing about December."""
-    now = _trade("b", mine=110, theirs=101, name="for now", season=SAFE_SEASON, playoff=1.0, get="now")
-    later = _trade("c", mine=102, theirs=101, name="for December", season=SAFE_SEASON, playoff=6.0, get="later")
+def test_a_safe_team_is_offered_the_most_points_over_the_rest_of_the_season() -> None:
+    """Regular-season weeks still count once the place is safe: the seed and a bye ride on them.
 
-    ideas = MarketEngine(_Market(now, later, season=SAFE_SEASON)).trades("L1").ideas
+    A trade worth +7 in each of three regular weeks and -0.25 in each of three
+    playoff weeks beats one worth -2 now and +4 in December.
+    """
+    now = _trade("b", mine=107, theirs=101, name="for now", season=SAFE_SEASON, playoff=-0.25, get="now")
+    later = _trade("c", mine=98, theirs=101, name="for December", season=SAFE_SEASON, playoff=4.0, get="later")
 
     trades = MarketEngine(_Market(now, later, season=SAFE_SEASON)).trades("L1")
-    assert [i.giving for i in trades.ideas] == [["for December"], ["for now"]]
-    assert ideas[0].playoff_points == 6.0
+
+    assert [i.giving for i in trades.ideas] == [["for now"], ["for December"]]
+    assert [round(i.total, 1) for i in trades.ideas] == [20.2, 6.0]
     # The list says which figure it is ordered by, so the page can mark that column.
-    assert trades.ranked_by == "playoff_points"
+    assert trades.ranked_by == "total"
+
+
+def test_a_playoff_week_counts_at_the_chance_of_playing_in_it() -> None:
+    # Safe, at about 85%, but with a place still to lose.
+    season = _season(
+        [_team("a", 7), _team("b", 5), _team("c", 2)],
+        [
+            Fixture(10, "a", "b"),
+            Fixture(11, "a", "c"),
+            Fixture(11, "b", "c"),
+            Fixture(12, "b", "c"),
+            Fixture(12, "a", "c"),
+        ],
+        {"a": 100, "b": 100, "c": 100},
+    )
+    option = _trade("c", mine=101, theirs=101, season=season, playoff=10.0)
+
+    [idea] = MarketEngine(_Market(option, season=season, regular_weeks=2)).trades("L1").ideas
+
+    assert 0.8 < idea.playoffs < 1
+    assert idea.total == 1 * 2 + idea.playoffs * 10.0 * 3
+
+
+def test_a_trade_that_loses_points_before_the_playoffs_and_in_them_is_not_offered() -> None:
+    """Even where weakening a rival raises your playoff chance."""
+    option = replace(_trade("b", mine=99, theirs=70, playoff=-1.0), their_points=1.0)
+
+    assert MarketEngine(_Market(option)).trades("L1").ideas == []
 
 
 def test_a_safe_team_without_playoff_projections_is_ranked_on_the_regular_season() -> None:
@@ -279,12 +311,12 @@ def test_a_safe_team_without_playoff_projections_is_ranked_on_the_regular_season
 
     trades = MarketEngine(_Market(_trade("c", mine=115, theirs=101, season=season), season=season)).trades("L1")
 
-    assert trades.ideas and trades.ranked_by == "points"
+    assert trades.ideas and trades.ranked_by == "total"
 
 
 def test_a_team_on_the_bubble_is_offered_its_playoff_chance_before_its_december() -> None:
     """A better December lineup is no use to a team that does not get there."""
-    december = _trade("b", mine=100, theirs=101, name="for December", playoff=6.0, get="later")
+    december = _trade("b", mine=100, theirs=101, name="for December", playoff=20.0, get="later")
     now = _trade("c", mine=110, theirs=101, name="for now", playoff=1.0, get="now")
 
     trades = MarketEngine(_Market(december, now)).trades("L1")

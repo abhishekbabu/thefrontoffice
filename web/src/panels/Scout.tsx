@@ -295,11 +295,10 @@ export function BestTrade({ competition, league }: { competition: Competition; l
   );
 }
 
-/** What a trade gains you on the figure the list is ranked by, in words: '+2.1 playoff /wk', 'playoff odds +4.0 pts'. */
+/** What a trade gains you on the figure the list is ranked by, in words: '+21.4 pts rest of season', 'playoff odds +4.0 pts'. */
 export function gain(idea: TradeIdea, ranked: Trades["ranked_by"]): string {
   if (ranked === "playoffs_change") return `playoff odds ${percentPoints(idea.playoffs_change)}`;
-  if (ranked === "playoff_points" && idea.playoff_points != null) return `${signed(idea.playoff_points)} playoff /wk`;
-  return `${signed(idea.points)} /wk`;
+  return `${signed(idea.total)} pts rest of season`;
 }
 
 /**

@@ -18,6 +18,7 @@ describe("the best trade under the deadline item", () => {
     points: 1,
     their_points: 1,
     playoff_points: 3.2,
+    total: 12.4,
     their_playoffs: 0.4,
     pickup: "",
     form: [],
@@ -30,13 +31,13 @@ describe("the best trade under the deadline item", () => {
   }
 
   it("names the Trades page's first offer, who to make it to and what it gains, with a way there", async () => {
-    const container = await shown({ ideas: [idea, { ...idea, team: "Other" }], ranked_by: "playoff_points", pickup: "" });
+    const container = await shown({ ideas: [idea, { ...idea, team: "Other" }], ranked_by: "total", pickup: "" });
 
     expect(container.textContent).toContain("Puka Nacua");
     expect(container.textContent).toContain("Bijan Robinson");
     expect(container.textContent).toContain("Rival");
     expect(container.textContent).not.toContain("Other");
-    expect(container.textContent).toContain("+3.2");
+    expect(container.textContent).toContain("+12.4");
     expect(container.querySelector("a")?.getAttribute("href")).toContain("trades");
   });
 
@@ -48,10 +49,7 @@ describe("the best trade under the deadline item", () => {
 
   it("gains on the figure the Trades page orders by", () => {
     expect(gain(idea, "playoffs_change")).toContain("+2.0");
-    expect(gain(idea, "playoff_points")).toContain("+3.2");
-    expect(gain(idea, "points")).toContain("+1.0");
-    // Unprojected playoff weeks fall back to the regular season's.
-    expect(gain({ ...idea, playoff_points: null }, "playoff_points")).toContain("+1.0");
+    expect(gain(idea, "total")).toContain("+12.4");
   });
 });
 

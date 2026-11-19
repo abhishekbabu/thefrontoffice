@@ -46,10 +46,11 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   see the projected lineups. FPL gameweeks and NBA category weeks work the same way.
 - **Trades**: near-even offers that start for you, one a row: give, get, the
   partner and why he might accept, and what each does to your regular season,
-  your playoff weeks and your playoff odds. Ranked by the odds, or once those
-  are 80%+ by the playoff weeks (so a trade can cost the regular season for
-  December); the ranked column is marked. Pricing notes are on hover; a pickup
-  most trades share is said once.
+  your playoff weeks, your total and your playoff odds. Ranked by the odds, or
+  once those are 80%+ by the total: points over every regular-season week left
+  plus each playoff week weighed by the odds. None that lose points both before
+  and in the playoffs; the ranked column is marked. Pricing notes are on hover;
+  a pickup most trades share is said once.
 - **Free agents**: best fit first (points over the weakest starter he would
   replace, who on hover), so a 1QB league's list does not open on quarterbacks;
   the Win column shows only where a pickup moves this week's odds by half a

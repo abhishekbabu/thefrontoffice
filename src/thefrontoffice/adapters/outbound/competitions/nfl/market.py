@@ -11,7 +11,7 @@ judgment there.
 What a trade is worth to you is in two parts: the regular season left, which
 the season engine plays out for your playoff chance, and the playoff weeks
 themselves, which no simulation of the table reaches. A team already safe
-trades for those.
+trades for both, summed over the weeks left (`MarketEngine`).
 
 What you get must start for you, in most of those weeks: a lineup's worth
 counts a backup's cover for a starter's missed weeks, and that cover alone
@@ -87,7 +87,12 @@ def build(client: NFLSource, state: Week, seed: int, scoreboard: Scoreboard | No
         if theirs.roster_id != mine.roster_id:
             options += _with(model, state, weeks, worth, pickup, found, mine, theirs)
     logger.info(f"Found {len(options)} trades near even in worth that help your lineup")
-    return TradeMarket(season=model.season, options=tuple(options))
+    return TradeMarket(
+        season=model.season,
+        options=tuple(options),
+        regular_weeks=len(weeks.regular),
+        playoff_weeks=len(weeks.playoffs),
+    )
 
 
 def _with_playoffs(

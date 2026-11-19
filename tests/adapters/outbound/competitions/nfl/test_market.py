@@ -202,11 +202,20 @@ def test_the_playoff_weeks_never_enter_the_season_simulated_for_the_table() -> N
     assert {row.week for row in option.scoring} == {8, 9}
 
 
+def test_the_market_counts_the_weeks_a_trade_changes_on_each_side_of_the_playoffs() -> None:
+    """Weeks 8 and 9 before the playoffs; two rounds of four teams, weeks 10 and 11."""
+    market = _market(_client(playoff_teams=4))
+
+    assert (market.regular_weeks, market.playoff_weeks) == (2, 2)
+
+
 def test_playoff_weeks_nobody_has_projected_yet_leave_the_playoff_figure_out() -> None:
     client = _client(playoff_teams=4)
     client.weekly_projections = {10: {}, 11: {}}
 
-    assert all(o.playoff_points is None for o in _market(client).options)
+    market = _market(client)
+    assert all(o.playoff_points is None for o in market.options)
+    assert market.playoff_weeks == 0
 
 
 def test_a_league_whose_playoffs_are_one_round_still_prices_them() -> None:
