@@ -8,7 +8,7 @@ import { offlineClient, render, settle } from "@/test/render";
 import { playerDetail } from "@/test/players";
 
 const competition = { key: "nfl-sleeper", finds_trades: true } as Competition;
-const league = { league_id: "L1", name: "Sunday Money", detail: "", url: "" } as League;
+const league: League = { league_id: "L1", name: "Sunday Money", detail: "", url: "" };
 
 const schedule: LeagueSchedule = {
   headline: [],

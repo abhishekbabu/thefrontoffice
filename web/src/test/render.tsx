@@ -79,3 +79,16 @@ export async function press(target: Element, key: string, init: KeyboardEventIni
 export async function settle(ms = 50): Promise<void> {
   await act(async () => new Promise((resolve) => setTimeout(resolve, ms)));
 }
+
+/**
+ * Type `value` into `input` as a person would. React hears a change only
+ * through the input's own value setter followed by an input event; setting
+ * `.value` directly is swallowed by its tracker.
+ */
+export async function typeInto(input: HTMLInputElement, value: string): Promise<void> {
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+  await act(async () => {
+    descriptor?.set?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}

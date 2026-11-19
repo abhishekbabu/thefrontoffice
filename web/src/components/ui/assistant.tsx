@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
+import { useKept } from "@/lib/useKept";
 import { Eye, Minus, RotateCcw, Sparkles } from "lucide-react";
 import { m } from "motion/react";
 import type { Competition, League } from "@/lib/api";
@@ -24,9 +25,11 @@ import { cn } from "@/lib/utils";
  * unmounted, so opening it again finds the conversation where it was.
  */
 export function Assistant({ route, competition, league }: { route: Route; competition?: Competition; league?: League }) {
-  const last = useRef<{ competition: Competition; league: League } | null>(null);
-  if (competition && league) last.current = { competition, league };
-  const target = last.current;
+  // Each kept on its own, as they arrive: one object made of the two would be
+  // new on every render, and so a change on every render.
+  const keptCompetition = useKept(competition && league ? competition : null);
+  const keptLeague = useKept(competition && league ? league : null);
+  const target = keptCompetition && keptLeague ? { competition: keptCompetition, league: keptLeague } : null;
 
   const [open, setOpen] = useAssistantOpen();
   const [generation, setGeneration] = useState(0);

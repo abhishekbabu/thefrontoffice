@@ -124,6 +124,6 @@ jobs:
           # no-commit-to-branch is a local guardrail against committing straight
           # to main; by the time CI runs, the commit exists and the check would
           # fail every push to main. The rest each have a job of their own —
-          # eslint runs in `web`, which is the one with pnpm on it.
-          SKIP: no-commit-to-branch,ruff,ruff-format,pyrefly,pytest,eslint
+          # oxlint runs in `web`, which is the one with pnpm on it.
+          SKIP: no-commit-to-branch,ruff,ruff-format,pyrefly,pytest,oxlint
         run: uv run pre-commit run --all-files --show-diff-on-failure

@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { CaptureStatus, Competition, League, PlayerComparison, PlayerDetail, PlayerRef } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { ComparePanel } from "@/panels/Compare";
-import { offlineClient, render, settle } from "@/test/render";
+import { offlineClient, render, settle, typeInto } from "@/test/render";
 import { playerDetail } from "@/test/players";
 
 const competition = { key: "nfl-sleeper", searches_players: false } as Competition;
-const league = { league_id: "C1", name: "Sunday Money", detail: "", url: "" } as League;
+const league: League = { league_id: "C1", name: "Sunday Money", detail: "", url: "" };
 
 const header = (id: string, name: string, owner = ""): PlayerDetail =>
   playerDetail({ player_id: id, name, owner, headline: "18.2" });
@@ -69,12 +69,7 @@ describe("Compare", () => {
     const { container } = await render(<ComparePanel competition={nba} league={{ ...league, league_id: "N1" }} />, client);
     expect(container.textContent).not.toContain("Synced players only");
 
-    const input = container.querySelector("input")!;
-    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-    await act(async () => {
-      setValue.call(input, "cam");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    await typeInto(container.querySelector("input")!, "cam");
     await settle();
 
     expect(container.textContent).toContain("Cam Johnson");

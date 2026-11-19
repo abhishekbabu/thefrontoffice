@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Action, MovePlayer, TaskVerdict } from "@/lib/api";
 import { ActionList, Compared, opener, staleVerdicts } from "@/components/ui/actions";
+import type { Comparing } from "@/components/ui/compare";
 import { render, settle } from "@/test/render";
 
 function action(key: string, verdict: TaskVerdict | null = null, stale = false): Action {
@@ -177,8 +178,8 @@ describe("what an item opens", () => {
   const williams = player("out", "Antonio Williams", "bench", ["40%", "8.20", "vs KC"]);
 
   it("opens the players a move weighs side by side, each said to be coming in or going out", () => {
-    const onOpen = vi.fn();
-    const onCompare = vi.fn();
+    const onOpen = vi.fn<(id: string) => void>();
+    const onCompare = vi.fn<(comparing: Comparing) => void>();
     const swap: Action = { ...action("dike"), player_id: dike.player_id, players: [dike, williams] };
 
     opener(swap, onOpen, onCompare)!();
@@ -192,17 +193,17 @@ describe("what an item opens", () => {
   });
 
   it("opens the one player an item is about, and nothing where it is about nobody", () => {
-    const onOpen = vi.fn();
+    const onOpen = vi.fn<(id: string) => void>();
     const single: Action = { ...action("lions"), player_id: "DET", players: [] };
 
-    opener(single, onOpen, vi.fn())!();
+    opener(single, onOpen, vi.fn<(comparing: Comparing) => void>())!();
 
     expect(onOpen).toHaveBeenCalledWith("DET");
-    expect(opener(action("trade"), onOpen, vi.fn())).toBeUndefined();
+    expect(opener(action("trade"), onOpen, vi.fn<(comparing: Comparing) => void>())).toBeUndefined();
   });
 
   it("falls back to the one player where the page cannot compare", () => {
-    const onOpen = vi.fn();
+    const onOpen = vi.fn<(id: string) => void>();
     const swap: Action = { ...action("dike"), player_id: dike.player_id, players: [dike, williams] };
 
     opener(swap, onOpen)!();

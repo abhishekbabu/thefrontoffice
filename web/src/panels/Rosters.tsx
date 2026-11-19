@@ -79,7 +79,7 @@ export function RostersPanel({ competition, league }: { competition: Competition
             <WeeksAhead
               competition={competition}
               league={league}
-              team={yours ? "" : selected!.team_id}
+              team={yours ? "" : selected.team_id}
               onOpen={openPlayer}
             />
           )}

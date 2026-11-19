@@ -6,7 +6,7 @@ import { RostersPanel } from "@/panels/Rosters";
 import { offlineClient, render, settle } from "@/test/render";
 
 const competition = { key: "nfl-sleeper", plans_weeks: false } as Competition;
-const league = { league_id: "R1", name: "Sunday Money", detail: "", url: "" } as League;
+const league: League = { league_id: "R1", name: "Sunday Money", detail: "", url: "" };
 
 const teams: TeamRef[] = [
   { team_id: "1", name: "Me", detail: "6-4", url: "", is_mine: true },

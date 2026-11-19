@@ -42,18 +42,19 @@ repos:
             pass_filenames: false
             files: (AGENTS\.md|CLAUDE\.md|\.agents/|scripts/check_agent_docs\.py)$
 
-          - id: eslint
-            name: eslint (front end)
+          - id: oxlint
+            name: oxlint (front end)
             language: system
-            # The whole tree rather than the staged files: it takes under two
-            # seconds, and the config lives in web/ so a path relative to the
+            # The whole tree rather than the staged files: it takes about two
+            # seconds with type-aware rules, which need the whole program
+            # anyway, and the config lives in web/ so a path relative to the
             # repo root would not resolve against it.
             # Through just, which runs it from inside web/: started from the
             # repo root, corepack ignores web/'s pnpm pin and a newer default
             # refuses to run there at all.
             entry: just lint-web
             pass_filenames: false
-            files: ^web/(src/.*\.tsx?|eslint\.config\.js|package\.json)$
+            files: ^web/(src/.*\.tsx?|lint/.*\.ts|\.oxlintrc\.json|tsconfig\.json|package\.json)$
 
           - id: pytest
             name: pytest (hermetic suite)

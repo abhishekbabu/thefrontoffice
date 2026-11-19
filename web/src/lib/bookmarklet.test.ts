@@ -14,7 +14,7 @@ function world(pages: Record<string, number | Error> = {}, profile = 200) {
   const calls: Call[] = [];
   const posted: { profile: unknown; responses: { path: string; status: number; body: string }[] }[] = [];
   const http = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
+    const url = input instanceof Request ? input.url : input.toString();
     calls.push({ url, init });
     if (url.startsWith(`${APP}/api/yahoo/capture/plan`)) {
       const leagues = new URL(url).searchParams.get("leagues")?.split(",").filter(Boolean) ?? [];
@@ -22,9 +22,9 @@ function world(pages: Record<string, number | Error> = {}, profile = 200) {
       return Response.json({ base: YAHOO, probe: "profile", steps });
     }
     if (url === `${APP}/api/yahoo/capture`) {
-      const body = JSON.parse(String(init?.body));
+      const body = JSON.parse(typeof init?.body === "string" ? init.body : "") as (typeof posted)[number];
       posted.push(body);
-      const leagues = [...new Set(body.responses.map((r: { path: string }) => r.path.split("/")[1]).filter(Boolean))];
+      const leagues = [...new Set(body.responses.map((r) => r.path.split("/")[1]).filter(Boolean))];
       return Response.json({ stored: body.responses.length, leagues, errors: [] });
     }
     const path = url.slice(YAHOO.length);
@@ -106,7 +106,10 @@ describe("bookmarklet", () => {
   it("carries a sync that runs from its source text alone, closing over nothing", async () => {
     const code = decodeURIComponent(bookmarklet(APP).slice("javascript:".length));
     const source = code.slice("void (".length, code.lastIndexOf(`)(${JSON.stringify(APP)})`));
-    const run = new Function(`return (${source});`)() as typeof sync;
+    // Evaluated from text on purpose: the bookmark runs as source on Yahoo's
+    // page, where nothing this module imports exists.
+    // oxlint-disable-next-line typescript/no-implied-eval
+    const run = (new Function(`return (${source});`) as () => typeof sync)();
 
     expect(await run(APP, world().http, document)).toBe("Synced 2 leagues");
   });

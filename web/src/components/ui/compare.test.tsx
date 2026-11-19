@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { keys } from "@/lib/queries";
-import { ComparisonDrawer, compareLabel, sides, traded } from "@/components/ui/compare";
+import { ComparisonDrawer, compareLabel, sides, traded, type Comparing } from "@/components/ui/compare";
 import type { TradeIdea } from "@/lib/api";
 import { offlineClient, render, settle } from "@/test/render";
 import { REED_WHITE } from "@/test/players";
@@ -8,7 +8,7 @@ import { REED_WHITE } from "@/test/players";
 const COMPETITION = "nba-yahoo";
 const LEAGUE = "L1";
 
-async function opened(onOpenPlayer = vi.fn()) {
+async function opened(onOpenPlayer = vi.fn<(id: string, label: string) => void>()) {
   const client = offlineClient();
   client.setQueryData(keys.compare(COMPETITION, LEAGUE, ["p.1", "p.2"]), REED_WHITE);
   await render(
@@ -41,7 +41,7 @@ describe("a comparison drawer", () => {
   });
 
   it("opens a player with a Back link that names the comparison", async () => {
-    const onOpenPlayer = vi.fn();
+    const onOpenPlayer = vi.fn<(id: string, label: string) => void>();
     const dialog = await opened(onOpenPlayer);
 
     [...dialog.querySelectorAll("button")].find((b) => b.textContent?.includes("Coby White"))!.click();
@@ -95,7 +95,7 @@ const idea = (over: Partial<TradeIdea>): TradeIdea => ({
 
 describe("what a trade opens", () => {
   it("both sides side by side, what you give first, each column saying which", () => {
-    const onCompare = vi.fn();
+    const onCompare = vi.fn<(comparing: Comparing) => void>();
 
     traded(idea({ giving_ids: ["a1", "a2"], receiving_ids: ["b"] }), onCompare)!();
 
@@ -107,6 +107,6 @@ describe("what a trade opens", () => {
   });
 
   it("nothing where the trade carries no players to open", () => {
-    expect(traded(idea({ giving_ids: [], receiving_ids: [] }), vi.fn())).toBeUndefined();
+    expect(traded(idea({ giving_ids: [], receiving_ids: [] }), vi.fn<(comparing: Comparing) => void>())).toBeUndefined();
   });
 });

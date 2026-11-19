@@ -1,39 +1,29 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { m, MotionGlobalConfig } from "motion/react";
 import { render, settle } from "@/test/render";
 
 /**
- * The system's "reduce motion" setting, as the page reads it. Motion reads it
- * once and then follows its change event, so the setting is flipped through
- * that event rather than by asking again.
+ * The system's "reduce motion" setting, flipped in the test DOM itself.
+ * Motion reads it once and then follows its change event, which happy-dom
+ * sends for a media query whose answer changes on the next resize.
  */
-let reduce = true;
-const listeners: (() => void)[] = [];
-
 function setReduce(next: boolean) {
-  reduce = next;
-  for (const listener of listeners) listener();
+  const { happyDOM } = window as unknown as { happyDOM: { settings: { device: { prefersReducedMotion: string } } } };
+  happyDOM.settings.device.prefersReducedMotion = next ? "reduce" : "no-preference";
+  window.dispatchEvent(new Event("resize"));
 }
 
 beforeAll(() => {
-  vi.spyOn(window, "matchMedia").mockImplementation(
-    (query: string) =>
-      ({
-        media: query,
-        get matches() {
-          return query.includes("reduced-motion") && reduce;
-        },
-        addEventListener: (_: string, listener: () => void) => listeners.push(listener),
-        removeEventListener: () => {},
-      }) as unknown as MediaQueryList,
-  );
+  // From no preference, so the switch to "reduce" is a change: happy-dom
+  // sends one only for an answer unlike the one it saw as Motion subscribed.
+  setReduce(false);
   // The suite skips every animation; these tests are about whether one runs.
   MotionGlobalConfig.skipAnimations = false;
 });
 
 afterAll(() => {
   MotionGlobalConfig.skipAnimations = true;
-  vi.restoreAllMocks();
+  setReduce(false);
 });
 
 /**
@@ -49,14 +39,13 @@ async function moving() {
 }
 
 describe("motion under the system's reduce-motion setting", () => {
-  it("puts movement at its end at once for a viewer who asked for less", async () => {
-    setReduce(true);
-    expect((await moving()).style.transform).toBe("none");
-  });
-
-  it("still moves for everyone else", async () => {
-    setReduce(false);
+  it("moves for a viewer who has not asked for less", async () => {
     expect((await moving()).style.transform).toMatch(/translateX\(\d/);
     await settle(400);
+  });
+
+  it("puts movement at its end at once once the viewer asks for less", async () => {
+    setReduce(true);
+    expect((await moving()).style.transform).toBe("none");
   });
 });

@@ -1,5 +1,7 @@
 import { act } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { http, HttpResponse } from "msw";
+import { server } from "@/test/server";
 import type { CaptureStatus, Setting, SettingsGroup } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { SettingsPanel } from "@/panels/Settings";
@@ -127,11 +129,10 @@ const GROUPS: SettingsGroup[] = [
 async function fixedValues() {
   const saved: Record<string, string>[] = [];
   const capture: CaptureStatus = { active: false, synced_at: null, leagues: [], session: null };
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (path: string, init?: RequestInit) => {
-      if (init?.method === "PUT") saved.push((JSON.parse(String(init.body)) as { values: Record<string, string> }).values);
-      return Response.json(path.endsWith("/capture") ? capture : GROUPS);
+  server.use(
+    http.all("*", async ({ request }) => {
+      if (request.method === "PUT") saved.push(((await request.json()) as { values: Record<string, string> }).values);
+      return HttpResponse.json(new URL(request.url).pathname.endsWith("/capture") ? capture : GROUPS);
     }),
   );
   const client = offlineClient();
@@ -149,10 +150,6 @@ async function fixedValues() {
   const status = () => container.querySelector("[role=status]")?.textContent;
   return { container, saved, chips, pressed, chip, click, save, discard, status };
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("Fixed-value settings", () => {
   it("offers each choice as a chip, with the stored one pressed", async () => {

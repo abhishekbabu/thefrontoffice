@@ -54,7 +54,7 @@ function Chat({
 
   useEffect(() => {
     if (isExpired(history.error)) onExpired();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per failed read, not per render.
+    // oxlint-disable-next-line react/exhaustive-deps -- once per failed read, not per render.
   }, [history.error]);
 
   // Once per question handed over, and only once the conversation has been
@@ -65,7 +65,7 @@ function Chat({
     handled.current = asked;
     onTaken();
     ask.mutate({ message: asked.message, about: unique([...onScreen, ...asked.about]) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- per question handed over, not per render.
+    // oxlint-disable-next-line react/exhaustive-deps -- per question handed over, not per render.
   }, [asked, history.isSuccess, ask.isPending]);
 
   const turns: Shown[] = [...(history.data ?? [])];
@@ -210,7 +210,7 @@ export function AssistantChat({
   function reopen(question?: Asked) {
     setUnasked(question ?? null);
     // Dropped and asked again: the kept id is the one the server no longer knows.
-    queryClient.resetQueries({ queryKey: threadKey });
+    void queryClient.resetQueries({ queryKey: threadKey });
   }
 
   if (thread.isError) return <ErrorNote error={thread.error} className="m-0" />;

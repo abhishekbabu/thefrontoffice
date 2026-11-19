@@ -54,7 +54,7 @@ export async function sync(app: string, http: typeof fetch = fetch, page: Docume
     } catch {
       throw new Error(`Can't reach the app at ${app}. Is it running, and was local network access allowed?`);
     }
-    const body = await response.json().catch(() => ({}));
+    const body = (await response.json().catch(() => ({}))) as { detail?: string };
     if (!response.ok) throw new Error(body.detail || `The app answered ${response.status}.`);
     return body as T;
   };
@@ -92,7 +92,7 @@ export async function sync(app: string, http: typeof fetch = fetch, page: Docume
             // League keys only, read off the account's lists: the plan says the rest.
             if (!step.league) (body.match(/\d+\.l\.\d+/g) ?? []).forEach((key) => leagues.add(key));
           } catch (e) {
-            errors.push(`${step.league || "account"} ${step.path}: ${e}`);
+            errors.push(`${step.league || "account"} ${step.path}: ${e instanceof Error ? e.message : String(e)}`);
           }
           say(`Fetched ${++done} of ${fetched.size}…`);
         }

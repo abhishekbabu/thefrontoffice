@@ -1,9 +1,11 @@
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { http, HttpResponse } from "msw";
+import { server as msw } from "@/test/server";
 import { QueryClient } from "@tanstack/react-query";
 import type { Subject, Turn } from "@/lib/api";
 import { AssistantChat, type Asked } from "@/components/ui/chat";
-import { render, settle } from "@/test/render";
+import { render, settle, typeInto } from "@/test/render";
 
 const ASKED: Turn[] = [
   { role: "you", text: "Why bench him?" },
@@ -18,22 +20,22 @@ const ASKED: Turn[] = [
  */
 function server(said: Turn[] = [], expired?: string) {
   const state = { opened: 0, turns: [...said], screens: [] as Subject[][] };
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (path: string, init?: RequestInit) => {
+  msw.use(
+    http.all("*", async ({ request }) => {
+      const path = new URL(request.url).pathname;
       if (path.endsWith("/assistant")) {
         state.opened += 1;
-        return Response.json({ chat_id: `chat-${state.opened}` });
+        return HttpResponse.json({ chat_id: `chat-${state.opened}` });
       }
-      if (expired && path.endsWith(`/${expired}`) && init?.method === "POST") {
-        return Response.json({ detail: "Gone.", code: "chat_expired", remedy: null }, { status: 404 });
+      if (expired && path.endsWith(`/${expired}`) && request.method === "POST") {
+        return HttpResponse.json({ detail: "Gone.", code: "chat_expired", remedy: null }, { status: 404 });
       }
-      if (init?.method === "POST") {
-        const { message, on_screen } = JSON.parse(String(init.body)) as { message: string; on_screen: Subject[] };
+      if (request.method === "POST") {
+        const { message, on_screen } = (await request.json()) as { message: string; on_screen: Subject[] };
         state.screens.push(on_screen);
         state.turns.push({ role: "you", text: message }, { role: "model", text: `About: ${message}` });
       }
-      return Response.json(state.turns);
+      return HttpResponse.json(state.turns);
     }),
   );
   return state;
@@ -69,12 +71,7 @@ function questions(container: HTMLElement): (string | null)[] {
 }
 
 async function ask(container: HTMLElement, question: string) {
-  const input = container.querySelector("input")!;
-  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-  await act(async () => {
-    setValue.call(input, question);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await typeInto(container.querySelector("input")!, question);
   await act(async () => {
     container.querySelector("form")!.requestSubmit();
   });
@@ -90,7 +87,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  vi.unstubAllGlobals();
 });
 
 describe("the assistant's conversation", () => {
@@ -157,7 +153,7 @@ describe("the assistant's conversation", () => {
 
   it("sends a question handed over with what it is about beside the page, once", async () => {
     const state = server();
-    const taken = vi.fn();
+    const taken = vi.fn<() => void>();
     await render(assistant({ message: "Why?", about: [ITEM, WEEK] }, taken), client());
     await settle();
 
