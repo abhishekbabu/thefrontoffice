@@ -11,7 +11,7 @@ import pytest
 import requests
 from support.http import NO_WAIT, FakeResponse, FakeSession
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError, SleeperUnavailableError
 
@@ -24,7 +24,7 @@ def _client(
     routes: dict[str, Any], tmp_path: Path, error: Exception | None = None
 ) -> tuple[SleeperClient, FakeSession]:
     session = FakeSession(routes, error)
-    return SleeperClient(cache=JsonDiskCache(tmp_path / "cache"), retry=NO_WAIT, session=session), session
+    return SleeperClient(cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, session=session), session
 
 
 # ── retry policy ────────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ def test_a_transient_failure_then_success_is_retried(tmp_path: Path) -> None:
                 raise requests.exceptions.Timeout()
             return FakeResponse(STATE)
 
-    client = SleeperClient(cache=JsonDiskCache(tmp_path / "cache"), retry=NO_WAIT, session=Flaky({}))
+    client = SleeperClient(cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, session=Flaky({}))
     assert client.get_nfl_state().week == 5
 
 

@@ -22,7 +22,7 @@ from typing import Any
 
 import requests
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy, outage
 from thefrontoffice.domain.errors import FrontOfficeError, PlatformUnavailableError
 
@@ -55,7 +55,7 @@ class Batch[K, V]:
         )
 
 
-def fetch_many(cache: JsonDiskCache, fetches: Mapping[str, Callable[[], Any]], ttl: timedelta) -> Batch[str, Any]:
+def fetch_many(cache: DiskCache, fetches: Mapping[str, Callable[[], Any]], ttl: timedelta) -> Batch[str, Any]:
     """Each key's cached value, fetching only the misses and those in parallel.
 
     A season of weekly matchups is eighteen independent requests, and run one
@@ -99,7 +99,7 @@ class JsonApiClient:
         self,
         *,
         name: str,
-        cache: JsonDiskCache,
+        cache: DiskCache,
         retry: RetryPolicy,
         error: type[FrontOfficeError],
         unavailable: type[PlatformUnavailableError],

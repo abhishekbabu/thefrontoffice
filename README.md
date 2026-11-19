@@ -304,7 +304,12 @@ Settings come from the environment or `.env`, and each is validated at startup.
 | `LOG_LEVEL` | `INFO` | |
 
 `*_CACHE_DIR`, `ANSWER_CACHE_DIR` and `ITEM_STATE_DIR` move what the app keeps
-on disk.
+on disk. Each directory holds one SQLite database, `cache.sqlite3` (WAL, values as
+compressed JSON). A directory still holding the JSON files of the cache before it
+is adopted, not discarded: each file moves into the database, keeping its age, the
+first time its key is read, so kept answers and dismissed items survive the
+upgrade. A file whose key is never read again stays where it is; `just clean-data`
+removes the platform caches whole.
 
 ## How it works
 

@@ -16,7 +16,7 @@ from typing import Any, Protocol
 
 from yahoofantasy.api.parse import as_list, parse_response
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.http import fetch_many
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy, outage
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
@@ -125,7 +125,7 @@ class LiveResponses:
     cached until the file was deleted.
     """
 
-    def __init__(self, context: YahooContext, *, cache: JsonDiskCache, retry: RetryPolicy) -> None:
+    def __init__(self, context: YahooContext, *, cache: DiskCache, retry: RetryPolicy) -> None:
         self._context = context
         self._cache = cache
         self._retry = retry

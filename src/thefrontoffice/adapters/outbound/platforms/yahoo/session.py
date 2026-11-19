@@ -22,7 +22,7 @@ from typing import Protocol
 
 import requests
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.http import DEFAULT_TIMEOUT_SECONDS
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
@@ -86,7 +86,7 @@ class SessionState:
     request only notes how it went here and `record` writes it down afterwards.
     """
 
-    def __init__(self, cache: JsonDiskCache, cookie: str) -> None:
+    def __init__(self, cache: DiskCache, cookie: str) -> None:
         self._cache = cache
         self._digest = _digest(cookie)
         self._answered = False
@@ -159,7 +159,7 @@ class YahooSession:
 class SessionResponses:
     """Yahoo's answers fetched with the session, kept in the same cache under the same keys as a capture."""
 
-    def __init__(self, session: YahooSession, *, state: SessionState, cache: JsonDiskCache, retry: RetryPolicy) -> None:
+    def __init__(self, session: YahooSession, *, state: SessionState, cache: DiskCache, retry: RetryPolicy) -> None:
         self._session = session
         self._state = state
         self._cache = cache

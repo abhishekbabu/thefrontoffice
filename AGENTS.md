@@ -53,9 +53,9 @@ outgrows one file splits the same way each time — `week.py` (state), `views.py
 `platforms/yahoo/`, which reads it into its own `types.py`. There is no `type: ignore` anywhere —
 fix the type, the fake or the port instead, and disable no check globally.
 
-**Yahoo.** Responses go through our own `JsonDiskCache`, keyed by Yahoo path (`yahoo/paths.py`), not the
+**Yahoo.** Responses go through our own `DiskCache`, keyed by Yahoo path (`yahoo/paths.py`), not the
 SDK's store: `make_request` is the only fetch that parallelises safely and the vendor's `_load` takes no expiry.
-The scoreboard alone serves its stored copy when a refresh fails. Cache writes stay on one thread. The SDK raises
+The scoreboard alone serves its stored copy when a refresh fails. The SDK raises
 requests' own exceptions, which escape as a 500 unless passed through `yahoo.client.call` (retry, then `translate`).
 `YahooAuth` logs in and finds leagues — never implicitly: non-interactive callers use `ensure_authorized`.
 `YAHOO_SOURCE=browser` reads what the sync bookmark captured (`yahoo/capture.py`), which plans from `paths.py`:
@@ -121,8 +121,8 @@ and platforms differ only where they genuinely differ; everything else is
 shared. When you find yourself writing something a second time, extract it then
 — not on the third. Existing seams:
 
-- `adapters/outbound/cache.py` — the disk cache platforms and `storage/` share: a directory,
-  one atomically-replaced file per key, read with a TTL; a stored null is a hit, not a miss.
+- `adapters/outbound/cache.py` — the disk cache platforms and `storage/` share: a directory holding one
+  SQLite database (WAL, a row per key, upserted), read with a TTL; a stored null is a hit, not a miss.
 - `adapters/outbound/platforms/` — infrastructure every platform needs: `http.py` (cached,
   retried JSON GETs; `fetch_many`, the parallel cached fetch), `retry.py` (`RetryPolicy`, and what
   counts as transient or an outage). Clients take `cache=` and `retry=` from `bootstrap`; tests pass `NO_WAIT`.

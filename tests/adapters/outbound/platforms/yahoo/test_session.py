@@ -9,11 +9,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from support.cache import stored_text
 from support.http import NO_WAIT
 from support.logs import capture_logs
 from support.yahoo import FakeFrontend, league_xml, leagues_xml, scoreboard_xml, team_xml, teams_xml
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
 from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooCapture
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
@@ -40,8 +41,8 @@ PROFILE = "<fantasy_content><users><user><guid>X</guid></user></users></fantasy_
 
 def _reader(
     tmp_path: Path, frontend: FakeFrontend, cookie: str = COOKIE
-) -> tuple[SessionResponses, SessionState, JsonDiskCache]:
-    cache = JsonDiskCache(tmp_path / "cache")
+) -> tuple[SessionResponses, SessionState, DiskCache]:
+    cache = DiskCache(tmp_path / "cache")
     state = SessionState(cache, cookie)
     session = YahooSession(cookie, state=state, http=frontend)
     return SessionResponses(session, state=state, cache=cache, retry=NO_WAIT), state, cache
@@ -216,5 +217,4 @@ def test_the_cookie_appears_in_no_log_line_or_error(tmp_path: Path, status: int)
     for secret in ("secret-session-value", "tokenvalue"):
         assert secret not in logs.text
         assert secret not in str(raised.value)
-    stored = "".join(path.read_text() for path in (tmp_path / "cache").glob("*.json"))
-    assert "secret-session-value" not in stored
+    assert "secret-session-value" not in stored_text(tmp_path / "cache")

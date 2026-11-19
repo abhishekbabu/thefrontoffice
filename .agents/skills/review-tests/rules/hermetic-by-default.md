@@ -11,7 +11,7 @@ Two things hold the line, and both belong in a review:
 cannot exist and every platform cache directory under `tmp_path`, so a run
 neither reads a cache this machine happened to warm nor leaves one behind. A
 test that constructs its own client must take the same care — pass a
-`JsonDiskCache(tmp_path / "cache")`, never the default path.
+`DiskCache(tmp_path / "cache")`, never the default path.
 
 **The `integration` marker.** Declared in `pyproject.toml` and deselected by
 `addopts = "-m 'not integration'"`. Anything touching a live API — Yahoo,
@@ -30,7 +30,7 @@ def test_the_catalog_parses() -> None:
 
 ```python
 def test_the_catalog_parses(tmp_path: Path) -> None:
-    client = SleeperClient(cache=JsonDiskCache(tmp_path / "cache"), session=FakeSession(...))
+    client = SleeperClient(cache=DiskCache(tmp_path / "cache"), session=FakeSession(...))
 
 
 @pytest.mark.integration

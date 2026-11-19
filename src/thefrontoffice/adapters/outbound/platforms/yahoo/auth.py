@@ -9,7 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, YahooContext, call, leagues_in
@@ -42,7 +42,7 @@ class YahooAuth:
         redirect_uri: str,
         authorize: Authorize,
         connect: Callable[[], YahooContext],
-        cache: JsonDiskCache,
+        cache: DiskCache,
         retry: RetryPolicy,
     ) -> None:
         """

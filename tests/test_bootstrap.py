@@ -12,7 +12,7 @@ from support.settings import NOWHERE, isolated_settings
 from support.wiring import FakeCompetition, entry
 
 from thefrontoffice import bootstrap
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
 from thefrontoffice.bootstrap import Registry
 from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionError, UnsupportedError
@@ -258,7 +258,7 @@ class _OneItem(FakeCompetition):
 def test_a_dismissal_kept_under_the_competitions_old_label_still_hides_its_item(tmp_path: Path) -> None:
     """Decisions are keyed by entry now; one made before that is not lost."""
     settings = isolated_settings(tmp_path)
-    old = DiskItemStateStore(JsonDiskCache(Path(settings.item_state_dir)))
+    old = DiskItemStateStore(DiskCache(Path(settings.item_state_dir)))
     old.save("items:NFL (Sleeper):L1", {SWAP.key: ItemState(key=SWAP.key, dismissed_as=SWAP.fingerprint)})
 
     wiring = bootstrap.wiring(settings)
@@ -332,7 +332,7 @@ def test_read_with_the_session_yahoo_is_not_ready_once_yahoo_refused_that_cookie
     settings = isolated_settings(tmp_path, yahoo_source="session", yahoo_session_cookie=COOKIE)
     nba = bootstrap.registry(settings).find("nba")
     nba.check_ready()
-    state = SessionState(JsonDiskCache(Path(settings.yahoo_cache_dir)), COOKIE)
+    state = SessionState(DiskCache(Path(settings.yahoo_cache_dir)), COOKIE)
     state.refused()
     state.record()
 
@@ -350,7 +350,7 @@ def test_read_with_the_session_the_nba_provider_reads_what_is_kept_under_yahoos_
     settings = isolated_settings(tmp_path, yahoo_source="session", yahoo_session_cookie=COOKIE)
     registry = bootstrap.registry(settings)
     [step] = registry.captures()["yahoo"]().plan([]).steps
-    JsonDiskCache(Path(settings.yahoo_cache_dir)).set(step.path, leagues_xml(league_xml("466.l.9", "Kept")))
+    DiskCache(Path(settings.yahoo_cache_dir)).set(step.path, leagues_xml(league_xml("466.l.9", "Kept")))
 
     leagues = registry.find("nba").open().list_leagues()
 

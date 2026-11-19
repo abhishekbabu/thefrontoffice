@@ -9,7 +9,7 @@ back a dismissal someone still meant.
 
 from datetime import timedelta
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.storage import scopes
 from thefrontoffice.domain.models import ItemState
 from thefrontoffice.domain.ports import ItemStateStore
@@ -18,7 +18,7 @@ KEEP_FOR = timedelta(days=180)
 
 
 class DiskItemStateStore(ItemStateStore):
-    def __init__(self, cache: JsonDiskCache) -> None:
+    def __init__(self, cache: DiskCache) -> None:
         self._cache = cache
 
     def states(self, scope: str) -> dict[str, ItemState]:

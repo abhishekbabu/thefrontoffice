@@ -49,7 +49,7 @@ from thefrontoffice.domain.ports import (
 )
 
 if TYPE_CHECKING:
-    from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+    from thefrontoffice.adapters.outbound.cache import DiskCache
     from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
     from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
     from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
@@ -252,10 +252,10 @@ def _present(value: object) -> bool:
 # the next one.
 
 
-def _disk_cache(directory: str) -> JsonDiskCache:
-    from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+def _disk_cache(directory: str) -> DiskCache:
+    from thefrontoffice.adapters.outbound.cache import DiskCache
 
-    return JsonDiskCache(Path(directory))
+    return DiskCache(Path(directory))
 
 
 def _retry() -> RetryPolicy:
@@ -282,7 +282,7 @@ def _fpl_client(settings: AppSettings) -> FPLClient:
     return FPLClient(cache=_disk_cache(settings.fpl_cache_dir), retry=_retry())
 
 
-def _yahoo_auth(settings: AppSettings, cache: JsonDiskCache) -> YahooAuth:
+def _yahoo_auth(settings: AppSettings, cache: DiskCache) -> YahooAuth:
     from yahoofantasy import Context
 
     from thefrontoffice.adapters.outbound.platforms.yahoo import oauth
@@ -305,7 +305,7 @@ def yahoo_auth(settings: AppSettings = process_settings) -> YahooAuth:
     return _yahoo_auth(settings, _disk_cache(settings.yahoo_cache_dir))
 
 
-def _yahoo_session(settings: AppSettings, cache: JsonDiskCache) -> SessionState | None:
+def _yahoo_session(settings: AppSettings, cache: DiskCache) -> SessionState | None:
     """How reading with the session cookie is going, where Yahoo is read that way and a cookie is set."""
     from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
 

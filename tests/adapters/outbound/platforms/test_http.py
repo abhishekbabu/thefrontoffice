@@ -9,7 +9,7 @@ import pytest
 import requests
 from support.http import FakeResponse
 
-from thefrontoffice.adapters.outbound.cache import JsonDiskCache
+from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError, FPLUnavailableError
 from thefrontoffice.adapters.outbound.platforms.http import Batch, JsonApiClient, fetch_many
 from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
@@ -50,11 +50,11 @@ class Session(Protocol):
 
 
 def _client(
-    tmp_path: Path, session: Session, error: type = SleeperAPIError, cache: JsonDiskCache | None = None
+    tmp_path: Path, session: Session, error: type = SleeperAPIError, cache: DiskCache | None = None
 ) -> JsonApiClient:
     return JsonApiClient(
         name="Test",
-        cache=cache or JsonDiskCache(tmp_path / "cache"),
+        cache=cache or DiskCache(tmp_path / "cache"),
         retry=RetryPolicy(attempts=2, min_wait=0, max_wait=0),
         error=error,
         unavailable=UNAVAILABLE[error],
@@ -132,7 +132,7 @@ def test_an_expired_entry_is_refetched(tmp_path: Path) -> None:
     about 15ms — so a write and the read after it land on the same instant and
     the entry is served rather than refetched.
     """
-    cache = JsonDiskCache(tmp_path / "cache")
+    cache = DiskCache(tmp_path / "cache")
     cache.set("k", {"n": 1}, now=datetime.now(UTC) - timedelta(hours=2))
 
     session = FixedSession({"n": 2})
@@ -142,7 +142,7 @@ def test_an_expired_entry_is_refetched(tmp_path: Path) -> None:
 
 def test_a_caller_can_trim_what_is_stored(tmp_path: Path) -> None:
     """The catalog is trimmed on the way in, so a hit is the trimmed form, not the whole response."""
-    cache = JsonDiskCache(tmp_path / "cache")
+    cache = DiskCache(tmp_path / "cache")
     session = FixedSession({"kept": 1, "dropped": 2})
     client = _client(tmp_path, session, cache=cache)
 
@@ -219,7 +219,7 @@ def test_a_batch_fetches_concurrently(tmp_path: Path) -> None:
 
 
 def test_a_batch_only_fetches_what_it_does_not_have(tmp_path: Path) -> None:
-    cache = JsonDiskCache(tmp_path / "cache")
+    cache = DiskCache(tmp_path / "cache")
     cache.set("k1", {"week": 1})
     cache.set("k2", {"week": 2})
     session = RoutedSession(ROUTES)
@@ -232,7 +232,7 @@ def test_a_batch_only_fetches_what_it_does_not_have(tmp_path: Path) -> None:
 
 def test_a_batch_can_trim_what_it_stores(tmp_path: Path) -> None:
     """A club's whole roster is a third of a megabyte, of which a name and an id are read."""
-    cache = JsonDiskCache(tmp_path / "cache")
+    cache = DiskCache(tmp_path / "cache")
 
     def keep(raw: Any) -> Any:
         return raw["week"]
@@ -245,7 +245,7 @@ def test_a_batch_can_trim_what_it_stores(tmp_path: Path) -> None:
 
 def test_a_batch_takes_a_stored_null_as_a_hit(tmp_path: Path) -> None:
     """The same rule `cached` keeps: null is an answer, and asking again every read is the bug."""
-    cache = JsonDiskCache(tmp_path / "cache")
+    cache = DiskCache(tmp_path / "cache")
     cache.set("k1", None)
     session = RoutedSession(ROUTES)
 
@@ -256,7 +256,7 @@ def test_a_batch_takes_a_stored_null_as_a_hit(tmp_path: Path) -> None:
 
 
 def test_a_fully_cached_batch_never_touches_the_network(tmp_path: Path) -> None:
-    cache = JsonDiskCache(tmp_path / "cache")
+    cache = DiskCache(tmp_path / "cache")
     for i in range(1, 6):
         cache.set(f"k{i}", {"week": i})
     session = RoutedSession(ROUTES)
@@ -271,7 +271,7 @@ def test_batch_writes_stay_on_the_calling_thread(tmp_path: Path) -> None:
     from several threads. Only the requests are allowed to fan out."""
     writes: set[str] = set()
 
-    class Recording(JsonDiskCache):
+    class Recording(DiskCache):
         def set(self, key: str, value: Any, now: Any = None) -> None:
             import threading
 
@@ -295,7 +295,7 @@ def test_one_failed_request_is_named_rather_than_failing_the_batch(tmp_path: Pat
 
 
 def test_a_failed_request_is_not_stored_as_though_it_were_an_answer(tmp_path: Path) -> None:
-    cache = JsonDiskCache(tmp_path / "cache")
+    cache = DiskCache(tmp_path / "cache")
     session = RoutedSession(ROUTES, failing={"https://example.test/3"})
 
     _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)
@@ -305,7 +305,7 @@ def test_a_failed_request_is_not_stored_as_though_it_were_an_answer(tmp_path: Pa
 
 def test_a_batch_names_each_failure_for_a_caller_that_cannot_tolerate_a_hole(tmp_path: Path) -> None:
     """A category with no leaders would read as nobody worth adding in it, so Yahoo's caller raises instead."""
-    cache = JsonDiskCache(tmp_path / "cache")
+    cache = DiskCache(tmp_path / "cache")
 
     def _refused() -> Any:
         raise SleeperAPIError("refused")
