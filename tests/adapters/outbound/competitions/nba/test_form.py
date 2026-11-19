@@ -145,3 +145,19 @@ def test_an_accented_name_still_matches() -> None:
 def test_a_failed_lookup_leaves_the_report_without_form_rather_than_failing() -> None:
     """Form is enrichment: a report without it is thinner, not wrong."""
     assert _form(error=SleeperAPIError("down")).get_player_stats("Nikola Jokic") is None
+
+
+def test_the_box_scores_carry_every_game_and_find_a_player_by_name() -> None:
+    logs = _run(3)
+
+    scores = _form(logs=logs).box_scores()
+
+    assert scores.logs == logs
+    assert scores.players["p1"].name == "Nikola Jokic"
+    assert scores.index.lookup("Nikola Jokic") == "p1"
+
+
+def test_box_scores_that_will_not_load_are_empty() -> None:
+    scores = _form(error=SleeperAPIError("down")).box_scores()
+
+    assert (dict(scores.logs), dict(scores.players), scores.index.lookup("Nikola Jokic")) == ({}, {}, None)

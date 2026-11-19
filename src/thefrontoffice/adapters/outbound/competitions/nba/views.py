@@ -6,7 +6,7 @@ the provider is the place a league is read, not drawn. Every figure is his
 recent run (`RecentForm`): the last fifteen games, or every game while fewer.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.injuries import BODY_PART, approximately
@@ -20,6 +20,8 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     fantasy_points,
     ruled_out,
 )
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split
+from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 from thefrontoffice.domain.models import (
     PLAYER_COLUMN,
@@ -79,6 +81,7 @@ def cards(
     stats_for: Callable[[str], PlayerStats | None],
     returns: Mapping[str, date],
     weights: Mapping[str, float] | None,
+    splits: Callable[[YahooPlayer], Sequence[Split]] | None = None,
 ) -> list[PlayerCard]:
     """One table shape for every list of players this sport shows.
 
@@ -86,11 +89,14 @@ def cards(
     nobody does, and the column would be blank down its whole length. A
     points league adds the fantasy points per game its weights make of the
     same run. `returns` is the day ESPN expects each player back, by Yahoo's key.
+    `splits`, on the wire, adds the teammate whose absence matters most to
+    each (`teammates.Split`), the rest being in his drawer.
     """
     slotted = any(p.slot for p in players)
     rows = []
     for player in players:
         stats = stats_for(player.name)
+        split = next(iter(splits(player)), None) if splits else None
         back = returns.get(player.player_key) if player.status else None
         values = {c.label: value for c in CARD_CATEGORIES if (value := figure(stats, c)) is not None}
         columns = {c.label: recent(stats, c) for c in CARD_CATEGORIES}
@@ -110,22 +116,32 @@ def cards(
                     "Team": player.team,
                     **({SLOT_COLUMN: player.slot} if slotted else {}),
                     **columns,
+                    **({WITHOUT_COLUMN: split.cell() if split else NO_FIGURE} if splits else {}),
                     STATUS_COLUMN: player.status,
                 },
-                notes={STATUS_COLUMN: f"back {approximately(back)}"} if back else {},
+                notes={
+                    **({STATUS_COLUMN: f"back {approximately(back)}"} if back else {}),
+                    **({WITHOUT_COLUMN: split.note()} if split else {}),
+                },
             )
         )
     return rows
 
 
 def detail(
-    player: YahooPlayer, stats: PlayerStats | None, weights: Mapping[str, float] | None, reported: list[Stat]
+    player: YahooPlayer,
+    stats: PlayerStats | None,
+    weights: Mapping[str, float] | None,
+    reported: list[Stat],
+    splits: Sequence[Split] = (),
 ) -> PlayerDetail:
-    """The drawer on one player: every category of his recent run, and his injury.
+    """The drawer on one player: every category of his recent run, his teammates out, and his injury.
 
     A points league heads it with his fantasy points per game; a category league
-    with his points. `reported` is ESPN's report on him, which says when he is
-    back; where it has none, Yahoo's status stands alone. Nothing for a healthy player.
+    with his points. `splits` is his line without each regular teammate who is
+    hurt or lately sat out, and with him (`teammates.Split`). `reported` is ESPN's
+    report on him, which says when he is back; where it has none, Yahoo's status
+    stands alone. Nothing for a healthy player.
     """
     span = run(stats)
     figures = [Stat(label=c.label, value=recent(stats, c), better=c.better) for c in CATEGORIES]
@@ -153,6 +169,7 @@ def detail(
             # One title however long the run, which the headline already says: a comparison lines
             # up the players' figures by it, and "Last 12" beside "Last 15" would be two tables.
             StatGroup(title=RECENT_FORM, stats=figures),
+            *([StatGroup(title="Teammates", stats=[split.stat() for split in splits])] if splits else []),
             *([StatGroup(title="Injury", stats=hurt)] if hurt else []),
         ],
     )

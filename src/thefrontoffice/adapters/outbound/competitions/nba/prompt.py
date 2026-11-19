@@ -33,6 +33,10 @@ MATCHUP CONTEXT:
 TOP FREE AGENTS {free_agent_basis}:
 {fas_str}
 
+- NOTE: "Without <teammate> (status)" is that player's per-game line in the games a regular teammate missed,
+  against the games they played together. Where the teammate is out, the without-line is what the player is
+  worth now; "With <teammate>" means the teammate is due back, and the with-line is what he is worth.
+
 YOUR TASK:
 1. {analysis}
 2. Compare the underperformers on the current roster with the high-upside players on the waiver wire using the provided stats.

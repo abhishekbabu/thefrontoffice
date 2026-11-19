@@ -10,7 +10,7 @@ import pytest
 from support.nfl import game_line
 
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import gather
-from thefrontoffice.adapters.outbound.competitions.nfl.teammates import HurtTeammates, split, surname
+from thefrontoffice.adapters.outbound.competitions.nfl.teammates import HurtTeammates, split
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NFLGameLine, PlayerMeta
 
 SCORING = "pts_ppr"
@@ -190,14 +190,6 @@ def test_a_receiver_weighs_his_clubs_hurt_top_target_earner_at_tight_end() -> No
     assert [m.player_id for m in hurt.of(receiver)] == ["te1"]
     # Counted once, though he is both a hurt regular at tight end and the top target earner.
     assert [m.player_id for m in hurt.of(BACKUP)] == ["te1"]
-
-
-@pytest.mark.parametrize(
-    ("name", "short"),
-    [("Brock Bowers", "Bowers"), ("Marvin Harrison Jr.", "Harrison"), ("Kenneth Walker III", "Walker"), ("Jr", "Jr")],
-)
-def test_a_surname_leaves_a_generational_suffix_off(name: str, short: str) -> None:
-    assert surname(name) == short
 
 
 def test_only_his_games_for_this_club_count() -> None:

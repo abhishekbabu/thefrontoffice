@@ -5,7 +5,8 @@ from datetime import date, datetime
 from typing import Any
 
 from support.espn import FakeESPN
-from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
+from thefrontoffice.adapters.outbound.competitions.names import NameIndex
+from thefrontoffice.adapters.outbound.competitions.nba.form import BoxScores, FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, TURNOVERS
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
@@ -41,6 +42,32 @@ def make_player(
         status=status,
         injury_note=injury_note,
         slot=selected_position,
+    )
+
+
+def game_log(pid: str, day: int, minutes: float = 30.0, team: str = "TOR", **stats: float) -> NBAGameLog:
+    """One game in November 2026, for `team`."""
+    return NBAGameLog(player_id=pid, date=f"2026-11-{day:02d}", opponent="BOS", stats=stats, team=team, minutes=minutes)
+
+
+def box_scores(logs: dict[str, list[NBAGameLog]], names: dict[str, str], team: str = "TOR") -> BoxScores:
+    """These games, each player named in Sleeper's catalog and found by his name."""
+    index: NameIndex[str] = NameIndex()
+    for pid, name in names.items():
+        index.add(name, pid)
+    players = {pid: PlayerMeta(player_id=pid, name=name, team=team) for pid, name in names.items()}
+    return BoxScores(logs=logs, players=players, index=index)
+
+
+def toronto() -> BoxScores:
+    """Barnes (s1) played TOR's first four games and sat the next four; Poeltl (c1) played all
+    eight, six points a game beside him and twelve without."""
+    return box_scores(
+        {
+            "s1": [game_log("s1", d, 35.0, pts=25) for d in (1, 2, 3, 4)],
+            "c1": [game_log("c1", d, 20.0, pts=6 if d <= 4 else 12) for d in range(1, 9)],
+        },
+        {"s1": "Scottie Barnes", "c1": "Jakob Poeltl"},
     )
 
 
@@ -270,23 +297,28 @@ class FakeSleeperNBA:
 
 
 class FakeNBA:
-    """Stands in for SleeperNBAForm and SleeperNBASchedule both: one player's form, one club's games."""
+    """Stands in for SleeperNBAForm and SleeperNBASchedule both: one player's form, one club's games, the box scores."""
 
     def __init__(
         self,
         stats: dict[str, Any] | None = None,
         games: dict[str, int] | None = None,
         slate: list[ScheduledGame] | None = None,
+        scores: BoxScores | None = None,
     ) -> None:
         self.stats = stats or {}
         self.games = games or {}
         self.slate = slate or []
+        self.scores = scores or BoxScores()
 
     def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
         return [g for g in self.slate if start_date.isoformat() <= g.date <= end_date.isoformat()]
 
     def get_player_stats(self, full_name: str) -> Any:
         return self.stats.get(full_name)
+
+    def box_scores(self) -> BoxScores:
+        return self.scores
 
     def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
         return self.games.get(team_abbr.upper(), 0)

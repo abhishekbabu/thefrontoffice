@@ -10,13 +10,15 @@ or four cannot be cut at.
 """
 
 import logging
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Literal, NamedTuple, Protocol, TypedDict
 
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BOX_SCORE, Line, line
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNBASource
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +66,27 @@ def nine_cat(games: list[NBAGameLog]) -> Line:
     return line(totals, games=len(games))
 
 
+@dataclass(frozen=True)
+class BoxScores:
+    """Every game in the form window, and who played it: what a teammate split reads (`teammates.py`)."""
+
+    logs: Mapping[str, Sequence[NBAGameLog]] = field(default_factory=dict)
+    """Each player's games, newest first, by Sleeper's id."""
+    players: Mapping[str, PlayerMeta] = field(default_factory=dict)
+    """Sleeper's catalog, by its id: a teammate's name, and ESPN's id for him."""
+    index: NameIndex[str] = field(default_factory=NameIndex)
+    """Sleeper's id by a player's name, refusing ambiguity: how a Yahoo player is found in `logs`."""
+
+
 class FormSource(Protocol):
     """What the basketball provider reads recent form through. See `SleeperNBASource` for why it exists."""
 
     def get_player_stats(self, full_name: str) -> PlayerStats | None:
         """A player's last 5, 10 and 15 games, or nothing where there are none."""
+        ...
+
+    def box_scores(self) -> BoxScores:
+        """Every game in the window, by player, and who each player is; empty where they would not load."""
         ...
 
 
@@ -85,6 +103,7 @@ class SleeperNBAForm:
         self._season = season
         self._logs: dict[str, list[NBAGameLog]] | None = None
         self._by_name: NameIndex[str] | None = None
+        self._catalog: dict[str, PlayerMeta] | None = None
 
     def get_player_stats(self, full_name: str) -> PlayerStats | None:
         """A player's last 5, 10 and 15 games, or nothing where there are none.
@@ -110,6 +129,10 @@ class SleeperNBAForm:
             run = games[:RECENT_GAMES]
             stats["recent"] = RecentForm(games=len(run), line=nine_cat(run))
         return stats or None
+
+    def box_scores(self) -> BoxScores:
+        """Every game in the window, by player, and who each player is; empty where they would not load."""
+        return BoxScores(logs=self._game_logs(), players=self._players(), index=self._name_index())
 
     # ── loading, once ───────────────────────────────────────────────
 
@@ -140,14 +163,20 @@ class SleeperNBAForm:
         previous = str(int(state.season) - 1)
         return previous, list(range(SEASON_WEEKS - FORM_WEEKS + 1, SEASON_WEEKS + 1))
 
+    def _players(self) -> dict[str, PlayerMeta]:
+        if self._catalog is None:
+            try:
+                self._catalog = self.client.get_nba_players()
+            except SleeperAPIError as e:
+                logger.warning(f"Continuing without the basketball catalog: {e}")
+                self._catalog = {}
+        return self._catalog
+
     def _name_index(self) -> NameIndex[str]:
         if self._by_name is None:
             index: NameIndex[str] = NameIndex()
-            try:
-                for player_id, meta in self.client.get_nba_players().items():
-                    if name := meta.name:
-                        index.add(name, player_id)
-            except SleeperAPIError as e:
-                logger.warning(f"Continuing without the basketball catalog: {e}")
+            for player_id, meta in self._players().items():
+                if name := meta.name:
+                    index.add(name, player_id)
             self._by_name = index
         return self._by_name

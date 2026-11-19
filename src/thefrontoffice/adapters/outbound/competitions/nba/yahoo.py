@@ -7,7 +7,7 @@ weights — and the budget constraint is the league's weekly add limit.
 """
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime
 from itertools import zip_longest
 
@@ -26,11 +26,12 @@ from thefrontoffice.adapters.outbound.competitions.nba.context import (
 from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.projections import index_for
 from thefrontoffice.adapters.outbound.competitions.nba.rules import SCOUTED
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split, Teammates, conditions, reported
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
-from thefrontoffice.adapters.outbound.platforms.espn.types import NBA
+from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooGame
@@ -304,13 +305,28 @@ class YahooNBAProvider:
             remaining_games = self.games.get_remaining_games_bulk(teams, start, end)
 
         projections = index_for(self.sleeper, start, end)
-        returns = self._returns([*rostered, *free_agents])
+        reports = self._reports()
+        returns = self._returns([*rostered, *free_agents], reports)
+        splits = self._splits([*rostered, *free_agents], weights, reports)
         builder = PlayerContextBuilder(self.form, self.games, weights)
         roster_lines = builder.build_player_lines(
-            rostered, start, end, remaining_games=remaining_games, projections=projections, returns=returns
+            rostered,
+            start,
+            end,
+            remaining_games=remaining_games,
+            projections=projections,
+            returns=returns,
+            splits=splits,
         )
         fa_lines = builder.build_player_lines(
-            free_agents, start, end, annotations, remaining_games, projections=projections, returns=returns
+            free_agents,
+            start,
+            end,
+            annotations,
+            remaining_games,
+            projections=projections,
+            returns=returns,
+            splits=splits,
         )
 
         schedule_context = prompt.schedule(week, remaining_games, projected=projections is not None)
@@ -354,7 +370,7 @@ class YahooNBAProvider:
         # Not enrichment: a trade is judged against the roster it changes, and
         # one judged without it is an answer to a different question.
         rostered = yahoo.roster(my_team.team_key)
-        returns = self._returns([*rostered, *giving, *receiving])
+        returns = self._returns([*rostered, *giving, *receiving], self._reports())
         roster = builder.build_player_lines(
             rostered, week.start if week else None, week.end if week else None, returns=returns
         )
@@ -409,7 +425,7 @@ class YahooNBAProvider:
         paging.view(query, ())  # no other lists: one asked for is refused, not ignored
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
-        ranked = self._cards(_wire(yahoo), self._weights(league, yahoo))
+        ranked = self._cards(_wire(yahoo), self._weights(league, yahoo), wire=True)
         return paging.page(ranked, query)
 
     def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
@@ -427,9 +443,13 @@ class YahooNBAProvider:
             for p in found[:limit]
         ]
 
-    def _cards(self, players: list[YahooPlayer], weights: Mapping[str, float] | None) -> list[PlayerCard]:
-        """One table shape for every list of players this sport shows (`views.cards`)."""
-        return views.cards(players, self.form.get_player_stats, self._returns(players), weights)
+    def _cards(
+        self, players: list[YahooPlayer], weights: Mapping[str, float] | None, wire: bool = False
+    ) -> list[PlayerCard]:
+        """One table shape for every list of players this sport shows (`views.cards`); the wire's with teammate splits."""
+        reports = self._reports()
+        splits = self._splits(players, weights, reports) if wire else None
+        return views.cards(players, self.form.get_player_stats, self._returns(players, reports), weights, splits)
 
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
         """Any player in the league — yours, a rival's or a free agent — with their recent line where Sleeper has it.
@@ -444,27 +464,51 @@ class YahooNBAProvider:
         player = found[0]
 
         stats = self.form.get_player_stats(player.name)
-        return views.detail(player, stats, self._weights(league, yahoo), self._injuries([player]).stats(player_id))
+        weights = self._weights(league, yahoo)
+        reports = self._reports()
+        return views.detail(
+            player,
+            stats,
+            weights,
+            self._injuries([player], reports).stats(player_id),
+            self._splits([player], weights, reports)(player),
+        )
 
-    def _injuries(self, players: list[YahooPlayer]) -> PlayerInjuries:
+    def _reports(self) -> list[InjuryReport]:
+        """ESPN's NBA injury report; empty where it will not load, which leaves Yahoo's statuses standing alone."""
+        try:
+            return self.espn.get_injuries(NBA)
+        except ESPNAPIError as e:
+            logger.warning(f"Continuing on Yahoo's injury statuses alone: {e}")
+            return []
+
+    @staticmethod
+    def _injuries(players: list[YahooPlayer], reports: Sequence[InjuryReport]) -> PlayerInjuries:
         """Each of `players` on ESPN's injury report, keyed by Yahoo's key, where it names him.
 
         Yahoo carries no ESPN id, so the join is by full name within his club
-        alone, refusing a name two of them there share. ESPN's report is
-        enrichment: one that will not load leaves Yahoo's status standing alone.
+        alone, refusing a name two of them there share.
         """
-        try:
-            reports = self.espn.get_injuries(NBA)
-        except ESPNAPIError as e:
-            logger.warning(f"Continuing on Yahoo's injury statuses alone: {e}")
-            return PlayerInjuries()
         clubs = by_club((espn_club(p.team), p.name, p.player_key) for p in players)
         return PlayerInjuries(by_player=matched(reports, clubs, {}))
 
-    def _returns(self, players: list[YahooPlayer]) -> dict[str, date]:
+    def _returns(self, players: list[YahooPlayer], reports: Sequence[InjuryReport]) -> dict[str, date]:
         """The day ESPN expects each of `players` back, keyed by Yahoo's key; nobody it gives none for."""
-        injuries = self._injuries(players)
+        injuries = self._injuries(players, reports)
         return {p.player_key: back for p in players if (back := injuries.returns(p.player_key))}
+
+    def _splits(
+        self, players: list[YahooPlayer], weights: Mapping[str, float] | None, reports: Sequence[InjuryReport]
+    ) -> Callable[[YahooPlayer], list[Split]]:
+        """Each player's line without each regular teammate who is hurt or lately sat out (`teammates.py`).
+
+        A teammate's condition is Yahoo's status where his row is among
+        `players`, else ESPN's report; the box scores are read once for them all.
+        """
+        mates = Teammates(self.form.box_scores(), weights)
+        regulars = mates.regulars()
+        known = conditions(regulars, players, reported(regulars, reports))
+        return lambda player: mates.splits(player, known)
 
 
 def _wire(yahoo: YahooSource) -> list[YahooPlayer]:

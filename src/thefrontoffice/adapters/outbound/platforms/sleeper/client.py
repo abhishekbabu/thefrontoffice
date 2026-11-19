@@ -461,6 +461,8 @@ class SleeperClient:
                     date=str(row.get("date") or ""),
                     opponent=str(row.get("opponent") or ""),
                     stats={k: float(v) for k in NBA_STAT_KEYS if (v := stats.get(k)) is not None},
+                    team=str(row.get("team") or ""),
+                    minutes=float(stats.get("min") or 0.0),
                 )
             )
         # Newest first, so a caller takes the first N rather than sorting again.

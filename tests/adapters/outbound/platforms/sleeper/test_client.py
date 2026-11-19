@@ -561,7 +561,13 @@ def test_a_week_that_does_not_answer_is_a_failure_not_an_empty_week(tmp_path: Pa
 # ── basketball ──────────────────────────────────────────────────────────
 
 NBA_LOGS = [
-    {"player_id": "p1", "date": "2026-01-02", "opponent": "LAL", "stats": {"pts": 30.0, "stl": 2.0}},
+    {
+        "player_id": "p1",
+        "date": "2026-01-02",
+        "opponent": "LAL",
+        "team": "DEN",
+        "stats": {"pts": 30.0, "stl": 2.0, "min": 34.5},
+    },
     {"player_id": "p1", "date": "2026-01-01", "opponent": "GSW", "stats": {"pts": 20.0}},
     # A game he was scheduled for and did not play.
     {"player_id": "p1", "date": "2025-12-30", "opponent": "PHX", "stats": {}},
@@ -611,6 +617,15 @@ def test_an_absent_category_is_left_out_rather_than_stored_as_zero(tmp_path: Pat
     assert newest.get("stl") == 2.0
     assert older.get("stl") == 0.0
     assert "stl" not in older.stats
+
+
+def test_a_game_log_keeps_the_club_he_played_for_and_his_minutes(tmp_path: Path) -> None:
+    """A teammate split reads who else played for his club that night, and whether he left early."""
+    client, _ = _client({"/stats/nba/2026/1": NBA_LOGS}, tmp_path)
+
+    newest, older = client.get_nba_game_logs("2026", [1])["p1"]
+    assert (newest.team, newest.minutes) == ("DEN", 34.5)
+    assert (older.team, older.minutes) == ("", 0.0)
 
 
 NBA_SCHEDULE = [
