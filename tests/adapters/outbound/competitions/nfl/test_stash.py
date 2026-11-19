@@ -8,7 +8,8 @@ on IR, back for week 6, and projects 12 a week once back.
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
-from support.nfl import SLEEPER_USER_ID, FakeESPN, FakeSleeper, game_line, nfl_provider, proj
+from support.espn import FakeESPN
+from support.nfl import SLEEPER_USER_ID, FakeSleeper, game_line, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (

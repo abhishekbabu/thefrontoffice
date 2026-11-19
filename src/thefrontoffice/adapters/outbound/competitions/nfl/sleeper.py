@@ -22,6 +22,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 
 from thefrontoffice.adapters.outbound.competitions import paging
+from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex, normalize_name
 from thefrontoffice.adapters.outbound.competitions.nfl import (
     actions,
@@ -539,7 +540,7 @@ class SleeperNFLProvider:
         out = {pid for pid, meta in players.items() if ruled_out(meta.injury_status)}
         return evidence.gather(lines, scoring, out)
 
-    def _injuries(self, players: dict[str, PlayerMeta], season: str) -> injuries.PlayerInjuries:
+    def _injuries(self, players: dict[str, PlayerMeta], season: str) -> PlayerInjuries:
         """Each player's row on ESPN's injury report as it stands now, where it names him.
 
         Then, for whoever Sleeper has ruled out and the report has dropped,
@@ -550,10 +551,10 @@ class SleeperNFLProvider:
         except ESPNAPIError as e:
             # Sleeper's own designations stand: older, but still a designation.
             logger.warning(f"Continuing on Sleeper's injury designations alone: {e}")
-            return injuries.PlayerInjuries()
+            return PlayerInjuries()
         espn_ids = {meta.espn_id: pid for pid, meta in players.items() if meta.espn_id}
         found = injuries.matched(reports, players, espn_ids)
-        return injuries.PlayerInjuries(by_player=found | self._backfilled(players, found, espn_ids, season))
+        return PlayerInjuries(by_player=found | self._backfilled(players, found, espn_ids, season))
 
     def _backfilled(
         self, players: dict[str, PlayerMeta], found: dict[str, espn.InjuryReport], espn_ids: dict[str, str], season: str

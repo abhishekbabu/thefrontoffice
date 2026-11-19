@@ -7,10 +7,10 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
+from support.espn import FakeESPN
 from support.nfl import (
     DEFAULT_PROJECTIONS,
     SLEEPER_USER_ID,
-    FakeESPN,
     FakeSleeper,
     at_week,
     league_client,

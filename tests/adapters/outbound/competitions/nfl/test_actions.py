@@ -7,7 +7,8 @@ that every scenario can say exactly who is where.
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from support.nfl import SLEEPER_USER_ID, FakeESPN, FakeSleeper, nfl_provider, proj
+from support.espn import FakeESPN
+from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
 
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport

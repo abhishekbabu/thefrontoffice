@@ -419,6 +419,7 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
         yahoo_for=lambda league: YahooClient(league, responses=responses()),
         nba=SleeperNBAForm(sleeper),
         sleeper=sleeper,
+        espn=_espn_client(settings),
         max_weekly_adds=settings.yahoo_max_weekly_adds,
     )
 

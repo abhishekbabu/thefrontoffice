@@ -69,18 +69,26 @@ export function RosterTable({
       detail={detail}
       render={(column, value, row) => {
         const role = row.roles[column];
+        // A cell that abbreviates something says it in full on hover and focus.
+        const note = row.notes[column];
         // The status in the platform's own words; whether it rules him out is the provider's to say.
         if (role === "status" && value) {
-          return (
+          const badge = (
             <Badge variant={row.ruled_out ? "fail" : "warn"} appearance="status">
               {value}
             </Badge>
           );
+          if (!note) return badge;
+          return (
+            <Tooltip label={note}>
+              <span tabIndex={0} aria-label={`${value}: ${note}`}>
+                {badge}
+              </span>
+            </Tooltip>
+          );
         }
         if (role === "player") return <span className="font-medium">{value}</span>;
         if (role === "slot") return <span className="font-mono text-[11px] text-muted-foreground">{value}</span>;
-        // A cell that abbreviates something says it in full on hover and focus.
-        const note = row.notes[column];
         if (note) {
           return (
             <Tooltip label={note}>

@@ -26,16 +26,15 @@ week it is depends on the schedule, so the week is worked out here from it.
 
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
 from datetime import date
 
-from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
+from thefrontoffice.adapters.outbound.competitions import injuries as shared
+from thefrontoffice.adapters.outbound.competitions.dates import day_month
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club, on_a_club, players_by_club
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, PlayerInfo, Projection, Reported
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out
 from thefrontoffice.adapters.outbound.platforms.espn.types import Athlete, InjuryReport
-from thefrontoffice.domain.models import Stat
 
 ESPN_STATUS = {
     "Active": "",
@@ -49,34 +48,15 @@ ESPN_STATUS = {
 """ESPN's designations in Sleeper's words, which the rules read. One not here changes nothing."""
 
 
-BODY_PART = "Body part"
-"""What is hurt, under one label whichever platform said it, so players compare row for row."""
-
-CLEARED = "Active"
-"""ESPN's status for a player back off the report, who has no injury left to show."""
-
-
 def matched(
     reports: Sequence[InjuryReport], players: Mapping[str, PlayerInfo], espn_ids: Mapping[str, str]
 ) -> dict[str, InjuryReport]:
-    """Each reported player's row, keyed by Sleeper's id.
+    """Each reported player's row, keyed by Sleeper's id (`competitions/injuries.matched`).
 
-    `espn_ids` is Sleeper's id for each ESPN athlete id it carries. A row
-    joins on that first, then on his name within his club — unless the
-    player that name finds carries an ESPN id of his own that is not this row's.
+    `espn_ids` is Sleeper's id for each ESPN athlete id it carries; the name
+    join is over his fantasy players on a club (`clubs.players_by_club`).
     """
-    clubs = players_by_club(players)
-    known = {pid: eid for eid, pid in espn_ids.items()}
-    found: dict[str, InjuryReport] = {}
-    for report in reports:
-        player_id = espn_ids.get(report.athlete_id) if report.athlete_id else None
-        if not player_id:
-            named = clubs.get(report.club, {}).get(normalize_name(report.name))
-            theirs = known.get(named or "", "")
-            player_id = named if named and not (theirs and report.athlete_id and theirs != report.athlete_id) else None
-        if player_id and (player_id not in found or report.updated > found[player_id].updated):
-            found[player_id] = report
-    return found
+    return shared.matched(reports, players_by_club(players), espn_ids)
 
 
 def unreported(players: Mapping[str, PlayerInfo], found: Mapping[str, InjuryReport]) -> list[str]:
@@ -136,38 +116,7 @@ def short_return(back: date, schedule: Mapping[int, Sequence[Game]]) -> str:
 def long_return(back: date, schedule: Mapping[int, Sequence[Game]]) -> str:
     """'~22 Nov · wk 12', or just the day past the season's last game: an estimate, and it says so."""
     week = return_week(back, schedule)
-    return f"~{day_month(back)}" + (f" · wk {week}" if week else "")
-
-
-@dataclass(frozen=True)
-class PlayerInjuries:
-    """Each player's row on ESPN's injury report, keyed by Sleeper's id."""
-
-    by_player: dict[str, InjuryReport] = field(default_factory=dict)
-
-    def of(self, player_id: str) -> InjuryReport | None:
-        """His row while he is still hurt; None for a player cleared or never on it."""
-        report = self.by_player.get(player_id)
-        return report if report and report.status != CLEARED else None
-
-    def returns(self, player_id: str) -> date | None:
-        report = self.of(player_id)
-        return report.returns if report else None
-
-    def stats(self, player_id: str, schedule: Mapping[int, Sequence[Game]]) -> list[Stat]:
-        """What, when he is back, and the latest word, linked to ESPN; nothing for a player not hurt."""
-        report = self.of(player_id)
-        if report is None:
-            return []
-        stats = [Stat(label="Status", value=report.status, tone="warning")]
-        if report.injury:
-            stats.append(Stat(label=BODY_PART, value=report.injury))
-        if report.returns:
-            stats.append(Stat(label="Back", value=long_return(report.returns, schedule)))
-        # A row ESPN filled by hand says only the status again.
-        if report.comment and report.comment.casefold() != report.status.casefold():
-            stats.append(Stat(label=weekday_day_month(report.updated.date()), value=report.comment, url=report.url))
-        return stats
+    return shared.approximately(back) + (f" · wk {week}" if week else "")
 
 
 def reported(projections: Mapping[str, Projection], designations: Mapping[str, str]) -> dict[str, Projection]:

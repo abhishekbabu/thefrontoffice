@@ -6,10 +6,9 @@ of the same club. Like `competitions/names.py` for players, this is identity
 across platforms, so it lives apart from any reader of it.
 """
 
-from collections import defaultdict
 from collections.abc import Mapping
 
-from thefrontoffice.adapters.outbound.competitions.names import normalize_name
+from thefrontoffice.adapters.outbound.competitions.injuries import Clubs, by_club
 from thefrontoffice.adapters.outbound.competitions.nfl.model import FREE_AGENT, PlayerInfo
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS
 
@@ -31,21 +30,6 @@ def on_a_club(meta: PlayerInfo) -> bool:
     return meta.team != FREE_AGENT and meta.position in FANTASY_POSITIONS and meta.position not in NOT_PLAYERS
 
 
-def players_by_club(players: Mapping[str, PlayerInfo]) -> dict[str, dict[str, str | None]]:
-    """Each club's fantasy players by normalized name, under ESPN's spelling of the club.
-
-    The two platforms share no player identifier, so a join is by name within
-    one club. A name two players on a club share maps to None: it is nobody's,
-    rather than whichever of them was indexed first.
-    """
-    clubs: dict[str, dict[str, str | None]] = defaultdict(dict)
-    for player_id, meta in players.items():
-        team = meta.team
-        if not on_a_club(meta):
-            continue
-        key = normalize_name(meta.name)
-        if not key:
-            continue
-        roster = clubs[espn_club(team)]
-        roster[key] = None if key in roster else player_id
-    return dict(clubs)
+def players_by_club(players: Mapping[str, PlayerInfo]) -> Clubs:
+    """Each club's fantasy players by normalized name, under ESPN's spelling of the club (`injuries.by_club`)."""
+    return by_club((espn_club(meta.team), meta.name, pid) for pid, meta in players.items() if on_a_club(meta))

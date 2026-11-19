@@ -7,8 +7,10 @@ the matchup period. A line without the games remaining is a rate with no
 quantity behind it, which is why they are built together.
 """
 
+from collections.abc import Mapping
 from datetime import date
 
+from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba.form import WINDOWS, FormSource, PlayerStats, Window
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
@@ -48,16 +50,18 @@ class PlayerContextBuilder:
         annotations: dict[str, str] | None = None,
         remaining_games: dict[str, int] | None = None,
         projections: ProjectionIndex | None = None,
+        returns: Mapping[str, date] | None = None,
     ) -> str:
         """One prompt line per player, concatenated.
 
         Args:
             annotations: player_key -> extra text, e.g. "[Top in: PTS]".
             remaining_games: precomputed counts, empty where unknown; looked up if omitted.
+            returns: player_key -> the day ESPN expects him back, for whoever it has hurt.
         """
         return "".join(
             self.build_player_lines(
-                players, matchup_start, matchup_end, annotations, remaining_games, projections
+                players, matchup_start, matchup_end, annotations, remaining_games, projections, returns
             ).values()
         )
 
@@ -69,6 +73,7 @@ class PlayerContextBuilder:
         annotations: dict[str, str] | None = None,
         remaining_games: dict[str, int] | None = None,
         projections: ProjectionIndex | None = None,
+        returns: Mapping[str, date] | None = None,
     ) -> dict[str, str]:
         """Same as build_context_for_players, keyed by player name.
 
@@ -96,6 +101,8 @@ class PlayerContextBuilder:
                 status_str = f" [{p.status}]"
                 if p.injury_note:
                     status_str += f" ({p.injury_note})"
+            if returns and (back := returns.get(p.player_key)):
+                status_str += f" [back {approximately(back)}]"
 
             il_str = " [IN IL SPOT]" if p.slot in INJURED_SLOTS else ""
 

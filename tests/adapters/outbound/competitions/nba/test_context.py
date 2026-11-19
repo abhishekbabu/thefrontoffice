@@ -101,6 +101,15 @@ def test_injury_status_and_note_are_surfaced() -> None:
     assert "knee" in line
 
 
+def test_the_day_espn_expects_a_hurt_player_back_is_on_his_line() -> None:
+    hurt = make_player("Hurt Guy", key="hg", status="O")
+
+    [line] = _builder().build_player_lines([hurt], returns={"hg": date(2026, 11, 22)}).values()
+
+    assert "~22 Nov" in line
+    assert "~22 Nov" not in _builder().build_context_for_players([hurt], returns={"other": date(2026, 11, 22)})
+
+
 def test_il_slot_is_flagged_separately_from_status() -> None:
     """The prompt's IL rule depends on distinguishing these two."""
     stashed = _line(make_player("Stashed", status="O", selected_position="IL"))

@@ -6,9 +6,9 @@ Covers `nfl/league.py`: the season, the table, the real games, the activity.
 from dataclasses import replace
 
 import pytest
+from support.espn import FakeESPN
 from support.nfl import (
     DEFAULT_PROJECTIONS,
-    FakeESPN,
     FakeSleeper,
     at_week,
     game_line,

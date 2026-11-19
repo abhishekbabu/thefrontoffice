@@ -5,11 +5,12 @@ slots, matchup context) actually get encoded.
 """
 
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
 from support.ai import FakeAI
+from support.espn import FakeESPN
 from support.nba import (
     FakeNBA,
     FakeSleeperNBA,
@@ -34,6 +35,8 @@ from thefrontoffice.adapters.outbound.competitions.nba.form import (
 from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
+from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
+from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
@@ -46,7 +49,7 @@ from thefrontoffice.domain.errors import (
     PlayerNotFoundError,
     TeamNotFoundError,
 )
-from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat
+from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat, TradeProposal
 
 
 def _scout(yahoo: FakeYahoo, ai: FakeAI | None = None, nba: FakeNBA | None = None) -> ScoutEngine:
@@ -218,6 +221,7 @@ def _two_league_provider(auth: FakeYahooAuth | None = None) -> YahooNBAProvider:
         yahoo_for=lambda league: clients[league.league_key],
         nba=FakeNBA(),
         sleeper=FakeSleeperProjections(),
+        espn=FakeESPN(),
         max_weekly_adds=3,
     )
 
@@ -761,3 +765,97 @@ def test_a_weeks_real_games_are_those_inside_its_dates_marked_where_you_have_pla
 
 def test_a_week_with_no_matchup_has_no_dates_to_list_games_by() -> None:
     assert nba_provider(FakeYahoo(matchup_dates=None)).games_of("", 5).games == []
+
+
+# ── ESPN's injury report ────────────────────────────────────────────────
+
+
+def _espn_report(name: str, club: str, back: date | None = date(2026, 11, 22)) -> InjuryReport:
+    return InjuryReport(
+        name=name,
+        club=club,
+        status="Out",
+        updated=datetime(2026, 11, 17, 23, tzinfo=UTC),
+        returns=back,
+        injury="Left calf, strain",
+        comment=f"{name} (calf) won't play Friday.",
+        url="https://espn.example/news",
+    )
+
+
+CURRY = make_player("Stephen Curry", "PG", "GSW", key="curry", status="O", injury_note="Calf")
+ESPN_REPORT = FakeESPN(injuries=[_espn_report("Stephen Curry", "GS")])
+
+
+def test_a_hurt_players_status_cell_says_when_espn_expects_him_back() -> None:
+    """Yahoo spells the club GSW and ESPN GS: the join reads both as one club."""
+    card = nba_provider(FakeYahoo(roster=[CURRY]), espn=ESPN_REPORT).roster()[0]
+
+    assert card.columns["Status"] == "O"
+    assert "~22 Nov" in card.notes["Status"]
+
+
+def test_a_namesake_on_another_club_borrows_no_return() -> None:
+    namesake = make_player("Stephen Curry", team="SAS", key="other", status="O")
+
+    assert nba_provider(FakeYahoo(roster=[namesake]), espn=ESPN_REPORT).roster()[0].notes == {}
+
+
+def test_a_name_two_players_on_one_club_share_resolves_to_nobody() -> None:
+    twins = [CURRY, replace(CURRY, player_key="twin")]
+
+    assert [c.notes for c in nba_provider(FakeYahoo(roster=twins), espn=ESPN_REPORT).roster()] == [{}, {}]
+
+
+def test_a_player_yahoo_reports_healthy_has_no_status_to_annotate() -> None:
+    healthy = replace(CURRY, status="")
+
+    assert nba_provider(FakeYahoo(roster=[healthy]), espn=ESPN_REPORT).roster()[0].notes == {}
+
+
+def test_the_drawer_shows_espns_injury_its_return_and_the_latest_word() -> None:
+    detail = nba_provider(FakeYahoo(roster=[CURRY]), espn=ESPN_REPORT).player("", "curry")
+
+    [injury] = [g for g in detail.groups if g.title == "Injury"]
+    stats = {s.label: s.value for s in injury.stats}
+    assert (stats["Status"], stats["Back"]) == ("Out", "~22 Nov")
+    assert "Stephen Curry (calf) won't play Friday." in stats.values()
+
+
+def test_off_espns_report_the_drawer_shows_yahoos_status_and_note() -> None:
+    detail = nba_provider(FakeYahoo(roster=[CURRY])).player("", "curry")
+
+    [injury] = [g for g in detail.groups if g.title == "Injury"]
+    assert [(s.label, s.value) for s in injury.stats] == [("Status", "O"), ("Body part", "Calf")]
+
+
+def test_a_healthy_player_has_no_injury_group() -> None:
+    detail = nba_provider(FakeYahoo(roster=[make_player("A B", key="ab")]), espn=ESPN_REPORT).player("", "ab")
+
+    assert "Injury" not in [g.title for g in detail.groups]
+
+
+def test_an_injury_report_that_will_not_load_leaves_yahoos_status_standing() -> None:
+    espn = FakeESPN(injuries_error=ESPNAPIError("down"))
+
+    card = nba_provider(FakeYahoo(roster=[CURRY]), espn=espn).roster()[0]
+
+    assert (card.columns["Status"], card.notes) == ("O", {})
+
+
+def test_the_model_is_told_when_a_hurt_roster_player_is_back() -> None:
+    prompt = nba_provider(FakeYahoo(roster=[CURRY]), espn=ESPN_REPORT).build_context().prompt
+
+    [line] = [line for line in prompt.splitlines() if "Stephen Curry" in line]
+    assert "~22 Nov" in line
+
+
+def test_a_trade_is_priced_knowing_when_a_hurt_player_is_back() -> None:
+    yahoo = FakeYahoo(roster=[CURRY], search_results={"Stephen Curry": [CURRY]})
+    proposal = TradeProposal(giving=["Stephen Curry"], receiving=[])
+
+    text = nba_provider(yahoo, espn=ESPN_REPORT).build_trade_context("", proposal).prompt
+
+    lines = [line for line in text.splitlines() if line.startswith("- Stephen Curry")]
+    assert lines
+    assert all("~22 Nov" in line for line in lines)

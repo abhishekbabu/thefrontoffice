@@ -10,11 +10,11 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
+from support.espn import FakeESPN
 from support.nfl import (
     DEFAULT_PROJECTIONS,
     SEASON_SCHEDULE,
     SLEEPER_USER_ID,
-    FakeESPN,
     FakeSleeper,
     at_week,
     game_line,

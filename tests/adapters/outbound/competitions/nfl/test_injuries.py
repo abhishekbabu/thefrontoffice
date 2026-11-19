@@ -6,9 +6,8 @@ from datetime import UTC, date, datetime
 
 from support.nfl import SEASON_SCHEDULE, proj
 
+from thefrontoffice.adapters.outbound.competitions.injuries import BODY_PART, PlayerInjuries
 from thefrontoffice.adapters.outbound.competitions.nfl.injuries import (
-    BODY_PART,
-    PlayerInjuries,
     athletes,
     catalog,
     designations,
@@ -149,37 +148,25 @@ def test_a_return_reads_as_a_week_and_falls_back_to_the_day() -> None:
     assert long_return(date(2027, 3, 1), SCHEDULE) == "~1 Mar"
 
 
-def _hurt(status: str = "Injured Reserve", comment: str = "Hall (knee) had surgery.") -> PlayerInjuries:
+def _hurt() -> PlayerInjuries:
     report = replace(
-        _report("Breece Hall", "NYJ", status),
+        _report("Breece Hall", "NYJ", "Injured Reserve"),
         returns=date(2026, 9, 13),
         injury="Right knee, surgery",
-        comment=comment,
+        comment="Hall (knee) had surgery.",
         url="https://espn.example/hall",
     )
     return PlayerInjuries(by_player={"hall": report})
 
 
-def test_the_drawer_shows_the_injury_its_return_and_the_latest_word_linked() -> None:
-    stats = {s.label: s for s in _hurt().stats("hall", SCHEDULE)}
+def test_the_drawer_shows_the_injury_its_return_as_a_week_and_the_latest_word_linked() -> None:
+    stats = {s.label: s for s in _hurt().stats("hall", lambda back: long_return(back, SCHEDULE))}
 
     assert stats["Status"].value == "Injured Reserve"
     assert stats[BODY_PART].value == "Right knee, surgery"
     assert stats["Back"].value == "~13 Sep · wk 1"
     [update] = [s for s in stats.values() if s.url]
     assert (update.value, update.url) == ("Hall (knee) had surgery.", "https://espn.example/hall")
-
-
-def test_a_comment_that_only_repeats_the_status_is_left_out() -> None:
-    assert not any(s.url for s in _hurt("Questionable", "questionable").stats("hall", SCHEDULE))
-
-
-def test_a_cleared_player_has_no_injury_to_show() -> None:
-    injuries = _hurt("Active")
-
-    assert injuries.stats("hall", SCHEDULE) == []
-    assert injuries.returns("hall") is None
-    assert injuries.of("nobody") is None
 
 
 def test_a_projection_takes_the_reports_designation_and_keeps_his_points() -> None:
