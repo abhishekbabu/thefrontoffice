@@ -38,6 +38,9 @@ CARD_CATEGORIES = (POINTS, REBOUNDS, ASSISTS)
 FANTASY_POINTS = "FPTS"
 """A points league's fantasy points per game, as a column and a drawer name them."""
 
+RECENT_FORM = "Recent form"
+"""The drawer's group of a player's recent figures."""
+
 NO_FIGURE = "—"
 """What a table cell shows where there is no number. A zero would read as a
 bad line rather than an absent one."""
@@ -125,11 +128,11 @@ def detail(
     back; where it has none, Yahoo's status stands alone. Nothing for a healthy player.
     """
     span = run(stats)
-    figures = [Stat(label=c.label, value=recent(stats, c)) for c in CATEGORIES]
+    figures = [Stat(label=c.label, value=recent(stats, c), better=c.better) for c in CATEGORIES]
     if weights:
         fpts = points(stats, weights)
         headline, unit = (f"{fpts:.1f}", "fpts/game") if fpts is not None else ("", "")
-        figures.append(Stat(label=FANTASY_POINTS, value=headline or NO_FIGURE))
+        figures.append(Stat(label=FANTASY_POINTS, value=headline or NO_FIGURE, better="higher"))
     else:
         scored = recent(stats, POINTS)
         headline, unit = (scored, "pts/game") if scored != NO_FIGURE else ("", "")
@@ -147,7 +150,9 @@ def detail(
         note=player.status,
         tone="warning" if player.status else "neutral",
         groups=[
-            StatGroup(title=span.capitalize() or "Recent form", stats=figures),
+            # One title however long the run, which the headline already says: a comparison lines
+            # up the players' figures by it, and "Last 12" beside "Last 15" would be two tables.
+            StatGroup(title=RECENT_FORM, stats=figures),
             *([StatGroup(title="Injury", stats=hurt)] if hurt else []),
         ],
     )

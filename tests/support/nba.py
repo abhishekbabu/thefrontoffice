@@ -80,6 +80,7 @@ class FakeYahoo:
         adds_used: int = 0,
         teams: list[YahooTeam] | None = None,
         available: list[YahooPlayer] | None = None,
+        risers: list[YahooPlayer] | None = None,
         roster_error: Exception | None = None,
         weights: dict[str, float] | None = None,
         max_weekly_adds: int | None = 3,
@@ -93,6 +94,9 @@ class FakeYahoo:
         self.matchup_fetches = 0
         self.league_teams = teams if teams is not None else DEFAULT_TEAMS
         self.available = available if available is not None else [make_player("Waiver One")]
+        self.risers = risers or []
+        """The wire by the last week's rank; `available` is by the season's."""
+        self.wire_depths: Mapping[Timeframe, int] = {}
         self.weights = weights or {}
         self.max_weekly_adds = max_weekly_adds
         self.week_stats: dict[int, tuple[dict[str, str], dict[str, str]]] = {}
@@ -128,8 +132,11 @@ class FakeYahoo:
             return {week: self.season_weeks.get(week) for week in weeks}
         return {week: self.pairing(team_key, week) for week in weeks}
 
-    def fetch_available(self, count: int = 100) -> list[YahooPlayer]:
-        return self.available[:count]
+    def fetch_available(self, depths: Mapping[Timeframe, int]) -> dict[Timeframe, list[YahooPlayer]]:
+        """`available` by season rank and `risers` by the last week's, each as deep as asked; nothing by any other."""
+        self.wire_depths = depths
+        by = {Timeframe.SEASON: self.available, Timeframe.LAST_WEEK: self.risers}
+        return {sort_type: by.get(sort_type, [])[:depth] for sort_type, depth in depths.items()}
 
     def get_matchup(self, team_key: str) -> Matchup | None:
         """This week against Their Team, 12 blocks to 17; no matchup when built without dates."""
@@ -188,6 +195,7 @@ class FakeYahoo:
             *self.roster_players,
             *(p for t in self.league_teams if t.team_key != "t.1" for p in self.roster(t.team_key)),
             *self.available,
+            *self.risers,
             *(p for found in self.search_results.values() for p in found),
             *(p for leaders in self.stat_leaders.values() for p in leaders),
         ]

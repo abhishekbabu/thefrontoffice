@@ -35,7 +35,7 @@ from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooTeam
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Timeframe, YahooTeam
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.domain.errors import (
     InvalidRequestError,
@@ -467,6 +467,49 @@ def test_available_players_carry_the_same_form_columns_as_a_roster() -> None:
     agents = nba_provider(FakeYahoo()).free_agents("", PlayerQuery()).players
 
     assert {"Player", "Pos", "Team", "PTS", "REB", "AST", "Status"} <= set(agents[0].columns)
+
+
+def test_the_wire_is_read_300_deep_by_season_and_100_by_the_last_week() -> None:
+    yahoo = FakeYahoo()
+
+    nba_provider(yahoo).free_agents("", PlayerQuery())
+
+    assert yahoo.wire_depths == {Timeframe.SEASON: 300, Timeframe.LAST_WEEK: 100}
+
+
+def test_the_weeks_risers_sit_beside_the_seasons_best_each_once() -> None:
+    """Season rank alone buried a player who had just stepped into a role."""
+    season = [make_player("Season One"), make_player("Season Two"), make_player("Season Three")]
+    risers = [make_player("Riser"), make_player("Season Two")]
+
+    agents = nba_provider(FakeYahoo(available=season, risers=risers)).free_agents("", PlayerQuery()).players
+
+    assert [card.columns["Player"] for card in agents] == ["Season One", "Riser", "Season Two", "Season Three"]
+
+
+def test_a_riser_is_in_the_points_scouts_pool() -> None:
+    form = FakeNBA(stats={"Riser": _form(pts=30)})
+    yahoo = FakeYahoo(weights=WEIGHTS, available=[], risers=[make_player("Riser")])
+
+    assert list(_points(yahoo, form).build_context().candidate_lines) == ["Riser"]
+
+
+def test_a_player_is_found_by_name_rostered_or_not() -> None:
+    found = [
+        make_player("Cam Johnson", "SF", "DEN", key="466.p.1"),
+        make_player("Cameron Payne", "PG", "", key="466.p.2"),
+    ]
+    yahoo = FakeYahoo(search_results={"cam": found})
+
+    refs = nba_provider(yahoo).search_players("", " cam ", limit=1)
+
+    assert [(r.player_id, r.name, r.detail) for r in refs] == [("466.p.1", "Cam Johnson", "SF · DEN")]
+
+
+def test_a_search_of_one_letter_asks_yahoo_nothing() -> None:
+    yahoo = FakeYahoo(search_results={"c": [make_player("Cam Johnson")]})
+
+    assert nba_provider(yahoo).search_players("", " c ") == []
 
 
 def test_a_team_link_is_built_from_the_two_numbers_in_its_key() -> None:

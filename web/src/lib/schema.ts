@@ -976,6 +976,8 @@ export interface components {
             finds_trades: boolean;
             /** Searches Players */
             searches_players: boolean;
+            /** Syncs */
+            syncs: boolean;
             /** Configured */
             configured: boolean;
             /** Requires */

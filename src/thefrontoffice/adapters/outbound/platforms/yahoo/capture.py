@@ -29,7 +29,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.client import (
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooCaptureMissingError
 from thefrontoffice.adapters.outbound.platforms.yahoo.paths import YahooRead
 from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague, YahooPlayer, YahooTeam
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Timeframe, YahooLeague, YahooPlayer, YahooTeam
 from thefrontoffice.domain.errors import InvalidRequestError
 from thefrontoffice.domain.models import (
     Capture,
@@ -64,8 +64,8 @@ class YahooGame:
     season: Callable[[], int]
     """The season being played, as the provider finds its leagues by."""
 
-    available: int
-    """How many of the best available players the wire lists."""
+    available: Mapping[Timeframe, int]
+    """How deep the wire is read under each of Yahoo's rankings."""
 
     leaders: Mapping[str, str]
     """The stat ids the free-agent scout ranks by, keyed as it names them."""
@@ -214,7 +214,7 @@ class YahooCapture:
             paths.settings(key),
             paths.teams(key),
             paths.standings(key),
-            paths.available(key, game.available),
+            *(read for sort_type, depth in game.available.items() for read in paths.available(key, depth, sort_type)),
             *paths.leaders(key, game.leaders, game.per_stat).values(),
         ]
         current = league.current_week

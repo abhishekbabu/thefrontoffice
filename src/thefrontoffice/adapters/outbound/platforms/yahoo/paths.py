@@ -7,6 +7,7 @@ serves it at, below `/fantasy/v2/`, on the API host and on the host Yahoo's own
 pages read.
 """
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
@@ -29,6 +30,9 @@ stale within a game night."""
 
 FRONTEND = "https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/"
 """The read-only host Yahoo's own pages fetch from: it answers their session cookie, and nothing writes through it."""
+
+PAGE = 25
+"""The most players Yahoo's API lists in one response; a deeper list is read a page at a time."""
 
 PROFILE = "users;use_login=1/profile"
 """Who is signed in: 401 without a session, so a capture checks it before anything else."""
@@ -108,23 +112,36 @@ def player_page(
     sort: PlayerStat | str | None,
     sort_type: Timeframe | None,
     ttl: timedelta = LEADERS_TTL,
+    start: int = 0,
 ) -> YahooRead:
-    """A page of the league's players, filtered and sorted."""
+    """A page of the league's players, filtered and sorted, `start` places down the order."""
     params: dict[str, str] = {"count": str(count), "status": status.value}
     if sort is not None:
         params["sort"] = str(sort)
     if sort_type is not None:
         params["sort_type"] = sort_type.value
+    if start:
+        params["start"] = str(start)
     return YahooRead("players;" + ";".join(f"{k}={v}" for k, v in params.items()), ttl, league=league_key)
 
 
-def available(league_key: str, count: int) -> YahooRead:
-    """The best available players, however they became free, by season rank.
+def available(league_key: str, depth: int, sort_type: Timeframe = Timeframe.SEASON) -> list[YahooRead]:
+    """The best available players, however they became free, by Yahoo's rank over `sort_type`: a read per `PAGE`.
 
     ALL_AVAILABLE rather than FREE_AGENT: somebody sitting on waivers is still
     a decision to be made about.
     """
-    return player_page(league_key, count, PlayerStatus.ALL_AVAILABLE, PlayerStat.ACTUAL_RANK, Timeframe.SEASON)
+    return [
+        player_page(
+            league_key,
+            min(PAGE, depth - start),
+            PlayerStatus.ALL_AVAILABLE,
+            PlayerStat.ACTUAL_RANK,
+            sort_type,
+            start=start,
+        )
+        for start in range(0, depth, PAGE)
+    ]
 
 
 def leaders(
@@ -137,8 +154,14 @@ def leaders(
     }
 
 
+_PATH_SYNTAX = re.compile(r"[;/?#&=,]")
+"""What would end the search term and start another part of the path; no name holds any of it."""
+
+
 def search(league_key: str, query: str) -> YahooRead:
-    return YahooRead(f"players;search={query}", SEARCH_TTL, league=league_key, search=query)
+    """Players whose name holds `query`, rostered or not."""
+    term = " ".join(_PATH_SYNTAX.sub(" ", query).split())
+    return YahooRead(f"players;search={term}", SEARCH_TTL, league=league_key, search=term)
 
 
 def by_keys(league_key: str, player_keys: list[str]) -> YahooRead:

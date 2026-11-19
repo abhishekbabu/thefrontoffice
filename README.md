@@ -87,9 +87,11 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   with his last 5 weeks (points, snap share, targets, carries), and his
   projected line lists only what his position is played for.
 - **Compare**: up to four players side by side, added from any player page,
-  a move in Activity, or by name. Figures sit under their heading (this week,
+  a move in Activity, or by name (NFL and NBA). Figures sit under their heading (this week,
   projected line, this season), and the best of each comparable row is
-  starred.
+  starred (fewest NBA turnovers, most of everything else). Searching a
+  synced Yahoo league finds only the players the sync carried: every roster
+  and the wire it read.
 - **Rosters**: any team's squad, yours by default, and the weeks ahead where
   somebody is out on a bye or hurt (one line when nobody is).
 - **Schedule and Fixtures**: your season week by week, a future opponent with
@@ -111,7 +113,10 @@ every game he has while fewer (the drawer says how many); under 3 games shows no
 An NBA league is read as Yahoo scores it: a category league shows the categories,
 a points league its fantasy points scored and projected, with fantasy points a
 game (from the league's weights, over the same games) on player rows and the
-scout's free agents ranked by them. The add budget is the league's own.
+scout's free agents ranked by them. The add budget is the league's own. NBA's
+free agents are Yahoo's top 300 by season rank and top 100 by last week's,
+taken in turn so the week's risers sit beside the season's best (16 requests
+of 25 players, fetched together and cached for 30 minutes).
 
 | | |
 | --- | --- |
@@ -236,7 +241,8 @@ reads only the sync in this mode and never calls Yahoo, and a sync older than
   uses) with your Yahoo session, and posts the response bodies to
   `/api/yahoo/capture`. It repeats until nothing new is planned: league lists,
   then each league's settings, teams, standings, scoreboards and free agents, then
-  rosters. A sync from before a page's data was planned (the NBA table, say)
+  rosters. A sync from before a page's data was planned (the NBA table, or the
+  deeper NBA wire)
   shows "run the sync again" on that page rather than an empty one.
 - **What leaves the browser.** Only response bodies. Your Yahoo cookies stay in
   the browser and are attached to Yahoo's requests alone; the app accepts no

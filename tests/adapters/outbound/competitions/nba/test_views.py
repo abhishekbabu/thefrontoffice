@@ -9,6 +9,7 @@ from support.nba import FakeNBA, FakeYahoo, make_player, nba_provider
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
+from thefrontoffice.application.comparing import comparison
 from thefrontoffice.domain.errors import PlayerNotFoundError
 
 
@@ -70,7 +71,24 @@ def test_the_drawer_says_how_many_games_a_short_run_averages() -> None:
     detail = nba_provider(yahoo, nba=FakeNBA(stats={"A B": _form(played=12, pts=18)})).player("", "ab")
 
     assert detail.headline == "18.0"
-    assert "12" in detail.headline_label and "12" in detail.groups[0].title
+    assert "12" in detail.headline_label
+
+
+def test_two_players_compare_with_fewer_turnovers_and_more_of_everything_else_best() -> None:
+    """Runs of different lengths still line up on one grid: the run is in the headline, not the heading."""
+    yahoo = FakeYahoo(roster=[make_player("A B", key="ab"), make_player("C D", key="cd")])
+    form = FakeNBA(
+        stats={
+            "A B": _form(pts=20, to=4, fgm=5, fga=10),
+            "C D": _form(played=9, pts=12, to=1, fgm=6, fga=10),
+        }
+    )
+    provider = nba_provider(yahoo, nba=form)
+
+    [table] = comparison([provider.player("", "ab"), provider.player("", "cd")]).tables
+
+    best = {row.label: row.best for row in table.rows}
+    assert (best["PTS"], best["TO"], best["FG%"]) == ([0], [1], [1])
 
 
 def test_a_row_short_of_fifteen_games_still_carries_figures() -> None:
