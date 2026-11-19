@@ -6,7 +6,6 @@ is questionable, which bench and waiver starts are legal. Also the same for a
 week already played, which is what the simulation is scored and tuned on.
 """
 
-import hashlib
 import logging
 from collections.abc import Callable, Sequence
 
@@ -35,11 +34,6 @@ logger = logging.getLogger(__name__)
 
 SCORED_FROM = 3.0
 """Projected points below which a player is nobody's start, and his range not worth scoring."""
-
-
-def seed(*parts: object) -> int:
-    """The same simulation for the same week, so the numbers hold still between reloads."""
-    return int(hashlib.sha256(":".join(map(str, parts)).encode("utf-8")).hexdigest()[:12], 16)
 
 
 class Forecasts:

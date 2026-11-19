@@ -43,8 +43,10 @@ from thefrontoffice.domain.errors import (
     LeagueNotFoundError,
     NotFoundError,
     TeamNotFoundError,
+    UnsupportedError,
 )
 from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat, TradeProposal
+from thefrontoffice.domain.ports import ForecastProvider
 
 
 def _scout(yahoo: FakeYahoo, ai: FakeAI | None = None, nba: FakeNBA | None = None) -> ScoutEngine:
@@ -1031,3 +1033,81 @@ def test_a_wire_that_will_not_load_leaves_the_weeks_rows_and_starts_standing() -
 
     assert [a.key for a in summary.actions or []] == ["start:benched:starter"]
     assert summary.mine is not None and summary.mine.lineup[0].value.startswith("1G")
+
+
+# ── the week, simulated ─────────────────────────────────────────────
+
+
+def _simulated(yahoo: FakeYahoo, league: Any = None) -> YahooNBAProvider:
+    """My Roster One and Their Team One both play for the Lakers, twice inside the week, off two recent games each."""
+    slate = [
+        ScheduledGame(week=1, date=day, home="LAL", away="DEN", status="pre_game")
+        for day in ("2026-02-12", "2026-02-14")
+    ]
+    played = [
+        NBAGameLog(player_id="p", date="2026-02-01", opponent="BOS", stats={"pts": 20.0, "reb": 5.0}),
+        NBAGameLog(player_id="p", date="2026-01-30", opponent="NYK", stats={"pts": 10.0, "reb": 10.0}),
+    ]
+    nba = FakeNBA(slate=slate, logs={"Roster One": played, "Their Team One": played})
+    return nba_provider(yahoo, nba=nba, league=league)
+
+
+def test_a_category_week_is_simulated_from_its_board_and_both_rosters_games_left() -> None:
+    yahoo = FakeYahoo()
+    yahoo.week_stats[5] = ({"12": "100"}, {"12": "90"})
+
+    matchup = _simulated(yahoo).matchup_input("466.l.1")
+
+    assert matchup is not None and matchup.categories is not None
+    week = matchup.categories
+    assert dict(zip(week.stats, week.board_mine, strict=True))["pts"] == 100.0
+    assert [(line.player_id, line.games) for line in (*week.mine, *week.theirs)] == [
+        ("roster-one", 2),
+        ("their-team-one", 2),
+    ]
+    assert matchup == _simulated(yahoo).matchup_input("466.l.1")  # the same seed every read
+
+
+def test_a_points_week_is_simulated_in_fantasy_points_on_top_of_yahoos_live_total() -> None:
+    yahoo = FakeYahoo(weights={"12": 1.0, "15": 1.0})
+    yahoo.week_points[5] = (("349.90", "896.45"), ("575.80", "1107.37"))
+
+    matchup = _simulated(yahoo, POINTS_LEAGUE).matchup_input("466.l.1")
+
+    assert matchup is not None and matchup.categories is None
+    assert [(o.floor, o.games, o.samples) for o in matchup.mine] == [(349.9, 0, ()), (0.0, 2, (25.0, 20.0))]
+    assert matchup.theirs[0].floor == 575.8
+
+
+def test_the_wire_and_a_week_without_an_opponent_are_not_simulated() -> None:
+    assert _simulated(FakeYahoo()).matchup_input("466.l.1", candidates=["x"]) is None
+    assert _simulated(FakeYahoo(matchup_dates=None)).matchup_input("466.l.1") is None
+    between = replace(yahoo_league(), current_week=None)
+    assert _simulated(FakeYahoo(), between).matchup_input("466.l.1") is None
+
+
+def test_a_league_scoring_each_players_best_game_or_no_points_is_not_simulated() -> None:
+    best = FakeYahoo(weights={"12": 1.0})
+    best.best_game = True
+
+    with pytest.raises(UnsupportedError):
+        _simulated(best, POINTS_LEAGUE).matchup_input("466.l.1")
+    with pytest.raises(UnsupportedError):
+        _simulated(FakeYahoo(), POINTS_LEAGUE).matchup_input("466.l.1")
+
+
+def test_a_weekly_lineup_counts_only_todays_starters() -> None:
+    yahoo = FakeYahoo(roster=[make_player("Roster One", selected_position="BN")])
+    yahoo.weekly_lineups = True
+
+    matchup = _simulated(yahoo).matchup_input("466.l.1")
+
+    assert matchup is not None and matchup.categories is not None
+    assert matchup.categories.mine == ()
+
+
+def test_basketball_weeks_already_played_are_not_backtested() -> None:
+    provider = _simulated(FakeYahoo())
+
+    assert isinstance(provider, ForecastProvider)
+    assert (provider.played_weeks("466.l.1"), provider.played_matchups("466.l.1", 3)) == ([], [])

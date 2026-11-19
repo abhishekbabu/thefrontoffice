@@ -460,6 +460,23 @@ def test_the_settings_say_where_the_bracket_starts(tmp_path: Path) -> None:
     assert (rules.playoff_start_week, rules.playoff_teams, rules.multiweek_final) == (19, 6, True)
 
 
+def test_the_settings_say_how_lineups_are_set_and_whether_only_a_best_game_scores(tmp_path: Path) -> None:
+    settings = (
+        "<fantasy_content><league><roster_type>week</roster_type><is_highscore>1</is_highscore>"
+        "<settings/></league></fantasy_content>"
+    )
+    client, _ = _client(tmp_path, answers={"settings": settings})
+    daily, _ = _client(
+        tmp_path / "daily",
+        answers={
+            "settings": "<fantasy_content><league><roster_type>date</roster_type><settings/></league></fantasy_content>"
+        },
+    )
+
+    assert (client.settings().weekly_lineups, client.settings().best_game) == (True, True)
+    assert (daily.settings().weekly_lineups, daily.settings().best_game) == (False, False)
+
+
 def test_a_league_with_playoffs_off_has_no_bracket(tmp_path: Path) -> None:
     settings = (
         "<fantasy_content><league><settings><uses_playoff>0</uses_playoff>"

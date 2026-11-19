@@ -510,6 +510,8 @@ def league_settings(league: Any) -> LeagueSettings:
         playoff_start_week=_number(settings, "playoff_start_week") if playoffs else 0,
         playoff_teams=_number(settings, "num_playoff_teams") if playoffs else 0,
         multiweek_final=_text(settings, "has_multiweek_championship") == "1",
+        weekly_lineups=_text(league, "roster_type") == "week",
+        best_game=_text(league, "is_highscore") == "1",
     )
 
 

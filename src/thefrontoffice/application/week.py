@@ -19,6 +19,7 @@ from thefrontoffice.application.scouting import last_judgment, with_verdicts
 from thefrontoffice.application.season import SeasonEngine
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import (
+    CategoryLine,
     Forecast,
     LeagueSchedule,
     MatchupInput,
@@ -92,7 +93,12 @@ class WeekEngine:
         summary = self.provider.summary(league_id)
         forecast = self._forecast(league_id)
         if forecast is not None:
-            summary = summary.model_copy(update={"actions": ranked(summary.actions, *forecast)})
+            summary = summary.model_copy(
+                update={
+                    "actions": ranked(summary.actions, *forecast),
+                    "categories": _with_chances(summary.categories, forecast[0]),
+                }
+            )
         if summary.actions is not None:
             actions = with_verdicts(summary.actions, last_judgment(self.answers, self.key, league_id))
             summary = summary.model_copy(update={"actions": self.decisions.apply(self.key, league_id, actions)})
@@ -136,3 +142,11 @@ class WeekEngine:
         except FrontOfficeError as e:
             logger.warning(f"Showing the league without playoff odds: {e}")
             return None
+
+
+def _with_chances(lines: list[CategoryLine], forecast: Forecast) -> list[CategoryLine]:
+    """Each category's line with your chance of winning it, where the forecast played it out."""
+    return [
+        line.model_copy(update={"win": forecast.categories[line.name]}) if line.name in forecast.categories else line
+        for line in lines
+    ]

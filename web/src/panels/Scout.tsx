@@ -16,7 +16,7 @@ import {
 } from "@/lib/api";
 import { Link } from "react-router-dom";
 import { keys, useCapabilities } from "@/lib/queries";
-import { moment, percentPoints, signed } from "@/lib/format";
+import { moment, percent, percentPoints, signed } from "@/lib/format";
 import { href, offers } from "@/lib/route";
 import { ActionList, WhyButton, staleVerdicts } from "@/components/ui/actions";
 import { IconButton } from "@/components/ui/icon-button";
@@ -321,13 +321,20 @@ const LEAD: Record<NonNullable<CategoryLine["lead"]>, { word: string; tone: stri
   even: { word: "Level", tone: "text-muted-foreground" },
 };
 
+/** A chance of winning a category, toned as the header's win chance is; the figure itself carries it. */
+function chanceTone(win: number): string {
+  return win >= 0.6 ? "text-ok" : win <= 0.4 ? "text-warn" : "text-muted-foreground";
+}
+
 /**
- * A category week, read across: each category, both figures, and who leads it.
+ * A category week, read across: each category, both figures, who leads it,
+ * and — where the week is forecast — your chance of winning it.
  *
  * The leader is said in words as well as weight and color, since a category
  * week is won by the count of those words.
  */
 export function Categories({ lines, theirs }: { lines: CategoryLine[]; theirs: string }) {
+  const forecast = lines.some((line) => line.win != null);
   return (
     <Card>
       <CardHeader>
@@ -339,6 +346,7 @@ export function Categories({ lines, theirs }: { lines: CategoryLine[]; theirs: s
         <span className="w-20 text-right">You</span>
         <span className="w-20 truncate text-right">{theirs}</span>
         <span className="flex-1 text-right">Leads</span>
+        {forecast && <span className="w-12 text-right">Win</span>}
       </Label>
       {lines.map((line) => {
         const lead = line.lead ? LEAD[line.lead] : null;
@@ -355,6 +363,11 @@ export function Categories({ lines, theirs }: { lines: CategoryLine[]; theirs: s
             <span className={cn("flex-1 text-right text-[11px]", lead?.tone ?? "text-muted-foreground")}>
               {lead?.word ?? "—"}
             </span>
+            {forecast && (
+              <span className={cn("w-12 text-right", line.win != null ? chanceTone(line.win) : "text-muted-foreground")}>
+                {line.win != null ? percent(line.win) : "—"}
+              </span>
+            )}
           </div>
         );
       })}

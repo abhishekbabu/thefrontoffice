@@ -174,6 +174,22 @@ def test_a_windows_games_are_listed_once_each_in_date_order() -> None:
     assert [g.date for g in schedule.games_between(WINDOW_START, WINDOW_END)] == ["2026-02-12", "2026-02-14"]
 
 
+def test_the_games_left_are_the_windows_games_yet_to_tip_off_once_each() -> None:
+    schedule = _schedule(
+        schedule=[
+            _sched("2026-02-09"),
+            _sched("2026-02-10", status="in_game", home="BOS", away="NYK"),
+            _sched("2026-02-10"),
+            _sched("2026-02-14"),
+            _sched("2026-02-16"),
+        ]
+    )
+
+    left = schedule.games_left(WINDOW_START, WINDOW_END, now=NOW)
+
+    assert [(g.date, g.home) for g in left] == [("2026-02-10", "DEN"), ("2026-02-14", "DEN")]
+
+
 def test_a_game_already_in_the_past_is_not_remaining() -> None:
     schedule = _schedule(schedule=[_sched("2026-02-09"), _sched("2026-02-14")])
 
