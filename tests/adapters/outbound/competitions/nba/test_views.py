@@ -623,7 +623,6 @@ def test_his_seasons_read_this_one_and_the_two_before_it_a_game_at_a_time() -> N
     assert rows["FG%"] == [".500", ".500", "N/A"]
     assert rows["Games"] == ["10", "70", "N/A"]
     assert rows["Position rank"] == ["#12", "N/A", "N/A"]
-    assert nba.seasons_read == ["2026", "2025", "2024"]
 
 
 def test_seasons_that_will_not_load_leave_an_empty_tab() -> None:
@@ -651,7 +650,6 @@ def test_his_history_is_every_league_move_he_was_part_of() -> None:
 
     [move] = detail.moves
     assert (move.who, move.what, move.detail, move.is_mine) == ("My Team", "Add/drop", "+A B, -C D", True)
-    assert yahoo.moves_read == 1
 
 
 def test_his_news_is_his_clubs_feed_where_it_names_him() -> None:

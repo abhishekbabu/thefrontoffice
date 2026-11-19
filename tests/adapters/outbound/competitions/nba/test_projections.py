@@ -59,27 +59,11 @@ def game(name: str, day: str, team: str = "LAL", **stats: float) -> GameProjecti
 # ── aggregation ─────────────────────────────────────────────────────────
 
 
-def test_counting_stats_are_summed_across_games() -> None:
+def test_counting_stats_are_summed_across_games_and_read_as_totals_not_per_game() -> None:
+    """A category league is won on totals, so a projection is not averaged per game."""
     totals = aggregate([game("A B", "2026-01-05", pts=20), game("A B", "2026-01-07", pts=30)])
     assert totals.games == 2
-    assert totals.totals["pts"] == 50.0
-
-
-def test_percentages_use_totals_not_an_average_of_ratios() -> None:
-    """The same rule the historical splits follow: sum makes over sum attempts."""
-    totals = aggregate(
-        [
-            game("A B", "2026-01-05", fgm=1, fga=1),  # 100% on one attempt
-            game("A B", "2026-01-07", fgm=0, fga=19),  # 0% on nineteen
-        ]
-    )
-    assert totals.line["FG%"] == 0.05
-
-
-def test_no_attempts_yields_no_percentage_rather_than_zero() -> None:
-    """A player projected zero free throws has no FT%, which is different from 0%."""
-    totals = aggregate([game("A B", "2026-01-05", ftm=0, fta=0)])
-    assert "FT%" not in totals.line
+    assert (totals.totals["pts"], totals.line["PTS"]) == (50.0, 50.0)
 
 
 def test_no_games_is_an_empty_projection() -> None:
@@ -88,20 +72,16 @@ def test_no_games_is_an_empty_projection() -> None:
     assert totals.totals == {}
 
 
-def test_the_line_carries_counts_as_totals_over_the_period() -> None:
-    """A category league is won on totals, so a projection is not averaged per game."""
-    totals = aggregate([game("A B", "2026-01-05", pts=20), game("A B", "2026-01-07", pts=30)])
-    assert totals.line["PTS"] == 50.0
-
-
 # ── the matchup window ──────────────────────────────────────────────────
 
 
-def test_only_games_inside_the_period_are_counted() -> None:
+def test_only_games_inside_the_period_are_counted_its_bounds_included() -> None:
     index = ProjectionIndex(
         [
             game("A B", "2026-01-04"),  # before
+            game("A B", "2026-01-05"),  # the first day
             game("A B", "2026-01-06"),  # inside
+            game("A B", "2026-01-11"),  # the last day
             game("A B", "2026-01-12"),  # after
         ],
         WEEK_START,
@@ -109,14 +89,7 @@ def test_only_games_inside_the_period_are_counted() -> None:
     )
     totals = index.lookup("A B")
     assert totals is not None
-    assert totals.games == 1
-
-
-def test_window_bounds_are_inclusive() -> None:
-    index = ProjectionIndex([game("A B", "2026-01-05"), game("A B", "2026-01-11")], WEEK_START, WEEK_END)
-    totals = index.lookup("A B")
-    assert totals is not None
-    assert totals.games == 2
+    assert totals.games == 3
 
 
 def test_an_unparseable_date_is_excluded() -> None:

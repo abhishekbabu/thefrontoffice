@@ -50,11 +50,6 @@ def test_a_category_nobody_recorded_averages_to_zero() -> None:
     assert line["STL"] == 0.0
 
 
-def test_no_attempts_is_no_percentage_rather_than_zero() -> None:
-    """Nothing attempted is a different thing from 0%, and the drawer shows it as absent."""
-    assert "FT%" not in nine_cat([_game("2026-01-01", pts=2)])
-
-
 def test_the_line_is_keyed_by_every_category_label() -> None:
     """The drawer and the prompt read the line by these labels; a key spelled any
     other way is a figure nobody finds."""

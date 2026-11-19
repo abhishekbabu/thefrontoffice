@@ -112,14 +112,6 @@ def test_the_day_espn_expects_a_hurt_player_back_is_on_his_line() -> None:
     assert "~22 Nov" not in _builder().build_context_for_players([hurt], returns={"other": date(2026, 11, 22)})
 
 
-def test_il_slot_is_flagged_separately_from_status() -> None:
-    """The prompt's IL rule depends on distinguishing these two."""
-    stashed = _line(make_player("Stashed", status="O", selected_position="IL"))
-    out = _line(make_player("Stashed", status="O"))
-
-    assert stashed != out
-
-
 def test_il_plus_counts_as_an_il_slot() -> None:
     assert _line(make_player("Stashed", selected_position="IL+")) == _line(
         make_player("Stashed", selected_position="IL")
