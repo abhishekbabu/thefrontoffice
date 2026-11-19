@@ -132,7 +132,7 @@ function Panel({
         initial="hidden"
         animate="shown"
         exit="gone"
-        className="absolute inset-0 bg-foreground/20"
+        className="absolute inset-0 bg-scrim"
       />
       <m.aside
         ref={panel}

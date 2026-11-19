@@ -74,6 +74,13 @@ const STEP = 16;
 export type Swap = "forward" | "back" | null;
 
 /**
+ * A drawer leaving across the screen: gathering speed as it goes. The
+ * arriving ease front-loads the move, which out of a resting drawer put 40%
+ * of the screen into the first frame and read as a jump.
+ */
+const leave: Transition = { duration: 0.2, ease: [0.4, 0, 0.7, 0.2] };
+
+/**
  * A slide-over from the right, or a swap in place where it replaces another.
  *
  * Each variant takes a function rather than a value, because whether this is
@@ -91,7 +98,7 @@ export const slideOver: Variants = {
     const s = swap();
     return s
       ? { opacity: 0, x: s === "back" ? STEP : -STEP, transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] } }
-      : { x: "100%", transition: { ...glide, duration: 0.18 } };
+      : { x: "100%", transition: leave };
   },
 };
 

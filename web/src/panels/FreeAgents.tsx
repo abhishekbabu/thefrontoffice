@@ -151,12 +151,13 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
             {judge.isError && <ErrorNote error={judge.error} className="mx-4 my-3" />}
 
             <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+              {/* Grows from a floor, so on a phone the chips wrap under it rather than squeezing it shut. */}
               <SearchInput
                 value={search}
                 onChange={(e) => reset(setSearch)(e.target.value)}
                 placeholder="Search by name, club or status"
                 aria-label="Search available players"
-                className="flex-1"
+                className="flex-[1_1_14rem]"
               />
               {/* Read off the pool rather than written down: the positions
                   differ per competition, and a list here would be a fourth place to

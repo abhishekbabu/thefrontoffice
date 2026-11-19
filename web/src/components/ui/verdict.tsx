@@ -40,7 +40,8 @@ export function Verdict({
         </Badge>
         {stale && noted && <Label>stale — re-judge</Label>}
       </span>
-      <span className="min-w-0 flex-1 text-foreground">{reason}</span>
+      {/* Under the badge once beside it would leave the reason a few words a line. */}
+      <span className="min-w-0 flex-[1_1_14rem] text-foreground">{reason}</span>
     </div>
   );
 }
