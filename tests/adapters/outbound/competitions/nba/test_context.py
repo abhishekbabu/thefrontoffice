@@ -32,7 +32,8 @@ def _stats(**overrides: float) -> Line:
 
 
 def _builder(stats: dict[str, Any] | None = None, games: dict[str, int] | None = None) -> PlayerContextBuilder:
-    return PlayerContextBuilder(FakeNBA(stats=stats, games=games))
+    nba = FakeNBA(stats=stats, games=games)
+    return PlayerContextBuilder(nba, nba)
 
 
 def test_empty_player_list_yields_empty_context() -> None:
@@ -155,7 +156,8 @@ def test_in_a_points_league_each_window_and_projection_closes_on_its_fantasy_poi
         for day in ("2026-02-10", "2026-02-12")
     ]
     form = {"A B": PlayerStats(last_5=_stats())}
-    builder = PlayerContextBuilder(FakeNBA(stats=form), weights={"12": 1.0})
+    nba = FakeNBA(stats=form)
+    builder = PlayerContextBuilder(nba, nba, weights={"12": 1.0})
 
     out = builder.build_context_for_players(
         [make_player("A B")], START, END, projections=ProjectionIndex(rows, START, END)

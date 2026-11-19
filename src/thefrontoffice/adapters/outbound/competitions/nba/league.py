@@ -3,12 +3,16 @@
 Yahoo publishes no season schedule as such, but every week's scoreboard lists
 every pairing in it, so your season is your side of each one. The playoff weeks
 are named from the bracket the settings describe, as football names its own.
+
+Also which season a date belongs to, and where a league and its teams live on Yahoo.
 """
 
 from collections.abc import Mapping
+from datetime import datetime
 
 from thefrontoffice.adapters.outbound.competitions import brackets
 from thefrontoffice.adapters.outbound.competitions.dates import span
+from thefrontoffice.adapters.outbound.competitions.nba.rules import PACIFIC
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import LeagueSettings, Pairing, YahooTeam
 from thefrontoffice.domain.models import Outcome, ScheduleRow, StandingRow, record
 
@@ -17,6 +21,48 @@ BYE = "bye"
 
 CONSOLATION = "Consolation"
 """A playoff week played outside the championship bracket."""
+
+# Where the moves are actually made. Unlike the other two platforms these
+# cannot be checked from here — the sport is behind an approval this app does
+# not have — so they follow Yahoo's documented shape rather than a probe.
+LEAGUE_URL = "https://basketball.fantasysports.yahoo.com/nba/{league_id}"
+TEAM_URL = "https://basketball.fantasysports.yahoo.com/nba/{league_id}/{team_id}"
+
+
+def season_year(now: datetime | None = None) -> int:
+    """The NBA season a date belongs to, which rolls over on 1 September,
+    ahead of October's opening night.
+
+    Read in Pacific time, like the rest of basketball: a local clock would
+    put the night of 31 August in a different season depending on where
+    the machine is.
+    """
+    moment = (now or datetime.now(PACIFIC)).astimezone(PACIFIC)
+    return moment.year if moment.month >= 9 else moment.year - 1
+
+
+def league_url(league_key: str) -> str:
+    """A league's page on Yahoo: `<game>.l.<league>` addressed by its number."""
+    numbers = _key_numbers(league_key, "l")
+    return LEAGUE_URL.format(league_id=numbers[0]) if numbers else ""
+
+
+def team_url(team_key: str) -> str:
+    """A team's page on Yahoo: `<game>.l.<league>.t.<team>` addressed by its two numbers."""
+    numbers = _key_numbers(team_key, "l", "t")
+    return TEAM_URL.format(league_id=numbers[0], team_id=numbers[1]) if numbers else ""
+
+
+def _key_numbers(key: str, *kinds: str) -> list[str]:
+    """The number after each of `kinds` in a Yahoo key; empty for a key in any other shape.
+
+    A URL wants the numbers, not the key — so a key in an unexpected shape
+    yields no link rather than a broken one.
+    """
+    parts = key.split(".")
+    if len(parts) != 1 + 2 * len(kinds) or tuple(parts[1::2]) != kinds:
+        return []
+    return parts[2::2]
 
 
 def table(teams: list[YahooTeam], mine: str) -> list[StandingRow]:

@@ -4,10 +4,18 @@ Each category is named in four places — Sleeper's box score (recent form,
 projections), Yahoo's stat ids (the scout's leaders, the matchup), the label a
 page shows and the tag a prompt line carries — and every one of them reads it
 from here, so a category cannot be spelled two ways and miss its own figure.
+
+Beside them, the other facts every basketball reader shares: the clock the
+league keeps, the injured slots and the statuses that rule a player out.
 """
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
+
+PACIFIC = ZoneInfo("America/Los_Angeles")
+"""The league schedules by Pacific, so a day boundary is decided there rather
+than on whatever clock this happens to be running on."""
 
 
 @dataclass(frozen=True)

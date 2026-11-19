@@ -8,16 +8,36 @@ that has finished.
 
 A points league is scored in fantasy points, which Yahoo totals for each side
 and projects to the week's end; the categories behind them win nothing.
+
+The real games inside the week, and how many each club has left, are read from
+Sleeper's schedule (`SleeperNBASchedule`), since Yahoo publishes none.
 """
 
+import logging
 from collections.abc import Mapping, Sequence
-from typing import Literal
+from datetime import date, datetime
+from typing import Literal, Protocol
 
-from thefrontoffice.adapters.outbound.competitions.dates import parse_day, weekday_day_month
-from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, ruled_out
+from thefrontoffice.adapters.outbound.competitions.dates import parse_day, span, weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, PACIFIC, ruled_out, stranded
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNBASource
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, StatCategory, YahooPlayer
-from thefrontoffice.domain.models import CategoryLine, Match, PlayerRef, Side, Spot, Stat, Tone
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, Pairing, StatCategory, YahooPlayer
+from thefrontoffice.domain.models import (
+    Action,
+    CategoryLine,
+    Match,
+    PlayerRef,
+    Side,
+    Spot,
+    Stat,
+    Summary,
+    Tone,
+    WeekRange,
+)
+
+logger = logging.getLogger(__name__)
 
 BENCH = "BN"
 """Yahoo's slot for a player on the roster but not in the day's lineup."""
@@ -170,3 +190,213 @@ def match(game: ScheduledGame, roster: Sequence[YahooPlayer]) -> Match:
         detail=STATUS.get(game.status, ""),
         yours=yours,
     )
+
+
+def board(
+    found: Pairing,
+    weeks: WeekRange,
+    records: Mapping[str, str],
+    roster: list[YahooPlayer] | None,
+    theirs: list[YahooPlayer] | None,
+    categories_scored: Sequence[StatCategory] | None,
+) -> Summary:
+    """One week's head-to-head, and where it sits in the season.
+
+    `records` is each team's record by key. `roster` is yours and `theirs` the
+    opponent's where rosters are shown, and None where they are not.
+    `categories_scored` is the league's own list, None for a points league.
+    """
+    window = f"Week {weeks.week} · {span(found.start, found.end)}"
+    if categories_scored is None:
+        # Won on the fantasy-point total, which Yahoo keeps: the categories behind it win nothing.
+        when = stage(weeks.week, weeks.current)
+        return Summary(
+            headline=points(found.mine, found.opponent, when),
+            mine=side(found.mine.name, records.get(found.mine.team_key, ""), total(found.mine, when), roster),
+            opponent=side(
+                found.opponent.name, records.get(found.opponent.team_key, ""), total(found.opponent, when), theirs
+            ),
+            window=window,
+            weeks=weeks,
+        )
+    lines = categories(categories_scored, found.mine.stats, found.opponent.stats)
+    tally = score(lines)
+    return Summary(
+        headline=[headline(tally)] if tally else [],
+        mine=side(found.mine.name, records.get(found.mine.team_key, ""), written(tally) if tally else "", roster),
+        opponent=side(
+            found.opponent.name,
+            records.get(found.opponent.team_key, ""),
+            written((tally[1], tally[0], tally[2])) if tally else "",
+            theirs,
+        ),
+        categories=lines,
+        window=window,
+        weeks=weeks,
+    )
+
+
+def off_il(roster: list[YahooPlayer]) -> list[Action]:
+    """Each player held in an injured slot his status no longer qualifies him for.
+
+    Yahoo holds every add while one sits there, so it comes before any other
+    move. Activating him needs an active roster spot, which may mean a drop.
+    """
+    items = []
+    for player in roster:
+        if not stranded(player.slot, player.status):
+            continue
+        status = f"listed {player.status}" if player.status else "cleared to play"
+        items.append(
+            Action(
+                kind="lineup",
+                urgency="now",
+                title=f"Move {player.name} off {player.slot}",
+                reason=f"{player.name} is {status}. Adds locked until he leaves {player.slot}; needs an open roster spot.",
+                when="first",
+                player_id=player.player_key,
+                key=f"il:{player.player_key}:{player.status.upper() or 'ACTIVE'}",
+            )
+        )
+    return items
+
+
+def adds(used: int, limit: int) -> list[Stat]:
+    """The week's add budget, as what is left of it.
+
+    The one figure the week turns on: an exhausted budget is the constraint
+    the whole report bends around, turning every recommendation into a
+    MONITOR, so it warns. The team's name is the page's title already, and
+    the roster's size is My team's to say.
+    """
+    left = max(0, limit - used)
+    return [Stat(label="Adds left", value=f"{left} of {limit}", tone="good" if left else "warning")]
+
+
+# ── the real games, from Sleeper ────────────────────────────────────
+
+
+class ScheduleSource(Protocol):
+    """What the basketball provider reads the real games of a matchup week through.
+    See `SleeperNBASource` for why it exists.
+    """
+
+    def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
+        """Count a club's not-yet-played games inside a matchup window.
+
+        Raises:
+            PlatformError: the schedule would not load.
+        """
+        ...
+
+    def get_remaining_games_bulk(
+        self, team_abbrs: list[str], start_date: date, end_date: date, now: datetime | None = None
+    ) -> dict[str, int]:
+        """One schedule load and one `now` for every club asked about.
+
+        Empty where the schedule would not load: games left unknown, never nought.
+        """
+        ...
+
+    def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
+        """Every real game dated inside a matchup window, in date order.
+
+        Raises:
+            PlatformError: the schedule would not load.
+        """
+        ...
+
+
+class SleeperNBASchedule:
+    """The real games of a basketball matchup week, and how many each club has left.
+
+    Loads the season's schedule once and keeps it: a report asks about every
+    club in a matchup, and refetching it per question would be the whole cost
+    of the page.
+    """
+
+    def __init__(self, client: SleeperNBASource, season: str | None = None) -> None:
+        self.client = client
+        self._season = season
+        self._schedule: dict[str, list[ScheduledGame]] | None = None
+
+    def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
+        """Count a club's not-yet-played games inside a matchup window.
+
+        Two notions of time, kept apart the same way they always were: the
+        window test compares date labels, which is what Yahoo's matchup dates
+        also are, and the has-it-happened test is decided on the day in
+        Pacific — the zone the league schedules by.
+
+        Sleeper publishes a date and a status but no tip-off instant, so a game
+        today counts only while its status still says it has not started, and a
+        stale status on a past date cannot resurrect a played game.
+
+        Raises:
+            SleeperAPIError: the schedule would not load.
+        """
+        today = self._today(now)
+        return sum(
+            1
+            for game in self._team_schedule().get(team_abbr.upper(), [])
+            if self._is_remaining(game, start_date, end_date, today)
+        )
+
+    def get_remaining_games_bulk(
+        self, team_abbrs: list[str], start_date: date, end_date: date, now: datetime | None = None
+    ) -> dict[str, int]:
+        """One schedule load and one `now` for every club asked about.
+
+        Empty where the schedule would not load: games left are then unknown,
+        and a nought for every club would read as a week nobody plays.
+        """
+        moment = now or datetime.now(tz=PACIFIC)
+        try:
+            return {
+                abbr.upper(): self.get_remaining_games(abbr, start_date, end_date, now=moment)
+                for abbr in set(team_abbrs)
+            }
+        except SleeperAPIError as e:
+            logger.warning(f"Continuing without games left, the basketball schedule would not load: {e}")
+            return {}
+
+    def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
+        """Every real game dated inside a matchup window, in date order, each once.
+
+        Raises:
+            SleeperAPIError: the schedule would not load.
+        """
+        games = {id(g): g for club in self._team_schedule().values() for g in club}.values()
+        inside = [g for g in games if (day := parse_day(g.date)) is not None and start_date <= day <= end_date]
+        return sorted(inside, key=lambda g: (g.date, g.away, g.home))
+
+    @staticmethod
+    def _is_remaining(game: ScheduledGame, start: date, end: date, today: date) -> bool:
+        played = parse_day(game.date)
+        if played is None or not (start <= played <= end):
+            return False
+        if played < today:
+            return False
+        # Today's game turns on the status; a future one is remaining whatever
+        # a possibly-stale status says.
+        return played > today or game.status == "pre_game"
+
+    def _team_schedule(self) -> dict[str, list[ScheduledGame]]:
+        if self._schedule is None:
+            by_team: dict[str, list[ScheduledGame]] = {}
+            for game in self.client.get_nba_schedule(self._schedule_season()):
+                for club in (game.home, game.away):
+                    if club:
+                        by_team.setdefault(club, []).append(game)
+            self._schedule = by_team
+        return self._schedule
+
+    def _schedule_season(self) -> str:
+        """The season whose fixtures are still to be played, which is the one
+        the game itself is pointing at even while it has not started."""
+        return self._season or self.client.get_nba_state().season
+
+    @staticmethod
+    def _today(now: datetime | None) -> date:
+        moment = now or datetime.now(tz=PACIFIC)
+        return moment.astimezone(PACIFIC).date()

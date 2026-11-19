@@ -11,33 +11,21 @@ from collections.abc import Callable, Mapping
 from datetime import date, datetime
 
 from thefrontoffice.adapters.outbound.competitions import paging, places
-from thefrontoffice.adapters.outbound.competitions.dates import span
-from thefrontoffice.adapters.outbound.competitions.injuries import (
-    BODY_PART,
-    PlayerInjuries,
-    approximately,
-    by_club,
-    matched,
-)
+from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries, by_club, matched
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
-from thefrontoffice.adapters.outbound.competitions.nba import prompt
+from thefrontoffice.adapters.outbound.competitions.nba import prompt, views
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
-from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
-from thefrontoffice.adapters.outbound.competitions.nba.form import PACIFIC, FormSource, PlayerStats
-from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
-from thefrontoffice.adapters.outbound.competitions.nba.rules import (
-    ASSISTS,
-    CATEGORIES,
-    POINTS,
-    REBOUNDS,
-    SCOUTED,
-    Category,
-    fantasy_points,
-    ruled_out,
-    stranded,
+from thefrontoffice.adapters.outbound.competitions.nba.context import (
+    PlayerContextBuilder,
+    rank_by_points,
+    rank_free_agents,
 )
+from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
+from thefrontoffice.adapters.outbound.competitions.nba.projections import index_for
+from thefrontoffice.adapters.outbound.competitions.nba.rules import SCOUTED
+from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
@@ -47,19 +35,8 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSou
 from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague, YahooPlayer, YahooTeam
-from thefrontoffice.domain.errors import (
-    FrontOfficeError,
-    LeagueNotFoundError,
-    NotFoundError,
-    PlayerNotFoundError,
-    TeamNotFoundError,
-)
+from thefrontoffice.domain.errors import LeagueNotFoundError, NotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
-    PLAYER_COLUMN,
-    POSITION_COLUMN,
-    SLOT_COLUMN,
-    STATUS_COLUMN,
-    Action,
     CompetitionContext,
     LeagueSchedule,
     PlayerCard,
@@ -67,8 +44,6 @@ from thefrontoffice.domain.models import (
     PlayerPage,
     PlayerQuery,
     Slate,
-    Stat,
-    StatGroup,
     Summary,
     TeamRef,
     TradeProposal,
@@ -87,77 +62,22 @@ LEADERS = {c.label: c.yahoo_stat for c in SCOUTED}
 
 LEADERS_PER_STAT = 10
 
-# Where the moves are actually made. Unlike the other two platforms these
-# cannot be checked from here — the sport is behind an approval this app does
-# not have — so they follow Yahoo's documented shape rather than a probe.
-LEAGUE_URL = "https://basketball.fantasysports.yahoo.com/nba/{league_id}"
-TEAM_URL = "https://basketball.fantasysports.yahoo.com/nba/{league_id}/{team_id}"
-
-CARD_CATEGORIES = (POINTS, REBOUNDS, ASSISTS)
-"""The categories a table row has room for; the drawer carries all nine."""
-
-FANTASY_POINTS = "FPTS"
-"""A points league's fantasy points per game, as a column and a drawer name them."""
-
-POINTS_POOL = 30
-"""Free agents a points league's scout reads, best fantasy points per game first."""
-
-NO_FIGURE = "—"
-"""What a table cell shows where there is no number. A zero would read as a
-bad line rather than an absent one."""
-
-
-def _figure(stats: PlayerStats | None, category: Category) -> float | None:
-    """One category over a player's recent run, or None where there is no figure.
-
-    The run is the last fifteen games, or every game while fewer (see
-    `RecentForm`). Out of season, and for a player who has not featured, there
-    is no line to show; nor is there a percentage for a player who has
-    attempted nothing.
-    """
-    recent = (stats or PlayerStats()).get("recent")
-    return recent.line.get(category.label) if recent else None
-
-
-def _run(stats: PlayerStats | None) -> str:
-    """The run a figure averages, as a label reads it: 'last 15', 'last 12'."""
-    recent = (stats or PlayerStats()).get("recent")
-    return f"last {recent.games}" if recent else ""
-
-
-def _recent(stats: PlayerStats | None, category: Category) -> str:
-    """That figure as a cell reads it, or a dash where there is none."""
-    value = _figure(stats, category)
-    return category.show(value) if value is not None else NO_FIGURE
-
-
-def _points(stats: PlayerStats | None, weights: Mapping[str, float]) -> float | None:
-    """Fantasy points per game over a player's recent run, under the league's weights; None where there is no line."""
-    recent = (stats or PlayerStats()).get("recent")
-    return fantasy_points(recent.line, weights) if recent else None
-
 
 class YahooNBAProvider:
     """CompetitionProvider for Yahoo head-to-head basketball, by categories or by points."""
 
     @staticmethod
     def season_year(now: datetime | None = None) -> int:
-        """The NBA season a date belongs to, which rolls over on 1 September,
-        ahead of October's opening night.
-
-        Read in Pacific time, like the rest of basketball: a local clock would
-        put the night of 31 August in a different season depending on where
-        the machine is.
-        """
-        moment = (now or datetime.now(PACIFIC)).astimezone(PACIFIC)
-        return moment.year if moment.month >= 9 else moment.year - 1
+        """The NBA season a date belongs to (`league.season_year`)."""
+        return nba_league.season_year(now)
 
     def __init__(
         self,
         *,
         auth: YahooLeagueSource,
         yahoo_for: Callable[[YahooLeague], YahooSource],
-        nba: FormSource,
+        form: FormSource,
+        games: ScheduleSource,
         sleeper: SleeperProjectionSource,
         espn: ESPNSource,
         fallback_weekly_adds: int,
@@ -166,11 +86,14 @@ class YahooNBAProvider:
 
         `yahoo_for` rather than one client because a Yahoo client is bound to a
         league, and every call names the league it reads. `fallback_weekly_adds`
-        is the add limit for a league whose settings name none.
+        is the add limit for a league whose settings name none. `form` and
+        `games` are both read from Sleeper: each player's recent run, and the
+        real games inside a matchup week.
         """
         self._auth = auth
         self._yahoo_for = yahoo_for
-        self.nba = nba
+        self.form = form
+        self.games = games
         self.sleeper = sleeper
         self.espn = espn
         self.fallback_weekly_adds = fallback_weekly_adds
@@ -195,7 +118,7 @@ class YahooNBAProvider:
                 league_id=lg.league_key,
                 name=lg.name,
                 detail=lg.league_type,
-                url=_league_url(lg.league_key),
+                url=nba_league.league_url(lg.league_key),
             )
             for lg in self._leagues()
         ]
@@ -243,12 +166,12 @@ class YahooNBAProvider:
         yahoo = self._yahoo_for(league)
         my_team = yahoo.get_user_team()
         roster = yahoo.roster(my_team.team_key)
-        stuck = _off_il(roster)
+        stuck = nba_week.off_il(roster)
         week = league.current_week
         board = self._board(yahoo, league, my_team, week, roster) if week else Summary()
         return board.model_copy(
             update={
-                "headline": [*_adds(my_team.adds_used, self._add_limit(yahoo)), *board.headline],
+                "headline": [*nba_week.adds(my_team.adds_used, self._add_limit(yahoo)), *board.headline],
                 "actions": stuck or None,
             }
         )
@@ -289,7 +212,7 @@ class YahooNBAProvider:
         if found is None:
             return Slate()
         roster = yahoo.roster(team.team_key)
-        return Slate(games=[nba_week.match(game, roster) for game in self.nba.games_between(found.start, found.end)])
+        return Slate(games=[nba_week.match(game, roster) for game in self.games.games_between(found.start, found.end)])
 
     def _within(self, league: YahooLeague, week: int) -> int:
         """The week being played, once `week` is known to be one of the season's.
@@ -317,47 +240,8 @@ class YahooNBAProvider:
             return Summary(window=f"Week {week}", weeks=weeks)
         records = {t.team_key: t.standing.record for t in yahoo.teams() if t.standing}
         theirs = yahoo.roster(found.opponent.team_key) if roster is not None else None
-        window = f"Week {week} · {span(found.start, found.end)}"
-        if league.by_points:
-            # Won on the fantasy-point total, which Yahoo keeps: the categories behind it win nothing.
-            when = nba_week.stage(week, current)
-            return Summary(
-                headline=nba_week.points(found.mine, found.opponent, when),
-                mine=nba_week.side(
-                    found.mine.name,
-                    records.get(found.mine.team_key, ""),
-                    nba_week.total(found.mine, when),
-                    roster,
-                ),
-                opponent=nba_week.side(
-                    found.opponent.name,
-                    records.get(found.opponent.team_key, ""),
-                    nba_week.total(found.opponent, when),
-                    theirs,
-                ),
-                window=window,
-                weeks=weeks,
-            )
-        lines = nba_week.categories(yahoo.settings().categories, found.mine.stats, found.opponent.stats)
-        score = nba_week.score(lines)
-        return Summary(
-            headline=[nba_week.headline(score)] if score else [],
-            mine=nba_week.side(
-                found.mine.name,
-                records.get(found.mine.team_key, ""),
-                nba_week.written(score) if score else "",
-                roster,
-            ),
-            opponent=nba_week.side(
-                found.opponent.name,
-                records.get(found.opponent.team_key, ""),
-                nba_week.written((score[1], score[0], score[2])) if score else "",
-                theirs,
-            ),
-            categories=lines,
-            window=window,
-            weeks=weeks,
-        )
+        scored = None if league.by_points else yahoo.settings().categories
+        return nba_week.board(found, weeks, records, roster, theirs, scored)
 
     def schedule(self, league_id: str) -> LeagueSchedule:
         """The table, and your head-to-head season from every week's scoreboard.
@@ -402,17 +286,21 @@ class YahooNBAProvider:
         # Gathered before the schedule so one bulk lookup covers every team
         # either of them touches.
         rostered = yahoo.roster(my_team.team_key)
-        free_agents, annotations = self._rank_by_points(yahoo, weights) if weights else _rank_free_agents(yahoo)
+        free_agents, annotations = (
+            rank_by_points(yahoo.fetch_available(AVAILABLE_BROWSE_LIMIT), self.form.get_player_stats, weights)
+            if weights
+            else rank_free_agents(yahoo.fetch_top_by_stat(LEADERS, per_stat=LEADERS_PER_STAT))
+        )
         logger.debug(f"Building context for {len(rostered)} rostered and {len(free_agents)} free agents")
 
         remaining_games: dict[str, int] = {}
         if start and end:
             teams = [p.team for p in (*rostered, *free_agents)]
-            remaining_games = self.nba.get_remaining_games_bulk(teams, start, end)
+            remaining_games = self.games.get_remaining_games_bulk(teams, start, end)
 
-        projections = self._projection_index(start, end)
+        projections = index_for(self.sleeper, start, end)
         returns = self._returns([*rostered, *free_agents])
-        builder = PlayerContextBuilder(self.nba, weights)
+        builder = PlayerContextBuilder(self.form, self.games, weights)
         roster_lines = builder.build_player_lines(
             rostered, start, end, remaining_games=remaining_games, projections=projections, returns=returns
         )
@@ -421,7 +309,7 @@ class YahooNBAProvider:
         )
 
         schedule_context = prompt.schedule(week, remaining_games, projected=projections is not None)
-        stuck = _off_il(rostered)
+        stuck = nba_week.off_il(rostered)
         trans_context = prompt.transactions(used_adds, limit) + "".join(f"\n- {item.reason}" for item in stuck)
         return CompetitionContext(
             prompt=prompt.scout(
@@ -438,7 +326,7 @@ class YahooNBAProvider:
             extra=schedule_context,
             roster_lines=roster_lines,
             candidate_lines=fa_lines,
-            headline=_adds(used_adds, limit),
+            headline=nba_week.adds(used_adds, limit),
             tasks=stuck,
             listed=frozenset(p.name for p in rostered if p.player_key in {item.player_id for item in stuck}),
             # A kept judgment's add of somebody another manager has since claimed is no move at all.
@@ -452,7 +340,7 @@ class YahooNBAProvider:
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
         weights = self._weights(league, yahoo)
-        builder = PlayerContextBuilder(self.nba, weights)
+        builder = PlayerContextBuilder(self.form, self.games, weights)
         giving, receiving = resolve_sides(proposal, lambda name: _find_player(yahoo, name))
 
         my_team = yahoo.get_user_team()
@@ -490,7 +378,7 @@ class YahooNBAProvider:
                 team_id=team.team_key,
                 name=team.name,
                 detail=team.standing.record if team.standing else "",
-                url=_team_url(team.team_key),
+                url=nba_league.team_url(team.team_key),
                 is_mine=team.is_mine,
             )
             for team in self._yahoo(league_id).teams()
@@ -519,43 +407,8 @@ class YahooNBAProvider:
         return paging.page(ranked, query)
 
     def _cards(self, players: list[YahooPlayer], weights: Mapping[str, float] | None) -> list[PlayerCard]:
-        """One table shape for every list of players this sport shows.
-
-        The lineup slot is a column only where somebody holds one: on the wire
-        nobody does, and the column would be blank down its whole length. A
-        points league adds the fantasy points per game its weights make of the
-        same run.
-        """
-        slotted = any(p.slot for p in players)
-        returns = self._returns(players)
-        cards = []
-        for player in players:
-            stats = self.nba.get_player_stats(player.name)
-            back = returns.get(player.player_key) if player.status else None
-            values = {c.label: value for c in CARD_CATEGORIES if (value := _figure(stats, c)) is not None}
-            columns = {c.label: _recent(stats, c) for c in CARD_CATEGORIES}
-            if weights:
-                points = _points(stats, weights)
-                columns[FANTASY_POINTS] = f"{points:.1f}" if points is not None else NO_FIGURE
-                if points is not None:
-                    values[FANTASY_POINTS] = points
-            cards.append(
-                PlayerCard(
-                    player_id=player.player_key,
-                    ruled_out=ruled_out(player.status),
-                    values=values,
-                    columns={
-                        PLAYER_COLUMN: player.name,
-                        POSITION_COLUMN: player.position,
-                        "Team": player.team,
-                        **({SLOT_COLUMN: player.slot} if slotted else {}),
-                        **columns,
-                        STATUS_COLUMN: player.status,
-                    },
-                    notes={STATUS_COLUMN: f"back {approximately(back)}"} if back else {},
-                )
-            )
-        return cards
+        """One table shape for every list of players this sport shows (`views.cards`)."""
+        return views.cards(players, self.form.get_player_stats, self._returns(players), weights)
 
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
         """Any player in the league — yours, a rival's or a free agent — with their recent line where Sleeper has it.
@@ -569,54 +422,8 @@ class YahooNBAProvider:
             raise PlayerNotFoundError([player_id])
         player = found[0]
 
-        stats = self.nba.get_player_stats(player.name)
-        run = _run(stats)
-        figures = [Stat(label=c.label, value=_recent(stats, c)) for c in CATEGORIES]
-        weights = self._weights(league, yahoo)
-        if weights:
-            fpts = _points(stats, weights)
-            headline, unit = (f"{fpts:.1f}", "fpts/game") if fpts is not None else ("", "")
-            figures.append(Stat(label=FANTASY_POINTS, value=headline or NO_FIGURE))
-        else:
-            points = _recent(stats, POINTS)
-            headline, unit = (points, "pts/game") if points != NO_FIGURE else ("", "")
-        # ESPN's report where it has him, which says when he is back; Yahoo's
-        # status where it does not. Nothing for a healthy player.
-        hurt = self._injuries([player]).stats(player_id) or [
-            *([Stat(label="Status", value=player.status, tone="warning")] if player.status else []),
-            *([Stat(label=BODY_PART, value=player.injury_note)] if player.injury_note else []),
-        ]
-        return PlayerDetail(
-            player_id=player_id,
-            name=player.name,
-            position=player.position,
-            team=player.team,
-            headline=headline,
-            headline_label=f"{unit}, {run}" if headline else "No recent form",
-            note=player.status,
-            tone="warning" if player.status else "neutral",
-            groups=[
-                StatGroup(title=run.capitalize() or "Recent form", stats=figures),
-                *([StatGroup(title="Injury", stats=hurt)] if hurt else []),
-            ],
-        )
-
-    def _rank_by_points(
-        self, yahoo: YahooSource, weights: Mapping[str, float]
-    ) -> tuple[list[YahooPlayer], dict[str, str]]:
-        """The available players a points league's scout reads: best fantasy points per game first.
-
-        Drawn from Yahoo's own ranking of the wire, then reordered by what the
-        league's weights make of each one's recent run; a player with no line
-        has nothing to rank him by, and is left out.
-        """
-        scored = [
-            (player, points)
-            for player in yahoo.fetch_available(AVAILABLE_BROWSE_LIMIT)
-            if (points := _points(self.nba.get_player_stats(player.name), weights)) is not None
-        ]
-        ranked = sorted(scored, key=lambda pair: pair[1], reverse=True)[:POINTS_POOL]
-        return [p for p, _ in ranked], {p.player_key: f"[{points:.1f} fpts/g]" for p, points in ranked}
+        stats = self.form.get_player_stats(player.name)
+        return views.detail(player, stats, self._weights(league, yahoo), self._injuries([player]).stats(player_id))
 
     def _injuries(self, players: list[YahooPlayer]) -> PlayerInjuries:
         """Each of `players` on ESPN's injury report, keyed by Yahoo's key, where it names him.
@@ -637,32 +444,6 @@ class YahooNBAProvider:
         """The day ESPN expects each of `players` back, keyed by Yahoo's key; nobody it gives none for."""
         injuries = self._injuries(players)
         return {p.player_key: back for p in players if (back := injuries.returns(p.player_key))}
-
-    def _projection_index(self, start: date | None, end: date | None) -> ProjectionIndex | None:
-        """Projected category totals for the matchup period, or None.
-
-        Returns None rather than raising when projections are unavailable —
-        Sleeper publishes none before opening night, and a scout report built
-        from recent form alone is the behavior this had all along.
-        """
-        if start is None or end is None:
-            return None
-        try:
-            state = self.sleeper.get_nba_state()
-            rows = self.sleeper.get_nba_projections(state.season, state.week)
-            if not rows and state.week:
-                # A matchup can straddle two Sleeper weeks near a boundary.
-                rows = self.sleeper.get_nba_projections(state.season, state.week + 1)
-            index = ProjectionIndex(rows, start, end)
-        except FrontOfficeError as e:
-            logger.warning(f"No NBA projections available, using recent form only: {e}")
-            return None
-
-        if index.is_empty:
-            logger.info("Sleeper has no NBA projections for this period (out of season?)")
-            return None
-        logger.debug(f"Matched projections for {len(index)} players")
-        return index
 
 
 def _find_player(yahoo: YahooSource, name: str) -> YahooPlayer | None:
@@ -687,31 +468,6 @@ def _find_player(yahoo: YahooSource, name: str) -> YahooPlayer | None:
     return None
 
 
-def _rank_free_agents(yahoo: YahooSource) -> tuple[list[YahooPlayer], dict[str, str]]:
-    """Top available players per category, deduplicated, most versatile first.
-
-    A player leading several categories appears once, annotated with all of
-    them, and ahead of single-category players — the ordering the prompt
-    relies on when it asks for the three best adds.
-    """
-    leaders = yahoo.fetch_top_by_stat(LEADERS, per_stat=LEADERS_PER_STAT)
-
-    categories_by_key: dict[str, list[str]] = {}
-    player_by_key: dict[str, YahooPlayer] = {}
-    for label, players in leaders.items():
-        for p in players:
-            key = p.player_key
-            if key not in categories_by_key:
-                categories_by_key[key] = []
-                player_by_key[key] = p
-            categories_by_key[key].append(label)
-
-    ranked = sorted(categories_by_key.items(), key=lambda kv: len(kv[1]), reverse=True)
-    players = [player_by_key[key] for key, _ in ranked]
-    annotations = {key: f"[Top in: {', '.join(cats)}]" for key, cats in ranked}
-    return players, annotations
-
-
 YAHOO_GAME = YahooGame(
     code="nba",
     season=YahooNBAProvider.season_year,
@@ -720,64 +476,3 @@ YAHOO_GAME = YahooGame(
     per_stat=LEADERS_PER_STAT,
 )
 """What this provider reads of Yahoo's NBA game, so a browser sync captures exactly that."""
-
-
-def _league_url(league_key: str) -> str:
-    """A league's page on Yahoo: `<game>.l.<league>` addressed by its number."""
-    numbers = _key_numbers(league_key, "l")
-    return LEAGUE_URL.format(league_id=numbers[0]) if numbers else ""
-
-
-def _team_url(team_key: str) -> str:
-    """A team's page on Yahoo: `<game>.l.<league>.t.<team>` addressed by its two numbers."""
-    numbers = _key_numbers(team_key, "l", "t")
-    return TEAM_URL.format(league_id=numbers[0], team_id=numbers[1]) if numbers else ""
-
-
-def _key_numbers(key: str, *kinds: str) -> list[str]:
-    """The number after each of `kinds` in a Yahoo key; empty for a key in any other shape.
-
-    A URL wants the numbers, not the key — so a key in an unexpected shape
-    yields no link rather than a broken one.
-    """
-    parts = key.split(".")
-    if len(parts) != 1 + 2 * len(kinds) or tuple(parts[1::2]) != kinds:
-        return []
-    return parts[2::2]
-
-
-def _off_il(roster: list[YahooPlayer]) -> list[Action]:
-    """Each player held in an injured slot his status no longer qualifies him for.
-
-    Yahoo holds every add while one sits there, so it comes before any other
-    move. Activating him needs an active roster spot, which may mean a drop.
-    """
-    items = []
-    for player in roster:
-        if not stranded(player.slot, player.status):
-            continue
-        status = f"listed {player.status}" if player.status else "cleared to play"
-        items.append(
-            Action(
-                kind="lineup",
-                urgency="now",
-                title=f"Move {player.name} off {player.slot}",
-                reason=f"{player.name} is {status}. Adds locked until he leaves {player.slot}; needs an open roster spot.",
-                when="first",
-                player_id=player.player_key,
-                key=f"il:{player.player_key}:{player.status.upper() or 'ACTIVE'}",
-            )
-        )
-    return items
-
-
-def _adds(used: int, limit: int) -> list[Stat]:
-    """The week's add budget, as what is left of it.
-
-    The one figure the week turns on: an exhausted budget is the constraint
-    the whole report bends around, turning every recommendation into a
-    MONITOR, so it warns. The team's name is the page's title already, and
-    the roster's size is My team's to say.
-    """
-    left = max(0, limit - used)
-    return [Stat(label="Adds left", value=f"{left} of {limit}", tone="good" if left else "warning")]

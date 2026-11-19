@@ -1,9 +1,21 @@
-"""Tests for a basketball week as the page reads it: `nba/week.py`."""
+"""Tests for a basketball week as the page reads it: `nba/week.py`.
 
-from support.nba import make_player
+Its real games are read from Sleeper's schedule, where a matchup window is
+counted on date labels while "has it happened" is decided in the zone the
+league schedules by.
+"""
+
+from datetime import date, datetime
+from typing import Any
+
+import pytest
+from support.nba import FakeSleeperNBA, make_player
 
 from thefrontoffice.adapters.outbound.competitions.nba import week
-from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, FIELD_GOALS, POINTS, TURNOVERS
+from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, FIELD_GOALS, PACIFIC, POINTS, TURNOVERS
+from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASchedule
+from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, StatCategory
 
 
@@ -130,3 +142,85 @@ def test_the_board_reads_whatever_categories_the_league_scores() -> None:
     lines = week.categories(scored, {"27": "4", POINTS.yahoo_stat: "500"}, {"27": "6", POINTS.yahoo_stat: "480"})
 
     assert [(line.name, line.lead) for line in lines] == [("DD", "theirs"), ("PTS", "mine")]
+
+
+# ── remaining games, from Sleeper ─────────────────────────────────────────────────────
+
+
+def _sched(day: str, status: str = "pre_game", home: str = "DEN", away: str = "LAL") -> ScheduledGame:
+    return ScheduledGame(week=1, date=day, home=home, away=away, status=status)
+
+
+WINDOW_START = date(2026, 2, 9)
+WINDOW_END = date(2026, 2, 15)
+NOW = datetime(2026, 2, 10, 12, 0, tzinfo=PACIFIC)
+
+
+def _schedule(**kwargs: Any) -> SleeperNBASchedule:
+    return SleeperNBASchedule(client=FakeSleeperNBA(**kwargs), season="2026")
+
+
+def test_games_outside_the_matchup_window_are_not_counted() -> None:
+    schedule = _schedule(schedule=[_sched("2026-02-08"), _sched("2026-02-12"), _sched("2026-02-16")])
+
+    assert schedule.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
+
+
+def test_a_windows_games_are_listed_once_each_in_date_order() -> None:
+    """A game is filed under both its clubs: listed under each, it would show twice."""
+    schedule = _schedule(schedule=[_sched("2026-02-14"), _sched("2026-02-08"), _sched("2026-02-12")])
+
+    assert [g.date for g in schedule.games_between(WINDOW_START, WINDOW_END)] == ["2026-02-12", "2026-02-14"]
+
+
+def test_a_game_already_in_the_past_is_not_remaining() -> None:
+    schedule = _schedule(schedule=[_sched("2026-02-09"), _sched("2026-02-14")])
+
+    assert schedule.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
+
+
+def test_a_stale_status_cannot_resurrect_a_played_game() -> None:
+    """The schedule is cached, so its statuses can be hours old. A date in the
+    past settles it whatever the status still says."""
+    schedule = _schedule(schedule=[_sched("2026-02-09", status="pre_game")])
+
+    assert schedule.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 0
+
+
+def test_todays_game_turns_on_whether_it_has_tipped_off() -> None:
+    tipped = _schedule(schedule=[_sched("2026-02-10", status="in_game")])
+    waiting = _schedule(schedule=[_sched("2026-02-10", status="pre_game")])
+
+    assert tipped.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 0
+    assert waiting.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
+
+
+def test_a_club_is_counted_whether_it_is_home_or_away() -> None:
+    schedule = _schedule(schedule=[_sched("2026-02-12", home="LAL", away="DEN")])
+
+    assert schedule.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
+
+
+def test_an_unknown_club_has_no_games_rather_than_raising() -> None:
+    assert _schedule(schedule=[_sched("2026-02-12")]).get_remaining_games("XXX", WINDOW_START, WINDOW_END, now=NOW) == 0
+
+
+def test_bulk_counts_each_club_asked_about_keyed_in_upper_case() -> None:
+    schedule = _schedule(schedule=[_sched("2026-02-12", home="DEN", away="LAL")])
+
+    assert schedule.get_remaining_games_bulk(["DEN", "lal"], WINDOW_START, WINDOW_END, now=NOW) == {"DEN": 1, "LAL": 1}
+
+
+def test_an_unparseable_date_is_skipped_rather_than_counted() -> None:
+    schedule = _schedule(schedule=[_sched("not-a-date"), _sched("2026-02-12")])
+
+    assert schedule.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
+
+
+def test_a_failed_schedule_raises_for_one_club_and_leaves_every_club_unknown_in_bulk() -> None:
+    """Nought would read as a club with no games left; unknown is what a failed request knows."""
+    schedule = _schedule(error=SleeperAPIError("down"))
+
+    with pytest.raises(SleeperAPIError):
+        schedule.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW)
+    assert schedule.get_remaining_games_bulk(["DEN"], WINDOW_START, WINDOW_END, now=NOW) == {}

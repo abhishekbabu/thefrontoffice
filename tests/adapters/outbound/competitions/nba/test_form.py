@@ -1,14 +1,11 @@
-"""Tests for basketball's recent form and remaining games, read from Sleeper.
+"""Tests for basketball's recent form, read from Sleeper: `nba/form.py`.
 
 The rules that make the numbers mean anything: percentages summed rather than
-averaged, a window withheld until it can be filled, a game nobody played kept
-out of the average, and a matchup window counted on date labels while "has it
-happened" is decided in the zone the league schedules by.
+averaged, a window withheld until it can be filled, and a game nobody played
+kept out of the average.
 """
 
-from datetime import date, datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pytest
 from support.nba import FakeSleeperNBA
@@ -21,9 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.form import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta, ScheduledGame
-
-PACIFIC = ZoneInfo("America/Los_Angeles")
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, PlayerMeta
 
 
 def _game(day: str, **stats: float) -> NBAGameLog:
@@ -150,81 +145,3 @@ def test_an_accented_name_still_matches() -> None:
 def test_a_failed_lookup_leaves_the_report_without_form_rather_than_failing() -> None:
     """Form is enrichment: a report without it is thinner, not wrong."""
     assert _form(error=SleeperAPIError("down")).get_player_stats("Nikola Jokic") is None
-
-
-# ── remaining games ─────────────────────────────────────────────────────
-
-
-def _sched(day: str, status: str = "pre_game", home: str = "DEN", away: str = "LAL") -> ScheduledGame:
-    return ScheduledGame(week=1, date=day, home=home, away=away, status=status)
-
-
-WINDOW_START = date(2026, 2, 9)
-WINDOW_END = date(2026, 2, 15)
-NOW = datetime(2026, 2, 10, 12, 0, tzinfo=PACIFIC)
-
-
-def test_games_outside_the_matchup_window_are_not_counted() -> None:
-    form = _form(schedule=[_sched("2026-02-08"), _sched("2026-02-12"), _sched("2026-02-16")])
-
-    assert form.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
-
-
-def test_a_windows_games_are_listed_once_each_in_date_order() -> None:
-    """A game is filed under both its clubs: listed under each, it would show twice."""
-    form = _form(schedule=[_sched("2026-02-14"), _sched("2026-02-08"), _sched("2026-02-12")])
-
-    assert [g.date for g in form.games_between(WINDOW_START, WINDOW_END)] == ["2026-02-12", "2026-02-14"]
-
-
-def test_a_game_already_in_the_past_is_not_remaining() -> None:
-    form = _form(schedule=[_sched("2026-02-09"), _sched("2026-02-14")])
-
-    assert form.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
-
-
-def test_a_stale_status_cannot_resurrect_a_played_game() -> None:
-    """The schedule is cached, so its statuses can be hours old. A date in the
-    past settles it whatever the status still says."""
-    form = _form(schedule=[_sched("2026-02-09", status="pre_game")])
-
-    assert form.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 0
-
-
-def test_todays_game_turns_on_whether_it_has_tipped_off() -> None:
-    tipped = _form(schedule=[_sched("2026-02-10", status="in_game")])
-    waiting = _form(schedule=[_sched("2026-02-10", status="pre_game")])
-
-    assert tipped.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 0
-    assert waiting.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
-
-
-def test_a_club_is_counted_whether_it_is_home_or_away() -> None:
-    form = _form(schedule=[_sched("2026-02-12", home="LAL", away="DEN")])
-
-    assert form.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
-
-
-def test_an_unknown_club_has_no_games_rather_than_raising() -> None:
-    assert _form(schedule=[_sched("2026-02-12")]).get_remaining_games("XXX", WINDOW_START, WINDOW_END, now=NOW) == 0
-
-
-def test_bulk_counts_each_club_asked_about_keyed_in_upper_case() -> None:
-    form = _form(schedule=[_sched("2026-02-12", home="DEN", away="LAL")])
-
-    assert form.get_remaining_games_bulk(["DEN", "lal"], WINDOW_START, WINDOW_END, now=NOW) == {"DEN": 1, "LAL": 1}
-
-
-def test_an_unparseable_date_is_skipped_rather_than_counted() -> None:
-    form = _form(schedule=[_sched("not-a-date"), _sched("2026-02-12")])
-
-    assert form.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
-
-
-def test_a_failed_schedule_raises_for_one_club_and_leaves_every_club_unknown_in_bulk() -> None:
-    """Nought would read as a club with no games left; unknown is what a failed request knows."""
-    form = _form(error=SleeperAPIError("down"))
-
-    with pytest.raises(SleeperAPIError):
-        form.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW)
-    assert form.get_remaining_games_bulk(["DEN"], WINDOW_START, WINDOW_END, now=NOW) == {}
