@@ -65,11 +65,6 @@ function assistant(asked: Asked | null = null, onTaken = () => {}) {
 
 const thread = assistant();
 
-/** The questions on screen, oldest first. */
-function questions(container: HTMLElement): (string | null)[] {
-  return [...container.querySelectorAll("p.whitespace-pre-line")].map((node) => node.textContent);
-}
-
 async function ask(container: HTMLElement, question: string) {
   await typeInto(container.querySelector("input")!, question);
   await act(async () => {
@@ -138,7 +133,7 @@ describe("the assistant's conversation", () => {
 
     await ask(container, "And next week?");
 
-    expect(questions(container)).toEqual(["Why bench him?", "Elsewhere?", "And next week?"]);
+    expect(container.textContent).toMatch(/Why bench him\?.*Elsewhere\?.*And next week\?/);
   });
 
   it("sends each question with what is on screen", async () => {

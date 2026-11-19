@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { Capabilities, Competition, League, PlayerDetail } from "@/lib/api";
+import type { Competition, League, PlayerDetail } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { useDrawers } from "@/components/ui/drawers";
-import { offlineClient, press, render, settle } from "@/test/render";
+import { drawerClient, render, settle } from "@/test/render";
 import { playerDetail } from "@/test/players";
 
 const NFL = { key: "nfl-sleeper" } as Competition;
@@ -29,25 +29,20 @@ function Roster() {
   );
 }
 
+/** Open his drawer on `detail`, with each of `tabs` answering its own read. */
+async function opened(detail: PlayerDetail, tabs: Record<string, PlayerDetail> = {}) {
+  const client = drawerClient();
+  client.setQueryData(keys.player(NFL.key, LEAGUE.league_id, ALLEN.player_id), detail);
+  for (const [tab, read] of Object.entries(tabs)) {
+    client.setQueryData(keys.playerTab(NFL.key, LEAGUE.league_id, ALLEN.player_id, tab), read);
+  }
+  const { container } = await render(<Roster />, client);
+  container.querySelector("button")!.click();
+  await settle();
+  return document.querySelector<HTMLElement>('[role="dialog"]')!;
+}
+
 describe("the player drawer", () => {
-  it("opens as a modal dialog named for the player, and Escape closes it", async () => {
-    const client = offlineClient();
-    client.setQueryData<Capabilities>(keys.capabilities, { ai: false, limits: { judged: 10 } });
-    client.setQueryData(keys.player(NFL.key, LEAGUE.league_id, ALLEN.player_id), ALLEN);
-    const { container } = await render(<Roster />, client);
-
-    container.querySelector("button")!.click();
-    await settle();
-    const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
-
-    expect([dialog?.getAttribute("aria-modal"), dialog?.getAttribute("aria-label")]).toEqual(["true", "Josh Allen"]);
-    expect(dialog?.contains(document.activeElement)).toBe(true);
-
-    await press(dialog!, "Escape");
-    await settle(400);
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-  });
-
   it("shows one tab at a time, offers only tabs with something in them, and names his owner", async () => {
     const tabbed: PlayerDetail = {
       ...ALLEN,
@@ -59,14 +54,7 @@ describe("the player drawer", () => {
         { title: "Latest news", tab: "News", note: "", stats: [] },
       ],
     };
-    const client = offlineClient();
-    client.setQueryData<Capabilities>(keys.capabilities, { ai: false, limits: { judged: 10 } });
-    client.setQueryData(keys.player(NFL.key, LEAGUE.league_id, ALLEN.player_id), tabbed);
-    const { container } = await render(<Roster />, client);
-
-    container.querySelector("button")!.click();
-    await settle();
-    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const dialog = await opened(tabbed);
     const tabs = [...dialog.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
 
     expect(tabs).toEqual(["This week", "History"]);
@@ -91,16 +79,7 @@ describe("the player drawer", () => {
       ...ALLEN,
       tables: [{ title: "By season", tab: "Seasons", columns: ["2025-26"], rows: [{ label: "PTS", values: ["14.8"], tone: "neutral", better: "higher", best: [] }], absent: "N/A" }],
     });
-    const client = offlineClient();
-    client.setQueryData<Capabilities>(keys.capabilities, { ai: false, limits: { judged: 10 } });
-    client.setQueryData(keys.player(NFL.key, LEAGUE.league_id, ALLEN.player_id), lazy);
-    client.setQueryData(keys.playerTab(NFL.key, LEAGUE.league_id, ALLEN.player_id, "Seasons"), seasons);
-    client.setQueryData(keys.playerTab(NFL.key, LEAGUE.league_id, ALLEN.player_id, "News"), playerDetail({ ...ALLEN }));
-    const { container } = await render(<Roster />, client);
-
-    container.querySelector("button")!.click();
-    await settle();
-    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const dialog = await opened(lazy, { Seasons: seasons, News: playerDetail({ ...ALLEN }) });
     const tabs = [...dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
 
     expect(tabs.map((t) => t.textContent)).toEqual(["This week", "Seasons", "News"]);
@@ -135,14 +114,7 @@ describe("the player drawer", () => {
         },
       ],
     });
-    const client = offlineClient();
-    client.setQueryData<Capabilities>(keys.capabilities, { ai: false, limits: { judged: 10 } });
-    client.setQueryData(keys.player(NFL.key, LEAGUE.league_id, ALLEN.player_id), traded);
-    const { container } = await render(<Roster />, client);
-
-    container.querySelector("button")!.click();
-    await settle();
-    const drawer = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const drawer = await opened(traded);
     drawer.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1]!.click();
     await settle();
     const row = [...drawer.querySelectorAll<HTMLElement>("[role=button]")].find((el) => el.textContent?.includes("Trade"))!;

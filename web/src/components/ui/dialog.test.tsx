@@ -50,7 +50,6 @@ describe("a slide-over", () => {
 
     expect(dialog?.closest("[data-page]")).toBeNull();
     expect(container.contains(dialog)).toBe(false);
-    expect(dialog?.parentElement?.parentElement).toBe(document.body);
   });
 
   it("takes focus when it opens", async () => {

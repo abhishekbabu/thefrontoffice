@@ -15,6 +15,8 @@ import { MotionGlobalConfig } from "motion/react";
 import features from "@/lib/motion-features";
 import { MotionProvider } from "@/lib/motion-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import type { Capabilities } from "@/lib/api";
+import { keys } from "@/lib/queries";
 
 // Tells React this is a test environment, so `act` flushes as it would in one.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -27,6 +29,13 @@ MotionGlobalConfig.skipAnimations = true;
  */
 export function offlineClient(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, enabled: true } } });
+}
+
+/** An offline client holding what a player drawer reads besides the player: the capabilities, with no model. */
+export function drawerClient(): QueryClient {
+  const client = offlineClient();
+  client.setQueryData<Capabilities>(keys.capabilities, { ai: false, limits: { judged: 10 } });
+  return client;
 }
 
 const mounted = new Set<() => Promise<void>>();
@@ -67,7 +76,7 @@ export async function render(ui: ReactNode, client: QueryClient = offlineClient(
 }
 
 /** Press `key` on `target`, as a keyboard would: down, letting React and the page respond. */
-export async function press(target: Element, key: string, init: KeyboardEventInit = {}): Promise<KeyboardEvent> {
+export async function press(target: EventTarget, key: string, init: KeyboardEventInit = {}): Promise<KeyboardEvent> {
   const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
   await act(async () => {
     target.dispatchEvent(event);

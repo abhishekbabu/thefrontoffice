@@ -21,10 +21,8 @@ describe("Season", () => {
     const { container } = await render(
       <Season rows={[row("Week 10", { is_current: true, result: "119.24-103.90" }), row("Week 11", { marks: ["Trade deadline"] })]} />,
     );
-    const rows = [...container.querySelectorAll("[class*=border-t]")].map((r) => r.textContent ?? "");
 
-    expect(rows.find((r) => r.includes("Week 11"))).toContain("Trade deadline");
-    expect(rows.find((r) => r.includes("Week 10"))).toContain("live 119.24-103.90");
+    expect(container.textContent).toMatch(/Week 10.*live 119\.24-103\.90.*Week 11.*Trade deadline/);
   });
 
   it("puts the opponent's record now beside their name for a week still to be decided", async () => {

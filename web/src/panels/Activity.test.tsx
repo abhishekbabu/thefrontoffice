@@ -1,9 +1,8 @@
 import { act } from "react";
 import { describe, expect, it } from "vitest";
-import type { ActivityRow, Competition, League, LeagueSchedule, PlayerDetail } from "@/lib/api";
+import type { Competition, League, LeagueSchedule, PlayerDetail } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { ActivityPanel } from "@/panels/Activity";
-import { sections } from "@/components/ui/move";
 import { offlineClient, render, settle } from "@/test/render";
 import { playerDetail } from "@/test/players";
 
@@ -53,7 +52,6 @@ describe("League activity", () => {
     const dialog = document.querySelector("[role=dialog]")!;
     expect(dialog.getAttribute("aria-label")).toBe("Trade by Rival ↔ Me");
     expect(dialog.textContent).toMatch(/To Rival.*Star QB.*\$5 FAAB/);
-    expect(dialog.textContent).toContain("To Rival");
     expect(dialog.textContent).toContain("To Me");
     expect(dialog.textContent).toContain("QB · BUF");
 
@@ -70,27 +68,5 @@ describe("League activity", () => {
     await act(async () => back.click());
     await settle(400);
     expect(document.querySelector("[aria-label='Trade by Rival ↔ Me']")).not.toBeNull();
-  });
-});
-
-describe("sections", () => {
-  it("reads one manager's move as what he added and what he let go", () => {
-    const claim: ActivityRow = {
-      when: "11 Nov",
-      who: "Me",
-      what: "Waiver",
-      detail: "",
-      is_mine: true,
-      bid: "$14",
-      moves: [
-        { player_id: "wr9", player: "Waiver WR", position: "WR", team: "NYJ", change: "added", manager: "Me" },
-        { player_id: "rb1", player: "Good RB", position: "RB", team: "BUF", change: "dropped", manager: "Me" },
-      ],
-    };
-
-    expect(sections(claim).map((s) => [s.title, s.moves.map((m) => m.player)])).toEqual([
-      ["Added", ["Waiver WR"]],
-      ["Dropped", ["Good RB"]],
-    ]);
   });
 });

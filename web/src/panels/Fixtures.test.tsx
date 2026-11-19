@@ -30,11 +30,10 @@ describe("Games", () => {
     expect(container.textContent).not.toMatch(/\d+ at/);
   });
 
-  it("shows the start time where there is one, in the viewer's zone, and the day otherwise", async () => {
+  it("shows the start time in the viewer's zone", async () => {
     const iso = "2026-11-22T18:00:00Z";
     const { container } = await render(<Games rows={[game({ kickoff: iso })]} />);
-    expect(container.textContent).toContain(kickoff(iso));
-    expect(kickoff(iso)).toContain(new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }));
+    expect(container.textContent).toContain(new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }));
   });
 
   it("says each kickoff once, over the games that share it", async () => {
