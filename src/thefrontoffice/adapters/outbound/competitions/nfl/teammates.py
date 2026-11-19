@@ -21,40 +21,26 @@ The rule for whose absence counts is kept simple:
   at either position.
 
 A teammate's game counts as one he missed where he did not take the field, or
-was on for under `LEFT_EARLY` of the snaps; a game he played for another club
-counts as neither. Only games the player himself played for this club count.
+was on for under `LEFT_EARLY` of the snaps (`Appearance.partial`); how the games
+part, and how a split reads, is shared with basketball (`competitions/teammates.py`).
 """
 
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 
-from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
-    LEFT_EARLY,
-    RECEIVERS,
-    REGULAR,
-    ROLE_GAMES,
-    Evidence,
-)
+from thefrontoffice.adapters.outbound.competitions import teammates
+from thefrontoffice.adapters.outbound.competitions.nfl.evidence import RECEIVERS, REGULAR, ROLE_GAMES, Evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.model import FREE_AGENT, PlayerInfo
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out
-from thefrontoffice.domain.models import Stat, Tone
+from thefrontoffice.adapters.outbound.competitions.teammates import surname
+from thefrontoffice.domain.models import Stat
 
 HURT = frozenset({"QUESTIONABLE", "DOUBTFUL", "OUT", "IR", "PUP"})
 """The designations at which a teammate's absence is worth weighing: this week's report, and the long rulings."""
 
 SHORT_STATUS = {"QUESTIONABLE": "Q", "DOUBTFUL": "D", "OUT": "O", "IR": "IR", "PUP": "PUP"}
 """Each designation as an injury report abbreviates it."""
-
-SUFFIXES = frozenset({"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"})
-
-
-def surname(name: str) -> str:
-    """'Bowers' of 'Brock Bowers', and of 'Marvin Harrison Jr.' 'Harrison'."""
-    parts = name.split()
-    while len(parts) > 1 and parts[-1].casefold() in SUFFIXES:
-        parts.pop()
-    return parts[-1] if parts else name
 
 
 @dataclass(frozen=True)
@@ -88,19 +74,12 @@ class Split:
 
     def figures(self) -> str:
         """'6.10/game in 3 games · 8.60 with', the sample stated; the figure with him first once he is back."""
-        if self.back:
-            with_him = (
-                f"{self.alongside:.2f}/game in {_games(self.alongside_games)}"
-                if self.alongside is not None
-                else "never with"
-            )
-            return f"{with_him} · {self.without:.2f} without in {_games(self.games)}"
-        with_him = f" · {self.alongside:.2f} with" if self.alongside is not None else " · never with"
-        return f"{self.without:.2f}/game in {_games(self.games)}{with_him}"
+        alongside = f"{self.alongside:.2f}" if self.alongside is not None else None
+        return teammates.figures(self.back, f"{self.without:.2f}", self.games, alongside, self.alongside_games)
 
     def label(self) -> str:
         """'Without Brock Bowers (TE, O)', or 'With Brock Bowers (TE, Q)' once he is back."""
-        return f"{'With' if self.back else 'Without'} {self.teammate.name} ({self.teammate.position}, {self.status})"
+        return teammates.heading(self.back, self.teammate.name, f"{self.teammate.position}, {self.status}")
 
     def note(self) -> str:
         """The cell's tooltip: who, and the figures."""
@@ -108,16 +87,9 @@ class Split:
 
     def stat(self) -> Stat:
         """The drawer's row, toned by whether the figure that counts beats the other — and the figures say so too."""
-        if self.alongside is None:
-            tone: Tone = "neutral"
-        else:
-            counts, other = (self.alongside, self.without) if self.back else (self.without, self.alongside)
-            tone = "good" if counts > other else "warning"
-        return Stat(label=self.label(), value=self.figures(), tone=tone)
-
-
-def _games(count: int) -> str:
-    return "1 game" if count == 1 else f"{count} games"
+        return Stat(
+            label=self.label(), value=self.figures(), tone=teammates.tone(self.back, self.without, self.alongside)
+        )
 
 
 class HurtTeammates:
@@ -185,24 +157,8 @@ class HurtTeammates:
 
 
 def _recently_absent(evidence: Evidence) -> set[str]:
-    """Who sat out one of his club's last `ROLE_GAMES` games, having played for it before.
-
-    Sat out, not merely played little: a part-timer's quiet game is no absence,
-    and reading it as one would weigh a receiver against a backup who outplayed him.
-    """
-    club_weeks: dict[str, set[int]] = defaultdict(set)
-    for games in evidence.appearances.values():
-        for game in games:
-            club_weeks[game.team].add(game.week)
-    absent = set()
-    for pid, games in evidence.appearances.items():
-        team = games[-1].team
-        there = {game.week for game in games if game.team == team}
-        first = min(game.week for game in games if game.team == team)
-        recent = sorted(club_weeks[team])[-ROLE_GAMES:]
-        if any(week not in there for week in recent if week > first):
-            absent.add(pid)
-    return absent
+    """Who sat out one of his club's last `ROLE_GAMES` games, having played for it before (`teammates.recently_absent`)."""
+    return teammates.recently_absent(evidence.appearances, ROLE_GAMES)
 
 
 def split(evidence: Evidence, player: PlayerInfo, teammate: PlayerInfo) -> Split | None:
@@ -210,31 +166,16 @@ def split(evidence: Evidence, player: PlayerInfo, teammate: PlayerInfo) -> Split
 
     None where the player has played no game without him.
     """
-    theirs = {game.week: game for game in evidence.appearances.get(teammate.player_id, ())}
-    without: list[float] = []
-    weeks: list[int] = []
-    alongside: list[float] = []
-    for game in evidence.appearances.get(player.player_id, ()):
-        if game.team != player.team:
-            continue
-        other = theirs.get(game.week)
-        if other is not None and other.team != game.team:
-            continue
-        missed = other is None or (other.snap_share is not None and other.snap_share < LEFT_EARLY)
-        (without if missed else alongside).append(game.points)
-        if missed:
-            weeks.append(game.week)
-    if not without:
+    found = teammates.parted(
+        evidence.appearances.get(player.player_id, ()), evidence.appearances.get(teammate.player_id, ()), player.team
+    )
+    if not found.without:
         return None
     return Split(
         teammate=teammate,
-        without=_mean(without),
-        games=len(without),
-        alongside=_mean(alongside) if alongside else None,
-        alongside_games=len(alongside),
-        weeks=tuple(weeks),
+        without=teammates.mean([game.points for game in found.without]),
+        games=len(found.without),
+        alongside=teammates.mean([game.points for game in found.alongside]) if found.alongside else None,
+        alongside_games=len(found.alongside),
+        weeks=tuple(game.week for game in found.without),
     )
-
-
-def _mean(points: Sequence[float]) -> float:
-    return sum(points) / len(points)

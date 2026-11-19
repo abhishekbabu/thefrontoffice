@@ -374,6 +374,9 @@ class NBAGameLog:
 
     opponent: str
     stats: dict[str, float]
+    team: str = ""
+    """The club he played it for, as Sleeper abbreviates it: what a split by who else played is read within."""
+    minutes: float = 0.0
 
     def get(self, key: str) -> float:
         """A category, treating an absent key as the nought it stands for."""

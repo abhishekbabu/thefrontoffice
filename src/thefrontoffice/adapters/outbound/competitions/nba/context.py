@@ -10,7 +10,7 @@ Which free agents the scout reads is decided here too: the lines are only as
 useful as the candidates they are written for.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
@@ -18,6 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba.form import WINDOWS, FormSource, PlayerStats, Window
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split
 from thefrontoffice.adapters.outbound.competitions.nba.views import points
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
@@ -124,11 +125,14 @@ class PlayerContextBuilder:
         remaining_games: dict[str, int] | None = None,
         projections: ProjectionIndex | None = None,
         returns: Mapping[str, date] | None = None,
+        splits: Callable[[YahooPlayer], Sequence[Split]] | None = None,
     ) -> dict[str, str]:
         """Same as build_context_for_players, keyed by player name.
 
         Lets a caller keep only the lines it needs — the follow-up briefing
-        carries the recommended free agents rather than all thirty.
+        carries the recommended free agents rather than all thirty. `splits`
+        closes each line on his figures without each regular teammate who is
+        hurt or lately sat out, and with him (`teammates.Split.prompt`).
         """
         if not players:
             return {}
@@ -165,6 +169,8 @@ class PlayerContextBuilder:
                 line += f": {self._format_stats(stats_dict)}"
             if projections is not None and (projected := projections.lookup(p.name)):
                 line += f" | PROJ {projected.games}G {prompt.scored(projected.line, self.weights)}"
+            for split in splits(p) if splits else ():
+                line += f" | {split.prompt()}"
             lines[p.name] = line + "\n"
 
         return lines

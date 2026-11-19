@@ -117,6 +117,15 @@ scout's free agents ranked by them. The add budget is the league's own. NBA's
 free agents are Yahoo's top 300 by season rank and top 100 by last week's,
 taken in turn so the week's risers sit beside the season's best (16 requests
 of 25 players, fetched together and cached for 30 minutes).
+NBA free agents get the same "Without" column, and every NBA drawer a Teammates
+group: a club regular (28+ minutes a game over his last 15, or its top usage
+player) who is out or day-to-day (Yahoo's status where his Yahoo row is on the
+page, else ESPN's, with its return day) or sat one of the club's last 5 games,
+with the player's PTS/REB/AST (and fantasy points in a points league) a game
+without him and with him, from Sleeper's box scores; a game the regular played
+under 12 minutes counts as missed, and both sides need 3 games. Regulars who
+missed the same games share one row naming them all. The scout's
+roster and free-agent lines carry the same.
 
 | | |
 | --- | --- |

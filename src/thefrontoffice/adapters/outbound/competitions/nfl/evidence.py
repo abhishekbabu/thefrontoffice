@@ -66,6 +66,16 @@ class Appearance:
     points: float
     snap_share: float | None
 
+    @property
+    def game(self) -> int:
+        """The week, which is which of the club's games this was (`teammates.Outing`)."""
+        return self.week
+
+    @property
+    def partial(self) -> bool:
+        """On for under `LEFT_EARLY` of the snaps: a game a teammate split counts as missed."""
+        return self.snap_share is not None and self.snap_share < LEFT_EARLY
+
 
 @dataclass(frozen=True)
 class Role:

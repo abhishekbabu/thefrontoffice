@@ -3,12 +3,13 @@
 from datetime import date
 from typing import Any
 
-from support.nba import FakeNBA, make_player
+from support.nba import FakeNBA, make_player, toronto
 
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import Line
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import Condition, Teammates
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import GameProjection
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 
@@ -166,3 +167,13 @@ def test_in_a_points_league_each_window_and_projection_closes_on_its_fantasy_poi
     assert "= 20.0 fpts" in out  # the window's twenty a game
     assert "= 50.0 fpts" in out  # the period's two projected games
     assert "fpts" not in _builder(stats=form).build_context_for_players([make_player("A B")])
+
+
+def test_a_line_closes_on_each_teammate_split_it_is_given() -> None:
+    player = make_player("Jakob Poeltl", team="TOR")
+    mates = Teammates(toronto())
+    known = {"s1": Condition(status="O")}
+
+    line = _builder().build_player_lines([player], splits=lambda p: mates.splits(p, known))["Jakob Poeltl"]
+
+    assert line.rstrip().endswith(mates.splits(player, known)[0].prompt())

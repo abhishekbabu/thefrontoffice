@@ -41,10 +41,11 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, THIS_WEEK, listed, ruled_out
-from thefrontoffice.adapters.outbound.competitions.nfl.teammates import Split, surname
+from thefrontoffice.adapters.outbound.competitions.nfl.teammates import Split
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import split as split_on
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.adapters.outbound.competitions.nfl.worth import blend, filling_in, form, plays, value, worth
+from thefrontoffice.adapters.outbound.competitions.teammates import surname
 from thefrontoffice.domain.models import Action, MoveSide, Stat, Urgency, urgency_rank
 
 STACKED = 3

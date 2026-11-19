@@ -3,14 +3,21 @@
 Covered through the provider, which hands each view the player's recent run.
 """
 
+from datetime import UTC, date, datetime
+
 import pytest
-from support.nba import FakeNBA, FakeYahoo, make_player, nba_provider
+from support.espn import FakeESPN
+from support.nba import FakeNBA, FakeYahoo, make_player, nba_provider, toronto
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
+from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
+from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
+from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
 from thefrontoffice.application.comparing import comparison
 from thefrontoffice.domain.errors import PlayerNotFoundError
+from thefrontoffice.domain.models import PlayerQuery
 
 
 def test_a_roster_card_carries_the_row_and_what_a_row_cannot() -> None:
@@ -146,3 +153,65 @@ def test_recent_form_is_a_dash_when_there_is_none() -> None:
 
     assert card.columns["PTS"] == "—"
     assert "PTS" not in card.values
+
+
+# ── teammates out ───────────────────────────────────────────────────────
+
+POELTL = make_player("Jakob Poeltl", "C", "TOR", key="poeltl")
+BARNES_OUT = [
+    InjuryReport(
+        name="Scottie Barnes",
+        club="TOR",
+        status="Out",
+        updated=datetime(2026, 11, 18, tzinfo=UTC),
+        returns=date(2026, 11, 22),
+    )
+]
+
+
+def test_the_wire_shows_whose_absence_a_free_agent_gains_from_with_both_figures_on_hover() -> None:
+    yahoo = FakeYahoo(available=[POELTL, make_player("Somebody Else", key="else")])
+    provider = nba_provider(yahoo, nba=FakeNBA(scores=toronto()), espn=FakeESPN(injuries=BARNES_OUT))
+
+    poeltl, other = provider.free_agents("", PlayerQuery()).players
+
+    assert poeltl.columns[WITHOUT_COLUMN] == "Barnes O"
+    assert poeltl.notes[WITHOUT_COLUMN].startswith("Without Scottie Barnes")
+    assert "12.0" in poeltl.notes[WITHOUT_COLUMN]
+    assert other.columns[WITHOUT_COLUMN] == "—"
+    assert WITHOUT_COLUMN not in other.notes
+
+
+def test_a_roster_has_no_without_column() -> None:
+    provider = nba_provider(
+        FakeYahoo(roster=[POELTL]), nba=FakeNBA(scores=toronto()), espn=FakeESPN(injuries=BARNES_OUT)
+    )
+
+    assert WITHOUT_COLUMN not in provider.roster()[0].columns
+
+
+def test_the_drawer_lists_his_line_without_each_teammate_out() -> None:
+    provider = nba_provider(
+        FakeYahoo(roster=[POELTL]), nba=FakeNBA(scores=toronto()), espn=FakeESPN(injuries=BARNES_OUT)
+    )
+
+    [group] = [g for g in provider.player("", "poeltl").groups if g.title == "Teammates"]
+
+    [row] = group.stats
+    assert row.label.startswith("Without Scottie Barnes")
+    assert row.tone == "good"
+
+
+def test_a_teammate_who_lately_sat_counts_when_espns_report_will_not_load() -> None:
+    espn = FakeESPN(injuries_error=ESPNAPIError("down"))
+    provider = nba_provider(FakeYahoo(roster=[POELTL]), nba=FakeNBA(scores=toronto()), espn=espn)
+
+    [group] = [g for g in provider.player("", "poeltl").groups if g.title == "Teammates"]
+
+    assert group.stats[0].label.startswith("With Scottie Barnes")
+
+
+def test_a_drawer_with_no_teammate_out_has_no_teammates_group() -> None:
+    provider = nba_provider(FakeYahoo(roster=[make_player("A B", key="ab")]), nba=FakeNBA(scores=toronto()))
+
+    assert "Teammates" not in [g.title for g in provider.player("", "ab").groups]

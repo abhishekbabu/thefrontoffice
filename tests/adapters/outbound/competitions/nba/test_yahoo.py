@@ -19,6 +19,7 @@ from support.nba import (
     FakeYahooAuth,
     make_player,
     nba_provider,
+    toronto,
     yahoo_league,
 )
 from support.nba import yahoo_team as _yahoo_team
@@ -123,6 +124,17 @@ def test_prompt_carries_roster_matchup_and_free_agents() -> None:
     assert "Roster One" in prompt
     assert "Free Agent One" in prompt
     assert "BLK: 12 vs 17" in prompt  # FakeYahoo's matchup score
+
+
+def test_a_free_agents_line_carries_his_figures_without_a_teammate_out() -> None:
+    """The model weighs a pickup on what he did while the star sat, not on a guess that he inherits the role."""
+    poeltl = make_player("Jakob Poeltl", "C", "TOR", key="poeltl")
+    yahoo = FakeYahoo(roster=[make_player("Roster One")], stat_leaders={"REB": [poeltl]})
+
+    context = nba_provider(yahoo, nba=FakeNBA(scores=toronto())).build_context()
+
+    assert "Scottie Barnes" in context.candidate_lines["Jakob Poeltl"]
+    assert "Scottie Barnes" not in context.roster_lines["Roster One"]
 
 
 def test_free_agents_are_annotated_with_the_categories_they_lead() -> None:

@@ -43,6 +43,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.worth import plays, value
 from thefrontoffice.adapters.outbound.competitions.places import ordinal
+from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.domain.errors import PlatformError, PlayerNotFoundError
 from thefrontoffice.domain.models import (
     FIT_COLUMN,
@@ -219,10 +220,6 @@ SNAP_COLUMN, TARGET_COLUMN = "Snap%", "Tgt%"
 
 TREND_COLUMN = "Trend"
 """Whose role just jumped: the pickups a projection has not caught up with yet."""
-
-WITHOUT_COLUMN = "Without"
-"""A hurt teammate his value hangs on, 'Bowers Q', with his points a game without him and with in the tooltip:
-whether a pickup chasing an injury actually gains from it (see `teammates`)."""
 
 BACK_COLUMN = "Back"
 """When ESPN expects him back from injury, as a week of the season: the stash question on the IR list."""
