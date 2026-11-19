@@ -11,7 +11,7 @@ or four cannot be cut at.
 
 import logging
 from datetime import date, datetime
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, NamedTuple, Protocol, TypedDict
 from zoneinfo import ZoneInfo
 
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
@@ -36,15 +36,33 @@ Window = Literal["last_5", "last_10", "last_15"]
 
 WINDOWS: dict[int, Window] = {5: "last_5", 10: "last_10", 15: "last_15"}
 
+RECENT_GAMES = max(WINDOWS)
+"""The widest run a table or drawer averages over: the last fifteen games."""
+
+MIN_FORM_GAMES = 3
+"""Fewest games worth averaging. Early in a season, or back from injury, a
+player has fewer than fifteen; their last few still say something, but one or
+two games is a single hot or cold night reported as a rate."""
+
 # A basketball regular season runs 25 Sleeper weeks; week 26 comes back empty.
 # Only used to reach back into the season just finished.
 SEASON_WEEKS = 25
+
+
+class RecentForm(NamedTuple):
+    """The widest run a player has: their last fifteen games, or all of them while fewer."""
+
+    games: int
+    """How many games the line averages, which is what its label must say."""
+
+    line: Line
 
 
 class PlayerStats(TypedDict, total=False):
     last_5: Line
     last_10: Line
     last_15: Line
+    recent: RecentForm
 
 
 def nine_cat(games: list[NBAGameLog]) -> Line:
@@ -108,9 +126,11 @@ class SleeperNBAForm:
     def get_player_stats(self, full_name: str) -> PlayerStats | None:
         """A player's last 5, 10 and 15 games, or nothing where there are none.
 
-        A window is reported only once enough games exist to fill it: five
-        games averaged into a "last fifteen" is a different number wearing the
-        same label.
+        A fixed window is reported only once enough games exist to fill it:
+        five games averaged into a "last fifteen" is a different number wearing
+        the same label. `recent` is the widest run there is — the last fifteen,
+        or every game while fewer — once there are `MIN_FORM_GAMES`, and says
+        how many it averages, so a player twelve games in is not left blank.
         """
         player_id = self._name_index().lookup(full_name)
         if player_id is None:
@@ -123,6 +143,9 @@ class SleeperNBAForm:
         for count, window in WINDOWS.items():
             if len(games) >= count:
                 stats[window] = nine_cat(games[:count])
+        if len(games) >= MIN_FORM_GAMES:
+            run = games[:RECENT_GAMES]
+            stats["recent"] = RecentForm(games=len(run), line=nine_cat(run))
         return stats or None
 
     # ── remaining games ─────────────────────────────────────────────

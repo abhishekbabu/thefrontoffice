@@ -102,7 +102,8 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Light and dark mode**, several palettes, and a terminal CLI.
 
 NFL has the deepest analysis. FPL and NBA share the matchup, schedule, fixtures,
-team and league pages.
+team and league pages. An NBA player's PTS/REB/AST average his last 15 games, or
+every game he has while fewer (the drawer says how many); under 3 games shows none.
 
 | | |
 | --- | --- |

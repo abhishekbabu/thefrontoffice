@@ -89,12 +89,21 @@ bad line rather than an absent one."""
 
 
 def _figure(stats: PlayerStats | None, category: Category) -> float | None:
-    """One category over the last fifteen games, or None where there is no figure.
+    """One category over a player's recent run, or None where there is no figure.
 
-    Out of season, and for a player who has not featured, there is no line to
-    show; nor is there a percentage for a player who has attempted nothing.
+    The run is the last fifteen games, or every game while fewer (see
+    `RecentForm`). Out of season, and for a player who has not featured, there
+    is no line to show; nor is there a percentage for a player who has
+    attempted nothing.
     """
-    return ((stats or PlayerStats()).get("last_15") or {}).get(category.label)
+    recent = (stats or PlayerStats()).get("recent")
+    return recent.line.get(category.label) if recent else None
+
+
+def _run(stats: PlayerStats | None) -> str:
+    """The run a figure averages, as a label reads it: 'last 15', 'last 12'."""
+    recent = (stats or PlayerStats()).get("recent")
+    return f"last {recent.games}" if recent else ""
 
 
 def _recent(stats: PlayerStats | None, category: Category) -> str:
@@ -449,7 +458,7 @@ class YahooNBAProvider:
         return cards
 
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
-        """Any player in the league — yours, a rival's or a free agent — with their last-fifteen line where Sleeper has it."""
+        """Any player in the league — yours, a rival's or a free agent — with their recent line where Sleeper has it."""
         found = self._yahoo(league_id).players([player_id])
         if not found:
             raise PlayerNotFoundError([player_id])
@@ -457,18 +466,19 @@ class YahooNBAProvider:
 
         stats = self.nba.get_player_stats(player.name)
         points = _recent(stats, POINTS)
+        run = _run(stats)
         return PlayerDetail(
             player_id=player_id,
             name=player.name,
             position=player.position,
             team=player.team,
             headline=points if points != NO_FIGURE else "",
-            headline_label="pts/game, last 15" if points != NO_FIGURE else "No recent form",
+            headline_label=f"pts/game, {run}" if points != NO_FIGURE else "No recent form",
             note=player.status,
             tone="warning" if player.status else "neutral",
             groups=[
                 StatGroup(
-                    title="Last 15",
+                    title=run.capitalize() or "Recent form",
                     stats=[Stat(label=c.label, value=_recent(stats, c)) for c in CATEGORIES],
                 )
             ],
