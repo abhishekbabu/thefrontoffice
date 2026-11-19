@@ -7,9 +7,11 @@ which the real parser reads.
 """
 
 import threading
+from collections.abc import Callable
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 import requests
@@ -35,6 +37,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooLoginRequiredError,
     YahooUnavailableError,
 )
+from thefrontoffice.adapters.outbound.platforms.yahoo.paths import ScoreboardPace
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import TeamStanding, Timeframe, YahooLeague, YahooPlayer
 from thefrontoffice.domain.errors import TeamNotFoundError
 
@@ -627,6 +630,82 @@ def test_an_unrecognized_scoreboard_raises(tmp_path: Path) -> None:
 
     with pytest.raises(YahooAPIError):
         client.get_matchup("t1")
+
+
+def test_a_season_asks_only_for_the_weeks_that_can_still_have_changed(tmp_path: Path) -> None:
+    """A day-old settled week holds for the season; the week being played does not hold five minutes."""
+    _stored(tmp_path, paths.scoreboard(LEAGUE.league_key, 2).path, scoreboard_xml(), timedelta(days=1))
+    _stored(tmp_path, paths.scoreboard(LEAGUE.league_key, 4).path, scoreboard_xml(), timedelta(hours=1))
+    _stored(tmp_path, paths.scoreboard(LEAGUE.league_key, 6).path, scoreboard_xml(), timedelta(days=1))
+    _stored(tmp_path, SCOREBOARD, scoreboard_xml(), timedelta(minutes=5))
+    client, ctx = _client(tmp_path, scoreboard_xml())
+
+    client.season("t1", [2, 4, 5, 6])
+
+    assert ctx.queries == ["scoreboard;week=5"]
+
+
+def test_the_week_being_played_holds_longer_while_no_game_can_be_on(tmp_path: Path) -> None:
+    _stored(tmp_path, SCOREBOARD, scoreboard_xml(), timedelta(minutes=5))
+    ctx = FakeContext(scoreboard_xml())
+    quiet = ScoreboardPace(UTC, time(0), time(23, 59), games_on=lambda _: False)
+    live = LiveResponses(ctx, cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT)
+
+    YahooClient(LEAGUE, responses=live, pace=quiet).pairing("t1", 5)
+
+    assert ctx.requests == []
+
+
+class RecordingRefresh:
+    """Stands in for the background refresher: keeps what it was asked to refresh, runs nothing until told."""
+
+    def __init__(self) -> None:
+        self.asked: dict[str, Callable[[], Any]] = {}
+
+    def refresh(self, key: str, fetch: Callable[[], Any]) -> None:
+        self.asked[key] = fetch
+
+
+def _refreshing(tmp_path: Path, response: str) -> tuple[YahooClient, FakeContext, RecordingRefresh]:
+    ctx, refresher = FakeContext(response), RecordingRefresh()
+    live = LiveResponses(ctx, cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, refresher=refresher)
+    return YahooClient(LEAGUE, responses=live), ctx, refresher
+
+
+TEAMS = teams_xml(team_xml("t1", "Mine", mine=True))
+
+
+def test_a_copy_just_past_its_ttl_is_served_at_once_and_refreshed_behind_it(tmp_path: Path) -> None:
+    teams = paths.teams(LEAGUE.league_key)
+    _stored(tmp_path, teams.path, TEAMS, paths.TEAMS_TTL + timedelta(minutes=30))
+    client, ctx, refresher = _refreshing(tmp_path, teams_xml(team_xml("t1", "Renamed", mine=True)))
+
+    assert [team.name for team in client.teams()] == ["Mine"]
+    assert ctx.requests == []
+    assert list(refresher.asked) == [teams.path]
+
+    assert "Renamed" in refresher.asked[teams.path]()
+    assert ctx.queries == ["teams"]
+
+
+def test_a_copy_past_twice_its_ttl_is_fetched_before_it_is_served(tmp_path: Path) -> None:
+    teams = paths.teams(LEAGUE.league_key)
+    _stored(tmp_path, teams.path, TEAMS, 2 * paths.TEAMS_TTL + timedelta(minutes=1))
+    client, ctx, refresher = _refreshing(tmp_path, teams_xml(team_xml("t1", "Renamed", mine=True)))
+
+    assert [team.name for team in client.teams()] == ["Renamed"]
+    assert (ctx.queries, refresher.asked) == (["teams"], {})
+
+
+def test_a_batch_serves_its_stale_copies_and_fetches_only_what_it_has_none_of(tmp_path: Path) -> None:
+    _stored(tmp_path, SCOREBOARD, scoreboard_xml(start="2026-01-05"), timedelta(minutes=3))
+    client, ctx, refresher = _refreshing(tmp_path, scoreboard_xml())
+
+    weeks = client.season("t1", [5, 6])
+
+    assert weeks[5] is not None and weeks[5].start == date(2026, 1, 5)
+    assert ctx.queries == ["scoreboard;week=6"]
+    assert list(refresher.asked) == [SCOREBOARD]
 
 
 # ── translating transport failures ──────────────────────────────────────

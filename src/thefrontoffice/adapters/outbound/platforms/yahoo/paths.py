@@ -7,28 +7,48 @@ serves it at, below `/fantasy/v2/`, on the API host and on the host Yahoo's own
 pages read.
 """
 
+import logging
 import re
-from collections.abc import Mapping
-from dataclasses import dataclass
-from datetime import timedelta
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import PlayerStat, PlayerStatus, Timeframe
+from thefrontoffice.domain.errors import FrontOfficeError
+
+logger = logging.getLogger(__name__)
 
 # TTLs from how fast each answer actually goes stale. Waiver leaders move as
 # the league claims players; a name search resolves to the same player for as
 # long as anyone is looking.
 LEADERS_TTL = timedelta(minutes=30)
+DEEP_TTL = timedelta(hours=6)
+"""The wire past its first page: who sits 200th by season rank moves slowly, and is rarely the one claimed."""
 SEARCH_TTL = timedelta(hours=6)
 TEAMS_TTL = timedelta(hours=1)
+"""Short for what it is, because the team list carries each team's adds used this week."""
+STANDINGS_TTL = timedelta(hours=1)
 ROSTER_TTL = timedelta(hours=1)
 LEAGUES_TTL = timedelta(hours=1)
+"""The league list carries the week being played, which has to turn over with the week."""
 # A league's scoring is set before the season and almost never changes during it.
-SETTINGS_TTL = timedelta(hours=12)
+SETTINGS_TTL = timedelta(days=1)
 SCOREBOARD_TTL = timedelta(minutes=2)
-"""The scoreboard drives the "which categories are close" analysis and goes
-stale within a game night."""
+"""The week being played while games are on: it drives the "which categories
+are close" analysis and goes stale within a game night."""
+QUIET_SCOREBOARD_TTL = timedelta(minutes=30)
+"""The week being played when no game can be on: nothing in it moves but a stat correction."""
+SETTLING_TTL = timedelta(hours=6)
+"""Last week's, while the stat corrections Yahoo applies after a week closes still land."""
+AHEAD_TTL = timedelta(days=7)
+"""A week to come: only who plays whom, which is set until the playoff bracket is drawn."""
+FINAL_TTL = timedelta(days=365)
+"""A week closed and settled: it will never change, so it is never asked for again this season."""
 PLAYED_TTL = timedelta(days=7)
 """A week once played stands, bar the stat corrections Yahoo makes in the days after it."""
+
+API = "https://fantasysports.yahooapis.com/fantasy/v2/"
+"""Yahoo's Fantasy API, which the SDK asks with an OAuth token."""
 
 FRONTEND = "https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/"
 """The read-only host Yahoo's own pages fetch from: it answers their session cookie, and nothing writes through it."""
@@ -59,6 +79,15 @@ class YahooRead:
 
     search: str = ""
     """The name a search asks for; empty for any other read."""
+
+    @property
+    def servable(self) -> timedelta:
+        """How old a copy may be and still be served while a fresh one is fetched behind it: twice its TTL.
+
+        Bounded by the TTL itself, so a page is never more than one refresh
+        behind: a two-minute score is at most four minutes old, a roster two hours.
+        """
+        return self.ttl * 2
 
     @property
     def path(self) -> str:
@@ -95,7 +124,7 @@ def teams(league_key: str) -> YahooRead:
 
 def standings(league_key: str) -> YahooRead:
     """The table: the teams list carries none, so a reader built from it ranks nobody."""
-    return YahooRead("standings", TEAMS_TTL, league=league_key)
+    return YahooRead("standings", STANDINGS_TTL, league=league_key)
 
 
 def roster(team_key: str) -> YahooRead:
@@ -110,9 +139,57 @@ def played_roster(team_key: str, week: int) -> YahooRead:
     return YahooRead(f"team/{team_key}/roster;week={week}/players/stats;type=week;week={week}", PLAYED_TTL)
 
 
-def scoreboard(league_key: str, week: int) -> YahooRead:
-    """One week's matchups, every pairing in the league: the only place Yahoo lists a head-to-head season."""
-    return YahooRead(f"scoreboard;week={week}", SCOREBOARD_TTL, league=league_key, keep_on_failure=True)
+@dataclass(frozen=True)
+class ScoreboardPace:
+    """Whether a league's scores can be moving right now, so the week being played is asked for no oftener than that.
+
+    Games are played inside daily hours on the league's own clock, and only on
+    days with games: outside either, the scoreboard waits for a stat correction
+    at most. Hours that run past midnight belong to the day they opened on.
+    Which hours, which zone and which days are the competition's to say, so
+    the composition root supplies them.
+    """
+
+    zone: tzinfo
+    opens: time
+    closes: time
+    games_on: Callable[[date], bool] = field(default=lambda _: True)
+    """Whether the league plays on a day; a schedule that will not load is read as yes."""
+    clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
+
+    def live(self) -> bool:
+        local = self.clock().astimezone(self.zone)
+        now, today = local.time(), local.date()
+        if self.opens <= self.closes:
+            day = today if self.opens <= now < self.closes else None
+        elif now >= self.opens:
+            day = today
+        else:
+            day = today - timedelta(days=1) if now < self.closes else None
+        if day is None:
+            return False
+        try:
+            return self.games_on(day)
+        except FrontOfficeError as e:
+            logger.warning(f"Reading the scoreboard as live, with no schedule to say otherwise: {e}")
+            return True
+
+
+def scoreboard(league_key: str, week: int, current: int | None = None, live: bool = True) -> YahooRead:
+    """One week's matchups, every pairing in the league: the only place Yahoo lists a head-to-head season.
+
+    How long it holds follows where `week` sits against `current`, the week
+    being played: settled weeks never change, a week to come changes rarely,
+    and the week being played only while games are `live`. Where the week
+    being played is not known, any week is read as that one.
+    """
+    if current is None or week == current:
+        ttl = SCOREBOARD_TTL if live else QUIET_SCOREBOARD_TTL
+    elif week > current:
+        ttl = AHEAD_TTL
+    else:
+        ttl = SETTLING_TTL if week == current - 1 else FINAL_TTL
+    return YahooRead(f"scoreboard;week={week}", ttl, league=league_key, keep_on_failure=True)
 
 
 def player_page(
@@ -139,7 +216,8 @@ def available(league_key: str, depth: int, sort_type: Timeframe = Timeframe.SEAS
     """The best available players, however they became free, by Yahoo's rank over `sort_type`: a read per `PAGE`.
 
     ALL_AVAILABLE rather than FREE_AGENT: somebody sitting on waivers is still
-    a decision to be made about.
+    a decision to be made about. The first page holds the players most likely
+    to be claimed, so it is asked for oftenest; the rest hold for `DEEP_TTL`.
     """
     return [
         player_page(
@@ -148,6 +226,7 @@ def available(league_key: str, depth: int, sort_type: Timeframe = Timeframe.SEAS
             PlayerStatus.ALL_AVAILABLE,
             PlayerStat.ACTUAL_RANK,
             sort_type,
+            ttl=DEEP_TTL if start else LEADERS_TTL,
             start=start,
         )
         for start in range(0, depth, PAGE)

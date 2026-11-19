@@ -205,10 +205,9 @@ class YahooCapture:
     def _reads(self, game: YahooGame, league: YahooLeague) -> list[YahooRead]:
         """Everything the app reads of one league that can be planned from what is held.
 
-        The scoreboard of every week of the season, since any can be opened —
-        less a week already finished and held, which will not change. A roster
-        for every team the held team list names, which the first sync of a
-        league has to learn before it can ask. Both rosters of your matchup in
+        The scoreboard of every week of the season, since any can be opened. A
+        roster for every team the held team list names, which the first sync of
+        a league has to learn before it can ask. Both rosters of your matchup in
         each week played, as it ended, once that week's scoreboard is held and
         until they are.
         """
@@ -222,10 +221,9 @@ class YahooCapture:
         ]
         current = league.current_week
         if current:
-            for week in range(league.first_week, league.last_week(current) + 1):
-                read = paths.scoreboard(key, week)
-                if week >= current or self._stored(read) is None:
-                    reads.append(read)
+            reads.extend(
+                paths.scoreboard(key, week, current) for week in range(league.first_week, league.last_week(current) + 1)
+            )
         reads.extend(paths.roster(team.team_key) for team in self._teams(key))
         reads.extend(read for read in self._played(league) if self._stored(read) is None)
         return reads
@@ -244,17 +242,22 @@ class YahooCapture:
         return reads
 
     def plan(self, leagues: Sequence[str]) -> CapturePlan:
-        """Each game's league list, and everything each of `leagues` needs that what is held lets be planned.
+        """Each game's league list, and whatever else each of `leagues` needs that is not held fresh.
 
         A league is planned only once its list has been captured, since that is
         where its weeks come from; a key the list does not name is ignored.
+        Anything held within its own TTL is left out — a settled week, today's
+        settings — so a sync asks Yahoo only for what has moved since the last.
         """
+        return self._plan(leagues, held=lambda read: self._cache.lookup(read.path, read.ttl) is not None)
+
+    def _plan(self, leagues: Sequence[str], held: Callable[[YahooRead], bool] = lambda _: False) -> CapturePlan:
         steps = [CaptureStep(path=paths.leagues(game.code, game.season()).path) for game in self._games]
         wanted = set(leagues)
         for game in self._games:
             for league in self._leagues(game):
                 if league.league_key in wanted:
-                    reads = self._reads(game, league)
+                    reads = [read for read in self._reads(game, league) if not held(read)]
                     steps.extend(CaptureStep(path=read.path, league=league.league_key) for read in reads)
         return CapturePlan(base=paths.FRONTEND, probe=paths.PROFILE, steps=steps)
 
@@ -275,14 +278,15 @@ class YahooCapture:
             raise InvalidRequestError(
                 [f"Yahoo was not signed in when this was fetched (its profile answered {capture.profile.status})."]
             )
-        lists = {step.path for step in self.plan(()).steps}
+        lists = {step.path for step in self._plan(()).steps}
         first = [r for r in capture.responses if r.path in lists]
         rest = [r for r in capture.responses if r.path not in lists]
 
         receipt = CaptureReceipt(stored=0)
         for response in first:
             self._store(response, "", receipt)
-        planned = {step.path: step.league for step in self.plan(self._known_keys()).steps}
+        # Everything a plan could have asked for, fresh or not: what was fresh when planned may not be now.
+        planned = {step.path: step.league for step in self._plan(self._known_keys()).steps}
         for response in rest:
             if response.path in planned:
                 self._store(response, planned[response.path], receipt)

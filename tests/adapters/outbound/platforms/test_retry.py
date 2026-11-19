@@ -1,10 +1,13 @@
 """Tests for the retry policy and outage classification shared by the platform clients."""
 
+from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
+
 import pytest
 import requests
 from support.http import NO_WAIT, http_error
 
-from thefrontoffice.adapters.outbound.platforms.retry import is_transient, outage
+from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy, is_transient, outage, retry_after
 
 # ── classification ──────────────────────────────────────────────────────
 
@@ -32,6 +35,11 @@ def test_client_errors_are_not() -> None:
 def test_rate_limiting_is_transient() -> None:
     """Every platform here says "come back later" with a 429."""
     assert is_transient(http_error(429))
+
+
+def test_yahoos_own_denial_is_rate_limiting_too() -> None:
+    """Yahoo's frontend hosts answer 999 where an API would answer 429."""
+    assert outage(http_error(999)) == "it answered 999"
 
 
 def test_an_http_error_without_a_response_is_not_transient() -> None:
@@ -107,3 +115,64 @@ def test_attempts_are_bounded_and_the_original_error_reraises() -> None:
     with pytest.raises(requests.exceptions.Timeout):
         NO_WAIT.call(always)
     assert len(calls) == NO_WAIT.attempts
+
+
+def _asked_to_wait(status: int, after: str) -> requests.exceptions.HTTPError:
+    error = http_error(status)
+    assert error.response is not None
+    error.response.headers["Retry-After"] = after
+    return error
+
+
+# ── Retry-After ────────────────────────────────────────────────────────
+
+NOW = datetime(2026, 11, 19, 12, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("after", "seconds"),
+    [
+        ("30", 30.0),
+        (format_datetime(NOW + timedelta(seconds=90), usegmt=True), 90.0),
+        (format_datetime(NOW - timedelta(seconds=90), usegmt=True), 0.0),
+        ("Wed, 19 Nov 2026 12:01:30", 90.0),
+        ("soon", None),
+        ("", None),
+    ],
+    ids=["seconds", "date", "date-past", "date-without-zone", "unreadable", "blank"],
+)
+def test_a_retry_after_is_read_as_seconds_or_a_date(after: str, seconds: float | None) -> None:
+    assert retry_after(_asked_to_wait(429, after), now=NOW) == seconds
+
+
+def test_a_failure_naming_no_wait_asks_for_none() -> None:
+    assert retry_after(http_error(503)) is None
+    assert retry_after(requests.exceptions.Timeout()) is None
+
+
+def test_a_retry_waits_at_least_as_long_as_the_server_asked() -> None:
+    slept: list[float] = []
+    policy = RetryPolicy(min_wait=1, max_wait=60, sleep=slept.append)
+    failures = [_asked_to_wait(429, "45")]
+
+    def limited() -> str:
+        if failures:
+            raise failures.pop()
+        return "ok"
+
+    assert policy.call(limited) == "ok"
+    assert slept == [45.0]
+
+
+def test_a_server_asking_for_longer_than_the_policy_would_wait_is_not_asked_again() -> None:
+    """Retrying sooner than it said is the hammering the header exists to stop."""
+    calls: list[int] = []
+    policy = RetryPolicy(min_wait=1, max_wait=20, sleep=lambda _: None)
+
+    def limited() -> str:
+        calls.append(1)
+        raise _asked_to_wait(999, "120")
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        policy.call(limited)
+    assert len(calls) == 1

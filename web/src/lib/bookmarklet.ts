@@ -26,8 +26,9 @@ type Receipt = { stored: number; leagues: string[]; errors: string[] };
  * One sync, reported in a small banner on the page; resolves to what it said last.
  *
  * Each response is fetched on its own, so one that fails costs that response
- * and its league's completeness, never the rest. A few at a time: Yahoo's own
- * page is still running beside it.
+ * and its league's completeness, never the rest. Two at a time, as the server
+ * reads the same host with a cookie: Yahoo's own page is still running beside
+ * it, and every request is the person's own.
  */
 export async function sync(app: string, http: typeof fetch = fetch, page: Document = document): Promise<string> {
   const endpoint = `${app}/api/yahoo/capture`;
@@ -96,7 +97,7 @@ export async function sync(app: string, http: typeof fetch = fetch, page: Docume
           say(`Fetched ${++done} of ${fetched.size}…`);
         }
       };
-      await Promise.all([worker(), worker(), worker(), worker()]);
+      await Promise.all([worker(), worker()]);
 
       const receipt = await ask<Receipt>(endpoint, {
         method: "POST",

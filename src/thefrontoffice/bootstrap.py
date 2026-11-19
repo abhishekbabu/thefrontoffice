@@ -17,7 +17,8 @@ look for a login they have no reason to have.
 import functools
 import logging
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import date, time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -59,7 +60,9 @@ if TYPE_CHECKING:
     from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
     from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
     from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooAuth
+    from thefrontoffice.adapters.outbound.platforms.yahoo.budget import Breaker, Budget, Refresher
     from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooCapture
+    from thefrontoffice.adapters.outbound.platforms.yahoo.paths import ScoreboardPace
     from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
     from thefrontoffice.adapters.outbound.storage.answers import DiskAnswerStore
 
@@ -313,6 +316,49 @@ def _yahoo_session(settings: AppSettings, cache: DiskCache) -> SessionState | No
     return SessionState(cache, cookie) if settings.yahoo_source == "session" and cookie else None
 
 
+# Yahoo is asked within one budget per host for the whole process, whichever
+# request handler builds the reader: a pace shared by nothing is no pace.
+
+
+@functools.cache
+def _yahoo_budget(host: str) -> Budget:
+    from thefrontoffice.adapters.outbound.platforms.yahoo.budget import Budget
+
+    return Budget()
+
+
+@functools.cache
+def _yahoo_breaker(host: str, credential: str) -> Breaker:
+    """One breaker per credential, so pasting a fresh cookie is not held up by the pause the old one earned."""
+    from thefrontoffice.adapters.outbound.platforms.yahoo.budget import Breaker
+
+    return Breaker()
+
+
+def _yahoo_budget_for(host: str, credential: str) -> Budget:
+    return replace(_yahoo_budget(host), breaker=_yahoo_breaker(host, credential))
+
+
+@functools.cache
+def _yahoo_refresher(cache_dir: str) -> Refresher:
+    from thefrontoffice.adapters.outbound.platforms.yahoo.budget import Refresher
+
+    return Refresher(lambda: _disk_cache(cache_dir))
+
+
+NBA_GAME_HOURS = ("09:00", "01:00")
+"""When an NBA game can be on, Pacific: the earliest weekend tip-off to the last West Coast final whistle."""
+
+
+def _nba_pace(games_on: Callable[[date], bool]) -> ScoreboardPace:
+    """When an NBA league's scoreboard can be moving: inside game hours, on a day the schedule has games."""
+    from thefrontoffice.adapters.outbound.competitions.nba.rules import PACIFIC
+    from thefrontoffice.adapters.outbound.platforms.yahoo.paths import ScoreboardPace
+
+    opens, closes = (time.fromisoformat(hour) for hour in NBA_GAME_HOURS)
+    return ScoreboardPace(PACIFIC, opens, closes, games_on=games_on)
+
+
 def _yahoo_capture(settings: AppSettings) -> YahooCapture:
     """Yahoo as the sync bookmark captured it, into the cache the live reader keeps its responses in."""
     from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YAHOO_GAME
@@ -426,31 +472,45 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
     """
     from thefrontoffice.adapters.outbound.competitions.nba.form import SleeperNBAForm
     from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASchedule
+    from thefrontoffice.adapters.outbound.platforms.yahoo import paths
     from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
+    from thefrontoffice.adapters.outbound.platforms.yahoo.budget import BudgetedContext
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, YahooClient, YahooResponses
     from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionResponses, SessionState, YahooSession
 
     settings = entry.settings
     leagues: YahooLeagueSource
     responses: Callable[[], YahooResponses]
+    refresher = _yahoo_refresher(settings.yahoo_cache_dir)
     if settings.yahoo_source == "browser":
         capture = _yahoo_capture(settings)
         leagues, responses = capture, lambda: capture
     elif settings.yahoo_source == "session":
         cache, cookie = _disk_cache(settings.yahoo_cache_dir), _required(settings.yahoo_session_cookie, entry)
         state = SessionState(cache, cookie)
-        session = SessionResponses(YahooSession(cookie, state=state), state=state, cache=cache, retry=_retry())
+        budgeted = BudgetedContext(YahooSession(cookie, state=state), _yahoo_budget_for(paths.FRONTEND, cookie))
+        session = SessionResponses(budgeted, state=state, cache=cache, retry=_retry(), refresher=refresher)
         leagues, responses = session, lambda: session
     else:
         cache, retry = _disk_cache(settings.yahoo_cache_dir), _retry()
         auth = _yahoo_auth(settings, cache)
-        leagues, responses = auth, lambda: LiveResponses(auth.context(), cache=cache, retry=retry)
+        leagues, responses = (
+            auth,
+            lambda: LiveResponses(
+                BudgetedContext(auth.context(), _yahoo_budget_for(paths.API, settings.yahoo_client_id or "")),
+                cache=cache,
+                retry=retry,
+                refresher=refresher,
+            ),
+        )
     sleeper = _sleeper_client(settings)
+    schedule = SleeperNBASchedule(sleeper)
+    pace = _nba_pace(lambda day: bool(schedule.games_between(day, day)))
     return _nba()(
         auth=leagues,
-        yahoo_for=lambda league: YahooClient(league, responses=responses()),
+        yahoo_for=lambda league: YahooClient(league, responses=responses(), pace=pace),
         form=SleeperNBAForm(sleeper),
-        games=SleeperNBASchedule(sleeper),
+        games=schedule,
         sleeper=sleeper,
         espn=_espn_client(settings),
         fallback_weekly_adds=settings.yahoo_max_weekly_adds,

@@ -24,9 +24,15 @@ import requests
 
 from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.http import DEFAULT_TIMEOUT_SECONDS
-from thefrontoffice.adapters.outbound.platforms.retry import RetryPolicy
+from thefrontoffice.adapters.outbound.platforms.retry import DENIED, RetryPolicy
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
-from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, call, leagues_in
+from thefrontoffice.adapters.outbound.platforms.yahoo.client import (
+    LiveResponses,
+    Refresh,
+    YahooContext,
+    call,
+    leagues_in,
+)
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooSessionExpiredError
 from thefrontoffice.adapters.outbound.platforms.yahoo.paths import YahooRead
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague
@@ -59,6 +65,9 @@ class Response(Protocol):
     status_code: int
     text: str
 
+    @property
+    def headers(self) -> Mapping[str, str]: ...
+
     def raise_for_status(self) -> None: ...
 
 
@@ -73,6 +82,14 @@ def _cookieless() -> requests.Session:
     session = requests.Session()
     session.cookies.set_policy(DefaultCookiePolicy(allowed_domains=[]))
     return session
+
+
+def _denied(headers: Mapping[str, str]) -> requests.Response:
+    """Yahoo's 999 as a `requests` response, so the retry policy reads its status and its `Retry-After`."""
+    denied = requests.Response()
+    denied.status_code = DENIED
+    denied.headers.update(headers)
+    return denied
 
 
 def _digest(cookie: str) -> str:
@@ -139,7 +156,8 @@ class YahooSession:
 
         Raises:
             YahooSessionExpiredError: Yahoo refused the cookie.
-            requests.HTTPError: any other failure, for `call` to retry or translate.
+            requests.HTTPError: any other failure, for `call` to retry or translate — Yahoo's 999,
+                its "too many requests", among them, though `requests` raises on no status past 599.
         """
         response = self._http.get(
             paths.FRONTEND + paths.served_at(url, league if isinstance(league, str) else ""),
@@ -151,20 +169,34 @@ class YahooSession:
             self._state.refused()
             logger.warning(f"Yahoo refused the session cookie ({response.status_code}) for {url}")
             raise YahooSessionExpiredError()
+        if response.status_code == DENIED:
+            logger.warning(f"Yahoo asked for fewer requests ({DENIED}) for {url}")
+            raise requests.HTTPError(f"{DENIED} Request denied for {url}", response=_denied(response.headers))
         response.raise_for_status()
         self._state.answered()
         return response.text
 
 
 class SessionResponses:
-    """Yahoo's answers fetched with the session, kept in the same cache under the same keys as a capture."""
+    """Yahoo's answers fetched with the session, kept in the same cache under the same keys as a capture.
 
-    def __init__(self, session: YahooSession, *, state: SessionState, cache: DiskCache, retry: RetryPolicy) -> None:
+    `session` is a `YahooSession`, or one wrapped in the request budget, which is how bootstrap hands it over.
+    """
+
+    def __init__(
+        self,
+        session: YahooContext,
+        *,
+        state: SessionState,
+        cache: DiskCache,
+        retry: RetryPolicy,
+        refresher: Refresh | None = None,
+    ) -> None:
         self._session = session
         self._state = state
         self._cache = cache
         self._retry = retry
-        self._live = LiveResponses(session, cache=cache, retry=retry)
+        self._live = LiveResponses(session, cache=cache, retry=retry, refresher=refresher)
 
     def raw(self, read: YahooRead) -> str:
         return self._recorded(lambda: self._live.raw(read))

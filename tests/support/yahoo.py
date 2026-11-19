@@ -57,6 +57,7 @@ class FrontendResponse:
 
     status_code: int = 200
     text: str = "<fantasy_content/>"
+    headers: dict[str, str] = field(default_factory=dict)
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
