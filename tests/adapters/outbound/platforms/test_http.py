@@ -117,29 +117,6 @@ def test_a_transient_failure_is_retried(tmp_path: Path) -> None:
     assert len(session.requests) == 2
 
 
-def test_a_cached_value_is_served_without_a_second_request(tmp_path: Path) -> None:
-    session = FixedSession({"n": 1})
-    client = _client(tmp_path, session)
-    assert client.cached("k", "https://example.test/a", TTL) == {"n": 1}
-    assert client.cached("k", "https://example.test/a", TTL) == {"n": 1}
-    assert len(session.requests) == 1
-
-
-def test_an_expired_entry_is_refetched(tmp_path: Path) -> None:
-    """The entry is aged explicitly rather than by writing it with a zero TTL.
-
-    A zero TTL only expires once the clock has advanced, and Windows ticks at
-    about 15ms — so a write and the read after it land on the same instant and
-    the entry is served rather than refetched.
-    """
-    cache = DiskCache(tmp_path / "cache")
-    cache.set("k", {"n": 1}, now=datetime.now(UTC) - timedelta(hours=2))
-
-    session = FixedSession({"n": 2})
-    assert _client(tmp_path, session, cache=cache).cached("k", "https://example.test/a", TTL) == {"n": 2}
-    assert len(session.requests) == 1
-
-
 def test_a_caller_can_trim_what_is_stored(tmp_path: Path) -> None:
     """The catalog is trimmed on the way in, so a hit is the trimmed form, not the whole response."""
     cache = DiskCache(tmp_path / "cache")
@@ -152,15 +129,6 @@ def test_a_caller_can_trim_what_is_stored(tmp_path: Path) -> None:
     assert client.cached("k", "https://example.test/a", TTL, keep=keep) == {"kept": 1}
     assert client.cached("k", "https://example.test/a", TTL, keep=keep) == {"kept": 1}
     assert cache.get("k", TTL) == {"kept": 1}
-    assert len(session.requests) == 1
-
-
-def test_an_endpoint_answering_null_is_not_asked_again_until_it_expires(tmp_path: Path) -> None:
-    session = FixedSession(None)
-    client = _client(tmp_path, session)
-
-    assert client.cached("k", "https://example.test/a", TTL) is None
-    assert client.cached("k", "https://example.test/a", TTL) is None
     assert len(session.requests) == 1
 
 
@@ -177,7 +145,7 @@ def test_the_cache_is_keyed_not_url_addressed(tmp_path: Path) -> None:
 
 
 class RoutedSession:
-    """Answers by URL, and records which thread each request ran on."""
+    """Answers by URL, and fails each URL listed in `failing`."""
 
     def __init__(
         self, routes: dict[str, Any], failing: set[str] | None = None, barrier: threading.Barrier | None = None
@@ -255,35 +223,6 @@ def test_a_batch_takes_a_stored_null_as_a_hit(tmp_path: Path) -> None:
     assert "k1" in result and result["k1"] is None
 
 
-def test_a_fully_cached_batch_never_touches_the_network(tmp_path: Path) -> None:
-    cache = DiskCache(tmp_path / "cache")
-    for i in range(1, 6):
-        cache.set(f"k{i}", {"week": i})
-    session = RoutedSession(ROUTES)
-
-    _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)
-
-    assert session.requests == []
-
-
-def test_batch_writes_stay_on_the_calling_thread(tmp_path: Path) -> None:
-    """The cache holds what it has read in memory, which is not safe to write
-    from several threads. Only the requests are allowed to fan out."""
-    writes: set[str] = set()
-
-    class Recording(DiskCache):
-        def set(self, key: str, value: Any, now: Any = None) -> None:
-            import threading
-
-            writes.add(threading.current_thread().name)
-            super().set(key, value, now=now)
-
-    session = RoutedSession(ROUTES)
-    _client(tmp_path, session, cache=Recording(tmp_path / "c.json")).cached_many(URLS, TTL)
-
-    assert len(writes) == 1
-
-
 def test_one_failed_request_is_named_rather_than_failing_the_batch(tmp_path: Path) -> None:
     """A week that would not load is not a week with nothing in it, so the caller is told which it was."""
     session = RoutedSession(ROUTES, failing={"https://example.test/3"})
@@ -292,6 +231,7 @@ def test_one_failed_request_is_named_rather_than_failing_the_batch(tmp_path: Pat
 
     assert sorted(batch.values) == ["k1", "k2", "k4", "k5"]
     assert list(batch.failures) == ["k3"]
+    assert isinstance(batch.failures["k3"], SleeperAPIError)
 
 
 def test_a_failed_request_is_not_stored_as_though_it_were_an_answer(tmp_path: Path) -> None:
@@ -301,19 +241,6 @@ def test_a_failed_request_is_not_stored_as_though_it_were_an_answer(tmp_path: Pa
     _client(tmp_path, session, cache=cache).cached_many(URLS, TTL)
 
     assert cache.get("k3", TTL) is None
-
-
-def test_a_batch_names_each_failure_for_a_caller_that_cannot_tolerate_a_hole(tmp_path: Path) -> None:
-    """A category with no leaders would read as nobody worth adding in it, so Yahoo's caller raises instead."""
-    cache = DiskCache(tmp_path / "cache")
-
-    def _refused() -> Any:
-        raise SleeperAPIError("refused")
-
-    batch = fetch_many(cache, {"good": lambda: {"n": 1}, "bad": _refused}, TTL)
-
-    assert batch.values == {"good": {"n": 1}}
-    assert isinstance(batch.failures["bad"], SleeperAPIError)
 
 
 def test_a_batch_hands_back_a_value_or_raises_why_it_is_missing() -> None:

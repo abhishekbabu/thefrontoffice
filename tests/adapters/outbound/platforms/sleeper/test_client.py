@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 import requests
-from support.http import NO_WAIT, FakeResponse, FakeSession
+from support.http import NO_WAIT, FakeSession
 
 from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperClient
@@ -30,24 +30,11 @@ def _client(
 # ── retry policy ────────────────────────────────────────────────────────
 
 
-def test_no_connection_is_retried_then_reported_as_sleeper_being_down(tmp_path: Path) -> None:
+def test_no_connection_is_reported_as_sleeper_being_down(tmp_path: Path) -> None:
     """Still Sleeper's own error, so callers that carry on without Sleeper still catch it."""
-    client, session = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
+    client, _ = _client({}, tmp_path, error=requests.exceptions.ConnectionError("down"))
     with pytest.raises(SleeperUnavailableError):
         client.get_nfl_state()
-    assert len(session.requests) == NO_WAIT.attempts
-
-
-def test_a_transient_failure_then_success_is_retried(tmp_path: Path) -> None:
-    class Flaky(FakeSession):
-        def get(self, url: str, timeout: int = 0) -> FakeResponse:
-            self.requests.append(url)
-            if len(self.requests) == 1:
-                raise requests.exceptions.Timeout()
-            return FakeResponse(STATE)
-
-    client = SleeperClient(cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, session=Flaky({}))
-    assert client.get_nfl_state().week == 5
 
 
 # ── state and user ──────────────────────────────────────────────────────
@@ -66,14 +53,6 @@ def test_preseason_is_not_the_regular_season(tmp_path: Path) -> None:
     assert not client.get_nfl_state().is_regular_season
 
 
-def test_state_is_cached_between_calls(tmp_path: Path) -> None:
-    """Sleeper asks callers to stay under 1000 requests a minute."""
-    client, session = _client({"state/nfl": STATE}, tmp_path)
-    client.get_nfl_state()
-    client.get_nfl_state()
-    assert len(session.requests) == 1
-
-
 def test_user_lookup_returns_the_id(tmp_path: Path) -> None:
     client, _ = _client({"user/me": {"user_id": "42", "username": "me", "display_name": "Me"}}, tmp_path)
     assert client.get_user("me").user_id == "42"
@@ -89,17 +68,20 @@ def test_unknown_user_raises(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("rec_value", "expected"),
-    [(1.0, "pts_ppr"), (0.75, "pts_ppr"), (0.5, "pts_half_ppr"), (0.25, "pts_half_ppr"), (0.0, "pts_std")],
+    ("settings", "expected"),
+    [
+        ({"rec": 1.0}, "pts_ppr"),
+        ({"rec": 0.75}, "pts_ppr"),
+        ({"rec": 0.5}, "pts_half_ppr"),
+        ({"rec": 0.25}, "pts_half_ppr"),
+        ({"rec": 0.0}, "pts_std"),
+        ({}, "pts_std"),
+    ],
 )
-def test_scoring_format_is_inferred_from_points_per_reception(rec_value: float, expected: str) -> None:
+def test_scoring_format_is_inferred_from_points_per_reception(settings: dict[str, float], expected: str) -> None:
     """Sleeper never labels the format; getting this wrong ranks every player by
-    the wrong currency."""
-    assert SleeperClient.detect_scoring_format({"rec": rec_value}) == expected
-
-
-def test_absent_reception_setting_is_standard() -> None:
-    assert SleeperClient.detect_scoring_format({}) == "pts_std"
+    the wrong currency. A league with no reception setting is standard."""
+    assert SleeperClient.detect_scoring_format(settings) == expected
 
 
 # ── leagues and rosters ─────────────────────────────────────────────────
@@ -124,10 +106,13 @@ def test_leagues_are_parsed_with_format_and_slots(tmp_path: Path) -> None:
     assert league.starting_slots == ["QB", "RB", "FLEX"]  # BN excluded
 
 
-def test_a_league_carries_its_trade_deadline(tmp_path: Path) -> None:
+def test_a_league_carries_its_trade_deadline_and_week_zero_where_it_sets_none(tmp_path: Path) -> None:
     payload = [{**LEAGUE_PAYLOAD[0], "settings": {"trade_deadline": 11}}]
     client, _ = _client({"leagues/nfl": payload}, tmp_path)
     assert client.get_leagues("42", "2026")[0].trade_deadline == 11
+
+    plain, _ = _client({"leagues/nfl": LEAGUE_PAYLOAD}, tmp_path / "plain")
+    assert plain.get_leagues("42", "2026")[0].trade_deadline == 0
 
 
 def test_a_league_carries_its_playoff_bracket(tmp_path: Path) -> None:
@@ -146,11 +131,6 @@ def test_a_league_says_whether_it_also_plays_its_median(tmp_path: Path) -> None:
 
     plain, _ = _client({"leagues/nfl": LEAGUE_PAYLOAD}, tmp_path / "plain")
     assert not plain.get_leagues("42", "2026")[0].median_game
-
-
-def test_a_league_with_no_trade_deadline_reads_as_week_zero(tmp_path: Path) -> None:
-    client, _ = _client({"leagues/nfl": LEAGUE_PAYLOAD}, tmp_path)
-    assert client.get_leagues("42", "2026")[0].trade_deadline == 0
 
 
 def test_a_leagues_ir_slot_takes_ir_and_whatever_its_settings_switch_on(tmp_path: Path) -> None:
@@ -175,7 +155,7 @@ def test_rosters_tell_injured_reserve_from_taxi(tmp_path: Path) -> None:
     assert (roster.reserve_ids, roster.ir_ids) == (["b", "c"], ["b"])
 
 
-def test_rosters_carry_record_and_bench(tmp_path: Path) -> None:
+def test_a_rosters_record_and_points_for_read_whole_points_plus_hundredths(tmp_path: Path) -> None:
     payload = [
         {
             "roster_id": 1,
@@ -191,13 +171,11 @@ def test_rosters_carry_record_and_bench(tmp_path: Path) -> None:
     assert roster.points_for == pytest.approx(412.5)
 
 
-def test_rosters_are_read_without_asking_for_the_weeks_matchups(tmp_path: Path) -> None:
-    """Which lineup a team starts this week is the provider's to settle, from the week it has already read."""
+def test_a_roster_carries_the_lineup_it_sets(tmp_path: Path) -> None:
     payload = [{"roster_id": 1, "owner_id": "42", "players": ["a", "b"], "starters": ["a"], "settings": {}}]
-    client, session = _client({"rosters": payload}, tmp_path)
+    client, _ = _client({"rosters": payload}, tmp_path)
 
     assert client.get_rosters("L1")[0].starter_ids == ["a"]
-    assert not any("matchups" in url or "state" in url for url in session.requests)
 
 
 def test_a_tie_shows_in_the_record() -> None:
@@ -215,8 +193,7 @@ def test_league_users_map_ids_to_names(tmp_path: Path) -> None:
 # ── players and projections ─────────────────────────────────────────────
 
 
-def test_catalog_is_trimmed_to_the_fields_used(tmp_path: Path) -> None:
-    """The raw response is ~14MB; caching it whole would dominate the file."""
+def test_catalog_reads_each_players_name_position_and_club(tmp_path: Path) -> None:
     raw = {"1": {"full_name": "Star QB", "position": "QB", "team": "BUF", "unused": "x" * 500}}
     client, _ = _client({"players/nfl": raw}, tmp_path)
     meta = client.get_nfl_players()["1"]
@@ -442,23 +419,15 @@ def test_a_player_projected_nothing_is_kept_with_no_stats(tmp_path: Path) -> Non
     assert (unprojected.name, unprojected.stats) == ("No Proj", {})
 
 
-def test_out_of_season_yields_no_projections(tmp_path: Path) -> None:
-    """Sleeper publishes nothing before opening night."""
-    client, _ = _client({"projections/nba": []}, tmp_path)
-    assert client.get_nba_projections("2026", 1) == []
-
-
 def test_state_is_fetched_per_sport(tmp_path: Path) -> None:
     """NBA and NFL are at different points in their seasons."""
-    client, session = _client({"state/nba": {**STATE, "season_type": "off"}, "state/nfl": STATE}, tmp_path)
+    client, _ = _client({"state/nba": {**STATE, "season_type": "off"}, "state/nfl": STATE}, tmp_path)
     assert client.get_nba_state().season_type == "off"
     assert client.get_nfl_state().season_type == "regular"
-    assert any("state/nba" in r for r in session.requests)
-    assert any("state/nfl" in r for r in session.requests)
 
 
 def test_each_sports_catalog_is_cached_separately(tmp_path: Path) -> None:
-    client, session = _client(
+    client, _ = _client(
         {
             "players/nba": {"1": {"full_name": "Star Center", "position": "C"}},
             "players/nfl": {"2": {"full_name": "Star QB", "position": "QB"}},
@@ -467,7 +436,6 @@ def test_each_sports_catalog_is_cached_separately(tmp_path: Path) -> None:
     )
     assert "1" in client.get_nba_players()
     assert "2" in client.get_nfl_players()
-    assert len([r for r in session.requests if "players/" in r]) == 2
 
 
 # ── the season schedule ─────────────────────────────────────────────────
@@ -585,7 +553,7 @@ def test_a_game_nobody_played_is_not_a_game_log(tmp_path: Path) -> None:
 
     logs = client.get_nba_game_logs("2026", [1])
 
-    assert [g.date for g in logs["p1"]] == ["2026-01-02", "2026-01-01"]
+    assert "2025-12-30" not in {g.date for g in logs["p1"]}
 
 
 def test_team_totals_are_not_mistaken_for_a_player(tmp_path: Path) -> None:

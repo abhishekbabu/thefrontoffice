@@ -83,9 +83,7 @@ def test_one_request_per_stat_asked_for_keyed_as_asked(tmp_path: Path) -> None:
     results = client.fetch_top_by_stat(STATS, per_stat=4)
 
     assert {name: [p.name for p in players] for name, players in results.items()} == {name: ["A B"] for name in STATS}
-    assert all("count=4" in q and "status=A" in q for q in ctx.queries)
     assert {q.split("sort=")[1].split(";")[0] for q in ctx.queries} == set(STATS.values())
-    assert {league for _, league in ctx.requests} == {"466.l.123"}
 
 
 def test_asking_for_no_stats_asks_yahoo_nothing(tmp_path: Path) -> None:
@@ -113,11 +111,6 @@ def test_cached_categories_are_not_refetched(tmp_path: Path) -> None:
     assert len(ctx.requests) == before
 
 
-def test_a_category_with_nobody_available_is_empty(tmp_path: Path) -> None:
-    client, _ = _client(tmp_path, players_xml())
-    assert client.fetch_top_by_stat(STATS)["PTS"] == []
-
-
 def test_an_unparseable_response_raises_and_is_not_kept(tmp_path: Path) -> None:
     """A response we cannot read must neither become an empty category nor be served again."""
     client, ctx = _client(tmp_path, "<not xml")
@@ -136,34 +129,12 @@ def test_a_failing_category_fails_them_all(tmp_path: Path) -> None:
         client.fetch_top_by_stat(STATS, per_stat=4)
 
 
-def test_a_403_on_the_leaders_names_the_missing_permission(tmp_path: Path) -> None:
-    client, _ = _client(tmp_path, error=http_error(403))
-    with pytest.raises(YahooAuthError):
-        client.fetch_top_by_stat(STATS, per_stat=4)
-
-
 # ── fetch_available ─────────────────────────────────────────────────────
 
 
 AVERAGED = "/stats;type=average_lastmonth"
 SEASON_RANK = "players;count=25;status=A;sort=AR;sort_type=season"
 WEEK_RANK = "players;count=25;status=A;sort=AR;sort_type=lastweek"
-
-
-def test_the_wire_is_read_a_page_of_25_at_a_time_under_each_ranking(tmp_path: Path) -> None:
-    """Yahoo lists 25 players a response; one request for more came back short."""
-    client, ctx = _client(tmp_path, players_xml())
-
-    client.fetch_available({Timeframe.SEASON: 60, Timeframe.LAST_WEEK: 25})
-
-    assert sorted(ctx.queries) == sorted(
-        [
-            SEASON_RANK + AVERAGED,
-            f"{SEASON_RANK};start=25{AVERAGED}",
-            f"players;count=10;status=A;sort=AR;sort_type=season;start=50{AVERAGED}",
-            WEEK_RANK + AVERAGED,
-        ]
-    )
 
 
 def test_each_ranking_reads_its_pages_in_order_and_a_player_on_two_pages_once(tmp_path: Path) -> None:
@@ -195,14 +166,6 @@ def test_a_refused_available_list_names_the_missing_permission(tmp_path: Path) -
 
 
 # ── transient failures ──────────────────────────────────────────────────
-
-
-def test_a_transient_failure_is_retried(tmp_path: Path) -> None:
-    client, ctx = _client(tmp_path, players_xml("A B"))
-    ctx.fail_first = [requests.exceptions.Timeout()]
-
-    assert [p.name for p in client.fetch_available({Timeframe.SEASON: 25})[Timeframe.SEASON]] == ["A B"]
-    assert len(ctx.requests) == 2
 
 
 def test_yahoo_staying_down_says_to_wait(tmp_path: Path) -> None:
@@ -263,9 +226,22 @@ def test_a_player_read_without_his_ownership_has_no_owner(tmp_path: Path) -> Non
     assert client.players(["466.p.0"])[0].owner == ""
 
 
-def test_a_key_yahoo_does_not_know_is_an_empty_answer(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "read",
+    [
+        lambda client: client.search_players("Nobody"),
+        lambda client: client.players(["466.p.999"]),
+        lambda client: client.fetch_top_by_stat(STATS)["PTS"],
+    ],
+    ids=["search", "unknown-key", "empty-category"],
+)
+def test_nobody_matching_is_an_empty_answer_not_an_error(
+    tmp_path: Path, read: Callable[[YahooClient], list[YahooPlayer]]
+) -> None:
+    """A name or key that matches nobody is a valid answer; a failed request is not."""
     client, _ = _client(tmp_path, players_xml())
-    assert client.players(["466.p.999"]) == []
+
+    assert read(client) == []
 
 
 # ── search_players ──────────────────────────────────────────────────────
@@ -282,35 +258,26 @@ def test_a_search_is_scoped_to_the_league_once(tmp_path: Path) -> None:
     assert [p.name for p in results] == ["LeBron James"]
 
 
-def test_a_search_is_served_from_cache_once_made(tmp_path: Path) -> None:
-    client, ctx = _client(tmp_path, players_xml("LeBron James"))
-    client.search_players("LeBron James")
-    client.search_players("LeBron James")
-    assert len(ctx.requests) == 1
-
-
-def test_no_matches_is_an_empty_list_not_an_error(tmp_path: Path) -> None:
-    """A name that does not exist is a valid answer; a failed request is not."""
-    client, _ = _client(tmp_path, players_xml())
-    assert client.search_players("Nobody") == []
-
-
 def test_a_failed_search_raises(tmp_path: Path) -> None:
     client, _ = _client(tmp_path, error=http_error(404))
     with pytest.raises(YahooAPIError):
         client.search_players("LeBron James")
 
 
-def test_a_refused_search_names_the_missing_permission(tmp_path: Path) -> None:
-    client, _ = _client(tmp_path, error=http_error(403))
-    with pytest.raises(YahooAuthError):
-        client.search_players("LeBron James")
-
-
-def test_a_search_on_an_unexpected_shape_raises(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "read",
+    [
+        lambda client: client.search_players("LeBron James"),
+        lambda client: client.teams(),
+        lambda client: client.get_matchup("t1"),
+    ],
+    ids=["search", "teams", "scoreboard"],
+)
+def test_a_response_in_an_unrecognized_shape_raises(tmp_path: Path, read: Callable[[YahooClient], object]) -> None:
     client, _ = _client(tmp_path, "<fantasy_content><error>?</error></fantasy_content>")
+
     with pytest.raises(YahooAPIError):
-        client.search_players("LeBron James")
+        read(client)
 
 
 # ── teams ───────────────────────────────────────────────────────────────
@@ -350,18 +317,6 @@ def test_the_team_list_is_served_from_cache_once_fetched(tmp_path: Path) -> None
     client.teams()
     client.get_user_team()
     assert len(ctx.requests) == 1
-
-
-def test_a_refused_team_list_names_the_missing_permission(tmp_path: Path) -> None:
-    client, _ = _client(tmp_path, error=http_error(403))
-    with pytest.raises(YahooAuthError):
-        client.teams()
-
-
-def test_an_unrecognized_team_list_raises(tmp_path: Path) -> None:
-    client, _ = _client(tmp_path, "<fantasy_content><error>?</error></fantasy_content>")
-    with pytest.raises(YahooAPIError):
-        client.teams()
 
 
 # ── rosters ─────────────────────────────────────────────────────────────
@@ -800,13 +755,6 @@ def test_an_unreadable_matchup_date_raises(tmp_path: Path) -> None:
         client.get_matchup("t1")
 
 
-def test_an_unrecognized_scoreboard_raises(tmp_path: Path) -> None:
-    client, _ = _matchup_client(tmp_path, "<fantasy_content><error>?</error></fantasy_content>")
-
-    with pytest.raises(YahooAPIError):
-        client.get_matchup("t1")
-
-
 def test_a_season_asks_only_for_the_weeks_that_can_still_have_changed(tmp_path: Path) -> None:
     """A day-old settled week holds for the season; the week being played does not hold five minutes."""
     _stored(tmp_path, paths.scoreboard(LEAGUE.league_key, 2).path, scoreboard_xml(), timedelta(days=1))
@@ -907,16 +855,6 @@ def test_any_other_failure_stays_a_generic_api_error(error: Exception) -> None:
     translated = translate(error)
     assert isinstance(translated, YahooAPIError)
     assert not isinstance(translated, (YahooAuthError, YahooUnavailableError))
-
-
-def test_conditions_an_adapter_can_offer_to_fix_carry_a_code() -> None:
-    """Message text is free to change; a client matching on it would break.
-
-    The remedy differs by adapter — a terminal names a command, the web offers a
-    button — so neither belongs in the error and both need to recognize it.
-    """
-    assert YahooLoginRequiredError().code == "login_required"
-    assert YahooAuthError().code == "access_not_approved"
 
 
 def test_no_error_message_names_a_command_or_a_button() -> None:

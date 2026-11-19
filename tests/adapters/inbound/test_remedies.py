@@ -2,6 +2,8 @@
 
 from urllib.parse import urlparse
 
+import pytest
+
 from thefrontoffice.adapters.inbound import remedies
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooAuthError,
@@ -9,7 +11,12 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooLoginRequiredError,
     YahooSessionExpiredError,
 )
-from thefrontoffice.domain.errors import AccessNotApprovedError, LoginRequiredError, UnknownCompetitionError
+from thefrontoffice.domain.errors import (
+    AccessNotApprovedError,
+    FrontOfficeError,
+    LoginRequiredError,
+    UnknownCompetitionError,
+)
 
 EVERY = [*remedies.REMEDIES.values(), *remedies.LOGINS.values(), *remedies.APPROVALS.values()]
 
@@ -36,15 +43,10 @@ def test_a_missing_login_offers_the_login_of_the_platform_that_needs_it() -> Non
     assert fix is not None and (fix.action, fix.platform) == ("authorize", "yahoo")
 
 
-def test_a_missing_browser_sync_sends_you_to_settings_where_the_bookmark_is() -> None:
-    fix = remedies.remedy(YahooCaptureMissingError())
-
-    assert fix is not None and fix.action == "settings"
-
-
-def test_an_expired_session_sends_you_to_settings_where_the_cookie_is_pasted() -> None:
-    """Not to the OAuth login: a fresh cookie is the only fix."""
-    fix = remedies.remedy(YahooSessionExpiredError())
+@pytest.mark.parametrize("error", [YahooCaptureMissingError(), YahooSessionExpiredError()], ids=["sync", "session"])
+def test_a_browser_session_condition_sends_you_to_settings_not_the_oauth_login(error: FrontOfficeError) -> None:
+    """The sync bookmark and the session cookie both live in Settings; a fresh login fixes neither."""
+    fix = remedies.remedy(error)
 
     assert fix is not None and fix.action == "settings"
 

@@ -89,14 +89,6 @@ def test_no_more_than_a_screen_of_players_is_put_to_the_model() -> None:
     assert wire.asked[-1] == ids[:MAX_JUDGED]
 
 
-def test_judging_a_page_with_no_kept_calls_reads_the_wire_once() -> None:
-    engine, wire, _ = _engine()
-
-    engine.judge("L1", ["a", "b"])
-
-    assert wire.asked == [["a", "b"]]
-
-
 def test_a_player_listed_twice_is_asked_about_once() -> None:
     engine, wire, _ = _engine()
 

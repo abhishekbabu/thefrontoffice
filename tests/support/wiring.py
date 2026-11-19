@@ -153,9 +153,8 @@ class FakeLogin:
 class FakeCapture:
     """Stands in for a platform's browser sync: plans one step per league asked for, and records each hand-over."""
 
-    def __init__(self, status: CaptureStatus | None = None) -> None:
+    def __init__(self) -> None:
         self.ingested: list[Capture] = []
-        self._status = status or CaptureStatus(active=True)
 
     def plan(self, leagues: Sequence[str]) -> CapturePlan:
         steps = [
@@ -169,7 +168,7 @@ class FakeCapture:
         return CaptureReceipt(stored=len(capture.responses))
 
     def status(self) -> CaptureStatus:
-        return self._status
+        return CaptureStatus(active=True)
 
 
 def wiring(

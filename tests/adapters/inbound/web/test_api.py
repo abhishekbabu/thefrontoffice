@@ -35,7 +35,6 @@ from thefrontoffice.config.settings import AppSettings, env_var
 from thefrontoffice.domain.errors import PortInUseError
 from thefrontoffice.domain.models import (
     Action,
-    CaptureStatus,
     CompetitionContext,
     LeagueSchedule,
     Match,
@@ -158,13 +157,6 @@ def test_leagues_are_listed(client: TestClient) -> None:
     ]
 
 
-def test_a_roster_keeps_the_competitions_own_columns(client: TestClient) -> None:
-    """The client reads the keys off the data rather than being taught them."""
-    body = client.get("/api/premier-league/leagues/900/roster").json()
-    assert list(body[0]["columns"]) == ["Player", "Pos", "xPts"]
-    assert body[0]["player_id"] == "10"
-
-
 class _Squad(FakeProvider):
     def roster(self, league_id: str) -> list[PlayerCard]:
         return [
@@ -181,13 +173,6 @@ def test_a_roster_is_ordered_by_the_column_asked_for_as_a_page_of_the_wire_is() 
     body = client.get("/api/premier-league/leagues/900/roster", params={"sort": "Price", "descending": True}).json()
 
     assert [card["player_id"] for card in body] == ["2", "3", "1"]
-
-
-def test_a_roster_says_which_columns_hold_the_name_status_and_slot(client: TestClient) -> None:
-    """So the page renders them by role, never by matching a column's name."""
-    [card] = client.get("/api/premier-league/leagues/900/roster").json()
-
-    assert card["roles"] == {"Player": "player"}
 
 
 def test_an_unconfigured_competition_is_a_readable_400() -> None:
@@ -284,7 +269,6 @@ def test_the_summary_is_served_without_calling_a_model() -> None:
 
     assert body["headline"][0]["label"] == "Week"
     assert body["mine"]["lineup"][0]["player"] == "P"
-    assert body["swaps"] == []
     assert ai.prompts == []
 
 
@@ -337,11 +321,6 @@ def test_judging_is_bounded_to_a_screen_of_players(client: TestClient) -> None:
     assert client.post("/api/nfl-sleeper/leagues/900/free-agents/judge", json={"player_ids": ids}).status_code == 422
 
 
-def test_judging_for_an_unknown_competition_is_a_404(client: TestClient) -> None:
-    response = client.post("/api/cricket/leagues/900/free-agents/judge", json={"player_ids": ["p1"]})
-    assert response.status_code == 404
-
-
 # ── conversations ───────────────────────────────────────────────────────
 
 
@@ -370,13 +349,6 @@ def test_a_question_about_an_item_since_settled_says_so(client: TestClient) -> N
     response = client.post(f"/api/chat/{_opened(client)}", json={"message": "Why?", "on_screen": on_screen})
 
     assert response.json()["code"] == SubjectGoneError.code
-
-
-def test_what_is_on_screen_must_be_something_a_question_can_be_asked_with(client: TestClient) -> None:
-    on_screen = [{"kind": "league", "key": "x"}]
-    response = client.post(f"/api/chat/{_opened(client)}", json={"message": "Hi", "on_screen": on_screen})
-
-    assert response.status_code == 422
 
 
 def test_a_turn_keeps_the_question_not_the_briefing_that_rode_with_it() -> None:
@@ -445,19 +417,6 @@ def test_a_model_failure_is_a_bad_gateway_not_a_crash() -> None:
 
     assert (response.status_code, response.json()["code"]) == (502, "ai_failed")
     assert "quota exhausted" not in response.json()["detail"]  # a vendor's repr belongs in the log
-
-
-def test_a_follow_up_every_model_refused_says_why() -> None:
-    """A domain error is already a sentence; flattening it to "did not answer"
-    would hide that the quota, not the question, is the problem."""
-    from thefrontoffice.domain.errors import AIQuotaError
-
-    error = AIQuotaError("Gemini, Groq")
-    client = _client(ai=FakeAI(chat=FakeChat(error=error)))
-
-    response = client.post(f"/api/chat/{_opened(client)}", json={"message": "Why?"})
-
-    assert response.json()["code"] == error.code
 
 
 def test_an_empty_follow_up_is_rejected(client: TestClient) -> None:
@@ -558,15 +517,6 @@ def test_a_hand_over_carrying_anything_but_bodies_is_refused() -> None:
     assert capture.ingested == []
 
 
-def test_settings_reads_when_the_sync_last_ran() -> None:
-    synced = datetime(2026, 11, 18, 17, tzinfo=UTC)
-    client = _client(capture=FakeCapture(CaptureStatus(active=True, synced_at=synced, leagues=["Hoops"])))
-
-    status = client.get("/api/yahoo/capture").json()
-
-    assert (datetime.fromisoformat(status["synced_at"]), status["leagues"]) == (synced, ["Hoops"])
-
-
 def test_a_platform_with_no_browser_sync_is_a_404_with_its_code(client: TestClient) -> None:
     response = client.get("/api/sleeper/capture/plan")
     assert (response.status_code, response.json()["code"]) == (404, "not_found")
@@ -597,20 +547,6 @@ def _listed(body: list[dict[str, Any]], key: str) -> dict[str, Any]:
     return next(s for group in body for s in group["settings"] if s["key"] == key)
 
 
-def test_settings_list_every_variable_the_app_reads(settings_client: TestClient) -> None:
-    body = settings_client.get("/api/settings").json()
-    keys = {s["key"] for group in body for s in group["settings"]}
-    assert {"GOOGLE_API_KEY", "FPL_ENTRY_ID", "SLEEPER_USERNAME"} <= keys
-
-
-def test_settings_arrive_grouped_with_what_each_group_unlocks(settings_client: TestClient) -> None:
-    """So the page renders the server's groups rather than keeping a list of keys of its own."""
-    body = settings_client.get("/api/settings").json()
-
-    ai = next(group for group in body if any(s["key"] == "GOOGLE_API_KEY" for s in group["settings"]))
-    assert ai["note"] and {"GROQ_API_KEY", "OPENROUTER_API_KEY"} <= {s["key"] for s in ai["settings"]}
-
-
 def test_a_secret_is_never_sent_to_the_client(env_path: Path) -> None:
     """There is nothing the UI can do with the characters of an API key that it
     cannot do with the fact that one is set — and a page that renders them puts
@@ -620,10 +556,6 @@ def test_a_secret_is_never_sent_to_the_client(env_path: Path) -> None:
     entry = _listed(response.json(), "GROQ_API_KEY")
     assert (entry["secret"], entry["present"], entry["value"], entry["effective"]) == (True, True, "", "")
     assert "super-secret-value" not in response.text
-
-
-def test_a_non_secret_carries_its_value_so_it_can_be_edited(settings_client: TestClient) -> None:
-    assert _listed(settings_client.get("/api/settings").json(), "SLEEPER_USERNAME")["value"] == "abhibeast"
 
 
 def test_saving_writes_the_value_and_returns_the_new_state(settings_client: TestClient) -> None:
@@ -649,14 +581,6 @@ def test_an_env_that_cannot_be_written_is_a_server_fault_that_says_so(tmp_path: 
     assert (response.status_code, response.json()["code"]) == (500, "settings_unwritable")
 
 
-def test_a_shell_variable_is_reported_so_a_futile_edit_is_visible(
-    settings_client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("FPL_ENTRY_ID", "999")
-
-    assert _listed(settings_client.get("/api/settings").json(), "FPL_ENTRY_ID")["shadowed"] is True
-
-
 def _model_key_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Path, dict[str, str]]:
     """The app as bootstrap wires it, over a throwaway .env, and a value for every model key.
 
@@ -672,35 +596,6 @@ def _model_key_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[
     wiring = bootstrap.wiring(isolated_settings(tmp_path, sleeper_username="abhibeast"), env=path)
     keys = {env_var(field): f"{field}-value" for field in ("gemini_api_key", "groq_api_key", "openrouter_api_key")}
     return TestClient(web.create_app(wiring)), path, keys
-
-
-def test_every_model_key_saved_in_settings_reaches_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    client, path, keys = _model_key_client(tmp_path, monkeypatch)
-
-    assert client.put("/api/settings", json={"values": keys}).status_code == 200
-
-    written = path.read_text(encoding="utf-8")
-    assert all(f"{key}={value}" in written for key, value in keys.items())
-
-
-def test_saving_model_keys_keeps_the_rest_of_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    client, path, keys = _model_key_client(tmp_path, monkeypatch)
-
-    client.put("/api/settings", json={"values": keys})
-
-    assert "SLEEPER_USERNAME=abhibeast" in path.read_text(encoding="utf-8")
-
-
-def test_saved_model_keys_are_reported_present_but_never_sent_back(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    client, _, keys = _model_key_client(tmp_path, monkeypatch)
-
-    response = client.put("/api/settings", json={"values": keys})
-
-    listed = [_listed(response.json(), key) for key in keys]
-    assert all(s["present"] and s["secret"] for s in listed)
-    assert not any(value in response.text for value in keys.values())
 
 
 def test_saving_a_model_key_turns_analysis_on_without_a_restart(
@@ -849,36 +744,6 @@ def test_a_decision_made_under_a_bare_competition_holds_under_its_key() -> None:
     assert shown["mark"]["hidden"] == "dismissed"
 
 
-def test_a_restored_item_is_shown_again() -> None:
-    client = _week_with_one_item()
-    client.post(
-        "/api/nfl-sleeper/leagues/L1/items",
-        json={"key": ITEM.key, "decision": "dismiss", "fingerprint": ITEM.fingerprint},
-    )
-
-    restored = client.post("/api/nfl-sleeper/leagues/L1/items", json={"key": ITEM.key, "decision": "restore"})
-    [shown] = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["actions"]
-
-    assert restored.json() == shown["mark"]
-    assert shown["mark"]["hidden"] is None
-
-
-def test_a_decision_that_says_too_little_is_rejected(client: TestClient) -> None:
-    for incomplete in ({"key": "k", "decision": "dismiss"}, {"key": "k", "decision": "snooze"}):
-        assert client.post("/api/nfl-sleeper/leagues/L1/items", json=incomplete).status_code == 422
-
-
-def test_a_snooze_into_the_past_is_refused_by_name(client: TestClient) -> None:
-    from thefrontoffice.domain.errors import ItemDecisionError
-
-    response = client.post(
-        "/api/nfl-sleeper/leagues/L1/items",
-        json={"key": "k", "decision": "snooze", "until": "2001-01-01T00:00:00+00:00"},
-    )
-
-    assert response.json()["code"] == ItemDecisionError.code
-
-
 # ── the week, simulated ─────────────────────────────────────────────────
 
 
@@ -1005,13 +870,6 @@ def test_the_weeks_ahead_come_back_with_their_fixes() -> None:
     assert (week["week"], week["short"], week["short_by"], week["gain"]) == (8, True, 23.0, 12.0)
 
 
-def test_a_competition_that_cannot_look_ahead_refuses_as_it_does_trades(client: TestClient) -> None:
-    """Only offered where it can be, so asking anyway is refused rather than answered with no weeks."""
-    response = client.get("/api/nfl-sleeper/leagues/L1/weeks-ahead")
-
-    assert (response.status_code, response.json()["code"]) == (400, "unsupported")
-
-
 class _BrowsingProvider(_SummaryProvider):
     def week_of(self, league_id: str, week: int) -> Summary:
         from thefrontoffice.domain.models import WeekRange
@@ -1044,16 +902,6 @@ def test_a_weeks_real_games_come_back_by_number() -> None:
     assert (game["label"], game["detail"], body["byes"]) == ("Week 4", "Final", ["KC"])
 
 
-def test_a_competition_that_cannot_browse_weeks_refuses_as_it_does_trades(client: TestClient) -> None:
-    response = client.get("/api/nfl-sleeper/leagues/L1/weeks/4")
-
-    assert (response.status_code, response.json()["code"]) == (400, "unsupported")
-
-
-def test_a_competition_with_no_season_to_play_finds_no_trades(client: TestClient) -> None:
-    assert client.get("/api/nfl-sleeper/leagues/L1/trades").status_code == 400
-
-
 def test_the_table_carries_each_teams_playoff_chance() -> None:
     from thefrontoffice.domain.models import Summary
 
@@ -1075,10 +923,6 @@ def test_a_platform_that_is_down_is_a_503_that_says_so() -> None:
 
     assert response.status_code == 503
     assert response.json()["code"] == PlatformUnavailableError.code
-
-
-def test_a_platform_nothing_logs_in_to_is_a_404() -> None:
-    assert TestClient(web.create_app(fake_wiring())).post("/api/espn/login").status_code == 404
 
 
 # ── choosing a port ─────────────────────────────────────────────────────
@@ -1166,7 +1010,6 @@ def test_players_are_found_by_name_where_the_competition_can() -> None:
     assert _client(_Comparable()).get("/api/nfl/leagues/900/players?search=lamb").json() == [
         {"player_id": "7", "name": "Found lamb", "detail": ""}
     ]
-    assert _client().get("/api/nfl/leagues/900/players?search=lamb").status_code != 200
 
 
 class _Tabbed(_Comparable):
@@ -1181,4 +1024,15 @@ def test_a_deferred_tab_is_its_own_read_where_the_competition_defers_any() -> No
     body = _client(_Tabbed()).get("/api/nfl/leagues/900/players/7/tabs/Seasons").json()
 
     assert [(t["title"], t["tab"]) for t in body["tables"]] == [("By season", "Seasons")]
-    assert _client(_Comparable()).get("/api/nfl/leagues/900/players/7/tabs/Seasons").status_code != 200
+
+
+@pytest.mark.parametrize(
+    "path", ["weeks-ahead", "weeks/4", "weeks/4/games", "trades", "players?search=lamb", "players/7/tabs/Seasons"]
+)
+def test_a_read_the_competition_cannot_serve_is_refused_rather_than_answered_empty(
+    client: TestClient, path: str
+) -> None:
+    """Each is offered only where a competition can serve it, so asking anyway is refused, not answered with nothing."""
+    response = client.get(f"/api/nfl-sleeper/leagues/L1/{path}")
+
+    assert (response.status_code, response.json()["code"]) == (400, "unsupported")

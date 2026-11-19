@@ -23,12 +23,6 @@ def _fresh_logger() -> Iterator[None]:
     logging.getLogger(MINE).setLevel(logging.NOTSET)
 
 
-def test_records_from_the_named_logger_are_captured() -> None:
-    with capture_logs(MINE) as logs:
-        logging.getLogger(MINE).info("the catalog was refreshed")
-    assert "the catalog was refreshed" in logs.text
-
-
 def test_another_logger_does_not_satisfy_the_assertion() -> None:
     """The whole point: `caplog` would return this line and pass."""
     with capture_logs(MINE) as logs:

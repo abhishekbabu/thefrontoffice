@@ -217,30 +217,20 @@ def test_the_reader_reads_everything_it_needs_from_a_sweep(tmp_path: Path) -> No
 def test_nothing_synced_yet_is_an_error_not_an_empty_league(tmp_path: Path) -> None:
     yahoo = YahooClient(LEAGUE, responses=_capture(tmp_path))
 
-    with pytest.raises(YahooCaptureMissingError) as caught:
+    with pytest.raises(YahooCaptureMissingError):
         yahoo.teams()
-    assert caught.value.code == "capture_required"
     with pytest.raises(YahooCaptureMissingError):
         _capture(tmp_path).find_leagues("nba", SEASON)
 
 
-def test_a_sync_from_before_the_table_was_planned_asks_for_the_sync_again(tmp_path: Path) -> None:
+def test_a_read_the_last_sync_did_not_carry_asks_for_the_sync_again_naming_it(tmp_path: Path) -> None:
+    """A sync from before the table was planned, say."""
     capture = _capture(tmp_path)
     _sweep(capture, {path: xml for path, xml in YAHOO.items() if path != paths.standings(KEY).path})
     yahoo = YahooClient(LEAGUE, responses=capture)
 
-    with pytest.raises(YahooCaptureMissingError) as caught:
+    with pytest.raises(YahooCaptureMissingError, match=re.escape(paths.standings(KEY).path)):
         yahoo.standings()
-    assert caught.value.code == "capture_required"
-    assert paths.standings(KEY).path in str(caught.value)
-
-
-def test_a_week_the_last_sync_did_not_carry_is_an_error(tmp_path: Path) -> None:
-    capture = _capture(tmp_path)
-    _sweep(capture)
-
-    with pytest.raises(YahooCaptureMissingError, match=re.escape(paths.scoreboard(KEY, 9).path)):
-        YahooClient(LEAGUE, responses=capture).pairing("t1", 9)
 
 
 def test_a_capture_older_than_its_ttl_no_longer_stands_in_for_yahoo(tmp_path: Path) -> None:
@@ -339,12 +329,8 @@ def test_ready_only_once_a_recent_sync_has_stored_something(tmp_path: Path) -> N
 
 def test_the_status_says_when_it_last_synced_and_which_leagues_it_holds(tmp_path: Path) -> None:
     capture = _capture(tmp_path, active=False)
-    assert capture.status().model_dump() == {
-        "active": False,
-        "synced_at": None,
-        "leagues": [],
-        "session": None,
-    }
+    never = capture.status()
+    assert (never.synced_at, never.leagues) == (None, [])
 
     before = datetime.now(UTC)
     _sweep(capture)

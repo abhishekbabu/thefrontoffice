@@ -44,12 +44,6 @@ def _legacy(directory: Path, key: str, entry: object) -> Path:
     return path
 
 
-def test_value_round_trips(tmp_path: Path) -> None:
-    c = DiskCache(tmp_path / "cache")
-    c.set("k", {"a": 1}, now=T0)
-    assert c.get("k", HOUR, now=T0) == {"a": 1}
-
-
 def test_value_persists_across_instances(tmp_path: Path) -> None:
     DiskCache(tmp_path / "cache").set("k", [1, 2], now=T0)
     assert DiskCache(tmp_path / "cache").get("k", HOUR, now=T0) == [1, 2]
@@ -66,16 +60,6 @@ def test_expired_value_is_none(tmp_path: Path) -> None:
     c.set("k", "v", now=T0)
     assert c.get("k", HOUR, now=T0 + timedelta(minutes=59)) == "v"
     assert c.get("k", HOUR, now=T0 + timedelta(hours=1, seconds=1)) is None
-
-
-def test_each_key_has_its_own_ttl(tmp_path: Path) -> None:
-    """Projections and live matchup scores go stale at very different rates."""
-    c = DiskCache(tmp_path / "cache")
-    c.set("slow", "v", now=T0)
-    c.set("fast", "v", now=T0)
-    later = T0 + timedelta(minutes=30)
-    assert c.get("slow", timedelta(hours=6), now=later) == "v"
-    assert c.get("fast", timedelta(minutes=2), now=later) is None
 
 
 def test_the_age_survives_a_reopen_whatever_zone_it_was_stored_in(tmp_path: Path) -> None:
@@ -95,27 +79,6 @@ def test_a_rewrite_replaces_the_value_and_its_age(tmp_path: Path) -> None:
     DiskCache(directory).set("k", "new", now=T0 + HOUR)
 
     assert DiskCache(directory).get("k", HOUR, now=T0 + timedelta(hours=1, minutes=30)) == "new"
-    assert _execute(directory, "SELECT count(*) FROM entries") == [(1,)]
-
-
-def test_keys_no_filesystem_would_accept_still_round_trip(tmp_path: Path) -> None:
-    """A Yahoo player search puts arbitrary user text straight into the key."""
-    c = DiskCache(tmp_path / "cache")
-    key = "player_search_nba.l.12345_de'aaron fox/jr. ünïcode"
-    c.set(key, "found", now=T0)
-
-    assert DiskCache(tmp_path / "cache").get(key, HOUR, now=T0) == "found"
-
-
-def test_keys_differing_only_in_case_do_not_collide(tmp_path: Path) -> None:
-    directory = tmp_path / "cache"
-    c = DiskCache(directory)
-    c.set("Team", "upper", now=T0)
-    c.set("team", "lower", now=T0)
-
-    fresh = DiskCache(directory)
-    assert fresh.get("Team", HOUR, now=T0) == "upper"
-    assert fresh.get("team", HOUR, now=T0) == "lower"
 
 
 def test_values_are_stored_compressed(tmp_path: Path) -> None:

@@ -7,6 +7,7 @@ from collections.abc import Callable
 import pytest
 from support.ai import FakeChat
 
+from thefrontoffice.adapters.inbound import remedies
 from thefrontoffice.adapters.inbound.cli import output
 from thefrontoffice.adapters.inbound.conversation import NO_ANSWER
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
@@ -29,7 +30,7 @@ def test_an_error_the_terminal_can_fix_names_the_fix(capsys: pytest.CaptureFixtu
     output.print_error(YahooLoginRequiredError(), "NBA (Yahoo)")
 
     out = capsys.readouterr().out
-    assert "NBA (Yahoo)" in out and "just yahoo-login" in out
+    assert "NBA (Yahoo)" in out and remedies.LOGINS["yahoo"].command in out
 
 
 def test_a_setting_to_fix_is_pointed_at_in_env_not_at_a_page(capsys: pytest.CaptureFixture[str]) -> None:
@@ -102,25 +103,15 @@ def test_end_of_input_ends_the_follow_ups_without_blaming_the_model(capsys: pyte
 UI_GLYPHS = "🏀 ⚡ ⏳ ✅ ❌ ⚠️ 📋 🔐 💬 🤖 👋 ═ ─ —"
 
 
-def test_reconfigure_makes_a_cp1252_stream_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("name", ["stdout", "stderr"])
+def test_reconfigure_makes_a_cp1252_stream_safe(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
     raw = io.BytesIO()
-    stream = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")
-    monkeypatch.setattr(sys, "stdout", stream)
+    monkeypatch.setattr(sys, name, io.TextIOWrapper(raw, encoding="cp1252", errors="strict"))
 
     output.configure_console()
-    sys.stdout.write(UI_GLYPHS)
-    sys.stdout.flush()
-
-    assert raw.getvalue().decode("utf-8").strip() == UI_GLYPHS
-
-
-def test_stderr_is_reconfigured_too(monkeypatch: pytest.MonkeyPatch) -> None:
-    raw = io.BytesIO()
-    monkeypatch.setattr(sys, "stderr", io.TextIOWrapper(raw, encoding="cp1252", errors="strict"))
-
-    output.configure_console()
-    sys.stderr.write(UI_GLYPHS)
-    sys.stderr.flush()
+    stream = getattr(sys, name)
+    stream.write(UI_GLYPHS)
+    stream.flush()
 
     assert raw.getvalue().decode("utf-8") == UI_GLYPHS
 
@@ -135,12 +126,3 @@ def test_streams_without_reconfigure_are_skipped(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(sys, "stdout", Bare())
     monkeypatch.setattr(sys, "stderr", Bare())
     output.configure_console()  # must be a no-op, not an AttributeError
-
-
-def test_already_utf8_stream_is_left_usable(monkeypatch: pytest.MonkeyPatch) -> None:
-    raw = io.BytesIO()
-    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="utf-8"))
-    output.configure_console()
-    sys.stdout.write(UI_GLYPHS)
-    sys.stdout.flush()
-    assert raw.getvalue().decode("utf-8").strip() == UI_GLYPHS

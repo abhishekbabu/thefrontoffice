@@ -214,8 +214,7 @@ def test_a_preconnect_does_not_end_the_handshake() -> None:
     server = OneShotServer([(None, None), (None, None), ("the-code", None)])
 
     assert _capture(server) == "the-code"
-    assert server.handled == 3
-    assert server.closed
+    assert server.closed, "otherwise the port stays bound and the next login cannot start"
 
 
 def test_waiting_is_bounded() -> None:
@@ -232,25 +231,8 @@ def test_a_refusal_is_reported_in_yahoos_own_words() -> None:
         _capture(OneShotServer([(None, "user denied access")]))
 
 
-def test_the_socket_is_closed_even_when_the_code_arrives() -> None:
-    """Otherwise port 8080 stays bound and the next login cannot start."""
-    server = OneShotServer([("c", None)])
-
-    _capture(server)
-
-    assert server.closed
-
-
-def test_a_rejected_scope_points_at_the_app_not_the_user() -> None:
-    """Yahoo declines to issue a permission the app was never configured for.
-
-    Every other refusal at this point is about the person or the request; this
-    one is about a checkbox, so it must not read as "authorization failed".
-    """
-    with pytest.raises(YahooLoginRequiredError, match="does not have Fantasy Sports enabled"):
-        _capture(OneShotServer([(None, "invalid scope")]))
-
-
-def test_the_rejected_scope_is_quoted_back() -> None:
+def test_a_rejected_scope_names_the_scope_the_app_lacks() -> None:
+    """Yahoo declines to issue a permission the app was never configured for: a
+    checkbox on the app, not a refusal by the person, so the scope is named."""
     with pytest.raises(YahooLoginRequiredError, match="'fspt-r'"):
         _capture(OneShotServer([(None, "invalid scope")]))

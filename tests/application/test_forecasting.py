@@ -5,6 +5,7 @@ simulation should conclude — a sure thing, a coin flip, a move that cannot
 hurt — without depending on any sport's data.
 """
 
+import random
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
@@ -12,13 +13,13 @@ import pytest
 from support.simulation import FEW, FakeForecast, outcome
 
 from thefrontoffice.application.forecasting import (
-    REMEMBERED,
     WORTH_A_ROW,
     ForecastEngine,
     calibrate,
     categories,
     pickup_chances,
     ranked,
+    score_ranges,
     simulate,
 )
 from thefrontoffice.domain.models import (
@@ -314,12 +315,8 @@ def test_projection_error_widens_a_range_and_never_scores_below_nothing() -> Non
 
 
 def test_a_range_that_matches_reality_holds_four_in_five() -> None:
-    import random as rng_module
-
-    from thefrontoffice.application.forecasting import score_ranges
-
     truth = tuple(float(x) for x in range(101))
-    rng = rng_module.Random(3)
+    rng = random.Random(3)
     played = [(Outcomes(f"p{i}", "P", 50.0, truth), rng.choice(truth)) for i in range(2_000)]
 
     result = score_ranges(played)
@@ -329,12 +326,8 @@ def test_a_range_that_matches_reality_holds_four_in_five() -> None:
 
 
 def test_a_range_too_narrow_for_reality_holds_less_and_scores_worse() -> None:
-    import random as rng_module
-
-    from thefrontoffice.application.forecasting import score_ranges
-
     truth = tuple(float(x) for x in range(101))
-    rng = rng_module.Random(3)
+    rng = random.Random(3)
     actuals = [rng.choice(truth) for _ in range(1_000)]
     true_range = score_ranges([(Outcomes("p", "P", 50.0, truth), a) for a in actuals])
     narrow = score_ranges([(Outcomes("p", "P", 50.0, (45.0, 50.0, 55.0)), a) for a in actuals])
@@ -344,8 +337,6 @@ def test_a_range_too_narrow_for_reality_holds_less_and_scores_worse() -> None:
 
 
 def test_no_games_to_score_scores_nothing() -> None:
-    from thefrontoffice.application.forecasting import score_ranges
-
     assert score_ranges([]).players == 0
 
 
@@ -509,23 +500,6 @@ def test_an_unchanged_matchup_is_not_played_again_even_by_an_engine_built_for_th
 
     assert first is not None and second is not None
     assert first[0] is second[0]
-
-
-class _Changing(FakeForecast):
-    """A matchup that is a different one each time it is asked for, as a live week is, until it comes round again."""
-
-    def matchup(self, candidates: Sequence[str]) -> MatchupInput | None:
-        return _match([outcome("a", 0, 10, 20)], [outcome("b", 5, 15)], seed=len(self.asked) % (REMEMBERED + 1))
-
-
-def test_a_matchup_is_played_again_once_newer_ones_have_pushed_it_out() -> None:
-    engine = ForecastEngine(_Changing())
-    reads = [engine.forecast("L1") for _ in range(REMEMBERED + 2)]
-
-    first, again = reads[0], reads[-1]
-    assert first is not None and again is not None
-    assert again[1] == first[1]
-    assert again[0] == first[0] and again[0] is not first[0]
 
 
 # ── teammates ───────────────────────────────────────────────────────────

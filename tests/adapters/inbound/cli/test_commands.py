@@ -79,12 +79,9 @@ def test_no_argument_runs_every_configured_competition() -> None:
     assert commands.resolve(session, []) == session.entries
 
 
-def test_a_named_competition_runs_only_that_one() -> None:
-    assert [e.key for e in commands.resolve(_session(_nfl(), _nba()), ["nfl"])] == ["nfl-sleeper"]
-
-
-def test_a_competition_is_named_by_its_key_too() -> None:
-    assert [e.key for e in commands.resolve(_session(_nfl(), _nba()), ["nba-yahoo"])] == ["nba-yahoo"]
+@pytest.mark.parametrize(("named", "key"), [("nfl", "nfl-sleeper"), ("nba-yahoo", "nba-yahoo")])
+def test_a_named_competition_runs_only_that_one_by_competition_or_key(named: str, key: str) -> None:
+    assert [e.key for e in commands.resolve(_session(_nfl(), _nba()), [named])] == [key]
 
 
 def test_an_unknown_competition_resolves_to_nothing(capsys: pytest.CaptureFixture[str]) -> None:
@@ -232,16 +229,14 @@ def test_trade_reports_when_no_competition_supports_it(capsys: pytest.CaptureFix
     assert commands.TRADES in capsys.readouterr().out  # and the user is told what cannot be done
 
 
-def test_trade_usage_is_shown_without_arguments(capsys: pytest.CaptureFixture[str]) -> None:
-    commands.trade(_session(_nfl(_Trades())), [])
+@pytest.mark.parametrize("args", [[], ["nfl"]], ids=["nothing", "only-a-competition"])
+def test_trade_usage_is_shown_without_a_description(capsys: pytest.CaptureFixture[str], args: list[str]) -> None:
+    ai = FakeAI()
+
+    commands.trade(_session(_nfl(_Trades()), ai=ai), args)
 
     assert "/trade" in capsys.readouterr().out
-
-
-def test_usage_is_shown_when_only_a_competition_is_given(capsys: pytest.CaptureFixture[str]) -> None:
-    commands.trade(_session(_nfl(_Trades())), ["nfl"])
-
-    assert "/trade" in capsys.readouterr().out
+    assert ai.structured == []  # nothing was evaluated
 
 
 def test_a_lone_trading_competition_needs_no_argument() -> None:
