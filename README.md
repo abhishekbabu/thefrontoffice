@@ -122,13 +122,26 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Light and dark mode**, several palettes, and a terminal CLI.
 
 NFL has the deepest analysis. FPL and NBA share the matchup, schedule, fixtures,
-team and league pages. NBA averages are Yahoo's own, as Yahoo prints them: table
-rows show PTS/REB/AST over the last 30 days (FPTS a game in a points league), and
-the drawer every category the league scores over the season and the last 30 days.
-That costs one request per roster page (the roster's averages), none on Free agents
-(each wire page carries them) and two per drawer (season and last 30 days), each
-cached 3 hours. Sleeper's box scores still drive everything game by game: worth,
-the win chance, teammate splits and games left. An NBA league is read as Yahoo
+team and league pages. NBA averages are Yahoo's own, as Yahoo prints them (a rate
+reads `.850`), one figure per stat on every page: in a category league, Free agents
+and Rosters show every category the league scores over the last 30 days plus
+`Value`, a game's worth across the categories (the to-do list's own figure, read on
+its pool: both rosters of this week's matchup and the top of the wire), best first;
+in a points league FPTS a game and PTS/REB/AST, most FPTS first. Lineup rows show
+games left and Yahoo's PTS/REB/AST (FPTS in a points league); a week played shows
+each category as a column. Position filters are PG/SG/SF/PF/C, plus G and F where
+the league's lineup has them, each keeping anybody eligible there. The drawer has
+the photo, whose roster he is on, games left this week, and every category the
+league scores over the season and the last 30 days (the latter only once it
+differs). To-do items compare `Value/g` (explained on hover), Yahoo's FPTS in a
+points league, and in a category league the two categories dragging a player's
+value most (`Weak in: FG% .380 · 2.9 TO`), which a drop's reason names too.
+That costs one request per roster page (the roster's averages) plus, in a category
+league, the matchup's rosters and the wire's first pages the summary reads anyway;
+none more on Free agents (each wire page carries its averages), two per drawer
+(season and last 30 days, cached 3 hours) and the drawer's player lookup carries
+his ownership. Sleeper's box scores still drive everything game by game: worth,
+`Value`, the win chance, teammate splits and games left. An NBA league is read as Yahoo
 scores it: a category league shows the categories, a points league its fantasy
 points scored and projected, with the scout's free agents ranked by fantasy points
 a game over their last 15 Sleeper box scores. The add budget is the league's own.

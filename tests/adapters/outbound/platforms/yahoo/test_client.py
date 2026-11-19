@@ -32,7 +32,7 @@ from support.yahoo import (
 
 from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
-from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, YahooClient, translate
+from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, YahooClient, full_size, translate
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooAPIError,
     YahooAuthError,
@@ -222,8 +222,45 @@ def test_players_are_looked_up_by_key_across_the_league(tmp_path: Path) -> None:
 
     found = client.players(["466.p.0"])
 
-    assert ctx.requests == [("players;player_keys=466.p.0", "466.l.123")]
+    assert ctx.requests == [("players;player_keys=466.p.0/ownership", "466.l.123")]
     assert [p.name for p in found] == ["LeBron James"]
+
+
+def _owned_xml(ownership: str) -> str:
+    resized = "https://s.yimg.com/iu/api/res/1.2/abc--~C/YXBw/https://s.yimg.com/xe/i/us/sp/v/nba_cutout/6169.1.png"
+    return (
+        "<fantasy_content><league><players><player><player_key>466.p.0</player_key><name><full>Coby White</full>"
+        f"</name><image_url>{resized}</image_url><ownership>{ownership}</ownership></player></players></league>"
+        "</fantasy_content>"
+    )
+
+
+def test_a_player_carries_his_full_size_headshot_and_whose_roster_he_is_on(tmp_path: Path) -> None:
+    held = "<ownership_type>team</ownership_type><owner_team_name>Injury Prone</owner_team_name>"
+    client, _ = _client(tmp_path, _owned_xml(held))
+
+    [player] = client.players(["466.p.0"])
+
+    assert player.image_url == "https://s.yimg.com/xe/i/us/sp/v/nba_cutout/6169.1.png"
+    assert player.owner == "Injury Prone"
+
+
+@pytest.mark.parametrize(("kind", "owner"), [("freeagents", "Free agent"), ("waivers", "Waivers"), ("other", "")])
+def test_a_player_nobody_holds_reads_as_the_wire_he_is_on(tmp_path: Path, kind: str, owner: str) -> None:
+    client, _ = _client(tmp_path, _owned_xml(f"<ownership_type>{kind}</ownership_type>"))
+
+    assert client.players(["466.p.0"])[0].owner == owner
+
+
+def test_a_headshot_yahoo_serves_unresized_is_kept_as_it_is() -> None:
+    assert full_size("https://s.yimg.com/a.png") == "https://s.yimg.com/a.png"
+    assert full_size("") == ""
+
+
+def test_a_player_read_without_his_ownership_has_no_owner(tmp_path: Path) -> None:
+    client, _ = _client(tmp_path, players_xml("LeBron James"))
+
+    assert client.players(["466.p.0"])[0].owner == ""
 
 
 def test_a_key_yahoo_does_not_know_is_an_empty_answer(tmp_path: Path) -> None:
@@ -474,6 +511,19 @@ def test_a_side_carries_yahoos_projected_final(tmp_path: Path) -> None:
 
     assert found is not None
     assert (found.mine.points, found.mine.projected, found.opponent.projected) == ("50", "896.45", "1107.37")
+
+
+def test_the_settings_list_the_leagues_lineup_slots(tmp_path: Path) -> None:
+    slots = "".join(
+        f"<roster_position><position>{slot}</position><count>1</count></roster_position>" for slot in ("PG", "G", "BN")
+    )
+    settings = (
+        f"<fantasy_content><league><settings><roster_positions>{slots}</roster_positions>"
+        "</settings></league></fantasy_content>"
+    )
+    client, _ = _client(tmp_path, answers={"settings": settings})
+
+    assert client.settings().positions == ["PG", "G", "BN"]
 
 
 def test_the_settings_say_where_the_bracket_starts(tmp_path: Path) -> None:

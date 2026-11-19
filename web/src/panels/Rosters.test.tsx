@@ -145,7 +145,7 @@ describe("Rosters", () => {
         },
       ],
       clear: 14,
-      warnings: [{ label: "GW12", value: "1 blank: Haaland", tone: "warning", url: "", better: null }],
+      warnings: [{ label: "GW12", value: "1 blank: Haaland", tone: "warning", url: "", better: null, hint: "" }],
     } satisfies Outlook);
     const text = (await render(<RostersPanel competition={fpl} league={league} />, client)).container.textContent;
 

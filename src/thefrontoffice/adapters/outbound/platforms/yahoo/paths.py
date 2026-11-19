@@ -273,8 +273,11 @@ def search(league_key: str, query: str) -> YahooRead:
 
 
 def by_keys(league_key: str, player_keys: list[str]) -> YahooRead:
+    """These players, whoever holds them, each with whose roster he is on: the ownership rides the same read."""
     keys = ",".join(player_keys)
-    return YahooRead(f"players;player_keys={keys}", ROSTER_TTL, league=league_key, player_keys=tuple(player_keys))
+    return YahooRead(
+        f"players;player_keys={keys}/ownership", ROSTER_TTL, league=league_key, player_keys=tuple(player_keys)
+    )
 
 
 def averages(league_key: str, player_keys: list[str], average: Average) -> list[YahooRead]:

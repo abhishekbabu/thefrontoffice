@@ -14,7 +14,9 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     per_game,
     points_value,
     read,
+    scales,
     usage,
+    weakest,
 )
 from thefrontoffice.adapters.outbound.competitions.worth import USAGE_SWING
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
@@ -140,3 +142,32 @@ def test_a_player_with_nothing_to_read_has_no_value() -> None:
     reading = read(make_player("A"), None, None, points_value({POINTS.yahoo_stat: 1.0}), 2)
 
     assert (reading.line, reading.per_game, reading.minutes) == (None, None, None)
+
+
+SCORED = _scored(
+    StatCategory(FIELD_GOALS.yahoo_stat, "FG%"),
+    StatCategory(BLOCKS.yahoo_stat, "BLK"),
+    StatCategory(POINTS.yahoo_stat, "PTS"),
+    StatCategory(TURNOVERS.yahoo_stat, "TO", fewer_wins=True),
+)
+POOL = [
+    {FIELD_GOALS.label: 0.50, BLOCKS.label: 1.0, POINTS.label: 20.0, TURNOVERS.label: 1.0},
+    {FIELD_GOALS.label: 0.46, BLOCKS.label: 0.5, POINTS.label: 15.0, TURNOVERS.label: 1.5},
+    {FIELD_GOALS.label: 0.42, BLOCKS.label: 0.0, POINTS.label: 10.0, TURNOVERS.label: 2.0},
+]
+
+
+def test_a_player_is_weak_where_he_sits_furthest_under_the_pools_average_worst_first() -> None:
+    """A wild shooter who turns it over: those drag him, not the points he scores; more turnovers is worse."""
+    line = {FIELD_GOALS.label: 0.38, BLOCKS.label: 0.4, POINTS.label: 18.0, TURNOVERS.label: 3.0}
+
+    assert [c.name for c in weakest(line, scales(SCORED, POOL))] == ["TO", "FG%"]
+
+
+def test_an_average_line_is_weak_nowhere() -> None:
+    assert weakest(POOL[1], scales(SCORED, POOL)) == []
+    assert weakest(None, scales(SCORED, POOL)) == []
+
+
+def test_a_category_with_no_spread_across_the_pool_scales_nothing() -> None:
+    assert BLOCKS.label not in scales(SCORED, [{BLOCKS.label: 1.0}, {BLOCKS.label: 1.0}])

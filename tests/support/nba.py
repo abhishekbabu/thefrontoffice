@@ -155,6 +155,8 @@ class FakeYahoo:
         self.averages_error: Exception | None = None
         self.averaged: list[tuple[tuple[str, ...], tuple[Average, ...]]] = []
         """Every lookup of averages by key: the keys, and the spans."""
+        self.positions: list[str] = []
+        """The league's lineup slots."""
 
     def get_user_team(self) -> YahooTeam:
         return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
@@ -215,6 +217,7 @@ class FakeYahoo:
         six teams make playoffs from week 19."""
         return LeagueSettings(
             categories=[StatCategory(c.yahoo_stat, c.label, fewer_wins=c is TURNOVERS) for c in CATEGORIES],
+            positions=self.positions,
             weights=self.weights,
             max_weekly_adds=self.max_weekly_adds,
             playoff_start_week=19,

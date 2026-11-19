@@ -34,7 +34,7 @@ describe("why the other manager might take a trade", () => {
 
 describe("a player's pricing", () => {
   it("is found on every trade he is in, under the name the trade lists him by", () => {
-    const form = [{ label: "Matthew Golden", value: "priced 18.5", tone: "neutral" as const, url: "", better: null }];
+    const form = [{ label: "Matthew Golden", value: "priced 18.5", tone: "neutral" as const, url: "", better: null, hint: "" }];
     const ideas = [
       idea(0.4, 1.4, { giving: ["Matthew Golden (WR)"], form }),
       idea(0.4, 1.4, { giving: ["Matthew Golden (WR)", "C (RB)"] }),

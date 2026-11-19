@@ -9,10 +9,11 @@ Beside them, the other facts every basketball reader shares: the clock the
 league keeps, the injured slots and the statuses that rule a player out.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 from thefrontoffice.domain.models import Better
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
@@ -128,10 +129,36 @@ ANYBODY = "UTIL"
 def fits(slot: str, positions: str) -> bool:
     """Whether a player eligible at `positions` ('PG,SG') may fill lineup slot `slot`."""
     slot = slot.upper()
-    held = {p.strip().upper() for p in positions.split(",") if p.strip()}
+    held = eligible(positions)
     if slot == ANYBODY:
         return bool(held)
     return bool(held & SLOT_TAKES.get(slot, frozenset({slot})))
+
+
+POSITIONS = ("PG", "SG", "SF", "PF", "C")
+"""Basketball's five positions, in the order a filter offers them."""
+
+FILTER_SLOTS = ("G", "F")
+"""The combined slots a filter offers too, where the league has them in its lineup."""
+
+
+def eligible(positions: str) -> frozenset[str]:
+    """Each position a player is eligible at, from Yahoo's 'PG,SG'."""
+    return frozenset(p.strip().upper() for p in positions.split(",") if p.strip())
+
+
+def position_filters(players: Iterable[YahooPlayer], slots: Sequence[str]) -> dict[str, frozenset[str]]:
+    """The position filters a list of players offers, each with the eligibilities it keeps.
+
+    One per position anybody in `players` is eligible at, rather than one per
+    combination Yahoo prints ('PG,SG', 'SF,PF,C'), each keeping everyone eligible
+    there; then 'G' and 'F' where the league's lineup `slots` have them, each
+    keeping anybody who could fill it (`SLOT_TAKES`).
+    """
+    held = frozenset().union(*(eligible(p.position) for p in players))
+    single = {position: frozenset({position}) for position in POSITIONS if position in held}
+    combined = {slot: SLOT_TAKES[slot] for slot in FILTER_SLOTS if slot in {s.upper() for s in slots}}
+    return {**single, **combined}
 
 
 RULED_OUT = frozenset({"O", "INJ", "SUSP", "IL", "IL+", "NA"})

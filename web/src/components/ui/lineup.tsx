@@ -1,8 +1,8 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CardNote } from "@/components/ui/state";
-import type { Side, Spot, Swap } from "@/lib/api";
+import type { Side, Spot, Stat, Swap } from "@/lib/api";
 import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 import { Label, Meta } from "@/components/ui/label";
@@ -115,6 +115,7 @@ function SpotList({
   if (!spots.length) {
     return <CardNote>{empty ?? "Nothing set."}</CardNote>;
   }
+  const slotted = spots.some((spot) => spot.slot);
   return (
     <div className="flex flex-col">
       {spots.map((spot, i) => {
@@ -126,6 +127,8 @@ function SpotList({
           {...clickable(open)}
           className={cn(
             "flex items-baseline gap-3 border-b border-border/45 px-4 py-2 last:border-b-0",
+            // His line in each category takes a row of its own under his name, column under column.
+            spot.line.length > 0 && "flex-wrap gap-y-1",
             open && "cursor-pointer hover:bg-muted",
           )}
         >
@@ -143,7 +146,9 @@ function SpotList({
             </div>
             <Meta as="div" className="truncate">{spot.detail}</Meta>
           </div>
-          {spot.scoring ? (
+          {spot.line.length > 0 ? (
+            <LineFigures line={spot.line} indent={slotted} />
+          ) : spot.scoring ? (
             <SpotScore spot={spot} started={started} />
           ) : spot.tone === "warning" ? (
             <Badge variant="warn" appearance="pill" className="tabular-nums">
@@ -156,6 +161,53 @@ function SpotList({
         );
       })}
     </div>
+  );
+}
+
+/** The grid a row of category figures and its heading share, so each figure sits under its label. */
+function lineGrid(count: number): CSSProperties {
+  return { gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` };
+}
+
+/** Clears the slot label (w-16) and the gap after it, so the figures start under the name. */
+const UNDER_NAME = "pl-[4.75rem]";
+
+/**
+ * His line in each category the league scores, a column each, under his
+ * name: nine figures do not fit beside it, and as one sentence they truncated.
+ */
+function LineFigures({ line, indent }: { line: Stat[]; indent: boolean }) {
+  return (
+    <div
+      className={cn("grid basis-full gap-x-1 font-mono text-[12px] tabular-nums", indent && UNDER_NAME)}
+      style={lineGrid(line.length)}
+    >
+      {line.map((figure) => (
+        <span
+          key={figure.label}
+          aria-label={`${figure.label} ${figure.value}`}
+          className={cn("text-right", figure.value === "—" && "text-muted-foreground/50")}
+        >
+          {figure.value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** The categories' names over rows that carry a line, column for column with `LineFigures`. */
+function LineHeads({ spots, children, className }: { spots: Spot[]; children?: ReactNode; className?: string }) {
+  const line = spots.find((spot) => spot.line.length > 0)?.line ?? [];
+  const indent = spots.some((spot) => spot.slot);
+  return (
+    <ListHeading className={className}>
+      {children && <div>{children}</div>}
+      <div className={cn("grid gap-x-1 text-right", indent && UNDER_NAME)} style={lineGrid(line.length)}>
+        {line.map((figure) => (
+          <span key={figure.label}>{figure.label}</span>
+        ))}
+      </div>
+    </ListHeading>
   );
 }
 
@@ -227,6 +279,13 @@ function ScoreHeads({
   children?: ReactNode;
   className?: string;
 }) {
+  if (spots.some((spot) => spot.line.length > 0)) {
+    return (
+      <LineHeads spots={spots} className={className}>
+        {children}
+      </LineHeads>
+    );
+  }
   if (!spots.some((spot) => spot.scoring)) {
     return children ? <ListHeading className={className}>{children}</ListHeading> : null;
   }

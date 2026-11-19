@@ -20,6 +20,7 @@ import { Label, Meta } from "@/components/ui/label";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Linked } from "@/components/ui/stat";
 import { Table, Td, Th } from "@/components/ui/table";
+import { Hint } from "@/components/ui/tooltip";
 
 /** Said in words as well as color, so the order survives without the hue. */
 const URGENCY: Record<Urgency, { label: string; variant: Variant }> = {
@@ -351,6 +352,8 @@ function Row({
  */
 export function Compared({ players }: { players: MovePlayer[] }) {
   const rows = players[0]?.figures.map((figure) => figure.label) ?? [];
+  // A label that is the app's own measure says what it means on hover and focus.
+  const hints = Object.fromEntries((players[0]?.figures ?? []).map((figure) => [figure.label, figure.hint]));
   return (
     <Table className="mt-2 w-auto text-[12px]">
       <thead>
@@ -370,7 +373,15 @@ export function Compared({ players }: { players: MovePlayer[] }) {
       <tbody>
         {rows.map((label, i) => (
           <tr key={label}>
-            <Td className="whitespace-nowrap px-0 py-1 font-mono text-[11px] text-muted-foreground">{label}</Td>
+            <Td className="whitespace-nowrap px-0 py-1 font-mono text-[11px] text-muted-foreground">
+              {hints[label] ? (
+                <Hint label={hints[label]} name={`${label}: ${hints[label]}`} dotted>
+                  {label}
+                </Hint>
+              ) : (
+                label
+              )}
+            </Td>
             {players.map((player) => {
               const figure = player.figures[i];
               return (

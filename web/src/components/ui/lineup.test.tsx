@@ -4,7 +4,7 @@ import { LineupCard, SideCard, underWay } from "@/components/ui/lineup";
 import { render } from "@/test/render";
 
 function spot(player: string, mark = ""): Spot {
-  return { player_id: player, slot: "", player, mark, detail: "MID · ARS vs LIV (2)", value: "6.0 xPts", tone: "neutral", scoring: null, scored: "", projection: "" };
+  return { player_id: player, slot: "", player, mark, detail: "MID · ARS vs LIV (2)", value: "6.0 xPts", tone: "neutral", scoring: null, scored: "", projection: "", line: [] };
 }
 
 describe("LineupCard", () => {
@@ -101,5 +101,24 @@ describe("underWay", () => {
 
     expect(underWay(quiet, null)).toBe(false);
     expect(underWay(quiet, done)).toBe(true);
+  });
+});
+
+describe("a week played in categories", () => {
+  const figure = (label: string, value: string) => ({ label, value, tone: "neutral" as const, url: "", better: null, hint: "" });
+  const played = (player: string, fg: string, pts: string): Spot => ({
+    ...spot(player),
+    slot: "PG",
+    line: [figure("FG%", fg), figure("PTS", pts)],
+  });
+
+  it("sets each category as a column under one heading, in place of a sentence", async () => {
+    const side = { name: "Mine", detail: "", points: "", lineup: [played("A", ".511", "134"), played("B", "—", "0")], bench: [], reserve: [], open_spots: 0 };
+    const { container } = await render(<SideCard side={side} label="You" />);
+
+    const heading = container.querySelector("[style*=grid-template-columns]");
+    expect(heading?.textContent).toBe("FG%PTS");
+    const cells = [...container.querySelectorAll("[aria-label]")].map((el) => el.getAttribute("aria-label"));
+    expect(cells).toEqual(["FG% .511", "PTS 134", "FG% —", "PTS 0"]);
   });
 });

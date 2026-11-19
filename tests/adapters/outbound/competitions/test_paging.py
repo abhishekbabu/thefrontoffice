@@ -62,6 +62,28 @@ def test_the_positions_offered_come_from_the_whole_pool() -> None:
     assert result.positions == ["DEF", "FWD", "GKP", "MID"]
 
 
+ELIGIBLE = [_card("Guard", "PG,SG"), _card("Big", "PF,C"), _card("Wing", "SF")]
+FILTERS = {"PG": frozenset({"PG"}), "C": frozenset({"C"}), "F": frozenset({"SF", "PF"})}
+"""A sport whose players are eligible at several positions, and the filters it offers for them."""
+
+
+def test_offered_filters_replace_the_pools_combinations() -> None:
+    assert page(ELIGIBLE, PlayerQuery(), FILTERS).positions == ["PG", "C", "F"]
+
+
+@pytest.mark.parametrize(("position", "kept"), [("PG", ["Guard"]), ("C", ["Big"]), ("F", ["Big", "Wing"])])
+def test_a_filter_keeps_anybody_eligible_at_any_position_it_takes(position: str, kept: list[str]) -> None:
+    found = page(ELIGIBLE, PlayerQuery(position=position), FILTERS).players
+
+    assert [card.columns[PLAYER_COLUMN] for card in found] == kept
+
+
+def test_a_position_no_filter_offers_matches_only_itself() -> None:
+    found = page(ELIGIBLE, PlayerQuery(position="PF,C"), FILTERS).players
+
+    assert [card.columns[PLAYER_COLUMN] for card in found] == ["Big"]
+
+
 # ── ordering ────────────────────────────────────────────────────────────
 
 

@@ -494,9 +494,9 @@ def test_available_players_carry_the_same_form_columns_as_a_roster() -> None:
 
 
 def test_the_wire_is_read_300_deep_by_season_and_100_by_the_last_week() -> None:
-    yahoo = FakeYahoo()
+    yahoo = FakeYahoo(weights=WEIGHTS)  # a points league reads no value, so the wire is read once, deep
 
-    nba_provider(yahoo).free_agents("", PlayerQuery())
+    nba_provider(yahoo, league=POINTS_LEAGUE).free_agents("", PlayerQuery())
 
     assert yahoo.wire_depths == {Timeframe.SEASON: 300, Timeframe.LAST_WEEK: 100}
 
@@ -649,7 +649,8 @@ def test_a_week_played_shows_both_rosters_as_they_ended_it_with_each_line() -> N
     assert week.actions is None
     assert week.mine is not None and week.opponent is not None
     assert [(s.player, s.value, s.tone) for s in week.mine.lineup] == [("Then Starter", "", "neutral")]
-    assert "143 PTS" in week.mine.lineup[0].detail and "9 BLK" in week.mine.lineup[0].detail
+    figures = {s.label: s.value for s in week.mine.lineup[0].line}
+    assert (figures["PTS"], figures["BLK"]) == ("143", "9")
     assert [s.player for s in week.mine.reserve] == ["Then Hurt"]
     assert "no games" in week.mine.reserve[0].detail
     assert [s.player for s in week.opponent.lineup] == ["t.2 One"]
@@ -932,7 +933,8 @@ def test_a_points_leagues_drawer_is_headed_by_yahoos_fantasy_points_a_game_this_
     detail = _points(yahoo).player("", "ab")
 
     assert (detail.headline, detail.headline_label) == ("32.67", "fpts/game, season")
-    assert [{s.label: s.value for s in g.stats}["FPTS"] for g in detail.groups[:2]] == ["32.67", "38.10"]
+    groups = {g.title: {s.label: s.value for s in g.stats} for g in detail.groups}
+    assert (groups["Season"]["FPTS"], groups["Last 30 days"]["FPTS"]) == ("32.67", "38.10")
 
 
 def test_a_points_drawer_without_a_season_says_so() -> None:
@@ -988,8 +990,17 @@ WEEK_FORM = {"Starter": _line(30), "Benched": _line(24), "Spare": _line(8), "Str
 WEEK_GAMES = {"LAL": 1, "BOS": 3, "MIA": 1, "NYK": 4}
 
 
+STARTER_MONTH = YahooLine(stats={"12": "28.4", "15": "6.1", "16": "2.9"}, points="44.70")
+"""Yahoo's average over the starter's last month: what his row shows, apart from the form his week is weighed on."""
+
+
+def _averaged(yahoo: FakeYahoo) -> FakeYahoo:
+    yahoo.lines = {Average.LAST_MONTH: {"starter": STARTER_MONTH}}
+    return yahoo
+
+
 def _decisions(league: YahooLeague = POINTS_LEAGUE, **extra: Any) -> YahooNBAProvider:
-    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS, **extra)
+    yahoo = _averaged(FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS, **extra))
     return nba_provider(yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES), league=league)
 
 
@@ -998,14 +1009,14 @@ def test_a_points_leagues_rows_read_games_left_and_fantasy_points_a_game() -> No
 
     assert summary.mine is not None
     [row] = summary.mine.lineup
-    assert row.value.startswith("1G · ") and row.value.endswith(" fpts/g")
+    assert row.value == "1G · 44.70 fpts/g"
 
 
 def test_a_category_leagues_rows_read_games_left_and_the_line() -> None:
     summary = _decisions(league=yahoo_league()).summary("")
 
     assert summary.mine is not None
-    assert summary.mine.lineup[0].value == "1G · 30.0p 5.0r 3.0a"
+    assert summary.mine.lineup[0].value == "1G · 28.4p 6.1r 2.9a"
 
 
 def test_a_bench_player_with_more_this_week_starts_and_a_free_agent_streams_in() -> None:
@@ -1168,7 +1179,7 @@ UNSCHEDULED = [date(2026, 2, 10), date(2026, 2, 11), date(2026, 2, 12)]
 
 
 def _pending(league: YahooLeague = POINTS_LEAGUE, unscheduled: list[date] = UNSCHEDULED) -> YahooNBAProvider:
-    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+    yahoo = _averaged(FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS))
     nba = FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, unscheduled=unscheduled)
     return nba_provider(yahoo, nba=nba, league=league)
 

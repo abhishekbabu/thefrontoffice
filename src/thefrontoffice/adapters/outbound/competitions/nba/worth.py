@@ -20,7 +20,7 @@ from thefrontoffice.adapters.outbound.competitions import worth as shared
 from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES, PlayerStats
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, Line, fantasy_points, line
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooPlayer
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
 
 
 class MinutesRule(NamedTuple):
@@ -51,6 +51,50 @@ def points_value(weights: Mapping[str, float]) -> Valuer:
 BY_STAT = {c.yahoo_stat: c for c in CATEGORIES}
 
 
+@dataclass(frozen=True)
+class Scale:
+    """One category's spread across a pool, which a line's figure in it is read against."""
+
+    scored: StatCategory
+    """The category as the league names it: 'ST', where this app says 'STL'."""
+
+    sign: float
+    """-1 for a category won by less (turnovers), else 1."""
+
+    centre: float
+    """Where his figure is counted from: the pool's average for a percentage, nought for a count."""
+
+    spread: float
+    mean: float
+    """The pool's average, which says whether his figure is weak for the pool."""
+
+
+def scales(scored: Sequence[StatCategory], pool: Iterable[Line]) -> dict[str, Scale]:
+    """Each category the league scores and this app has a figure for, by label, scaled across `pool`.
+
+    A category with no spread across the pool (one line, or all alike) scales nothing and is left out.
+    """
+    lines = list(pool)
+    found: dict[str, Scale] = {}
+    for scored_as in scored:
+        category = BY_STAT.get(scored_as.stat_id)
+        if category is None:
+            continue
+        figures = [figures[category.label] for figures in lines if category.label in figures]
+        spread = statistics.pstdev(figures) if len(figures) > 1 else 0.0
+        if not spread:
+            continue
+        mean = statistics.fmean(figures)
+        found[category.label] = Scale(
+            scored=scored_as,
+            sign=-1.0 if scored_as.fewer_wins else 1.0,
+            centre=mean if category.is_percentage else 0.0,
+            spread=spread,
+            mean=mean,
+        )
+    return found
+
+
 def category_value(scored: Sequence[StatCategory], pool: Iterable[Line]) -> Valuer:
     """A category league's: his contribution to each category it scores, in that category's spread across `pool`.
 
@@ -63,29 +107,42 @@ def category_value(scored: Sequence[StatCategory], pool: Iterable[Line]) -> Valu
     counts against him. A category this app has no figure for (double-doubles)
     counts nothing, and percentages are not weighted by attempts.
     """
-    lines = list(pool)
-    scales: dict[str, tuple[float, float, float]] = {}
-    for found in scored:
-        category = BY_STAT.get(found.stat_id)
-        if category is None:
-            continue
-        figures = [figures[category.label] for figures in lines if category.label in figures]
-        spread = statistics.pstdev(figures) if len(figures) > 1 else 0.0
-        if not spread:
-            continue
-        centre = statistics.fmean(figures) if category.is_percentage else 0.0
-        scales[category.label] = (-1.0 if found.fewer_wins else 1.0, centre, spread)
+    found = scales(scored, pool)
 
     def value(figures: Line) -> float | None:
-        if not figures or not scales:
+        if not figures or not found:
             return None
         return sum(
-            sign * (figures[label] - centre) / spread
-            for label, (sign, centre, spread) in scales.items()
+            scale.sign * (figures[label] - scale.centre) / scale.spread
+            for label, scale in found.items()
             if label in figures
         )
 
     return value
+
+
+WEAK_BELOW = -0.5
+"""How far under the pool's average, in its spreads, a category must sit to be one he is weak in."""
+
+WEAKEST = 2
+"""The weak categories a player's note names: the two that drag his value most."""
+
+
+def weakest(figures: Line | None, found: Mapping[str, Scale]) -> list[StatCategory]:
+    """The categories he is weakest in against the pool, worst first, as the league names them: at most `WEAKEST`.
+
+    Read against the pool's average rather than from nought, so a guard's few
+    blocks read as the shortfall they are; only those under it by `WEAK_BELOW`
+    of a spread, so an average line names none.
+    """
+    if not figures:
+        return []
+    below = {
+        label: z
+        for label, scale in found.items()
+        if label in figures and (z := scale.sign * (figures[label] - scale.mean) / scale.spread) <= WEAK_BELOW
+    }
+    return [found[label].scored for label in sorted(below, key=lambda label: below[label])[:WEAKEST]]
 
 
 def per_game(stats: PlayerStats | None, projected: ProjectedTotals | None) -> Line | None:
@@ -137,6 +194,14 @@ class Reading:
 
     back: date | None = None
     """The day ESPN expects him back, while it reports him hurt; None otherwise."""
+
+    weak: tuple[StatCategory, ...] = ()
+    """The categories that drag his value, worst first, as the league names them (`weakest`); none in a points
+    league."""
+
+    average: YahooLine | None = None
+    """Yahoo's own average over his last month, the figures every view shows of him; None where not read.
+    Shown, never weighed: the week is weighed on `line`, which Sleeper's box scores build game by game."""
 
     @property
     def worth(self) -> float | None:

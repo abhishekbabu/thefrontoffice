@@ -15,7 +15,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.actions import (
     streams,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
 
 
 def _player(name: str, slot: str = "", position: str = "PF", status: str = "") -> YahooPlayer:
@@ -125,6 +125,22 @@ def test_a_free_agent_with_more_this_week_streams_in_for_the_weakest_drop() -> N
 
     assert (item.kind, item.player_id, item.drop) == ("waiver", "Pickup", "Weaker")
     assert [(p.side, p.held) for p in item.players] == [("in", "free agent"), ("out", "bench")]
+
+
+def test_a_category_drop_says_what_drags_him() -> None:
+    """'Weakest you can drop' alone is a verdict; the categories behind it make it a reason."""
+    roster, readings = _team()
+    readings["Weaker"] = replace(
+        readings["Weaker"],
+        weak=(StatCategory("5", "FG%"), StatCategory("19", "TO", fewer_wins=True)),
+        average=YahooLine(stats={"5": ".380", "19": "2.9"}),
+    )
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 20.0, 4))
+
+    [item] = streams(roster, [pickup], readings, adds_left=2, by_points=False, named=set())
+
+    assert "(FG% .380 · 2.9 TO)" in item.reason
 
 
 def test_no_adds_left_is_nothing_to_stream() -> None:
