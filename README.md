@@ -17,7 +17,11 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   and who to drop: the weakest bench player by recent form and projection
   together, never one the best lineup starts or one just on bye. A handcuff
   (the back next on the depth chart behind a running back you start) goes only
-  once nobody ordinary is left, and the drop says whose he is. An empty IR
+  once nobody ordinary is left, and the drop says whose he is. So does a stash,
+  dropped before a handcuff: the back next behind any club's first back, whoever
+  rosters him, where that back is healthy, played 60%+ of the snaps over his
+  last three games, and scores more a game than your weakest RB or FLEX
+  starter. An empty IR
   slot gets the best free agent on IR who is back before the playoffs (ESPN's
   estimate), projects 25+ points from then, and rates within a point a game of
   that weakest bench player, with the spot his claim takes until he moves to IR.

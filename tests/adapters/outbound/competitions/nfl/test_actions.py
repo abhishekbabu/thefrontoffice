@@ -753,6 +753,112 @@ def test_a_handcuff_left_as_the_only_drop_says_whose_he_is() -> None:
     assert "handcuff" in action.reason and "Starter" in action.reason
 
 
+# A MIA back on your bench, next behind MIA's first back, whom you do not roster.
+STASH = proj("rb7", "Kaelon Stash", "RB", 3.0, team="MIA", opp="BUF")
+WORKHORSE = PlayerMeta(player_id="rb8", name="Christian Workhorse", position="RB", team="MIA", depth_chart_order=1)
+
+
+def _workhorse_games(snaps: int, points: float) -> list[NFLGameLine]:
+    """`WORKHORSE`'s weeks 1 and 2, on `snaps` of his club's 60, scoring `points`."""
+    return [
+        NFLGameLine(
+            player_id=WORKHORSE.player_id,
+            week=week,
+            team="MIA",
+            opponent="LV",
+            position="RB",
+            stats={"off_snp": snaps, "tm_off_snp": 60, "pts_ppr": points},
+        )
+        for week in (1, 2)
+    ]
+
+
+def _stashed(
+    *bench: WeeklyProjection,
+    snaps: int = 50,
+    points: float = 30.0,
+    status: str = "",
+    slots: tuple[str, ...] = ("QB", "RB", "WR", "FLEX"),
+    lines: list[NFLGameLine] | None = None,
+) -> Action:
+    """A full roster needing a quarterback, with `STASH` on the bench behind a workhorse on `snaps` of 60 a game."""
+    league = replace(LEAGUE, roster_positions=[*slots] + ["BN"] * (1 + len(bench)))
+    client = _client(
+        [_ruled_out(QB), STARTING_RB, WR, FLEX, STASH, *bench, FREE_QB],
+        ["qb", "rb", "wr", "te"],
+        ["rb7", *(p.player_id for p in bench)],
+        league=league,
+        game_lines=_scored(STASH, 2.0, 2.0) + (_workhorse_games(snaps, points) if lines is None else lines),
+    )
+    catalog = client.players_catalog or {}
+    catalog["rb7"] = replace(catalog["rb7"], depth_chart_order=2)
+    catalog[WORKHORSE.player_id] = replace(WORKHORSE, injury_status=status)
+    [action] = [a for a in _actions(client) if a.kind == "waiver"]
+    return action
+
+
+def test_a_back_behind_another_managers_workhorse_is_dropped_after_every_ordinary_player() -> None:
+    action = _stashed(WEAK)
+
+    assert action.drop == WEAK.player_id
+
+
+def test_a_stash_left_as_the_only_drop_says_whose_work_he_would_inherit() -> None:
+    action = _stashed()
+
+    assert action.drop == STASH.player_id
+    assert "stash" in action.reason and "Workhorse" in action.reason
+
+
+def test_a_back_behind_a_committee_back_is_no_stash() -> None:
+    """Half the snaps is a share of the work, not the work."""
+    action = _stashed(WEAK, snaps=30)
+
+    assert action.drop == STASH.player_id
+    assert "stash" not in action.reason
+
+
+def test_a_back_behind_a_first_back_ruled_out_is_no_stash() -> None:
+    """He is already the starter, and his own figures say so."""
+    assert _stashed(WEAK, status="IR").drop == STASH.player_id
+
+
+def test_a_back_behind_a_workhorse_who_would_not_start_for_you_is_no_stash() -> None:
+    """Five a game would not beat the weakest back or flex you start, so inheriting it changes nothing."""
+    assert _stashed(WEAK, points=5.0).drop == STASH.player_id
+
+
+def test_a_back_behind_a_first_back_with_no_games_to_read_is_no_stash() -> None:
+    assert _stashed(WEAK, lines=[]).drop == STASH.player_id
+
+
+def test_a_league_with_no_slot_a_back_can_fill_has_no_stash() -> None:
+    assert _stashed(WEAK, slots=("QB", "WR", "TE")).drop == STASH.player_id
+
+
+def test_a_stash_is_dropped_before_a_handcuff() -> None:
+    """A handcuff insures points you score already; a stash only a chance at more, however much better he looks."""
+    league = replace(LEAGUE, roster_positions=["QB", "RB", "WR", "FLEX", "BN", "BN"])
+    better_stash = replace(STASH, points=9.0)
+    client = _client(
+        [_ruled_out(QB), STARTING_RB, WR, FLEX, HANDCUFF, better_stash, FREE_QB],
+        ["qb", "rb", "wr", "te"],
+        ["rb3", "rb7"],
+        league=league,
+        game_lines=_scored(HANDCUFF, 2.0, 2.0) + _scored(better_stash, 8.0, 8.0) + _workhorse_games(50, 30.0),
+    )
+    catalog = client.players_catalog or {}
+    catalog["rb"] = replace(catalog["rb"], depth_chart_order=1)
+    catalog["rb3"] = replace(catalog["rb3"], depth_chart_order=2)
+    catalog["rb7"] = replace(catalog["rb7"], depth_chart_order=2)
+    catalog[WORKHORSE.player_id] = WORKHORSE
+
+    [action] = [a for a in _actions(client) if a.kind == "waiver"]
+
+    assert action.drop == better_stash.player_id
+    assert "stash" in action.reason
+
+
 def _with_breakout(projected: float) -> list[Action]:
     rising = proj("wr9", "Rising Receiver", "WR", projected, team="KC", opp="LV")
     client = _client(

@@ -12,7 +12,7 @@ import logging
 import statistics
 from collections.abc import Callable, Mapping, Sequence
 
-from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item, drop_candidate, handcuff_note, join
+from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item, drop_candidate, insurance_note, join
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, lineup_points
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, NFLSource, Projection, active, by_club
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
@@ -183,7 +183,7 @@ def _fixed(
         # Never a regular, nor one who is only away for the week.
         drop = drop_candidate(state, (p for p in state.projected if p.player_id in held), keep)
         if drop:
-            note = handcuff_note(state, drop)
+            note = insurance_note(state, drop)
             fix += f", drop {drop.name}" + (f" ({note})" if note else "")
     return row.model_copy(update={"fix": fix, "gain": round(gain, 2)})
 
