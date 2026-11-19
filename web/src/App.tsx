@@ -50,12 +50,24 @@ const PANELS: Record<View, (props: PanelProps) => React.ReactNode> = {
 };
 
 /**
- * Views that keep the whole column rather than the page's readable width
- * (`--page-max` in index.css). Free agents is a table of fifteen-odd columns
- * that already truncates its headings at full width; capped, it would
- * truncate its figures too.
+ * How wide each view runs (`--page-max` in index.css), by what its content
+ * needs: a list or a few-column table keeps a reading width, so a row's
+ * figures stay near its name; free agents, fifteen-odd columns that truncate
+ * even at full width, take the whole column; the rest run wide, and the
+ * matchup goes two-across once there is room. `Record<View, …>` makes a view
+ * added without a width fail to compile.
  */
-const WIDE: ReadonlySet<View> = new Set(["free-agents"]);
+const WIDTH: Record<View, "reading" | "full" | "wide"> = {
+  matchup: "full",
+  fixtures: "reading",
+  schedule: "reading",
+  rosters: "full",
+  "free-agents": "wide",
+  trades: "full",
+  activity: "reading",
+  league: "reading",
+  compare: "full",
+};
 
 export default function App() {
   const { mode, setMode } = useTheme();
@@ -131,7 +143,7 @@ export default function App() {
   function shell() {
     if (route.page === "settings") {
       return (
-        <div data-page="capped">
+        <div data-page="reading">
           <SettingsPanel onBack={() => navigate(LANDING)} />
         </div>
       );
@@ -156,7 +168,7 @@ export default function App() {
     return (
       <m.div
         key={`${active.key}:${league.league_id}:${view}`}
-        data-page={WIDE.has(view) ? "wide" : "capped"}
+        data-page={WIDTH[view]}
         variants={rise}
         initial="hidden"
         animate="shown"
