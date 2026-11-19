@@ -14,6 +14,7 @@ from thefrontoffice.adapters.outbound.llm.gemini.client import GeminiClient, tra
 from thefrontoffice.adapters.outbound.llm.gemini.constants import MODEL_FLASH, MODEL_PRO
 from thefrontoffice.domain.errors import AIKeyInvalidError, AIQuotaError, AIResponseError
 from thefrontoffice.domain.models import ScoutReport, TradeVerdict
+from thefrontoffice.domain.ports import HistoryTurn
 
 # The module logs through `getLogger(__name__)`, so the class's module is the
 # logger's name — and follows the module if it ever moves.
@@ -66,8 +67,11 @@ class FakeChats:
 
     def __init__(self, reply: Callable[[str], Any]) -> None:
         self.reply = reply
+        self.opened: list[dict[str, Any]] = []
+        """What each chat was opened with: model, history and config, as the SDK received them."""
 
     def create(self, **kwargs: Any) -> Any:
+        self.opened.append(kwargs)
         return SimpleNamespace(send_message=self.reply)
 
 
@@ -243,3 +247,47 @@ def test_a_chat_answer_with_nothing_said_is_a_failed_turn(text: str | None) -> N
 
     with pytest.raises(AIResponseError):
         c.start_chat().send_message("why?")
+
+
+def _searches(opened: dict[str, Any]) -> bool:
+    """Whether a chat was opened with Google Search among its tools."""
+    config: types.GenerateContentConfig | None = opened["config"]
+    return config is not None and any(
+        isinstance(tool, types.Tool) and tool.google_search is not None for tool in config.tools or []
+    )
+
+
+def test_a_chat_asked_to_search_is_opened_with_google_search_on_pro() -> None:
+    """Trade analysis grounds itself in this week's news (`application/trading.py`), which only Search can see."""
+    chats = FakeChats(lambda message: SimpleNamespace(text="because"))
+
+    GeminiClient(client=FakeGenAI(chats=chats)).start_chat(enable_search=True)
+
+    [opened] = chats.opened
+    assert opened["model"] == MODEL_PRO
+    assert _searches(opened)
+
+
+def test_a_chat_not_asked_to_search_has_no_tools() -> None:
+    chats = FakeChats(lambda message: SimpleNamespace(text="because"))
+
+    GeminiClient(client=FakeGenAI(chats=chats)).start_chat()
+
+    assert not _searches(chats.opened[0])
+
+
+def test_a_chat_carries_on_from_the_history_it_is_seeded_with() -> None:
+    """A conversation moved to Gemini mid-way, or reopened, picks up every turn so far in order."""
+    chats = FakeChats(lambda message: SimpleNamespace(text="because"))
+    history: list[HistoryTurn] = [
+        HistoryTurn(role="user", parts=["Who starts?"]),
+        HistoryTurn(role="model", parts=["Gibbs."]),
+    ]
+
+    GeminiClient(client=FakeGenAI(chats=chats)).start_chat(initial_history=history, enable_search=True)
+
+    seeded: list[types.Content] = chats.opened[0]["history"]
+    assert [(turn.role, [part.text for part in turn.parts or []]) for turn in seeded] == [
+        ("user", ["Who starts?"]),
+        ("model", ["Gibbs."]),
+    ]
