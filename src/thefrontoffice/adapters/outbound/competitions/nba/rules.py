@@ -80,11 +80,11 @@ INJURED_SLOTS = frozenset({"IL", "IL+"})
 """Roster slots that hold an injured player outside the active roster."""
 
 NOT_TAKEN: dict[str, frozenset[str]] = {
-    "IL": frozenset({"", "DTD", "GTD", "O"}),
+    "IL": frozenset({"", "DTD", "GTD"}),
     "IL+": frozenset({""}),
 }
-"""What each injured slot will not hold, by Yahoo status: IL takes only Injured and Out For
-Season, IL+ also Out and game-time decisions. Listed as what is refused rather than what is
+"""What each injured slot will not hold, by Yahoo status: IL takes Out, Injured and Out For
+Season, IL+ also day-to-day and game-time decisions. Listed as what is refused rather than what is
 taken, so a status Yahoo's rules do not mention is never flagged — a false "move him" costs
 more than a late one. Empty is a player with nothing reported: cleared to play."""
 

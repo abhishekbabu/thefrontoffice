@@ -597,9 +597,10 @@ def test_a_player_the_il_slot_no_longer_takes_is_the_first_thing_to_do() -> None
     assert "cleared to play" in item.reason
 
 
-def test_a_player_still_injured_on_il_is_nothing_to_do() -> None:
+@pytest.mark.parametrize("status", ["INJ", "O"])
+def test_a_player_still_out_on_il_is_nothing_to_do(status: str) -> None:
     """With nothing computed there is no list, rather than an empty one saying there is nothing to do."""
-    assert nba_provider(_il_roster("INJ")).summary("").actions is None
+    assert nba_provider(_il_roster(status)).summary("").actions is None
 
 
 def test_the_il_item_is_judged_and_the_model_told_adds_are_held() -> None:

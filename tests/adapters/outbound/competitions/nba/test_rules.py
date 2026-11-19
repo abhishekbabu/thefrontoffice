@@ -60,7 +60,8 @@ def test_threes_are_tagged_so_the_count_cannot_run_into_the_tag() -> None:
     [
         ("IL", "", True),
         ("IL", "GTD", True),
-        ("IL", "O", True),
+        ("IL", "DTD", True),
+        ("IL", "O", False),
         ("IL", "INJ", False),
         ("IL", "OFS", False),
         ("IL+", "", True),
