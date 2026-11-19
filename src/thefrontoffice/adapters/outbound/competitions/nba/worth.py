@@ -13,6 +13,7 @@ categories it scores (`category_value`). His minutes nudge it (`MINUTES`).
 import statistics
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import NamedTuple
 
 from thefrontoffice.adapters.outbound.competitions import worth as shared
@@ -134,6 +135,9 @@ class Reading:
     provisional: bool = False
     """Whether `games` is short of the week's: the NBA has days of it still to schedule (`week.unsettled`)."""
 
+    back: date | None = None
+    """The day ESPN expects him back, while it reports him hurt; None otherwise."""
+
     @property
     def worth(self) -> float | None:
         """`per_game` × `usage` × `games`: what he adds this week. None where either is unknown."""
@@ -154,8 +158,10 @@ def read(
     value: Valuer,
     games: int | None,
     provisional: bool = False,
+    back: date | None = None,
 ) -> Reading:
-    """One player's `Reading`, from his form, his projection and the games he can play — a floor where `provisional`."""
+    """One player's `Reading`, from his form, his projection, the games he can play (a floor where
+    `provisional`) and when he is back."""
     figures = per_game(stats, projected)
     played = minutes(stats)
     return Reading(
@@ -166,4 +172,5 @@ def read(
         usage=usage(stats),
         minutes=statistics.fmean(played) if played else None,
         provisional=provisional,
+        back=back,
     )

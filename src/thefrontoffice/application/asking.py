@@ -20,6 +20,7 @@ from thefrontoffice.application.scouting import last_judgment, standing_moves, w
 from thefrontoffice.domain.errors import SubjectGoneError
 from thefrontoffice.domain.models import (
     Action,
+    CompetitionContext,
     LeagueSchedule,
     PlayerCard,
     PlayerDetail,
@@ -151,6 +152,8 @@ class AskEngine:
             "THE ITEM:\n" + _task_text(task),
             verdict,
             briefing.titled("THE ROSTER", briefing.roster(context)),
+            # A pickup is on nobody's roster, so his line — form, return, teammates out — is a candidate's.
+            briefing.titled("THE PLAYERS IT ADDS", _candidates(context, task)),
         )
         return f"the to-do item {task.title!r}", facts
 
@@ -219,6 +222,12 @@ def _task_text(task: Action) -> str:
         lines.append(f"Deadline: {task.when}")
     lines += [f"- {line}" for line in task.lines()]
     return "\n".join(lines)
+
+
+def _candidates(context: CompetitionContext, task: Action) -> str:
+    """The prompt's lines on the players `task` moves who are not on the roster; empty where it moves none."""
+    named = {player.name for player in task.players}
+    return "".join(line for name, line in context.candidate_lines.items() if name in named).strip()
 
 
 def _player_text(detail: PlayerDetail) -> str:

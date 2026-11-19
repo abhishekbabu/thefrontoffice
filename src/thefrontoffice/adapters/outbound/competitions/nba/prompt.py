@@ -12,7 +12,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, 
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.tasks import task_lines
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup
-from thefrontoffice.domain.models import Action, task_id
+from thefrontoffice.domain.models import Action, CompetitionContext, task_id
 
 OPPONENT_KEY_PLAYERS = 12
 """Enough of the other roster to name its threats without listing its bench."""
@@ -103,6 +103,41 @@ Return the evaluation in the required structured form. Field guidance:
 - schedule: how the remaining games compare, especially through the fantasy playoff weeks.
 - risk: availability risk on the incoming side — shutdowns on tanking teams, injury designations.
 - strategy: what to do next, including any counter worth offering.
+"""
+
+NBA_WIRE_PROMPT = """
+You are an elite NBA fantasy basketball manager deciding which available players are worth a roster spot.
+
+LEAGUE RULES:
+{league_rules}
+- A claim costs a roster spot and one of the week's adds, so every ADD names who on the roster makes way.
+
+READING THE PLAYER LINES:
+- [NG left] is how many games the player's TEAM has left this matchup period; PROJ is Sleeper's projection.
+- "WEEK" is his worth this week: a game's value ({value_unit}), blending his recent run with the
+  projection, nudged up to a tenth by how steady his minutes are, times the games he can play.
+- "back ~date" is when ESPN expects an injured player back.
+- "Without <teammate> (status)" is his per-game line in the games a regular teammate missed; where the teammate
+  is out, that line is what he is worth now. "With <teammate>" means the teammate is due back.
+- "fits" names the weakest player on your roster he beats by a fifth this week, and by how much.
+
+{situation}
+
+{constraints}
+
+YOUR ROSTER (who could make way):
+{roster_str}
+
+THE AVAILABLE PLAYERS TO JUDGE, each with its id:
+{candidates_str}
+
+YOUR TASK:
+Give exactly one call per available player above, by id. ADD to claim him now, naming in `drop` who on the
+roster makes way — only while adds remain. WATCH when a change in his situation — a teammate's injury, a
+return, minutes trending up — would make him worth it, or when no adds remain. PASS otherwise. Ground each
+reason in role, minutes, schedule or news, not the numbers alone.
+
+Return the calls in the required structured form.
 """
 
 NO_MATCHUP = "No head-to-head matchup this week."
@@ -356,4 +391,44 @@ def trade(
         roster_str=roster,
         impact=league.impact,
         currency=league.currency,
+    )
+
+
+def wire(
+    *,
+    week: Matchup | None,
+    weights: Mapping[str, float] | None,
+    roster: Mapping[str, str],
+    candidates: Mapping[str, str],
+    names: Mapping[str, str],
+    fits: Mapping[str, str],
+    constraints: str,
+) -> CompetitionContext:
+    """The prompt asking for one call per candidate, each by the id the call has to name.
+
+    `candidates` is each one's player line by Yahoo's key, `names` his name, and
+    `fits` the drop he streams over, where he does (`actions.fit`). A candidate's
+    target is his line alone, so a call on him is kept against it whatever else is asked.
+    """
+    league = scoring(weights)
+    targets = {
+        pid: f"- [id {pid}] {line.removeprefix('- ')}" + (f"  fits: {fit}\n" if (fit := fits.get(pid)) else "")
+        for pid, line in candidates.items()
+    }
+    situation = matchup(week, weights)
+    text = NBA_WIRE_PROMPT.format(
+        league_rules=league.rules,
+        value_unit=league.value_unit,
+        situation=situation,
+        constraints=constraints,
+        roster_str="".join(roster.values()),
+        candidates_str="".join(targets.values()),
+    )
+    return CompetitionContext(
+        prompt=text,
+        situation=situation,
+        constraints=constraints,
+        roster_lines=dict(roster),
+        candidate_lines={names[pid]: line for pid, line in targets.items()},
+        targets=targets,
     )

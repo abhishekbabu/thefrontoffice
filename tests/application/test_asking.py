@@ -65,14 +65,16 @@ PLAYER = Subject(kind="player", key="hall")
 
 
 class OneWeek:
-    def __init__(self, movable: frozenset[str] | None = None) -> None:
+    def __init__(self, movable: frozenset[str] | None = None, candidates: dict[str, str] | None = None) -> None:
         self.movable = movable
+        self.candidates = candidates or {}
 
     def build_context(self, league_id: str) -> CompetitionContext:
         return CompetitionContext(
             prompt="prompt",
             situation="SITUATION: 3-3, chasing.",
             roster_lines={"Breece Hall": "- Breece Hall (RB, NYJ) vs MIA: 14.1 proj pts\n"},
+            candidate_lines=self.candidates,
             tasks=[TASK],
             movable=self.movable,
         )
@@ -127,6 +129,19 @@ def test_an_item_is_briefed_with_its_evidence_and_the_roster() -> None:
     assert all(player.text() in sent for player in TASK.players)
     assert "Breece Hall (RB, NYJ)" in sent
     assert sent.endswith("Why?")
+
+
+def test_an_item_moving_a_player_off_the_roster_is_briefed_with_his_line_and_no_one_elses() -> None:
+    """A pickup's form, return and teammates out are in his candidate line, not the roster's."""
+    lines = {
+        "Germie Bernard": "- Germie Bernard (WR, NE) [back ~3 Dec]\n",
+        "Jonah Coleman": "- Jonah Coleman (RB, DEN)\n",
+    }
+
+    [sent] = _assist(("Why?", [ITEM]), week=OneWeek(candidates=lines))
+
+    assert "back ~3 Dec" in sent
+    assert "Jonah Coleman" not in sent
 
 
 def test_an_earlier_verdict_on_the_item_is_part_of_its_briefing() -> None:

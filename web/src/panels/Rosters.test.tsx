@@ -51,6 +51,9 @@ describe("Rosters", () => {
       missing,
       short_by: 0,
       short: false,
+      light: [],
+      heavy: false,
+      provisional: false,
       fix: "",
       gain: 0,
     });
@@ -62,13 +65,58 @@ describe("Rosters", () => {
       return (await render(<RostersPanel competition={planning} league={league} />, client)).container.textContent;
     };
 
-    const some = await show({ usual: 120, weeks: [week(12), week(13, ["Josh Allen (bye)"]), week(14)] });
+    const some = await show({
+      usual: 120,
+      measure: "proj",
+      weeks: [week(12), week(13, ["Josh Allen (bye)"]), week(14)],
+    });
     expect(some).toContain("Week 13");
     expect(some).not.toContain("Week 12");
     expect(some).not.toContain("Week 14");
 
-    const none = await show({ usual: 120, weeks: [week(12), week(13), week(14)] });
+    const none = await show({ usual: 120, measure: "proj", weeks: [week(12), week(13), week(14)] });
     expect(none).toContain("through week 14");
     expect(none).not.toContain("Week 12");
+  });
+
+  it("counts a basketball week in games, and lists a light or heavy one with its stream", async () => {
+    const planning = { ...competition, plans_weeks: true } as Competition;
+    const week = (n: number, more: Partial<Outlook["weeks"][number]> = {}): Outlook["weeks"][number] => ({
+      week: n,
+      points: 40,
+      missing: [],
+      short_by: 0,
+      short: false,
+      light: [],
+      heavy: false,
+      provisional: false,
+      fix: "",
+      gain: 0,
+      ...more,
+    });
+    const client = offlineClient();
+    client.setQueryData(keys.teams(competition.key, league.league_id), teams);
+    client.setQueryData([...keys.roster(competition.key, league.league_id), null], [card("a", "Brunson")]);
+    client.setQueryData(keys.weeksAhead(competition.key, league.league_id, ""), {
+      usual: 40.5,
+      measure: "games",
+      weeks: [
+        week(6),
+        week(7, { points: 34, short: true, short_by: 6.5, light: ["Jalen Brunson (2 games)"] }),
+        week(8, { heavy: true, fix: "Pick up Kris Dunn (PG, LAC, 4 games), drop Coby White (2 games)", gain: 2 }),
+        week(9, { provisional: true }),
+      ],
+    } satisfies Outlook);
+    const text = (await render(<RostersPanel competition={planning} league={league} />, client)).container
+      .textContent;
+
+    expect(text).not.toContain("Week 6");
+    expect(text).toContain("34 games");
+    expect(text).toContain("Jalen Brunson (2 games)");
+    expect(text).toContain("heavy");
+    expect(text).toContain("Kris Dunn");
+    expect(text).toContain("+2 games");
+    expect(text).toContain("Week 9");
+    expect(text).toContain("provisional");
   });
 });

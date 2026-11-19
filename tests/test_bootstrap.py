@@ -183,7 +183,7 @@ def test_what_each_competition_can_do_is_read_off_its_provider() -> None:
     can = {e.key: tuple(e.can(port) for port in ports) for e in _registry().entries}
 
     assert can == {
-        "nba-yahoo": (True, False, False, False),
+        "nba-yahoo": (True, True, True, False),
         "nfl-sleeper": (True, True, True, True),
         "premier-league-fpl": (False, False, False, False),
     }

@@ -9,6 +9,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.actions import (
     STREAMS,
     build,
     droppable,
+    fit,
     held,
     starts,
     streams,
@@ -148,6 +149,29 @@ def test_a_free_agent_ruled_out_is_never_streamed() -> None:
     readings |= _readings((pickup, 30.0, 3))
 
     assert streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set()) == []
+
+
+# ── how a free agent fits ───────────────────────────────────────────
+
+
+def test_a_free_agent_fits_over_the_weakest_drop_he_clears_by_the_margin() -> None:
+    roster, readings = _team()
+    pickup = _player("Pickup")
+    readings |= _readings((pickup, 20.0, 4))
+
+    said = fit(readings["Pickup"], roster, readings, by_points=True)
+
+    assert "Weaker" in said
+    assert "+44.0 fpts" in said  # 80 this week against 36
+    assert "4G vs 2G" in said
+
+
+def test_a_free_agent_inside_the_margin_fits_over_nobody() -> None:
+    roster, readings = _team()
+    pickup = _player("Pickup")
+    readings |= _readings((pickup, 19.0, 2))
+
+    assert fit(readings["Pickup"], roster, readings, by_points=False) == ""
 
 
 def test_one_more_game_never_costs_a_much_better_player() -> None:
