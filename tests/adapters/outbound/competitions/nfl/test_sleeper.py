@@ -860,15 +860,13 @@ def test_a_backup_who_jumped_while_the_starter_missed_his_game_reads_as_growing_
     assert _available(client)["wr9"]["Trend"].startswith("snaps")
 
 
-def _hurt_starter_client() -> FakeSleeper:
-    """NYJ's starter wr8 is questionable and missed week 3; the free agent wr9 scored 4 without him, 10 with."""
+def _hurt_starter_client(status: str = "Out") -> FakeSleeper:
+    """NYJ's starter wr8 is ruled out (or `status`) and missed week 3; the free agent wr9 scored 4 without him, 10 with."""
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
     client.week = 4
     client.players_catalog = {
         **client.get_nfl_players(),
-        "wr8": PlayerMeta(
-            player_id="wr8", name="Hurt Starter", position="WR", team="NYJ", injury_status="Questionable"
-        ),
+        "wr8": PlayerMeta(player_id="wr8", name="Hurt Starter", position="WR", team="NYJ", injury_status=status),
     }
     client.game_lines = [
         NFLGameLine(
@@ -892,7 +890,7 @@ def test_a_free_agent_names_the_hurt_starter_he_would_replace_with_his_split_in_
     page = nfl_provider(_hurt_starter_client()).free_agents("L1", PlayerQuery())
     cards = {card.player_id: card for card in page.players}
 
-    assert cards["wr9"].columns["Without"] == "Starter Q"
+    assert cards["wr9"].columns["Without"] == "Starter O"
     assert "4.00/game in 1 game" in cards["wr9"].notes["Without"]
     assert "10.00 with" in cards["wr9"].notes["Without"]
     assert cards["bye1"].columns["Without"] == "—"
@@ -906,6 +904,23 @@ def test_the_drawer_says_what_he_scored_without_his_hurt_teammate() -> None:
     row = next(stat for stat in week.stats if stat.label.startswith("Without"))
     assert "Hurt Starter" in row.label
     assert row.tone == "warning"
+
+
+def test_once_the_teammate_is_due_back_the_tooltip_leads_with_the_figure_beside_him() -> None:
+    page = nfl_provider(_hurt_starter_client("Questionable")).free_agents("L1", PlayerQuery())
+    card = next(card for card in page.players if card.player_id == "wr9")
+
+    assert card.columns["Without"] == "Starter Q"
+    assert card.notes["Without"].startswith("With Hurt Starter")
+    assert card.notes["Without"].index("10.00") < card.notes["Without"].index("4.00")
+
+
+def test_a_teammate_back_from_a_missed_game_with_no_designation_keeps_his_split() -> None:
+    detail = nfl_provider(_hurt_starter_client("")).player("L1", "wr9")
+
+    row = next(stat for stat in detail.groups[0].stats if "Hurt Starter" in stat.label)
+    # 10 a game beside him is the figure that counts now, and it is the better one.
+    assert row.tone == "good"
 
 
 # ── the roster as rows ──────────────────────────────────────────────────────

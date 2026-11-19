@@ -10,7 +10,8 @@ weakest bench player dropped for it.
 
 Whether he is worth it is read the way a drop is: his recent form beside his
 outlook (`actions.FORM_WEIGHT`), where the outlook is his projection over the
-weeks after he is back through the fantasy final rather than this week's, which is nought.
+weeks after he is back through the fantasy final rather than this week's, which is nought,
+times his usage before he was hurt (`actions.usage`).
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -21,6 +22,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.actions import (
     drop_candidate,
     drop_reason,
     headlines,
+    usage,
     worth,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import MIN_GAMES_FOR_AVERAGE
@@ -89,7 +91,7 @@ def to_do(
             continue
         recent = _form(state, pid)
         outlook = rest / len(projected)
-        value = outlook if recent is None else FORM_WEIGHT * recent + (1 - FORM_WEIGHT) * outlook
+        value = (outlook if recent is None else FORM_WEIGHT * recent + (1 - FORM_WEIGHT) * outlook) * usage(state, pid)
         if bar is not None and value < bar - COMPARABLE_BY:
             continue
         valued.append((value, pid, week, rest))

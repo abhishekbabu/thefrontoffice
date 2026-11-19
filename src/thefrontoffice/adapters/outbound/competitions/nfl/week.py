@@ -37,6 +37,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PlayerNews
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out
+from thefrontoffice.adapters.outbound.competitions.nfl.teammates import HurtTeammates
 from thefrontoffice.adapters.outbound.platforms.espn import types as espn
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
@@ -158,6 +159,11 @@ class Week:
     def bench(self) -> list[Projection]:
         """Who could come into the lineup: sitting, and not in an injured-reserve or taxi slot."""
         return [p for p in self.sitting if p.player_id not in self.roster.reserve_ids]
+
+    @cached_property
+    def teammates(self) -> HurtTeammates:
+        """Every club's hurt or recently absent regulars, read once for everything that weighs one."""
+        return HurtTeammates(self.players, self.evidence)
 
     @cached_property
     def owned(self) -> set[str]:

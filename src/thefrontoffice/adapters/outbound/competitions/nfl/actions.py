@@ -20,7 +20,10 @@ from typing import Literal
 
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
     MIN_GAMES_FOR_AVERAGE,
+    REGULAR,
     RISES,
+    ROLE_GAMES,
+    TARGET_POSITIONS,
     average,
     season_average,
 )
@@ -41,7 +44,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, THIS_WEEK, listed, ruled_out
-from thefrontoffice.adapters.outbound.competitions.nfl.teammates import surname
+from thefrontoffice.adapters.outbound.competitions.nfl.teammates import Split, surname
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.domain.models import Action, Stat, Urgency, urgency_rank
 
@@ -333,6 +336,7 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
     starter's season as well as his week, so a star's one bad matchup is not
     a reason to drop him. At a streamed position the starter he replaces is
     the drop — a lineup starts one defense, and nobody keeps a spare.
+    The season check reads both players by the same `worth`.
     """
     taken: set[str] = set()
     items = []
@@ -348,7 +352,7 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
         starter = slot.player
         if starter is None or starter.team in started or starter.player_id in taken or gain < UPGRADE_BY:
             continue
-        if player.points <= season_average(state.evidence, starter):
+        if value(state, player) <= value(state, starter):
             continue
         taken.add(starter.player_id)
         streamed = player.position in STREAMED and starter.position == player.position
@@ -389,7 +393,9 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
 
     A stash rather than a start: whether he beats a starter this week is the
     free-agent page's question, so the row names the role and leaves the
-    lineup alone.
+    lineup alone. But he must be worth more, by `worth`, than the weakest
+    starter he could replace: a role that grew into less than you start
+    already is not a pickup.
     """
     rising = sorted(
         (
@@ -398,7 +404,7 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
             if p.player_id in state.evidence.trends
             and p.player_id not in already
             and p.points >= BREAKOUT_FROM
-            and best_upgrade(state.lineup, p) is not None
+            and _beats_a_starter(state, p)
         ),
         key=lambda p: -state.evidence.trends[p.player_id].rise,
     )
@@ -412,9 +418,7 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
                     kind="waiver",
                     urgency="soon",
                     title=f"Pick up {player.name}: role growing",
-                    reason=(
-                        f"{trend.describe().capitalize()}. Projects {player.points:.2f}; projections lag a role change."
-                    ),
+                    reason=f"{trend.describe().capitalize()}. Projects {player.points:.2f}.",
                     player_id=player.player_id,
                     evidence=_evidence(state, [player], told=frozenset({player.player_id})),
                     key=f"rise:{player.player_id}",
@@ -422,6 +426,15 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
             )
         )
     return items
+
+
+def _beats_a_starter(state: Week, player: Projection) -> bool:
+    """Whether he is worth more than the weakest starter he could replace, or there is an empty slot he fits."""
+    upgrade = best_upgrade(state.lineup, player)
+    if upgrade is None:
+        return False
+    starter = upgrade[1].player
+    return starter is None or value(state, player) > value(state, starter)
 
 
 def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]:
@@ -436,9 +449,10 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
 
     A pickup that fills a hole needs a body whoever it costs, so it names the
     cheapest drop regardless. A breakout is optional, and is dropped from the
-    list unless the bench holds someone it already beats — trading a
-    fourteen-point tight end on a one-week injury for a seven-point flier is
-    not a to-do item.
+    list unless the bench holds someone it already beats by `worth` — trading
+    a fourteen-point tight end on a one-week injury for a seven-point flier is
+    not a to-do item. Where his projection does not yet beat the drop's, the
+    reason says the projection lags; where it already does, that would be false.
     """
     # A player coming off IR takes a spot first: until he does, nothing else can be added.
     room = open_spots(state.league, state.roster)
@@ -468,12 +482,15 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
             out.append(_reworded(item, reason=f"{action.reason} Roster full; no bench player can be dropped yet."))
             continue
         chosen.add(drop.player_id)
+        pickup = state.projections.get(action.player_id)
+        lag = item.move == "rise" and pickup is not None and pickup.points <= drop.points
+        reason = f"{action.reason} Projections lag a role change." if lag else action.reason
         out.append(
             _reworded(
                 item,
                 drop=drop.player_id,
                 title=f"{action.title}, drop {drop.name}",
-                reason=f"{action.reason} {drop_reason(state, drop)}",
+                reason=f"{reason} {drop_reason(state, drop)}",
             )
         )
     return out
@@ -484,29 +501,69 @@ def _reworded(item: Item, **update: str) -> Item:
 
 
 def _worth_a_spot(state: Week, player_id: str, drop: Projection | None) -> bool:
-    """Whether an optional pickup is worth more than the player it would cost."""
+    """Whether an optional pickup is worth more than the player it would cost, both read by the same `value`."""
     pickup = state.projections.get(player_id)
     if drop is None or pickup is None:
         return False
-    kept = worth(state, drop)
-    return pickup.points > (season_average(state.evidence, drop) if kept is None else kept)
+    return value(state, pickup) > value(state, drop)
 
 
 FORM_WEIGHT = 0.5
 """The share of a player's worth, when choosing who to drop, that is his recent form; the rest is his outlook.
 
-Worth = FORM_WEIGHT × form + (1 − FORM_WEIGHT) × outlook, where form is his points a game over his
-last `ROLE_GAMES` games played and outlook is this week's projection — or, in a week he does not play
-(a bye, a ruling), his season average. Either alone where the other is unknown. Even weights: a
-projection alone drops a receiver scoring thirteen a game for one scoring five whenever a bye or a
-quiet matchup dents the first's number, and form alone chases one big afternoon.
+Worth = (FORM_WEIGHT × form + (1 − FORM_WEIGHT) × outlook) × usage, where form is his points a game
+over his last `ROLE_GAMES` games played — or, where those include games a regular teammate missed and
+that teammate is back, his points a game beside him (`filling_in`) — and outlook is this week's
+projection, or, in a week he does not play (a bye, a ruling), his season average. Either alone where
+the other is unknown. Even weights: a projection alone drops a receiver scoring thirteen a game for
+one scoring five whenever a bye or a quiet matchup dents the first's number, and form alone chases
+one big afternoon. Usage is `usage`.
+"""
+
+USAGE_SWING = 0.1
+"""The most his usage moves his worth, either way: a tenth.
+
+Points follow snaps, and a role that is steady says more about next week than
+one that swings. So a back, receiver or tight end on `REGULAR` of the snaps in
+every one of his last `ROLE_GAMES` games is worth a tenth more; one whose share
+moved by the smallest jump that counts (`RISES`) between them, and not because
+his role grew (a trend), a tenth less — a fill-in, a part-timer, a starter
+losing his place. A tenth because it is a tiebreak between comparable players,
+not a ranking of its own. Quarterbacks, kickers and defenses are on for every
+snap or none, so theirs says nothing.
 """
 
 
+def filling_in(state: Week, player: Projection) -> Split | None:
+    """The split on a regular teammate who is back, where his recent games were without him (see `HurtTeammates`)."""
+    meta = state.players.get(player.player_id)
+    return state.teammates.filling_in(meta) if meta is not None else None
+
+
 def form(state: Week, player: Projection) -> float | None:
-    """His points a game over his last few games played; None until he has played enough of them to say anything."""
+    """His points a game over his last few games played; None until he has played enough of them to say anything.
+
+    Where those games were fill-in work for a teammate who is back, his points a
+    game beside that teammate instead — or None where he has never played beside him.
+    """
     role = state.evidence.roles.get(player.player_id)
-    return role.points if role is not None and role.games >= MIN_GAMES_FOR_AVERAGE else None
+    if role is None or role.games < MIN_GAMES_FOR_AVERAGE:
+        return None
+    split = filling_in(state, player)
+    return role.points if split is None else split.alongside
+
+
+def usage(state: Week, player_id: str) -> float:
+    """What his snaps over his last games multiply his worth by: 1 ± `USAGE_SWING`, or 1."""
+    games = state.evidence.appearances.get(player_id, ())[-ROLE_GAMES:]
+    shares = [game.snap_share for game in games if game.snap_share is not None]
+    if state.evidence.positions.get(player_id) not in TARGET_POSITIONS or len(shares) < MIN_GAMES_FOR_AVERAGE:
+        return 1.0
+    if min(shares) >= REGULAR:
+        return 1 + USAGE_SWING
+    if player_id not in state.evidence.trends and max(shares) - min(shares) >= RISES["snaps"][0]:
+        return 1 - USAGE_SWING
+    return 1.0
 
 
 def _plays(state: Week, player: Projection) -> bool:
@@ -523,11 +580,21 @@ def outlook(state: Week, player: Projection) -> float | None:
 
 
 def worth(state: Week, player: Projection) -> float | None:
-    """`FORM_WEIGHT` of his form and the rest his outlook; either alone where the other is unknown, None with neither."""
+    """`FORM_WEIGHT` of his form and the rest his outlook, times his `usage`; either alone where the other is unknown, None with neither."""
     recent, ahead = form(state, player), outlook(state, player)
-    if recent is None or ahead is None:
-        return ahead if recent is None else recent
-    return FORM_WEIGHT * recent + (1 - FORM_WEIGHT) * ahead
+    if recent is None:
+        blended = ahead
+    elif ahead is None:
+        blended = recent
+    else:
+        blended = FORM_WEIGHT * recent + (1 - FORM_WEIGHT) * ahead
+    return None if blended is None else blended * usage(state, player.player_id)
+
+
+def value(state: Week, player: Projection) -> float:
+    """His `worth`, or his season average where there is nothing to read it from: what both sides of a move are weighed by."""
+    found = worth(state, player)
+    return season_average(state.evidence, player) if found is None else found
 
 
 def cuffed(state: Week) -> dict[str, PlayerInfo]:
@@ -646,8 +713,9 @@ def drop_reason(state: Week, player: Projection) -> str:
     A handcuff or a stash says so instead, since he is only the pick once nobody else is left.
     """
     figures = []
+    split = filling_in(state, player)
     if (recent := form(state, player)) is not None:
-        figures.append(f"{recent:.2f}/game")
+        figures.append(f"{recent:.2f}/game" + (f" with {surname(split.teammate.name)}" if split else ""))
     if _plays(state, player):
         figures.append(f"{player.points:.2f} proj")
     elif (played := average(state.evidence, player.player_id)) is not None:
@@ -712,9 +780,6 @@ def _same_game(
         )
     return items
 
-
-REGULAR = RISES["snaps"][1]
-"""Snap share over his last few games at which a player's absence is felt by whoever plays behind him."""
 
 WORK_POSITIONS = frozenset({"RB", "WR", "TE"})
 """Where a teammate's absence hands his snaps and touches to the next man: a quarterback's backup is

@@ -4,6 +4,8 @@ The club is LV. Its tight end one is hurt; its tight end two is the free agent
 everybody is adding. Every figure below can be checked with a pencil.
 """
 
+from dataclasses import replace
+
 import pytest
 from support.nfl import game_line
 
@@ -55,12 +57,39 @@ def test_a_player_who_never_played_without_him_has_no_split() -> None:
 
 
 def test_the_split_says_its_sample_and_tones_by_which_way_it_cuts() -> None:
+    found = split(gather(_season(), SCORING), BACKUP, replace(STAR, injury_status="Out"))
+    assert found is not None
+
+    assert (found.back, found.cell()) == (False, "Bowers O")
+    assert "2 games" in found.figures()
+    assert found.stat().tone == "warning"
+
+
+def test_a_teammate_not_ruled_out_is_back_and_the_figure_beside_him_counts() -> None:
     found = split(gather(_season(), SCORING), BACKUP, STAR)
     assert found is not None
 
-    assert found.cell() == "Bowers Q"
-    assert "2 games" in found.figures()
-    assert found.stat().tone == "warning"
+    assert found.back
+    assert found.figures().startswith(f"{26 / 3:.2f}/game in 3 games")
+    assert found.stat().label.startswith("With")
+    # Mayer scored more beside Bowers, and Bowers plays: good news for Mayer.
+    assert found.stat().tone == "good"
+
+
+def test_a_teammate_back_without_any_designation_reads_as_back() -> None:
+    found = split(gather(_season(), SCORING), BACKUP, replace(STAR, injury_status=""))
+    assert found is not None
+
+    assert found.cell() == "Bowers back"
+
+
+def test_a_teammate_back_who_he_never_played_beside_says_so() -> None:
+    lines = [_te("te1", 1, 50, 15.0), _te("te2", 2, 30, 8.0)]
+
+    found = split(gather(lines, SCORING), BACKUP, STAR)
+
+    assert found is not None
+    assert found.figures().startswith("never with")
 
 
 def test_a_split_with_no_game_alongside_him_is_neither_good_nor_bad() -> None:
@@ -81,8 +110,8 @@ def test_a_hurt_regular_at_his_position_is_his_teammate_to_weigh() -> None:
     assert [s.teammate.player_id for s in hurt.splits(BACKUP)] == ["te1"]
 
 
-def test_a_healthy_starter_or_a_hurt_depth_player_is_nobody_to_weigh() -> None:
-    lines = _season()
+def test_a_healthy_starter_who_missed_nothing_or_a_hurt_depth_player_is_nobody_to_weigh() -> None:
+    lines = [*(_te("te1", w, 50, 15.0) for w in range(1, 6)), *(_te("te2", w, 30, 8.0) for w in range(1, 6))]
     healthy = PlayerMeta(player_id="te1", name="Brock Bowers", position="TE", team="LV")
     assert HurtTeammates({"te1": healthy, "te2": BACKUP}, gather(lines, SCORING)).of(BACKUP) == []
 
@@ -90,6 +119,66 @@ def test_a_healthy_starter_or_a_hurt_depth_player_is_nobody_to_weigh() -> None:
     hurt_backup = PlayerMeta(player_id="te2", name="Michael Mayer", position="TE", team="LV", injury_status="Out")
     depth = [_te("te1", 1, 50, 15.0), _te("te2", 1, 15, 3.0)]
     assert HurtTeammates({"te1": healthy, "te2": hurt_backup}, gather(depth, SCORING)).of(healthy) == []
+
+
+def test_a_healthy_regular_who_missed_a_recent_game_is_still_weighed() -> None:
+    """Bowers missed week 5 and carries no designation now: the split is what Mayer's week 5 was worth."""
+    healthy = replace(STAR, injury_status="")
+
+    hurt = HurtTeammates({"te1": healthy, "te2": BACKUP}, gather(_season(), SCORING))
+
+    assert [s.teammate.player_id for s in hurt.splits(BACKUP)] == ["te1"]
+
+
+def test_a_regular_who_missed_a_game_long_ago_is_nobody_to_weigh() -> None:
+    lines = [
+        *(_te("te1", w, 50, 15.0) for w in (1, 3, 4, 5, 6)),
+        *(_te("te2", w, 30, 8.0) for w in range(1, 7)),
+    ]
+    healthy = replace(STAR, injury_status="")
+
+    assert HurtTeammates({"te1": healthy, "te2": BACKUP}, gather(lines, SCORING)).of(BACKUP) == []
+
+
+def _understudy_season() -> list[NFLGameLine]:
+    """Bowers as in `_season`; Mayer a part-timer beside him, on most of the snaps without him."""
+    return [
+        *(line for line in _season() if line.player_id == "te1"),
+        *(_te("te2", w, 15, 2.0) for w in (1, 2, 3)),
+        *(_te("te2", w, 50, 12.0) for w in (4, 5)),
+    ]
+
+
+def test_an_understudys_recent_games_without_a_teammate_who_is_back_are_fill_in_work() -> None:
+    hurt = HurtTeammates({p.player_id: p for p in (STAR, BACKUP)}, gather(_understudy_season(), SCORING))
+
+    found = hurt.filling_in(BACKUP)
+
+    assert found is not None
+    assert (found.weeks, found.alongside) == ((4, 5), 2.0)
+
+
+def test_a_regular_beside_the_teammate_kept_his_own_role_and_is_no_fill_in() -> None:
+    """Mayer was on half the snaps beside Bowers too: his games without him are his own."""
+    hurt = HurtTeammates({p.player_id: p for p in (STAR, BACKUP)}, gather(_season(), SCORING))
+
+    assert hurt.filling_in(BACKUP) is None
+
+
+def test_games_without_a_teammate_still_ruled_out_are_no_fill_in() -> None:
+    out = replace(STAR, injury_status="Out")
+
+    assert HurtTeammates({"te1": out, "te2": BACKUP}, gather(_understudy_season(), SCORING)).filling_in(BACKUP) is None
+
+
+def test_games_without_him_before_the_last_few_are_no_fill_in() -> None:
+    """Mayer's game without Bowers was week 1; his last three were all beside him."""
+    lines = [
+        *(_te("te1", w, 50, 15.0) for w in (2, 3, 4, 5)),
+        *(_te("te2", w, 15, 8.0) for w in range(1, 6)),
+    ]
+
+    assert HurtTeammates({p.player_id: p for p in (STAR, BACKUP)}, gather(lines, SCORING)).filling_in(BACKUP) is None
 
 
 def test_a_receiver_weighs_his_clubs_hurt_top_target_earner_at_tight_end() -> None:

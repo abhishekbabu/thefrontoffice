@@ -32,7 +32,6 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     listed,
     ruled_out,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.teammates import HurtTeammates
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,
     Week,
@@ -261,7 +260,7 @@ def cards(
     without it there is no such column, rather than one of noughts.
     """
     reserve = reserve or {}
-    hurt = HurtTeammates(state.players, state.evidence) if wire else None
+    hurt = state.teammates if wire else None
     rows = []
     for player_id in player_ids:
         meta = state.players.get(player_id)
@@ -486,7 +485,7 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
             stats=[
                 _opponent(projection, state),
                 *(_role(projection, state) if projection else []),
-                *(s.stat() for s in HurtTeammates(state.players, state.evidence).splits(meta)),
+                *(s.stat() for s in state.teammates.splits(meta)),
             ],
         )
     ]
