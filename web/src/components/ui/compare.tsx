@@ -72,9 +72,12 @@ export function ComparisonGrid({
         <tr>
           <Th />
           {players.map((p) => (
-            <Th key={p.player_id} className="min-w-40 normal-case tracking-normal">
+            <Th key={p.player_id} className="min-w-28 normal-case tracking-normal sm:min-w-40">
               <div className="flex items-start justify-between gap-2">
-                <Portrait src={p.image_url} className="size-14" />
+                {/* Off on a phone: two players and their labels fit the width only without them. */}
+                <div className="hidden sm:block">
+                  <Portrait src={p.image_url} className="size-14" />
+                </div>
                 <button type="button" onClick={() => onOpen(p.player_id)} className="min-w-0 flex-1 text-left">
                   {tags?.[p.player_id] && <span className={cn(LABEL, "block")}>{tags[p.player_id]}</span>}
                   <div className="truncate font-sans text-[13.5px] font-semibold text-foreground">{p.name}</div>

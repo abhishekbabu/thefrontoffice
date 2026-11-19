@@ -183,8 +183,9 @@ export function Chips({ detail, className }: { detail: PlayerDetail; className?:
           {detail.rank}
         </Badge>
       )}
+      {/* Truncated rather than overflowing: a manager's team name is as long as he likes. */}
       {detail.owner && (
-        <Badge variant="muted" appearance="label">
+        <Badge variant="muted" appearance="label" className="max-w-full truncate">
           {detail.owner}
         </Badge>
       )}

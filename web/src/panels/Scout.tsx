@@ -189,7 +189,7 @@ export function ScoutPanel({
           pending={shown.isPlaceholderData}
           // Two across once the page has the room: what to do beside the
           // lineups it acts on, rather than a to-do stretched past reading.
-          className="grid touch-pan-y grid-cols-1 items-start gap-4 p-5 @min-[110rem]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]"
+          className="grid touch-pan-y grid-cols-1 items-start gap-4 p-5 @min-[96rem]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]"
           {...swipe}
         >
           <div className="flex min-w-0 flex-col gap-4 empty:hidden">
@@ -250,9 +250,12 @@ export function ScoutPanel({
             )}
           </div>
 
-          <div className="flex min-w-0 flex-col gap-4 @min-[110rem]:col-start-2 @min-[110rem]:row-span-2 @min-[110rem]:row-start-1">
+          <div className="@container flex min-w-0 flex-col gap-4 @min-[96rem]:col-start-2 @min-[96rem]:row-span-2 @min-[96rem]:row-start-1">
             {shown.data.opponent ? (
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 @min-[60rem]:grid-cols-2">
+                {/* Side by side once their column fits two (about 470px each,
+                    what an NBA row's per-game line needs), stacked before that:
+                    a 1920px screen has the to-do beside them, not room for both across. */}
                 {/* Both sides draw a points column from the week's first kickoff on either, so they stay aligned. */}
                 <SideCard
                   side={shown.data.mine}
@@ -281,7 +284,7 @@ export function ScoutPanel({
 
           {/* Back in the first column under the to-do on a wide page; after the
               lineups, as before, on a narrow one. */}
-          <div className="flex min-w-0 flex-col gap-4 empty:hidden @min-[110rem]:col-start-1">
+          <div className="flex min-w-0 flex-col gap-4 empty:hidden @min-[96rem]:col-start-1">
             {shown.data.boosts && shown.data.boosts.stats.length > 0 && (
               <Card>
                 <CardHeader>

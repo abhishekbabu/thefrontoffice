@@ -198,8 +198,8 @@ importers:
         version: 3.7.0
     devDependencies:
       '@interfere/landmines':
-        specifier: 0.1.0
-        version: 0.1.0(oxlint@1.94.0)
+        specifier: 0.1.1
+        version: 0.1.1(oxlint@1.94.0)
       '@playwright/test':
         specifier: ^1.64.1
         version: 1.64.1
@@ -329,8 +329,8 @@ packages:
       '@types/node':
         optional: true
 
-  '@interfere/landmines@0.1.0':
-    resolution: {integrity: sha512-pbKVVTRBlkv395GbApiF9/AY8r9ZS85IlqzRXn4mhuQWFisC6sNEkOUHckXtSaTyhplLrODMrEkbzv0mwOwqew==}
+  '@interfere/landmines@0.1.1':
+    resolution: {integrity: sha512-ClZhJIIMJaibCU11dQru3APhnHtzrfSRFbAfUhisusA/6ueURr1FRjJeu0i1n0Y0lGMwPNTqv9GNspJ23N9/hg==}
     engines: {node: '>=22.18.0'}
     peerDependencies:
       oxlint: '>=1.81.0'
@@ -1969,7 +1969,7 @@ snapshots:
     optionalDependencies:
       '@types/node': 26.6.5
 
-  '@interfere/landmines@0.1.0(oxlint@1.94.0)':
+  '@interfere/landmines@0.1.1(oxlint@1.94.0)':
     dependencies:
       '@babel/parser': 8.0.4
       '@babel/types': 8.0.4

@@ -5,7 +5,7 @@
   "packageManager": "pnpm@12.15.0",
   "scripts": {
     "api-types": "node scripts/api-types.mjs",
-    "build": "tsc -b && vite build && node scripts/check-bundle.mjs",
+    "build": "vite build && node scripts/check-bundle.mjs",
     "dev": "vite",
     "lint": "oxlint",
     "preview": "vite preview",
@@ -25,7 +25,7 @@
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
-    "@interfere/landmines": "0.1.0",
+    "@interfere/landmines": "0.1.1",
     "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.3.0",

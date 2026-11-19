@@ -6,7 +6,10 @@
   // correctness set is here because something actually went wrong.
   "plugins": ["typescript", "react", "oxc", "vitest"],
   "categories": { "correctness": "error" },
-  "options": { "typeAware": true },
+  // Type-aware rules and the type check itself, both through `tsrs`: the same
+  // diagnostics `tsc -b` gave, from the program the rules already built, so
+  // there is no separate `tsc` pass anywhere (`just check-web`, `pnpm build`).
+  "options": { "typeAware": true, "typeCheck": true },
   "ignorePatterns": ["dist/**", ".shots/**", "scripts/**", "src/lib/schema.ts"],
   "jsPlugins": [
     "./lint/front-office.ts",
