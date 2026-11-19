@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Plus, Search, X } from "lucide-react";
+import { Plus, Search, Star, X } from "lucide-react";
 import { api, type Competition, type League, type PlayerComparison, type PlayerRef } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { Card, CardHeader } from "@/components/ui/card";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
+import { LABEL } from "@/components/ui/label";
 import { ListRow } from "@/components/ui/list";
 import { Empty, QueryState } from "@/components/ui/state";
 import { Table, Td, Th } from "@/components/ui/table";
@@ -67,7 +68,7 @@ function Grid({
   onOpen: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
-  const { players, table } = comparison;
+  const { players, tables } = comparison;
   return (
     <Card>
       <CardHeader>
@@ -102,23 +103,53 @@ function Grid({
             ))}
           </tr>
         </thead>
-        <tbody>
-          {table.rows.map((row) => (
-            <tr key={row.label}>
-              <Td className="whitespace-nowrap text-muted-foreground">{row.label}</Td>
-              {row.values.map((value, i) => (
-                <Td
-                  key={`${row.label}-${i}`}
-                  className={cn("font-mono text-[12.5px]", value === table.absent && "text-muted-foreground/50")}
-                >
-                  {value}
-                </Td>
-              ))}
+        {tables.map((table) => (
+          <tbody key={table.title}>
+            {/* The heading once, over its rows, rather than as a prefix on every label. */}
+            <tr>
+              <th
+                scope="colgroup"
+                colSpan={players.length + 1}
+                className={cn(LABEL, "border-b border-border bg-muted px-4 pt-3 pb-1.5 text-left")}
+              >
+                {table.title}
+              </th>
             </tr>
-          ))}
-        </tbody>
+            {table.rows.map((row) => (
+              <tr key={row.label}>
+                <Td className="whitespace-nowrap text-muted-foreground">{row.label}</Td>
+                {row.values.map((value, i) => (
+                  <Cell key={`${row.label}-${i}`} value={value} absent={value === table.absent} best={row.best.includes(i)} />
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        ))}
       </Table>
     </Card>
+  );
+}
+
+/** One figure; the best of its row is set heavier, in the good color, and starred, so it reads without color too. */
+function Cell({ value, absent, best }: { value: string; absent: boolean; best: boolean }) {
+  return (
+    <Td
+      className={cn(
+        "font-mono text-[12.5px]",
+        absent && "text-muted-foreground/50",
+        best && "font-semibold text-ok",
+      )}
+    >
+      <span className="inline-flex items-center gap-1">
+        {value}
+        {best && (
+          <>
+            <Star className="size-3 fill-current" aria-hidden />
+            <span className="sr-only">best</span>
+          </>
+        )}
+      </span>
+    </Td>
   );
 }
 

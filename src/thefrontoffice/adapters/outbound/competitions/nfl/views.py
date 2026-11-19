@@ -46,6 +46,7 @@ from thefrontoffice.domain.models import (
     POSITION_COLUMN,
     SLOT_COLUMN,
     STATUS_COLUMN,
+    Better,
     PlayerCard,
     PlayerDetail,
     Side,
@@ -64,34 +65,47 @@ logger = logging.getLogger(__name__)
 # Sleeper's projection keys, in the order a box score reads them. Only the ones
 # a fantasy line is actually made of — the payload carries dozens more, most of
 # which are zero for any given player.
-PROJECTION_LABELS: tuple[tuple[str, str], ...] = (
-    ("pass_att", "Pass att"),
-    ("pass_cmp", "Completions"),
-    ("pass_yd", "Pass yards"),
-    ("pass_td", "Pass TD"),
-    ("pass_int", "Interceptions"),
-    ("rush_att", "Carries"),
-    ("rush_yd", "Rush yards"),
-    ("rush_td", "Rush TD"),
-    ("rec_tgt", "Targets"),
-    ("rec", "Receptions"),
-    ("rec_yd", "Rec yards"),
-    ("rec_td", "Rec TD"),
-    ("fum_lost", "Fumbles lost"),
-)
+PROJECTION_LABELS: dict[str, str] = {
+    "pass_att": "Pass att",
+    "pass_cmp": "Completions",
+    "pass_yd": "Pass yards",
+    "pass_td": "Pass TD",
+    "pass_int": "Interceptions",
+    "rush_att": "Carries",
+    "rush_yd": "Rush yards",
+    "rush_td": "Rush TD",
+    "rec_tgt": "Targets",
+    "rec": "Receptions",
+    "rec_yd": "Rec yards",
+    "rec_td": "Rec TD",
+}
+
+_PASSING = ("pass_att", "pass_cmp", "pass_yd", "pass_td", "pass_int")
+_RUSHING = ("rush_att", "rush_yd", "rush_td")
+_CATCHING = ("rec_tgt", "rec", "rec_yd", "rec_td")
+PROJECTED_FOR: dict[str, tuple[str, ...]] = {
+    "QB": (*_PASSING, *_RUSHING),
+    "RB": (*_RUSHING, *_CATCHING),
+    "WR": _CATCHING,
+    "TE": _CATCHING,
+}
+"""The projected line each position is played for. A receiver's tenth of a carry is
+noise beside his targets; a position not listed reads every key that has a figure."""
+
+LOWER_IS_BETTER = frozenset({"pass_int", "Interceptions"})
+"""Measures a player is better for having less of, by projection key and by season split label."""
 
 
-def _projection_lines(stats: Mapping[str, float]) -> list[Stat]:
-    """The projection broken out, skipping what does not apply.
-
-    A receiver has no passing line, and printing a column of zeroes for one
-    buries the three numbers that matter.
-    """
-    return [
-        Stat(label=label, value=f"{stats[key]:.1f}".rstrip("0").rstrip(".") or "0")
-        for key, label in PROJECTION_LABELS
-        if stats.get(key)
-    ]
+def _projection_lines(stats: Mapping[str, float], position: str) -> list[Stat]:
+    """The projection broken out: only what his position is played for, and nothing that rounds to nought."""
+    keys = PROJECTED_FOR.get(position, tuple(PROJECTION_LABELS))
+    lines = []
+    for key in keys:
+        value = f"{stats.get(key, 0.0):.1f}".rstrip("0").rstrip(".")
+        if value not in ("", "0", "-0"):
+            better: Better = "lower" if key in LOWER_IS_BETTER else "higher"
+            lines.append(Stat(label=PROJECTION_LABELS[key], value=value, better=better))
+    return lines
 
 
 SPLIT_LABELS = (
@@ -339,14 +353,14 @@ def _role(projection: Projection, state: Week) -> list[Stat]:
     if role := state.evidence.roles.get(projection.player_id):
         games = f"last {role.games}" if role.games > 1 else "last game"
         if role.snap_share is not None:
-            stats.append(Stat(label=f"Snap share, {games}", value=share(role.snap_share)))
+            stats.append(Stat(label=f"Snap share, {games}", value=share(role.snap_share), better="higher"))
         if role.position in evidence.CARRY_POSITIONS:
-            stats.append(Stat(label="Carries a game", value=f"{role.carries:.1f}"))
+            stats.append(Stat(label="Carries a game", value=f"{role.carries:.1f}", better="higher"))
         if role.position in evidence.TARGET_POSITIONS:
-            stats.append(Stat(label="Targets a game", value=f"{role.targets:.1f}"))
+            stats.append(Stat(label="Targets a game", value=f"{role.targets:.1f}", better="higher"))
             if role.target_share is not None:
-                stats.append(Stat(label="Target share", value=share(role.target_share)))
-        stats.append(Stat(label=f"Points a game, {games}", value=f"{role.points:.2f}"))
+                stats.append(Stat(label="Target share", value=share(role.target_share), better="higher"))
+        stats.append(Stat(label=f"Points a game, {games}", value=f"{role.points:.2f}", better="higher"))
     return stats
 
 
@@ -437,16 +451,20 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
     if hurt:
         groups.append(StatGroup(title="Injury", stats=hurt))
     if projection and projection.stats:
-        groups.append(StatGroup(title="Projected line", stats=_projection_lines(projection.stats)))
+        groups.append(StatGroup(title="Projected line", stats=_projection_lines(projection.stats, meta.position)))
+    # Who he is matters least to a lineup call, so it goes last and on two lines.
+    profile = [
+        _experience(meta.years_exp),
+        *([f"age {meta.age}"] if meta.age else []),
+        *([f"#{meta.number}"] if meta.number else []),
+        *([meta.college] if meta.college else []),
+    ]
     groups.append(
         StatGroup(
             title="Player",
             stats=[
                 Stat(label="Depth chart", value=f"{depth}" if depth else "unlisted"),
-                Stat(label="Experience", value=f"{meta.years_exp} seasons"),
-                *([Stat(label="Age", value=str(meta.age))] if meta.age else []),
-                *([Stat(label="Number", value=f"#{meta.number}")] if meta.number else []),
-                *([Stat(label="College", value=meta.college)] if meta.college else []),
+                Stat(label="Profile", value=" · ".join(profile)),
             ],
         )
     )
@@ -456,7 +474,8 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
         groups.append(StatGroup(title="News", tab=NEWS_TAB, stats=headlines))
 
     seasons = _season_table(client, player_id, state)
-    tables = [t for t in (_game_log(client, player_id, meta, state, schedule), seasons) if t]
+    log = _game_log(client, player_id, meta, state, schedule)
+    tables = [t for t in (log and _recent_form(log, meta.position), log, seasons) if t]
     return PlayerDetail(
         player_id=player_id,
         name=meta.name,
@@ -538,6 +557,37 @@ def _game_log(
     return StatTable(title="Game log", tab=GAME_LOG_TAB, columns=columns, rows=rows)
 
 
+def _experience(years: int) -> str:
+    """'rookie', '1 season', '7 seasons'."""
+    return "rookie" if years == 0 else f"{years} season{'' if years == 1 else 's'}"
+
+
+RECENT_WEEKS = 5
+"""Weeks the drawer's first tab shows of the game log: enough to see a role change, few enough to read at a glance."""
+
+
+def _recent_form(log: StatTable, position: str) -> StatTable:
+    """The game log's last few weeks, cut to the columns that show a role — a snap share going 21%, 82%, 95%.
+
+    What he scored, how much he played, and how often the ball came his way:
+    targets for a pass catcher, carries for a runner, both for a back.
+    """
+    wanted = {
+        "Pts",
+        "Snaps",
+        *(["Tgt"] if position in evidence.TARGET_POSITIONS else []),
+        *(["Car"] if position in evidence.CARRY_POSITIONS else []),
+    }
+    rows = log.rows[-RECENT_WEEKS:]
+    kept = [i for i, column in enumerate(log.columns) if column in wanted]
+    return StatTable(
+        title="Recent weeks",
+        tab=WEEK_TAB,
+        columns=[log.columns[i] for i in kept],
+        rows=[StatRow(label=row.label, values=[row.values[i] for i in kept]) for row in rows],
+    )
+
+
 def _fixture(club: str, opponent: str, fixture: Game | None) -> str:
     """'vs GB' at home, '@ GB' away, as a box score writes it; bare where the schedule would not load."""
     if fixture is None:
@@ -596,23 +646,25 @@ def _season_table(client: NFLSource, player_id: str, state: Week) -> StatTable |
         stats = by_season.get(season)
         return stats if stats and stats.games else None
 
-    def row(label: str, of: Callable[[SeasonTotals], str]) -> StatRow:
+    def row(label: str, of: Callable[[SeasonTotals], str], better: Better = "higher") -> StatRow:
         return StatRow(
             label=label,
             values=[of(stats) if (stats := played(c)) else NOT_APPLICABLE for c in columns],
+            better=better,
         )
 
     rows = [
         row("Per game", lambda st: f"{st.per_game(scoring):.2f}"),
         row("Total", lambda st: f"{st.scored(scoring):.2f}"),
         row("Games", lambda st: str(st.games)),
-        row(POSITION_RANK, lambda st: f"#{st.position_rank}" if st.position_rank else NOT_APPLICABLE),
+        row(POSITION_RANK, lambda st: f"#{st.position_rank}" if st.position_rank else NOT_APPLICABLE, "lower"),
     ]
     # Only the splits somebody actually records: a running back has no
     # completion percentage, and a whole row of N/A is a row of nothing.
     for key, label in SPLIT_LABELS:
         if any(stats and stats.splits.get(key) for stats in by_season.values()):
-            rows.append(row(label, lambda st, k=key: _split_value(k, st.splits.get(k))))
+            better: Better = "lower" if label in LOWER_IS_BETTER else "higher"
+            rows.append(row(label, lambda st, k=key: _split_value(k, st.splits.get(k)), better))
 
     return StatTable(title="By season", tab=SEASONS_TAB, columns=columns, rows=rows)
 

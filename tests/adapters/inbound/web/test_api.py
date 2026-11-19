@@ -48,6 +48,8 @@ from thefrontoffice.domain.models import (
     PlayerRef,
     Remembered,
     SeasonInput,
+    Stat,
+    StatGroup,
     Summary,
     TradeMarket,
     TradeProposal,
@@ -1078,7 +1080,13 @@ class _Comparable(FakeProvider):
     """A competition whose every player can be opened and found by name."""
 
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
-        return PlayerDetail(player_id=player_id, name=f"Player {player_id}", position="WR", team="DAL")
+        return PlayerDetail(
+            player_id=player_id,
+            name=f"Player {player_id}",
+            position="WR",
+            team="DAL",
+            groups=[StatGroup(title="Week 11", stats=[Stat(label="Projected", value=player_id)])],
+        )
 
     def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
         return [PlayerRef(player_id="7", name=f"Found {text}")]
@@ -1088,7 +1096,8 @@ def test_players_compare_side_by_side_in_the_order_asked() -> None:
     body = _client(_Comparable()).get("/api/nfl/leagues/900/compare?ids=2&ids=1").json()
 
     assert [p["player_id"] for p in body["players"]] == ["2", "1"]
-    assert body["table"]["columns"] == ["Player 2", "Player 1"]
+    [table] = body["tables"]
+    assert table["columns"] == ["Player 2", "Player 1"]
 
 
 def test_more_than_four_players_is_refused() -> None:

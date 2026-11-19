@@ -54,8 +54,8 @@ describe("the player drawer", () => {
       owner: "Rival",
       tabs: ["This week", "History", "News"],
       groups: [
-        { title: "Week 11", tab: "", note: "", stats: [{ label: "Projected", value: "24.1", tone: "neutral", url: "" }] },
-        { title: "Moves", tab: "History", note: "", stats: [{ label: "Draft", value: "Round 1", tone: "neutral", url: "" }] },
+        { title: "Week 11", tab: "", note: "", stats: [{ label: "Projected", value: "24.1", tone: "neutral", url: "", better: null }] },
+        { title: "Moves", tab: "History", note: "", stats: [{ label: "Draft", value: "Round 1", tone: "neutral", url: "", better: null }] },
         { title: "Latest news", tab: "News", note: "", stats: [] },
       ],
     };
@@ -85,7 +85,7 @@ describe("the player drawer", () => {
       ...ALLEN,
       tabs: ["This week", "History"],
       moves_tab: "History",
-      groups: [{ title: "Week 11", tab: "", note: "", stats: [{ label: "Projected", value: "24.1", tone: "neutral", url: "" }] }],
+      groups: [{ title: "Week 11", tab: "", note: "", stats: [{ label: "Projected", value: "24.1", tone: "neutral", url: "", better: null }] }],
       moves: [
         {
           when: "19 Sep",

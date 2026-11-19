@@ -46,9 +46,13 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Player pages**: tabs for this week, the game log, past seasons, league
   history (draft pick, then each add, drop and trade, opening in full as in
   Activity) and linked news. An injured NFL player shows ESPN's injury, its
-  estimated return week and the latest update.
+  estimated return week and the latest update. An NFL player's first tab leads
+  with his last 5 weeks (points, snap share, targets, carries), and his
+  projected line lists only what his position is played for.
 - **Compare**: up to four players side by side, added from any player page,
-  a move in Activity, or by name.
+  a move in Activity, or by name. Figures sit under their heading (this week,
+  projected line, this season), and the best of each comparable row is
+  starred.
 - **Rosters**: any team's squad and weeks ahead, yours by default.
 - **League and Activity**: the table with PF, PA, FAAB left and waiver order,
   and every recent move in full. A fixture opens to your players and your
