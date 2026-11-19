@@ -45,6 +45,11 @@ TRANSFER_HIT = 4
 TRANSFER_CHIPS = frozenset({"wildcard", "freehit"})
 """Chips whose week's transfers are free and leave the banked allowance where it was."""
 
+DEFENSIVE_THRESHOLDS = {"DEF": 10, "MID": 12, "FWD": 12}
+"""Defensive contribution a match must reach for its two points, by position — the game's rule since
+2025/26: clearances, blocks, interceptions and tackles for a defender, recoveries too further forward.
+A keeper earns none."""
+
 
 def plays(player: Player) -> bool:
     """Whether the game expects this player to be able to feature.

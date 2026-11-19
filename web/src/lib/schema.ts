@@ -1004,6 +1004,42 @@ export interface components {
             remedy: components["schemas"]["Remedy"] | null;
         };
         /**
+         * FixtureRun
+         * @description One player's matches over the weeks ahead, with why the row is worth a look.
+         */
+        FixtureRun: {
+            /** Player Id */
+            player_id: string;
+            /** Player */
+            player: string;
+            /**
+             * Detail
+             * @description Position and club: 'MID · LIV'.
+             * @default
+             */
+            detail: string;
+            /**
+             * Weeks
+             * @description One per week the grid covers, in order, a blank included.
+             */
+            weeks: components["schemas"]["FixtureWeek"][];
+            /**
+             * Flags
+             * @description What earns the row its place, in words: 'blank GW14', 'double GW15', '3 hard', 'injured'.
+             */
+            flags: string[];
+        };
+        /**
+         * FixtureWeek
+         * @description One week of a player's run: no match is a blank, two a double.
+         */
+        FixtureWeek: {
+            /** Week */
+            week: number;
+            /** Games */
+            games: components["schemas"]["Opposition"][];
+        };
+        /**
          * ItemDecision
          * @description One decision about one to-do item, as the page sends it.
          */
@@ -1287,6 +1323,24 @@ export interface components {
             figures: components["schemas"]["Stat"][];
         };
         /**
+         * Opposition
+         * @description One match a club plays in a week to come, as a fixture grid cell reads it.
+         */
+        Opposition: {
+            /**
+             * Opponent
+             * @description The club faced, as a table spells it: 'ARS'.
+             */
+            opponent: string;
+            /** Home */
+            home: boolean;
+            /**
+             * Difficulty
+             * @description The league's own 1-5 rating of the match for the club facing it; 5 hardest.
+             */
+            difficulty: number;
+        };
+        /**
          * Outlook
          * @description The next few weeks for your roster, soonest first, each measured against the same usual week.
          */
@@ -1305,6 +1359,27 @@ export interface components {
             measure: "proj" | "games";
             /** Weeks */
             weeks: components["schemas"]["WeekAhead"][];
+            /**
+             * Run Weeks
+             * @description The weeks a fixture grid covers, soonest first — where the competition projects its weeks ahead as fixtures rather than as lineups. Empty otherwise.
+             */
+            run_weeks: number[];
+            /**
+             * Runs
+             * @description The players whose run has something to act on — a blank, a double, a hard stretch, a doubt.
+             */
+            runs: components["schemas"]["FixtureRun"][];
+            /**
+             * Clear
+             * @description Players on the roster whose run has nothing to flag, left off `runs`.
+             * @default 0
+             */
+            clear: number;
+            /**
+             * Warnings
+             * @description Each week a blank or a double lands on the roster, naming who: 'GW14' — '3 blank: Saka, Rice, Raya'.
+             */
+            warnings: components["schemas"]["Stat"][];
         };
         /**
          * PlayerCall

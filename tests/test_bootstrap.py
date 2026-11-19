@@ -185,7 +185,7 @@ def test_what_each_competition_can_do_is_read_off_its_provider() -> None:
     assert can == {
         "nba-yahoo": (True, True, True, False),
         "nfl-sleeper": (True, True, True, True),
-        "premier-league-fpl": (False, False, False, False),
+        "premier-league-fpl": (False, False, True, False),
     }
 
 

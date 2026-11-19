@@ -5,15 +5,18 @@ fixtures, the market and the figures the provider computed — since a report
 missing the captaincy or the transfer allowance is wrong however well it renders.
 """
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
 from support.fpl import (
     ENTRY_ID,
+    H2H_LEAGUE_ID,
     LEAGUE_ID,
     MARKET,
     SQUAD_PLAYERS,
     FakeFPL,
+    game,
     player,
     provider,
 )
@@ -615,3 +618,94 @@ def test_matches_without_a_squad_to_read_still_list_the_games() -> None:
     games = provider(squad_error=FPLAPIError("down")).games_of(H2H_LEAGUE, 4).games
 
     assert games and not games[0].yours and not games[0].theirs
+
+
+# ── finding a player ────────────────────────────────────────────────────
+
+
+def test_any_player_in_the_game_is_found_by_name_the_most_owned_first() -> None:
+    catalog = {
+        **SQUAD_PLAYERS,
+        200: replace(player(200, "DEF", 5.0, team="ARS"), name="Saliba", full_name="William Saliba", selected_by=30.0),
+        201: replace(player(201, "FWD", 4.0, team="NEW"), name="Salia", full_name="Vakhtang Salía", selected_by=0.1),
+    }
+    found = provider(players=catalog).search_players(H2H_LEAGUE_ID, "sali")
+
+    assert [(r.player_id, r.name, r.detail) for r in found] == [
+        ("200", "William Saliba", "DEF · ARS · £5.0m"),
+        ("201", "Vakhtang Salía", "FWD · NEW · £5.0m"),
+    ]
+
+
+def test_a_search_too_short_to_mean_anyone_finds_nobody() -> None:
+    assert provider().search_players(LEAGUE_ID, "p") == []
+
+
+def test_a_search_is_capped_at_the_limit() -> None:
+    assert len(provider().search_players(LEAGUE_ID, "player", limit=3)) == 3
+
+
+# ── the weeks ahead ─────────────────────────────────────────────────────
+
+
+def test_the_weeks_ahead_read_five_gameweeks_from_the_next_deadline() -> None:
+    season = [Fixture(event=w, home="ARS", away="LIV", home_difficulty=2, away_difficulty=4) for w in range(5, 12)]
+    found = provider(season_fixtures=season).weeks_ahead(LEAGUE_ID)
+
+    assert found.run_weeks == [5, 6, 7, 8, 9]
+    # Man City's two blank every week of a list that has only Arsenal in it.
+    assert {run.player for run in found.runs} == {"P2", "P15"}
+    assert found.clear == 13
+
+
+def test_another_managers_weeks_ahead_are_his_own_squad() -> None:
+    fake = FakeFPL()
+    FPLProvider(ENTRY_ID, client=fake).weeks_ahead(LEAGUE_ID, "99")
+    assert fake.squad_requests  # read a squad, not refused
+
+
+def test_a_team_id_that_is_no_entry_is_refused() -> None:
+    with pytest.raises(TeamNotFoundError):
+        provider().weeks_ahead(LEAGUE_ID, "nope")
+
+
+def test_nothing_is_ahead_once_every_gameweek_is_finished() -> None:
+    assert provider(finished=38).weeks_ahead(LEAGUE_ID).run_weeks == []
+
+
+# ── the tie, simulated ──────────────────────────────────────────────────
+
+
+def test_a_head_to_head_tie_is_simulated_from_both_squads() -> None:
+    fake = FakeFPL(games={8: [game(3, 10), game(4, 2)]})
+    found = FPLProvider(ENTRY_ID, client=fake).matchup_input(H2H_LEAGUE_ID)
+
+    assert found is not None
+    assert [o.player_id for o in found.mine].count("8") == 2  # the captain, twice
+    assert len(found.theirs) >= 11
+    assert [sorted(ids) for ids in fake.summary_requests] == [sorted(SQUAD_PLAYERS)]  # one read, everyone once
+
+
+def test_the_same_tie_is_the_same_simulation_between_reloads() -> None:
+    first = provider().matchup_input(H2H_LEAGUE_ID)
+    again = provider().matchup_input(H2H_LEAGUE_ID)
+    assert first is not None and again is not None
+    assert first.seed == again.seed
+
+
+def test_a_classic_league_has_no_tie_to_simulate() -> None:
+    assert provider().matchup_input(LEAGUE_ID) is None
+
+
+def test_a_gameweek_without_a_tie_is_not_simulated() -> None:
+    assert provider(h2h_match_error=FPLAPIError("down")).matchup_input(H2H_LEAGUE_ID) is None
+
+
+def test_the_market_is_not_priced_against_one_tie() -> None:
+    assert provider().matchup_input(H2H_LEAGUE_ID, candidates=["100"]) is None
+
+
+def test_no_played_gameweek_is_rebuilt_for_a_backtest() -> None:
+    fpl = provider()
+    assert fpl.played_weeks(H2H_LEAGUE_ID) == []
+    assert fpl.played_matchups(H2H_LEAGUE_ID, 3) == []

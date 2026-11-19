@@ -8,6 +8,7 @@ from thefrontoffice.adapters.outbound.competitions.injuries import (
     PlayerInjuries,
     approximately,
     by_club,
+    injury_stats,
     matched,
 )
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
@@ -106,3 +107,15 @@ def test_a_cleared_player_has_no_injury_to_show() -> None:
 def test_a_hurt_player_has_his_return_and_one_off_the_report_none() -> None:
     assert _hurt().returns("curry") == date(2026, 11, 22)
     assert PlayerInjuries().returns("curry") is None
+
+
+def test_any_platforms_injury_reads_the_same_and_an_undated_word_is_the_latest() -> None:
+    """FPL reports its own injuries, with no ESPN row behind them: the group is built from the parts."""
+    stats = injury_stats("injured", injury="Knock", returns=date(2026, 11, 23), comment="Expected back 23 Nov")
+
+    assert [(s.label, s.value) for s in stats] == [
+        ("Status", "injured"),
+        (BODY_PART, "Knock"),
+        ("Back", "~23 Nov"),
+        ("Latest", "Expected back 23 Nov"),
+    ]
