@@ -12,12 +12,7 @@ function Input({ className, ...props }: React.ComponentProps<"input">) {
   return <input className={cn(FIELD, className)} {...props} />;
 }
 
-/** The same field as a `<select>`, for a setting with a fixed set of values. */
-function Select({ className, ...props }: React.ComponentProps<"select">) {
-  return <select className={cn(FIELD, className)} {...props} />;
-}
-
 const FIELD =
   "h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-[13px] placeholder:text-muted-foreground focus-visible:border-ring disabled:opacity-50";
 
-export { Input, Select };
+export { Input };
