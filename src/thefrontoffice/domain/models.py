@@ -1195,6 +1195,16 @@ class Match(BaseModel):
     )
 
 
+class Slate(BaseModel):
+    """The real games one fantasy week is made of, and the clubs with none in it."""
+
+    games: list[Match] = Field(default_factory=list, description="In kickoff order.")
+    byes: list[str] = Field(
+        default_factory=list,
+        description="Clubs with no game that week, alphabetical; empty where every club plays, or none has played yet.",
+    )
+
+
 class ActivityMove(BaseModel):
     """One player a league move moved: who, and which way, for which team."""
 

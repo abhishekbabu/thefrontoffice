@@ -309,9 +309,7 @@ def cards(
                 **ros,
                 "Opponent": versus,
                 "Depth": depth_cell,
-                # Years in the league tell a roster apart; on the wire the
-                # usage beside it says more about a pickup, in the room.
-                "Exp": f"{meta.years_exp}y",
+                # Years in the league are in the player's drawer: a column of them decides nothing.
                 STATUS_COLUMN: injury,
             }
         )
@@ -333,7 +331,6 @@ def cards(
                     **({ROS_COLUMN: rest} if rest is not None else {}),
                     "Proj": projection.points if projection else 0.0,
                     "Depth": float(depth) if depth else 0.0,
-                    **({} if wire else {"Exp": float(meta.years_exp)}),
                 },
             )
         )

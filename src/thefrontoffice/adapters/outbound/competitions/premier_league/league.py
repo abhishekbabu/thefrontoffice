@@ -134,3 +134,11 @@ def matches(client: FPLSource, gameweek: int) -> list[Match]:
         )
         for f in sorted(fixtures, key=lambda f: (f.kickoff is None, f.kickoff))
     ]
+
+
+def blanks(client: FPLSource, games: list[Match]) -> list[str]:
+    """The clubs with no match in a gameweek's `games`, alphabetical; none where it lists no matches at all."""
+    if not games:
+        return []
+    playing = {club for m in games for club in (m.home, m.away)}
+    return sorted(set(client.get_clubs()) - playing)

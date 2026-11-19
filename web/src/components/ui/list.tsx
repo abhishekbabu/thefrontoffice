@@ -1,6 +1,7 @@
 import { m } from "motion/react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ErrorNote } from "@/components/ui/error-note";
+import { Label } from "@/components/ui/label";
 import { Loading } from "@/components/ui/state";
 import { list, listItem } from "@/lib/motion";
 import { clickable } from "@/lib/clickable";
@@ -82,5 +83,14 @@ export function ListRow({
     >
       {children}
     </m.div>
+  );
+}
+
+/** A heading inside a list card that splits its rows into runs: the playoffs from the season, one kickoff from the next. */
+export function ListHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <Label as="div" className="border-t border-border bg-muted px-4 py-1.5 first:border-t-0">
+      {children}
+    </Label>
   );
 }

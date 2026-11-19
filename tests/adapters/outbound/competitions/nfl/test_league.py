@@ -154,10 +154,10 @@ def test_a_week_with_no_real_games_lists_none() -> None:
     assert nfl_provider(league_client()).schedule("L1").matches == []
 
 
-def test_a_game_you_have_players_in_is_marked() -> None:
+def test_a_game_you_have_players_in_names_them() -> None:
     """The only thing that makes one game on a slate different from another."""
     matches = nfl_provider(at_week(2)).schedule("L1").matches
-    marked = {(m.away, m.home) for m in matches if m.detail}
+    marked = {(m.away, m.home) for m in matches if m.yours}
 
     assert marked == {("BUF", "MIA")}  # every fake projection is a BUF player
 
@@ -439,4 +439,4 @@ def test_a_game_lists_your_players_in_it_starters_first_and_your_opponents() -> 
 
     assert [(p.player_id, p.detail.split(" · ")[1]) for p in game.yours] == [("qb1", "starting"), ("rb1", "bench")]
     assert all(p.player_id == "rb2" for p in game.theirs)
-    assert all(not m.yours and not m.theirs for m in matches if m.tone == "neutral")
+    assert all(not m.theirs for m in matches if not m.yours)

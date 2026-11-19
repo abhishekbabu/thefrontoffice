@@ -105,8 +105,9 @@ export function RostersPanel({ competition, league }: { competition: Competition
  *
  * A week where byes and injuries land together is a loss that can be seen a
  * month out, and a pickup made then costs a bench spot rather than whatever
- * is left on the morning. Every week is shown, so a dip reads against the
- * others; one short enough to act on carries the pickup that fixes it.
+ * is left on the morning. Only a week somebody misses is listed, and one
+ * short enough to act on carries the pickup that fixes it; a stretch with
+ * nobody missing is one line, not a row a week saying so.
  */
 function WeeksAhead({ competition, league, team }: { competition: Competition; league: League; team: string }) {
   const outlook = useQuery<Outlook, Error>({
@@ -115,6 +116,7 @@ function WeeksAhead({ competition, league, team }: { competition: Competition; l
   });
 
   const weeks = outlook.data?.weeks;
+  const flagged = weeks?.filter((w) => w.missing.length > 0 || w.short);
   const short = weeks?.filter((w) => w.short).length ?? 0;
   const usual = outlook.data?.usual;
   return (
@@ -125,7 +127,10 @@ function WeeksAhead({ competition, league, team }: { competition: Competition; l
       error={outlook.error}
     >
       {weeks?.length === 0 && <CardNote>No weeks left.</CardNote>}
-      {weeks?.map((week) => (
+      {weeks && weeks.length > 0 && flagged?.length === 0 && (
+        <CardNote>No byes or injuries through week {weeks[weeks.length - 1]!.week}.</CardNote>
+      )}
+      {flagged?.map((week) => (
         <ListRow key={week.week} className="flex-col items-stretch gap-1">
           <div className="flex items-baseline gap-3">
             <Label className="w-20 shrink-0">Week {week.week}</Label>

@@ -56,12 +56,12 @@ from thefrontoffice.domain.models import (
     STATUS_COLUMN,
     CompetitionContext,
     LeagueSchedule,
-    Match,
     PlayerCard,
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
     Side,
+    Slate,
     Spot,
     SpotScoring,
     Stat,
@@ -569,14 +569,15 @@ class FPLProvider:
             weeks=self._range(week, current.id),
         )
 
-    def games_of(self, league_id: str, week: int) -> list[Match]:
-        """The real matches of any gameweek, each with its score once it has kicked off.
+    def games_of(self, league_id: str, week: int) -> Slate:
+        """The real matches of any gameweek, each with its score once it has kicked off, and its blanks.
 
         Raises:
             NotFoundError: the season has no such gameweek.
         """
         self._gameweek_numbered(week)
-        return league.matches(self.client, week)
+        games = league.matches(self.client, week)
+        return Slate(games=games, byes=league.blanks(self.client, games))
 
     def _range(self, week: int, current: int) -> WeekRange:
         return WeekRange(week=week, current=current, first=1, last=max(len(self.client.get_gameweeks()), current))
