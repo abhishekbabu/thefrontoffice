@@ -14,6 +14,7 @@ from support.http import NO_WAIT
 from support.logs import capture_logs
 from support.yahoo import FakeFrontend, league_xml, leagues_xml, scoreboard_xml, team_xml, teams_xml
 
+from thefrontoffice.adapters.outbound import platforms
 from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
 from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooCapture
@@ -207,7 +208,7 @@ def test_the_cookie_appears_in_no_log_line_or_error(tmp_path: Path, status: int)
     reader, _, _ = _reader(tmp_path, FakeFrontend(statuses={"/teams": status}))
 
     with (
-        capture_logs("thefrontoffice.adapters.outbound.platforms", logging.DEBUG) as logs,
+        capture_logs(platforms.__name__, logging.DEBUG) as logs,
         pytest.raises(Exception) as raised,
     ):
         YahooClient(LEAGUE, responses=reader).teams()

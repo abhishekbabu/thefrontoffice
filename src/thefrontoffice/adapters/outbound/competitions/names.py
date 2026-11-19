@@ -73,9 +73,6 @@ class NameIndex[T]:
         matched = self._by_surname.get(surname)
         return self._by_name.get(matched) if matched else None
 
-    def __len__(self) -> int:
-        return len(self._by_name)
-
     @property
     def is_empty(self) -> bool:
         return not self._by_name

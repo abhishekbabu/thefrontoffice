@@ -4,6 +4,7 @@ The fake league plays week 3. Its slots are QB, RB, WR and FLEX, small enough
 that every scenario can say exactly who is where.
 """
 
+import re
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -710,7 +711,9 @@ def test_a_breakouts_evidence_leaves_the_role_change_to_its_reason() -> None:
     [action] = [a for a in _actions(_with_free_agent(free)) if a.player_id == "wr9"]
 
     [his] = [stat for stat in action.evidence if stat.label == free.name]
-    assert "role growing" not in his.value
+    jump = re.findall(r"\d+%", action.reason)  # his snap share before and after
+    assert jump
+    assert not any(share in his.value for share in jump)
 
 
 def test_a_growing_role_the_projection_has_given_up_on_is_left_alone() -> None:

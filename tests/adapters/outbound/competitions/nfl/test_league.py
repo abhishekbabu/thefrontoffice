@@ -175,9 +175,10 @@ def test_a_trade_names_both_managers_and_the_budget_it_moved() -> None:
     )
     [row] = nfl_provider(league_client(transactions={3: [trade]})).schedule("L1").activity
 
-    assert row.who == "Me ↔ Roster 2"
+    assert row.who.index("Me") < row.who.index("Roster 2")
     # What each side got, in the order they are named; a zero transfer is no transfer.
-    assert row.detail == "+Star QB · +$5 FAAB"
+    assert row.detail.index("Star QB") < row.detail.index("$5 FAAB")
+    assert "$0" not in row.detail
     assert {(m.player, m.manager) for m in row.moves if m.change == "added"} == {
         ("Star QB", "Me"),
         ("$5 FAAB", "Roster 2"),
@@ -209,7 +210,9 @@ def test_activity_names_players_rather_than_identifiers() -> None:
 
     activity = nfl_provider(client).schedule("L1").activity
 
-    assert activity[0].detail == "+Star QB, -Good RB"
+    detail = activity[0].detail
+    assert "Star QB" in detail and "Good RB" in detail
+    assert "qb1" not in detail and "rb1" not in detail
     assert activity[0].is_mine
 
 

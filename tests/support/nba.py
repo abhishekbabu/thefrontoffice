@@ -172,7 +172,6 @@ class FakeYahoo:
         self.moves: list[YahooTransaction] = []
         """The league's transactions, newest first."""
         self.moves_error: Exception | None = None
-        self.moves_read = 0
 
     def get_user_team(self) -> YahooTeam:
         return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
@@ -297,7 +296,6 @@ class FakeYahoo:
         return {k: v for k, v in self.lines.get(average, {}).items() if k in held}
 
     def transactions(self) -> list[YahooTransaction]:
-        self.moves_read += 1
         if self.moves_error:
             raise self.moves_error
         return self.moves
@@ -423,7 +421,6 @@ class FakeNBA:
         self.seasons: dict[tuple[str, str], NBASeason] = {}
         """Each player's totals over a season, by name and season."""
         self.season_error: Exception | None = None
-        self.seasons_read: list[str] = []
 
     def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
         return [g for g in self.slate if start_date.isoformat() <= g.date <= end_date.isoformat()]
@@ -451,7 +448,6 @@ class FakeNBA:
         return self.profiles.get(full_name)
 
     def season(self, full_name: str, season: str) -> NBASeason | None:
-        self.seasons_read.append(season)
         if self.season_error:
             raise self.season_error
         return self.seasons.get((full_name, season))

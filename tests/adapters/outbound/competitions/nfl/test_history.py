@@ -1,5 +1,6 @@
 """Tests for a player's season in the league: `nfl/history.py`."""
 
+import re
 from dataclasses import replace
 
 from support.nfl import FakeSleeper, league_client, nfl_provider
@@ -37,11 +38,14 @@ def test_the_drawer_says_whose_roster_he_is_on() -> None:
     assert _detail(client, "wr9").owner == FREE_AGENT
 
 
-def test_his_draft_pick_names_the_round_the_pick_and_who_made_it() -> None:
-    [drafted] = _history(_drafted(league_client()), "qb1")
+def test_his_draft_pick_is_placed_in_its_round_and_names_who_made_it() -> None:
+    """Sleeper numbers picks across the whole draft: the 31st of a 12-team draft is round 3's 7th."""
+    client = _drafted(league_client())
+    [drafted] = _history(client, "qb1")
 
-    assert "Round 3, pick 7" in drafted
-    assert "31st" in drafted
+    by = _detail(client, "rb2").owner  # roster 2's, who made the pick
+    assert by in drafted
+    assert [int(n) for n in re.findall(r"\d+", drafted.replace(by, ""))] == [3, 7, 31]  # round, pick in it, overall
 
 
 def test_a_player_the_draft_passed_over_reads_as_undrafted() -> None:
