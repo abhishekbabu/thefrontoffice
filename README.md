@@ -19,7 +19,8 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   more than the starter he'd replace and the player he'd cost. Each item names the fix
   and who to drop: the weakest bench player by recent form and projection
   together (form read beside a teammate who is back where his recent games were
-  fill-in for him; ±10% for snaps steady at 50%+ or swinging by 20+ points),
+  fill-in for him; ±10% for snaps steady at 50%+ or swinging by 20+ points, a
+  climb to his most snaps not counting as a swing),
   never one the best lineup starts or one just on bye. Pickup and drop are valued
   the same way. A handcuff
   (the back next on the depth chart behind a running back you start) goes only
@@ -35,7 +36,10 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   side by side on the same rows: snap share, targets a game and target share
   over the last three games, points a game recent and season, projection and
   opponent. A bench player whose teammate is listed questionable reads as the
-  start to make: "Start X over Y if Z sits". The trade-deadline item shows the
+  start to make: "Start X over Y if Z sits" — only where his worth with Z out
+  (his points a game without Z, given two such games, else his worth up a
+  fifth) beats Y's; otherwise nothing is listed. A starter's "Keep X in" holds
+  to the same rule against the best bench player for his slot. The trade-deadline item shows the
   Trades page's best offer and links there. The lineup's points column appears
   once the week's first game kicks off.
 - **Win chance and playoff odds**: the week is simulated 10,000 times and the

@@ -46,6 +46,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
 from thefrontoffice.adapters.outbound.competitions.nfl.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, THIS_WEEK, listed, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import Split, surname
+from thefrontoffice.adapters.outbound.competitions.nfl.teammates import split as split_on
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
 from thefrontoffice.domain.models import Action, MoveSide, Stat, Urgency, urgency_rank
 
@@ -555,9 +556,11 @@ Points follow snaps, and a role that is steady says more about next week than
 one that swings. So a back, receiver or tight end on `REGULAR` of the snaps in
 every one of his last `ROLE_GAMES` games is worth a tenth more; one whose share
 moved by the smallest jump that counts (`RISES`) between them, and not because
-his role grew (a trend), a tenth less — a fill-in, a part-timer, a starter
-losing his place. A tenth because it is a tiebreak between comparable players,
-not a ranking of its own. Quarterbacks, kickers and defenses are on for every
+his role grew, a tenth less — a fill-in, a part-timer, a starter losing his
+place. A role grew where it is a trend, or where his latest game is his most
+snaps of them: a debut ramping up has too few games before it for a trend. A
+tenth because it is a tiebreak between comparable players, not a ranking of
+its own. Quarterbacks, kickers and defenses are on for every
 snap or none, so theirs says nothing.
 """
 
@@ -589,7 +592,8 @@ def usage(state: Week, player_id: str) -> float:
         return 1.0
     if min(shares) >= REGULAR:
         return 1 + USAGE_SWING
-    if player_id not in state.evidence.trends and max(shares) - min(shares) >= RISES["snaps"][0]:
+    grew = player_id in state.evidence.trends or shares[-1] == max(shares)
+    if not grew and max(shares) - min(shares) >= RISES["snaps"][0]:
         return 1 - USAGE_SWING
     return 1.0
 
@@ -609,7 +613,12 @@ def outlook(state: Week, player: Projection) -> float | None:
 
 def worth(state: Week, player: Projection) -> float | None:
     """`FORM_WEIGHT` of his form and the rest his outlook, times his `usage`; either alone where the other is unknown, None with neither."""
-    recent, ahead = form(state, player), outlook(state, player)
+    return _blend(state, player, form(state, player))
+
+
+def _blend(state: Week, player: Projection, recent: float | None) -> float | None:
+    """`worth` with `recent` as his form: what a teammate check reads his games without the teammate through."""
+    ahead = outlook(state, player)
     if recent is None:
         blended = ahead
     elif ahead is None:
@@ -838,6 +847,12 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
     held to fewer snaps still takes his targets with him when he sits. It
     names no move, so nothing on the list is dropped for it, and the player it
     is about is kept off the drop list while it stands.
+
+    Only a check worth making is listed: his worth with the teammate sitting
+    (`worth_without`) must beat the starter a bench player would replace, or,
+    for a starter, at least match the best bench player who could take his
+    slot — both by `value`. One that would not is no decision, and a watch
+    note would only be noise beside the ones that are.
     """
     roles = state.evidence.roles
     items = []
@@ -869,12 +884,22 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
             continue
         doubt = [other for other, _ in regulars if not ruled_out(other.injury_status)]
         out = [other for other, _ in regulars if ruled_out(other.injury_status)]
+        mine_starts = mine.player_id in state.starter_ids
+        rival = _challenger(state, mine, started) if mine_starts else _would_bench(state, mine, started)
+        if rival is None and not mine_starts:
+            continue
+        estimate, found = worth_without(state, mine, [other for other, _ in regulars])
+        theirs = None if rival is None else value(state, rival)
+        # He must beat a starter to take his place, and only lose to a bench player to give his up.
+        if theirs is not None and (estimate < theirs if mine_starts else estimate <= theirs):
+            continue
+        starter = None if mine_starts else rival
         # Said as his teammate, so neither the page nor a model reads him as one of yours.
         described = ("Teammate " if len(regulars) == 1 else "Teammates ") + join(
             [f"{other.name} ({other.injury_status.lower()}, {share:.0%} of snaps)" for other, share in regulars]
         )
-        starter = None if mine.player_id in state.starter_ids else _would_bench(state, mine, started)
         title, outcome = _teammate_wording(mine, starter, doubt, out)
+        weighed = _weighed(estimate, found, rival, theirs)
         evidence = _evidence(state, [mine])
         players = []
         if starter is not None:
@@ -888,7 +913,7 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
                     kind="lineup",
                     urgency="soon",
                     title=title,
-                    reason=f"{described}. {outcome}",
+                    reason=f"{described}. {weighed} {outcome}",
                     when=f"before kickoff, {day(game.date)}" if game and game.date else "",
                     player_id=mine.player_id,
                     evidence=evidence + headlines(state, [other for other, _ in regulars]),
@@ -900,17 +925,82 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
     return items
 
 
+TEAMMATE_BUMP = 0.2
+"""How much more a player is worth with a regular teammate at his position sitting, where his own games without
+that teammate are too few to say (under `MIN_GAMES_FOR_AVERAGE`): a fifth.
+
+A regular's snaps and targets do not all go to the next man — the club spreads them, and some go to
+a tight end or a back — so the bump is the share a single beneficiary plausibly picks up, not the
+whole of the absent player's line. Generous on purpose: an estimate that still loses to the starter
+he would replace leaves no start to make, and that is the item's whole question.
+"""
+
+
+def worth_without(state: Week, player: Projection, teammates: Sequence[PlayerInfo]) -> tuple[float, Split | None]:
+    """What he is worth with these teammates sitting, and the split it was read from, if any.
+
+    His `worth` with his points a game in games without a teammate as his form,
+    where he has played at least `MIN_GAMES_FOR_AVERAGE` of them (the one with
+    most, where several qualify); otherwise his `value` up `TEAMMATE_BUMP`.
+    """
+    meta = state.players.get(player.player_id)
+    splits = [
+        found
+        for mate in teammates
+        if meta is not None
+        and (found := split_on(state.evidence, meta, mate)) is not None
+        and found.games >= MIN_GAMES_FOR_AVERAGE
+    ]
+    if splits:
+        most = max(splits, key=lambda found: found.games)
+        blended = _blend(state, player, most.without)
+        if blended is not None:
+            return blended, most
+    return value(state, player) * (1 + TEAMMATE_BUMP), None
+
+
 def _would_bench(state: Week, mine: Projection, started: set[str]) -> Projection | None:
-    """The starter a bench player would replace: the weakest one in a slot he can play, still free to move."""
-    upgrade = best_upgrade(state.lineup, mine)
-    starter = upgrade[1].player if upgrade else None
-    return starter if starter is not None and starter.team not in started else None
+    """The starter a bench player would replace: the weakest by `value` in a slot he can play.
+
+    None where any such slot is empty (the lineup's own item fills it) or its
+    starter's game has kicked off, so there is no start to make.
+    """
+    eligible = [slot.player for slot in state.lineup if mine.position in eligible_positions(slot.slot)]
+    movable = [p for p in eligible if p is not None and p.team not in started]
+    if not movable or len(movable) < len(eligible):
+        return None
+    return min(movable, key=lambda p: value(state, p))
+
+
+def _challenger(state: Week, mine: Projection, started: set[str]) -> Projection | None:
+    """The best bench player by `value` who could take a starter's slot this week; None where nobody could."""
+    slot = next(slot.slot for slot in state.lineup if slot.player and slot.player.player_id == mine.player_id)
+    return max(
+        (
+            p
+            for p in state.bench
+            if p.team not in started and p.position in eligible_positions(slot) and not _cannot_play(p, state.scheduled)
+        ),
+        key=lambda p: value(state, p),
+        default=None,
+    )
+
+
+def _weighed(estimate: float, found: Split | None, rival: Projection | None, theirs: float | None) -> str:
+    """'7.00/game in 3 games without Tate: worth 9.80 vs Tyson's 9.40.' — the figures the check was decided on."""
+    basis = (
+        f"{found.without:.2f}/game in {found.games} games without {surname(found.teammate.name)}: worth"
+        if found
+        else f"Worth up {TEAMMATE_BUMP:.0%}:"
+    )
+    against = f" vs {surname(rival.name)}'s {theirs:.2f}" if rival is not None and theirs is not None else ""
+    return f"{basis} {estimate:.2f}{against}."
 
 
 def _teammate_wording(
     mine: Projection, starter: Projection | None, doubt: list[PlayerInfo], out: list[PlayerInfo]
 ) -> tuple[str, str]:
-    """The title and the second half of the reason for a teammate check: the decision it leaves you.
+    """The title and the last of the reason for a teammate check: the decision it leaves you.
 
     A bench player is a start to make if the teammate sits, over the starter
     he would replace; a starter is one to leave in. Either way the teammate
@@ -927,11 +1017,8 @@ def _teammate_wording(
         return title, "Inactives are out ~90 min before kickoff."
     names = join([o.name for o in out])
     if starter:
-        return f"Consider {mine.name} over {starter.name}: {names} out", "His projection may not count the extra work."
-    return (
-        f"More work for {mine.name} with {names} out",
-        f"{mine.name} projects {mine.points:.2f}, which may not count the extra work.",
-    )
+        return f"Start {mine.name} over {starter.name}: {names} out", "His projection may not count the extra work."
+    return f"More work for {mine.name} with {names} out", "His projection may not count the extra work."
 
 
 def headlines(state: Week, players: Sequence[Projection | PlayerInfo]) -> list[Stat]:
