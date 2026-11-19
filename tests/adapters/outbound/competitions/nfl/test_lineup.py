@@ -5,7 +5,9 @@ computed rather than asked of the model — and therefore worth pinning hard.
 """
 
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
+    SWAP_BY,
     LineupSlot,
+    Rank,
     best_upgrade,
     eligible_positions,
     fits,
@@ -89,6 +91,14 @@ def test_defense_and_kicker_slots_are_filled() -> None:
     assert _names(optimal_lineup(["K", "DEF"], players)) == ["k1", "d1"]
 
 
+def test_the_lineup_starts_by_the_rank_it_is_given_not_the_projection() -> None:
+    """This week's lineup is solved on worth: the receiver projected lower but worth more starts."""
+    worth = {"wr1": 11.49, "wr2": 12.87}
+    players = [p("wr1", "WR", 10.98), p("wr2", "WR", 10.23)]
+
+    assert _names(optimal_lineup(["WR"], players, lambda player: worth[player.player_id])) == ["wr2"]
+
+
 # ── lineup_changes ──────────────────────────────────────────────────────
 
 
@@ -123,6 +133,40 @@ def test_shuffling_the_same_players_between_slots_is_not_a_change() -> None:
     """Moving a RB from the RB slot to FLEX is not a start/sit decision."""
     players = [p("rb1", "RB", 20), p("wr1", "WR", 18)]
     assert lineup_changes(["RB", "FLEX"], ["rb1", "wr1"], players) == []
+
+
+def _worth(**values: float) -> Rank:
+    return lambda player: values[player.player_id]
+
+
+def test_a_swap_is_ranked_and_measured_by_the_rank_given() -> None:
+    players = [p("wr1", "WR", 10.98), p("wr2", "WR", 10.23)]
+
+    [change] = lineup_changes(["WR"], ["wr1"], players, _worth(wr1=11.49, wr2=12.87), SWAP_BY)
+
+    assert change.start.player_id == "wr2"
+    assert change.gain == 1.38
+
+
+def test_a_swap_inside_the_margin_is_no_change() -> None:
+    """A near tie reorders the lineup on every refresh of the numbers; it is not a decision."""
+    players = [p("wr1", "WR", 10.98), p("wr2", "WR", 10.23)]
+
+    assert lineup_changes(["WR"], ["wr1"], players, _worth(wr1=11.49, wr2=11.49 + SWAP_BY - 0.01), SWAP_BY) == []
+
+
+def test_covering_a_starter_worth_nothing_this_week_is_never_inside_the_margin() -> None:
+    players = [p("wr1", "WR", 0.0), p("wr2", "WR", 0.5)]
+
+    [change] = lineup_changes(["WR"], ["wr1"], players, _worth(wr1=0.0, wr2=0.5), SWAP_BY)
+
+    assert change.start.player_id == "wr2"
+
+
+def test_filling_an_empty_slot_is_never_inside_the_margin() -> None:
+    [change] = lineup_changes(["WR", "WR"], ["wr1"], [p("wr1", "WR", 10.0), p("wr2", "WR", 0.5)], margin=SWAP_BY)
+
+    assert (change.start.player_id, change.bench) == ("wr2", None)
 
 
 def test_filling_an_empty_slot_reports_no_benched_player() -> None:

@@ -13,7 +13,10 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 ## Features
 
 - **To-do list**: starters out or on bye, empty slots, bench swaps, IR moves,
-  pickups with a growing role, and the trade deadline. A role jump that came
+  pickups with a growing role, and the trade deadline. The best lineup starts
+  whoever is worth most by that same value (form, projection, snaps), never a
+  player on bye or ruled out; a bench swap is listed only at 1+ point of worth,
+  stated for both ("Worth 12.87 vs Tyson's 11.49"). A role jump that came
   while a regular teammate sat is fill-in work, not a growing role, unless that
   teammate is ruled out of the coming week; a growing role must also be worth
   more than the starter he'd replace and the player he'd cost. Each item names the fix
@@ -43,7 +46,9 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   Trades page's best offer and links there. The lineup's points column appears
   once the week's first game kicks off.
 - **Win chance and playoff odds**: the week is simulated 10,000 times and the
-  season 5,000. Every move shows what it does to both, live on Sundays. The
+  season 5,000, each player's range centred on his projection. The week's chance
+  is for the lineup the to-do list's swaps make; each of those swaps shows what
+  undoing it would cost. Every move shows what it does to both, live on Sundays. The
   matchup header shows the score once a game kicks off, and playoff odds as
   "99% win / 83% loss".
 - **Every week of the season**: page back to see what was played and forward to

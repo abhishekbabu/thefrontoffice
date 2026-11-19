@@ -856,6 +856,10 @@ class LineupMove:
     into: tuple[Outcomes, ...]
     """Who comes in instead."""
 
+    made: bool = False
+    """Already in `mine`, as the lineup a provider recommends: the move is written as its undo — `out` the
+    player it started, `into` the one it benched — and what it is worth is the chance undoing it would cost."""
+
 
 @dataclass(frozen=True)
 class MatchupInput:

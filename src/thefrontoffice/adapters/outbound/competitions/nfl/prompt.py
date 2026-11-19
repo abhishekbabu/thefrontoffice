@@ -218,8 +218,9 @@ def build(
     constraints = lineup_slots(
         state,
         f"Current lineup projects {current_points:.2f} points.",
-        f"The best legal lineup projects {best_points:.2f}"
-        + (f", so {on_bench:.2f} points are sitting on the bench." if on_bench > 0 else "."),
+        # Chosen by worth — recent form beside the projection — so it may project less than the lineup as set.
+        f"The recommended lineup, chosen by worth (form beside projection), projects {best_points:.2f}"
+        + (f", so {on_bench:.2f} projected points are sitting on the bench." if on_bench > 0 else "."),
         "Bench players score nothing. A start/sit change costs nothing; an add costs a roster spot.",
     )
 

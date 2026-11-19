@@ -206,7 +206,76 @@ def test_a_projection_upgrade_is_worth_doing_but_not_urgent() -> None:
 
     assert (action.kind, action.urgency, action.player_id) == ("lineup", "soon", "wr2")
     _names_the_swap(action, start=better, out=FLEX)
-    assert "+7.0" in action.reason
+    # With nothing played yet, each is worth his projection.
+    assert "12.00" in action.reason and "5.00" in action.reason
+
+
+def _two_games(player: WeeklyProjection, points: float) -> list[NFLGameLine]:
+    """Weeks 1 and 2 at `points`, on two thirds of the snaps."""
+    return [
+        NFLGameLine(
+            player_id=player.player_id,
+            week=week,
+            team=player.team,
+            opponent="LV",
+            position=player.position,
+            stats={"off_snp": 40, "tm_off_snp": 60, "pts_ppr": points},
+        )
+        for week in (1, 2)
+    ]
+
+
+def test_a_bench_player_worth_more_starts_though_he_projects_less() -> None:
+    """The live case: the bench receiver projects a point less but scores far more; worth, not projection, decides."""
+    starter = replace(WR, points=11.0)
+    hot = replace(BENCH_WR, points=10.0)
+    client = _client(
+        [QB, RB, starter, FLEX, hot],
+        ["qb", "rb", "wr", "te"],
+        ["wr2"],
+        game_lines=_two_games(starter, 4.0) + _two_games(hot, 16.0),
+    )
+
+    [action] = _actions(client)
+
+    assert (action.player_id, action.replaces) == ("wr2", "wr")
+    # Each at half form, half projection, a tenth up for steady snaps: 14.30 vs 8.25.
+    assert "14.30" in action.reason and "8.25" in action.reason
+    assert [(p.side, p.player_id) for p in action.players] == [("in", "wr2"), ("out", "wr")]
+
+
+def test_a_bench_player_ahead_by_less_than_the_margin_is_no_swap() -> None:
+    """Half a point is a coin flip, not a decision: the list leaves the lineup be."""
+    client = _client([QB, RB, WR, FLEX, replace(BENCH_WR, points=FLEX.points + 0.5)], ["qb", "rb", "wr", "te"], ["wr2"])
+
+    assert _actions(client) == []
+
+
+def test_a_bench_player_on_bye_is_never_started_however_well_he_has_scored() -> None:
+    idle = replace(BENCH_WR, team="NE", opponent="")
+    client = _client(
+        [QB, RB, WR, replace(FLEX, points=5.0), idle],
+        ["qb", "rb", "wr", "te"],
+        ["wr2"],
+        game_lines=_two_games(idle, 30.0),
+    )
+
+    assert not [a for a in _actions(client) if a.player_id == "wr2"]
+
+
+def test_a_ruled_out_starter_is_covered_by_the_bench_player_worth_most() -> None:
+    projected = replace(BENCH_RB, points=9.0)
+    scoring = proj("rb3", "Scoring Back", "RB", 7.0, team="NYJ", opp="NE")
+    client = _client(
+        [QB, _ruled_out(RB), WR, FLEX, projected, scoring],
+        ["qb", "rb", "wr", "te"],
+        ["rb2", "rb3"],
+        game_lines=_two_games(_ruled_out(RB), 25.0) + _two_games(projected, 2.0) + _two_games(scoring, 15.0),
+    )
+
+    [action] = [a for a in _actions(client) if a.replaces == "rb"]
+
+    assert action.player_id == "rb3"
 
 
 def test_starting_a_questionable_player_says_so() -> None:
@@ -1020,13 +1089,14 @@ def test_a_league_with_no_slot_a_back_can_fill_has_no_stash() -> None:
 def test_a_stash_is_dropped_before_a_handcuff() -> None:
     """A handcuff insures points you score already; a stash only a chance at more, however much better he looks."""
     league = replace(LEAGUE, roster_positions=["QB", "RB", "WR", "FLEX", "BN", "BN"])
-    better_stash = replace(STASH, points=9.0)
+    # Better than the handcuff, though not enough to start over the tight end: a starter is never the drop.
+    better_stash = replace(STASH, points=6.0)
     client = _client(
         [_ruled_out(QB), STARTING_RB, WR, FLEX, HANDCUFF, better_stash, FREE_QB],
         ["qb", "rb", "wr", "te"],
         ["rb3", "rb7"],
         league=league,
-        game_lines=_scored(HANDCUFF, 2.0, 2.0) + _scored(better_stash, 8.0, 8.0) + _workhorse_games(50, 30.0),
+        game_lines=_scored(HANDCUFF, 2.0, 2.0) + _scored(better_stash, 6.0, 6.0) + _workhorse_games(50, 30.0),
     )
     catalog = client.players_catalog or {}
     catalog["rb"] = replace(catalog["rb"], depth_chart_order=1)

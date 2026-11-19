@@ -59,7 +59,9 @@ def simulate(matchup: MatchupInput, simulations: int = SIMULATIONS) -> Forecast:
     win = _win_rate(margins)
 
     moves = {move.key: _win_rate(_with(move, mine, theirs, draws)) for move in matchup.moves}
-    best = max(moves, key=lambda key: moves[key], default="")
+    # Undoing a move the lineup already makes is never the one to suggest: it was chosen on more than the range.
+    open_moves = [move.key for move in matchup.moves if not move.made]
+    best = max(open_moves, key=lambda key: moves[key], default="")
     return Forecast(
         win=win,
         margin=_range(margins),
@@ -162,7 +164,7 @@ def ranked(actions: list[Action] | None, forecast: Forecast, matchup: MatchupInp
     priced = []
     for action in actions:
         move = by_move.get((action.player_id, action.replaces))
-        change = forecast.moves[move.key] - forecast.win if move and move.key in forecast.moves else None
+        change = _change(move, forecast) if move and move.key in forecast.moves else None
         priced.append(action.model_copy(update={"win_change": change}) if change is not None else action)
 
     best = next((m for m in matchup.moves if m.key == forecast.best_move), None)
@@ -177,8 +179,15 @@ def ranked(actions: list[Action] | None, forecast: Forecast, matchup: MatchupInp
 
 
 def _identity(move: LineupMove) -> tuple[str, str]:
-    """What a single move does — who comes in, who goes out — as a to-do item names it."""
-    return (move.into[0].player_id if move.into else "", move.out[0] if move.out else "")
+    """What a single move does — who comes in, who goes out — as a to-do item names it; a made one read forward."""
+    into, out = (move.into[0].player_id if move.into else "", move.out[0] if move.out else "")
+    return (out, into) if move.made else (into, out)
+
+
+def _change(move: LineupMove, forecast: Forecast) -> float:
+    """What a move does to the chance of winning: made already, what undoing it would cost."""
+    with_it = forecast.moves[move.key]
+    return forecast.win - with_it if move.made else with_it - forecast.win
 
 
 def _odds_row(move: LineupMove, forecast: Forecast) -> Action:
@@ -199,7 +208,7 @@ def pickup_chances(forecast: Forecast, matchup: MatchupInput) -> list[PickupChan
     """Each player brought in by a move, at the move that does the most for the chance of winning."""
     best: dict[str, tuple[float, str]] = {}
     for move in matchup.moves:
-        if not move.into or move.key not in forecast.moves:
+        if move.made or not move.into or move.key not in forecast.moves:
             continue
         player_id, change = move.into[0].player_id, forecast.moves[move.key] - forecast.win
         if player_id not in best or change > best[player_id][0]:

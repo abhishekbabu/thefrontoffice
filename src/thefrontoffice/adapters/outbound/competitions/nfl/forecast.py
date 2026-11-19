@@ -12,7 +12,7 @@ from collections.abc import Callable, Sequence
 
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, outcomes
 from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import fits
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupChange, fits
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     LeagueRules,
     Matchup,
@@ -75,16 +75,25 @@ class Forecasts:
     def matchup(
         self, state: Week, scoreboard: Scoreboard, opponent: Team, to_do: Sequence[Item], seeded: int
     ) -> MatchupInput:
-        """This week's matchup: both lineups, and the moves worth pricing.
+        """This week's matchup: the lineup the app recommends against theirs, and the moves worth pricing.
 
-        The moves are every single swap your bench allows — the simulation
-        finds the one a projection would not — and every waiver pickup the
-        to-do list names.
+        Yours is the one the to-do list's swaps make (`settled`): the chance
+        of winning is the chance of the advice. Each of those swaps is priced
+        by what undoing it would cost (`undone`); the other moves are every
+        single start the rest of your bench allows — the simulation finds the
+        one a projection would not — and every waiver pickup the list names.
+        A player a swap benched is offered back only as that swap's undoing.
         """
         outcome = self._outcomes(state, scoreboard)
         started = scoreboard.started(state)
-        lineup = [slot.player for slot in state.lineup if slot.player]
-        moves = starts(state, lineup, state.bench, outcome, started) + pickups(state, to_do, outcome)
+        lineup = settled(state, started)
+        starting = {p.player_id for p in lineup}
+        bench = [p for p in state.bench if p.player_id not in starting]
+        moves = (
+            undone(open_changes(state, started), outcome)
+            + starts(state, lineup, bench, outcome, started)
+            + pickups(state, to_do, outcome)
+        )
         return MatchupInput(
             mine=_side(lineup, outcome), theirs=_theirs(state, opponent, outcome), moves=moves, seed=seeded
         )
@@ -210,15 +219,39 @@ def _theirs(state: Week, opponent: Team, outcome: Callable[[Projection], Outcome
     return _side(projections_for(opponent.starter_ids, state.projections, state.players), outcome)
 
 
+def open_changes(state: Week, started: set[str]) -> list[LineupChange]:
+    """The swaps to the best lineup that can still be made: neither player's game has kicked off."""
+    return [
+        change
+        for change in state.changes
+        if change.start.team not in started and (change.bench is None or change.bench.team not in started)
+    ]
+
+
 def settled(state: Week, started: set[str]) -> list[Projection]:
-    """Your starters once the bench has made every swap it still can: the lineup a pickup has to beat."""
+    """Your starters once the bench has made every swap it still can: the lineup the app recommends,
+    and the one a pickup has to beat."""
     starters = [slot.player for slot in state.lineup if slot.player]
-    for change in state.changes:
-        if change.start.team in started or (change.bench is not None and change.bench.team in started):
-            continue
+    for change in open_changes(state, started):
         out = change.bench.player_id if change.bench else None
         starters = [p for p in starters if p.player_id != out] + [change.start]
     return starters
+
+
+def undone(made: Sequence[LineupChange], outcome: Callable[[Projection], Outcomes]) -> tuple[LineupMove, ...]:
+    """Each swap the recommended lineup already makes, written as its undoing (see `LineupMove.made`)."""
+    return tuple(
+        LineupMove(
+            key=f"{change.start.player_id}<{change.bench.player_id if change.bench else ''}",
+            title=f"Start {change.bench.name} over {change.start.name}"
+            if change.bench
+            else f"Leave {change.slot} empty",
+            out=(change.start.player_id,),
+            into=(outcome(change.bench),) if change.bench else (),
+            made=True,
+        )
+        for change in made
+    )
 
 
 def starts(
