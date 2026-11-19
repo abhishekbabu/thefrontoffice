@@ -215,9 +215,9 @@ def test_a_team_the_league_does_not_have_is_not_found() -> None:
 # ── the rest of the season ──────────────────────────────────────────────
 
 
-def _rest(client: FakeSleeper, start: int, teams: int = 4, round_type: int = 0) -> dict[str, float]:
-    """This week is 3; four teams play two rounds from `start`."""
-    client.league = replace(client.league, playoff_week_start=start, playoff_teams=teams, playoff_round_type=round_type)
+def _rest(client: FakeSleeper, start: int, teams: int = 4) -> dict[str, float]:
+    """This week is 3; four teams play two rounds from `start`. How the round types lengthen the bracket is `test_rules.py`'s."""
+    client.league = replace(client.league, playoff_week_start=start, playoff_teams=teams)
     page = nfl_provider(client).free_agents("L1", PlayerQuery())
     return {card.player_id: card.values["ROS"] for card in page.players if "ROS" in card.values}
 
@@ -228,16 +228,6 @@ def test_the_rest_of_the_season_sums_the_weeks_after_this_one_through_the_final(
     client.weekly_projections[3] = {"rb9": replace(WIRE["rb9"], points=99.0)}
 
     assert _rest(client, start=6)["rb9"] == 4 * WIRE["rb9"].points
-
-
-def test_a_two_week_final_adds_a_week_to_the_rest_of_the_season() -> None:
-    """Rounds in week 5 and weeks 6-7: weeks 4 to 7."""
-    assert _rest(_client(), start=5, round_type=1)["rb9"] == 4 * WIRE["rb9"].points
-
-
-def test_two_week_rounds_double_the_playoff_weeks_in_the_rest_of_the_season() -> None:
-    """Rounds in weeks 5-6 and 7-8: weeks 4 to 8."""
-    assert _rest(_client(), start=5, round_type=2)["rb9"] == 5 * WIRE["rb9"].points
 
 
 def test_a_week_he_is_not_projected_in_adds_nothing_to_the_rest_of_his_season() -> None:

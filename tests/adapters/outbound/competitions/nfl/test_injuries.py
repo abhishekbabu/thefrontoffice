@@ -1,12 +1,16 @@
-"""Tests for the latest injury report, joined to Sleeper: `nfl/injuries.py`."""
+"""Tests for the latest injury report, joined to Sleeper: `nfl/injuries.py`.
+
+The name and id join, and how an injury reads in the drawer, are shared, and covered in
+`competitions/test_injuries.py`; these cover football's clubs, designations, lookups and return weeks.
+"""
 
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime
 
+import pytest
 from support.nfl import SEASON_SCHEDULE, proj
 
-from thefrontoffice.adapters.outbound.competitions.injuries import BODY_PART, PlayerInjuries
 from thefrontoffice.adapters.outbound.competitions.nfl.injuries import (
     athletes,
     catalog,
@@ -24,74 +28,33 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta
 PLAYERS = {
     "hall": PlayerMeta(player_id="hall", name="Breece Hall", position="RB", team="NYJ", injury_status="Out"),
     "wash": PlayerMeta(player_id="wash", name="Antonio Williams", position="WR", team="WAS"),
-    "kc1": PlayerMeta(player_id="kc1", name="Chris Jones", position="WR", team="KC"),
-    "kc2": PlayerMeta(player_id="kc2", name="Chris Jones", position="TE", team="KC"),
 }
 
 
 SCHEDULE = {w: [g for g in SEASON_SCHEDULE if g.week == w] for w in {g.week for g in SEASON_SCHEDULE}}
 
 
-def _report(
-    name: str, club: str, status: str, athlete_id: str = "", updated: datetime = datetime(2026, 10, 27, 13, tzinfo=UTC)
-) -> InjuryReport:
-    return InjuryReport(name=name, club=club, status=status, updated=updated, athlete_id=athlete_id)
+def _report(name: str, club: str, status: str) -> InjuryReport:
+    return InjuryReport(name=name, club=club, status=status, updated=datetime(2026, 10, 27, 13, tzinfo=UTC))
 
 
-def _designations(reports: Sequence[InjuryReport], espn_ids: dict[str, str] | None = None) -> dict[str, str]:
-    return designations(matched(reports, PLAYERS, espn_ids or {}))
+def _designations(reports: Sequence[InjuryReport]) -> dict[str, str]:
+    return designations(matched(reports, PLAYERS, {}))
 
 
-def test_the_report_names_a_player_by_his_name_on_his_own_club() -> None:
-    assert _designations([_report("Breece Hall", "NYJ", "Questionable")]) == {"hall": "Questionable"}
-
-
-def test_a_club_is_read_in_espns_spelling() -> None:
-    assert _designations([_report("Antonio Williams", "WSH", "Out")]) == {"wash": "Out"}
-
-
-def test_a_player_of_the_same_name_on_another_club_is_not_him() -> None:
-    assert _designations([_report("Breece Hall", "BUF", "Out")]) == {}
-
-
-def test_a_name_two_players_on_a_club_share_is_nobodys() -> None:
-    assert _designations([_report("Chris Jones", "KC", "Out")]) == {}
-
-
-def test_a_player_cleared_to_play_carries_no_designation() -> None:
-    assert _designations([_report("Breece Hall", "NYJ", "Active")]) == {"hall": ""}
+@pytest.mark.parametrize(
+    ("espn", "sleeper"), [("Questionable", "Questionable"), ("Injured Reserve", "IR"), ("Active", "")]
+)
+def test_the_report_names_a_player_on_his_club_in_sleepers_words_and_cleared_as_none(espn: str, sleeper: str) -> None:
+    assert _designations([_report("Breece Hall", "NYJ", espn)]) == {"hall": sleeper}
 
 
 def test_a_designation_the_rules_have_no_word_for_changes_nothing() -> None:
     assert _designations([_report("Breece Hall", "NYJ", "Day-To-Day")]) == {}
 
 
-def test_a_long_ruling_reads_in_sleepers_words() -> None:
-    assert _designations([_report("Breece Hall", "NYJ", "Injured Reserve")]) == {"hall": "IR"}
-
-
-def test_espns_id_wins_over_a_name() -> None:
-    """Sleeper's espn_id names him whatever ESPN calls him, and whichever club the name would find."""
-    report = _report("Breece Hall Jr.", "NYJ", "Out", athlete_id="4427366")
-
-    assert set(matched([report], PLAYERS, {"4427366": "wash"})) == {"wash"}
-
-
-def test_a_name_match_carrying_another_espn_id_is_somebody_else() -> None:
-    players = {**PLAYERS, "hall": replace(PLAYERS["hall"], espn_id="111")}
-
-    assert matched([_report("Breece Hall", "NYJ", "Out", athlete_id="222")], players, {"111": "hall"}) == {}
-
-
-def test_a_shared_name_with_no_id_match_still_matches_nobody() -> None:
-    assert matched([_report("Chris Jones", "KC", "Out", athlete_id="999")], PLAYERS, {}) == {}
-
-
-def test_two_rows_for_one_player_keep_the_latest() -> None:
-    older = _report("Breece Hall", "NYJ", "Out", updated=datetime(2026, 10, 20, tzinfo=UTC))
-    newer = _report("Breece Hall", "NYJ", "Questionable")
-
-    assert _designations([newer, older]) == {"hall": "Questionable"}
+def test_a_club_is_read_in_espns_spelling() -> None:
+    assert _designations([_report("Antonio Williams", "WSH", "Out")]) == {"wash": "Out"}
 
 
 RULED_OUT = {
@@ -146,27 +109,6 @@ def test_a_return_reads_as_a_week_and_falls_back_to_the_day() -> None:
     assert short_return(date(2027, 3, 1), SCHEDULE) == "1 Mar"
     assert long_return(date(2026, 9, 13), SCHEDULE) == "~13 Sep · wk 1"
     assert long_return(date(2027, 3, 1), SCHEDULE) == "~1 Mar"
-
-
-def _hurt() -> PlayerInjuries:
-    report = replace(
-        _report("Breece Hall", "NYJ", "Injured Reserve"),
-        returns=date(2026, 9, 13),
-        injury="Right knee, surgery",
-        comment="Hall (knee) had surgery.",
-        url="https://espn.example/hall",
-    )
-    return PlayerInjuries(by_player={"hall": report})
-
-
-def test_the_drawer_shows_the_injury_its_return_as_a_week_and_the_latest_word_linked() -> None:
-    stats = {s.label: s for s in _hurt().stats("hall", lambda back: long_return(back, SCHEDULE))}
-
-    assert stats["Status"].value == "Injured Reserve"
-    assert stats[BODY_PART].value == "Right knee, surgery"
-    assert stats["Back"].value == "~13 Sep · wk 1"
-    [update] = [s for s in stats.values() if s.url]
-    assert (update.value, update.url) == ("Hall (knee) had surgery.", "https://espn.example/hall")
 
 
 def test_a_projection_takes_the_reports_designation_and_keeps_his_points() -> None:

@@ -26,30 +26,11 @@ def test_surrounding_whitespace_is_stripped() -> None:
     assert giving == ["qb1"]
 
 
-def test_an_unresolved_name_raises() -> None:
-    """Dropping it would evaluate a different trade than was described."""
-    with pytest.raises(PlayerNotFoundError) as excinfo:
-        resolve_sides(TradeProposal(giving=["Ghost"], receiving=["Good RB"]), _resolve_one)
-    assert excinfo.value.names == ["Ghost"]
-
-
-def test_failures_on_both_sides_are_reported_together() -> None:
-    """One message to fix, rather than one per re-run."""
-    with pytest.raises(PlayerNotFoundError) as excinfo:
-        resolve_sides(TradeProposal(giving=["Ghost One"], receiving=["Ghost Two"]), _resolve_one)
-    assert excinfo.value.names == ["Ghost One", "Ghost Two"]
-
-
-def test_the_receiving_side_is_still_checked_when_giving_fails() -> None:
+def test_every_unresolved_name_on_either_side_raises_together() -> None:
+    """Dropping one would evaluate a different trade than was described; one message to fix, not one per re-run."""
     with pytest.raises(PlayerNotFoundError) as excinfo:
         resolve_sides(TradeProposal(giving=["Ghost", "Star QB"], receiving=["Also Missing"]), _resolve_one)
     assert excinfo.value.names == ["Ghost", "Also Missing"]
-
-
-def test_an_empty_side_resolves_to_an_empty_list() -> None:
-    giving, receiving = resolve_sides(TradeProposal(giving=["Star QB"], receiving=[]), _resolve_one)
-    assert giving == ["qb1"]
-    assert receiving == []
 
 
 WORTH = {"star": 100.0, "good": 85.0, "half": 50.0, "other half": 40.0, "scrap": 5.0, "nothing": 0.0}

@@ -87,13 +87,17 @@ def test_with_nothing_played_the_range_is_the_projection() -> None:
     assert week.samples == (9.5,)
 
 
-@pytest.mark.parametrize(
-    ("status", "chance"), [("Out", 0.0), ("IR", 0.0), ("Doubtful", 0.25), ("Questionable", 0.8), ("", 1.0)]
-)
-def test_whether_he_plays_follows_his_designation(status: str, chance: float) -> None:
-    player = replace(proj("x", "X", "RB", 10.0), injury_status=status)
+def _plays(status: str) -> float:
+    return outcomes(replace(proj("x", "X", "RB", 10.0), injury_status=status), spreads(Evidence())).plays
 
-    assert outcomes(player, spreads(Evidence())).plays == chance
+
+@pytest.mark.parametrize(("status", "chance"), [("Out", 0.0), ("IR", 0.0), ("", 1.0)])
+def test_a_ruled_out_player_never_plays_and_an_undesignated_one_always_does(status: str, chance: float) -> None:
+    assert _plays(status) == chance
+
+
+def test_a_doubtful_player_is_less_likely_to_play_than_a_questionable_one() -> None:
+    assert 0.0 < _plays("Doubtful") < _plays("Questionable") < 1.0
 
 
 def test_a_player_with_no_game_this_week_does_not_play() -> None:

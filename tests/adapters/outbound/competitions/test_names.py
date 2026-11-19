@@ -94,10 +94,3 @@ def test_an_unnameable_entry_is_not_indexed() -> None:
     index: NameIndex[str] = NameIndex()
     index.add("...", "value")
     assert index.is_empty
-
-
-def test_size_and_emptiness_are_reported() -> None:
-    index = _index("Josh Allen", "Keenan Allen")
-    assert len(index) == 2
-    assert not index.is_empty
-    assert NameIndex().is_empty

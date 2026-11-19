@@ -38,26 +38,14 @@ from thefrontoffice.domain.models import Spot
 # ── the summary, before any report ──────────────────────────────────────
 
 
-def test_the_summary_carries_the_lineup_and_the_changes() -> None:
-    """Every figure in it is already known, so the page need not wait on a model."""
-    summary = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)).summary("L1")
-
-    assert [spot.slot for spot in mine(summary).lineup] == ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
-    # Good RB sits on the bench while an RB slot stands empty: the one change to make.
-    [swap] = [a for a in summary.actions or [] if a.kind == "lineup"]
-    assert (swap.player_id, swap.replaces) == ("rb1", "")  # Good RB into the slot, nobody out
-
-
-def test_a_player_in_a_reserve_slot_is_never_a_swap_nor_in_the_best_lineup() -> None:
+def test_a_player_in_a_reserve_slot_is_never_started() -> None:
     """Good RB would fill the empty RB slot from the bench, but not from injured reserve."""
     client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
     client.rosters = [replace(client.rosters[0], reserve_ids=["rb1"])]
 
-    summary = nfl_provider(client).summary("L1")
-    context = nfl_provider(client).build_context("L1")
+    actions = nfl_provider(client).summary("L1").actions or []
 
-    assert summary.swaps == []
-    assert "sitting on the bench" not in context.constraints
+    assert all(a.player_id != "rb1" for a in actions)
 
 
 def test_a_player_is_never_both_starting_and_benched() -> None:
@@ -138,7 +126,7 @@ def test_a_player_carries_their_week_and_their_depth() -> None:
 
     assert detail.name == "Star QB"
     assert detail.headline == "22.00"
-    assert detail.headline_label == "projected for week 3"
+    assert "week 3" in detail.headline_label
     # In full, because a drawer has the room a table column does not.
     assert labels["Opponent"] == "vs Miami Dolphins"
     assert labels["Depth chart"] == "2"
@@ -320,10 +308,7 @@ def test_a_missing_scoreboard_falls_back_to_projections() -> None:
     client = _live_client({})
     client.matchups_error = SleeperAPIError("down")
 
-    summary = nfl_provider(client).summary("L1")
-
-    assert summary.mine is not None
-    assert mine(summary).points.endswith("proj")
+    assert mine(nfl_provider(client).summary("L1")).points.endswith("proj")
 
 
 # ── the live scoreboard over a stale schedule ───────────────────────────

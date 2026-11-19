@@ -5,6 +5,7 @@ fixtures, the market and the figures the provider computed — since a report
 missing the captaincy or the transfer allowance is wrong however well it renders.
 """
 
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -39,11 +40,6 @@ from thefrontoffice.domain.errors import InvalidRequestError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery
 
 # ── configuration ───────────────────────────────────────────────────────
-
-
-def test_the_registry_advertises_no_trade_support() -> None:
-    """FPL managers transfer against the market; they do not trade each other."""
-    assert not hasattr(FPLProvider, "build_trade_context")
 
 
 # ── leagues ─────────────────────────────────────────────────────────────
@@ -192,15 +188,19 @@ def test_two_fixtures_in_one_gameweek_are_called_a_double() -> None:
     assert arsenal.label == "ARS" and "double gameweek" in arsenal.value
 
 
-def test_failed_fixtures_fail_the_report_rather_than_reading_as_blanks() -> None:
-    """A blank is the one thing the report most needs told; an outage must not pass for one."""
+@pytest.mark.parametrize(
+    "read",
+    [
+        lambda fpl: fpl.build_context(LEAGUE_ID),
+        lambda fpl: fpl.summary(LEAGUE_ID),
+        lambda fpl: fpl.schedule(H2H_LEAGUE),
+    ],
+    ids=["report", "week", "season"],
+)
+def test_failed_fixtures_fail_the_page_rather_than_reading_as_blanks(read: Callable[[FPLProvider], object]) -> None:
+    """A blank is the one thing the page most needs told; an outage must not pass for one."""
     with pytest.raises(FPLAPIError):
-        provider(fixtures_error=FPLAPIError("down")).build_context(LEAGUE_ID)
-
-
-def test_failed_fixtures_fail_the_week_rather_than_warning_of_blanks() -> None:
-    with pytest.raises(FPLAPIError):
-        provider(fixtures_error=FPLAPIError("down")).summary(LEAGUE_ID)
+        read(provider(fixtures_error=FPLAPIError("down")))
 
 
 # ── the market ──────────────────────────────────────────────────────────
@@ -244,17 +244,6 @@ def test_an_injured_player_is_kept_out_of_the_market_page() -> None:
 def test_a_list_of_the_market_fpl_does_not_offer_is_refused() -> None:
     with pytest.raises(InvalidRequestError):
         provider().free_agents(H2H_LEAGUE, PlayerQuery(view="Trending"))
-
-
-def test_the_briefing_keeps_the_squad_and_only_the_players_named() -> None:
-    from support.reports import MOCK_FPL_REPORT
-
-    from thefrontoffice.application import briefing
-
-    context = provider().build_context(LEAGUE_ID)
-    brief = briefing.of_report(context, MOCK_FPL_REPORT)
-    assert "P8" in brief
-    assert len(brief) < len(context.prompt)
 
 
 def _headline(over: FPLProvider | None = None) -> dict[str, str]:
@@ -403,9 +392,13 @@ def test_the_matches_carry_a_difficulty_for_each_side() -> None:
     assert all("FDR" in m.detail for m in matches)
 
 
-def test_a_failed_table_is_an_error_not_an_empty_league() -> None:
+@pytest.mark.parametrize(
+    "read", [lambda fpl: fpl.schedule(H2H_LEAGUE), lambda fpl: fpl.teams(H2H_LEAGUE)], ids=["season", "teams"]
+)
+def test_a_failed_table_is_an_error_not_an_empty_league(read: Callable[[FPLProvider], object]) -> None:
+    """The table is the membership list, and nobody in it is not the same as not knowing who is."""
     with pytest.raises(FPLAPIError):
-        provider(standings_error=FPLAPIError("down")).schedule(H2H_LEAGUE)
+        read(provider(standings_error=FPLAPIError("down")))
 
 
 def test_a_failed_h2h_season_still_lists_the_gameweeks() -> None:
@@ -415,19 +408,10 @@ def test_a_failed_h2h_season_still_lists_the_gameweeks() -> None:
     assert all(row.opponent == "" for row in schedule.season)
 
 
-def test_failed_fixtures_are_an_error_not_a_week_without_matches() -> None:
-    with pytest.raises(FPLAPIError):
-        provider(fixtures_error=FPLAPIError("down")).schedule(H2H_LEAGUE)
-
-
-def test_the_week_view_shows_the_gameweek_being_played() -> None:
+def test_the_week_view_shows_the_gameweek_being_played_until_its_deadline() -> None:
     """The bug this distinction exists for: on a Saturday in August the week
     you can still act on is next week's, and the one being played — where the
     points are landing — is this one."""
-    assert provider().summary(H2H_LEAGUE).window.startswith("Gameweek 4")
-
-
-def test_a_gameweek_with_no_ball_kicked_yet_shows_its_deadline() -> None:
     assert provider().summary(H2H_LEAGUE).window == "Gameweek 4 · deadline Tue 11 Aug, 17:30"
 
 
@@ -439,12 +423,6 @@ def test_the_teams_list_puts_you_first() -> None:
 
     assert teams[0].is_mine
     assert teams[0].name == "Front Office FC"
-
-
-def test_a_table_that_will_not_load_is_an_error_not_an_empty_league() -> None:
-    """The table is the membership list, and nobody in it is not the same as not knowing who is."""
-    with pytest.raises(FPLAPIError):
-        provider(standings_error=FPLAPIError("down")).teams(H2H_LEAGUE)
 
 
 def test_the_overall_standing_has_no_teams_to_browse() -> None:

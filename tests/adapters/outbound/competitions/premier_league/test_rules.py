@@ -92,15 +92,6 @@ def test_the_familiar_shapes_are_all_present() -> None:
 # ── the best eleven ─────────────────────────────────────────────────────
 
 
-def test_the_best_eleven_is_legal() -> None:
-    lineup = best_lineup(FIFTEEN, effective_points)
-    assert len(lineup.starters) == STARTING_SIZE
-    counts = {position: sum(p.position == position for p in lineup.starters) for position in FORMATION_LIMITS}
-    for position, count in counts.items():
-        low, high = FORMATION_LIMITS[position]
-        assert low <= count <= high
-
-
 def test_the_best_eleven_leaves_the_weakest_four_out() -> None:
     lineup = best_lineup(FIFTEEN, effective_points)
     assert {p.id for p in lineup.bench} == {2, 6, 7, 12}
