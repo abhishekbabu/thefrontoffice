@@ -13,6 +13,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
+from thefrontoffice.domain.models import Better
+
 PACIFIC = ZoneInfo("America/Los_Angeles")
 """The league schedules by Pacific, so a day boundary is decided there rather
 than on whatever clock this happens to be running on."""
@@ -36,6 +38,9 @@ class Category:
 
     attempts: str = ""
     """Sleeper's attempts key, which makes this a percentage."""
+
+    better: Better = "higher"
+    """Which way a line improves in it: fewer turnovers, more of everything else."""
 
     @property
     def is_percentage(self) -> bool:
@@ -72,7 +77,7 @@ BLOCKS = Category("BLK", "18", "blk", "b")
 THREES = Category("3PTM", "10", "tpm", "tpm")
 FIELD_GOALS = Category("FG%", "5", "fgm", "FG", attempts="fga")
 FREE_THROWS = Category("FT%", "8", "ftm", "FT", attempts="fta")
-TURNOVERS = Category("TO", "19", "to", "to")
+TURNOVERS = Category("TO", "19", "to", "to", better="lower")
 
 CATEGORIES = (POINTS, REBOUNDS, ASSISTS, STEALS, BLOCKS, THREES, FIELD_GOALS, FREE_THROWS, TURNOVERS)
 """What a nine-category league is scored on, in the order it is read."""

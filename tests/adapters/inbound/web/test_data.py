@@ -1,6 +1,8 @@
 """Tests for what the web adapter reads off the registry: `web/data.py`."""
 
-from support.wiring import FakeCompetition, entry
+from dataclasses import replace
+
+from support.wiring import FakeCapture, FakeCompetition, entry
 
 from thefrontoffice.adapters.inbound.web import data
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
@@ -45,3 +47,11 @@ def test_a_competition_is_listed_under_its_key_with_what_it_needs() -> None:
     listed = data.competition(entry(FakeCompetition(), needs=("sleeper_username",)))
 
     assert (listed.key, listed.requires) == ("nfl-sleeper", "SLEEPER_USERNAME")
+
+
+def test_only_a_competition_with_a_browser_sync_says_it_syncs() -> None:
+    """A synced platform's search knows only what the sync carried, which the finder says."""
+    plain = entry(FakeCompetition())
+    synced = replace(plain, capture=lambda: FakeCapture())
+
+    assert (data.competition(plain).syncs, data.competition(synced).syncs) == (False, True)

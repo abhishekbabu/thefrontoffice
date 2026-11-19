@@ -51,6 +51,10 @@ class Competition(BaseModel):
     searches_players: bool
     """Whether any player can be found by name, rostered or not: who a comparison adds."""
 
+    syncs: bool
+    """Whether its platform can be read from a browser sync (`/api/{platform}/capture`), which
+    then knows only the players the sync carried."""
+
     configured: bool
     """Whether the credentials this competition needs are set."""
 
@@ -80,6 +84,7 @@ def competition(entry: CompetitionEntry) -> Competition:
         browses_weeks=entry.can(WeekBrowsingProvider),
         finds_trades=entry.can(TradeMarketProvider),
         searches_players=entry.can(PlayerSearchProvider),
+        syncs=entry.capture is not None,
         configured=entry.is_configured(),
         requires=entry.requires,
         blocked=ErrorBody.of(blocker) if blocker else None,

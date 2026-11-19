@@ -35,7 +35,7 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import (
     YahooLoginRequiredError,
     YahooUnavailableError,
 )
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import TeamStanding, YahooLeague, YahooPlayer
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import TeamStanding, Timeframe, YahooLeague, YahooPlayer
 from thefrontoffice.domain.errors import TeamNotFoundError
 
 STATS = {"PTS": "12", "REB": "15", "BLK": "18"}
@@ -133,20 +133,52 @@ def test_a_403_on_the_leaders_names_the_missing_permission(tmp_path: Path) -> No
 # ── fetch_available ─────────────────────────────────────────────────────
 
 
-def test_available_players_include_those_on_waivers_by_season_rank(tmp_path: Path) -> None:
-    client, ctx = _client(tmp_path, players_xml("A B", "C D", "E F"))
+SEASON_RANK = "players;count=25;status=A;sort=AR;sort_type=season"
+WEEK_RANK = "players;count=25;status=A;sort=AR;sort_type=lastweek"
 
-    available = client.fetch_available(count=2)
 
-    assert [p.name for p in available] == ["A B", "C D"]
-    assert ctx.queries == ["players;count=2;status=A;sort=AR;sort_type=season"]
+def test_the_wire_is_read_a_page_of_25_at_a_time_under_each_ranking(tmp_path: Path) -> None:
+    """Yahoo lists 25 players a response; one request for more came back short."""
+    client, ctx = _client(tmp_path, players_xml())
+
+    client.fetch_available({Timeframe.SEASON: 60, Timeframe.LAST_WEEK: 25})
+
+    assert sorted(ctx.queries) == sorted(
+        [
+            SEASON_RANK,
+            f"{SEASON_RANK};start=25",
+            "players;count=10;status=A;sort=AR;sort_type=season;start=50",
+            WEEK_RANK,
+        ]
+    )
+
+
+def test_each_ranking_reads_its_pages_in_order_and_a_player_on_two_pages_once(tmp_path: Path) -> None:
+    """Pages fetched a moment apart overlap when the order shifts between them."""
+    answers = {
+        f"{SEASON_RANK};start=25": players_xml("Shifted", "Third", first=1),
+        SEASON_RANK: players_xml("First", "Shifted"),
+        WEEK_RANK: players_xml("Riser", first=7),
+    }
+    client, _ = _client(tmp_path, answers=answers)
+
+    wire = client.fetch_available({Timeframe.SEASON: 50, Timeframe.LAST_WEEK: 25})
+
+    assert [p.name for p in wire[Timeframe.SEASON]] == ["First", "Shifted", "Third"]
+    assert [p.name for p in wire[Timeframe.LAST_WEEK]] == ["Riser"]
+
+
+def test_a_ranking_that_runs_out_early_is_shorter_not_a_failure(tmp_path: Path) -> None:
+    client, _ = _client(tmp_path, answers={f"{SEASON_RANK};start=25": players_xml(), SEASON_RANK: players_xml("Only")})
+
+    assert [p.name for p in client.fetch_available({Timeframe.SEASON: 50})[Timeframe.SEASON]] == ["Only"]
 
 
 def test_a_refused_available_list_names_the_missing_permission(tmp_path: Path) -> None:
     """Untranslated, requests' own error escapes as a 500 with nothing to render."""
     client, _ = _client(tmp_path, error=http_error(403))
     with pytest.raises(YahooAuthError):
-        client.fetch_available()
+        client.fetch_available({Timeframe.SEASON: 25})
 
 
 # ── transient failures ──────────────────────────────────────────────────
@@ -156,7 +188,7 @@ def test_a_transient_failure_is_retried(tmp_path: Path) -> None:
     client, ctx = _client(tmp_path, players_xml("A B"))
     ctx.fail_first = [requests.exceptions.Timeout()]
 
-    assert [p.name for p in client.fetch_available()] == ["A B"]
+    assert [p.name for p in client.fetch_available({Timeframe.SEASON: 25})[Timeframe.SEASON]] == ["A B"]
     assert len(ctx.requests) == 2
 
 
@@ -164,7 +196,7 @@ def test_yahoo_staying_down_says_to_wait(tmp_path: Path) -> None:
     client, ctx = _client(tmp_path, error=http_error(503))
 
     with pytest.raises(YahooUnavailableError):
-        client.fetch_available()
+        client.fetch_available({Timeframe.SEASON: 25})
     assert len(ctx.requests) == NO_WAIT.attempts
 
 

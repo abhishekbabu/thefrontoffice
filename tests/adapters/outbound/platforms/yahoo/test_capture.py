@@ -34,12 +34,13 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.capture import (
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooClient
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
 from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Timeframe, YahooLeague
 from thefrontoffice.domain.errors import InvalidRequestError
 from thefrontoffice.domain.models import Capture, CapturedResponse, CaptureReceipt
 
 SEASON = 2026
-GAME = YahooGame(code="nba", season=lambda: SEASON, available=50, leaders={"PTS": "12", "BLK": "18"}, per_stat=5)
+WIRE = {Timeframe.SEASON: 50, Timeframe.LAST_WEEK: 25}
+GAME = YahooGame(code="nba", season=lambda: SEASON, available=WIRE, leaders={"PTS": "12", "BLK": "18"}, per_stat=5)
 KEY = "466.l.1"
 LEAGUE = YahooLeague(league_key=KEY, name="Hoops", current_week=2, start_week=1, end_week=3)
 LIST = paths.leagues("nba", SEASON).path
@@ -52,7 +53,14 @@ YAHOO = {
         team_xml("t1", "Mine", mine=True, standings=standings_xml(2, 1, 1, 0, "10")),
         team_xml("t2", "Theirs", standings=standings_xml(1, 2, 0, 0, "12")),
     ),
-    paths.available(KEY, GAME.available).path: players_xml("Free Agent", "Waiver Wire"),
+    **dict(
+        zip(
+            [read.path for read in paths.available(KEY, 50)],
+            [players_xml("Free Agent", "Waiver Wire"), players_xml("Deep Bench", first=50)],
+            strict=True,
+        )
+    ),
+    paths.available(KEY, 25, Timeframe.LAST_WEEK)[0].path: players_xml("Hot Hand", first=100),
     **{read.path: players_xml("Shot Blocker") for read in paths.leaders(KEY, GAME.leaders, GAME.per_stat).values()},
     **{paths.scoreboard(KEY, week).path: scoreboard_xml(start=f"2026-01-0{week}") for week in (1, 2, 3)},
     paths.roster("t1").path: roster_xml(rostered_xml("My Center", "C")),
@@ -111,7 +119,8 @@ def test_a_league_is_planned_from_its_held_list_before_its_teams_are_known(tmp_p
         paths.settings(KEY).path,
         paths.teams(KEY).path,
         paths.standings(KEY).path,
-        paths.available(KEY, GAME.available).path,
+        *(read.path for read in paths.available(KEY, 50)),
+        paths.available(KEY, 25, Timeframe.LAST_WEEK)[0].path,
         *(read.path for read in paths.leaders(KEY, GAME.leaders, GAME.per_stat).values()),
         *(paths.scoreboard(KEY, week).path for week in (1, 2, 3)),
     }
@@ -160,7 +169,10 @@ def test_the_reader_reads_everything_it_needs_from_a_sweep(tmp_path: Path) -> No
     assert [(t.name, t.standing.rank if t.standing else 0) for t in yahoo.standings()] == [("Mine", 2), ("Theirs", 1)]
     assert sorted(yahoo.season("t1", [1, 2, 3])) == [1, 2, 3]
     assert yahoo.settings().categories == []
-    assert [p.name for p in yahoo.fetch_available(GAME.available)] == ["Free Agent", "Waiver Wire"]
+    assert {sort_type: [p.name for p in found] for sort_type, found in yahoo.fetch_available(WIRE).items()} == {
+        Timeframe.SEASON: ["Free Agent", "Waiver Wire", "Deep Bench"],
+        Timeframe.LAST_WEEK: ["Hot Hand"],
+    }
     assert {name: [p.name for p in found] for name, found in yahoo.fetch_top_by_stat(GAME.leaders, 5).items()} == {
         "PTS": ["Shot Blocker"],
         "BLK": ["Shot Blocker"],
@@ -223,6 +235,7 @@ def test_a_name_search_matches_part_of_a_name_as_yahoo_does(tmp_path: Path) -> N
     yahoo = YahooClient(LEAGUE, responses=capture)
 
     assert [p.name for p in yahoo.search_players("wire")] == ["Waiver Wire"]
+    assert [p.name for p in yahoo.search_players("hand")] == ["Hot Hand"]
     assert yahoo.search_players("nobody") == []
 
 

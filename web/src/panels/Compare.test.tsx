@@ -1,6 +1,6 @@
 import { act } from "react";
 import { describe, expect, it } from "vitest";
-import type { Competition, League, PlayerComparison, PlayerDetail } from "@/lib/api";
+import type { CaptureStatus, Competition, League, PlayerComparison, PlayerDetail, PlayerRef } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { ComparePanel } from "@/panels/Compare";
 import { offlineClient, render, settle } from "@/test/render";
@@ -57,5 +57,27 @@ describe("Compare", () => {
       <ComparePanel competition={competition} league={{ ...league, league_id: "C2" }} />,
     );
     expect(container.textContent).toContain("Nobody to compare");
+  });
+
+  it("finds a player by name, and says when a browser sync limits who can be found", async () => {
+    const nba = { key: "nba-yahoo", platform: "yahoo", searches_players: true, syncs: true } as Competition;
+    const found: PlayerRef[] = [{ player_id: "466.p.1", name: "Cam Johnson", detail: "SF · DEN" }];
+    const client = offlineClient();
+    client.setQueryData(keys.playerSearch(nba.key, "N1", "cam"), found);
+    const status: CaptureStatus = { active: true, synced_at: null, leagues: [], session: null };
+    client.setQueryData(keys.capture("yahoo"), status);
+    const { container } = await render(<ComparePanel competition={nba} league={{ ...league, league_id: "N1" }} />, client);
+    expect(container.textContent).not.toContain("Synced players only");
+
+    const input = container.querySelector("input")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(input, "cam");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+
+    expect(container.textContent).toContain("Cam Johnson");
+    expect(container.textContent).toContain("Synced players only");
   });
 });

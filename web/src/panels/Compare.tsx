@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Plus, Search, Star, X } from "lucide-react";
-import { api, type Competition, type League, type PlayerComparison, type PlayerRef } from "@/lib/api";
+import { api, type CaptureStatus, type Competition, type League, type PlayerComparison, type PlayerRef } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -171,6 +171,12 @@ function Finder({
     queryFn: () => api.league(competition.key, league.league_id).searchPlayers(search.trim()),
     enabled: search.trim().length >= 2,
   });
+  // Read from a browser sync, only the players it carried can be found: say so once a search is under way.
+  const sync = useQuery<CaptureStatus, Error>({
+    queryKey: keys.capture(competition.platform),
+    queryFn: () => api.captureStatus(competition.platform),
+    enabled: competition.syncs,
+  });
   const offered = (found.data ?? []).filter((p) => !exclude.includes(p.player_id));
   return (
     <Card>
@@ -187,6 +193,9 @@ function Finder({
           className="pl-8"
         />
       </div>
+      {sync.data?.active && search.trim().length >= 2 && (
+        <p className="px-4 pb-2 text-[11px] text-muted-foreground">Synced players only: rosters and the top of the wire.</p>
+      )}
       {offered.map((p) => (
         <ListRow
           key={p.player_id}

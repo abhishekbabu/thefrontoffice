@@ -92,12 +92,12 @@ class FakeFrontend:
 # ── Yahoo's XML ─────────────────────────────────────────────────────────
 
 
-def players_xml(*names: str) -> str:
-    """A league's players response, as Yahoo serves it."""
+def players_xml(*names: str, first: int = 0) -> str:
+    """A league's players response, as Yahoo serves it; keys count up from `first`."""
     rows = "".join(
         f"<player><player_key>466.p.{i}</player_key><name><full>{name}</full></name><display_position>PF</display_position>"
         f"<editorial_team_abbr>LAL</editorial_team_abbr></player>"
-        for i, name in enumerate(names)
+        for i, name in enumerate(names, start=first)
     )
     return (
         '<fantasy_content xmlns="http://fantasysports.yahooapis.com/fantasy/v2/base.rng">'

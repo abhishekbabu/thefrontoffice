@@ -9,6 +9,7 @@ weights — and the budget constraint is the league's weekly add limit.
 import logging
 from collections.abc import Callable, Mapping
 from datetime import date, datetime
+from itertools import zip_longest
 
 from thefrontoffice.adapters.outbound.competitions import paging, places
 from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries, by_club, matched
@@ -33,8 +34,8 @@ from thefrontoffice.adapters.outbound.platforms.espn.types import NBA
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.capture import YahooGame
-from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague, YahooPlayer, YahooTeam
+from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource, once
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import Timeframe, YahooLeague, YahooPlayer, YahooTeam
 from thefrontoffice.domain.errors import LeagueNotFoundError, NotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     CompetitionContext,
@@ -43,6 +44,7 @@ from thefrontoffice.domain.models import (
     PlayerDetail,
     PlayerPage,
     PlayerQuery,
+    PlayerRef,
     Slate,
     Summary,
     TeamRef,
@@ -53,9 +55,12 @@ from thefrontoffice.domain.ports import LeagueRef
 
 logger = logging.getLogger(__name__)
 
-# Enough to find somebody, few enough to read — and one Yahoo request rather
-# than the eight the category scout makes.
-AVAILABLE_BROWSE_LIMIT = 100
+WIRE_DEPTH = {Timeframe.SEASON: 300, Timeframe.LAST_WEEK: 100}
+"""How deep the wire is read under each of Yahoo's rankings: sixteen pages of 25, fetched together.
+
+Season rank alone buries a player who has just stepped into a role — he ranks
+low on a season mostly spent on the bench — so the last week's ranking is read
+beside it. Three hundred deep by season is past every regular rotation player."""
 
 LEADERS = {c.label: c.yahoo_stat for c in SCOUTED}
 """The stats the free-agent scout ranks the wire by, a request each."""
@@ -287,7 +292,7 @@ class YahooNBAProvider:
         # either of them touches.
         rostered = yahoo.roster(my_team.team_key)
         free_agents, annotations = (
-            rank_by_points(yahoo.fetch_available(AVAILABLE_BROWSE_LIMIT), self.form.get_player_stats, weights)
+            rank_by_points(_wire(yahoo), self.form.get_player_stats, weights)
             if weights
             else rank_free_agents(yahoo.fetch_top_by_stat(LEADERS, per_stat=LEADERS_PER_STAT))
         )
@@ -396,15 +401,31 @@ class YahooNBAProvider:
     def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
         """The best players nobody in the league holds.
 
-        Sorted by Yahoo's own season rank rather than by a category: a wire
-        browsed one stat at a time is the scout's job, and this is the list you
-        read when you just want to see who is out there.
+        Ordered by Yahoo's own ranks rather than by a category — season and
+        last week in turn (`_wire`): a wire browsed one stat at a time is the
+        scout's job, and this is the list you read when you just want to see
+        who is out there.
         """
         paging.view(query, ())  # no other lists: one asked for is refused, not ignored
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
-        ranked = self._cards(yahoo.fetch_available(AVAILABLE_BROWSE_LIMIT), self._weights(league, yahoo))
+        ranked = self._cards(_wire(yahoo), self._weights(league, yahoo))
         return paging.page(ranked, query)
+
+    def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
+        """Anyone in the league whose name holds `text`, rostered or not, in Yahoo's order.
+
+        Read from a browser sync, only the players it carried — every roster and the wire it read.
+        """
+        if len(text.strip()) < 2:
+            return []
+        found = self._yahoo(league_id).search_players(text.strip())
+        return [
+            PlayerRef(
+                player_id=p.player_key, name=p.name, detail=" · ".join(part for part in (p.position, p.team) if part)
+            )
+            for p in found[:limit]
+        ]
 
     def _cards(self, players: list[YahooPlayer], weights: Mapping[str, float] | None) -> list[PlayerCard]:
         """One table shape for every list of players this sport shows (`views.cards`)."""
@@ -446,6 +467,16 @@ class YahooNBAProvider:
         return {p.player_key: back for p in players if (back := injuries.returns(p.player_key))}
 
 
+def _wire(yahoo: YahooSource) -> list[YahooPlayer]:
+    """The available players under every ranking in `WIRE_DEPTH`, taken from each in turn, each player once.
+
+    Interleaved rather than one list after the other, so the week's risers sit
+    beside the season's best instead of below three hundred of them.
+    """
+    rankings = list(yahoo.fetch_available(WIRE_DEPTH).values())
+    return once(p for row in zip_longest(*rankings) for p in row if p is not None)
+
+
 def _find_player(yahoo: YahooSource, name: str) -> YahooPlayer | None:
     """The one Yahoo player a name refers to, or None — never a guess.
 
@@ -471,7 +502,7 @@ def _find_player(yahoo: YahooSource, name: str) -> YahooPlayer | None:
 YAHOO_GAME = YahooGame(
     code="nba",
     season=YahooNBAProvider.season_year,
-    available=AVAILABLE_BROWSE_LIMIT,
+    available=WIRE_DEPTH,
     leaders=LEADERS,
     per_stat=LEADERS_PER_STAT,
 )

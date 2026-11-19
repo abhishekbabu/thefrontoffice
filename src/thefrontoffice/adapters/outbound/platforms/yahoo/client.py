@@ -10,7 +10,7 @@ Yahoo itself (`LiveResponses`), or what a browser captured of it (`capture.py`).
 """
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import date, timedelta
 from typing import Any, Protocol
 
@@ -168,8 +168,8 @@ class LiveResponses:
 class YahooSource(Protocol):
     """What the basketball provider reads Yahoo through. See `SleeperNFLSource` in platforms/sleeper/client.py for why it exists."""
 
-    def fetch_available(self, count: int = 100) -> list[YahooPlayer]:
-        """The best available players in the league, however they became free."""
+    def fetch_available(self, depths: Mapping[Timeframe, int]) -> dict[Timeframe, list[YahooPlayer]]:
+        """The best available players in the league, however they became free, by Yahoo's rank over each timeframe."""
         ...
 
     def fetch_top_by_stat(
@@ -250,9 +250,21 @@ class YahooClient:
         raws = self._responses.many(paths.leaders(self.league.league_key, stats, per_stat, sort_type))
         return {name: self._players(raw, per_stat) for name, raw in raws.items()}
 
-    def fetch_available(self, count: int = 100) -> list[YahooPlayer]:
-        """The best available players in the league, however they became free."""
-        return self._players(self._responses.raw(paths.available(self.league.league_key, count)), count)
+    def fetch_available(self, depths: Mapping[Timeframe, int]) -> dict[Timeframe, list[YahooPlayer]]:
+        """The best available players, however they became free, by Yahoo's rank over each timeframe, that deep.
+
+        Every page of every ranking in one batch, fetched concurrently. Pages
+        fetched a moment apart can overlap as the order shifts, so a player is
+        kept once, where he first appears; a ranking that runs out early is
+        shorter, not a failure.
+        """
+        key = self.league.league_key
+        reads = {sort_type: paths.available(key, depth, sort_type) for sort_type, depth in depths.items()}
+        raws = self._responses.many({read.path: read for pages in reads.values() for read in pages})
+        return {
+            sort_type: once(p for read in pages for p in self._players(raws[read.path]))
+            for sort_type, pages in reads.items()
+        }
 
     def search_players(self, query: str) -> list[YahooPlayer]:
         """Players in the league whose name matches `query`; no match is an empty answer."""
@@ -350,6 +362,14 @@ class YahooClient:
         """
         raw = self._responses.raw(paths.scoreboard(self.league.league_key, week))
         return readable("scoreboard", lambda: find_matchup(parse(raw), team_key))
+
+
+def once(players: Iterable[YahooPlayer]) -> list[YahooPlayer]:
+    """`players` in order, each kept where he first appears."""
+    seen: dict[str, YahooPlayer] = {}
+    for player in players:
+        seen.setdefault(player.player_key, player)
+    return list(seen.values())
 
 
 def leagues_in(raw: Any) -> list[YahooLeague]:
