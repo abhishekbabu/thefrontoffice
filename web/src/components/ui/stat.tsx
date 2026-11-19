@@ -25,7 +25,7 @@ export function StatStrip({ stats }: { stats: Stat[] }) {
           left under a clip: whichever figure starts a line — the first, or
           the first after a wrap on a phone — has its divider cut off, and no
           line ends on a divider with nothing after it. */}
-      <div className="max-w-(--page-max) overflow-hidden">
+      <div className="mx-auto max-w-(--page-max) overflow-hidden">
         <div className="-ml-px flex flex-wrap">
           {stats.map((stat) => (
             <div key={stat.label} className="min-w-[7rem] border-l border-border px-5 py-2.5">

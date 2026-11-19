@@ -46,7 +46,7 @@ describe("a slide-over", () => {
 
   it("mounts outside the page, so no page width cap or transform can reach it", async () => {
     const { dialog } = await opened();
-    const { container } = await render(<div data-page="capped" />);
+    const { container } = await render(<div data-page="reading" />);
 
     expect(dialog?.closest("[data-page]")).toBeNull();
     expect(container.contains(dialog)).toBe(false);

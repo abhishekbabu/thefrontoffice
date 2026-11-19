@@ -33,8 +33,11 @@ export function PageHeader({
     // The bar spans the column; what is in it keeps to the page's width
     // (`--page-max`), so the controls sit over the content they act on rather
     // than at the far edge of a wide screen.
-    <header data-bleed className="sticky top-0 z-20 border-b border-border bg-background">
-      <div className="flex max-w-(--page-max) flex-wrap items-center justify-between gap-3 px-5 py-4">
+    <header
+      data-bleed
+      className="sticky top-0 z-20 border-b border-border bg-background"
+    >
+      <div className="flex mx-auto max-w-(--page-max) flex-wrap items-center justify-between gap-3 px-5 py-4">
         <div className="flex min-w-0 items-center gap-3">
           {leading}
           <div className="min-w-0">
@@ -53,7 +56,11 @@ export function PageHeader({
                 />
               )}
             </div>
-            {meta && <p className="mt-0.5 font-mono text-[12px] text-muted-foreground">{meta}</p>}
+            {meta && (
+              <p className="mt-0.5 font-mono text-[12px] text-muted-foreground">
+                {meta}
+              </p>
+            )}
           </div>
         </div>
         {children}
