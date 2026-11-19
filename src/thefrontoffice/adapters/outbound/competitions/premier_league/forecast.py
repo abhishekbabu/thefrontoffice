@@ -12,17 +12,19 @@ where there is one, else how often he has played lately.
 The captain counts twice (three times under Triple Captain) by appearing that many
 times in his side: the same draw, so his week is doubled rather than drawn again.
 
-Auto-subs are approximated. A bench player comes on with the chance that enough
-starters ahead of him miss out — the keeper for the keeper, the outfield bench in
-the order the manager set — so each side's total is right on average, though not
-which starter a substitute replaces, nor whether the formation allows him.
+Auto-subs follow the game's rules (`rules.substitution_chances`): the keeper only
+for the keeper, the outfield bench in the order the manager set, each passed over
+where he would leave the eleven short of its formation. A bench player comes on
+with the exact chance those rules bring him on, drawn apart from the starters, so
+each side's total is right on average though not tied week by week to which
+starter missed.
 """
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from statistics import fmean
 
-from thefrontoffice.adapters.outbound.competitions.premier_league.rules import Roster, plays
+from thefrontoffice.adapters.outbound.competitions.premier_league.rules import Roster, plays, substitution_chances
 from thefrontoffice.adapters.outbound.platforms.fpl.types import LiveStat, Opponent, Pick, Player, PlayerGame
 from thefrontoffice.domain.models import MatchupInput, Outcomes
 
@@ -75,18 +77,15 @@ def side(squad: Roster, week: Gameweek, tag: str) -> tuple[Outcomes, ...]:
     if bench_boosted(squad, week):
         return (*drawn, *(outcomes(player, week) for _, player in bench))
 
-    misses = {player.id: miss(player, week) for _, player in starters}
-    keeper = sum(misses[p.id] for _, p in starters if p.position == "GKP")
-    outfield = sum(misses[p.id] for _, p in starters if p.position != "GKP")
-    ahead = 0
-    for _, player in bench:
-        if player.position == "GKP":
-            called = min(1.0, keeper)
-        else:
-            called = min(1.0, max(0.0, outfield - ahead))
-            ahead += 1
-        if called > 0:
-            drawn.append(substitute(outcomes(player, week), called, tag))
+    out = [miss(player, week) for _, player in bench]
+    chances = substitution_chances(
+        [(player.position, miss(player, week)) for _, player in starters],
+        [(player.position, misses) for (_, player), misses in zip(bench, out, strict=True)],
+    )
+    for (_, player), misses, chance in zip(bench, out, chances, strict=True):
+        if chance > 0:
+            # Coming on already means he plays: what his own draw adds is how often he is called, given that.
+            drawn.append(substitute(outcomes(player, week), chance / (1 - misses), tag))
     return tuple(drawn)
 
 

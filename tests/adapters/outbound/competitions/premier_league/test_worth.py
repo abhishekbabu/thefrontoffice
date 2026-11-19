@@ -6,6 +6,7 @@ import pytest
 from support.fpl import FakeFPL, player
 
 from thefrontoffice.adapters.outbound.competitions.premier_league import worth
+from thefrontoffice.adapters.outbound.competitions.premier_league.clean_sheets import Strength
 from thefrontoffice.adapters.outbound.competitions.premier_league.worth import (
     FORM_WEEKS,
     HORIZON,
@@ -17,7 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.worth import (
     valuation,
 )
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
-from thefrontoffice.adapters.outbound.platforms.fpl.types import Fixture, LiveStat, Player
+from thefrontoffice.adapters.outbound.platforms.fpl.types import Fixture, LiveStat, Opponent, Player
 
 
 def _home(club: str, rating: int, week: int = 5, away: str = "ZZZ") -> Fixture:
@@ -181,16 +182,31 @@ def test_a_projection_that_only_repeats_form_is_not_counted_and_one_that_differs
 
 
 def test_underlying_numbers_need_minutes_to_say_anything() -> None:
-    assert worth.underlying(player(1, "FWD", 5.0), Record(), None, 3) is None
+    assert worth.underlying(player(1, "FWD", 5.0), Record(), None, Opponent("LIV", 3, True), Strength()) is None
 
 
-def test_a_defenders_clean_sheet_odds_fall_with_the_fixture() -> None:
+def test_a_defenders_clean_sheet_odds_fall_with_the_fixture_where_his_club_has_no_season() -> None:
     back = player(1, "DEF", 5.0)
 
-    easy = worth.underlying(back, Record(), 1.0, 1)
-    hard = worth.underlying(back, Record(), 1.0, 5)
+    easy = worth.underlying(back, Record(), 1.0, Opponent("LIV", 1, True), Strength())
+    hard = worth.underlying(back, Record(), 1.0, Opponent("LIV", 5, True), Strength())
     assert easy is not None and hard is not None
-    assert easy - hard == pytest.approx((0.5 - 0.12) * 4)
+    assert easy > hard
+
+
+def test_a_defender_behind_a_tight_defence_is_worth_more_than_one_behind_a_leaky_one() -> None:
+    """Both at an average fixture by the game's rating: their clubs' seasons are what tell them apart."""
+    tight, leaky = player(1, "DEF", 5.0, team="TGT"), player(2, "DEF", 5.0, team="LKY")
+    clubs = Strength(average=1.3, attack={"MID": 1.0}, defence={"TGT": 0.6, "LKY": 1.6})
+
+    def reading(back: Player) -> float | None:
+        return worth.underlying(back, Record(), 1.0, Opponent("MID", 3, True), clubs)
+
+    assert (reading(tight) or 0.0) > (reading(leaky) or 0.0)
+    week = valuation(
+        {1: tight, 2: leaky}, {}, {5: [_home("TGT", 3, away="MID"), _home("LKY", 3, away="ZZZ")]}, played=4, clubs=clubs
+    )
+    assert week(tight) > week(leaky)
 
 
 # ── gathering ───────────────────────────────────────────────────────────
@@ -217,6 +233,13 @@ def test_results_that_will_not_load_leave_the_projection_to_value_on() -> None:
     value = worth.gather(fake, fake.upcoming_gameweek())
 
     assert value(fake.get_players()[8]) > 0
+
+
+def test_season_fixtures_that_will_not_load_leave_clean_sheets_to_the_fixtures_difficulty() -> None:
+    fake = FakeFPL(upcoming=11, finished=10, season_fixtures_error=FPLAPIError("down"))
+    value = worth.gather(fake, fake.upcoming_gameweek())
+
+    assert value(fake.get_players()[3]) > 0
 
 
 def test_the_fixtures_it_was_figured_on_are_kept_for_every_gameweek_of_the_horizon() -> None:

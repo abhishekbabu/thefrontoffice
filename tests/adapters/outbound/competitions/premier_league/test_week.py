@@ -16,7 +16,6 @@ from support.fpl import (
 )
 from support.summary import mine
 
-from thefrontoffice.adapters.outbound.competitions.premier_league import worth
 from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
@@ -423,12 +422,16 @@ def test_the_next_gameweek_shows_the_squad_as_last_picked_at_its_projection() ->
     catalog = {pid: replace(p, expected_this=0.0) for pid, p in {**SQUAD_PLAYERS, **MARKET}.items()}
     fake = FakeFPL(finished=4, live=FINISHED_LIVE, players=catalog)
     summary = FPLProvider(ENTRY_ID, client=fake).summary(H2H_LEAGUE)
-    value = worth.gather(fake, fake.upcoming_gameweek())
-    expected = sum(value(catalog[pick.element]) * pick.multiplier for pick in fake.squad.picks)
+    rows = {spot.player_id: float(spot.projection) for spot in mine(summary).lineup}
+    total = float(mine(summary).points.removesuffix(" proj"))
 
     assert mine(summary).detail == "GW4 picks"
     assert all(spot.scoring == "projected" for spot in mine(summary).lineup)
-    assert mine(summary).points == f"{expected:.1f} proj"  # each at his worth for GW5, the captain doubled
+    # Each row at his worth for GW5, not GW4's spent `ep_this` of nought; the side is its eleven's rows.
+    assert total > 0
+    assert total == pytest.approx(sum(rows.values()), abs=0.05 * len(rows))
+    # The captain's row is doubled: P8 reads more than twice what P9, a point a match behind him, reads.
+    assert rows["8"] > 2 * rows["9"] > 0
     assert summary.opponent is not None and summary.opponent.points.endswith(" proj")
 
 

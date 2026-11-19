@@ -90,16 +90,30 @@ def test_a_blank_plays_no_match_and_a_double_plays_two() -> None:
     assert drawn["1"][0].games == 2
 
 
-def test_a_bench_player_comes_on_with_the_chance_enough_starters_ahead_of_him_miss_out() -> None:
-    # P1 (keeper) and P3 are at Man City, which blanks: the bench keeper and the first outfielder come on.
+def test_a_bench_player_comes_on_only_where_a_starter_misses_and_he_plays_himself() -> None:
+    # P1 (keeper) and P3 are at Man City, which blanks: the first outfielder comes on for P3.
     catalog = {**SQUAD_PLAYERS, 1: replace(SQUAD_PLAYERS[1], team="MCI"), 3: replace(SQUAD_PLAYERS[3], team="MCI")}
     fixtures = {"ARS": [Opponent("LIV", 3, True)]}
     drawn = by_id(side(squad(catalog=catalog), week(fixtures=fixtures), "mine"))
 
-    # P2, the bench keeper, is himself at Man City: he comes on, and adds nothing.
-    assert drawn["2:bench:mine"][0].games == 0
+    assert "2:bench:mine" not in drawn  # the bench keeper is at Man City too, so nobody replaces P1
     assert drawn["12:bench:mine"][0].plays == 1.0
     assert "14:bench:mine" not in drawn  # nobody else is missing
+
+
+def test_a_substitute_who_would_leave_two_defenders_is_passed_over_for_the_next() -> None:
+    """A 3-4-3 losing a defender: the midfielder and forward first on the bench cannot take his place."""
+    catalog = {**SQUAD_PLAYERS, 3: player(3, "DEF", 6.0, status="i")}
+    starting = [1, 3, 4, 5, 8, 9, 10, 11, 13, 14, 15]
+    picks = [Pick(element=pid, position=i, multiplier=1) for i, pid in enumerate(starting, start=1)]
+    picks += [Pick(element=pid, position=i, multiplier=0) for i, pid in enumerate([2, 12, 6, 7], start=12)]
+    three_four_three = roster(Squad(gameweek=10, picks=picks, bank=0, value=1000), catalog)
+
+    drawn = by_id(side(three_four_three, week(), "mine"))
+
+    assert "12:bench:mine" not in drawn
+    assert drawn["6:bench:mine"][0].plays == 1.0
+    assert "7:bench:mine" not in drawn
 
 
 def test_a_doubt_ahead_brings_the_bench_on_for_his_share_alone() -> None:
@@ -115,7 +129,7 @@ def test_bench_boost_counts_all_fifteen_once_its_picks_are_published() -> None:
 
 def test_what_he_has_already_is_on_the_board_and_a_match_under_way_is_counted_played() -> None:
     fixtures = {club: [Opponent("LIV", 3, True, started=True)] for club in CLUBS}
-    live = {8: LiveStat(points=7, minutes=60), 3: LiveStat(points=0, minutes=0)}
+    live = {8: LiveStat(points=7, minutes=60), 3: LiveStat(points=0, minutes=0), 12: LiveStat(points=2, minutes=70)}
     drawn = by_id(side(squad(), week(fixtures=fixtures, live=live, to_come=False), "mine"))
 
     assert (drawn["8"][0].floor, drawn["8"][0].games) == (7.0, 0)

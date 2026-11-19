@@ -6,6 +6,7 @@ than left to the model.
 
 from datetime import UTC, datetime
 
+import pytest
 from support.fpl import player
 
 from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
@@ -29,6 +30,7 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
     room_at,
     roster,
     selling_price,
+    substitution_chances,
 )
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     FORMATION_LIMITS,
@@ -154,6 +156,54 @@ def test_a_squad_too_short_for_any_formation_yields_nothing() -> None:
     assert lineup.starters == []
     assert lineup.captain is None
     assert lineup.points == 0.0
+
+
+# ── auto-subs ───────────────────────────────────────────────────────────
+
+
+def _three_four_three(**misses: float) -> list[tuple[str, float]]:
+    """A 3-4-3 by position, every starter certain to play unless named: `DEF1=1.0` rules the first defender out."""
+    shape = [("GKP", 1), ("DEF", 3), ("MID", 4), ("FWD", 3)]
+    return [(pos, misses.get(f"{pos}{n}", 0.0)) for pos, count in shape for n in range(1, count + 1)]
+
+
+def test_a_substitute_who_would_leave_two_defenders_is_passed_over_for_the_next() -> None:
+    bench = [("GKP", 0.0), ("MID", 0.0), ("FWD", 0.0), ("DEF", 0.0)]
+    assert substitution_chances(_three_four_three(DEF1=1.0), bench) == [0.0, 0.0, 0.0, 1.0]
+
+
+def test_the_reserve_keeper_comes_on_for_the_keeper_and_for_nobody_else() -> None:
+    bench = [("GKP", 0.0), ("MID", 0.0), ("FWD", 0.0), ("DEF", 0.0)]
+    assert substitution_chances(_three_four_three(GKP1=1.0), bench) == [1.0, 0.0, 0.0, 0.0]
+    assert substitution_chances(_three_four_three(MID1=1.0), bench) == [0.0, 1.0, 0.0, 0.0]
+
+
+def test_the_bench_comes_on_in_order_passing_over_one_who_does_not_play() -> None:
+    fit = [("GKP", 0.0), ("MID", 0.0), ("FWD", 0.0), ("DEF", 0.0)]
+    first_out = [("GKP", 0.0), ("MID", 1.0), ("FWD", 0.0), ("DEF", 0.0)]
+
+    assert substitution_chances(_three_four_three(FWD1=1.0), fit) == [0.0, 1.0, 0.0, 0.0]
+    assert substitution_chances(_three_four_three(FWD1=1.0), first_out) == [0.0, 0.0, 1.0, 0.0]
+
+
+def test_a_reserve_keeper_who_does_not_play_himself_never_comes_on() -> None:
+    bench = [("GKP", 1.0), ("MID", 0.0), ("FWD", 0.0), ("DEF", 0.0)]
+    assert substitution_chances(_three_four_three(GKP1=1.0), bench)[0] == 0.0
+
+
+def test_doubts_bring_the_bench_on_with_the_chance_enough_of_them_miss() -> None:
+    """Two defenders each at evens: one or more miss three times in four, both once in four."""
+    bench = [("GKP", 0.0), ("DEF", 0.0), ("DEF", 0.0), ("MID", 0.0)]
+    chances = substitution_chances(_three_four_three(DEF1=0.5, DEF2=0.5), bench)
+
+    assert chances == pytest.approx([0.0, 0.75, 0.25, 0.0])
+
+
+def test_a_doubtful_substitute_comes_on_only_as_often_as_he_plays() -> None:
+    bench = [("GKP", 0.0), ("MID", 0.5), ("FWD", 0.0), ("DEF", 0.0)]
+    chances = substitution_chances(_three_four_three(MID1=1.0), bench)
+
+    assert chances == pytest.approx([0.0, 0.5, 0.5, 0.0])  # the forward behind him covers the half he misses
 
 
 # ── changes ─────────────────────────────────────────────────────────────

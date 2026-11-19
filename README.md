@@ -239,8 +239,15 @@ deadline. A player's worth for a gameweek is, per match: his points per match
 over the last 5 finished gameweeks (a match he missed counts as nought, settled
 with 5 matches of his season average) beside an outlook, each ×1.1 to ×0.8 by
 fixture difficulty 2 to 5, plus a quarter from his underlying numbers (xG and xA
-at his position's rates, clean-sheet odds by difficulty, saves, bonus, the
-defensive-contribution points he has been earning). The outlook is FPL's
+at his position's rates, his club's clean-sheet odds, saves, bonus, the
+defensive-contribution points he has been earning). Clean-sheet odds are
+Poisson, exp(−goals against), where goals against is the league's xG a side ×
+the opponent's attack (its players' xG a match over the league's) × his club's
+defence (its keepers' xGC a match over the league's) × the opponent's venue (the
+league's home/away goal split); each club's rate is settled with 6 matches of
+the league average, the venue with 40. A club with no match played yet, or a
+season fixture list that will not load, falls back to odds by FPL difficulty
+(50% at a 1 to 12% at a 5). The outlook is FPL's
 `ep_next` where it differs from its form figure, else the underlying numbers
 (this season `ep_next` repeats form). Matches sum, so a double counts both and
 a blank is 0, × his chance of playing, ±10% for steady or rotated minutes
@@ -278,9 +285,12 @@ A head-to-head FPL league's matchup header carries a win chance (10,000
 gameweeks): each player's points from every match he played in the last 8
 gameweeks, drawn once per match his club has left (twice in a double, none in a
 blank), played with FPL's chance of playing or else how often he has played
-lately; the captain counts twice on the same draw. Auto-subs are approximated: a
-bench player counts with the chance enough starters ahead of him miss out, keeper
-for keeper. A gameweek to come uses the last published picks, with each player's
+lately; the captain counts twice on the same draw. Auto-subs follow the game's
+rules: the reserve keeper only for the keeper, the outfield bench in order, each
+one who plays coming on for the first starter who did not unless that would leave
+fewer than 3 defenders, 2 midfielders or 1 forward, in which case he is passed
+over for the next. Each bench player counts with the exact chance those rules
+bring him on, given every player's chance of missing. A gameweek to come uses the last published picks, with each player's
 matches scaled so their mean is his worth a match he plays. Classic leagues get
 no chance.
 
