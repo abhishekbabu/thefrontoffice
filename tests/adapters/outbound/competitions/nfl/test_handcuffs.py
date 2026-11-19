@@ -1,6 +1,6 @@
-"""Tests for which of your backs is a handcuff: `nfl/handcuffs.py`."""
+"""Tests for which of your backs is a handcuff or an understudy: `nfl/handcuffs.py`."""
 
-from thefrontoffice.adapters.outbound.competitions.nfl.handcuffs import handcuffs
+from thefrontoffice.adapters.outbound.competitions.nfl.handcuffs import handcuffs, understudies
 from thefrontoffice.adapters.outbound.competitions.nfl.model import FREE_AGENT
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta
 
@@ -20,6 +20,8 @@ CATALOG = {
         _player("kc1", 1, team="KC"),
         _player("kc2", 2, team="KC"),
         _player("fa", 2, team=FREE_AGENT),
+        _player("lv1", 1, team="LV"),
+        _player("lv3", 3, team="LV"),
     )
 }
 
@@ -60,3 +62,29 @@ def test_a_starter_with_nobody_of_yours_next_behind_him_has_no_handcuff() -> Non
 
 def test_a_back_with_no_club_is_never_on_a_chart() -> None:
     assert _cuffs(["fa"], starting=("fa",)) == {}
+
+
+def _behind(held: list[str]) -> dict[str, str]:
+    """Each understudy's id, mapped to his club's first back's."""
+    return {pid: ahead.player_id for pid, ahead in understudies(CATALOG, held).items()}
+
+
+def test_a_back_next_behind_a_first_back_you_do_not_roster_is_his_understudy() -> None:
+    assert _behind(["rb2"]) == {"rb2": "rb1"}
+
+
+def test_the_understudy_is_the_next_back_listed_where_the_chart_skips_a_number() -> None:
+    """LV lists nobody second, so its third is next behind its first."""
+    assert _behind(["lv3"]) == {"lv3": "lv1"}
+
+
+def test_a_back_further_down_than_next_is_no_understudy() -> None:
+    assert _behind(["rb4"]) == {}
+
+
+def test_a_first_back_is_nobodys_understudy() -> None:
+    assert _behind(["rb1"]) == {}
+
+
+def test_receivers_and_backs_with_no_club_are_never_understudies() -> None:
+    assert _behind(["wr2", "fa"]) == {}

@@ -1,22 +1,26 @@
-"""Which of your backs is held as insurance on another of yours.
+"""Which of your backs is held as insurance: behind another of yours, or behind a club's first back.
 
 A handcuff is the running back next on his club's depth chart behind one you
 start: worth little while the starter plays, and the starter's work the week
 he does not. Dropping him to make room drops the insurance with him, so the
 drop pick reaches him only once nobody else will do.
 
-The rule:
+An understudy is the same back behind his club's first back, whoever rosters
+that one — you, another manager, nobody. Whether he is worth keeping depends
+on how much of the work the first back has and what it would be worth to you,
+which the catalog cannot say; `actions.stashed` decides that.
 
-- the starter is a running back you roster, and either starts in your lineup
-  or the best one, or is his club's first on the depth chart;
-- the handcuff is a running back you roster at the same club, at the lowest
-  depth below the starter's that the catalog lists anyone at — normally two.
+Both read the chart the same way: the back behind is one you roster at the
+same club, at the lowest depth below the back ahead that the catalog lists
+anyone at — normally two. For a handcuff the back ahead is yours, and either
+starts in your lineup or the best one, or is his club's first on the chart.
+For an understudy he is his club's first: the lowest depth it lists.
 
 Running backs alone: a backup back inherits the work, where a backup receiver
 or tight end splits it with the rest of the room.
 """
 
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Iterable, Mapping
 
 from thefrontoffice.adapters.outbound.competitions.nfl.model import FREE_AGENT, PlayerInfo
 
@@ -32,25 +36,49 @@ def handcuffs(
     `players` is the catalog, read for each club's depth chart; `held` your
     roster; `starting` who your lineups start.
     """
-    backs = [meta for pid in held if (meta := players.get(pid)) and _charted(meta)]
-    starters = [m for m in backs if m.player_id in starting or m.depth_chart_order == 1]
-    if not starters:
-        return {}
-    clubs = {m.team for m in starters}
-    depths: dict[str, list[int]] = {club: [] for club in clubs}
+    backs = _held(players, held)
+    return _next_behind(players, backs, [m for m in backs if m.player_id in starting or m.depth_chart_order == 1])
+
+
+def understudies(players: Mapping[str, PlayerInfo], held: Collection[str]) -> dict[str, PlayerInfo]:
+    """Each held back next on the depth chart behind his club's first back, mapped to that back, whoever holds him."""
+    backs = _held(players, held)
+    clubs = {m.team for m in backs}
+    first: dict[str, PlayerInfo] = {}
     for meta in players.values():
         if meta.team in clubs and _charted(meta):
-            depths[meta.team].append(meta.depth_chart_order)
-    cuffs: dict[str, PlayerInfo] = {}
-    for starter in sorted(starters, key=lambda m: m.depth_chart_order):
-        below = [d for d in depths[starter.team] if d > starter.depth_chart_order]
+            ahead = first.get(meta.team)
+            if ahead is None or meta.depth_chart_order < ahead.depth_chart_order:
+                first[meta.team] = meta
+    return _next_behind(players, backs, first.values())
+
+
+def _held(players: Mapping[str, PlayerInfo], held: Collection[str]) -> list[PlayerInfo]:
+    """Your backs on a depth chart."""
+    return [meta for pid in held if (meta := players.get(pid)) and _charted(meta)]
+
+
+def _next_behind(
+    players: Mapping[str, PlayerInfo], backs: Collection[PlayerInfo], ahead: Iterable[PlayerInfo]
+) -> dict[str, PlayerInfo]:
+    """Each of `backs` at the next depth his club lists below one of `ahead`, gaps skipped, mapped to that one."""
+    leaders = sorted(ahead, key=lambda m: m.depth_chart_order)
+    clubs = {m.team for m in leaders}
+    depths: dict[str, list[int]] = {club: [] for club in clubs}
+    if clubs:
+        for meta in players.values():
+            if meta.team in clubs and _charted(meta):
+                depths[meta.team].append(meta.depth_chart_order)
+    found: dict[str, PlayerInfo] = {}
+    for leader in leaders:
+        below = [d for d in depths[leader.team] if d > leader.depth_chart_order]
         if not below:
             continue
         nxt = min(below)
         for back in backs:
-            if back.team == starter.team and back.depth_chart_order == nxt:
-                cuffs.setdefault(back.player_id, starter)
-    return cuffs
+            if back.team == leader.team and back.depth_chart_order == nxt:
+                found.setdefault(back.player_id, leader)
+    return found
 
 
 def _charted(meta: PlayerInfo) -> bool:
