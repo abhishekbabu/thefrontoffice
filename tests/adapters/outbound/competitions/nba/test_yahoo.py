@@ -663,7 +663,7 @@ def test_a_game_still_to_come_carries_its_tip_off_from_espns_scoreboard() -> Non
         espn=espn,
     )
 
-    assert espn.days_asked == [date(2026, 2, 11)]
+    assert set(espn.days_asked) == {date(2026, 2, 11)}
     assert rows["Plays Home"].kickoff == TIP_OFF
     assert rows["On The Bench"].kickoff == TIP_OFF
     assert rows["Sits Today"].kickoff is None  # under way: the row is about the game now
@@ -1063,6 +1063,10 @@ SPARE = make_player("Spare", "C", "MIA", key="spare", selected_position="BN")
 STREAMER = make_player("Streamer", "SF", "NYK", key="streamer")
 WEEK_FORM = {"Starter": _line(30), "Benched": _line(24), "Spare": _line(8), "Streamer": _line(12)}
 WEEK_GAMES = {"LAL": 1, "BOS": 3, "MIA": 1, "NYK": 4}
+WEEK_DAY = date(2026, 2, 11)
+WEEK_SLATE = [ScheduledGame(week=0, date=WEEK_DAY.isoformat(), home="BOS", away="NYK", status="pre_game")]
+"""Today, inside FakeYahoo's week: the bench player's club plays, the starter's rests."""
+START = f"start:{WEEK_DAY.isoformat()}:benched:starter"
 
 
 STARTER_MONTH = YahooLine(stats={"12": "28.4", "15": "6.1", "16": "2.9"}, points="44.70")
@@ -1076,7 +1080,9 @@ def _averaged(yahoo: FakeYahoo) -> FakeYahoo:
 
 def _decisions(league: YahooLeague = POINTS_LEAGUE, **extra: Any) -> YahooNBAProvider:
     yahoo = _averaged(FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS, **extra))
-    return nba_provider(yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES), league=league)
+    return nba_provider(
+        yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY), league=league
+    )
 
 
 def test_a_points_leagues_rows_read_games_left_and_fantasy_points_a_game() -> None:
@@ -1087,11 +1093,11 @@ def test_a_points_leagues_rows_read_games_left_and_fantasy_points_a_game() -> No
     assert row.value == "1G · 44.70 fpts/g"
 
 
-def test_a_bench_player_with_more_this_week_starts_and_a_free_agent_streams_in() -> None:
+def test_a_bench_player_playing_today_starts_over_a_starter_who_rests_and_a_free_agent_streams_in() -> None:
     actions = _decisions().summary("").actions
 
     assert actions is not None
-    assert [a.key for a in actions] == ["start:benched:starter", "stream:streamer:spare"]
+    assert [a.key for a in actions] == [START, "stream:streamer:spare"]
     start, stream = actions
     assert [(p.name, p.held) for p in start.players] == [("Benched", "bench"), ("Starter", "starter")]
     assert stream.drop == "spare"
@@ -1171,11 +1177,12 @@ def test_the_model_reads_each_players_week_and_judges_the_same_list_the_page_sho
 def test_a_wire_that_will_not_load_leaves_the_weeks_rows_and_starts_standing() -> None:
     yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
     yahoo.wire_error = YahooCaptureMissingError("players")
-    provider = nba_provider(yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES), league=POINTS_LEAGUE)
+    nba = FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY)
+    provider = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE)
 
     summary = provider.summary("")
 
-    assert [a.key for a in summary.actions or []] == ["start:benched:starter"]
+    assert [a.key for a in summary.actions or []] == [START]
     assert summary.mine is not None and summary.mine.lineup[0].value.startswith("1G")
 
 

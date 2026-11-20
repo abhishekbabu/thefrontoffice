@@ -224,10 +224,13 @@ joins Yahoo by name and club: a player Sleeper projects nothing (ruled out), a
 match on another club, or a projection over 2.5× his recent run either way (with
 a gap of 6 PTS, 4 REB, 3 AST or 1.5 3PTM a game) carries none, and he is read on
 form alone. The to-do list adds
-a bench start over a starter whose slot he fits, and up to two streams (from
-the wire's top 50 by season and top 25 by last week, three requests) within
-the adds left, each with a drop — never from IL or the better half of the
-roster — all at a fifth more worth. Lineups are daily; starts are weekly.
+today's starts: a bench player whose game today is still to come, over a starter
+whose slot he fits who has no game today or is ruled out of it, or who plays and
+is a fifth worse a game. Nobody resting today is started, nobody whose game has
+tipped off is moved, and without today's schedule there are no starts. Then up to
+two streams (from the wire's top 50 by season and top 25 by last week, three
+requests) within the adds left, each a fifth more worth this week and at least as
+good a game as its drop — never from IL or the better half of the roster.
 While the NBA has yet to schedule days of a week (3+ days in a row with under 3
 games, 1–20 Dec: the Cup knockouts, before eliminated clubs get games), the header
 says "Schedule: not final", games left read "3+G", Fixtures carries a note naming

@@ -281,7 +281,8 @@ class YahooNBAProvider:
         weights = self._weights(league, yahoo)
         averages = {**(shown or {}), **_carried(free_agents)}
         readings = self._readings(yahoo, weights, [*roster, *theirs, *free_agents], start, end, also or [], averages)
-        return Decided(readings, actions.build(roster, free_agents, readings, adds_left, weights is not None))
+        today = self._today(start, end)
+        return Decided(readings, actions.build(roster, free_agents, readings, adds_left, weights is not None, today))
 
     def _readings(
         self,
@@ -443,11 +444,18 @@ class YahooNBAProvider:
         unscheduled = [] if played else self.games.unscheduled(found.start, found.end)
         # Only while the week shown is the one being played: a week ahead has no today, and one played
         # was set day by day already. None where the schedule would not load, rather than a day of no games.
-        on = None if played or week != current else self.games.games_today()
-        today = (
-            nba_week.Today(on[1], self._tipoff(on[0])) if on is not None and found.start <= on[0] <= found.end else None
-        )
+        today = None if played or week != current else self._today(found.start, found.end)
         return nba_week.board(found, weeks, records, roster, theirs, scored, readings, unscheduled, today)
+
+    def _today(self, start: date, end: date) -> nba_week.Today | None:
+        """Today's games, while today falls inside the week from `start` to `end`.
+
+        None outside it, and where the schedule would not load rather than a day of no games.
+        """
+        on = self.games.games_today()
+        if on is None or not start <= on[0] <= end:
+            return None
+        return nba_week.Today(on[0], on[1], self._tipoff(on[0]))
 
     def _tipoff(self, day: date) -> dict[str, datetime]:
         """When each club's game on `day` starts, while it has not, by ESPN's abbreviation.

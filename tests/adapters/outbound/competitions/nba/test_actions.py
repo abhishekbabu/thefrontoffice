@@ -1,6 +1,7 @@
 """Tests for what a basketball week asks of the manager: `nba/actions.py`."""
 
 from dataclasses import replace
+from datetime import date
 
 from support.nba import make_player
 
@@ -14,12 +15,14 @@ from thefrontoffice.adapters.outbound.competitions.nba.actions import (
     starts,
     streams,
 )
+from thefrontoffice.adapters.outbound.competitions.nba.week import Today
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
 
 
-def _player(name: str, slot: str = "", position: str = "PF", status: str = "") -> YahooPlayer:
-    return make_player(name, position=position, key=name, selected_position=slot, status=status)
+def _player(name: str, slot: str = "", position: str = "PF", status: str = "", team: str = "LAL") -> YahooPlayer:
+    return make_player(name, position=position, team=team, key=name, selected_position=slot, status=status)
 
 
 def _read(player: YahooPlayer, per_game: float, games: int) -> Reading:
@@ -36,58 +39,113 @@ def _figures(item_players: list, label: str) -> list[str]:
 
 # ── starts ──────────────────────────────────────────────────────────
 
+DAY = date(2026, 11, 20)
 
-def test_a_bench_player_with_more_games_starts_over_the_starter_he_can_replace() -> None:
-    starter, bench = _player("Starter", "PF"), _player("Bench", "BN")
-    readings = _readings((starter, 30.0, 1), (bench, 25.0, 3))
 
-    [item] = starts([starter, bench], readings, by_points=True)
+def _slate(*games: tuple[str, str, str]) -> Today:
+    """Today's games, each as home, away and Sleeper's status."""
+    return Today(DAY, [ScheduledGame(week=0, date=DAY.isoformat(), home=h, away=a, status=st) for h, a, st in games])
 
-    assert (item.player_id, item.replaces, item.kind) == ("Bench", "Starter", "lineup")
+
+TONIGHT = _slate(("LAL", "BOS", "pre_game"))
+"""The Lakers and Celtics play tonight; every other club rests."""
+
+
+def test_a_starter_with_no_game_today_gives_way_to_a_bench_player_with_one() -> None:
+    """A lineup is set daily: however good his week, a starter who rests today scores nothing today."""
+    starter, bench = _player("Rests", "PF", team="DEN"), _player("Plays", "BN", team="LAL")
+    readings = _readings((starter, 30.0, 3), (bench, 10.0, 1))
+
+    [item] = starts([starter, bench], readings, by_points=True, today=TONIGHT)
+
+    assert (item.player_id, item.replaces, item.kind, item.urgency) == ("Plays", "Rests", "lineup", "now")
     assert [(p.side, p.held) for p in item.players] == [("in", "bench"), ("out", "starter")]
-    assert _figures(item.players, "G left") == ["3", "1"]
-    assert _figures(item.players, "Week") == ["75.0", "30.0"]
+    assert "vs BOS" in item.reason
+    assert item.key == f"start:{DAY.isoformat()}:Plays:Rests"
+
+
+def test_a_bench_player_with_no_game_today_is_never_started() -> None:
+    """Twice the player and three games to come still scores nothing tonight."""
+    starter, bench = _player("Plays", "Util", team="LAL"), _player("Rests", "BN", team="DEN")
+
+    assert starts([starter, bench], _readings((starter, 5.0, 1), (bench, 15.0, 3)), True, TONIGHT) == []
+
+
+def test_when_both_play_the_better_a_game_starts_by_the_margin() -> None:
+    starter, bench = _player("Starter", "PF", team="LAL"), _player("Bench", "BN", team="BOS")
+
+    [item] = starts([starter, bench], _readings((starter, 10.0, 3), (bench, 15.0, 1)), True, TONIGHT)
+    assert item.player_id == "Bench"
+    assert starts([starter, bench], _readings((starter, 10.0, 1), (bench, 11.0, 3)), True, TONIGHT) == []
 
 
 def test_a_bench_player_yahoo_will_not_slot_there_is_no_start() -> None:
-    starter, bench = _player("Starter", "C", position="C"), _player("Bench", "BN", position="PG")
+    starter = _player("Starter", "C", position="C", team="DEN")
+    bench = _player("Bench", "BN", position="PG")
 
-    assert starts([starter, bench], _readings((starter, 10.0, 1), (bench, 30.0, 4)), by_points=True) == []
+    assert starts([starter, bench], _readings((starter, 10.0, 1), (bench, 30.0, 4)), True, TONIGHT) == []
 
 
 def test_a_guard_fills_a_guard_slot_and_anybody_a_utility_one() -> None:
     guard_slot, util = _player("Two Guard", "G", position="SG"), _player("Utility", "Util", position="C")
-    bench = _player("Bench", "BN", position="PG")
+    bench = _player("Bench", "BN", position="PG", team="BOS")
     readings = _readings((guard_slot, 10.0, 1), (util, 12.0, 1), (bench, 30.0, 4))
 
-    [item] = starts([guard_slot, util, bench], readings, by_points=True)
+    [item] = starts([guard_slot, util, bench], readings, True, TONIGHT)
 
     assert item.replaces == "Two Guard"  # the weakest he could replace
 
 
-def test_a_gain_inside_the_margin_is_no_start() -> None:
+def test_a_starter_resting_is_replaced_before_a_weaker_one_playing() -> None:
+    playing, resting = _player("Weak", "PF"), _player("Rests", "SF", team="DEN")
+    bench = _player("Bench", "BN", position="PF,SF", team="BOS")
+    readings = _readings((playing, 5.0, 1), (resting, 20.0, 1), (bench, 15.0, 1))
+
+    [item] = starts([playing, resting, bench], readings, True, TONIGHT)
+
+    assert item.replaces == "Rests"
+
+
+def test_a_starter_ruled_out_of_tonights_game_is_replaced() -> None:
+    starter, bench = _player("Hurt", "PF", status="O"), _player("Bench", "BN", team="BOS")
+
+    [item] = starts([starter, bench], _readings((starter, 40.0, 0), (bench, 5.0, 1)), False, TONIGHT)
+
+    assert item.replaces == "Hurt"
+    assert "ruled out" in item.reason
+
+
+def test_a_bench_player_ruled_out_is_never_started() -> None:
+    starter, bench = _player("Rests", "PF", team="DEN"), _player("Hurt", "BN", status="O")
+
+    assert starts([starter, bench], _readings((starter, 5.0, 1), (bench, 30.0, 1)), True, TONIGHT) == []
+
+
+def test_nobody_moves_once_his_game_has_tipped_off() -> None:
+    """Yahoo locks a player at his game's start, in the lineup or out of it."""
+    under_way = _slate(("LAL", "BOS", "in_game"), ("DEN", "MIA", "pre_game"))
+    locked, bench = _player("Locked", "PF"), _player("Bench", "BN", team="DEN")
+    assert starts([locked, bench], _readings((locked, 5.0, 1), (bench, 30.0, 1)), True, under_way) == []
+
+    resting, too_late = _player("Rests", "PF", team="NYK"), _player("Too Late", "BN", team="BOS")
+    assert starts([resting, too_late], _readings((resting, 5.0, 1), (too_late, 30.0, 1)), True, under_way) == []
+
+
+def test_without_todays_games_there_is_no_start() -> None:
+    """The schedule would not load, or today is outside the week: a weekly guess can start a player who rests."""
     starter, bench = _player("Starter", "PF"), _player("Bench", "BN")
 
-    assert starts([starter, bench], _readings((starter, 30.0, 2), (bench, 33.0, 2)), by_points=True) == []
+    assert starts([starter, bench], _readings((starter, 5.0, 1), (bench, 30.0, 3)), True, None) == []
 
 
 def test_each_starter_is_replaced_once_by_the_biggest_gain() -> None:
-    starter = _player("Starter", "PF")
-    better, best = _player("Better", "BN"), _player("Best", "BN")
+    starter = _player("Starter", "PF", team="DEN")
+    better, best = _player("Better", "BN"), _player("Best", "BN", team="BOS")
     readings = _readings((starter, 10.0, 1), (better, 20.0, 2), (best, 30.0, 2))
 
-    [item] = starts([starter, better, best], readings, by_points=True)
+    [item] = starts([starter, better, best], readings, True, TONIGHT)
 
     assert item.player_id == "Best"
-
-
-def test_a_starter_who_cannot_play_this_week_is_beaten_by_anyone_who_can() -> None:
-    starter, bench = _player("Hurt", "PF", status="O"), _player("Bench", "BN")
-
-    [item] = starts([starter, bench], _readings((starter, 40.0, 0), (bench, 5.0, 1)), by_points=False)
-
-    assert item.replaces == "Hurt"
-    assert "value" in item.reason
 
 
 # ── streams and drops ───────────────────────────────────────────────
@@ -199,14 +257,23 @@ def test_one_more_game_never_costs_a_much_better_player() -> None:
     assert streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set()) == []
 
 
+def test_a_stream_never_gives_up_a_better_player_a_game_for_more_games() -> None:
+    """Twice the games this week does not make a lesser player worth dropping a better one for."""
+    roster, readings = _team()
+    pickup = _player("Pickup")
+    readings |= _readings((pickup, 17.0, 4))  # 68 this week against Weaker's 36, but 17 a game against 18
+
+    assert streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set()) == []
+
+
 def test_the_week_lists_il_moves_then_starts_then_streams() -> None:
-    starter, bench = _player("Starter", "PF"), _player("Bench", "BN")
+    starter, bench = _player("Starter", "PF", team="DEN"), _player("Bench", "BN")
     back = _player("Back", "IL")
     pickup = _player("Pickup")
     filler = _player("Filler", "BN")
     readings = _readings((starter, 30.0, 1), (bench, 25.0, 3), (back, 20.0, 2), (pickup, 25.0, 4), (filler, 5.0, 1))
 
-    items = build([starter, bench, back, filler], [pickup], readings, adds_left=1, by_points=True)
+    items = build([starter, bench, back, filler], [pickup], readings, adds_left=1, by_points=True, today=TONIGHT)
 
     assert [item.key.split(":")[0] for item in items] == ["il", "start", "stream"]
     assert items[-1].drop == "Filler"
@@ -221,11 +288,12 @@ def test_where_a_player_stands_follows_his_slot() -> None:
     ]
 
 
-def test_a_start_weighed_on_a_schedule_not_final_says_it_is_provisional() -> None:
-    starter, bench = _player("Starter", "PF"), _player("Bench", "BN")
-    readings = {k: replace(r, provisional=True) for k, r in _readings((starter, 30.0, 1), (bench, 25.0, 3)).items()}
+def test_a_stream_weighed_on_a_schedule_not_final_says_it_is_provisional() -> None:
+    roster, readings = _team()
+    pickup = _player("Pickup", position="SF")
+    readings |= {"Pickup": replace(_read(pickup, 20.0, 4), provisional=True)}
 
-    [item] = starts([starter, bench], readings, by_points=True)
+    [item] = streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set())
 
     assert item.reason.endswith(PROVISIONAL)
-    assert _figures(item.players, "G left") == ["3+", "1+"]
+    assert _figures(item.players, "G left")[0] == "4+"

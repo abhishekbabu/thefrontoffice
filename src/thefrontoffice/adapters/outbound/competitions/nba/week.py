@@ -150,10 +150,16 @@ def total(side: MatchupSide, when: Stage) -> str:
 class Today:
     """The day's real games, while the week shown is the one being played, and when each still to come tips off."""
 
+    day: date
+    """Today, in Pacific: the day the lineup is being set for."""
     games: Sequence[ScheduledGame]
     tipoff: Mapping[str, datetime] = field(default_factory=dict)
     """When each club's game starts, while it has not, by ESPN's abbreviation: Sleeper publishes the day
     alone. Empty where ESPN's scoreboard would not load, and the rows then say the day without the hour."""
+
+    def game(self, club: str) -> ScheduledGame | None:
+        """His club's game today, or None on a day it rests."""
+        return next((g for g in self.games if g.opponent_of(club.upper()) is not None), None)
 
 
 def side(
@@ -183,7 +189,7 @@ def side(
         row = _spot(player, found.get(player.player_key), by_points, scored)
         if today is None or row.scoring is not None:
             return row
-        game = next((g for g in today.games if g.opponent_of(player.team.upper()) is not None), None)
+        game = today.game(player.team)
         return row.model_copy(
             update={
                 "today": today_line(game, player.team),

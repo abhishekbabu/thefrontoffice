@@ -40,7 +40,7 @@ TO DO — WHAT LEAGUE STATE ALREADY SAYS NEEDS DECIDING:
 - "WEEK" on a player line, and "Week" in an item, is his worth this week: a game's value ({value_unit}),
   blending his recent run with Sleeper's projection, nudged up to a tenth by how steady his minutes are,
   times the games he can play before the week ends. Items need a fifth more worth than the player replaced.
-- Yahoo lineups are set daily: a start item is about more games or value over the week, not every night.
+- Yahoo lineups are set daily: a start item is for today, a bench player with a game tonight over a starter without one or clearly weaker a game.
 - The manager sees this list; your verdicts appear beside it, so judge these items rather than restating them.
 {tasks_str}
 
