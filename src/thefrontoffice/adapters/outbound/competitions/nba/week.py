@@ -152,6 +152,7 @@ def side(
     readings: Mapping[str, Reading] | None = None,
     by_points: bool = False,
     scored: Sequence[StatCategory] = (),
+    today: Sequence[ScheduledGame] | None = None,
 ) -> Side:
     """One team in the week, its roster parted as Yahoo slots it: the lineup, the bench, the injured list.
 
@@ -159,12 +160,18 @@ def side(
     week ended, each player carrying his line over it, read in the league's
     categories `scored`. `readings` are each player's week by Yahoo's key, which
     his row reads its games left and Yahoo's averages from (`views.cell`).
+    `today` are the day's real games while the week is being played, None in
+    any other: each row then says whether he plays today (`today_line`).
     """
     rows = list(roster or [])
     found = readings or {}
 
     def spot(player: YahooPlayer) -> Spot:
-        return _spot(player, found.get(player.player_key), by_points, scored)
+        row = _spot(player, found.get(player.player_key), by_points, scored)
+        if today is None or row.scoring is not None:
+            return row
+        game = next((g for g in today if g.opponent_of(player.team.upper()) is not None), None)
+        return row.model_copy(update={"today": today_line(game, player.team), "idle": game is None})
 
     return Side(
         name=name,
@@ -175,6 +182,21 @@ def side(
         # A player on the injured list was never going to play: no warning on his row.
         reserve=[spot(p).model_copy(update={"slot": "", "tone": "neutral"}) for p in rows if p.slot in INJURED_SLOTS],
     )
+
+
+def today_line(game: ScheduledGame | None, club: str) -> str:
+    """Whether his club plays today, as his row says it: 'vs TOR today', '@ BOS live', 'vs TOR final', 'no game today'.
+
+    A lineup is set day by day, so a starter with no game today scores nothing
+    until he is swapped for one who has. Sleeper publishes no tip-off time, so
+    a game to come says the day, not the hour.
+    """
+    found = game.opponent_of(club.upper()) if game else None
+    if game is None or found is None:
+        return "no game today"
+    opponent, home = found
+    where = f"vs {opponent}" if home else f"@ {opponent}"
+    return f"{where} {STATUS.get(game.status, 'today')}"
 
 
 def _spot(
@@ -344,6 +366,7 @@ def board(
     categories_scored: Sequence[StatCategory] | None,
     readings: Mapping[str, Reading] | None = None,
     unscheduled: Sequence[date] = (),
+    today: Sequence[ScheduledGame] | None = None,
 ) -> Summary:
     """One week's head-to-head, and where it sits in the season.
 
@@ -353,7 +376,8 @@ def board(
     `categories_scored` is the league's own list, None for a points league.
     `readings` are every shown player's week, by Yahoo's key. `unscheduled` are
     the week's days the NBA has yet to schedule (`unsettled`), which the header
-    says, since every games-left count below it is short by them.
+    says, since every games-left count below it is short by them. `today` are
+    the day's real games while the week is the one being played (`side`).
     """
     window = f"Week {weeks.week} · {span(found.start, found.end)}"
     pending = [NOT_FINAL] if unscheduled else []
@@ -363,7 +387,13 @@ def board(
         return Summary(
             headline=[*result(found), *points(found.mine, found.opponent, when), *pending],
             mine=side(
-                found.mine.name, records.get(found.mine.team_key, ""), total(found.mine, when), roster, readings, True
+                found.mine.name,
+                records.get(found.mine.team_key, ""),
+                total(found.mine, when),
+                roster,
+                readings,
+                True,
+                today=today,
             ),
             opponent=side(
                 found.opponent.name,
@@ -372,6 +402,7 @@ def board(
                 theirs,
                 readings,
                 True,
+                today=today,
             ),
             window=window,
             weeks=weeks,
@@ -387,6 +418,7 @@ def board(
             roster,
             readings,
             scored=categories_scored,
+            today=today,
         ),
         opponent=side(
             found.opponent.name,
@@ -395,6 +427,7 @@ def board(
             theirs,
             readings,
             scored=categories_scored,
+            today=today,
         ),
         categories=lines,
         window=window,
@@ -485,6 +518,12 @@ class ScheduleSource(Protocol):
         would not load, which leaves games left unknown already."""
         ...
 
+    def games_today(self, now: datetime | None = None) -> tuple[date, list[ScheduledGame]] | None:
+        """Today's date in Pacific, and every real game on it whatever its status: none on a day the NBA rests.
+        None where the schedule would not load: no rows then say whether he plays today, rather than every
+        one saying he does not."""
+        ...
+
 
 class SleeperNBASchedule:
     """The real games of a basketball matchup week, and how many each club has left.
@@ -571,6 +610,15 @@ class SleeperNBASchedule:
             logger.warning(f"Reading the schedule as final, it would not load: {e}")
             return []
         return unsettled(games, start_date, end_date)
+
+    def games_today(self, now: datetime | None = None) -> tuple[date, list[ScheduledGame]] | None:
+        today = self._today(now)
+        try:
+            games = {id(g): g for club in self._team_schedule().values() for g in club}.values()
+        except SleeperAPIError as e:
+            logger.warning(f"Showing rows without today's games, the schedule would not load: {e}")
+            return None
+        return today, sorted((g for g in games if parse_day(g.date) == today), key=lambda g: (g.away, g.home))
 
     @staticmethod
     def _is_remaining(game: ScheduledGame, start: date, end: date, today: date) -> bool:

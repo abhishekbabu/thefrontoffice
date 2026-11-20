@@ -6,7 +6,7 @@ league schedules by.
 """
 
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
@@ -206,6 +206,28 @@ def test_todays_game_turns_on_whether_it_has_tipped_off() -> None:
 
     assert tipped.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 0
     assert waiting.get_remaining_games("DEN", WINDOW_START, WINDOW_END, now=NOW) == 1
+
+
+def test_todays_games_are_the_pacific_days_whatever_has_tipped_off_once_each() -> None:
+    """Read in Pacific, the zone the league schedules by: past midnight on the 11th in UTC is still the 10th's
+    slate there, and a game under way or over is still today's."""
+    schedule = _schedule(
+        schedule=[
+            _sched("2026-02-09"),
+            _sched("2026-02-10", status="complete", home="BOS", away="NYK"),
+            _sched("2026-02-10", status="in_game"),
+            _sched("2026-02-11"),
+        ]
+    )
+    found = schedule.games_today(now=datetime(2026, 2, 11, 1, 30, tzinfo=UTC))
+
+    assert found is not None
+    day, games = found
+    assert (day, [(g.home, g.status) for g in games]) == (date(2026, 2, 10), [("DEN", "in_game"), ("BOS", "complete")])
+
+
+def test_todays_games_are_unknown_rather_than_none_when_the_schedule_will_not_load() -> None:
+    assert _schedule(error=SleeperAPIError("down")).games_today(now=NOW) is None
 
 
 def test_a_club_is_counted_whether_it_is_home_or_away() -> None:

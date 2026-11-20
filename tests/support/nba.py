@@ -406,6 +406,7 @@ class FakeNBA:
         dated: dict[str, list[date]] | None = None,
         logs: dict[str, list[NBAGameLog]] | None = None,
         unscheduled: list[date] | None = None,
+        today: date | None = None,
     ) -> None:
         self.stats = stats or {}
         self.counts = games or {}
@@ -415,6 +416,8 @@ class FakeNBA:
         self.dated = dated or {}
         self.logs = logs or {}
         """Each player's recent games by name, newest first."""
+        self.today = today
+        """The day `games_today` reads the slate on; None reads as a schedule that would not load."""
         self.pending = unscheduled or []
         """Days the NBA has yet to schedule, whatever the window: those inside it are the window's."""
         self.profiles: dict[str, PlayerMeta] = {}
@@ -432,6 +435,11 @@ class FakeNBA:
 
     def unscheduled(self, start_date: date, end_date: date) -> list[date]:
         return [day for day in self.pending if start_date <= day <= end_date]
+
+    def games_today(self, now: datetime | None = None) -> tuple[date, list[ScheduledGame]] | None:
+        if self.today is None:
+            return None
+        return self.today, [g for g in self.slate if g.date == self.today.isoformat()]
 
     def get_player_stats(self, full_name: str) -> Any:
         return self.stats.get(full_name)

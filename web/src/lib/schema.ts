@@ -1983,6 +1983,18 @@ export interface components {
              */
             tone: "neutral" | "good" | "warning";
             /**
+             * Today
+             * @description Whether he plays in the scoring period under way, where a lineup is set day by day: 'vs TOR today', '@ BOS live', 'no game today'. Empty where the competition sets lineups by the week, or it is unknown.
+             * @default
+             */
+            today: string;
+            /**
+             * Idle
+             * @description He has no game today (`today`): a start there scores nothing until he is swapped out.
+             * @default false
+             */
+            idle: boolean;
+            /**
              * Scoring
              * @description Which kind of number `value` is: projected before his game, live while it is on, final after. None where the competition does not say.
              */

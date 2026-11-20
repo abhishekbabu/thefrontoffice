@@ -205,7 +205,11 @@ under 12 minutes counts as missed, and both sides need 3 games. Regulars who
 missed the same games share one row naming them all. The scout's
 roster and free-agent lines carry the same.
 Each NBA lineup row, both teams, shows games left this week and a game's value
-("3G · 41.5 fpts/g", or "3G · 22.1p 8.3r 4.0a" in categories). An NBA player's
+("3G · 41.5 fpts/g", or "3G · 22.1p 8.3r 4.0a" in categories). In the week being
+played each row also says whether he plays today, in Pacific: "vs TOR today",
+"@ BOS live", "vs TOR final", or "no game today", with that row dimmed. Sleeper
+publishes the day, not the tip-off time; a schedule that will not load leaves
+the line off rather than claiming a day off. An NBA player's
 worth this week is that game's value (his recent run blended with Sleeper's
 projection, in fantasy points or across the scored categories, each counted in
 its spread over the players read) × games left (none while ruled out, or from
