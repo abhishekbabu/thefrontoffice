@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moment, percent, percentPoints, signed } from "@/lib/format";
+import { moment, percent, percentPoints, signed, startsAt } from "@/lib/format";
 
 describe("formatting a figure", () => {
   it("signs a change either way, with the minus that lines up with the plus", () => {
@@ -18,5 +18,14 @@ describe("formatting a figure", () => {
     const now = new Date(2026, 9, 22, 21, 30);
     expect(moment(new Date(2026, 9, 22, 14, 5).toISOString(), now)).not.toMatch(/[A-Za-z]{3}/);
     expect(moment(new Date(2026, 9, 20, 14, 5).toISOString(), now)).toMatch(/^[A-Za-z]{3}/);
+  });
+});
+
+describe("when a game starts, on a lineup row", () => {
+  const now = new Date(2026, 10, 19, 12, 0);
+
+  it("says today for a game today, and the weekday for one later in the week", () => {
+    expect(startsAt(new Date(2026, 10, 19, 17, 15).toISOString(), now)).toMatch(/^today /);
+    expect(startsAt(new Date(2026, 10, 22, 13, 0).toISOString(), now)).toMatch(/^Sun /);
   });
 });

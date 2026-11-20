@@ -4,6 +4,7 @@ Covers `nfl/week.py` and the summary the provider builds from it.
 """
 
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -352,6 +353,20 @@ def test_a_row_before_kickoff_is_a_projection_and_says_so() -> None:
     qb = _qb(nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS)))
 
     assert (qb.scoring, qb.value, qb.projection) == ("projected", "22.00 proj", "22.00")
+
+
+def test_a_row_whose_game_is_still_to_come_says_when_it_kicks_off_until_it_does() -> None:
+    """Thursday's players lock days before Monday's: when each starts is what a lineup is set around."""
+    thursday = datetime(2026, 9, 25, 0, 15, tzinfo=UTC)
+    before = _qb(_underway(scoreboard=[ScoreboardGame("BUF", "MIA", "pre", kickoff=thursday)]))
+    during = _qb(_underway(scoreboard=[replace(UNDERWAY[0], kickoff=thursday)]))
+
+    assert before.kickoff == thursday
+    assert during.kickoff is None
+
+
+def test_a_row_with_no_scoreboard_claims_no_kickoff() -> None:
+    assert _qb(_underway(scoreboard=[])).kickoff is None
 
 
 def test_the_side_total_counts_a_game_under_way() -> None:

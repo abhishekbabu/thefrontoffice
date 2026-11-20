@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { Spot } from "@/lib/api";
 import { LineupCard, SideCard, underWay } from "@/components/ui/lineup";
 import { render } from "@/test/render";
+import { startsAt } from "@/lib/format";
 
-function spot(player: string, mark = "", today: Partial<Pick<Spot, "today" | "idle">> = {}): Spot {
+function spot(player: string, mark = "", today: Partial<Pick<Spot, "today" | "idle" | "kickoff">> = {}): Spot {
   return {
     player_id: player,
     slot: "",
@@ -14,6 +15,7 @@ function spot(player: string, mark = "", today: Partial<Pick<Spot, "today" | "id
     tone: "neutral",
     today: "",
     idle: false,
+    kickoff: null,
     scoring: null,
     scored: "",
     projection: "",
@@ -46,6 +48,17 @@ describe("a day's lineup", () => {
 
     // Each said on its own player's row, in the lineup's order.
     expect(container.textContent).toMatch(/Plays.*vs TOR today.*Sits.*no game today/);
+  });
+});
+
+describe("a week's lineup", () => {
+  it("says when a game still to come starts", async () => {
+    const thursday = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    const { container } = await render(
+      <LineupCard title="You" lineup={[spot("Thursday", "", { kickoff: thursday })]} bench={[]} />,
+    );
+
+    expect(container.textContent).toContain(startsAt(thursday));
   });
 });
 

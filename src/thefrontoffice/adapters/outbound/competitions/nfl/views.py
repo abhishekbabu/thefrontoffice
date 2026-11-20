@@ -900,6 +900,7 @@ def spot(
         scoring=_scoring(projection.team, live) if scored is not None else "projected",
         scored=f"{scored:.2f}" if scored is not None else "",
         projection=f"{points:.2f}",
+        kickoff=live.kickoff.get(projection.team) if live and scored is None else None,
     )
 
 

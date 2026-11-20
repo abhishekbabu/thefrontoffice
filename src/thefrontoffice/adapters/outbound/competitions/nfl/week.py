@@ -73,6 +73,9 @@ class Live:
     """Where each club's game is while it is on — 'Q3 13:02', 'Halftime' — by Sleeper's abbreviation."""
     final: set[str] = field(default_factory=set)
     """Clubs whose game is over, by the live scoreboard; empty where it would not load."""
+    kickoff: dict[str, datetime] = field(default_factory=dict)
+    """When each club's game starts, while it has not, by Sleeper's abbreviation; empty where the scoreboard
+    would not load. Thursday's players lock days before Monday's, which is what a lineup is set around."""
 
     def scored(self, player_id: str, team: str) -> float | None:
         """Points where that club's game has started, and nothing before it."""
@@ -494,4 +497,10 @@ class Scoreboard:
         clock = {club: game.label for club, game in self.board(state).items() if game.state == "in" and game.label}
         points = {pid: scored for entry in state.matchups for pid, scored in entry.players_points.items()}
         final = {club for club, game in self.board(state).items() if game.state == "post"}
-        return Live(started=self.started(state), points=points, clock=clock, final=final)
+        started = self.started(state)
+        kickoff = {
+            club: game.kickoff
+            for club, game in self.board(state).items()
+            if game.state == "pre" and game.kickoff is not None and club not in started
+        }
+        return Live(started=started, points=points, clock=clock, final=final, kickoff=kickoff)
