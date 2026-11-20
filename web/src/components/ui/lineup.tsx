@@ -114,14 +114,24 @@ function SpotList({
           )}
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-[13.5px] font-medium">{spot.player}</span>
+              <span className={cn("truncate text-[13.5px] font-medium", spot.idle && "text-muted-foreground")}>
+                {spot.player}
+              </span>
               {spot.mark && (
                 <Badge variant="info" appearance="label" className="shrink-0">
                   {spot.mark}
                 </Badge>
               )}
             </div>
-            <Meta as="div" className="truncate">{spot.detail}</Meta>
+            <Meta as="div" className="flex min-w-0 gap-1">
+              <span className="truncate">{spot.detail}</span>
+              {/* Whether he plays today, where a lineup is set day by day: never the part cut
+                  off, since it is what the day's decision turns on. Said in words; a game today
+                  is set in the foreground, a day off left muted with the rest of his row. */}
+              {spot.today && (
+                <span className={cn("shrink-0", !spot.idle && "font-medium text-foreground")}>· {spot.today}</span>
+              )}
+            </Meta>
           </div>
           {spot.line.length > 0 ? (
             <LineFigures line={spot.line} indent={slotted} />

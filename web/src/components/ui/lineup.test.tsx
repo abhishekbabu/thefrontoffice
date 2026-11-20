@@ -3,8 +3,23 @@ import type { Spot } from "@/lib/api";
 import { LineupCard, SideCard, underWay } from "@/components/ui/lineup";
 import { render } from "@/test/render";
 
-function spot(player: string, mark = ""): Spot {
-  return { player_id: player, slot: "", player, mark, detail: "MID · ARS vs LIV (2)", value: "6.0 xPts", tone: "neutral", scoring: null, scored: "", projection: "", line: [] };
+function spot(player: string, mark = "", today: Partial<Pick<Spot, "today" | "idle">> = {}): Spot {
+  return {
+    player_id: player,
+    slot: "",
+    player,
+    mark,
+    detail: "MID · ARS vs LIV (2)",
+    value: "6.0 xPts",
+    tone: "neutral",
+    today: "",
+    idle: false,
+    scoring: null,
+    scored: "",
+    projection: "",
+    line: [],
+    ...today,
+  };
 }
 
 describe("LineupCard", () => {
@@ -16,6 +31,21 @@ describe("LineupCard", () => {
     expect(container.textContent).toContain("HaalandC");
     expect(container.textContent).toContain("IsakVC");
     expect(container.textContent).not.toContain("RiceC");
+  });
+});
+
+describe("a day's lineup", () => {
+  it("says on each row whether he plays today, so a starter sitting it out can be swapped", async () => {
+    const { container } = await render(
+      <LineupCard
+        title="You"
+        lineup={[spot("Plays", "", { today: "vs TOR today" }), spot("Sits", "", { today: "no game today", idle: true })]}
+        bench={[]}
+      />,
+    );
+
+    // Each said on its own player's row, in the lineup's order.
+    expect(container.textContent).toMatch(/Plays.*vs TOR today.*Sits.*no game today/);
   });
 });
 

@@ -441,7 +441,11 @@ class YahooNBAProvider:
         readings = read(found, theirs) if read is not None and theirs is not None else None
         scored = None if league.by_points else yahoo.settings().categories
         unscheduled = [] if played else self.games.unscheduled(found.start, found.end)
-        return nba_week.board(found, weeks, records, roster, theirs, scored, readings, unscheduled)
+        # Only while the week shown is the one being played: a week ahead has no today, and one played
+        # was set day by day already. None where the schedule would not load, rather than a day of no games.
+        on = None if played or week != current else self.games.games_today()
+        today = on[1] if on is not None and found.start <= on[0] <= found.end else None
+        return nba_week.board(found, weeks, records, roster, theirs, scored, readings, unscheduled, today)
 
     def schedule(self, league_id: str) -> LeagueSchedule:
         """The table, and your head-to-head season from every week's scoreboard.

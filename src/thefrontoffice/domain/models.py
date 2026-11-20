@@ -133,6 +133,17 @@ class Spot(BaseModel):
         description="The number the row turns on, with its unit: a projection, or once his game has kicked off, what he has scored."
     )
     tone: Tone = "neutral"
+    today: str = Field(
+        default="",
+        description=(
+            "Whether he plays in the scoring period under way, where a lineup is set day by day: 'vs TOR today', "
+            "'@ BOS live', 'no game today'. Empty where the competition sets lineups by the week, or it is unknown."
+        ),
+    )
+    idle: bool = Field(
+        default=False,
+        description="He has no game today (`today`): a start there scores nothing until he is swapped out.",
+    )
     scoring: SpotScoring | None = Field(
         default=None,
         description=(

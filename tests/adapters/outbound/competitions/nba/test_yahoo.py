@@ -55,7 +55,7 @@ from thefrontoffice.domain.errors import (
     TeamNotFoundError,
     UnsupportedError,
 )
-from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Stat, TradeProposal
+from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Spot, Stat, TradeProposal
 from thefrontoffice.domain.ports import ForecastProvider, OutlookProvider, WireProvider
 
 
@@ -583,6 +583,70 @@ def test_a_kept_move_can_name_only_your_roster_or_the_players_still_free() -> No
 
 
 # ── the week, and paging through the season ─────────────────────────────
+
+
+def _today(slate: list[ScheduledGame], today: date | None = date(2026, 2, 11)) -> dict[str, Spot]:
+    """Every row of the week being played, by player, on a day of FakeYahoo's 9-15 Feb window."""
+    yahoo = FakeYahoo(
+        roster=[
+            make_player("Plays Home", team="LAL", selected_position="PG"),
+            make_player("Plays Away", team="BOS", selected_position="SG"),
+            make_player("Sits Today", team="DEN", selected_position="C"),
+            make_player("On The Bench", team="BOS", selected_position="BN"),
+        ]
+    )
+    summary = nba_provider(yahoo, nba=FakeNBA(slate=slate, today=today)).summary("")
+    assert summary.mine is not None
+    return {s.player: s for s in (*summary.mine.lineup, *summary.mine.bench)}
+
+
+def test_each_row_of_the_week_being_played_says_whether_he_plays_today() -> None:
+    """A lineup is set day by day: a starter with no game today scores nothing until he is swapped out."""
+    rows = _today(
+        [
+            ScheduledGame(week=0, date="2026-02-11", home="LAL", away="BOS", status="pre_game"),
+            ScheduledGame(week=0, date="2026-02-12", home="DEN", away="MIA"),
+        ]
+    )
+
+    assert rows["Plays Home"].today == "vs BOS today"
+    assert rows["Plays Away"].today == "@ LAL today"
+    assert rows["On The Bench"].today == "@ LAL today"
+    assert rows["Sits Today"].today == "no game today"
+    assert [name for name, row in rows.items() if row.idle] == ["Sits Today"]
+
+
+def test_a_game_under_way_or_over_says_so_rather_than_today() -> None:
+    rows = _today(
+        [
+            ScheduledGame(week=0, date="2026-02-11", home="LAL", away="BOS", status="in_game"),
+            ScheduledGame(week=0, date="2026-02-11", home="DEN", away="MIA", status="complete"),
+        ]
+    )
+
+    assert rows["Plays Home"].today == "vs BOS live"
+    assert rows["Sits Today"].today == "vs MIA final"
+    assert not any(row.idle for row in rows.values())
+
+
+@pytest.mark.parametrize(
+    "today",
+    [
+        None,  # the schedule would not load: unknown, which is not a day nobody plays
+        date(2026, 2, 20),  # a day outside the week shown
+    ],
+)
+def test_no_row_claims_a_day_off_it_cannot_know(today: date | None) -> None:
+    rows = _today([ScheduledGame(week=0, date="2026-02-20", home="LAL", away="BOS")], today)
+
+    assert not any(row.today or row.idle for row in rows.values())
+
+
+def test_a_day_the_nba_rests_leaves_every_starter_without_a_game() -> None:
+    """Thanksgiving, the All-Star break: nobody plays, which the rows say rather than leaving it unsaid."""
+    rows = _today([ScheduledGame(week=0, date="2026-02-12", home="LAL", away="BOS")])
+
+    assert all(row.idle and row.today == "no game today" for row in rows.values())
 
 
 def test_the_week_being_played_shows_its_categories_and_both_rosters() -> None:
