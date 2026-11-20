@@ -28,4 +28,9 @@ describe("when a game starts, on a lineup row", () => {
     expect(startsAt(new Date(2026, 10, 19, 17, 15).toISOString(), now)).toMatch(/^today /);
     expect(startsAt(new Date(2026, 10, 22, 13, 0).toISOString(), now)).toMatch(/^Sun /);
   });
+
+  it("dates a game more than a week off, where the weekday alone would not place it", () => {
+    expect(startsAt(new Date(2026, 11, 6, 15, 0).toISOString(), now)).toMatch(/^Sun.*6/);
+    expect(startsAt(new Date(2026, 10, 22, 13, 0).toISOString(), now)).not.toMatch(/22/);
+  });
 });

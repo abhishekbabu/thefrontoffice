@@ -5,7 +5,7 @@ import { CardNote } from "@/components/ui/state";
 import type { Side, Spot, Stat } from "@/lib/api";
 import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
-import { startsAt } from "@/lib/format";
+import { clock, startsAt } from "@/lib/format";
 import { Label, Meta } from "@/components/ui/label";
 import { ListHeading } from "@/components/ui/list";
 
@@ -130,7 +130,10 @@ function SpotList({
                   off, since it is what the day's decision turns on. Said in words; a game today
                   is set in the foreground, a day off left muted with the rest of his row. */}
               {spot.today && (
-                <span className={cn("shrink-0", !spot.idle && "font-medium text-foreground")}>· {spot.today}</span>
+                <span className={cn("shrink-0", !spot.idle && "font-medium text-foreground")}>
+                  · {spot.today}
+                  {spot.kickoff && ` ${clock(spot.kickoff)}`}
+                </span>
               )}
               {/* A weekly lineup's version of the same: when his game starts, while it has not. */}
               {!spot.today && spot.kickoff && <span className="shrink-0">· {startsAt(spot.kickoff)}</span>}

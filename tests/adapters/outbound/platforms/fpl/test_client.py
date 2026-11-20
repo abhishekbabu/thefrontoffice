@@ -296,8 +296,12 @@ def test_history_returns_one_row_per_gameweek_played(client: FPLClient) -> None:
 def test_fixtures_resolve_both_clubs_and_both_difficulties(client: FPLClient) -> None:
     fixture = client.get_fixtures(3)[0]
     assert (fixture.home, fixture.away) == ("ARS", "MCI")
-    assert fixture.opponent_of("ARS") == Opponent(club="MCI", difficulty=4, home=True, started=True)
-    assert fixture.opponent_of("MCI") == Opponent(club="ARS", difficulty=2, home=False, started=True)
+    assert fixture.opponent_of("ARS") == Opponent(
+        club="MCI", difficulty=4, home=True, started=True, kickoff=fixture.kickoff
+    )
+    assert fixture.opponent_of("MCI") == Opponent(
+        club="ARS", difficulty=2, home=False, started=True, kickoff=fixture.kickoff
+    )
     assert fixture.opponent_of("LIV") is None
 
 

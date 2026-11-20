@@ -33,7 +33,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATE
 from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASchedule
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
-from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
+from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
@@ -585,7 +585,9 @@ def test_a_kept_move_can_name_only_your_roster_or_the_players_still_free() -> No
 # ── the week, and paging through the season ─────────────────────────────
 
 
-def _today(slate: list[ScheduledGame], today: date | None = date(2026, 2, 11)) -> dict[str, Spot]:
+def _today(
+    slate: list[ScheduledGame], today: date | None = date(2026, 2, 11), espn: FakeESPN | None = None
+) -> dict[str, Spot]:
     """Every row of the week being played, by player, on a day of FakeYahoo's 9-15 Feb window."""
     yahoo = FakeYahoo(
         roster=[
@@ -595,7 +597,7 @@ def _today(slate: list[ScheduledGame], today: date | None = date(2026, 2, 11)) -
             make_player("On The Bench", team="BOS", selected_position="BN"),
         ]
     )
-    summary = nba_provider(yahoo, nba=FakeNBA(slate=slate, today=today)).summary("")
+    summary = nba_provider(yahoo, nba=FakeNBA(slate=slate, today=today), espn=espn).summary("")
     assert summary.mine is not None
     return {s.player: s for s in (*summary.mine.lineup, *summary.mine.bench)}
 
@@ -640,6 +642,41 @@ def test_no_row_claims_a_day_off_it_cannot_know(today: date | None) -> None:
     rows = _today([ScheduledGame(week=0, date="2026-02-20", home="LAL", away="BOS")], today)
 
     assert not any(row.today or row.idle for row in rows.values())
+
+
+TIP_OFF = datetime(2026, 2, 12, 3, 30, tzinfo=UTC)
+
+
+def test_a_game_still_to_come_carries_its_tip_off_from_espns_scoreboard() -> None:
+    """Sleeper says the day; ESPN says the hour."""
+    espn = FakeESPN(
+        scoreboard=[
+            ScoreboardGame(home="LAL", away="BOS", state="pre", kickoff=TIP_OFF),
+            ScoreboardGame(home="DEN", away="MIA", state="in", kickoff=TIP_OFF),
+        ]
+    )
+    rows = _today(
+        [
+            ScheduledGame(week=0, date="2026-02-11", home="LAL", away="BOS", status="pre_game"),
+            ScheduledGame(week=0, date="2026-02-11", home="DEN", away="MIA", status="in_game"),
+        ],
+        espn=espn,
+    )
+
+    assert espn.days_asked == [date(2026, 2, 11)]
+    assert rows["Plays Home"].kickoff == TIP_OFF
+    assert rows["On The Bench"].kickoff == TIP_OFF
+    assert rows["Sits Today"].kickoff is None  # under way: the row is about the game now
+
+
+def test_tip_off_times_are_left_out_rather_than_failing_the_week_when_espn_will_not_load() -> None:
+    rows = _today(
+        [ScheduledGame(week=0, date="2026-02-11", home="LAL", away="BOS", status="pre_game")],
+        espn=FakeESPN(scoreboard_error=ESPNAPIError("down")),
+    )
+
+    assert rows["Plays Home"].today == "vs BOS today"
+    assert not any(row.kickoff for row in rows.values())
 
 
 def test_a_day_the_nba_rests_leaves_every_starter_without_a_game() -> None:
