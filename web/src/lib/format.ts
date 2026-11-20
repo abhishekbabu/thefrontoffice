@@ -32,6 +32,18 @@ export function moment(iso: string, now: Date = new Date()): string {
     : `${when.toLocaleDateString([], { weekday: "short" })} ${time}`;
 }
 
+/**
+ * When a game in the week starts, short enough for a lineup row: "today 5:15 PM", or "Thu 5:15 PM"
+ * on another day, in the viewer's own zone. A week's games are at most six days off, so the weekday
+ * is enough to place one.
+ */
+export function startsAt(iso: string, now: Date = new Date()): string {
+  const when = new Date(iso);
+  const time = when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const day = when.toDateString() === now.toDateString() ? "today" : when.toLocaleDateString(undefined, { weekday: "short" });
+  return `${day} ${time}`;
+}
+
 /** "Sun 23 Nov, 1:00 PM" in the viewer's own zone. */
 export function kickoff(iso: string): string {
   const when = new Date(iso);

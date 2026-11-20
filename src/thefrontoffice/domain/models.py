@@ -144,6 +144,13 @@ class Spot(BaseModel):
         default=False,
         description="He has no game today (`today`): a start there scores nothing until he is swapped out.",
     )
+    kickoff: datetime | None = Field(
+        default=None,
+        description=(
+            "When his game starts, in UTC, while it has not: the page shows it in the viewer's own zone. "
+            "None once it has kicked off, where the time is unknown, and in a competition that does not say."
+        ),
+    )
     scoring: SpotScoring | None = Field(
         default=None,
         description=(

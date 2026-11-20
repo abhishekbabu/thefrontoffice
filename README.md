@@ -209,7 +209,9 @@ Each NBA lineup row, both teams, shows games left this week and a game's value
 played each row also says whether he plays today, in Pacific: "vs TOR today",
 "@ BOS live", "vs TOR final", or "no game today", with that row dimmed. Sleeper
 publishes the day, not the tip-off time; a schedule that will not load leaves
-the line off rather than claiming a day off. An NBA player's
+the line off rather than claiming a day off. An NFL row whose game is still to come
+says when it kicks off, from ESPN's scoreboard, in the viewer's own zone ("today
+5:15 PM", "Sun 1:00 PM"): Thursday's players lock days before Monday's. An NBA player's
 worth this week is that game's value (his recent run blended with Sleeper's
 projection, in fantasy points or across the scored categories, each counted in
 its spread over the players read) × games left (none while ruled out, or from

@@ -1995,6 +1995,11 @@ export interface components {
              */
             idle: boolean;
             /**
+             * Kickoff
+             * @description When his game starts, in UTC, while it has not: the page shows it in the viewer's own zone. None once it has kicked off, where the time is unknown, and in a competition that does not say.
+             */
+            kickoff: string | null;
+            /**
              * Scoring
              * @description Which kind of number `value` is: projected before his game, live while it is on, final after. None where the competition does not say.
              */
