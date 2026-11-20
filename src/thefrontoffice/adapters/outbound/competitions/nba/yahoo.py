@@ -444,8 +444,28 @@ class YahooNBAProvider:
         # Only while the week shown is the one being played: a week ahead has no today, and one played
         # was set day by day already. None where the schedule would not load, rather than a day of no games.
         on = None if played or week != current else self.games.games_today()
-        today = on[1] if on is not None and found.start <= on[0] <= found.end else None
+        today = (
+            nba_week.Today(on[1], self._tipoff(on[0])) if on is not None and found.start <= on[0] <= found.end else None
+        )
         return nba_week.board(found, weeks, records, roster, theirs, scored, readings, unscheduled, today)
+
+    def _tipoff(self, day: date) -> dict[str, datetime]:
+        """When each club's game on `day` starts, while it has not, by ESPN's abbreviation.
+
+        Empty where ESPN's scoreboard would not load: a row then says he plays
+        today without the hour, which is still what the lineup is set on.
+        """
+        try:
+            games = self.espn.get_day_scoreboard(NBA, day)
+        except ESPNAPIError as e:
+            logger.warning(f"Showing today's games without tip-off times, ESPN's scoreboard would not load: {e}")
+            return {}
+        return {
+            club: game.kickoff
+            for game in games
+            if game.state == "pre" and game.kickoff is not None
+            for club in (game.home, game.away)
+        }
 
     def schedule(self, league_id: str) -> LeagueSchedule:
         """The table, and your head-to-head season from every week's scoreboard.

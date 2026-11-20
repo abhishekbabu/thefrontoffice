@@ -32,16 +32,26 @@ export function moment(iso: string, now: Date = new Date()): string {
     : `${when.toLocaleDateString([], { weekday: "short" })} ${time}`;
 }
 
+/** "5:15 PM": a start time alone, in the viewer's own zone, for a row that already says the day. */
+export function clock(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+const WEEK_MS = 6 * 86_400_000;
+
 /**
- * When a game in the week starts, short enough for a lineup row: "today 5:15 PM", or "Thu 5:15 PM"
- * on another day, in the viewer's own zone. A week's games are at most six days off, so the weekday
- * is enough to place one.
+ * When a game starts, short enough for a lineup row: "today 5:15 PM", "Thu 5:15 PM" later in the
+ * week, and "Sat 6 Dec 3:00 PM" beyond it, where a weekday alone would not place it; in the
+ * viewer's own zone.
  */
 export function startsAt(iso: string, now: Date = new Date()): string {
   const when = new Date(iso);
-  const time = when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  const day = when.toDateString() === now.toDateString() ? "today" : when.toLocaleDateString(undefined, { weekday: "short" });
-  return `${day} ${time}`;
+  const far = when.getTime() - now.getTime() > WEEK_MS;
+  const day =
+    when.toDateString() === now.toDateString()
+      ? "today"
+      : when.toLocaleDateString(undefined, far ? { weekday: "short", day: "numeric", month: "short" } : { weekday: "short" });
+  return `${day} ${clock(iso)}`;
 }
 
 /** "Sun 23 Nov, 1:00 PM" in the viewer's own zone. */

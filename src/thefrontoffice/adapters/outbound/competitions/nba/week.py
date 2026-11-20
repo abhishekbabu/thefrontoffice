@@ -16,11 +16,13 @@ Sleeper's schedule (`SleeperNBASchedule`), since Yahoo publishes none.
 import logging
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Literal, Protocol
 
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day, span, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nba import views
+from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nba.league import ended
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, PACIFIC, ruled_out, stranded
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
@@ -144,6 +146,16 @@ def total(side: MatchupSide, when: Stage) -> str:
     return " · ".join(part for part in (scored, projected) if part)
 
 
+@dataclass(frozen=True)
+class Today:
+    """The day's real games, while the week shown is the one being played, and when each still to come tips off."""
+
+    games: Sequence[ScheduledGame]
+    tipoff: Mapping[str, datetime] = field(default_factory=dict)
+    """When each club's game starts, while it has not, by ESPN's abbreviation: Sleeper publishes the day
+    alone. Empty where ESPN's scoreboard would not load, and the rows then say the day without the hour."""
+
+
 def side(
     name: str,
     detail: str,
@@ -152,7 +164,7 @@ def side(
     readings: Mapping[str, Reading] | None = None,
     by_points: bool = False,
     scored: Sequence[StatCategory] = (),
-    today: Sequence[ScheduledGame] | None = None,
+    today: Today | None = None,
 ) -> Side:
     """One team in the week, its roster parted as Yahoo slots it: the lineup, the bench, the injured list.
 
@@ -160,8 +172,9 @@ def side(
     week ended, each player carrying his line over it, read in the league's
     categories `scored`. `readings` are each player's week by Yahoo's key, which
     his row reads its games left and Yahoo's averages from (`views.cell`).
-    `today` are the day's real games while the week is being played, None in
-    any other: each row then says whether he plays today (`today_line`).
+    `today` is the day's real games while the week is being played, None in
+    any other: each row then says whether he plays today (`today_line`), and
+    when, while his game is still to come.
     """
     rows = list(roster or [])
     found = readings or {}
@@ -170,8 +183,14 @@ def side(
         row = _spot(player, found.get(player.player_key), by_points, scored)
         if today is None or row.scoring is not None:
             return row
-        game = next((g for g in today if g.opponent_of(player.team.upper()) is not None), None)
-        return row.model_copy(update={"today": today_line(game, player.team), "idle": game is None})
+        game = next((g for g in today.games if g.opponent_of(player.team.upper()) is not None), None)
+        return row.model_copy(
+            update={
+                "today": today_line(game, player.team),
+                "idle": game is None,
+                "kickoff": today.tipoff.get(espn_club(player.team)) if game is not None else None,
+            }
+        )
 
     return Side(
         name=name,
@@ -188,8 +207,8 @@ def today_line(game: ScheduledGame | None, club: str) -> str:
     """Whether his club plays today, as his row says it: 'vs TOR today', '@ BOS live', 'vs TOR final', 'no game today'.
 
     A lineup is set day by day, so a starter with no game today scores nothing
-    until he is swapped for one who has. Sleeper publishes no tip-off time, so
-    a game to come says the day, not the hour.
+    until he is swapped for one who has. Sleeper publishes no tip-off time: the
+    hour of a game to come is ESPN's, on the row beside this (`Today.tipoff`).
     """
     found = game.opponent_of(club.upper()) if game else None
     if game is None or found is None:
@@ -366,7 +385,7 @@ def board(
     categories_scored: Sequence[StatCategory] | None,
     readings: Mapping[str, Reading] | None = None,
     unscheduled: Sequence[date] = (),
-    today: Sequence[ScheduledGame] | None = None,
+    today: Today | None = None,
 ) -> Summary:
     """One week's head-to-head, and where it sits in the season.
 
@@ -376,7 +395,7 @@ def board(
     `categories_scored` is the league's own list, None for a points league.
     `readings` are every shown player's week, by Yahoo's key. `unscheduled` are
     the week's days the NBA has yet to schedule (`unsettled`), which the header
-    says, since every games-left count below it is short by them. `today` are
+    says, since every games-left count below it is short by them. `today` is
     the day's real games while the week is the one being played (`side`).
     """
     window = f"Week {weeks.week} · {span(found.start, found.end)}"

@@ -147,8 +147,9 @@ class Spot(BaseModel):
     kickoff: datetime | None = Field(
         default=None,
         description=(
-            "When his game starts, in UTC, while it has not: the page shows it in the viewer's own zone. "
-            "None once it has kicked off, where the time is unknown, and in a competition that does not say."
+            "When his game starts, in UTC, while it has not: the page shows it in the viewer's own zone, "
+            "as the hour beside `today` where a lineup is set by the day. "
+            "None once it has kicked off, and where the time is unknown."
         ),
     )
     scoring: SpotScoring | None = Field(

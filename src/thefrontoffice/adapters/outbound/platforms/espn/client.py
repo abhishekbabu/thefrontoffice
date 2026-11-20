@@ -78,6 +78,10 @@ class ESPNSource(Protocol):
         """Everyone on every club's roster, with ESPN's id for him."""
         ...
 
+    def get_day_scoreboard(self, league: str, day: date) -> list[ScoreboardGame]:
+        """Every game on `day`, as it stands right now."""
+        ...
+
     def get_athlete_injuries(self, league: str, season: str, athletes: Sequence[Athlete]) -> dict[str, InjuryReport]:
         """Each athlete's latest injury this season, keyed by his ESPN id; nobody ESPN has none for."""
         ...
@@ -184,10 +188,19 @@ class ESPNClient:
 
     def get_scoreboard(self, league: str, season: str, week: int) -> list[ScoreboardGame]:
         """Every regular-season game of `week`, as it stands right now."""
+        return self._scoreboard(f"{league}_{season}_{week}", league, f"seasontype=2&week={week}&dates={season}")
+
+    def get_day_scoreboard(self, league: str, day: date) -> list[ScoreboardGame]:
+        """Every game on `day`, as it stands right now: a league that plays daily is read a day at a time.
+
+        The day is ESPN's own, the US calendar day its schedule is published by.
+        """
+        stamp = day.strftime("%Y%m%d")
+        return self._scoreboard(f"{league}_{stamp}", league, f"dates={stamp}")
+
+    def _scoreboard(self, key: str, league: str, query: str) -> list[ScoreboardGame]:
         data = self._api.cached(
-            f"scoreboard_{league.replace('/', '_')}_{season}_{week}",
-            f"{BASE_URL}/{league}/scoreboard?seasontype=2&week={week}&dates={season}",
-            SCOREBOARD_TTL,
+            f"scoreboard_{key.replace('/', '_')}", f"{BASE_URL}/{league}/scoreboard?{query}", SCOREBOARD_TTL
         )
         if not isinstance(data, dict):
             raise ESPNAPIError("ESPN returned an unreadable scoreboard.")

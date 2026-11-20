@@ -10,7 +10,7 @@ from support.http import NO_WAIT, FakeSession
 from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
-from thefrontoffice.adapters.outbound.platforms.espn.types import NFL, Athlete
+from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, NFL, Athlete
 
 TEAMS = {
     "sports": [
@@ -141,6 +141,17 @@ def test_the_scoreboard_says_where_each_game_is(tmp_path: Path) -> None:
     assert before.kickoff == datetime(2026, 10, 25, 17, tzinfo=UTC)
     assert game.kickoff is None  # ESPN gave no time
     assert any("week=7" in url for url in session.requests)
+
+
+def test_a_days_scoreboard_is_read_by_its_date(tmp_path: Path) -> None:
+    """Basketball plays daily, so its board is asked for by the day rather than the week."""
+    board = {"events": [_event("LAL", "BOS", "pre", date="2026-02-12T03:30Z")]}
+    client, session = _client({"/scoreboard": board}, tmp_path)
+
+    [game] = client.get_day_scoreboard(NBA, date(2026, 2, 11))
+
+    assert (game.home, game.away, game.kickoff) == ("LAL", "BOS", datetime(2026, 2, 12, 3, 30, tzinfo=UTC))
+    assert any("dates=20260211" in url and "week=" not in url for url in session.requests)
 
 
 def test_an_unreadable_scoreboard_is_an_error(tmp_path: Path) -> None:

@@ -13,6 +13,7 @@ last match. Any other gameweek can be browsed in the same shapes.
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 from thefrontoffice.adapters.outbound.competitions.dates import at_time
 from thefrontoffice.adapters.outbound.competitions.premier_league import league, prompt
@@ -382,7 +383,13 @@ def spot(
         scoring=state,
         scored="" if points is None else str(points),
         projection="" if expected is None else f"{expected:.1f}",
+        kickoff=first_kickoff(opponents) if state == "projected" else None,
     )
+
+
+def first_kickoff(opponents: list[Opponent]) -> datetime | None:
+    """When his first match of the gameweek starts — a double's earlier one — or None where FPL set no time."""
+    return min((o.kickoff for o in opponents if o.kickoff is not None), default=None)
 
 
 def spot_tone(points: int | None, flag: str, *, blank: bool) -> Tone:

@@ -313,6 +313,9 @@ class Opponent:
     finished: bool = False
     """The match is over. Bonus can still be confirmed after, so his points may yet move by a point or two."""
 
+    kickoff: datetime | None = None
+    """When it starts, in UTC; None where FPL has yet to set a time."""
+
 
 @dataclass(frozen=True)
 class Fixture:
@@ -335,9 +338,9 @@ class Fixture:
     def opponent_of(self, team: str) -> Opponent | None:
         """Who `team` faces, at what difficulty, and whether they are at home."""
         if team == self.home:
-            return Opponent(self.away, self.home_difficulty, True, self.started, self.finished)
+            return Opponent(self.away, self.home_difficulty, True, self.started, self.finished, self.kickoff)
         if team == self.away:
-            return Opponent(self.home, self.away_difficulty, False, self.started, self.finished)
+            return Opponent(self.home, self.away_difficulty, False, self.started, self.finished, self.kickoff)
         return None
 
 

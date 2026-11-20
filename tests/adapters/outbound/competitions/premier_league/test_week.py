@@ -1,6 +1,7 @@
 """Tests for an FPL gameweek as the week view reads it: both squads, the rows, the swaps, the chips."""
 
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import pytest
 from support.fpl import (
@@ -201,6 +202,24 @@ def test_once_his_club_kicks_off_a_nought_is_a_score_not_a_match_to_come() -> No
     unused = next(s for s in lineup if s.player_id == "10")
 
     assert (unused.scoring, unused.scored, unused.value) == ("live", "0", "0 pts")
+
+
+def test_a_row_still_to_kick_off_says_when_its_first_match_starts() -> None:
+    """A double's earlier match is the one his row waits on; FPL's time is what the lineup is set around."""
+    early, late = datetime(2026, 11, 21, 12, 30, tzinfo=UTC), datetime(2026, 11, 25, 20, tzinfo=UTC)
+    fixtures = [replace(_arsenal(), kickoff=late), replace(_arsenal(), home="CHE", away="ARS", kickoff=early)]
+    side = mine(provider(fixtures=fixtures).summary(H2H_LEAGUE))
+    rows = {s.player_id: s for s in (*side.lineup, *side.bench)}
+
+    assert rows["8"].kickoff == early
+    assert rows["15"].kickoff is None, "MCI has no fixture this gameweek"
+
+
+def test_a_row_under_way_says_no_kickoff() -> None:
+    started = replace(_arsenal(started=True), kickoff=datetime(2026, 11, 21, 12, 30, tzinfo=UTC))
+    rows = {s.player_id: s for s in mine(provider(live=LIVE, fixtures=[started]).summary(H2H_LEAGUE)).lineup}
+
+    assert rows["8"].kickoff is None
 
 
 def test_a_row_is_final_once_every_match_his_club_has_is_over() -> None:

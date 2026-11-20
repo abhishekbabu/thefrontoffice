@@ -1,6 +1,7 @@
 """A stand-in for ESPN's public site API, which the NFL and the NBA both read."""
 
 from collections.abc import Sequence
+from datetime import date
 
 from thefrontoffice.adapters.outbound.platforms.espn.types import Athlete, InjuryReport, NewsArticle, ScoreboardGame
 
@@ -24,6 +25,7 @@ class FakeESPN:
         self.scoreboard = scoreboard or []
         self.scoreboard_error = scoreboard_error
         self.weekly_scoreboards: dict[int, list[ScoreboardGame]] = {}
+        self.days_asked: list[date] = []
         """Scoreboards for particular weeks, where a test needs them to differ; `scoreboard` otherwise."""
         self.asked: list[str] = []
         self.rosters: list[Athlete] = []
@@ -49,6 +51,12 @@ class FakeESPN:
         if self.scoreboard_error:
             raise self.scoreboard_error
         return self.weekly_scoreboards.get(week, self.scoreboard)
+
+    def get_day_scoreboard(self, league: str, day: date) -> list[ScoreboardGame]:
+        self.days_asked.append(day)
+        if self.scoreboard_error:
+            raise self.scoreboard_error
+        return self.scoreboard
 
     def get_rosters(self, league: str) -> list[Athlete]:
         self.roster_reads += 1
