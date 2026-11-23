@@ -33,7 +33,7 @@ export function LineupCard({
 }) {
   if (!lineup.length && !bench.length) return null;
   // With no opponent's kickoff to wait for, the points column is always drawn.
-  const rows = { ...shapeOf([...lineup, ...bench, ...reserve]), started: true };
+  const rows = { ...shapeOf([...lineup, ...bench, ...reserve], []), started: true };
   return (
     <Card>
       <CardHeader>
@@ -63,7 +63,8 @@ export function LineupCard({
  * What every row of a lineup makes room for, whether or not it has it: the
  * points column once a game is under way, and a line of category figures once
  * anyone has one. Read from both sides of a matchup, so the two cards draw the
- * same headings and the same row heights, and slot N sits beside slot N.
+ * same headings, the same row heights and as many rows in each list, and slot N
+ * sits beside slot N.
  */
 export type Rows = {
   /** Whether any game of the week has kicked off: a player's points exist from then. */
@@ -72,18 +73,30 @@ export type Rows = {
   scored: boolean;
   /** The first line anyone has, whose categories head the columns; empty while nobody has one. */
   line: Stat[];
+  /** The most rows either side draws in each list, open spots counted on the bench: a shorter list is padded to it. */
+  lineup: number;
+  bench: number;
+  reserve: number;
 };
 
 /** The rows' shape across every list of every side given: one side alone, or both of a matchup. */
 export function rowsOf(...sides: (Side | null | undefined)[]): Rows {
-  return shapeOf(sides.flatMap((side) => (side ? [...side.lineup, ...side.bench, ...side.reserve] : [])));
+  const shown = sides.filter((side): side is Side => !!side);
+  return shapeOf(
+    shown.flatMap((side) => [...side.lineup, ...side.bench, ...side.reserve]),
+    shown,
+  );
 }
 
-function shapeOf(spots: Spot[]): Rows {
+function shapeOf(spots: Spot[], sides: Side[]): Rows {
+  const most = (count: (side: Side) => number) => Math.max(0, ...sides.map(count));
   return {
     started: spots.some((spot) => spot.scoring === "live" || spot.scoring === "final"),
     scored: spots.some((spot) => spot.scoring),
     line: spots.find((spot) => spot.line.length > 0)?.line ?? [],
+    lineup: most((side) => side.lineup.length),
+    bench: most((side) => side.bench.length + Math.max(side.open_spots, 0)),
+    reserve: most((side) => side.reserve.length),
   };
 }
 
@@ -103,6 +116,7 @@ function SpotList({
   spots,
   rows,
   open = 0,
+  pad = 0,
   empty,
   onOpen,
 }: {
@@ -110,10 +124,12 @@ function SpotList({
   rows: Rows;
   /** Roster spots nobody holds, drawn as rows of their own after the players. */
   open?: number;
+  /** Blank rows after everything else, so this list ends where the other side's does. */
+  pad?: number;
   empty?: string;
   onOpen?: (id: string) => void;
 }) {
-  if (!spots.length && open <= 0) {
+  if (!spots.length && open <= 0 && pad <= 0) {
     return <CardNote>{empty ?? "Nothing set."}</CardNote>;
   }
   const slotted = spots.some((spot) => spot.slot);
@@ -189,6 +205,12 @@ function SpotList({
           <div className={cn("flex items-center rounded-md border border-dashed border-border px-3", rowBody(rows))}>
             <span className="truncate text-[13px] font-medium text-muted-foreground">Open roster spot</span>
           </div>
+        </div>
+      ))}
+      {/* Room the other side's longer list takes, left blank: no border, nothing to read. */}
+      {Array.from({ length: Math.max(pad, 0) }, (_, i) => (
+        <div key={`pad-${i}`} data-row="pad" aria-hidden className={cn(ROW, "border-transparent")}>
+          <div className={rowBody(rows)} />
         </div>
       ))}
     </div>
@@ -355,6 +377,7 @@ export function SideCard({
 }) {
   if (!side) return null;
   const shape = rows ?? rowsOf(side);
+  const open = Math.max(side.open_spots, 0);
   return (
     <Card>
       <CardHeader>
@@ -369,22 +392,29 @@ export function SideCard({
         <span className="normal-case tracking-normal">{[side.record, side.detail, side.points].filter(Boolean).join(" · ")}</span>
       </CardHeader>
       <ScoreHeads spots={side.lineup} rows={shape} className="border-t-0" />
-      <SpotList spots={side.lineup} rows={shape} onOpen={onOpen} />
-      {(side.bench.length > 0 || side.open_spots > 0) && (
+      <SpotList spots={side.lineup} rows={shape} pad={shape.lineup - side.lineup.length} onOpen={onOpen} />
+      {/* Headed wherever either side has one, so the two cards' lists start level. */}
+      {shape.bench > 0 && (
         <>
           <ScoreHeads spots={side.bench} rows={shape}>
             Bench
           </ScoreHeads>
-          <SpotList spots={side.bench} open={side.open_spots} rows={shape} onOpen={onOpen} />
+          <SpotList
+            spots={side.bench}
+            open={open}
+            pad={shape.bench - side.bench.length - open}
+            rows={shape}
+            onOpen={onOpen}
+          />
         </>
       )}
       {/* Apart from the bench: these cost no roster spot and cannot start. */}
-      {side.reserve.length > 0 && (
+      {shape.reserve > 0 && (
         <>
           <ScoreHeads spots={side.reserve} rows={shape}>
             Reserve
           </ScoreHeads>
-          <SpotList spots={side.reserve} rows={shape} onOpen={onOpen} />
+          <SpotList spots={side.reserve} rows={shape} pad={shape.reserve - side.reserve.length} onOpen={onOpen} />
         </>
       )}
     </Card>

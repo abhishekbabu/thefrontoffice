@@ -250,6 +250,33 @@ describe("rows side by side", () => {
     expect(linesUnder(right)).toEqual([1]);
     expect(right.textContent).toContain("vs LAL today");
   });
+
+  it("pad the shorter side's lists, so each list starts level with the other side's", async () => {
+    const mine = { name: "Mine", record: "", detail: "", points: "", lineup: [quiet("A"), quiet("B"), quiet("C")], bench: [quiet("D")], reserve: [], open_spots: 1 };
+    const theirs = { name: "Theirs", record: "", detail: "", points: "", lineup: [quiet("E")], bench: [quiet("F"), quiet("G"), quiet("H")], reserve: [quiet("I")], open_spots: 0 };
+    const rows = rowsOf(mine, theirs);
+    const { container } = await render(
+      <>
+        <SideCard side={mine} label="You" rows={rows} />
+        <SideCard side={theirs} label="Opponent" rows={rows} />
+      </>,
+    );
+    const [left, right] = sides(container);
+    /** Rows drawn in each list, lineup then bench then reserve. */
+    const perList = (card: Element): number[] =>
+      [...new Set([...card.querySelectorAll("[data-row]")].map((row) => row.parentElement))].map((list) => list?.children.length ?? 0);
+    const padding = (card: Element) => [...card.querySelectorAll('[data-row="pad"]')];
+
+    expect(perList(left)).toEqual([3, 3, 1]);
+    expect(perList(right)).toEqual(perList(left));
+    // Both cards head a reserve list, though only one side has anybody in it.
+    expect(left.textContent).toContain("Reserve");
+    // The blanks are as tall as a player's row and say nothing to a screen reader.
+    expect(padding(left)).toHaveLength(2);
+    expect(padding(right)).toHaveLength(2);
+    expect(new Set(rowBodies(left))).toEqual(new Set(["h-9"]));
+    expect(padding(left).every((row) => row.getAttribute("aria-hidden") === "true" && row.textContent === "")).toBe(true);
+  });
 });
 
 describe("a week played in categories", () => {
