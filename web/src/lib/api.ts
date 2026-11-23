@@ -6,11 +6,13 @@
  * OpenAPI schema. A field added to `ScoutReport` arrives with the next
  * `just api-types`, and `just check-web` fails until it has.
  *
- * Each call is typed by the route it calls, through `Ok`, rather than by a
- * model picked beside it: a route changed to return something else fails to
- * compile here instead of handing a component the wrong shape.
+ * Each call names its route by the schema's own path, through `openapi-fetch`,
+ * so its parameters, body and answer are the route's: a path the server does
+ * not serve, or a route changed to return something else, fails to compile
+ * here instead of handing a component the wrong shape.
  */
-import type { components, operations } from "@/lib/schema";
+import createClient from "openapi-fetch";
+import type { components, operations, paths } from "@/lib/schema";
 
 type Schemas = components["schemas"];
 
@@ -59,9 +61,6 @@ export type Trades = Schemas["Trades"];
 export type Turn = Schemas["Turn"];
 export type Urgency = Action["urgency"];
 
-/** What a route answers with, named by the route's own function on the server. */
-type Ok<Route extends keyof operations> = operations[Route]["responses"][200]["content"]["application/json"];
-
 /** What to ask for: the competition's own ranking unless a column is named. */
 export type FreeAgentQuery = NonNullable<operations["free_agents"]["parameters"]["query"]>;
 
@@ -101,90 +100,122 @@ export function failure(body: unknown, status: string): ApiError {
   return new ApiError(isErrorBody(body) ? body : { detail: `The server did not answer (${status}).`, code: "error", remedy: null });
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  // A header the caller sets wins; JSON is only the default. Built as Headers
-  // because `init.headers` may be one, or pairs, neither of which spreads.
-  const headers = new Headers(init?.headers);
-  if (!headers.has("content-type")) headers.set("content-type", "application/json");
-  const response = await fetch(path, { ...init, headers });
-  if (!response.ok) {
-    throw failure(await response.json().catch(() => null), `${response.status} ${response.statusText}`);
-  }
-  return response.json() as Promise<T>;
+/**
+ * Looked up on each call rather than captured once: a test's interceptor
+ * replaces `fetch` after this module has loaded.
+ */
+const client = createClient<paths>({ fetch: (request) => globalThis.fetch(request) });
+
+/** The answer a call came back with, or the failure it carried, thrown. */
+async function settle<T>(pending: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
+  const { data, error, response } = await pending;
+  if (!response.ok || data === undefined) throw failure(error ?? null, `${response.status} ${response.statusText}`);
+  return data;
 }
 
-const post = <T,>(path: string, body: unknown) => request<T>(path, { method: "POST", body: JSON.stringify(body) });
-
-const put = <T,>(path: string, body: unknown) => request<T>(path, { method: "PUT", body: JSON.stringify(body) });
-
-const segment = encodeURIComponent;
-
-/** `path` asking for the values given, leaving out the ones left empty for the server's own default. */
-function withQuery(path: string, query: Record<string, string | number | boolean | undefined>): string {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(query)) {
-    if (value !== "" && value !== undefined) params.set(key, String(value));
-  }
-  const asked = params.toString();
-  return asked ? `${path}?${asked}` : path;
+/** `query` without the values left empty, so the server applies its own default. */
+function present<Query extends object>(query: Query): Query {
+  return Object.fromEntries(Object.entries(query).filter(([, value]) => value !== "" && value !== undefined)) as Query;
 }
 
 /**
- * Everything asked of one league, under one base path.
+ * Everything asked of one league, addressed by the same two path parameters.
  *
- * Built once per league, so each segment is encoded once and in one place —
- * an id with a slash in it would otherwise address a different route.
+ * `openapi-fetch` encodes each parameter, so an id with a slash in it stays
+ * one segment rather than addressing a different route.
  */
 export function leagueApi(competition: string, league: string) {
-  const base = `/api/${segment(competition)}/leagues/${segment(league)}`;
+  const at = { competition, league_id: league };
   return {
-    roster: (order: PlayerOrder = {}) => request<Ok<"roster">>(withQuery(`${base}/roster`, order)),
-    player: (id: string) => request<Ok<"player">>(`${base}/players/${segment(id)}`),
+    roster: (order: PlayerOrder = {}) =>
+      settle(client.GET("/api/{competition}/leagues/{league_id}/roster", { params: { path: at, query: present(order) } })),
+    player: (id: string) =>
+      settle(
+        client.GET("/api/{competition}/leagues/{league_id}/players/{player_id}", {
+          params: { path: { ...at, player_id: id } },
+        }),
+      ),
     /** One tab of his drawer read only when opened (`PlayerDetail.deferred`). */
     playerTab: (id: string, tab: string) =>
-      request<Ok<"player_tab">>(`${base}/players/${segment(id)}/tabs/${segment(tab)}`),
+      settle(
+        client.GET("/api/{competition}/leagues/{league_id}/players/{player_id}/tabs/{tab}", {
+          params: { path: { ...at, player_id: id, tab } },
+        }),
+      ),
     compare: (ids: string[]) =>
-      request<Ok<"compare">>(`${base}/compare?${ids.map((id) => `ids=${encodeURIComponent(id)}`).join("&")}`),
-    searchPlayers: (search: string) => request<Ok<"search_players">>(withQuery(`${base}/players`, { search })),
-    summary: () => request<Ok<"summary">>(`${base}/summary`),
+      settle(client.GET("/api/{competition}/leagues/{league_id}/compare", { params: { path: at, query: { ids } } })),
+    searchPlayers: (search: string) =>
+      settle(
+        client.GET("/api/{competition}/leagues/{league_id}/players", { params: { path: at, query: present({ search }) } }),
+      ),
+    summary: () => settle(client.GET("/api/{competition}/leagues/{league_id}/summary", { params: { path: at } })),
     /** Another week of the season, as played or as it projects; the week being played is `summary`. */
-    weekOf: (week: number) => request<Ok<"week_of">>(`${base}/weeks/${week}`),
+    weekOf: (week: number) =>
+      settle(client.GET("/api/{competition}/leagues/{league_id}/weeks/{week}", { params: { path: { ...at, week } } })),
     /** The real games of any week of the season, the week being played included. */
-    gamesOf: (week: number) => request<Ok<"games_of">>(`${base}/weeks/${week}/games`),
-    schedule: () => request<Ok<"schedule">>(`${base}/schedule`),
-    weeksAhead: (team = "") => request<Ok<"weeks_ahead">>(withQuery(`${base}/weeks-ahead`, { team })),
-    trades: () => request<Ok<"trades">>(`${base}/trades`),
-    teams: () => request<Ok<"teams">>(`${base}/teams`),
+    gamesOf: (week: number) =>
+      settle(
+        client.GET("/api/{competition}/leagues/{league_id}/weeks/{week}/games", { params: { path: { ...at, week } } }),
+      ),
+    schedule: () => settle(client.GET("/api/{competition}/leagues/{league_id}/schedule", { params: { path: at } })),
+    weeksAhead: (team = "") =>
+      settle(
+        client.GET("/api/{competition}/leagues/{league_id}/weeks-ahead", { params: { path: at, query: present({ team }) } }),
+      ),
+    trades: () => settle(client.GET("/api/{competition}/leagues/{league_id}/trades", { params: { path: at } })),
+    teams: () => settle(client.GET("/api/{competition}/leagues/{league_id}/teams", { params: { path: at } })),
     teamRoster: (team: string, order: PlayerOrder = {}) =>
-      request<Ok<"team_roster">>(withQuery(`${base}/teams/${segment(team)}/roster`, order)),
-    decide: (decision: ItemDecision) => post<Ok<"decide">>(`${base}/items`, decision),
-    freeAgents: (query: FreeAgentQuery = {}) => request<Ok<"free_agents">>(withQuery(`${base}/free-agents`, query)),
+      settle(
+        client.GET("/api/{competition}/leagues/{league_id}/teams/{team_id}/roster", {
+          params: { path: { ...at, team_id: team }, query: present(order) },
+        }),
+      ),
+    decide: (decision: ItemDecision) =>
+      settle(client.POST("/api/{competition}/leagues/{league_id}/items", { params: { path: at }, body: decision })),
+    freeAgents: (query: FreeAgentQuery = {}) =>
+      settle(
+        client.GET("/api/{competition}/leagues/{league_id}/free-agents", { params: { path: at, query: present(query) } }),
+      ),
     freeAgentCalls: (playerIds: string[]) =>
-      post<Ok<"free_agent_calls">>(`${base}/free-agents/calls`, { player_ids: playerIds }),
+      settle(
+        client.POST("/api/{competition}/leagues/{league_id}/free-agents/calls", {
+          params: { path: at },
+          body: { player_ids: playerIds },
+        }),
+      ),
     judgeFreeAgents: (playerIds: string[]) =>
-      post<Ok<"judge_free_agents">>(`${base}/free-agents/judge`, { player_ids: playerIds }),
-    scout: () => post<Ok<"scout">>(`${base}/scout`, {}),
-    judgment: () => request<Ok<"judgment">>(`${base}/judgment`),
+      settle(
+        client.POST("/api/{competition}/leagues/{league_id}/free-agents/judge", {
+          params: { path: at },
+          body: { player_ids: playerIds },
+        }),
+      ),
+    scout: () => settle(client.POST("/api/{competition}/leagues/{league_id}/scout", { params: { path: at } })),
+    judgment: () => settle(client.GET("/api/{competition}/leagues/{league_id}/judgment", { params: { path: at } })),
     /** Open the assistant's conversation in this league; asked through `api.ask`. */
-    assistant: () => post<Ok<"assistant">>(`${base}/assistant`, {}),
+    assistant: () => settle(client.POST("/api/{competition}/leagues/{league_id}/assistant", { params: { path: at } })),
   };
 }
 
 export const api = {
-  competitions: () => request<Ok<"list_sports">>("/api/competitions"),
-  capabilities: () => request<Ok<"capabilities">>("/api/capabilities"),
-  leagues: (competition: string) => request<Ok<"list_leagues">>(`/api/${segment(competition)}/leagues`),
+  competitions: () => settle(client.GET("/api/competitions")),
+  capabilities: () => settle(client.GET("/api/capabilities")),
+  leagues: (competition: string) =>
+    settle(client.GET("/api/{competition}/leagues", { params: { path: { competition } } })),
   league: leagueApi,
   /** What has been said in a conversation: the server keeps it, so a reopened chat shows it. */
-  turns: (chatId: string) => request<Ok<"turns">>(`/api/chat/${segment(chatId)}`),
+  turns: (chatId: string) => settle(client.GET("/api/chat/{chat_id}", { params: { path: { chat_id: chatId } } })),
   /** Ask the next question with what is on screen; answered with every turn so far, the answer last. */
   ask: (chatId: string, message: string, onScreen: Subject[] = []) =>
-    post<Ok<"ask">>(`/api/chat/${segment(chatId)}`, { message, on_screen: onScreen }),
-  settings: () => request<Ok<"read_settings">>("/api/settings"),
-  saveSettings: (values: Record<string, string>) => put<Ok<"save_settings">>("/api/settings", { values }),
+    settle(
+      client.POST("/api/chat/{chat_id}", { params: { path: { chat_id: chatId } }, body: { message, on_screen: onScreen } }),
+    ),
+  settings: () => settle(client.GET("/api/settings")),
+  saveSettings: (values: Record<string, string>) => settle(client.PUT("/api/settings", { body: { values } })),
   /** Start a platform's login, named as a remedy names it: `yahoo`. */
-  login: (platform: string) => post<Ok<"start_login">>(`/api/${segment(platform)}/login`, {}),
-  loginState: (platform: string) => request<Ok<"login_state">>(`/api/${segment(platform)}/login`),
+  login: (platform: string) => settle(client.POST("/api/{platform}/login", { params: { path: { platform } } })),
+  loginState: (platform: string) => settle(client.GET("/api/{platform}/login", { params: { path: { platform } } })),
   /** When a platform's browser sync last stored anything, and which leagues it holds. */
-  captureStatus: (platform: string) => request<Ok<"capture_status">>(`/api/${segment(platform)}/capture`),
+  captureStatus: (platform: string) =>
+    settle(client.GET("/api/{platform}/capture", { params: { path: { platform } } })),
 };
