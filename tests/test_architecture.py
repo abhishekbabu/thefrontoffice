@@ -128,20 +128,94 @@ def test_only_the_yahoo_platform_reads_the_yahoo_sdk() -> None:
     assert reached == []
 
 
-def test_the_nfls_rules_read_its_own_model_and_only_its_provider_names_the_league_platform() -> None:
-    """The rules are the competition's, so a second platform for the NFL is a provider and nothing else.
+COMPETITIONS = "adapters/outbound/competitions"
+COMPETITION_NAMES = sorted(p.name for p in (PACKAGE / COMPETITIONS).iterdir() if (p / "__init__.py").exists())
 
-    Only `nfl/sleeper.py`, the adapter for the platform that owns the league,
-    imports Sleeper; everything beside it reads `nfl/model.py`.
-    """
-    named = [
+LEAGUE_PLATFORMS = {"nba": "yahoo", "nfl": "sleeper"}
+"""Each competition's league platform, which only its provider module may name.
+
+The Premier League is absent on purpose: FPL is not a platform hosting the
+league but the game itself, so its rules are FPL's and read its types.
+"""
+
+NAMES_ITS_PLATFORM = {
+    "nba/actions.py",
+    "nba/context.py",
+    "nba/forecast.py",
+    "nba/history.py",
+    "nba/league.py",
+    "nba/lineup.py",
+    "nba/market.py",
+    "nba/outlook.py",
+    "nba/prompt.py",
+    "nba/rules.py",
+    "nba/strength.py",
+    "nba/teammates.py",
+    "nba/views.py",
+    "nba/week.py",
+    "nba/worth.py",
+}
+"""Rule modules that still read the league platform's types instead of the competition's model.
+
+It may only shrink: a module moved onto `model.py` comes off it, and the test
+fails until it does.
+"""
+
+
+def _reaching(under: str, forbidden: tuple[str, ...]) -> list[str]:
+    """Every import under `under` of a module inside `forbidden`, as `path:line imports module`."""
+    return [
         f"{path.relative_to(PACKAGE)}:{line} imports {module}"
-        for path in _modules("adapters/outbound/competitions/nfl")
-        if path.name != "sleeper.py"
+        for path in _modules(under)
         for line, module in _imports(path)
-        if module.startswith("thefrontoffice.adapters.outbound.platforms.sleeper")
+        if module.startswith(forbidden)
     ]
-    assert named == []
+
+
+def test_platforms_never_import_a_competition() -> None:
+    """A platform serves every competition on it; one that knew a competition's rules would serve only that one."""
+    assert _reaching("adapters/outbound/platforms", ("thefrontoffice.adapters.outbound.competitions",)) == []
+
+
+@pytest.mark.parametrize("competition", COMPETITION_NAMES)
+def test_a_competition_never_imports_another(competition: str) -> None:
+    """What two competitions share lives beside them in `competitions/`, not inside either."""
+    others = tuple(
+        f"thefrontoffice.adapters.outbound.competitions.{other}" for other in COMPETITION_NAMES if other != competition
+    )
+    assert _reaching(f"{COMPETITIONS}/{competition}", others) == []
+
+
+def test_outbound_adapters_never_reach_an_entry_point_or_the_composition_root() -> None:
+    """An outbound adapter is handed what it needs; reaching back up for it would make a cycle."""
+    assert _reaching("adapters/outbound", ("thefrontoffice.adapters.inbound", "thefrontoffice.bootstrap")) == []
+
+
+def _names_its_platform() -> set[str]:
+    """Every module beside a competition's provider that imports the competition's league platform."""
+    return {
+        f"{competition}/{path.relative_to(PACKAGE / COMPETITIONS / competition).as_posix()}"
+        for competition, platform in LEAGUE_PLATFORMS.items()
+        for path in _modules(f"{COMPETITIONS}/{competition}")
+        if path.name != f"{platform}.py"
+        and any(
+            module.startswith(f"thefrontoffice.adapters.outbound.platforms.{platform}") for _, module in _imports(path)
+        )
+    }
+
+
+def test_a_competitions_rules_read_its_own_model_and_only_its_provider_names_the_league_platform() -> None:
+    """The rules are the competition's, so a second platform for one is a provider and nothing else.
+
+    Only the provider, named for the platform that owns the league (`nfl/sleeper.py`),
+    imports that platform; everything beside it reads the competition's `model.py`.
+    """
+    assert _names_its_platform() - NAMES_ITS_PLATFORM == set()
+
+
+def test_the_allowlist_of_rules_naming_their_platform_only_shrinks() -> None:
+    """A module that no longer names its platform comes off the list, so the list cannot hide a new one."""
+    assert NAMES_ITS_PLATFORM - _names_its_platform() == set()
 
 
 # ── the suite's own shape ───────────────────────────────────────────────
