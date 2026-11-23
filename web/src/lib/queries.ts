@@ -19,19 +19,19 @@ export const keys = {
   login: (platform: string) => ["login", platform] as const,
   capture: (platform: string) => ["capture", platform] as const,
   leagues: (competition: string) => ["leagues", competition] as const,
-  summary: (competition: string, league: string) => [...inLeague(competition, league), "summary"] as const,
+  week: (competition: string, league: string) => [...inLeague(competition, league), "week"] as const,
   weekOf: (competition: string, league: string, week: number | null) =>
     [...inLeague(competition, league), "week-of", week] as const,
   games: (competition: string, league: string, week: number | null) =>
     [...inLeague(competition, league), "games", week] as const,
   judgment: (competition: string, league: string) => [...inLeague(competition, league), "judgment"] as const,
   roster: (competition: string, league: string) => [...inLeague(competition, league), "roster"] as const,
-  schedule: (competition: string, league: string) => [...inLeague(competition, league), "schedule"] as const,
+  season: (competition: string, league: string) => [...inLeague(competition, league), "season"] as const,
   teams: (competition: string, league: string) => [...inLeague(competition, league), "teams"] as const,
   teamRoster: (competition: string, league: string, team: string | undefined) =>
     [...inLeague(competition, league), "team-roster", team] as const,
-  weeksAhead: (competition: string, league: string, team = "") =>
-    [...inLeague(competition, league), "weeks-ahead", team] as const,
+  outlook: (competition: string, league: string, team = "") =>
+    [...inLeague(competition, league), "outlook", team] as const,
   trades: (competition: string, league: string) => [...inLeague(competition, league), "trades"] as const,
   compare: (competition: string, league: string, ids: string[]) =>
     [...inLeague(competition, league), "compare", ids.join(",")] as const,

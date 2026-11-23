@@ -13,7 +13,7 @@ from support.wiring import wiring as fake_wiring
 from thefrontoffice.adapters.inbound.web import api as web
 from thefrontoffice.adapters.inbound.web.capture import CaptureGate, allowed_origin
 
-PLAN = "/api/yahoo/capture/plan"
+PLAN = "/api/platforms/yahoo/capture/plan"
 YAHOO_PAGE = "https://basketball.fantasysports.yahoo.com"
 ELSEWHERE = "https://example.com"
 
@@ -84,7 +84,7 @@ def test_any_other_page_is_refused_before_anything_runs(client: TestClient, meth
 
 def test_a_request_from_no_page_at_all_passes(client: TestClient) -> None:
     """No `Origin` means no other site's page sent it: Settings reading the status, or a terminal."""
-    response = client.get("/api/yahoo/capture")
+    response = client.get("/api/platforms/yahoo/capture")
 
     assert response.status_code == 200
     assert "access-control-allow-origin" not in response.headers
@@ -101,11 +101,13 @@ def _echo_app(max_bytes: int) -> TestClient:
     async def echo(request: Request) -> JSONResponse:
         return JSONResponse({"bytes": len(await request.body())})
 
-    return TestClient(CaptureGate(Starlette(routes=[Route("/api/yahoo/capture", echo, methods=["POST"])]), max_bytes))
+    return TestClient(
+        CaptureGate(Starlette(routes=[Route("/api/platforms/yahoo/capture", echo, methods=["POST"])]), max_bytes)
+    )
 
 
 def test_a_body_within_the_limit_reaches_the_route_whole() -> None:
-    response = _echo_app(10).post("/api/yahoo/capture", content=b"x" * 10, headers={"Origin": YAHOO_PAGE})
+    response = _echo_app(10).post("/api/platforms/yahoo/capture", content=b"x" * 10, headers={"Origin": YAHOO_PAGE})
 
     assert response.json() == {"bytes": 10}
     assert response.headers["access-control-allow-origin"] == YAHOO_PAGE
@@ -116,7 +118,7 @@ def test_a_body_past_the_limit_is_refused_whatever_its_headers_claim() -> None:
         yield b"x" * 8
         yield b"x" * 8
 
-    response = _echo_app(10).post("/api/yahoo/capture", content=chunks(), headers={"Origin": YAHOO_PAGE})
+    response = _echo_app(10).post("/api/platforms/yahoo/capture", content=chunks(), headers={"Origin": YAHOO_PAGE})
 
     assert response.status_code == 413
     assert response.headers["access-control-allow-origin"] == YAHOO_PAGE

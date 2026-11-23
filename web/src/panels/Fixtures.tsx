@@ -28,8 +28,8 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
   const { openPlayer, drawer } = useDrawers(competition, league);
 
   const summary = useQuery<Summary, Error>({
-    queryKey: keys.summary(competition.key, league.league_id),
-    queryFn: leagueApi.summary,
+    queryKey: keys.week(competition.key, league.league_id),
+    queryFn: leagueApi.week,
     enabled: browses,
   });
   const { shown, step, swipe } = useWeekParam(browses ? (summary.data?.weeks ?? undefined) : undefined);
@@ -41,8 +41,8 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
     placeholderData: keepPreviousData,
   });
   const schedule = useQuery<LeagueSchedule, Error>({
-    queryKey: keys.schedule(competition.key, league.league_id),
-    queryFn: leagueApi.schedule,
+    queryKey: keys.season(competition.key, league.league_id),
+    queryFn: leagueApi.season,
     enabled: !browses,
   });
 

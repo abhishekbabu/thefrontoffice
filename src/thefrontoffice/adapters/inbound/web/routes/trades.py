@@ -4,16 +4,16 @@ from typing import Annotated
 
 from fastapi import APIRouter
 
-from thefrontoffice.adapters.inbound.web.routes.deps import Capability, CurrentWiring
+from thefrontoffice.adapters.inbound.web.routes.deps import LEAGUE, Capability, CurrentWiring
 from thefrontoffice.domain.models import Trades
 from thefrontoffice.domain.ports import TradeMarketProvider
 
-router = APIRouter()
+router = APIRouter(prefix=LEAGUE)
 
 
-@router.get("/api/{competition}/leagues/{league_id}/trades", response_model=Trades)
+@router.get("/trades", response_model=Trades)
 def trades(
-    competition: str,
+    key: str,
     league_id: str,
     wiring: CurrentWiring,
     provider: Annotated[TradeMarketProvider, Capability(TradeMarketProvider)],

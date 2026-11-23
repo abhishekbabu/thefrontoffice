@@ -22,7 +22,8 @@ from thefrontoffice.domain.errors import InvalidRequestError
 CAPTURE_ORIGIN = re.compile(r"https://(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+fantasysports\.yahoo\.com")
 """A page on any subdomain of fantasysports.yahoo.com, over https and on its default port — the whole origin, not a prefix."""
 
-CAPTURE_ROUTE = re.compile(r"/api/[a-z0-9-]+/capture(?:/plan)?")
+CAPTURE_ROUTE = re.compile(r"/api/(?:platforms/[a-z0-9-]+|yahoo)/capture(?:/plan)?")
+"""A platform's sync routes, and the `/api/yahoo/capture` a bookmark installed before they moved still calls."""
 
 MAX_CAPTURE_BYTES = 48 * 1024 * 1024
 """A sweep of five leagues is about 12 MB in one round at most; well past that is not a sync."""

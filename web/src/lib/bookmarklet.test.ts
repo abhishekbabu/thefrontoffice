@@ -16,12 +16,12 @@ function world(pages: Record<string, number | Error> = {}, profile = 200) {
   const http = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
     calls.push({ url, init });
-    if (url.startsWith(`${APP}/api/yahoo/capture/plan`)) {
+    if (url.startsWith(`${APP}/api/platforms/yahoo/capture/plan`)) {
       const leagues = new URL(url).searchParams.get("leagues")?.split(",").filter(Boolean) ?? [];
       const steps = [{ path: "list", league: "" }, ...leagues.map((key) => ({ path: `league/${key}/settings`, league: key }))];
       return Response.json({ base: YAHOO, probe: "profile", steps });
     }
-    if (url === `${APP}/api/yahoo/capture`) {
+    if (url === `${APP}/api/platforms/yahoo/capture`) {
       const body = JSON.parse(typeof init?.body === "string" ? init.body : "") as (typeof posted)[number];
       posted.push(body);
       const leagues = [...new Set(body.responses.map((r) => r.path.split("/")[1]).filter(Boolean))];

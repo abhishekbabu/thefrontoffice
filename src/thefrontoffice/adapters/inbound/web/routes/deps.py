@@ -4,7 +4,7 @@ Everything comes from the `Wiring` the app was created with, kept on
 `app.state`, so a test's fakes reach every route the same way the real wiring
 does.
 
-A route that reads `competition` through a dependency still names it first in
+A route that reads `key` through a dependency still names it first in
 its own signature: FastAPI lists a route's own parameters before its
 dependencies', and that order is the client's generated types.
 
@@ -20,6 +20,9 @@ from fastapi import Depends, Request, params
 from thefrontoffice.adapters.inbound.web.routes.state import Chats, Logins
 from thefrontoffice.domain.ports import CompetitionProvider
 from thefrontoffice.wiring import CompetitionEntry, Wiring
+
+LEAGUE = "/api/competitions/{key}/leagues/{league_id}"
+"""Where everything about one league lives: the prefix of every router about one."""
 
 
 def _wiring(request: Request) -> Wiring:
@@ -47,12 +50,12 @@ PlatformLogins = Annotated[Logins, Depends(_logins)]
 """Each platform's browser login, by the platform's name."""
 
 
-def _entry(competition: str, wiring: CurrentWiring) -> CompetitionEntry:
-    return wiring.registry.find(competition)
+def _entry(key: str, wiring: CurrentWiring) -> CompetitionEntry:
+    return wiring.registry.by_key(key)
 
 
 Entry = Annotated[CompetitionEntry, Depends(_entry)]
-"""The registry entry the path's `competition` names.
+"""The registry entry the path's `key` names, exactly: a bare competition names nothing.
 
 Raises `UnknownCompetitionError` where none does."""
 

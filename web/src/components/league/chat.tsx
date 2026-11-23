@@ -202,7 +202,7 @@ export function AssistantChat({
   const [unasked, setUnasked] = useState<Asked | null>(null);
   const thread = useQuery({
     queryKey: threadKey,
-    queryFn: () => api.league(competition, league).assistant(),
+    queryFn: () => api.league(competition, league).openChat(),
     staleTime: Infinity,
     gcTime: Infinity,
   });

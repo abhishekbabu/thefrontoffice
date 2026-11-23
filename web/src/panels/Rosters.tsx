@@ -133,8 +133,8 @@ function WeeksAhead({
   onOpen: (id: string) => void;
 }) {
   const outlook = useQuery<Outlook, Error>({
-    queryKey: keys.weeksAhead(competition.key, league.league_id, team),
-    queryFn: () => api.league(competition.key, league.league_id).weeksAhead(team),
+    queryKey: keys.outlook(competition.key, league.league_id, team),
+    queryFn: () => api.league(competition.key, league.league_id).outlook(team),
   });
   // A competition that reads its weeks ahead as fixtures — FPL — sends a grid instead of weeks.
   if (outlook.data && outlook.data.run_weeks.length > 0) {

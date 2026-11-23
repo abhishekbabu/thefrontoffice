@@ -490,7 +490,7 @@ reads only the sync in this mode and never calls Yahoo, and a sync older than
 - **What it does.** The bookmark asks the app what to fetch, fetches it from
   `pub-api-ro.fantasysports.yahoo.com` (the read-only host Yahoo's frontend
   uses) with your Yahoo session, and posts the response bodies to
-  `/api/yahoo/capture`. It repeats until nothing new is planned: league lists,
+  `/api/platforms/yahoo/capture`. It repeats until nothing new is planned: league lists,
   then each league's settings, teams, standings, scoreboards and free agents, then
   rosters. Anything the app holds fresh by the TTLs above (a settled week,
   today's settings) is left out, and the bookmark fetches two at a time. A sync

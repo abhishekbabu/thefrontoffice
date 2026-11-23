@@ -11,6 +11,13 @@ from thefrontoffice.wiring import Wiring
 
 router = APIRouter()
 
+PLATFORM = "/api/platforms/{platform}"
+
+LEGACY_CAPTURE = "/api/yahoo/capture"
+"""Where a sync bookmark installed before the platforms moved under `/api/platforms` still hands over.
+
+The bookmark's code lives in the person's browser, not here, so this path answers for as long as one might."""
+
 
 def _login(logins: Logins, platform: str) -> Login:
     if platform not in logins:
@@ -24,12 +31,12 @@ def _capture(wiring: Wiring, platform: str) -> BrowserCapture:
     return wiring.captures[platform]()
 
 
-@router.get("/api/{platform}/login", response_model=LoginState)
+@router.get(f"{PLATFORM}/login", response_model=LoginState)
 def login_state(platform: str, logins: PlatformLogins) -> LoginState:
     return _login(logins, platform).state
 
 
-@router.post("/api/{platform}/login", response_model=LoginState)
+@router.post(f"{PLATFORM}/login", response_model=LoginState)
 def start_login(platform: str, logins: PlatformLogins) -> LoginState:
     """Begin the platform's handshake and return at once.
 
@@ -40,13 +47,13 @@ def start_login(platform: str, logins: PlatformLogins) -> LoginState:
     return _login(logins, platform).start()
 
 
-@router.get("/api/{platform}/capture", response_model=CaptureStatus)
+@router.get(f"{PLATFORM}/capture", response_model=CaptureStatus)
 def capture_status(platform: str, wiring: CurrentWiring) -> CaptureStatus:
     """When the platform's browser sync last stored anything, for Settings to say beside the bookmark."""
     return _capture(wiring, platform).status()
 
 
-@router.get("/api/{platform}/capture/plan", response_model=CapturePlan)
+@router.get(f"{PLATFORM}/capture/plan", response_model=CapturePlan)
 def capture_plan(platform: str, wiring: CurrentWiring, leagues: str = "") -> CapturePlan:
     """What the sync bookmark should fetch next, for the comma-separated league keys it has found so far.
 
@@ -57,7 +64,19 @@ def capture_plan(platform: str, wiring: CurrentWiring, leagues: str = "") -> Cap
     return _capture(wiring, platform).plan([key for key in leagues.split(",") if key])
 
 
-@router.post("/api/{platform}/capture", response_model=CaptureReceipt)
+@router.post(f"{PLATFORM}/capture", response_model=CaptureReceipt)
 def ingest_capture(platform: str, capture: Capture, wiring: CurrentWiring) -> CaptureReceipt:
     """Store what the sync bookmark fetched before replying: the hand-over is the only copy."""
     return _capture(wiring, platform).ingest(capture)
+
+
+@router.get(f"{LEGACY_CAPTURE}/plan", response_model=CapturePlan, include_in_schema=False)
+def legacy_capture_plan(wiring: CurrentWiring, leagues: str = "") -> CapturePlan:
+    """`capture_plan` for Yahoo, where an older bookmark asks for it."""
+    return capture_plan("yahoo", wiring, leagues)
+
+
+@router.post(LEGACY_CAPTURE, response_model=CaptureReceipt, include_in_schema=False)
+def legacy_ingest_capture(capture: Capture, wiring: CurrentWiring) -> CaptureReceipt:
+    """`ingest_capture` for Yahoo, where an older bookmark hands over."""
+    return ingest_capture("yahoo", capture, wiring)
