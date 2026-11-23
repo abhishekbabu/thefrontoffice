@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from thefrontoffice.adapters.outbound.competitions.availability import QUESTIONABLE
 from thefrontoffice.adapters.outbound.competitions.dates import weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.injuries import in_words
 from thefrontoffice.adapters.outbound.competitions.nba.model import INJURED_SLOTS as INJURED_SLOTS
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.domain.models import Better
@@ -210,13 +211,12 @@ STATUS_WORDS = {
     "DTD": "Day-to-day",
     "Q": "Questionable",
 }
-"""Yahoo's status codes in words. A table column has room for 'O'; a drawer's header does not need to
-make anyone decode it, and 'O' set alone reads as the figure zero."""
+"""Yahoo's status codes in words (`injuries.in_words`)."""
 
 
 def status_word(status: str) -> str:
     """A Yahoo status as a person would say it, 'O' as 'Out'; a code it does not know, as Yahoo wrote it."""
-    return STATUS_WORDS.get(status.upper(), status)
+    return in_words(status, STATUS_WORDS)
 
 
 def chance(status: str) -> float:

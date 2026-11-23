@@ -9,7 +9,7 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 
 from thefrontoffice.adapters.outbound.competitions.careers import experience, recent_seasons
-from thefrontoffice.adapters.outbound.competitions.injuries import BODY_PART
+from thefrontoffice.adapters.outbound.competitions.injuries import designation
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, history, injuries
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     Game,
@@ -20,7 +20,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     SeasonTotals,
     by_club,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, status_word
 from thefrontoffice.adapters.outbound.competitions.nfl.views import facing, share, team_name
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.domain.errors import PlatformError, PlayerNotFoundError
@@ -212,7 +212,7 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
     projection = state.projections.get(player_id)
     scheduled = state.scheduled
     depth = meta.depth_chart_order
-    injury = meta.injury_status
+    injury = status_word(meta.injury_status)
     body = meta.injury_body_part
 
     groups = [
@@ -227,10 +227,9 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
     ]
     # ESPN's report where it has him, which says when he is back; Sleeper's
     # designation where it does not. Nothing for a healthy player.
-    hurt = state.injuries.stats(player_id, lambda back: injuries.long_return(back, schedule)) or [
-        *([Stat(label="Status", value=injury, tone="warning")] if injury else []),
-        *([Stat(label=BODY_PART, value=body)] if body else []),
-    ]
+    hurt = state.injuries.stats(player_id, lambda back: injuries.long_return(back, schedule)) or designation(
+        injury, body
+    )
     if hurt:
         groups.append(StatGroup(title="Injury", stats=hurt))
     if projection and projection.stats:

@@ -18,6 +18,7 @@ from support.nfl import (
     nfl_provider,
 )
 
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import status_word
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
@@ -470,6 +471,19 @@ def test_a_designated_player_shows_sleepers_status_where_espn_has_no_row() -> No
     [group] = [g for g in nfl_provider(client).player("L1", "rb1").groups if g.title == "Injury"]
 
     assert {s.label: s.value for s in group.stats}["Status"] == "Questionable"
+
+
+def test_a_list_sleeper_writes_as_a_code_is_said_in_words_in_the_header_and_its_group() -> None:
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    catalog = client.get_nfl_players()
+    client.players_catalog = {**catalog, "rb1": replace(catalog["rb1"], injury_status="IR")}
+
+    detail = nfl_provider(client).player("L1", "rb1")
+    [group] = [g for g in detail.groups if g.title == "Injury"]
+
+    assert detail.note == status_word("IR") != "IR"
+    assert {s.label: s.value for s in group.stats}["Status"] == status_word("IR")
+    assert detail.tone == "warning"
 
 
 def test_the_drawer_shows_espns_injury_with_its_return_week() -> None:

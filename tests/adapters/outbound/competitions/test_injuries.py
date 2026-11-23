@@ -8,6 +8,8 @@ from thefrontoffice.adapters.outbound.competitions.injuries import (
     PlayerInjuries,
     approximately,
     by_club,
+    designation,
+    in_words,
     injury_stats,
     matched,
 )
@@ -119,3 +121,15 @@ def test_any_platforms_injury_reads_the_same_and_an_undated_word_is_the_latest()
         ("Back", "~23 Nov"),
         ("Latest", "Expected back 23 Nov"),
     ]
+
+
+def test_a_code_reads_in_words_whatever_its_case_and_an_unknown_one_as_written() -> None:
+    words = {"O": "Out"}
+
+    assert [in_words(code, words) for code in ("O", "o", "NEW", "")] == ["Out", "Out", "NEW", ""]
+
+
+def test_a_platforms_designation_says_only_what_it_has() -> None:
+    assert designation("") == []
+    assert [(s.label, s.value) for s in designation("Out", "Knee")] == [("Status", "Out"), (BODY_PART, "Knee")]
+    assert [s.label for s in designation("", "Knee")] == [BODY_PART]

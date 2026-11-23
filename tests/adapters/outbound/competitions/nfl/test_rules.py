@@ -2,6 +2,8 @@
 
 from dataclasses import replace
 
+import pytest
+
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     FANTASY_POSITIONS,
     FLEX_ELIGIBILITY,
@@ -11,6 +13,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     playoff_round,
     scoring_name,
     season_end,
+    status_word,
 )
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import STARTING_SLOTS, SleeperLeague
 
@@ -108,3 +111,23 @@ def test_regular_season_weeks_and_weeks_past_the_final_name_no_round() -> None:
 
 def test_a_league_that_names_no_bracket_size_calls_its_playoff_weeks_playoffs() -> None:
     assert playoff_round(replace(LEAGUE, playoff_week_start=15, playoff_teams=0), 16) == "Playoffs"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        ("IR", "Injured reserve"),
+        ("Sus", "Suspended"),
+        ("Q", "Questionable"),
+        ("Questionable", "Questionable"),
+        ("D", "Doubtful"),
+        ("O", "Out"),
+        ("NA", "Not active"),
+        ("COV", "COVID list"),
+        ("PUP", "PUP"),
+        ("NEW", "NEW"),
+        ("", ""),
+    ],
+)
+def test_a_designation_reads_in_words_and_an_unknown_code_as_sleeper_wrote_it(status: str, expected: str) -> None:
+    assert status_word(status) == expected
