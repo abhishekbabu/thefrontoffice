@@ -15,6 +15,7 @@ function action(key: string, verdict: TaskVerdict | null = null, stale = false):
     player_id: "",
     replaces: "",
     drop: "",
+    pickup: null,
     win_change: null,
     evidence: [],
     players: [],
@@ -27,6 +28,26 @@ function action(key: string, verdict: TaskVerdict | null = null, stale = false):
 }
 
 const said = (decision: TaskVerdict["decision"], reason: string): TaskVerdict => ({ task: "T1", decision, reason });
+
+describe("ActionList pickups", () => {
+  it("says in words whether an add streams this week or is kept, and nothing for any other item", async () => {
+    const { container } = await render(
+      <ActionList
+        actions={[
+          { ...action("stream"), pickup: "streamer" },
+          { ...action("keep"), pickup: "keeper", when: "Thu 26 Nov" },
+          action("plain"),
+        ]}
+      />,
+    );
+    const rows = [...container.querySelectorAll("li")].map((row) => row.textContent ?? "");
+
+    expect(rows[0]).toContain("Streamer");
+    expect(rows[1]).toContain("Keeper");
+    expect(rows[1]).toContain("Thu 26 Nov");
+    expect(rows[2]).not.toMatch(/Streamer|Keeper/);
+  });
+});
 
 describe("ActionList verdicts", () => {
   it("shows an agreement as a chip alone, without the model's sentence", async () => {

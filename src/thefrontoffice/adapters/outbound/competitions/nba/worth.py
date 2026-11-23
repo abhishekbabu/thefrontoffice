@@ -22,7 +22,14 @@ from thefrontoffice.adapters.outbound.competitions import worth as shared
 from thefrontoffice.adapters.outbound.competitions.availability import expected_games
 from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES, PlayerStats, Role
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
-from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, Line, chance, fantasy_points, line
+from thefrontoffice.adapters.outbound.competitions.nba.rules import (
+    CATEGORIES,
+    Line,
+    chance,
+    fantasy_points,
+    line,
+    ruled_out,
+)
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
 
 
@@ -46,9 +53,10 @@ minutes are the share of the game a player is on the floor.
 class RoleRule(NamedTuple):
     moved: float
     settling: int
+    latest: int
 
 
-ROLE = RoleRule(moved=3.0, settling=5)
+ROLE = RoleRule(moved=3.0, settling=5, latest=2)
 """When his last few games outweigh the rest of his window (`form.Role`), and by how much.
 
 His recent run is the window's half-life: a starter's minutes handed to a
@@ -57,7 +65,9 @@ averaged away over fifteen, while Sleeper's projection reads the season and is
 slower still. So where his minutes a game over his last five differ from the
 window's by `moved` or more — a tenth of a starter's — his line is pulled from
 the usual reading toward those five games' by `worth.settled(5, settling)`: as
-far as halfway, since five games of a new role are as often a hot week. With
+far as halfway, since five games of a new role are as often a hot week. A role
+growing now — each of his `latest` games `moved` or more above the window's
+minutes (`rising`) — pulls the same way before his last five average it in. With
 his minutes where they were, a big night moves nothing beyond its share of the
 average: points without the minutes behind them are not a role.
 """
@@ -198,6 +208,14 @@ def moved(role: Role | None) -> bool:
     return role is not None and abs(role.minutes - role.window) >= ROLE.moved
 
 
+def rising(stats: PlayerStats | None) -> bool:
+    """Whether his role is growing now: each of his last `ROLE.latest` games `ROLE.moved` minutes or more above
+    the window's. One long night is not: an overtime game lifts one game, not two."""
+    role = (stats or PlayerStats()).get("role")
+    latest = (stats or PlayerStats()).get("minutes", ())[: ROLE.latest]
+    return role is not None and len(latest) == ROLE.latest and min(latest) >= role.window + ROLE.moved
+
+
 def per_game(stats: PlayerStats | None, projected: ProjectedTotals | None) -> Line | None:
     """His line a game: his recent run beside Sleeper's projection a game this week, category by category,
     pulled toward his last few games where his role has moved (`ROLE`).
@@ -214,7 +232,7 @@ def per_game(stats: PlayerStats | None, projected: ProjectedTotals | None) -> Li
     }
     role = (stats or PlayerStats()).get("role")
     latest = (stats or PlayerStats()).get("last_5")
-    if role is None or not moved(role) or not latest:
+    if role is None or not (moved(role) or rising(stats)) or not latest:
         return usual
     pull = shared.settled(role.games, ROLE.settling)
     return {label: value + pull * (latest.get(label, value) - value) for label, value in usual.items()}
@@ -225,9 +243,17 @@ def minutes(stats: PlayerStats | None) -> tuple[float, ...]:
     return tuple(reversed((stats or PlayerStats()).get("minutes", ())[: MINUTES.games]))
 
 
-def usage(stats: PlayerStats | None) -> float:
-    """What his minutes multiply his worth by (`MINUTES`)."""
-    return shared.usage(minutes(stats), steady_from=MINUTES.steady, swings_by=MINUTES.swing, fewest=MIN_FORM_GAMES)
+def usage(stats: PlayerStats | None, hurt: bool = False) -> float:
+    """What his minutes multiply his worth by (`MINUTES`).
+
+    For a player ruled out now (`hurt`), a latest game that is his fewest
+    minutes is the one he got hurt in: it is left out, since it says nothing
+    of his role.
+    """
+    played = minutes(stats)
+    if hurt and len(played) > 1 and played[-1] == min(played):
+        played = tuple(reversed((stats or PlayerStats()).get("minutes", ())[1 : MINUTES.games + 1]))
+    return shared.usage(played, steady_from=MINUTES.steady, swings_by=MINUTES.swing, fewest=MIN_FORM_GAMES)
 
 
 @dataclass(frozen=True)
@@ -265,6 +291,9 @@ class Reading:
 
     role: Role | None = None
     """His recent minutes against the window's (`form.Role`); None with too few games to compare."""
+
+    rising: bool = False
+    """Whether his minutes are growing now (`rising`): a role on its way up is never the one let go."""
 
     @property
     def worth(self) -> float | None:
@@ -305,9 +334,10 @@ def read(
         line=figures,
         per_game=value(figures) if figures else None,
         games=games,
-        usage=usage(stats),
+        usage=usage(stats, ruled_out(player.status)),
         minutes=statistics.fmean(played) if played else None,
         provisional=provisional,
         back=back,
         role=(stats or PlayerStats()).get("role"),
+        rising=rising(stats),
     )

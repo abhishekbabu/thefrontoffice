@@ -2,7 +2,7 @@ import { useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import type * as React from "react";
 import { AlarmClock, EyeOff, MessageCircleQuestion, Undo2 } from "lucide-react";
-import type { Action, ItemDecision, Move, MovePlayer, Stat, TaskVerdict, Urgency } from "@/lib/api";
+import type { Action, ItemDecision, Move, MovePlayer, Pickup, Stat, TaskVerdict, Urgency } from "@/lib/api";
 import { SNOOZES } from "@/lib/snooze";
 import { askAssistant } from "@/lib/screen";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,12 @@ const URGENCY: Record<Urgency, { label: string; variant: Variant }> = {
   now: { label: "Now", variant: "warn" },
   soon: { label: "Soon", variant: "info" },
   later: { label: "Later", variant: "muted" },
+};
+
+/** What an add is for, in the corner beside its deadline. */
+const PICKUP: Record<Pickup, string> = {
+  streamer: "Streamer",
+  keeper: "Keeper",
 };
 
 /**
@@ -115,6 +121,7 @@ export function ActionList({
                 title={action.title}
                 reason={action.reason}
                 when={action.when}
+                pickup={action.pickup}
                 chance={action.chance}
                 evidence={action.evidence}
                 players={action.players}
@@ -281,6 +288,7 @@ function Row({
   title,
   reason,
   when,
+  pickup = null,
   chance = null,
   evidence = [],
   players = [],
@@ -292,6 +300,8 @@ function Row({
   title: string;
   reason: string;
   when: string;
+  /** For an add, whether he streams this week or is kept for the season. */
+  pickup?: Pickup | null;
   /** What the move does to the chance of winning, where it was simulated. */
   chance?: Stat | null;
   evidence?: Action["evidence"];
@@ -328,10 +338,11 @@ function Row({
             corner column squeezes the title to a word a line. */}
         <div className="grid w-full min-w-0 flex-1 grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-3">
           <div className="text-[13.5px] font-medium">{title}</div>
-          {(when || chance) && (
+          {(when || chance || pickup) && (
             <Meta className="flex flex-wrap gap-x-2 pt-0.5 sm:row-span-2 sm:max-w-[11rem] sm:flex-col sm:flex-nowrap sm:items-end sm:gap-0.5 sm:text-right">
               {/* The sign is in the words; the color only lets a cost be found at a glance. */}
               {chance && <span className={cn("font-semibold", toneText(chance.tone))}>{chance.value}</span>}
+              {pickup && <span className="font-medium text-foreground">{PICKUP[pickup]}</span>}
               {when}
             </Meta>
           )}

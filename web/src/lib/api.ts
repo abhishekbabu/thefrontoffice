@@ -60,6 +60,8 @@ export type TradeIdea = Schemas["TradeIdea"];
 export type Trades = Schemas["Trades"];
 export type Turn = Schemas["Turn"];
 export type Urgency = Action["urgency"];
+/** What an add is for: this week's games, or the rest of the season. */
+export type Pickup = NonNullable<Action["pickup"]>;
 
 /** What to ask for: the competition's own ranking unless a column is named. */
 export type FreeAgentQuery = NonNullable<operations["free_agents"]["parameters"]["query"]>;

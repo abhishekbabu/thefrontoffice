@@ -370,3 +370,12 @@ def test_sleepers_schedule_reads_the_whole_season_and_a_failed_one_as_final() ->
 
     assert _schedule(schedule=_season(*CUP_GAP)).unscheduled(*window) == CUP_GAP
     assert _schedule(error=SleeperAPIError("down")).unscheduled(*window) == []
+
+
+def test_the_games_each_side_can_start_warn_when_you_have_fewer() -> None:
+    [behind] = week.volume(39, 44)
+    [ahead] = week.volume(44, 39)
+    [level] = week.volume(40, 40)
+
+    assert (behind.label, behind.value) == ("Games left", "39 vs 44")
+    assert (behind.tone, ahead.tone, level.tone) == ("warning", "good", "neutral")
