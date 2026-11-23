@@ -147,8 +147,7 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   scoreboard: categories won-lost-tied, or points in a points league, with the
   playoff rounds named from the league's bracket.
 - **League and Activity**: the table with PF, PA, FAAB left and waiver order,
-  and every recent move in full (the last three weeks; NBA's from Yahoo's
-  transaction feed, waiver claims with their bids).
+  and every recent move in full.
 - **AI, if you add a key**: a verdict on each to-do item and free agent, and an
   assistant that sees whatever's on screen. An agreement is a chip; only an
   overrule or a wait carries a reason.
