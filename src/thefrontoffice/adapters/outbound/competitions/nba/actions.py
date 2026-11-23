@@ -26,7 +26,7 @@ from thefrontoffice.adapters.outbound.competitions.nba import lineup, views
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, fits, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import RETURN_SOON, Leaning
-from thefrontoffice.adapters.outbound.competitions.nba.week import BENCH, Today, off_il
+from thefrontoffice.adapters.outbound.competitions.nba.week import BENCH, Today, if_streamed, off_il
 from thefrontoffice.adapters.outbound.competitions.nba.worth import ROLE, Reading, Targeting, game_value
 from thefrontoffice.domain.models import Action, Held, Pickup
 
@@ -226,14 +226,17 @@ class Plan:
     """What each free agent's role leans on, by Yahoo key: a teammate due back (`teammates.Leaning`)."""
     volume: tuple[int, int] | None = None
     """The games each side's lineups can start over the rest of the week: yours, then your opponent's."""
+    streams: int = 0
+    """The starts your opponent's adds left could still put into its open slots (`lineup.streamed`)."""
     targeting: Targeting | None = None
     """In a category league with a forecast, each category weighed by how winnable it is this week
     (`worth.Targeting`): what a pickup or drop is worth this week. None weighs every category alike."""
 
     @property
     def behind(self) -> bool:
-        """Whether your opponent can start more games than you this week: a stream is then urged now."""
-        return self.volume is not None and self.volume[0] < self.volume[1]
+        """Whether your opponent can start more games than you this week, counting the starts its adds left could
+        still stream in (`streams`): a stream is then urged now."""
+        return self.volume is not None and self.volume[0] < self.volume[1] + self.streams
 
 
 @dataclass(frozen=True)
@@ -560,11 +563,12 @@ def _leans(found: Leaning | None) -> str:
 
 
 def _behind(plan: Plan) -> str:
-    """' Behind on games: 39 to 44 left.' where the opponent can start more; nothing otherwise."""
+    """' Behind on games: 39 to 41 left (+3 if they stream).' where the opponent can start more, or could by
+    streaming; nothing otherwise."""
     if not plan.behind or plan.volume is None:
         return ""
     mine, theirs = plan.volume
-    return f" Behind on games: {mine} to {theirs} left."
+    return f" Behind on games: {mine} to {theirs} left{if_streamed(plan.streams)}."
 
 
 def acquire(player: Player, games: int | None = None, *about: str, as_of: date | None = None) -> str:

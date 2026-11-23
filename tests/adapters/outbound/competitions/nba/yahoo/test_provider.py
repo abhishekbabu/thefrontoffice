@@ -12,6 +12,7 @@ import pytest
 from support.ai import FakeAI
 from support.espn import FakeESPN
 from support.nba import (
+    DEFAULT_TEAMS,
     FakeForecast,
     FakeNBA,
     FakeSleeperNBA,
@@ -29,6 +30,7 @@ from support.nba import yahoo_team as _yahoo_team
 from support.reports import MOCK_NBA_REPORT
 from support.stores import FakeAnswers
 
+from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba.actions import PROVISIONAL
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, Role, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
@@ -1786,6 +1788,7 @@ def _games_left(headline: list[Stat]) -> list[str]:
 def test_the_week_heads_with_the_games_each_side_can_start_and_labels_each_pickup() -> None:
     """Only Benched plays among yours, nobody among theirs; Streamer is three times Spare's points a game."""
     yahoo, nba = _slotted()
+    yahoo.league_teams = [replace(t, adds_used=3) if not t.is_mine else t for t in DEFAULT_TEAMS]
 
     summary = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE).summary("")
 
@@ -1800,6 +1803,7 @@ def test_the_forecast_counts_the_starts_the_to_do_list_does() -> None:
     yahoo, _ = _slotted()
     spare = replace(SPARE, team="BOS")
     yahoo.roster_players = [STARTER, BENCHED, spare]
+    yahoo.league_teams = [replace(t, adds_used=3) if not t.is_mine else t for t in DEFAULT_TEAMS]
     played = [game_log("p", 1, pts=10.0)]
     logs = {p.name: played for p in [STARTER, BENCHED, spare, *yahoo.roster("t.2")]}
     nba = FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY, logs=logs)
@@ -1811,6 +1815,17 @@ def test_the_forecast_counts_the_starts_the_to_do_list_does() -> None:
     mine = sum(o.games for o in matchup.mine)
     assert _games_left(provider.summary("").headline) == [f"{mine} vs {sum(o.games for o in matchup.theirs)}"]
     assert mine == 2
+
+
+def test_the_race_in_games_counts_what_the_opponents_adds_left_could_stream_in() -> None:
+    """Their Team has adds left and an open slot tonight, when Streamer (New York) plays: one start it could add."""
+    yahoo, nba = _slotted()
+
+    summary = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE).summary("")
+
+    assert _games_left(summary.headline) == [nba_week.volume(1, 0, 1)[0].value]
+    yahoo.teams_error = YahooAPIError("down")
+    assert _games_left(nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE).summary("").headline) == ["1 vs 0"]
 
 
 @pytest.mark.parametrize("broken", ["weekly", "schedule"])
