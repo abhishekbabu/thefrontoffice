@@ -427,6 +427,23 @@ class PlayerSearchProvider(Protocol):
 
 
 @runtime_checkable
+class LeagueRefreshProvider(Protocol):
+    """A competition whose kept platform reads of one league can be dropped, so the next page asks again.
+
+    The reads are kept for as long as each platform's answer usually holds,
+    which is too long right after the manager makes a move or a week turns over.
+    """
+
+    def refresh(self, league_id: str) -> int:
+        """Drop what is kept of `league_id` that a move or a new week changes; how many reads went.
+
+        Raises:
+            CacheUnwritableError: they could not be dropped.
+        """
+        ...
+
+
+@runtime_checkable
 class PlayerTabProvider(Protocol):
     """A competition whose player drawer reads some tabs only when they are opened (`PlayerDetail.deferred`)."""
 

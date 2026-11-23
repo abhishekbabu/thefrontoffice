@@ -119,6 +119,14 @@ class YahooResponses(Protocol):
         """Each read's XML, keyed as `reads` keys them; one that cannot be had fails them all."""
         ...
 
+    def forget(self, match: Callable[[str], bool]) -> int:
+        """Drop each kept response whose path `match`es, so it is asked for again; how many went.
+
+        Raises:
+            CacheUnwritableError: they could not be dropped.
+        """
+        ...
+
 
 class Refresh(Protocol):
     """Fetches a key again behind the caller's back, and stores it: how a stale copy is served without a wait."""
@@ -194,6 +202,9 @@ class LiveResponses:
             raise error
         found = held | batch.values
         return {name: found[read.path] for name, read in reads.items()}
+
+    def forget(self, match: Callable[[str], bool]) -> int:
+        return self._cache.forget(match)
 
 
 class YahooSource(Protocol):
@@ -282,6 +293,14 @@ class YahooSource(Protocol):
         """Every move the league has made this season that went through, newest first."""
         ...
 
+    def forget(self) -> int:
+        """Drop what is kept of the league that a move or a new week changes (`paths.moves`); how many went.
+
+        Raises:
+            CacheUnwritableError: they could not be dropped.
+        """
+        ...
+
 
 class YahooClient:
     """Reads one Yahoo league, from whichever `YahooResponses` it is handed."""
@@ -291,6 +310,10 @@ class YahooClient:
         self.league = league
         self._responses = responses
         self._pace = pace
+
+    def forget(self) -> int:
+        key, week = self.league.league_key, self.league.current_week
+        return self._responses.forget(lambda path: paths.moves(path, key, week))
 
     def _scoreboard(self, week: int) -> YahooRead:
         live = self._pace.live() if self._pace is not None else True

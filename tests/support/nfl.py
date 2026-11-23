@@ -58,6 +58,8 @@ class FakeSleeper:
     ) -> None:
         self.game_lines = game_lines if game_lines is not None else []
         self.unloaded_weeks: set[int] = set()
+        self.forgotten: list[str] = []
+        """Each league whose cached reads were dropped, in order."""
         """Weeks whose bulk reads would not load: each a failure in what the readers return, as the client records it."""
         self.last_season_lines: list[NFLGameLine] = []
         self.season_stats = season_stats if season_stats is not None else {}
@@ -183,6 +185,10 @@ class FakeSleeper:
 
     def get_league_users(self, league_id: str) -> dict[str, str]:
         return {SLEEPER_USER_ID: "Me", "user-2": "Rival"}
+
+    def forget_league(self, league_id: str) -> int:
+        self.forgotten.append(league_id)
+        return 4
 
     def get_matchups(self, league_id: str, week: int) -> list[SleeperMatchup]:
         self.matchup_fetches += 1

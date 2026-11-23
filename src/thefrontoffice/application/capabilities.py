@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from thefrontoffice.domain.ports import (
     ForecastProvider,
+    LeagueRefreshProvider,
     OutlookProvider,
     PlayerSearchProvider,
     PlayerTabProvider,
@@ -40,6 +41,7 @@ CAPABILITIES: Mapping[type[object], Capability] = {
     TradeMarketProvider: Capability("finding trades", flag="finds_trades"),
     PlayerSearchProvider: Capability("finding players by name", flag="searches_players"),
     PlayerTabProvider: Capability("a player's deferred tabs"),
+    LeagueRefreshProvider: Capability("refreshing a league", flag="refreshes"),
     TradeProvider: Capability("trade evaluation"),
     ForecastProvider: Capability("simulating a matchup"),
     RangeTuningProvider: Capability("tuning player ranges"),

@@ -671,3 +671,19 @@ def test_the_live_feed_counts_a_players_matches_too(tmp_path: Path) -> None:
     client, _ = _live_client(tmp_path)
 
     assert client.get_live(1)[10].matches == 2
+
+
+def test_a_refreshed_league_rereads_its_managers_and_the_gameweeks_but_not_the_season(tmp_path: Path) -> None:
+    session = FakeSession(ROUTES)
+    client = FPLClient(cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT, session=session)
+
+    def read() -> None:
+        client.get_entry(77), client.get_clubs(), client.get_season_fixtures()
+
+    read()
+    dropped = client.forget_league(5)
+    asked = len(session.requests)
+    read()
+
+    assert dropped == 2
+    assert sorted(session.requests[asked:]) == [f"{BASE_URL}/bootstrap-static/", f"{BASE_URL}/entry/77/"]

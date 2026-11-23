@@ -49,6 +49,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar
 
+from thefrontoffice.domain.errors import CacheUnwritableError
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -305,6 +307,30 @@ class DiskCache:
         value = fetch()
         self.set(key, value, now=now)
         return value
+
+    def forget(self, match: Callable[[str], bool]) -> int:
+        """Drop every entry whose key `match`es, in memory and on disk; how many the database held.
+
+        Raises:
+            CacheUnwritableError: the database would not give them up, so a read would still find them.
+
+        For a reader asked to look again before its TTLs say so: the next
+        lookup of a dropped key misses, and fetches. Keys are matched here
+        rather than in SQL, so whoever names a platform's keys says which
+        go without a pattern language of their own.
+        """
+        self._entries = {key: hit for key, hit in self._entries.items() if not match(key)}
+        db = self._connection(create=False)
+        if db is None:
+            return 0
+        try:
+            with self._write_lock:
+                keys = [(key,) for (key,) in db.execute("SELECT key FROM entries") if match(key)]
+                db.executemany("DELETE FROM entries WHERE key = ?", keys)
+        except sqlite3.Error as e:
+            logger.error(f"Could not drop cache entries from {self._db}: {e}")
+            raise CacheUnwritableError(str(self._db), str(e)) from e
+        return len(keys)
 
     def clear(self) -> None:
         """Forget every entry, in memory and on disk.

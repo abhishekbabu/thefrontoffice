@@ -50,7 +50,7 @@ from thefrontoffice.adapters.outbound.competitions.seeds import seed
 from thefrontoffice.adapters.outbound.platforms.fpl.client import FPLSource
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import Chip, ChipPlay, MiniLeague, Player, as_millions
-from thefrontoffice.domain.errors import PlayerNotFoundError, TeamNotFoundError
+from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import (
     CompetitionContext,
     LeagueSchedule,
@@ -138,6 +138,12 @@ class FPLProvider:
         not play by.
         """
         return LEAGUE_URL.format(league_id=league.id, kind="h" if league.is_h2h else "c")
+
+    def refresh(self, league_id: str) -> int:
+        """Drop what is cached of the league, its managers and the gameweek being played."""
+        if not league_id.isdigit():
+            raise LeagueNotFoundError(f"FPL league {league_id!r} is not one of yours")
+        return self.client.forget_league(int(league_id))
 
     def _find_league(self, league_id: str, entry_id: int) -> MiniLeague | None:
         return league.league_of(self.client.get_entry(entry_id), league_id)

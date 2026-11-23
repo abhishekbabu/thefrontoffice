@@ -100,6 +100,20 @@ def test_a_season_reads_each_weeks_scoreboard_through_the_session(tmp_path: Path
     assert len(frontend.requests) == 3
 
 
+def test_a_refreshed_league_is_asked_for_again_and_another_league_is_not(tmp_path: Path) -> None:
+    frontend = FakeFrontend(answers={"/teams": TEAMS})
+    reader, _, cache = _reader(tmp_path, frontend)
+    cache.set(paths.teams("466.l.9").path, TEAMS)
+    client = YahooClient(LEAGUE, responses=reader)
+    client.teams()
+
+    assert client.forget() == 1
+    client.teams()
+
+    assert frontend.urls == [f"{paths.FRONTEND}league/{KEY}/teams"] * 2
+    assert cache.lookup(paths.teams("466.l.9").path, timedelta.max) is not None
+
+
 def test_yahoos_999_is_retried_and_then_read_as_yahoo_asking_for_fewer_requests(tmp_path: Path) -> None:
     """`requests` raises on no status past 599, so the reader names Yahoo's own rate limit itself."""
     frontend = FakeFrontend(statuses={"/teams": 999})

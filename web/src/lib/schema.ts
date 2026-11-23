@@ -71,6 +71,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/competitions/{key}/leagues/{league_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh
+         * @description Drop what is kept of one league that a move or a new week changes, so its pages read the platform again.
+         *
+         *     Each read is kept as long as its answer usually holds — a Yahoo roster an
+         *     hour — which is too long right after the manager has made a move.
+         */
+        post: operations["refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -1007,6 +1030,8 @@ export interface components {
             finds_trades: boolean;
             /** Searches Players */
             searches_players: boolean;
+            /** Refreshes */
+            refreshes: boolean;
             /** Syncs */
             syncs: boolean;
             /** Configured */
@@ -1661,6 +1686,17 @@ export interface components {
              * @default
              */
             detail: string;
+        };
+        /**
+         * Refreshed
+         * @description What a refresh dropped.
+         */
+        Refreshed: {
+            /**
+             * Dropped
+             * @description How many kept platform reads went, to be asked for again on the next page.
+             */
+            dropped: number;
         };
         /**
          * Remedy
@@ -2703,6 +2739,83 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LeagueRef"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    refresh: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                league_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refreshed"];
                 };
             };
             /** @description Bad Request */

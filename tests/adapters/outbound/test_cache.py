@@ -21,6 +21,7 @@ import pytest
 from support.logs import capture_logs
 
 from thefrontoffice.adapters.outbound.cache import DATABASE, DiskCache, _legacy_filename
+from thefrontoffice.domain.errors import CacheUnwritableError
 
 HOUR = timedelta(hours=1)
 THREADS = 32
@@ -282,6 +283,36 @@ def test_clear_leaves_the_directory_and_anything_else_in_it(tmp_path: Path) -> N
 def test_clear_on_a_cache_never_written_is_harmless(tmp_path: Path) -> None:
     DiskCache(tmp_path / "never-created").clear()
     assert not (tmp_path / "never-created").exists()
+
+
+def test_forgetting_drops_only_the_matching_keys_here_and_on_disk(tmp_path: Path) -> None:
+    directory = tmp_path / "cache"
+    c = DiskCache(directory)
+    for key in ("league/1/teams", "league/1/standings", "league/2/teams"):
+        c.set(key, "v", now=T0)
+
+    dropped = c.forget(lambda key: key.startswith("league/1/"))
+
+    assert dropped == 2
+    assert [c.get(key, HOUR, now=T0) for key in ("league/1/teams", "league/2/teams")] == [None, "v"]
+    assert DiskCache(directory).get("league/1/standings", HOUR, now=T0) is None
+    assert DiskCache(directory).get("league/2/teams", HOUR, now=T0) == "v"
+
+
+def test_forgetting_on_a_cache_never_written_drops_nothing_and_creates_nothing(tmp_path: Path) -> None:
+    assert DiskCache(tmp_path / "never-created").forget(lambda _: True) == 0
+    assert not (tmp_path / "never-created").exists()
+
+
+def test_a_database_that_will_not_give_its_rows_up_says_so(tmp_path: Path) -> None:
+    """A refresh that quietly dropped nothing would serve the same stale page as though it had."""
+    directory = tmp_path / "cache"
+    c = DiskCache(directory)
+    c.set("k", "v", now=T0)
+    _execute(directory, "DROP TABLE entries")
+
+    with pytest.raises(CacheUnwritableError):
+        c.forget(lambda _: True)
 
 
 # ── adopting the JSON-file-per-key cache ────────────────────────────────

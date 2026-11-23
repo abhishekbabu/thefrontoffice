@@ -102,6 +102,14 @@ def _sweep(capture: YahooCapture, yahoo: dict[str, str] = YAHOO) -> list[str]:
     return fetched
 
 
+def test_a_refresh_keeps_what_a_sync_stored_since_nothing_else_can_answer_until_the_next(tmp_path: Path) -> None:
+    capture = _capture(tmp_path)
+    _sweep(capture)
+
+    assert capture.forget(lambda _: True) == 0
+    assert capture.raw(paths.teams(KEY)) == YAHOO[paths.teams(KEY).path]
+
+
 # ── planning ────────────────────────────────────────────────────────────
 
 

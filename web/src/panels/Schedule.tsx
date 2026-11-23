@@ -25,7 +25,7 @@ export function SchedulePanel({ competition, league }: { competition: Competitio
 
   return (
     <>
-      <LeagueHeader league={league} />
+      <LeagueHeader competition={competition} league={league} />
       <QueryState query={schedule} lines={6} />
       {schedule.data && schedule.data.season.length === 0 && (
         <Empty title="No head-to-head schedule" />

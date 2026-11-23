@@ -161,6 +161,14 @@ class JsonApiClient:
         trim = keep or (lambda raw: raw)
         return self._cache.cached(key, ttl, lambda: trim(self.get(url, timeout=timeout)))
 
+    def forget(self, match: Callable[[str], bool]) -> int:
+        """Drop each cached response whose key `match`es, so the next read fetches it; how many went.
+
+        Raises:
+            CacheUnwritableError: they could not be dropped.
+        """
+        return self._cache.forget(match)
+
     def cached_many(
         self, urls: dict[str, str], ttl: timedelta, keep: Callable[[Any], Any] | None = None
     ) -> Batch[str, Any]:

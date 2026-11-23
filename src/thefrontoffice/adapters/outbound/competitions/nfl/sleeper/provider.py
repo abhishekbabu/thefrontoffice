@@ -175,6 +175,11 @@ class SleeperNFLProvider:
             for lg in leagues
         ]
 
+    def refresh(self, league_id: str) -> int:
+        """Drop what is cached of the league and of the week being played."""
+        self._weeks.clear()
+        return self.client.forget_league(league_id)
+
     def _league(self, league_id: str, season: str) -> SleeperLeague:
         for lg in self.client.get_leagues(self._resolve_user_id(), season):
             if lg.league_id == league_id:

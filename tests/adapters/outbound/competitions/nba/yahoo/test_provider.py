@@ -273,6 +273,25 @@ def test_a_specific_league_can_be_selected() -> None:
     assert [t.name for t in _two_league_provider().teams("2")] == ["League Two Side"]
 
 
+def test_a_refresh_drops_the_league_it_names_and_no_other() -> None:
+    one, two = FakeYahoo(), FakeYahoo()
+    provider = YahooNBAProvider(
+        auth=FakeYahooAuth([yahoo_league("1", "One"), yahoo_league("2", "Two")]),
+        yahoo_for=lambda league: {"1": one, "2": two}[league.league_key],
+        form=FakeNBA(),
+        games=FakeNBA(),
+        sleeper=FakeSleeperProjections(),
+        espn=FakeESPN(),
+        forecast=FakeForecast(),
+        fallback_weekly_adds=3,
+    )
+
+    dropped = provider.refresh("2")
+
+    assert (one.forgotten, two.forgotten) == (0, 1)
+    assert dropped == 3
+
+
 def test_no_league_id_reads_the_current_league() -> None:
     assert [t.name for t in _two_league_provider().teams("")] == ["League One Side"]
 

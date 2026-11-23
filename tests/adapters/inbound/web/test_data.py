@@ -70,4 +70,5 @@ def test_each_flag_says_whether_the_competition_implements_the_port_behind_it() 
         "browses_weeks": False,
         "finds_trades": False,
         "searches_players": False,
+        "refreshes": False,
     }

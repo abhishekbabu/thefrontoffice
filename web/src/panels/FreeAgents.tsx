@@ -111,7 +111,7 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
 
   return (
     <>
-      <LeagueHeader league={league} />
+      <LeagueHeader competition={competition} league={league} />
 
       <QueryState query={page} lines={6} />
 

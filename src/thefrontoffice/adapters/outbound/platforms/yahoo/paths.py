@@ -62,6 +62,9 @@ FRONTEND = "https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/"
 PAGE = 25
 """The most players Yahoo's API lists in one response; a deeper list is read a page at a time."""
 
+LEAGUES_PREFIX = "users;use_login=1/games;"
+"""Where every league list is kept, whichever game and season: `leagues`."""
+
 PROFILE = "users;use_login=1/profile"
 """Who is signed in: 401 without a session, so a capture checks it before anything else."""
 
@@ -117,7 +120,33 @@ def leagues(game_code: str, season: int) -> YahooRead:
     Filtered by game code and season rather than by game key, which the SDK
     resolves against a hardcoded table that stops at its last release.
     """
-    return YahooRead(f"users;use_login=1/games;game_codes={game_code};seasons={season}/leagues", LEAGUES_TTL)
+    return YahooRead(f"{LEAGUES_PREFIX}game_codes={game_code};seasons={season}/leagues", LEAGUES_TTL)
+
+
+_WEEK = re.compile(r"^scoreboard;week=(\d+)$")
+
+
+def moves(path: str, league_key: str, current_week: int | None) -> bool:
+    """Whether the read kept at `path` is one a move in `league_key`, or a new week, can change.
+
+    What a refresh drops: the league list, which carries the week being
+    played; every read below the league and its teams — rosters, the wire,
+    the table, the moves — but for its settings, fixed before the season, a
+    roster as a week already played ended, and a scoreboard settled before
+    last week. Another league's reads, and the session's own record, stay.
+    """
+    if path.startswith(LEAGUES_PREFIX):
+        return True
+    if path.startswith(f"team/{league_key}.t."):
+        return ";week=" not in path
+    below = f"league/{league_key}/"
+    if not path.startswith(below):
+        return False
+    query = path.removeprefix(below)
+    if query == "settings":
+        return False
+    week = _WEEK.match(query)
+    return week is None or current_week is None or int(week.group(1)) >= current_week - 1
 
 
 def settings(league_key: str) -> YahooRead:

@@ -49,6 +49,9 @@ class Competition(BaseModel):
     searches_players: bool
     """Whether any player can be found by name, rostered or not: who a comparison adds."""
 
+    refreshes: bool
+    """Whether a league's kept platform reads can be dropped, so its pages read the platform again."""
+
     syncs: bool
     """Whether its platform can be read from a browser sync (`/api/platforms/{platform}/capture`), which
     then knows only the players the sync carried."""

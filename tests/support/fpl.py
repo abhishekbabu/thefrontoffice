@@ -317,6 +317,8 @@ class FakeFPL:
         self.live_error = live_error
         self.results = results or {}
         self.results_error = results_error
+        self.forgotten: list[int] = []
+        """Each league whose cached reads were dropped, in order."""
         self.results_requests: list[list[int]] = []
         self.chips = chips if chips is not None else list(DEFAULT_CHIPS)
         self.chips_played = chips_played or []
@@ -384,6 +386,10 @@ class FakeFPL:
         if self.fixtures_error:
             raise self.fixtures_error
         return self.fixtures
+
+    def forget_league(self, league_id: int) -> int:
+        self.forgotten.append(league_id)
+        return 5
 
     def get_clubs(self) -> dict[str, Club]:
         if self.clubs_error:

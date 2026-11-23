@@ -121,6 +121,10 @@ class YahooCapture:
     def many(self, reads: Mapping[str, YahooRead]) -> dict[str, str]:
         return {name: self.raw(read) for name, read in reads.items()}
 
+    def forget(self, match: Callable[[str], bool]) -> int:
+        """Nothing: what a sync stored is all there is to read until the next, so a refresh keeps it."""
+        return 0
+
     def find_leagues(self, game_code: str, season: int) -> list[YahooLeague]:
         """Every league the captured league list names for one game and season.
 

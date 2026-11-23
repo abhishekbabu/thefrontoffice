@@ -36,7 +36,7 @@ from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     TableRow,
     TransferMade,
 )
-from thefrontoffice.domain.errors import InvalidRequestError, TeamNotFoundError
+from thefrontoffice.domain.errors import InvalidRequestError, LeagueNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import PlayerQuery
 
 # ── configuration ───────────────────────────────────────────────────────
@@ -51,6 +51,18 @@ def test_only_invitational_leagues_are_listed() -> None:
     assert [ref.name for ref in refs] == ["Work League", "Hood h2h"]
     assert refs[0].league_id == LEAGUE_ID
     assert "3 of 12" in refs[0].detail
+
+
+def test_a_refresh_drops_the_league_it_names() -> None:
+    fake = FakeFPL()
+
+    assert FPLProvider(ENTRY_ID, client=fake).refresh(LEAGUE_ID) == 5
+    assert fake.forgotten == [int(LEAGUE_ID)]
+
+
+def test_a_league_that_is_no_number_is_none_of_yours_to_refresh() -> None:
+    with pytest.raises(LeagueNotFoundError):
+        FPLProvider(ENTRY_ID, client=FakeFPL()).refresh("work")
 
 
 def test_a_manager_in_no_private_league_still_has_something_to_scout() -> None:

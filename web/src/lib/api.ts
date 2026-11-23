@@ -214,6 +214,9 @@ export function leagueApi(key: string, league: string) {
     /** The kept judgment, without asking the model. */
     judgment: () =>
       settle(client.GET("/api/competitions/{key}/leagues/{league_id}/judgment", { params: { path: at } })),
+    /** Drop what the server keeps of this league that a move or a new week changes. */
+    refresh: () =>
+      settle(client.POST("/api/competitions/{key}/leagues/{league_id}/refresh", { params: { path: at } })),
     /** Open the assistant's conversation in this league; asked through `api.ask`. */
     openChat: () => settle(client.POST("/api/competitions/{key}/leagues/{league_id}/chats", { params: { path: at } })),
   };
