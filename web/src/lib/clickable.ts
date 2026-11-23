@@ -18,15 +18,18 @@ export function clickable(
   { role = "button" }: { role?: "button" | null } = {},
 ) {
   if (!open) return {};
+
   return {
     onClick: () => open(),
     onKeyDown: (e: React.KeyboardEvent) => {
       if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+
       // Space would otherwise scroll the page as well.
       e.preventDefault();
+
       open();
     },
     tabIndex: 0,
-    ...(role ? { role } : {}),
+    role: role ?? undefined,
   };
 }

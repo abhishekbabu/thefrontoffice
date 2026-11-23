@@ -1,9 +1,10 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { m } from "motion/react";
-import { list, listItem, pressableRow } from "@/lib/motion";
+import { list, listItem } from "@/lib/motion/lists";
+import { pressableRow } from "@/lib/motion/press";
 import { Table, Td, Th } from "@/components/ui/table";
-import { Tooltip } from "@/components/ui/tooltip";
+import { Tooltip } from "@/components/ui/overlays/tooltip";
 import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
@@ -84,10 +85,13 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
 
   useLayoutEffect(() => {
     if (!head.current || widths) return;
-    const cells = [...head.current.children] as HTMLElement[];
+
+    const cells = [...head.current.cells];
     const sizes = cells.map((cell) => cell.getBoundingClientRect().width);
     const total = sizes.reduce((sum, size) => sum + size, 0);
+
     if (!total) return;
+
     setFrozen({ key, widths: sizes.map((size) => `${((size / total) * 100).toFixed(3)}%`), total: Math.ceil(total) });
   }, [key, widths]);
 
@@ -101,13 +105,17 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
    */
   const nextSort = (column: string): SortState | null => {
     if (!isActive(column)) return { column, descending: true };
+
     if (sort?.descending) return { column, descending: false };
+
     return null;
   };
 
   const sortLabel = (column: string) => {
     const hint = hints[column] ? `${hints[column]}. ` : "";
+
     if (!isActive(column)) return `${hint}Sort by ${column}, highest first`;
+
     return hint + (sort?.descending ? `Sort by ${column}, lowest first` : `Clear sorting by ${column}`);
   };
 
@@ -141,7 +149,7 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
                   // column so the label stays flush with the digits under it
                   // and the arrow's reserved space falls on the far side.
                   className={cn(
-                    "flex w-full items-center gap-1 py-2 transition-colors hover:text-foreground",
+                    "flex w-full items-center gap-1 py-2 transition-colors hover:text-foreground motion-reduce:transition-none",
                     dense ? "px-2" : "px-4",
                     isNumeric(column) && "flex-row-reverse justify-start",
                     isActive(column) && "text-foreground",
@@ -173,6 +181,7 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
       <m.tbody variants={list} initial="hidden" animate="shown">
         {rows.flatMap((row) => {
           const note = detail?.(row);
+
           return [
           // A motion row rather than a wrapped one: anything between <tbody>
           // and <tr> breaks the table's own layout.
@@ -180,10 +189,11 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
             key={row.player_id}
             variants={listItem}
             {...clickable(onSelect && (() => onSelect(row)), { role: null })}
-            className={cn("transition-colors duration-150 hover:bg-muted", onSelect && ["cursor-pointer", pressableRow])}
+            className={cn("transition-colors duration-150 hover:bg-muted motion-reduce:transition-none", onSelect && ["cursor-pointer", pressableRow])}
           >
             {columns.map((column) => {
               const value = row.columns[column] ?? "";
+
               return (
                 // A row with a note under it ends at the note, not here: a rule
                 // between them reads as two rows rather than one and its note.

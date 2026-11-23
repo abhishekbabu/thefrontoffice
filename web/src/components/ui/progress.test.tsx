@@ -5,6 +5,7 @@ import { render } from "@/test/render";
 describe("LoadingBar", () => {
   it("is an indeterminate progress bar, named for what it waits on", async () => {
     const { container } = await render(<LoadingBar label="Loading roster" />);
+
     const bar = container.querySelector("[role=progressbar]")!;
 
     expect(bar.getAttribute("aria-label")).toBe("Loading roster");

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SendHorizontal } from "lucide-react";
-import { api, isExpired, type Subject, type Turn } from "@/lib/api";
+import { api, isExpired } from "@/lib/api";
+import { type Subject, type Turn } from "@/lib/types";
 import { keys } from "@/lib/queries";
-import { IconButton } from "@/components/ui/icon-button";
+import { IconButton } from "@/components/ui/controls/icon-button";
 import { Busy } from "@/components/ui/state";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/controls/input";
 import { Prose } from "@/components/ui/prose";
 import { ErrorNote } from "@/components/ui/error-note";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,7 @@ function Chat({
     mutationFn: ({ message, about }: Asked) => api.ask(chatId, message, about),
     onMutate: async () => {
       setFailed(null);
+
       // A read already under way would land without this turn and overwrite it.
       await queryClient.cancelQueries({ queryKey: turnsKey });
     },
@@ -60,35 +62,47 @@ function Chat({
   // Once per question handed over, and only once the conversation has been
   // read: sent before, its turn would be overwritten by the read landing.
   const handled = useRef<Asked | null>(null);
+
   useEffect(() => {
     if (!asked || asked === handled.current || !history.isSuccess || ask.isPending) return;
+
     handled.current = asked;
+
     onTaken();
+
     ask.mutate({ message: asked.message, about: unique([...onScreen, ...asked.about]) });
     // oxlint-disable-next-line react/exhaustive-deps -- per question handed over, not per render.
   }, [asked, history.isSuccess, ask.isPending]);
 
   const turns: Shown[] = [...(history.data ?? [])];
+
   if (ask.isPending && ask.variables) turns.push({ role: "you", text: ask.variables.message });
+
   if (failed) turns.push({ role: "you", text: failed.question }, { role: "model", text: "", error: failed.error });
 
   // The box is under the conversation, so keeping it in view keeps the newest
   // turn in view too. Only for a turn asked here: turns read back on opening
   // are not news.
   const form = useRef<HTMLFormElement>(null);
+
   useEffect(() => {
     if (!ask.isIdle) form.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [ask.isIdle, ask.status, ask.submittedAt]);
 
   function send(e: React.FormEvent) {
     e.preventDefault();
+
     const message = draft.trim();
+
     if (!message || ask.isPending) return;
+
     setDraft("");
+
     ask.mutate({ message, about: onScreen });
   }
 
   if (history.isError && !isExpired(history.error)) return <ErrorNote error={history.error} className="m-0" />;
+
   if (!history.data) return <Opening />;
 
   // At least as tall as whatever holds it, so the box sits at the foot of the
@@ -200,6 +214,7 @@ export function AssistantChat({
   const queryClient = useQueryClient();
   const threadKey = keys.assistant(competition, league, generation);
   const [unasked, setUnasked] = useState<Asked | null>(null);
+
   const thread = useQuery({
     queryKey: threadKey,
     queryFn: () => api.league(competition, league).openChat(),
@@ -209,13 +224,17 @@ export function AssistantChat({
 
   function reopen(question?: Asked) {
     setUnasked(question ?? null);
+
     // Dropped and asked again: the kept id is the one the server no longer knows.
     void queryClient.resetQueries({ queryKey: threadKey });
   }
 
   if (thread.isError) return <ErrorNote error={thread.error} className="m-0" />;
+
   if (!thread.data) return <Opening />;
+
   const chatId = thread.data.chat_id;
+
   return (
     <Chat
       key={chatId}
@@ -223,6 +242,7 @@ export function AssistantChat({
       asked={unasked ?? asked}
       onTaken={() => {
         setUnasked(null);
+
         onTaken();
       }}
       onExpired={reopen}

@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RotateCw } from "lucide-react";
-import { api, type Competition, type League } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type Competition, type League } from "@/lib/types";
 import { keys } from "@/lib/queries";
-import { ExternalLink } from "@/components/ui/external-link";
-import { IconButton } from "@/components/ui/icon-button";
+import { ExternalLink } from "@/components/ui/controls/external-link";
+import { IconButton } from "@/components/ui/controls/icon-button";
 
 /**
  * The bar that says where you are and what you can do from here.
@@ -117,6 +118,7 @@ export function LeagueHeader({
  */
 function RefreshLeague({ competition, league }: { competition: Competition; league: League }) {
   const queryClient = useQueryClient();
+
   const refresh = useMutation({
     mutationFn: api.league(competition.key, league.league_id).refresh,
     onSuccess: () =>
@@ -125,6 +127,7 @@ function RefreshLeague({ competition, league }: { competition: Competition; leag
         queryClient.invalidateQueries({ queryKey: keys.leagues(competition.key) }),
       ]),
   });
+
   return (
     <IconButton
       label={refresh.isError ? `Refresh failed: ${refresh.error.message}` : "Refresh"}

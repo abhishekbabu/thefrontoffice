@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink as ExternalLinkIcon } from "lucide-react";
-import { ApiError, api, type Remedy } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
+import { type Remedy } from "@/lib/types";
 import { keys } from "@/lib/queries";
 import { SETTINGS } from "@/lib/route";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/controls/button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -38,6 +39,7 @@ export function ErrorNote({ error, className }: { error: unknown; className?: st
 export function RemedyAction({ remedy }: { remedy: Remedy }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+
   switch (remedy.action) {
     case "authorize":
       return <LoginButton label={remedy.label} platform={remedy.platform} />;
@@ -86,6 +88,7 @@ function LoginButton({ label, platform }: { label: string; platform: string }) {
 
   useEffect(() => {
     if (state.data?.status !== "ok") return;
+
     // Everything about this competition failed on the missing authorization;
     // none of those answers are worth keeping now that it exists. Polling
     // stops on its own once the status is no longer running.

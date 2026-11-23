@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { api, type CaptureStatus, type Competition, type League, type PlayerComparison, type PlayerRef } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type CaptureStatus, type Competition, type League, type PlayerComparison, type PlayerRef } from "@/lib/types";
 import { keys } from "@/lib/queries";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { Card, CardHeader } from "@/components/ui/card";
-import { SearchInput } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/controls/input";
 import { Meta } from "@/components/ui/label";
 import { ListRow } from "@/components/ui/list";
 import { Empty, QueryState } from "@/components/ui/state";
@@ -87,18 +88,22 @@ function Finder({
   exclude: string[];
 }) {
   const [search, setSearch] = useState("");
+
   const found = useQuery<PlayerRef[], Error>({
     queryKey: keys.playerSearch(competition.key, league.league_id, search.trim()),
     queryFn: () => api.league(competition.key, league.league_id).searchPlayers(search.trim()),
     enabled: search.trim().length >= 2,
   });
+
   // Read from a browser sync, only the players it carried can be found: say so once a search is under way.
   const sync = useQuery<CaptureStatus, Error>({
     queryKey: keys.capture(competition.platform),
     queryFn: () => api.captureStatus(competition.platform),
     enabled: competition.syncs,
   });
+
   const offered = (found.data ?? []).filter((p) => !exclude.includes(p.player_id));
+
   return (
     <Card>
       <div className="px-4 py-3">
@@ -119,6 +124,7 @@ function Finder({
           key={p.player_id}
           onClick={() => {
             onPick(p.player_id);
+
             setSearch("");
           }}
         >

@@ -5,16 +5,22 @@ import { prePaintScript } from "@/themes/prepaint";
 /** Run the script exactly as the page's head will: as source text, on its own. */
 function paint(stored: Record<string, string>) {
   localStorage.clear();
+
   for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value);
+
   // Evaluated from text on purpose: the page's head runs it as source.
+  // SAFETY: the script is statements returning nothing, so it is a function of no arguments.
   // oxlint-disable-next-line typescript/no-implied-eval
   (new Function(prePaintScript()) as () => void)();
+
   return document.documentElement;
 }
 
 afterEach(() => {
   localStorage.clear();
+
   document.documentElement.className = "";
+
   document.documentElement.removeAttribute("data-theme");
 });
 

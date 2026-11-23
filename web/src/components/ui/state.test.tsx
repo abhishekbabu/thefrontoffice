@@ -9,6 +9,7 @@ const failed = { isLoading: false, isError: true, error: new Error("Yahoo is dow
 describe("QueryState", () => {
   it("shows a progress bar in a polite status region while the query is asked", async () => {
     const { container } = await render(<QueryState query={asked} />);
+
     const status = container.querySelector("[role=status]")!;
 
     expect(status.getAttribute("aria-live")).toBe("polite");
@@ -18,7 +19,8 @@ describe("QueryState", () => {
   it("holds more room open for a page with more rows coming", async () => {
     const height = async (lines: number) => {
       const { container } = await render(<QueryState query={asked} lines={lines} />);
-      return parseFloat((container.querySelector("[role=status]") as HTMLElement).style.minHeight);
+
+      return parseFloat(container.querySelector<HTMLElement>("[role=status]")!.style.minHeight);
     };
 
     expect(await height(6)).toBeGreaterThan(await height(2));

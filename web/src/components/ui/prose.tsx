@@ -13,6 +13,7 @@ export function Prose({ text, className }: { text: string; className?: string })
         ) : block.kind === "list" ? (
           (() => {
             const List = block.ordered ? "ol" : "ul";
+
             return (
               <List key={i} className={cn("flex flex-col gap-1 pl-5", block.ordered ? "list-decimal" : "list-disc")}>
                 {block.items.map((item, j) => (

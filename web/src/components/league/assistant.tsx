@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
-import { useKept } from "@/lib/useKept";
+import { useKept } from "@/lib/hooks/useKept";
 import { Eye, Minus, RotateCcw, Sparkles } from "lucide-react";
 import { m } from "motion/react";
-import type { Competition, League } from "@/lib/api";
-import { dock } from "@/lib/motion";
+import type { Competition, League } from "@/lib/types";
+import { dock } from "@/lib/motion/enter";
 import type { Route } from "@/lib/route";
-import { onScreen, useAssistantOpen, useAsked, useOpened, type Shown } from "@/lib/screen";
+import { onScreen, useOpened, type Shown } from "@/lib/screen";
+import { useAssistantOpen, useAsked } from "@/lib/asking";
 import { AssistantChat, type Asked } from "@/components/league/chat";
-import { IconButton } from "@/components/ui/icon-button";
+import { IconButton } from "@/components/ui/controls/icon-button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
@@ -37,9 +38,12 @@ export function Assistant({ route, competition, league }: { route: Route; compet
   // conversation per page load that nobody uses is a model session for
   // nothing. Kept after, minimized or not.
   const [started, setStarted] = useState(false);
+
   if (open && !started) setStarted(true);
+
   const shown = onScreen(route, useOpened());
   const [handed, taken] = useAsked();
+
   const asked = useMemo<Asked | null>(
     () => handed && { message: handed.message, about: handed.about.map((s) => s.subject) },
     [handed],

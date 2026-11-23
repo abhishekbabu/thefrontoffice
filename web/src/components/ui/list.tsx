@@ -3,7 +3,8 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ErrorNote } from "@/components/ui/error-note";
 import { Label } from "@/components/ui/label";
 import { Loading } from "@/components/ui/state";
-import { list, listItem, pressableRow } from "@/lib/motion";
+import { list, listItem } from "@/lib/motion/lists";
+import { pressableRow } from "@/lib/motion/press";
 import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 

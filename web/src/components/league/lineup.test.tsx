@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { Spot } from "@/lib/api";
+import type { Spot } from "@/lib/types";
 import { LineupCard, SideCard, rowsOf } from "@/components/league/lineup";
 import { render } from "@/test/render";
-import { clock, startsAt } from "@/lib/format";
+import { clock, startsAt } from "@/lib/times";
 
 function spot(player: string, mark = "", today: Partial<Pick<Spot, "today" | "idle" | "kickoff">> = {}): Spot {
   return {
@@ -54,6 +54,7 @@ describe("a day's lineup", () => {
 describe("a day's lineup", () => {
   it("says the hour a game today tips off, beside the day", async () => {
     const tonight = new Date(Date.now() + 3_600_000).toISOString();
+
     const { container } = await render(
       <LineupCard title="You" lineup={[spot("Tonight", "", { today: "vs TOR today", kickoff: tonight })]} bench={[]} />,
     );
@@ -65,6 +66,7 @@ describe("a day's lineup", () => {
 describe("a week's lineup", () => {
   it("says when a game still to come starts", async () => {
     const thursday = new Date(Date.now() + 2 * 86_400_000).toISOString();
+
     const { container } = await render(
       <LineupCard title="You" lineup={[spot("Thursday", "", { kickoff: thursday })]} bench={[]} />,
     );
@@ -85,7 +87,9 @@ describe("SideCard", () => {
       reserve: [spot("Hurt")],
       open_spots: 0,
     };
+
     const { container } = await render(<SideCard side={side} label="Opponent" />);
+
     const text = container.textContent ?? "";
 
     expect(text.indexOf("Bench")).toBeLessThan(text.indexOf("Backup"));
@@ -97,7 +101,9 @@ describe("SideCard", () => {
 describe("a side's header", () => {
   it("says the team's record ahead of anything else it reads", async () => {
     const side = { name: "Mine", record: "7-4", detail: "GW12 picks", points: "88", lineup: [spot("Starter")], bench: [], reserve: [], open_spots: 0 };
+
     const { container } = await render(<SideCard side={side} label="You" />);
+
     const text = container.textContent ?? "";
 
     expect(text).toContain("7-4");
@@ -109,7 +115,9 @@ describe("a side's header", () => {
 describe("open roster spots", () => {
   it("draws each spot nobody holds at the foot of the bench, and only there", async () => {
     const side = { name: "Mine", record: "", detail: "", points: "", lineup: [spot("Starter")], bench: [spot("Backup")], reserve: [], open_spots: 2 };
+
     const { container } = await render(<SideCard side={side} label="You" />);
+
     const text = container.textContent ?? "";
 
     expect(text).not.toContain("2 open");
@@ -132,6 +140,7 @@ describe("the points column", () => {
     scored: points,
     projection: "10.0",
   });
+
   const side = (...lineup: Spot[]) => ({ name: "Mine", record: "", detail: "", points: "", lineup, bench: [], reserve: [], open_spots: 0 });
 
   it("is not drawn before any game of the week kicks off", async () => {
@@ -155,6 +164,7 @@ describe("the points column", () => {
   it("follows the caller where only the other side's game is under way", async () => {
     const waiting = side(scored("Waiting", "projected"));
     const playing = side(scored("Playing", "live", "12.4"));
+
     const { container } = await render(<SideCard side={waiting} label="You" rows={rowsOf(waiting, playing)} />);
 
     expect(container.textContent).toContain("Pts");
@@ -182,6 +192,7 @@ describe("rowsOf", () => {
 
 describe("rows side by side", () => {
   const figure = (label: string, value: string) => ({ label, value, tone: "neutral" as const, url: "", better: null, hint: "" });
+
   const live = (player: string): Spot => ({
     ...spot(player, "C", { today: "@ UTA final" }),
     slot: "PG",
@@ -190,17 +201,22 @@ describe("rows side by side", () => {
     projection: "28.0",
     line: [figure("FG%", ".511"), figure("PTS", "25")],
   });
+
   const quiet = (player: string): Spot => ({ ...spot(player), slot: "PG", detail: "", value: "" });
 
   /** The two cards, yours then the opponent's. */
   const sides = (container: Element): [Element, Element] => {
     const [left, right] = container.children;
+
     if (!left || !right) throw new Error("expected two cards");
+
     return [left, right];
   };
+
   /** The fixed height each row's body is drawn at, in order: what sets how tall the row stands. */
   const rowBodies = (card: Element): string[] =>
     [...card.querySelectorAll("[data-row] > div")].map((el) => el.className.split(" ").filter((c) => /^h-/.test(c)).join());
+
   /** How many lines each player's row draws under his name: its detail, and its figures where any row has them. */
   const linesUnder = (card: Element): number[] =>
     [...card.querySelectorAll('[data-row="spot"]')].map((row) => row.querySelectorAll(".h-4").length);
@@ -209,16 +225,19 @@ describe("rows side by side", () => {
     const mine = { name: "Mine", record: "", detail: "", points: "", lineup: [live("A"), quiet("B")], bench: [live("C")], reserve: [], open_spots: 1 };
     const theirs = { name: "Theirs", record: "", detail: "", points: "", lineup: [quiet("D"), quiet("E")], bench: [quiet("F"), quiet("G")], reserve: [], open_spots: 0 };
     const rows = rowsOf(mine, theirs);
+
     const { container } = await render(
       <>
         <SideCard side={mine} label="You" rows={rows} />
         <SideCard side={theirs} label="Opponent" rows={rows} />
       </>,
     );
+
     const [left, right] = sides(container);
 
     // Every row, a player's with a game, a score and a line, a bare one, or an open spot, takes the same fixed body.
     const bodies = [...rowBodies(left), ...rowBodies(right)];
+
     expect(bodies).toHaveLength(8);
     expect(new Set(bodies)).toEqual(new Set(["h-14"]));
     // The detail line and the figures' line are drawn on every player's row, empty or not.
@@ -231,17 +250,21 @@ describe("rows side by side", () => {
 
   it("are no taller for a game today, a kickoff or a mark than without", async () => {
     const plain = { name: "A", record: "", detail: "", points: "", lineup: [quiet("A")], bench: [], reserve: [], open_spots: 0 };
+
     const busy = {
       ...plain,
       lineup: [{ ...quiet("B"), mark: "C", today: "vs LAL today", kickoff: new Date(Date.now() + 3_600_000).toISOString() }],
     };
+
     const rows = rowsOf(plain, busy);
+
     const { container } = await render(
       <>
         <SideCard side={plain} label="You" rows={rows} />
         <SideCard side={busy} label="Opponent" rows={rows} />
       </>,
     );
+
     const [left, right] = sides(container);
 
     expect(rowBodies(left)).toEqual(["h-9"]);
@@ -255,16 +278,20 @@ describe("rows side by side", () => {
     const mine = { name: "Mine", record: "", detail: "", points: "", lineup: [quiet("A"), quiet("B"), quiet("C")], bench: [quiet("D")], reserve: [], open_spots: 1 };
     const theirs = { name: "Theirs", record: "", detail: "", points: "", lineup: [quiet("E")], bench: [quiet("F"), quiet("G"), quiet("H")], reserve: [quiet("I")], open_spots: 0 };
     const rows = rowsOf(mine, theirs);
+
     const { container } = await render(
       <>
         <SideCard side={mine} label="You" rows={rows} />
         <SideCard side={theirs} label="Opponent" rows={rows} />
       </>,
     );
+
     const [left, right] = sides(container);
+
     /** Rows drawn in each list, lineup then bench then reserve. */
     const perList = (card: Element): number[] =>
       [...new Set([...card.querySelectorAll("[data-row]")].map((row) => row.parentElement))].map((list) => list?.children.length ?? 0);
+
     const padding = (card: Element) => [...card.querySelectorAll('[data-row="pad"]')];
 
     expect(perList(left)).toEqual([3, 3, 1]);
@@ -281,6 +308,7 @@ describe("rows side by side", () => {
 
 describe("a week played in categories", () => {
   const figure = (label: string, value: string) => ({ label, value, tone: "neutral" as const, url: "", better: null, hint: "" });
+
   const played = (player: string, fg: string, pts: string): Spot => ({
     ...spot(player),
     slot: "PG",
@@ -289,16 +317,20 @@ describe("a week played in categories", () => {
 
   it("sets each category as a column under one heading, in place of a sentence", async () => {
     const side = { name: "Mine", record: "", detail: "", points: "", lineup: [played("A", ".511", "134"), played("B", "—", "0")], bench: [], reserve: [], open_spots: 0 };
+
     const { container } = await render(<SideCard side={side} label="You" />);
 
     expect(container.textContent).toContain("FG%PTS");
+
     const cells = [...container.querySelectorAll("[aria-label]")].map((el) => el.getAttribute("aria-label"));
+
     expect(cells).toEqual(["FG% .511", "PTS 134", "FG% —", "PTS 0"]);
   });
 
   it("keeps his week beside his line from a game today", async () => {
     const live = { ...played("A", ".500", "25"), value: "3 left", today: "vs TOR live" };
     const side = { name: "Mine", record: "", detail: "", points: "", lineup: [live], bench: [], reserve: [], open_spots: 0 };
+
     const { container } = await render(<SideCard side={side} label="You" />);
 
     expect(container.textContent).toContain("3 left");

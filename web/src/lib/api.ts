@@ -1,10 +1,10 @@
 /**
  * The API client.
  *
- * Its types are not written here: they are the server's response models —
- * the domain models themselves — generated into `schema.ts` from the API's
- * OpenAPI schema. A field added to `ScoutReport` arrives with the next
- * `just api-types`, and `just check-web` fails until it has.
+ * Its types are not written here: they are the server's response models,
+ * generated into `schema.ts` and named in `lib/types.ts`. A field added to
+ * `ScoutReport` arrives with the next `just api-types`, and `just check-web`
+ * fails until it has.
  *
  * Each call names its route by the schema's own path, through `openapi-fetch`,
  * so its parameters, body and answer are the route's: a path the server does
@@ -12,59 +12,8 @@
  * here instead of handing a component the wrong shape.
  */
 import createClient from "openapi-fetch";
-import type { components, operations, paths } from "@/lib/schema";
-
-type Schemas = components["schemas"];
-
-export type Action = Schemas["Action"];
-export type ActivityRow = Schemas["ActivityRow"];
-export type Capabilities = Schemas["Capabilities"];
-export type CaptureStatus = Schemas["CaptureStatus"];
-export type Competition = Schemas["Competition"];
-export type ErrorBody = Schemas["ErrorBody"];
-export type ErrorCode = ErrorBody["code"];
-export type ItemDecision = Schemas["ItemDecision"];
-export type ItemMark = Schemas["ItemMark"];
-export type League = Schemas["LeagueRef"];
-export type LeagueSchedule = Schemas["LeagueSchedule"];
-export type LoginState = Schemas["LoginState"];
-export type Match = Schemas["Match"];
-export type Move = Schemas["Move"];
-export type MovePlayer = Schemas["MovePlayer"];
-export type Outlook = Schemas["Outlook"];
-export type Judgment = Schemas["Judgment"];
-export type PlayerCall = Schemas["PlayerCall"];
-export type PlayerCard = Schemas["PlayerCard"];
-export type PlayerDetail = Schemas["PlayerDetail"];
-export type PlayerComparison = Schemas["PlayerComparison"];
-export type PlayerRef = Schemas["PlayerRef"];
-export type PlayerOrder = NonNullable<operations["roster"]["parameters"]["query"]>;
-export type PlayerPage = Schemas["PlayerPage"];
-export type Remedy = Schemas["Remedy"];
-export type ScheduleRow = Schemas["ScheduleRow"];
-export type ScoutReport = Schemas["ScoutReport"];
-export type Setting = Schemas["Setting"];
-export type SettingsGroup = Schemas["SettingsGroup"];
-export type Side = Schemas["Side"];
-export type Slate = Schemas["Slate"];
-export type CategoryLine = Schemas["CategoryLine"];
-export type Spot = Schemas["Spot"];
-export type Stat = Schemas["Stat"];
-export type StatTable = Schemas["StatTable"];
-export type Subject = Schemas["Subject"];
-export type WeekRange = Schemas["WeekRange"];
-export type Summary = Schemas["Summary"];
-export type TaskVerdict = Schemas["TaskVerdict"];
-export type TeamRef = Schemas["TeamRef"];
-export type TradeIdea = Schemas["TradeIdea"];
-export type Trades = Schemas["Trades"];
-export type Turn = Schemas["Turn"];
-export type Urgency = Action["urgency"];
-/** What an add is for: this week's games, or the rest of the season. */
-export type Pickup = NonNullable<Action["pickup"]>;
-
-/** What to ask for: the competition's own ranking unless a column is named. */
-export type FreeAgentQuery = NonNullable<operations["free_agents"]["parameters"]["query"]>;
+import type { paths } from "@/lib/schema";
+import type { ErrorBody, ErrorCode, FreeAgentQuery, ItemDecision, PlayerOrder, Remedy, Subject } from "@/lib/types";
 
 /**
  * A failure the server described in its own words, ready to show as-is.
@@ -78,13 +27,14 @@ export class ApiError extends Error {
 
   constructor({ detail, code, remedy }: ErrorBody) {
     super(detail);
+
     this.code = code;
     this.remedy = remedy;
   }
 }
 
 /** Whether `error` is the server saying it no longer holds a conversation: it restarted, or dropped it as the oldest. */
-export function isExpired(error: unknown): boolean {
+export function isExpired(error: Error | null): boolean {
   return error instanceof ApiError && error.code === "chat_expired";
 }
 
@@ -98,8 +48,8 @@ function isErrorBody(body: unknown): body is ErrorBody {
  * The server sends every failure as an `ErrorBody`. A response without one
  * never reached it — a proxy with the server down — and says so by its status.
  */
-export function failure(body: unknown, status: string): ApiError {
-  return new ApiError(isErrorBody(body) ? body : { detail: `The server did not answer (${status}).`, code: "error", remedy: null });
+export function failure(body: ErrorBody | null, status: string): ApiError {
+  return new ApiError(body ?? { detail: `The server did not answer (${status}).`, code: "error", remedy: null });
 }
 
 /**
@@ -111,12 +61,15 @@ const client = createClient<paths>({ fetch: (request) => globalThis.fetch(reques
 /** The answer a call came back with, or the failure it carried, thrown. */
 async function settle<T>(pending: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await pending;
-  if (!response.ok || data === undefined) throw failure(error ?? null, `${response.status} ${response.statusText}`);
+
+  if (!response.ok || data === undefined) throw failure(isErrorBody(error) ? error : null, `${response.status} ${response.statusText}`);
+
   return data;
 }
 
 /** `query` without the values left empty, so the server applies its own default. */
 function present<Query extends object>(query: Query): Query {
+  // SAFETY: only keys whose value is empty are dropped, and every such key is optional in a query.
   return Object.fromEntries(Object.entries(query).filter(([, value]) => value !== "" && value !== undefined)) as Query;
 }
 
@@ -128,6 +81,7 @@ function present<Query extends object>(query: Query): Query {
  */
 export function leagueApi(key: string, league: string) {
   const at = { key, league_id: league };
+
   return {
     roster: (order: PlayerOrder = {}) =>
       settle(client.GET("/api/competitions/{key}/leagues/{league_id}/roster", { params: { path: at, query: present(order) } })),

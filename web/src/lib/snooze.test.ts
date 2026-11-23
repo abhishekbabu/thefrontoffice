@@ -6,6 +6,7 @@ describe("snoozing", () => {
 
   it("puts a morning snooze at 8am on the day it names", () => {
     const tomorrow = morningAfter(now, 1);
+
     expect([tomorrow.getDate(), tomorrow.getHours(), tomorrow.getMinutes()]).toEqual([23, 8, 0]);
   });
 

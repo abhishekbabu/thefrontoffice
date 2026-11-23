@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Competition, League, TradeIdea, Trades } from "@/lib/api";
+import type { League, TradeIdea, Trades } from "@/lib/types";
 import { keys } from "@/lib/queries";
 import { priced, theirCase, TradesPanel } from "@/panels/Trades";
 import { offlineClient, render } from "@/test/render";
+import { competitionOf } from "@/test/leagues";
 
 const idea = (their_playoffs: number, their_points: number, over: Partial<TradeIdea> = {}): TradeIdea => ({
   team_id: "2",
@@ -27,6 +28,7 @@ const idea = (their_playoffs: number, their_points: number, over: Partial<TradeI
 describe("why the other manager might take a trade", () => {
   it("is what it is worth, once he is out of the race", () => {
     const said = theirCase(idea(0.01, -2.6));
+
     expect(said).toContain("1%");
     expect(said).not.toContain("2.6");
   });
@@ -43,6 +45,7 @@ describe("why the other manager might take a trade", () => {
 describe("a player's pricing", () => {
   it("is found on every trade he is in, under the name the trade lists him by", () => {
     const form = [{ label: "Matthew Golden", value: "priced 18.5", tone: "neutral" as const, url: "", better: null, hint: "" }];
+
     const ideas = [
       idea(0.4, 1.4, { giving: ["Matthew Golden (WR)"], form }),
       idea(0.4, 1.4, { giving: ["Matthew Golden (WR)", "C (RB)"] }),
@@ -56,12 +59,14 @@ describe("a player's pricing", () => {
 });
 
 describe("Trades", () => {
-  const competition = { key: "nfl-sleeper" } as Competition;
+  const competition = competitionOf({ key: "nfl-sleeper" });
   const league: League = { league_id: "T1", name: "Sunday Money", detail: "", url: "" };
 
   async function shown(trades: Trades) {
     const client = offlineClient();
+
     client.setQueryData(keys.trades(competition.key, league.league_id), trades);
+
     return render(<TradesPanel competition={competition} league={league} />, client);
   }
 
@@ -84,6 +89,7 @@ describe("Trades", () => {
     });
 
     const cells = [...container.querySelectorAll("tbody tr:first-child td")].map((td) => td.textContent);
+
     expect(cells.slice(0, 2)).toEqual(["A", "B"]);
     expect(cells).toContain("−3.0");
     expect(cells).toContain("+2.5");
@@ -102,8 +108,11 @@ describe("Trades", () => {
     });
 
     const headers = [...container.querySelectorAll("thead th")].map((th) => th.textContent);
+
     expect(headers.some((h) => h?.includes("cats"))).toBe(true);
+
     const cells = [...container.querySelectorAll("tbody tr:first-child td")].map((td) => td.textContent);
+
     expect(cells).toContain("+0.07");
     expect(container.textContent).toContain("deadline");
   });
@@ -116,6 +125,7 @@ describe("Trades", () => {
     });
 
     const headers = [...container.querySelectorAll("thead th")].map((th) => th.textContent);
+
     expect(headers.some((h) => h?.includes("Playoffs"))).toBe(false);
   });
 });

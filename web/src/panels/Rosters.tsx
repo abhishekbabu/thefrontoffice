@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { api, type League, type Competition, type Outlook, type TeamRef } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type League, type Competition, type Outlook, type TeamRef } from "@/lib/types";
 import { Table, Td, Th } from "@/components/ui/table";
 import { clickable } from "@/lib/clickable";
-import { ToggleChip, ToggleGroup } from "@/components/ui/toggle";
-import { ExternalLink } from "@/components/ui/external-link";
+import { ToggleChip, ToggleGroup } from "@/components/ui/controls/toggle";
+import { ExternalLink } from "@/components/ui/controls/external-link";
 import { Badge } from "@/components/ui/badge";
 import { ListCard, ListRow } from "@/components/ui/list";
 import { signed } from "@/lib/format";
@@ -33,6 +34,7 @@ export function RostersPanel({ competition, league }: { competition: Competition
     queryKey: keys.teams(competition.key, league.league_id),
     queryFn: leagueApi.teams,
   });
+
   const asked = params.get("team");
   const selected = teams.data?.find((t) => t.team_id === asked) ?? teams.data?.find((t) => t.is_mine);
   // Yours is read as yours — the columns that say how a player fits your lineup
@@ -40,16 +42,20 @@ export function RostersPanel({ competition, league }: { competition: Competition
   const yours = !selected || selected.is_mine;
 
   const mine = useSortedRoster(keys.roster(competition.key, league.league_id), leagueApi.roster, yours);
+
   const theirs = useSortedRoster(
     keys.teamRoster(competition.key, league.league_id, selected?.team_id),
     (order) => leagueApi.teamRoster(selected!.team_id, order),
     !yours,
   );
+
   const { roster, sort, onSort } = yours ? mine : theirs;
+
   const pick = (team: TeamRef) =>
     setParams((p) => {
       if (team.is_mine) p.delete("team");
       else p.set("team", team.team_id);
+
       return p;
     });
 
@@ -136,9 +142,11 @@ function WeeksAhead({
     queryKey: keys.outlook(competition.key, league.league_id, team),
     queryFn: () => api.league(competition.key, league.league_id).outlook(team),
   });
+
   // A competition that reads its weeks ahead as fixtures — FPL — sends a grid instead of weeks.
   if (outlook.data && outlook.data.run_weeks.length > 0) {
     const runs = outlook.data.runs;
+
     return (
       <ListCard title="Weeks ahead" count={runs.length ? `${runs.length} to watch` : undefined}>
         <FixtureGrid outlook={outlook.data} onOpen={onOpen} />
@@ -147,14 +155,17 @@ function WeeksAhead({
   }
 
   const weeks = outlook.data?.weeks;
+
   const flagged = weeks?.filter(
     (w) => w.missing.length > 0 || w.light.length > 0 || w.short || w.heavy || w.provisional || w.fix,
   );
+
   const short = weeks?.filter((w) => w.short).length ?? 0;
   const usual = outlook.data?.usual;
   const games = outlook.data?.measure === "games";
   // Games are whole; a usual week of them is a median, which can fall between two.
   const figure = (value: number) => (games ? `${Number(value.toFixed(1))} games` : `${value.toFixed(1)} proj`);
+
   return (
     <ListCard
       title="Weeks ahead"
@@ -222,6 +233,7 @@ function difficultyTone(difficulty: number): "ok" | "muted" | "warn" | "fail" {
 function FixtureGrid({ outlook, onOpen }: { outlook: Outlook; onOpen: (id: string) => void }) {
   const weeks = outlook.run_weeks;
   const last = weeks[weeks.length - 1];
+
   return (
     <>
       {outlook.warnings.map((w) => (

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Action, MovePlayer, TaskVerdict } from "@/lib/api";
-import { ActionList, Compared, opener, staleVerdicts } from "@/components/league/actions";
-import type { Comparing } from "@/components/league/compare";
+import type { Action, MovePlayer, TaskVerdict } from "@/lib/types";
+import { ActionList, Compared, opener } from "@/components/league/actions";
+import { staleVerdicts } from "@/components/league/verdicts";
+import type { Comparing } from "@/lib/comparing";
 import { render, settle } from "@/test/render";
 
 function action(key: string, verdict: TaskVerdict | null = null, stale = false): Action {
@@ -40,6 +41,7 @@ describe("ActionList pickups", () => {
         ]}
       />,
     );
+
     const rows = [...container.querySelectorAll("li")].map((row) => row.textContent ?? "");
 
     expect(rows[0]).toContain("Streamer");
@@ -104,26 +106,34 @@ const player = (
 describe("putting an item aside", () => {
   it("takes it out of the list and under Hidden, and back again on restore", async () => {
     const dismissed: Action = { ...action("b"), mark: { hidden: "dismissed", snoozed_until: null, resurfaced: false } };
+
     const { container, rerender } = await render(<ActionList actions={[action("a"), action("b")]} />);
+
     const listed = () => [...container.querySelectorAll("ol > li")].map((li) => li.textContent);
 
     await rerender(<ActionList actions={[action("a"), dismissed]} />);
+
     await settle();
+
     expect(listed()).toHaveLength(1);
     expect(listed()[0]).toContain("Pick up a");
     expect(container.textContent).toContain("Hidden (1)");
 
     await rerender(<ActionList actions={[action("a"), action("b")]} />);
+
     await settle();
+
     expect(listed()).toHaveLength(2);
     expect(container.textContent).not.toContain("Hidden");
   });
 
   it("says nothing is left once the last item is put aside", async () => {
     const dismissed: Action = { ...action("a"), mark: { hidden: "dismissed", snoozed_until: null, resurfaced: false } };
+
     const { container, rerender } = await render(<ActionList actions={[action("a")]} />);
 
     await rerender(<ActionList actions={[dismissed]} />);
+
     await settle();
 
     expect(container.querySelectorAll("ol > li")).toHaveLength(0);
@@ -133,6 +143,7 @@ describe("putting an item aside", () => {
 
 describe("a move between two players", () => {
   const dike = player("in", "Chimere Dike", "free agent", ["66%", "9.88", "vs DAL, 6th-easiest"]);
+
   const swap: Action = {
     ...action("dike"),
     players: [dike, player("out", "Antonio Williams", "bench", ["40%", "8.20", "vs KC, 2nd-toughest"])],
@@ -140,6 +151,7 @@ describe("a move between two players", () => {
 
   it("lines the two players up in columns, each figure on its own row read across", async () => {
     const { container } = await render(<ActionList actions={[swap]} />);
+
     const rows = [...container.querySelectorAll("tbody tr")].map((row) =>
       [...row.querySelectorAll("td")].map((cell) => cell.textContent),
     );
@@ -153,6 +165,7 @@ describe("a move between two players", () => {
 
   it("says which way each player goes and where he stands, in words", async () => {
     const { container } = await render(<ActionList actions={[swap]} />);
+
     const heads = [...container.querySelectorAll("thead th")].map((cell) => cell.textContent);
 
     expect(heads).toEqual(["", "InChimere Dikefree agent", "OutAntonio Williamsbench"]);
@@ -186,9 +199,11 @@ describe("players compared", () => {
         { label: "Weak in", value: "FG% .380", tone: "neutral", url: "", better: null, hint: "" },
       ],
     });
+
     const { container } = await render(<Compared players={[valued("A"), valued("B")]} />);
 
     const explained = [...container.querySelectorAll("[aria-label]")].map((el) => el.getAttribute("aria-label"));
+
     expect(explained).toEqual(["Cat value/g: A game's worth across the categories."]);
     expect(container.textContent).toContain("Weak inFG% .380FG% .380");
   });
@@ -206,6 +221,7 @@ describe("what an item opens", () => {
     opener(swap, onOpen, onCompare)!();
 
     expect(onOpen).not.toHaveBeenCalled();
+
     expect(onCompare).toHaveBeenCalledWith({
       ids: ["Chimere Dike", "Antonio Williams"],
       title: "Pick up dike",

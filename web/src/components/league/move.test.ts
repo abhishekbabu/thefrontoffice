@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ActivityRow } from "@/lib/api";
+import type { ActivityRow } from "@/lib/types";
 import { sections } from "@/components/league/move";
 
 describe("sections", () => {

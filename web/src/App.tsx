@@ -3,13 +3,16 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Menu, Moon, Settings, Sun, Trophy, X } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
-import { api, type League, type Competition } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type League, type Competition } from "@/lib/types";
 import { keys, useCapabilities } from "@/lib/queries";
-import { DEFAULT_VIEW, LANDING, SETTINGS, VIEWS, VIEW_LABELS, type View, href, offers, parse } from "@/lib/route";
-import { useTheme } from "@/lib/useTheme";
-import { IconButton } from "@/components/ui/icon-button";
-import { Tooltip } from "@/components/ui/tooltip";
-import { pressable, rise } from "@/lib/motion";
+import { LANDING, SETTINGS, href, parse } from "@/lib/route";
+import { DEFAULT_VIEW, VIEWS, VIEW_LABELS, type View, offers } from "@/lib/views";
+import { useTheme } from "@/lib/hooks/useTheme";
+import { IconButton } from "@/components/ui/controls/icon-button";
+import { Tooltip } from "@/components/ui/overlays/tooltip";
+import { rise } from "@/lib/motion/enter";
+import { pressable } from "@/lib/motion/press";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Empty, Loading } from "@/components/ui/state";
 import { ErrorNote } from "@/components/ui/error-note";
@@ -85,11 +88,14 @@ export default function App() {
   // where it distinguishes something.
   const sportCounts = (competitions.data ?? []).reduce<Record<string, number>>((counts, s) => {
     counts[s.sport] = (counts[s.sport] ?? 0) + 1;
+
     return counts;
   }, {});
+
   // Unblocked, not merely configured: credentials being set says nothing about
   // whether a platform will actually answer.
   const usable = (competitions.data ?? []).filter((s) => !s.blocked);
+
   // No fallback to the first usable competition: until one is chosen the
   // landing page is what shows, and choosing for the user is what it avoids.
   const active: Competition | undefined =
@@ -100,6 +106,7 @@ export default function App() {
     queryFn: () => api.leagues(active!.key),
     enabled: Boolean(active),
   });
+
   // Falling back to the first league is what makes /nfl-sleeper a real address;
   // the effect below then writes the one it resolved into the URL.
   const league: League | undefined =
@@ -120,14 +127,19 @@ export default function App() {
   // name a page is not a move you should have to press Back through.
   useEffect(() => {
     if (route.page !== "competition") return;
+
     if (competitions.data && !active) {
       // A competition nobody can play: a typo, or one whose credentials have
       // gone. Only once the list has arrived — before that they all look alike.
       void navigate(LANDING, { replace: true });
+
       return;
     }
+
     if (!active || !league) return;
+
     const settled = href(active.key, league.league_id, view);
+
     if (settled !== path) void navigate(settled, { replace: true });
   }, [route.page, path, competitions.data, active, league, view, navigate]);
 
@@ -148,6 +160,7 @@ export default function App() {
         </div>
       );
     }
+
     if (competitions.isSuccess && usable.length === 0) return <NothingConnected competitions={competitions.data} />;
 
     if (route.page !== "competition") {
@@ -165,6 +178,7 @@ export default function App() {
     // competition's analysis renders under the new league's name — a stale FPL
     // report headed "Huge Euge RR FF", with FPL's figures in the strip.
     const Panel = PANELS[view];
+
     return (
       <m.div
         key={`${active.key}:${league.league_id}:${view}`}
@@ -191,7 +205,7 @@ export default function App() {
           <Link
             to={LANDING}
             aria-label="Back to all leagues"
-            className="flex items-center gap-2.5 rounded-md px-1 py-1 text-left transition-colors hover:bg-muted"
+            className="flex items-center gap-2.5 rounded-md px-1 py-1 text-left transition-colors hover:bg-muted motion-reduce:transition-none"
           >
             <span className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground">
               <Trophy className="size-3.5" strokeWidth={2.25} aria-hidden />
@@ -215,7 +229,7 @@ export default function App() {
           <div
             aria-hidden
             onClick={() => setMenuAt(null)}
-            className="absolute inset-x-0 top-full h-dvh bg-scrim transition-opacity duration-150 ease-out starting:opacity-0 md:hidden"
+            className="absolute inset-x-0 top-full h-dvh bg-scrim transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none md:hidden"
           />
         )}
 
@@ -229,7 +243,7 @@ export default function App() {
           id="rail"
           className={cn(
             "absolute inset-x-0 top-full flex-1 flex-col gap-6 border-b border-border bg-card px-3 pt-2 pb-4 shadow-lg max-md:max-h-[calc(100dvh-3.5rem)] max-md:overflow-y-auto",
-            "max-md:transition-[opacity,translate,display] max-md:transition-discrete max-md:duration-150 max-md:ease-out",
+            "max-md:transition-[opacity,translate,display] max-md:transition-discrete max-md:duration-150 max-md:ease-out max-md:motion-reduce:transition-none",
             "md:static md:flex md:border-b-0 md:p-0 md:shadow-none",
             menuOpen
               ? "flex motion-safe:starting:-translate-y-1 starting:opacity-0"
@@ -244,6 +258,7 @@ export default function App() {
             {(competitions.data ?? []).map((s) => {
               // Two platforms under one sport need telling apart; one does not.
               const label = (sportCounts[s.sport] ?? 0) > 1 ? s.label : s.name;
+
               return !s.blocked ? (
                 <RailLink key={s.key} to={`/${s.key}`} active={s.key === active?.key}>
                   {label}

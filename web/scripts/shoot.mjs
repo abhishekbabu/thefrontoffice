@@ -5,7 +5,7 @@
  * from a clean shell. Shots land in web/.shots, which is gitignored — they are
  * a way of looking at the app, not an artifact of it.
  *
- * Usage: pnpm shoot [--dark] [--only=landing,week,team,free-agents,league,player,settings]
+ * Usage: just shots [--dark] [--only=landing,week,team,free-agents,league,player,settings]
  */
 import { chromium } from "@playwright/test";
 import { spawn } from "node:child_process";

@@ -1,9 +1,9 @@
 import type * as React from "react";
 import { AnimatePresence, m } from "motion/react";
-import { fade } from "@/lib/motion";
+import { fade } from "@/lib/motion/enter";
 import { cn } from "@/lib/utils";
 import { toneText } from "@/lib/tone";
-import type { Stat } from "@/lib/api";
+import type { Stat } from "@/lib/types";
 import { LABEL, Label } from "@/components/ui/label";
 
 /**
@@ -17,6 +17,7 @@ import { LABEL, Label } from "@/components/ui/label";
 /** The strip under a page title: where the team stands, before any reading. */
 export function StatStrip({ stats }: { stats: Stat[] }) {
   if (!stats.length) return null;
+
   return (
     // A band under the header, so it spans the column like the header does,
     // its rule reaching the edge while the figures keep to the page's width.
@@ -130,6 +131,7 @@ export function StatList({ stats, className }: { stats: Stat[]; className?: stri
 /** `children`, linked to `url` in a new tab where there is one: a headline opens its article. */
 export function Linked({ url, children }: { url?: string; children: React.ReactNode }) {
   if (!url) return <>{children}</>;
+
   return (
     <a
       href={url}

@@ -16,13 +16,17 @@ const storageKey = (scope: string) => `compare:${scope}`;
 
 function read(scope: string): string[] {
   if (!memory.has(scope)) memory.set(scope, stored(scope).slice(0, MAX_COMPARED));
+
   return memory.get(scope)!;
 }
 
 function stored(scope: string): string[] {
   try {
     const raw = window.localStorage.getItem(storageKey(scope));
-    return raw ? (JSON.parse(raw) as string[]) : [];
+
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
   } catch {
     return [];
   }
@@ -30,17 +34,21 @@ function stored(scope: string): string[] {
 
 function write(scope: string, ids: string[]) {
   const kept = [...new Set(ids)].slice(0, MAX_COMPARED);
+
   memory.set(scope, kept);
+
   try {
     window.localStorage.setItem(storageKey(scope), JSON.stringify(kept));
   } catch {
     // A private window keeps it for this page only.
   }
+
   listeners.forEach((listener) => listener());
 }
 
 function subscribe(listener: () => void) {
   listeners.add(listener);
+
   return () => listeners.delete(listener);
 }
 
@@ -48,6 +56,7 @@ function subscribe(listener: () => void) {
 export function useCompared(competition: string, league: string) {
   const scope = `${competition}:${league}`;
   const ids = useSyncExternalStore(subscribe, () => read(scope));
+
   return {
     ids,
     full: ids.length >= MAX_COMPARED,

@@ -7,7 +7,7 @@
  * committed, and `--check` fails when it no longer matches the server, which
  * is how `just check-web` catches a Python change the client was not told of.
  *
- * Usage: pnpm api-types [--check]
+ * Usage: just api-types (node scripts/api-types.mjs [--check])
  */
 import openapiTS, { astToString } from "openapi-typescript";
 import { execFileSync } from "node:child_process";

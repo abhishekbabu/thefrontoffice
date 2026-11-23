@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server as msw } from "@/test/server";
 import { QueryClient } from "@tanstack/react-query";
-import type { Subject, Turn } from "@/lib/api";
+import type { Subject, Turn } from "@/lib/types";
 import { AssistantChat, type Asked } from "@/components/league/chat";
 import { render, settle, typeInto } from "@/test/render";
 
@@ -19,25 +19,36 @@ const ASKED: Turn[] = [
  * conversation it no longer holds.
  */
 function server(said: Turn[] = [], expired?: string) {
-  const state = { opened: 0, turns: [...said], screens: [] as Subject[][] };
+  const screens: Subject[][] = [];
+  const state = { opened: 0, turns: [...said], screens };
+
   msw.use(
     http.all("*", async ({ request }) => {
       const path = new URL(request.url).pathname;
+
       if (path.endsWith("/chats")) {
         state.opened += 1;
+
         return HttpResponse.json({ chat_id: `chat-${state.opened}` });
       }
+
       if (expired && path.endsWith(`/${expired}/turns`) && request.method === "POST") {
         return HttpResponse.json({ detail: "Gone.", code: "chat_expired", remedy: null }, { status: 404 });
       }
+
       if (request.method === "POST") {
+        // SAFETY: the assistant POSTs a turn as `{ message, on_screen }`.
         const { message, on_screen } = (await request.json()) as { message: string; on_screen: Subject[] };
+
         state.screens.push(on_screen);
+
         state.turns.push({ role: "you", text: message }, { role: "model", text: `About: ${message}` });
       }
+
       return HttpResponse.json(state.turns);
     }),
   );
+
   return state;
 }
 
@@ -67,9 +78,11 @@ const thread = assistant();
 
 async function ask(container: HTMLElement, question: string) {
   await typeInto(container.querySelector("input")!, question);
+
   await act(async () => {
     container.querySelector("form")!.requestSubmit();
   });
+
   await settle();
 }
 
@@ -77,6 +90,7 @@ let scrolled: ReturnType<typeof vi.fn<(arg?: boolean | ScrollIntoViewOptions) =>
 
 beforeEach(() => {
   scrolled = vi.fn<(arg?: boolean | ScrollIntoViewOptions) => void>();
+
   Element.prototype.scrollIntoView = scrolled;
 });
 
@@ -89,14 +103,20 @@ describe("the assistant's conversation", () => {
     // Past the query cache's five-minute default, which dropped the id and
     // opened a blank conversation beside the one the server still held.
     vi.useFakeTimers({ shouldAdvanceTime: true });
+
     const state = server(ASKED);
     const queries = client();
+
     const first = await render(thread, queries);
+
     await settle();
+
     await first.unmount();
 
     await act(async () => vi.advanceTimersByTime(30 * 60_000));
+
     const again = await render(thread, queries);
+
     await settle();
 
     expect(state.opened).toBe(1);
@@ -106,7 +126,9 @@ describe("the assistant's conversation", () => {
   it("does not scroll to the turns it reads back on opening", async () => {
     // In the player drawer that carried the page past everything above the chat.
     server(ASKED);
+
     const { container } = await render(thread, client());
+
     await settle();
 
     expect(container.textContent).toContain("He has no fixture.");
@@ -115,7 +137,9 @@ describe("the assistant's conversation", () => {
 
   it("keeps a question asked here, and its answer, in view", async () => {
     server(ASKED);
+
     const { container } = await render(thread, client());
+
     await settle();
 
     await ask(container, "And next week?");
@@ -126,8 +150,11 @@ describe("the assistant's conversation", () => {
 
   it("shows the conversation the server answers with rather than a copy of its own", async () => {
     const state = server(ASKED);
+
     const { container } = await render(thread, client());
+
     await settle();
+
     // Asked since from another tab: only the server's record has it.
     state.turns.push({ role: "you", text: "Elsewhere?" }, { role: "model", text: "Yes." });
 
@@ -138,7 +165,9 @@ describe("the assistant's conversation", () => {
 
   it("sends each question with what is on screen", async () => {
     const state = server();
+
     const { container } = await render(thread, client());
+
     await settle();
 
     await ask(container, "Who starts?");
@@ -149,7 +178,9 @@ describe("the assistant's conversation", () => {
   it("sends a question handed over with what it is about beside the page, once", async () => {
     const state = server();
     const taken = vi.fn<() => void>();
+
     await render(assistant({ message: "Why?", about: [ITEM, WEEK] }, taken), client());
+
     await settle();
 
     expect(state.screens).toEqual([[WEEK, ITEM]]);
@@ -158,10 +189,13 @@ describe("the assistant's conversation", () => {
 
   it("asks a question the server's dropped conversation never took in a fresh one", async () => {
     const state = server([], "chat-1");
+
     const { container } = await render(thread, client());
+
     await settle();
 
     await ask(container, "Still there?");
+
     await settle();
 
     expect(state.opened).toBe(2);

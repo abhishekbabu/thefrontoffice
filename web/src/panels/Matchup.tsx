@@ -6,25 +6,14 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
-import {
-  api,
-  type CategoryLine,
-  type Competition,
-  type ItemDecision,
-  type ItemMark,
-  type Judgment,
-  type League,
-  type ScoutReport,
-  type Summary,
-  type TradeIdea,
-  type Trades,
-} from "@/lib/api";
-import { Link } from "react-router-dom";
+import { api } from "@/lib/api";
+import { type Competition, type ItemDecision, type ItemMark, type Judgment, type League, type ScoutReport, type Summary } from "@/lib/types";
 import { keys, useCapabilities } from "@/lib/queries";
-import { moment, percent, percentPoints, signed } from "@/lib/format";
-import { href, offers } from "@/lib/route";
-import { ActionList, WhyButton, staleVerdicts } from "@/components/league/actions";
-import { IconButton } from "@/components/ui/icon-button";
+import { moment } from "@/lib/times";
+import { offers } from "@/lib/views";
+import { ActionList } from "@/components/league/actions";
+import { WhyButton, staleVerdicts } from "@/components/league/verdicts";
+import { IconButton } from "@/components/ui/controls/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Busy, QueryState } from "@/components/ui/state";
@@ -33,15 +22,13 @@ import { LineupCard, SideCard, rowsOf } from "@/components/league/lineup";
 import { useDrawers } from "@/components/league/drawers";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/league/page-header";
+import { BestTrade } from "@/components/league/best-trade";
+import { Categories } from "@/components/league/categories";
 import {
   WeekPane,
   WeekStepper,
   useWeekParam,
 } from "@/components/league/week-stepper";
-import { Label } from "@/components/ui/label";
-import { Table, Td, Th } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
-import { traded, type Comparing } from "@/components/league/compare";
 
 /**
  * Judge again on arrival where the server says the week has moved on from the
@@ -56,9 +43,12 @@ export function useJudgeWhenDue(
 ) {
   const asked = useRef(new Set<string>());
   const { mutate, isPending } = judge;
+
   useEffect(() => {
     if (!due || isPending || asked.current.has(scope)) return;
+
     asked.current.add(scope);
+
     mutate();
   }, [due, isPending, scope, mutate]);
 }
@@ -92,6 +82,7 @@ export function MatchupPanel({
   const leagueApi = api.league(competition.key, league.league_id);
 
   const summaryKey = keys.week(competition.key, league.league_id);
+
   const week = useQuery<Summary, Error>({
     queryKey: summaryKey,
     queryFn: leagueApi.week,
@@ -106,6 +97,7 @@ export function MatchupPanel({
   } = useWeekParam(
     competition.browses_weeks ? (week.data?.weeks ?? undefined) : undefined,
   );
+
   const other = useQuery<Summary, Error>({
     queryKey: keys.weekOf(competition.key, league.league_id, browsing),
     queryFn: () => leagueApi.weekOf(browsing!),
@@ -113,17 +105,21 @@ export function MatchupPanel({
     // The last week stays up while the next loads, rather than the page blanking on every step.
     placeholderData: keepPreviousData,
   });
+
   const shown = browsing === null ? week : other;
 
   // The last judgment, read without asking the model anything: judging is a
   // click, and a reload should not throw the answer away.
   const judgmentKey = keys.judgment(competition.key, league.league_id);
+
   const judgment = useQuery<Judgment | null, Error>({
     queryKey: judgmentKey,
     queryFn: leagueApi.judgment,
     enabled: ai && Boolean(week.data?.actions),
   });
+
   const queryClient = useQueryClient();
+
   // The week carries each item's verdict, so a new judgment is read back
   // through it as well as through the judgment's own time and moves.
   const judge = useMutation<ScoutReport, Error>({
@@ -134,12 +130,15 @@ export function MatchupPanel({
         queryClient.invalidateQueries({ queryKey: summaryKey }),
       ]),
   });
+
   const report = judgment.data?.answer;
+
   useJudgeWhenDue(
     ai && judgment.data?.due === true,
     `${competition.key}:${league.league_id}`,
     judge,
   );
+
   // The decision answers with the item's new mark, which goes straight onto
   // its row: re-reading the week would take a second or two for one field.
   const decide = useMutation<ItemMark, Error, ItemDecision>({
@@ -251,36 +250,38 @@ export function MatchupPanel({
             )}
           </div>
 
-          <div className="@container flex min-w-0 flex-col gap-4 @min-[96rem]:col-start-2 @min-[96rem]:row-span-2 @min-[96rem]:row-start-1">
-            {shown.data.opponent ? (
-              <div className="grid grid-cols-1 gap-4 @min-[60rem]:grid-cols-2">
-                {/* Side by side once their column fits two (about 470px each,
-                    what an NBA row's per-game line needs), stacked before that:
-                    a 1920px screen has the to-do beside them, not room for both across. */}
-                {/* Both sides draw the same columns and row heights, read from either, so slot N sits beside slot N. */}
-                <SideCard
-                  side={shown.data.mine}
-                  label="You"
+          <div className="min-w-0 @min-[96rem]:col-start-2 @min-[96rem]:row-span-2 @min-[96rem]:row-start-1">
+            <div className="@container flex flex-col gap-4">
+              {shown.data.opponent ? (
+                <div className="grid grid-cols-1 gap-4 @min-[60rem]:grid-cols-2">
+                  {/* Side by side once their column fits two (about 470px each,
+                      what an NBA row's per-game line needs), stacked before that:
+                      a 1920px screen has the to-do beside them, not room for both across. */}
+                  {/* Both sides draw the same columns and row heights, read from either, so slot N sits beside slot N. */}
+                  <SideCard
+                    side={shown.data.mine}
+                    label="You"
+                    onOpen={openPlayer}
+                    rows={rowsOf(shown.data.mine, shown.data.opponent)}
+                  />
+                  <SideCard
+                    side={shown.data.opponent}
+                    label="Opponent"
+                    onOpen={openPlayer}
+                    rows={rowsOf(shown.data.mine, shown.data.opponent)}
+                  />
+                </div>
+              ) : (
+                <LineupCard
+                  title="Your lineup"
+                  lineup={shown.data.mine?.lineup ?? []}
+                  bench={shown.data.mine?.bench ?? []}
+                  reserve={shown.data.mine?.reserve ?? []}
+                  openSpots={shown.data.mine?.open_spots ?? 0}
                   onOpen={openPlayer}
-                  rows={rowsOf(shown.data.mine, shown.data.opponent)}
                 />
-                <SideCard
-                  side={shown.data.opponent}
-                  label="Opponent"
-                  onOpen={openPlayer}
-                  rows={rowsOf(shown.data.mine, shown.data.opponent)}
-                />
-              </div>
-            ) : (
-              <LineupCard
-                title="Your lineup"
-                lineup={shown.data.mine?.lineup ?? []}
-                bench={shown.data.mine?.bench ?? []}
-                reserve={shown.data.mine?.reserve ?? []}
-                openSpots={shown.data.mine?.open_spots ?? 0}
-                onOpen={openPlayer}
-              />
-            )}
+              )}
+            </div>
           </div>
 
           {/* Back in the first column under the to-do on a wide page; after the
@@ -323,77 +324,6 @@ export function MatchupPanel({
 }
 
 /**
- * The best trade the Trades page has, under the deadline item: an item that
- * says only "trade" leaves you to go and find out what. Read from the same
- * query as that page, so it is computed once for both, and linked to it for
- * the rest. The gain shown is the figure that page orders by, so "best"
- * means the same thing in both places. Its absence is said, tersely: no
- * offer is an answer.
- */
-export function BestTrade({
-  competition,
-  league,
-  onCompare,
-}: {
-  competition: Competition;
-  league: League;
-  /** Opens the trade's two sides side by side, as a row on the Trades page does. */
-  onCompare?: (comparing: Comparing) => void;
-}) {
-  const trades = useQuery<Trades, Error>({
-    queryKey: keys.trades(competition.key, league.league_id),
-    queryFn: api.league(competition.key, league.league_id).trades,
-  });
-  const best = trades.data?.ideas[0];
-  const said = best && `Best: give ${best.giving.join(" and ")} for ${best.receiving.join(", ")} with ${best.team}`;
-  const open = best && onCompare ? traded(best, onCompare) : undefined;
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
-      {trades.isLoading && <Busy>finding trades…</Busy>}
-      {best && trades.data && (
-        <>
-          {open ? (
-            <button type="button" onClick={open} className="text-left underline-offset-2 hover:underline">
-              {said}
-            </button>
-          ) : (
-            <span>{said}</span>
-          )}
-          <Badge variant="ok" appearance="pill" className="tabular-nums">
-            {gain(best, trades.data.ranked_by, trades.data.measure)}
-          </Badge>
-        </>
-      )}
-      {trades.data && !best && (
-        <span className="text-muted-foreground">No trades worth offering.</span>
-      )}
-      <Link
-        to={href(competition.key, league.league_id, "trades")}
-        className="font-mono text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
-      >
-        All trades
-      </Link>
-    </div>
-  );
-}
-
-/**
- * What a trade gains you on the figure the list is ranked by, in words: '+21.4 pts rest of season',
- * '+1.25 cats rest of season', 'playoff odds +4.0 pts'.
- */
-export function gain(
-  idea: TradeIdea,
-  ranked: Trades["ranked_by"],
-  measure: Trades["measure"] = "points",
-): string {
-  if (ranked === "playoffs_change")
-    return `playoff odds ${percentPoints(idea.playoffs_change)}`;
-  if (measure === "categories")
-    return `${signed(idea.total, 2)} cats rest of season`;
-  return `${signed(idea.total)} pts rest of season`;
-}
-
-/**
  * When the list was last judged, and — once for the whole list rather than on
  * every row — that some of it has changed since. Said in words, with the
  * color only to find it.
@@ -404,106 +334,6 @@ export function JudgedAt({ at, stale }: { at: string; stale: boolean }) {
       judged {moment(at)}
       {stale && <span className="text-warn"> · stale</span>}
     </span>
-  );
-}
-
-const LEAD: Record<
-  NonNullable<CategoryLine["lead"]>,
-  { word: string; tone: string }
-> = {
-  mine: { word: "You", tone: "text-ok" },
-  theirs: { word: "Them", tone: "text-warn" },
-  even: { word: "Level", tone: "text-muted-foreground" },
-};
-
-/** A chance of winning a category, toned as the header's win chance is; the figure itself carries it. */
-function chanceTone(win: number): string {
-  return win >= 0.6
-    ? "text-ok"
-    : win <= 0.4
-      ? "text-warn"
-      : "text-muted-foreground";
-}
-
-/**
- * A category week, read across: each category, both figures, who leads it,
- * and — where the week is forecast — your chance of winning it.
- *
- * The leader is said in words as well as weight and color, since a category
- * week is won by the count of those words.
- */
-export function Categories({ lines }: { lines: CategoryLine[] }) {
-  const forecast = lines.some((line) => line.win != null);
-  return (
-    <Card>
-      <CardHeader>
-        <span>Categories</span>
-        <span>{lines.length} scored</span>
-      </CardHeader>
-      <Table>
-        <thead>
-          <tr>
-            <Th className="w-16">Cat</Th>
-            <Th className="w-20 text-right">You</Th>
-            {/* Not the opponent's name, which truncates: the lineup cards below name both teams. */}
-            <Th className="w-20 text-right">Them</Th>
-            <Th className="text-right">Leads</Th>
-            {forecast && <Th className="w-12 text-right">Win</Th>}
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line) => {
-            const lead = line.lead ? LEAD[line.lead] : null;
-            return (
-              <tr
-                key={line.name}
-                className="font-mono text-[12.5px] [&:last-child>td]:border-b-0"
-              >
-                <Td>
-                  <Label>{line.name}</Label>
-                </Td>
-                <Td
-                  className={cn(
-                    "text-right",
-                    line.lead === "mine" && "font-semibold",
-                  )}
-                >
-                  {line.mine || "—"}
-                </Td>
-                <Td
-                  className={cn(
-                    "text-right",
-                    line.lead === "theirs" && "font-semibold",
-                  )}
-                >
-                  {line.theirs || "—"}
-                </Td>
-                <Td
-                  className={cn(
-                    "text-right text-[11px]",
-                    lead?.tone ?? "text-muted-foreground",
-                  )}
-                >
-                  {lead?.word ?? "—"}
-                </Td>
-                {forecast && (
-                  <Td
-                    className={cn(
-                      "text-right",
-                      line.win != null
-                        ? chanceTone(line.win)
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {line.win != null ? percent(line.win) : "—"}
-                  </Td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </Table>
-    </Card>
   );
 }
 

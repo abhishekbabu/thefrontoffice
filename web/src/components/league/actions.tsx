@@ -1,27 +1,27 @@
 import { useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import type * as React from "react";
-import { AlarmClock, EyeOff, MessageCircleQuestion, Undo2 } from "lucide-react";
-import type { Action, ItemDecision, Move, MovePlayer, Pickup, Stat, TaskVerdict, Urgency } from "@/lib/api";
+import { AlarmClock, EyeOff, Undo2 } from "lucide-react";
+import type { Action, ItemDecision, Move, MovePlayer, Pickup, Stat, Urgency } from "@/lib/types";
 import { SNOOZES } from "@/lib/snooze";
-import { askAssistant } from "@/lib/screen";
-import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
+import { Button } from "@/components/ui/controls/button";
+import { IconButton } from "@/components/ui/controls/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CardNote } from "@/components/ui/state";
-import { Verdict } from "@/components/ui/verdict";
-import { moment } from "@/lib/format";
-import { decisionTone, toneText, type Variant } from "@/lib/tone";
+import { moment } from "@/lib/times";
+import { toneText, type Variant } from "@/lib/tone";
 import { clickable } from "@/lib/clickable";
-import { collapse, pressableRow } from "@/lib/motion";
+import { collapse } from "@/lib/motion/enter";
+import { pressableRow } from "@/lib/motion/press";
 import { cn } from "@/lib/utils";
-import type { Comparing } from "@/components/league/compare";
+import type { Comparing } from "@/lib/comparing";
 import { Label, Meta } from "@/components/ui/label";
-import { Disclosure } from "@/components/ui/disclosure";
+import { Disclosure } from "@/components/ui/overlays/disclosure";
+import { Agreed, VerdictLine } from "@/components/league/verdicts";
 import { Linked } from "@/components/ui/stat";
 import { Table, Td, Th } from "@/components/ui/table";
-import { Hint } from "@/components/ui/tooltip";
+import { Hint } from "@/components/ui/overlays/tooltip";
 
 /** Said in words as well as color, so the order survives without the hue. */
 const URGENCY: Record<Urgency, { label: string; variant: Variant }> = {
@@ -87,6 +87,7 @@ export function ActionList({
   const shown = actions.filter((action) => !action.mark.hidden);
   const hidden = actions.filter((action) => action.mark.hidden);
   const count = shown.length + suggested.length;
+
   return (
     <Card>
       <CardHeader>
@@ -112,8 +113,10 @@ export function ActionList({
             const controls = onDecide && action.key && (
               <Decide action={action} onDecide={onDecide} busy={deciding} />
             );
+
             const below = footer ? footer(action, controls) : controls;
             const agreed = action.verdict?.decision === "AGREE";
+
             return (
               <Row
                 key={action.key || `${action.kind}-${action.title}`}
@@ -178,10 +181,13 @@ export function opener(
 ): (() => void) | undefined {
   const players = action.players.filter((player) => player.player_id);
   const ids = [...new Set(players.map((player) => player.player_id))];
+
   if (ids.length > 1 && onCompare) {
     const tags = Object.fromEntries(players.map((player) => [player.player_id, player.side === "in" ? "In" : "Out"]));
+
     return () => onCompare({ ids, title: action.title, tags });
   }
+
   return action.player_id && onOpen ? () => onOpen(action.player_id) : undefined;
 }
 
@@ -199,6 +205,7 @@ function Decide({
   busy: boolean;
 }) {
   const [choosing, setChoosing] = useState(false);
+
   return (
     <span className="flex flex-wrap items-center gap-1">
       <IconButton
@@ -224,6 +231,7 @@ function Decide({
             disabled={busy}
             onClick={() => {
               setChoosing(false);
+
               onDecide({ key: action.key, decision: "snooze", until: snooze.until(new Date()).toISOString() });
             }}
             className="font-mono text-[11px] text-muted-foreground"
@@ -393,6 +401,7 @@ export function Compared({ players }: { players: MovePlayer[] }) {
   const rows = players[0]?.figures.map((figure) => figure.label) ?? [];
   // A label that is the app's own measure says what it means on hover and focus.
   const hints = Object.fromEntries((players[0]?.figures ?? []).map((figure) => [figure.label, figure.hint]));
+
   return (
     <Table className="mt-2 w-auto text-[12px]">
       <thead>
@@ -423,6 +432,7 @@ export function Compared({ players }: { players: MovePlayer[] }) {
             </Td>
             {players.map((player) => {
               const figure = player.figures[i];
+
               return (
                 <Td
                   key={`${player.side}-${player.player_id}`}
@@ -436,74 +446,5 @@ export function Compared({ players }: { players: MovePlayer[] }) {
         ))}
       </tbody>
     </Table>
-  );
-}
-
-const DECISION_LABEL: Record<TaskVerdict["decision"], string> = {
-  AGREE: "Agree",
-  OVERRULE: "Overrule",
-  WAIT: "Wait for news",
-};
-
-/**
- * The model's word on one item, under the item it is about.
- *
- * Inside the row rather than in a list of its own: an overrule only means
- * something next to the move it overrules.
- */
-function VerdictLine({ verdict, stale }: { verdict: TaskVerdict; stale: boolean }) {
-  return (
-    <Verdict
-      label={DECISION_LABEL[verdict.decision]}
-      variant={decisionTone(verdict.decision)}
-      reason={verdict.reason}
-      stale={stale}
-      noted={false}
-    />
-  );
-}
-
-/** An agreement, as a chip alone: faded and muted where it was about the item as it was. */
-function Agreed({ stale }: { stale: boolean }) {
-  return (
-    <Badge variant={stale ? "muted" : decisionTone("AGREE")} appearance="status" className={cn(stale && "opacity-60")}>
-      {DECISION_LABEL.AGREE}
-    </Badge>
-  );
-}
-
-/** Whether any verdict on the list was about an item that has changed since: one notice covers them all. */
-export function staleVerdicts(actions: Action[]): boolean {
-  return actions.some((action) => action.verdict && action.stale && !action.mark.hidden);
-}
-
-/**
- * "Why?" under a to-do item: asked of the assistant, about that item.
- *
- * The assistant docked in the corner rather than a conversation in the row,
- * so asking about one move and then about the player it turns on, or the
- * waiver wire, is one conversation rather than three.
- */
-export function WhyButton({
-  action,
-  beside,
-}: {
-  action: Action;
-  /** On the same line as the Why? control — the row's other controls. */
-  beside?: React.ReactNode;
-}) {
-  return (
-    <span className="flex flex-wrap items-center gap-1">
-      <IconButton
-        label="Why this move?"
-        icon={<MessageCircleQuestion />}
-        onClick={() =>
-          askAssistant(`Why "${action.title}", and what would change your mind?`, [
-            { subject: { kind: "task", key: action.key }, label: action.title },
-          ])
-        }
-      />
-      {beside}
-    </span>
   );
 }

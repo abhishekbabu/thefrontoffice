@@ -2,9 +2,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MotionProvider } from "@/lib/motion-provider";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { assertPalettesResolve } from "@/themes/registry";
+import { MotionProvider } from "@/lib/motion/provider";
+import { TooltipProvider } from "@/components/ui/overlays/tooltip";
+import { assertPalettesResolve } from "@/themes/paint";
 import App from "@/App";
 import "@/index.css";
 
@@ -32,7 +32,7 @@ createRoot(document.getElementById("root")!).render(
           second chunk. It has to come from its own module: an import of
           `motion/react` from here resolves to this same bundle and never
           splits. */}
-      <MotionProvider features={() => import("@/lib/motion-features").then((mod) => mod.default)}>
+      <MotionProvider features={() => import("@/lib/motion/features").then((mod) => mod.default)}>
         <TooltipProvider>
           <App />
         </TooltipProvider>

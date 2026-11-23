@@ -50,7 +50,7 @@ preview *args: web-build
 
 # Screenshot every view into web/.shots (starts and stops its own preview)
 shots *args: web-build
-    cd web && pnpm shoot {{ args }}
+    cd web && node scripts/shoot.mjs {{ args }}
 
 # Authorize this machine with Yahoo (opens a browser); --force replaces the token
 yahoo-login *args:
@@ -136,16 +136,16 @@ lint-web:
 
 # Regenerate the UI's API types from the server's OpenAPI schema
 api-types:
-    cd web && pnpm api-types
+    cd web && node scripts/api-types.mjs
 
 # Lint and typecheck (one Oxlint pass), test and build the front end — this is what CI runs
 check-web: web-install lint-web
     # The generated API types must match the server: a model changed in
     # Python and not regenerated fails here, not as an undefined at runtime.
-    cd web && pnpm api-types --check
+    cd web && node scripts/api-types.mjs --check
     cd web && pnpm test
-    # Builds because the bundle budget is checked by the build and nothing
-    # else. Without this the recipe passes on a change CI then rejects.
+    # Builds because the bundle budget is checked by the build (a Vite plugin)
+    # and nothing else. Without this the recipe passes on a change CI then rejects.
     cd web && pnpm build
 
 # ============================================================================

@@ -1,11 +1,12 @@
 import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, type Competition, type League, type LeagueSchedule, type ScheduleRow } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type Competition, type League, type LeagueSchedule, type ScheduleRow } from "@/lib/types";
 import { keys } from "@/lib/queries";
 import type { Variant } from "@/lib/tone";
 import { Badge } from "@/components/ui/badge";
 import { ListCard, ListHeading, ListRow } from "@/components/ui/list";
-import { Hint } from "@/components/ui/tooltip";
+import { Hint } from "@/components/ui/overlays/tooltip";
 import { Empty, QueryState } from "@/components/ui/state";
 import { LeagueHeader } from "@/components/league/page-header";
 import { Label, Meta } from "@/components/ui/label";
@@ -112,12 +113,15 @@ export function Season({ rows }: { rows: ScheduleRow[] }) {
  */
 function Standing({ row }: { row: ScheduleRow }) {
   if (!row.detail || (!row.playoffs && row.outcome)) return null;
+
   const badge = (
     <Badge variant="muted" appearance="label" className="shrink-0 tabular-nums">
       {row.detail}
     </Badge>
   );
+
   if (row.playoffs) return badge;
+
   return (
     <Hint label="Their record now" name={`Record now ${row.detail}`} className="shrink-0">
       {badge}

@@ -1,12 +1,13 @@
 import { act } from "react";
 import { describe, expect, it } from "vitest";
-import type { Competition, League, LeagueSchedule, PlayerDetail } from "@/lib/api";
+import type { League, LeagueSchedule, PlayerDetail } from "@/lib/types";
 import { keys } from "@/lib/queries";
 import { ActivityPanel } from "@/panels/Activity";
 import { offlineClient, render, settle } from "@/test/render";
 import { playerDetail } from "@/test/players";
+import { competitionOf } from "@/test/leagues";
 
-const competition = { key: "nfl-sleeper", finds_trades: true } as Competition;
+const competition = competitionOf({ key: "nfl-sleeper", finds_trades: true });
 const league: League = { league_id: "L1", name: "Sunday Money", detail: "", url: "" };
 
 const schedule: LeagueSchedule = {
@@ -38,18 +39,25 @@ const STAR_QB: PlayerDetail = playerDetail({ player_id: "qb1", name: "Star QB", 
 describe("League activity", () => {
   it("opens a trade in full, by who got whom", async () => {
     const client = offlineClient();
+
     client.setQueryData(keys.season(competition.key, league.league_id), schedule);
+
     client.setQueryData(keys.teams(competition.key, league.league_id), []);
+
     client.setQueryData(keys.player(competition.key, league.league_id, "qb1"), STAR_QB);
+
     const { container } = await render(<ActivityPanel competition={competition} league={league} />, client);
 
     const row = [...container.querySelectorAll<HTMLElement>("[role=button]")].find((el) =>
       el.textContent?.includes("Star QB"),
     )!;
+
     await act(async () => row.click());
+
     await settle();
 
     const dialog = document.querySelector("[role=dialog]")!;
+
     expect(dialog.getAttribute("aria-label")).toBe("Trade by Rival ↔ Me");
     expect(dialog.textContent).toMatch(/To Rival.*Star QB.*\$5 FAAB/);
     expect(dialog.textContent).toContain("To Me");
@@ -59,14 +67,21 @@ describe("League activity", () => {
     const player = [...dialog.querySelectorAll<HTMLElement>("[role=button]")].find((el) =>
       el.textContent?.includes("Star QB"),
     )!;
+
     await act(async () => player.click());
+
     await settle(400);
+
     expect(document.querySelector("[aria-label='Trade by Rival ↔ Me']")).toBeNull();
+
     const back = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
       b.textContent?.includes("Trade · Rival ↔ Me"),
     )!;
+
     await act(async () => back.click());
+
     await settle(400);
+
     expect(document.querySelector("[aria-label='Trade by Rival ↔ Me']")).not.toBeNull();
   });
 });
