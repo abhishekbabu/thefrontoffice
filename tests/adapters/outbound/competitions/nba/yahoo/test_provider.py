@@ -593,6 +593,15 @@ def test_a_player_is_found_by_name_rostered_or_not() -> None:
     assert [(r.player_id, r.name, r.detail) for r in refs] == [("466.p.1", "Cam Johnson", "SF · DEN")]
 
 
+def test_a_player_found_on_waivers_says_when_he_clears_them() -> None:
+    waiting = make_player("Brook Lopez", "C", "LAC", key="466.p.3", waiver_date=date(2026, 11, 25))
+    yahoo = FakeYahoo(search_results={"lopez": [waiting]})
+
+    [ref] = nba_provider(yahoo).search_players("", "lopez")
+
+    assert "25 Nov" in ref.detail
+
+
 def test_a_search_of_one_letter_asks_yahoo_nothing() -> None:
     yahoo = FakeYahoo(search_results={"c": [make_player("Cam Johnson")]})
 

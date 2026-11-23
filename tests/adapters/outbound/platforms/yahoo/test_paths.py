@@ -47,7 +47,7 @@ def test_a_deeper_wire_is_a_page_of_25_per_read_the_last_only_as_long_as_needed(
 def test_a_search_cannot_reach_past_its_term_into_the_rest_of_the_path() -> None:
     read = paths.search("466.l.1", "  O'Neale;start=5/x ")
 
-    assert read.query == "players;search=O'Neale start 5 x"
+    assert read.query == "players;search=O'Neale start 5 x;out=ownership"
     assert read.search == "O'Neale start 5 x"
 
 

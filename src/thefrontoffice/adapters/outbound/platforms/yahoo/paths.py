@@ -19,14 +19,14 @@ from thefrontoffice.domain.errors import FrontOfficeError
 logger = logging.getLogger(__name__)
 
 # TTLs from how fast each answer actually goes stale. Waiver leaders move as
-# the league claims players; a name search resolves to the same player for as
-# long as anyone is looking.
+# the league claims players, and so does whom a name search finds on waivers.
 LEADERS_TTL = timedelta(minutes=30)
 """Also how long a waiver clear date on the first page holds: a claim, or a drop putting a player on waivers,
 shows within it."""
 DEEP_TTL = timedelta(hours=6)
 """The wire past its first page: who sits 200th by season rank moves slowly, and is rarely the one claimed."""
-SEARCH_TTL = timedelta(hours=6)
+SEARCH_TTL = LEADERS_TTL
+"""A search carries each player's ownership, which moves with every claim and drop as the wire's does."""
 TEAMS_TTL = timedelta(hours=1)
 """Short for what it is, because the team list carries each team's adds used this week."""
 STANDINGS_TTL = timedelta(hours=1)
@@ -335,9 +335,10 @@ _PATH_SYNTAX = re.compile(r"[;/?#&=,]")
 
 
 def search(league_key: str, query: str) -> YahooRead:
-    """Players whose name holds `query`, rostered or not."""
+    """Players whose name holds `query`, rostered or not, each with his ownership (`out=ownership`): the day
+    one on waivers clears them, as a page of the wire carries it."""
     term = " ".join(_PATH_SYNTAX.sub(" ", query).split())
-    return YahooRead(f"players;search={term}", SEARCH_TTL, league=league_key, search=term)
+    return YahooRead(f"players;search={term};out=ownership", SEARCH_TTL, league=league_key, search=term)
 
 
 def by_keys(league_key: str, player_keys: list[str]) -> YahooRead:

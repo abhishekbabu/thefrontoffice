@@ -322,7 +322,7 @@ def test_a_search_is_scoped_to_the_league_once(tmp_path: Path) -> None:
 
     results = client.search_players("LeBron James")
 
-    assert ctx.requests == [("players;search=LeBron James", "466.l.123")]
+    assert ctx.requests == [(paths.search("466.l.123", "LeBron James").query, "466.l.123")]
     assert [p.name for p in results] == ["LeBron James"]
 
 
