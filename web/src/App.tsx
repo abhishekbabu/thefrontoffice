@@ -316,7 +316,7 @@ export default function App() {
             animate="shown"
             exit="gone"
           >
-            {/* While a page's code arrives: the shell's own skeleton, the one it
+            {/* While a page's code arrives: the shell's own loading bar, the one it
                 already shows while the leagues load. */}
             <Suspense fallback={<Loading />}>{shell()}</Suspense>
           </m.div>

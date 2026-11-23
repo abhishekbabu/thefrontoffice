@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * the trades, the swaps — and each copy carried the same class strings, so
  * changing the look of a row meant finding all of them. A card that fetches
  * on its own passes `loading` and `error`, and waits the same way as every
- * other: its header at once, a placeholder inside it, so the page does not
+ * other: its header at once, a loading bar inside it, so the page does not
  * jump when it arrives.
  */
 export function ListCard({
