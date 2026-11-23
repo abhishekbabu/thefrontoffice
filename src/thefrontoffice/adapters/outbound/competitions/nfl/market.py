@@ -1,7 +1,7 @@
 """The trades worth offering: one or two of yours for one of theirs, near even in worth.
 
 A trade nobody will accept is not advice, so the search starts from what
-makes one acceptable: what they get is worth near what they give, each player
+makes one acceptable: what each side gets is worth near what it gives, each player
 priced by his points over the best of his position on the waiver wire. A
 manager still chasing a playoff place also wants his starters to come out
 ahead, and which managers are still chasing one is the season engine's to
@@ -38,7 +38,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.league import SeasonModel
 from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Projection, Team, active
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, STREAMED
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Scoreboard, Week, lineup_for
-from thefrontoffice.adapters.outbound.competitions.trades import offers
+from thefrontoffice.adapters.outbound.competitions.trades import FAIR_SHARE, offers
 from thefrontoffice.domain.models import TeamWeek, TradeMarket, TradeOption
 
 logger = logging.getLogger(__name__)
@@ -162,6 +162,8 @@ def _with(
     options = []
     for get in wanted:
         for give in offers(my_ids, worth, worth(get)):
+            if _overpays(give, worth, worth(get)):
+                continue
             mine_after = [pid for pid in my_held if pid not in give] + [get]
             if per_week(mine_after, weeks.every) <= my_now:
                 continue
@@ -191,6 +193,17 @@ def _with(
                 )
             )
     return sorted(options, key=lambda option: -(option.playoff_points or option.points))
+
+
+def _overpays(give: Sequence[str], worth: Callable[[str], float], asked: float) -> bool:
+    """Whether you give more than they could ask back: the fair share's floor, held from your side too.
+
+    Here and not in `offers`: a category week has no lineup that turns worth into
+    points, and a player who sits there can be worth trading at any price for
+    one who plays an empty night. A football lineup starts a player every week
+    or none, so worth over the wire is the whole of what a trade moves.
+    """
+    return FAIR_SHARE * sum(worth(pid) for pid in give) > asked
 
 
 def _starts(model: SeasonModel, state: Week, held: list[str], player_id: str, weeks: Sequence[int]) -> bool:

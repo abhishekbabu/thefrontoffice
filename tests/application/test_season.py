@@ -304,6 +304,28 @@ def test_a_safe_team_is_offered_the_most_points_over_the_rest_of_the_season() ->
     assert trades.ranked_by == "total"
 
 
+def _two_for_one(playoff: float, name: str) -> TradeOption:
+    option = _trade("b", mine=107, theirs=101, name=name, season=SAFE_SEASON, playoff=playoff, get=name)
+    return replace(option, giving=(name, "Depth"), giving_ids=(name.lower(), "depth"))
+
+
+def test_a_clinched_team_gives_no_depth_for_a_playoff_lineup_no_better() -> None:
+    """+7 a week before the playoffs is a seed; the two players it costs are the cover in the weeks that count."""
+    flat = _two_for_one(playoff=0.0, name="flat")
+    better = _two_for_one(playoff=1.0, name="better")
+    even = _trade("c", mine=107, theirs=101, name="one for one", season=SAFE_SEASON, playoff=0.0)
+
+    ideas = MarketEngine(_Market(flat, better, even, season=SAFE_SEASON)).trades("L1").ideas
+
+    assert {i.giving[0] for i in ideas} == {"better", "one for one"}
+
+
+def test_a_team_short_of_clinching_still_trades_depth_for_its_regular_season() -> None:
+    option = replace(_trade("b", mine=115, theirs=101, playoff=-1.0), giving=("X", "Depth"), giving_ids=("x", "depth"))
+
+    assert MarketEngine(_Market(option)).trades("L1").ideas
+
+
 def test_a_playoff_week_counts_at_the_chance_of_playing_in_it() -> None:
     # Safe, at about 85%, but with a place still to lose.
     season = _season(

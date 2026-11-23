@@ -140,6 +140,14 @@ def test_a_trade_worth_far_less_than_it_costs_them_is_not_offered() -> None:
     assert not any(option.giving == ("Spare QB (QB)",) for option in _market(client).options)
 
 
+def test_a_trade_giving_far_more_than_it_gets_is_not_offered() -> None:
+    """Your spare is worth 15 a week: a 14 is near enough for it, a 10 is giving a third of him away."""
+    got = {o.receiving for o in _market(_client()).options if o.giving == ("Spare QB (QB)",)}
+
+    assert ("Top WR (WR)",) in got
+    assert ("Third WR (WR)",) not in got
+
+
 # ── two for one ─────────────────────────────────────────────────────────
 
 

@@ -60,6 +60,10 @@ SAFE = 0.8
 the regular season's weeks for seeding and a bye, the playoff weeks the table's simulation never
 reaches — since from there a few points of chance are worth less than a better lineup."""
 
+CLINCHED = 0.9
+"""Your playoff chance above which the playoffs are what is left to play for: depth given up for a
+starter must make the playoff lineup better, not only the weeks before it."""
+
 MIN_TOTAL_GAIN = 3.0
 """Expected points over the rest of the season: less than about a point a playoff week is a trade
 not worth the asking. A market on another scale names its own (`TradeMarket.least_total_gain`)."""
@@ -209,10 +213,12 @@ class MarketEngine:
             return option.points
 
         their_least = MIN_THEIR_GAIN if market.least_their_gain is None else market.least_their_gain
+        clinched = before.playoffs >= CLINCHED
         acceptable = [
             option
             for option in market.options
-            if option.their_points >= their_least or chances.get(option.team_id, 0.0) < OUT_OF_IT
+            if (option.their_points >= their_least or chances.get(option.team_id, 0.0) < OUT_OF_IT)
+            and not (clinched and _depth_for_nothing(option))
         ]
         tried = sorted(_per_team(acceptable, for_you), key=lambda option: -for_you(option))[:TRADES_TRIED]
         logger.info(f"Pricing {len(tried)} of {len(market.options)} trades against the playoff race")
@@ -273,6 +279,13 @@ def _per_team(options: list[TradeOption], key: Callable[[TradeOption], float]) -
     for team in dict.fromkeys(option.team_id for option in best.values()):
         kept += [o for o in best.values() if o.team_id == team][:TRADES_PER_TEAM]
     return kept
+
+
+def _depth_for_nothing(option: TradeOption) -> bool:
+    """More players given than got, for a playoff lineup no better: a clinched team's depth is its cover in
+    the weeks that decide the title."""
+    more = len(option.giving_ids) > len(option.receiving_ids)
+    return more and option.playoff_points is not None and option.playoff_points <= 0
 
 
 def _worth_offering(idea: TradeIdea, total_least: float) -> bool:
