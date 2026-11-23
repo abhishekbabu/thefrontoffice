@@ -76,6 +76,7 @@ from thefrontoffice.domain.errors import (
 )
 from thefrontoffice.domain.models import (
     Action,
+    ActivityRow,
     CompetitionContext,
     LeagueSchedule,
     MatchupInput,
@@ -512,18 +513,19 @@ class YahooNBAProvider:
         }
 
     def schedule(self, league_id: str) -> LeagueSchedule:
-        """The table, and your head-to-head season from every week's scoreboard.
+        """The table, your head-to-head season from every week's scoreboard, and the league's moves lately.
 
-        Between seasons there are no weeks to read, so only the table. Yahoo
-        publishes no real-world NBA schedule through this SDK and no league-wide
-        transaction feed, so those sections stay empty and render as nothing.
+        Between seasons there are no weeks to read, so only the table and the
+        moves. Yahoo publishes no real-world NBA schedule through this SDK, so
+        that section stays empty and renders as nothing.
 
         Raises:
             YahooCaptureMissingError: read from a browser sync that has not carried the table.
         """
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
-        mine = yahoo.get_user_team().team_key
+        team = yahoo.get_user_team()
+        mine = team.team_key
         standings = nba_league.table(yahoo.standings(), mine)
         row = next((row for row in standings if row.is_mine), None)
         headline = places.season(row.record, row.rank, len(standings)) if row else []
@@ -535,7 +537,19 @@ class YahooNBAProvider:
             season = nba_league.season(
                 yahoo.season(mine, weeks), yahoo.settings(), current, records, points=league.by_points
             )
-        return LeagueSchedule(headline=headline, season=season, standings=standings)
+        return LeagueSchedule(
+            headline=headline, season=season, standings=standings, activity=self._activity(yahoo, team.name)
+        )
+
+    @staticmethod
+    def _activity(yahoo: YahooSource, mine: str) -> list[ActivityRow]:
+        """The league's moves lately, newest first; none where Yahoo would not give them, rather than no table."""
+        try:
+            transactions = yahoo.transactions()
+        except FrontOfficeError as e:
+            logger.warning(f"Showing the league without its activity, Yahoo would not give its moves: {e}")
+            return []
+        return history.recent(transactions, datetime.now(UTC), mine)
 
     def build_context(self, league_id: str = "") -> CompetitionContext:
         """Gather league state and render the scouting prompt.

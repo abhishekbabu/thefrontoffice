@@ -1,13 +1,12 @@
-"""A basketball player's season in this league: every move he was part of, as the league's own feed lists it.
+"""The league's moves, as its own feed lists them: lately, for the league, and all season, for one player.
 
-Read when his drawer's history is opened, never for a page: Yahoo carries the
-season's moves in one response, and only one player at a time is asked about.
-Each move names the team that made it, since "dropped" alone does not say
-whose mistake it was.
+Yahoo carries the season's moves in one response, which both read. Each move
+names the team that made it, since "dropped" alone does not say whose mistake
+it was.
 """
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from thefrontoffice.adapters.outbound.competitions.dates import day_month
@@ -20,6 +19,23 @@ FROM_WAIVERS = "waivers"
 
 LABELS = {"add": "Add", "drop": "Drop", "add/drop": "Add/drop", "trade": "Trade"}
 """Yahoo's words for a move, as the league's activity names them."""
+
+
+ACTIVITY_DAYS = 21
+"""How far back the league's activity reaches: about three weeks of matchups, as NFL's and FPL's do.
+
+This is "what did I miss", and a season of October waivers is not that.
+"""
+
+
+def recent(transactions: Sequence[YahooTransaction], now: datetime, mine: str = "") -> list[ActivityRow]:
+    """What the league has done in the last `ACTIVITY_DAYS`, newest first.
+
+    `mine` is your team's name, so your own moves can be found among everyone else's.
+    """
+    since = (now - timedelta(days=ACTIVITY_DAYS)).timestamp()
+    lately = [t for t in transactions if t.timestamp >= since]
+    return [_row(t, mine) for t in sorted(lately, key=lambda t: t.timestamp, reverse=True)]
 
 
 def moves(transactions: Sequence[YahooTransaction], player_key: str, mine: str = "") -> list[ActivityRow]:

@@ -1,6 +1,8 @@
 """Tests for a basketball player's season of league moves: `nba/history.py`."""
 
-from thefrontoffice.adapters.outbound.competitions.nba.history import moves
+from datetime import UTC, datetime, timedelta
+
+from thefrontoffice.adapters.outbound.competitions.nba.history import ACTIVITY_DAYS, moves, recent
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import MovedPlayer, YahooTransaction
 
 LOPEZ, MELTON, BARRETT, MURRAY = "478.p.4472", "478.p.6057", "478.p.6165", "478.p.5660"
@@ -54,3 +56,25 @@ def test_a_trade_names_both_teams_and_what_each_got() -> None:
         "+RJ Barrett · +Dejounte Murray",
         False,
     )
+
+
+NOW = datetime.fromtimestamp(CLAIM.timestamp, tz=UTC) + timedelta(days=1)
+
+
+def test_the_leagues_activity_is_its_moves_lately_newest_first() -> None:
+    lately = YahooTransaction(kind="drop", timestamp=CLAIM.timestamp - 3600, players=DROP.players)
+
+    rows = recent([TRADE, lately, CLAIM, DROP], NOW, mine="Kalshi")
+
+    assert [(r.what, r.who, r.is_mine) for r in rows] == [
+        ("Waiver", "Kalshi", True),
+        ("Drop", "Injury Prone", False),
+        ("Trade", "Justin ↔ Giddey", False),
+    ]
+
+
+def test_a_move_older_than_the_window_is_left_out() -> None:
+    stale = NOW - timedelta(days=ACTIVITY_DAYS, seconds=1)
+    old = YahooTransaction(kind="drop", timestamp=int(stale.timestamp()), players=DROP.players)
+
+    assert recent([old], NOW) == []
