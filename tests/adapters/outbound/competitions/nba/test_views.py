@@ -393,7 +393,7 @@ def test_a_category_item_names_what_drags_a_player_in_yahoos_figures_or_the_weig
 
     figures = {f.label: f for f in player.figures}
     assert figures["Weak in"].value == "FG% .380 · 2.9 TO"
-    assert figures["Value/g"].hint
+    assert figures["Cat value/g"].hint
     assert "FPTS" not in figures
 
 
@@ -407,7 +407,8 @@ def test_a_points_item_shows_yahoos_fantasy_points_beside_the_value_it_is_weighe
     [player] = compared([("in", "bench", READING)], True)
 
     figures = {f.label: f.value for f in player.figures}
-    assert (figures["Value/g"], figures["FPTS"]) == ("41.5", "30.15")
+    assert (figures["Pts value/g"], figures["FPTS"]) == ("41.5", "30.15")
+    assert "Cat value/g" not in figures
 
 
 def test_players_compared_carry_the_same_rows_with_a_dash_where_one_has_none() -> None:
@@ -518,9 +519,9 @@ def test_the_week_weighs_him_as_the_to_do_list_does_and_reads_his_minutes_and_us
     week = {s.label: s.value for s in _opened().groups[0].stats}
 
     assert week["G left"] == "2"
-    assert float(week["Value/g"]) > 0
-    assert week["Minutes"] == "29.3 L3"
-    assert week["Usage"] == f"{(20 + 0.44 * 7 + 3 + 16 + 0.44 * 4 + 2 + 9 + 0.44 * 2 + 1) / 3:.1f} L3"
+    assert float(week["Cat value/g"]) > 0
+    assert week["Minutes/g"] == "29.3 last 3"
+    assert week["Usage/g"] == f"{(20 + 0.44 * 7 + 3 + 16 + 0.44 * 4 + 2 + 9 + 0.44 * 2 + 1) / 3:.1f} last 3"
 
 
 def test_a_window_longer_than_his_last_five_reads_both() -> None:
@@ -528,7 +529,7 @@ def test_a_window_longer_than_his_last_five_reads_both() -> None:
 
     week = {s.label: s.value for s in _opened(_guard(logs={"A B": long})).groups[0].stats}
 
-    assert week["Minutes"] == f"30.0 L5 · {(7 * 30 + 9 * 10) / 16:.1f} L16"
+    assert week["Minutes/g"] == f"30.0 last 5 · {(7 * 30 + 9 * 10) / 16:.1f} last 6 wks"
 
 
 def test_the_drawer_carries_sleepers_projection_a_game_and_who_he_is() -> None:
