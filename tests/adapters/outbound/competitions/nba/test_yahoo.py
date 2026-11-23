@@ -42,11 +42,13 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIErro
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Average,
     MatchupSide,
+    MovedPlayer,
     Pairing,
     Timeframe,
     YahooLeague,
     YahooLine,
     YahooTeam,
+    YahooTransaction,
 )
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.domain.errors import (
@@ -408,6 +410,25 @@ def test_the_season_runs_every_week_from_the_scoreboards_with_the_bracket_named(
     assert season[0].detail == "5-1"
     assert [row.detail for row in season[18:]] == ["Quarterfinals", "Semifinals", "Final"]
     assert [row.label for row in season if row.is_current] == ["Week 5"]
+
+
+def test_the_schedule_carries_the_leagues_moves_lately_yours_marked() -> None:
+    yahoo = FakeYahoo()
+    dropped = MovedPlayer("478.p.1", "Jaxson Hayes", "C", "UTA", kind="drop", source="My Team", destination="waivers")
+    yahoo.moves = [YahooTransaction(kind="drop", timestamp=int(datetime.now(UTC).timestamp()), players=(dropped,))]
+
+    [row] = nba_provider(yahoo).schedule("").activity
+
+    assert (row.what, row.who, row.detail, row.is_mine) == ("Drop", "My Team", "-Jaxson Hayes", True)
+
+
+def test_moves_that_will_not_load_leave_the_table_standing() -> None:
+    yahoo = FakeYahoo()
+    yahoo.moves_error = YahooAPIError("down")
+
+    schedule = nba_provider(yahoo).schedule("")
+
+    assert (schedule.activity, len(schedule.standings)) == ([], 2)
 
 
 def test_between_seasons_there_is_a_table_and_no_weeks() -> None:
