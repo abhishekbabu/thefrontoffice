@@ -46,8 +46,11 @@ export function RosterTable({
   sort,
   onSort,
   detail,
+  hints,
 }: {
   players: PlayerCard[];
+  /** What a column measures, by its heading, where the heading alone would mislead. */
+  hints?: Record<string, string>;
   /** A line under a row, for what a caller has to say about that player. */
   detail?: (player: PlayerCard) => React.ReactNode;
   empty: { title: string; detail?: string };
@@ -68,6 +71,7 @@ export function RosterTable({
       onSort={onSort}
       onSelect={onOpen && ((row) => onOpen(row.player_id))}
       detail={detail}
+      hints={hints}
       render={(column, value, row) => {
         const role = row.roles[column];
         // A cell that abbreviates something says it in full on hover and focus.

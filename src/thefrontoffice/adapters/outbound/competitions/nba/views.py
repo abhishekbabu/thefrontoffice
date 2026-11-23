@@ -67,6 +67,10 @@ MINUTES_COLUMN = "Min"
 ROSTERED_COLUMN = "Rost"
 """The wire's share of Yahoo's leagues rostering him, with its week's change: '44% ↑20' — who managers are adding."""
 
+ROSTERED_HINT = "% rostered across Yahoo leagues"
+"""What `ROSTERED_COLUMN` measures, on its heading: Yahoo's `percent_owned` is every league's, and it publishes
+no share for one league, where a player is rostered or not."""
+
 UP, DOWN = "↑", "↓"
 
 SEASON = "Season"

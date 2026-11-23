@@ -13,6 +13,16 @@ const card = (id: string, without: string, notes: Record<string, string> = {}): 
 });
 
 describe("RosterTable", () => {
+  it("says what a column measures on its heading", async () => {
+    const hints = { Without: "Points a game with a teammate out" };
+    const { container } = await render(
+      <RosterTable players={[card("Mayer", "—")]} empty={{ title: "Nobody" }} sort={null} onSort={() => {}} hints={hints} />,
+    );
+
+    const heading = [...container.querySelectorAll("th")].find((th) => th.textContent?.includes("Without"))!;
+    expect(heading.querySelector("button")!.getAttribute("aria-label")).toContain(hints.Without);
+  });
+
   it("gives an abbreviated cell its full reading, reachable by keyboard, and leaves the rest plain", async () => {
     const note = "Without Brock Bowers (TE, Q): 6.10/game in 3 games · 8.60 with";
     const { container } = await render(

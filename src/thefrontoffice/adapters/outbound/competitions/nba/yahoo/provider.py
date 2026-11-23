@@ -317,7 +317,7 @@ class YahooNBAProvider:
         found = yahoo.pairing(team.team_key, week)
         if found is None:
             return Summary(window=f"Week {week}", weeks=weeks)
-        records = reads.records(yahoo)
+        records = reads.records_after(yahoo, league, week) if played else reads.records(yahoo)
         if played:
             kept = yahoo.played_rosters([team.team_key, found.opponent.team_key], week)
             roster, theirs = kept[team.team_key], kept[found.opponent.team_key]
@@ -586,7 +586,8 @@ class YahooNBAProvider:
         wire = reads.wire(yahoo)
         # Each page of the wire carries its players' averages, so the table costs no read beyond the list.
         cards = self._cards(yahoo, league, wire, reads.carried(wire), wire=True)
-        return paging.page(cards, query, position_filters(wire, yahoo.settings().positions))
+        page = paging.page(cards, query, position_filters(wire, yahoo.settings().positions))
+        return page.model_copy(update={"hints": {views.ROSTERED_COLUMN: views.ROSTERED_HINT}})
 
     def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
         """Anyone in the league whose name holds `text`, rostered or not, in Yahoo's order: each with his

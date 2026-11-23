@@ -6,6 +6,7 @@ runs through the real reader and the real parser.
 """
 
 import re
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -198,6 +199,37 @@ def test_a_week_played_is_planned_as_both_rosters_of_your_matchup_once_its_score
     played = [step.path for step in capture.plan([KEY]).steps if ";week=" in step.path and "/stats" in step.path]
 
     assert played == [paths.played_roster("t1", 1).path, paths.played_roster("t2", 1).path]
+
+
+@pytest.mark.parametrize(("today", "planned"), [(date(2026, 1, 10), True), (date(2026, 3, 1), False)])
+def test_today_is_planned_as_both_rosters_of_your_matchup_while_the_week_being_played_holds_it(
+    tmp_path: Path, today: date, planned: bool
+) -> None:
+    """Week 2 runs 2 Jan to 15 Feb: the matchup shows each player's line tonight from these two reads."""
+    capture = YahooCapture(DiskCache(tmp_path / "cache"), games=(replace(GAME, today=lambda: today),), active=True)
+    _hand_over(capture, _answer(LIST, YAHOO))
+    _hand_over(capture, *(_answer(step.path, YAHOO) for step in capture.plan([KEY]).steps))
+
+    steps = {step.path for step in capture.plan([KEY]).steps}
+
+    assert ({paths.day_roster(team, today).path for team in ("t1", "t2")} <= steps) is planned
+
+
+def test_todays_lines_are_read_from_what_the_sync_carried(tmp_path: Path) -> None:
+    today = date(2026, 1, 10)
+    capture = YahooCapture(DiskCache(tmp_path / "cache"), games=(replace(GAME, today=lambda: today),), active=True)
+    tonight = {
+        paths.day_roster("t1", today).path: roster_xml(rostered_xml("My Center", "C", stats={"12": "31"})),
+        paths.day_roster("t2", today).path: roster_xml(rostered_xml("Their Guard", "PG", stats={"12": "9"})),
+    }
+    _sweep(capture, {**YAHOO, **tonight})
+
+    rosters = YahooClient(LEAGUE, responses=capture).day_rosters(["t1", "t2"], today)
+
+    assert {team: [p.name for p in players] for team, players in rosters.items()} == {
+        "t1": ["My Center"],
+        "t2": ["Their Guard"],
+    }
 
 
 # ── the reader, served from the capture ─────────────────────────────────

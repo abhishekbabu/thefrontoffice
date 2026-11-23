@@ -17,6 +17,7 @@ from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
+    PACIFIC,
     SCOUTED,
     Line,
 )
@@ -93,6 +94,20 @@ def records(yahoo: YahooSource) -> dict[str, str]:
         logger.warning(f"Showing teams without their records, the table would not load: {e}")
         return {}
     return {t.team_key: t.standing.record for t in standings if t.standing}
+
+
+def records_after(yahoo: YahooSource, league: YahooLeague, week: int) -> dict[str, str]:
+    """Each team's record as it stood once `week` was settled, by key, from the season's scoreboards up to it.
+
+    Empty where a scoreboard will not load — a browser sync that has not
+    carried every week — rather than today's record standing in for that one.
+    """
+    try:
+        weeks = yahoo.matchups(list(range(league.first_week, week + 1)))
+    except FrontOfficeError as e:
+        logger.warning(f"Showing week {week} without its records, a scoreboard up to it would not load: {e}")
+        return {}
+    return nba_league.records_through(weeks, by_category=league.scoring_type == nba_league.EVERY_CATEGORY)
 
 
 def played_today(yahoo: YahooSource, team_keys: list[str], day: date) -> dict[str, YahooPlayer]:
@@ -251,5 +266,6 @@ YAHOO_GAME = YahooGame(
     available=WIRE_DEPTH,
     leaders=LEADERS,
     per_stat=LEADERS_PER_STAT,
+    today=lambda: datetime.now(PACIFIC).date(),
 )
 """What this provider reads of Yahoo's NBA game, so a browser sync captures exactly that."""
