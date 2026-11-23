@@ -1,12 +1,14 @@
 """What this installation offers: its competitions, what it can do with them, and the leagues in each."""
 
+from typing import Annotated
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from thefrontoffice.adapters.inbound.web import data
-from thefrontoffice.adapters.inbound.web.routes.deps import CurrentWiring, Provider
+from thefrontoffice.adapters.inbound.web.routes.deps import LEAGUE, Capability, CurrentWiring, Provider
 from thefrontoffice.application.wire import MAX_JUDGED
-from thefrontoffice.domain.ports import LeagueRef
+from thefrontoffice.domain.ports import LeagueRef, LeagueRefreshProvider
 
 router = APIRouter()
 
@@ -51,3 +53,23 @@ def capabilities(wiring: CurrentWiring) -> Capabilities:
 def list_leagues(key: str, provider: Provider) -> list[LeagueRef]:
     """Every league this account plays in for the competition `key` names: 'nba-yahoo', never a bare 'nba'."""
     return provider.list_leagues()
+
+
+class Refreshed(BaseModel):
+    """What a refresh dropped."""
+
+    dropped: int = Field(description="How many kept platform reads went, to be asked for again on the next page.")
+
+
+@router.post(f"{LEAGUE}/refresh", response_model=Refreshed)
+def refresh(
+    key: str,
+    league_id: str,
+    provider: Annotated[LeagueRefreshProvider, Capability(LeagueRefreshProvider)],
+) -> Refreshed:
+    """Drop what is kept of one league that a move or a new week changes, so its pages read the platform again.
+
+    Each read is kept as long as its answer usually holds — a Yahoo roster an
+    hour — which is too long right after the manager has made a move.
+    """
+    return Refreshed(dropped=provider.refresh(league_id))

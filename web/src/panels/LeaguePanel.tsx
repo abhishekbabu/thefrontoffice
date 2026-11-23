@@ -27,7 +27,7 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
 
   return (
     <>
-      <LeagueHeader league={league} />
+      <LeagueHeader competition={competition} league={league} />
       <QueryState query={schedule} lines={6} />
       {schedule.data && schedule.data.standings.length === 0 && <Empty title="No table" />}
       {schedule.data && schedule.data.standings.length > 0 && (

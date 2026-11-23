@@ -22,7 +22,7 @@ export function ActivityPanel({ competition, league }: { competition: Competitio
   const rows = schedule.data?.activity;
   return (
     <>
-      <LeagueHeader league={league} />
+      <LeagueHeader competition={competition} league={league} />
       <QueryState query={schedule} lines={6} />
       {rows && rows.length === 0 && <Empty title="No activity" />}
       {rows && rows.length > 0 && (

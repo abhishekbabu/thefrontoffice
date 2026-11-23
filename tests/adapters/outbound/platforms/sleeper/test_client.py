@@ -190,6 +190,21 @@ def test_league_users_map_ids_to_names(tmp_path: Path) -> None:
     assert client.get_league_users("L1") == {"42": "Me", "43": "rival"}
 
 
+def test_a_refreshed_league_and_the_week_are_asked_for_again_and_nobodys_league_is_not(tmp_path: Path) -> None:
+    client, session = _client({"state/nfl": STATE, "rosters": [], "trending/add": []}, tmp_path)
+
+    def read() -> None:
+        client.get_nfl_state(), client.get_rosters("L1"), client.get_rosters("L2"), client.get_trending()
+
+    read()
+    dropped = client.forget_league("L1")
+    asked = len(session.requests)
+    read()
+
+    assert dropped == 2
+    assert sorted(url.rsplit("/v1/", 1)[-1] for url in session.requests[asked:]) == ["league/L1/rosters", "state/nfl"]
+
+
 # ── players and projections ─────────────────────────────────────────────
 
 

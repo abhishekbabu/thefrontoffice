@@ -316,3 +316,10 @@ class SettingsUnwritableError(FrontOfficeError):
 
     def __init__(self, path: str, detail: str) -> None:
         super().__init__(f"Could not write {path}: {detail}")
+
+
+class CacheUnwritableError(FrontOfficeError):
+    """What the cache holds could not be dropped, so the next read would serve it again."""
+
+    def __init__(self, path: str, detail: str) -> None:
+        super().__init__(f"Could not drop cached reads from {path}: {detail}")

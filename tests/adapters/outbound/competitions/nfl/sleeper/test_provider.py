@@ -56,6 +56,19 @@ def test_the_weeks_a_backtest_can_rebuild_are_the_finished_ones_after_the_first(
     assert nfl_provider(client).played_weeks("L1") == [2, 3, 4, 5]
 
 
+def test_a_refresh_drops_the_league_it_names_and_the_week_kept_for_the_request() -> None:
+    client = FakeSleeper()
+    provider = nfl_provider(client)
+    provider.summary("L1")
+    fetched = client.matchup_fetches
+
+    assert provider.refresh("L1") == 4
+    provider.summary("L1")
+
+    assert client.forgotten == ["L1"]
+    assert client.matchup_fetches > fetched
+
+
 def test_leagues_are_listed_with_format_and_size() -> None:
     refs = nfl_provider(FakeSleeper()).list_leagues()
     assert len(refs) == 1

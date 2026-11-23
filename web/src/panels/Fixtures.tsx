@@ -51,7 +51,7 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
   const note = (browses && games.data?.note) || "";
   return (
     <>
-      <LeagueHeader league={league}>
+      <LeagueHeader competition={competition} league={league}>
         {shown && <WeekStepper range={shown} onStep={step} word={competition.week_word} />}
       </LeagueHeader>
       <QueryState query={browses ? (shown ? games : summary) : schedule} lines={6} />

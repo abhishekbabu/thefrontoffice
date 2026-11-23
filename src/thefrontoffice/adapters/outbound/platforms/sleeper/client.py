@@ -94,6 +94,14 @@ class SleeperNFLSource(Protocol):
     quietly. One per reader, so each fake implements only what its reader calls.
     """
 
+    def forget_league(self, league_id: str) -> int:
+        """Drop what is cached of the league and of the week being played; how many responses went.
+
+        Raises:
+            CacheUnwritableError: they could not be dropped.
+        """
+        ...
+
     def get_league_users(self, league_id: str) -> dict[str, str]: ...
 
     def get_leagues(self, user_id: str, season: str) -> list[SleeperLeague]: ...
@@ -218,6 +226,13 @@ class SleeperClient:
     def get_nfl_state(self) -> SeasonState:
         """The football season's current week and type."""
         return self._state(NFL)
+
+    def forget_league(self, league_id: str) -> int:
+        """Drop the league's rosters, managers, matchups and moves, the user's league lists and football's
+        current week; the catalog, projections and stats are nobody's league and stay."""
+        exact = {f"rosters_{league_id}", f"users_{league_id}", f"state_{NFL}"}
+        weekly = (f"matchups_{league_id}_", f"transactions_{league_id}_", "leagues_")
+        return self._api.forget(lambda key: key in exact or key.startswith(weekly))
 
     def get_nba_state(self) -> SeasonState:
         """The basketball season's current week and type."""

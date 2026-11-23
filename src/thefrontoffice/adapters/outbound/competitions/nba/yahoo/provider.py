@@ -175,6 +175,10 @@ class YahooNBAProvider:
         """
         return self._yahoo_for(self._league(league_id))
 
+    def refresh(self, league_id: str) -> int:
+        """Drop what is kept of the league that a move or a new week changes, the league list with it."""
+        return self._yahoo(league_id).forget()
+
     def _add_limit(self, yahoo: YahooSource) -> int:
         """The league's weekly add limit, as its settings name it, or the configured one where they name none."""
         limit = yahoo.settings().max_weekly_adds

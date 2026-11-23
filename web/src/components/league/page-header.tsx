@@ -1,5 +1,9 @@
-import type { League } from "@/lib/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { RotateCw } from "lucide-react";
+import { api, type Competition, type League } from "@/lib/api";
+import { keys } from "@/lib/queries";
 import { ExternalLink } from "@/components/ui/external-link";
+import { IconButton } from "@/components/ui/icon-button";
 
 /**
  * The bar that says where you are and what you can do from here.
@@ -79,10 +83,12 @@ export function PageHeader({
  * wanted; the week overrides it to lead with the window.
  */
 export function LeagueHeader({
+  competition,
   league,
   meta,
   children,
 }: {
+  competition: Competition;
   league: League;
   meta?: string;
   children?: React.ReactNode;
@@ -94,7 +100,37 @@ export function LeagueHeader({
       href={league.url}
       hrefLabel={`Open ${league.name} on the platform`}
     >
-      {children}
+      <div className="flex items-center gap-2">
+        {children}
+        {competition.refreshes && <RefreshLeague competition={competition} league={league} />}
+      </div>
     </PageHeader>
+  );
+}
+
+/**
+ * Reads the league from its platform again, rather than from what the server
+ * keeps of it: right after a move, a kept roster is an hour behind it.
+ *
+ * Every answer about the league goes stale with it, and so does the league
+ * list, which carries the week being played.
+ */
+function RefreshLeague({ competition, league }: { competition: Competition; league: League }) {
+  const queryClient = useQueryClient();
+  const refresh = useMutation({
+    mutationFn: api.league(competition.key, league.league_id).refresh,
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: keys.league(competition.key, league.league_id) }),
+        queryClient.invalidateQueries({ queryKey: keys.leagues(competition.key) }),
+      ]),
+  });
+  return (
+    <IconButton
+      label={refresh.isError ? `Refresh failed: ${refresh.error.message}` : "Refresh"}
+      icon={<RotateCw className={refresh.isPending ? "motion-safe:animate-spin" : undefined} />}
+      disabled={refresh.isPending}
+      onClick={() => refresh.mutate()}
+    />
   );
 }

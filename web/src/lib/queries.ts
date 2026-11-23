@@ -19,6 +19,8 @@ export const keys = {
   login: (platform: string) => ["login", platform] as const,
   capture: (platform: string) => ["capture", platform] as const,
   leagues: (competition: string) => ["leagues", competition] as const,
+  /** Every answer about one league: what a refresh invalidates. */
+  league: inLeague,
   week: (competition: string, league: string) => [...inLeague(competition, league), "week"] as const,
   weekOf: (competition: string, league: string, week: number | null) =>
     [...inLeague(competition, league), "week-of", week] as const,

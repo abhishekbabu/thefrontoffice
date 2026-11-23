@@ -204,6 +204,9 @@ class SessionResponses:
     def many(self, reads: Mapping[str, YahooRead]) -> dict[str, str]:
         return self._recorded(lambda: self._live.many(reads))
 
+    def forget(self, match: Callable[[str], bool]) -> int:
+        return self._live.forget(match)
+
     def find_leagues(self, game_code: str, season: int) -> list[YahooLeague]:
         """Every league the session's login plays in for one game and season; none is an answer.
 

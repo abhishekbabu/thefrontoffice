@@ -200,3 +200,31 @@ def test_hours_that_close_the_same_day_they_open() -> None:
 
     assert pace.live() is True
     assert ScoreboardPace(UTC, time(16), time(18), clock=lambda: clock).live() is False
+
+
+@pytest.mark.parametrize(
+    ("path", "dropped"),
+    [
+        ("users;use_login=1/games;game_codes=nba;seasons=2026/leagues", True),
+        ("team/466.l.1.t.2/roster", True),
+        ("team/466.l.1.t.2/roster;date=2026-11-23/players/stats;type=date;date=2026-11-23", True),
+        ("team/466.l.1.t.2/roster;week=3/players/stats;type=week;week=3", False),
+        ("league/466.l.1/teams", True),
+        ("league/466.l.1/transactions", True),
+        ("league/466.l.1/players;count=25;status=A", True),
+        ("league/466.l.1/settings", False),
+        ("league/466.l.1/scoreboard;week=6", True),
+        ("league/466.l.1/scoreboard;week=4", True),
+        ("league/466.l.1/scoreboard;week=3", False),
+        ("league/466.l.10/teams", False),
+        ("team/466.l.10.t.2/roster", False),
+        ("session", False),
+    ],
+)
+def test_a_refresh_drops_what_a_move_or_a_new_week_changes(path: str, dropped: bool) -> None:
+    """Week 5 being played: last week's scoreboard may still settle, the ones before it never change."""
+    assert paths.moves(path, "466.l.1", current_week=5) is dropped
+
+
+def test_a_league_whose_week_is_unknown_drops_every_scoreboard() -> None:
+    assert paths.moves("league/466.l.1/scoreboard;week=1", "466.l.1", current_week=None)

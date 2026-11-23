@@ -30,7 +30,7 @@ export function TradesPanel({ competition, league }: { competition: Competition;
   const { openComparison, drawer } = useDrawers(competition, league);
   return (
     <>
-      <LeagueHeader league={league} />
+      <LeagueHeader competition={competition} league={league} />
       <div className="flex flex-col gap-4 p-5">
         <TradeIdeas competition={competition} league={league} onCompare={openComparison} />
       </div>

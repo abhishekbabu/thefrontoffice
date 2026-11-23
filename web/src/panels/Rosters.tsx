@@ -55,7 +55,7 @@ export function RostersPanel({ competition, league }: { competition: Competition
 
   return (
     <>
-      <LeagueHeader league={league} />
+      <LeagueHeader competition={competition} league={league} />
       {(teams.data?.length ?? 0) > 1 && (
         <div className="flex flex-wrap gap-1.5 px-5 pt-5">
           <ToggleGroup>

@@ -199,6 +199,8 @@ class FakeYahoo:
         self.moves: list[YahooTransaction] = []
         """The league's transactions, newest first."""
         self.moves_error: Exception | None = None
+        self.forgotten = 0
+        """How many times the league's kept reads were dropped."""
 
     def get_user_team(self) -> YahooTeam:
         return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
@@ -334,6 +336,10 @@ class FakeYahoo:
         if self.moves_error:
             raise self.moves_error
         return self.moves
+
+    def forget(self) -> int:
+        self.forgotten += 1
+        return 3
 
     def players(self, player_keys: list[str]) -> list[YahooPlayer]:
         """Anybody this league was built with, on a roster or not."""

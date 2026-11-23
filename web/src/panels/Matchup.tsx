@@ -162,6 +162,7 @@ export function MatchupPanel({
       {/* The week is what this page is about, so it belongs in the header
           rather than a row down among the figures. */}
       <LeagueHeader
+        competition={competition}
         league={league}
         meta={[
           shown.data?.weeks ? undated(shown.data.window) : shown.data?.window,

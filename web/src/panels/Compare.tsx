@@ -27,7 +27,7 @@ export function ComparePanel({ competition, league }: { competition: Competition
 
   return (
     <>
-      <LeagueHeader league={league} />
+      <LeagueHeader competition={competition} league={league} />
       <div className="flex flex-col gap-4 p-5">
         {competition.searches_players && !compared.full && (
           <Finder competition={competition} league={league} onPick={compared.add} exclude={compared.ids} />

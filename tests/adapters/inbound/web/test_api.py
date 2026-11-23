@@ -140,6 +140,7 @@ def test_a_competition_says_what_it_can_do() -> None:
 
     assert flags["nfl-sleeper"] == (True, True, True, True)
     assert flags["premier-league-fpl"] == (False, True, False, True)
+    assert all(c["refreshes"] for c in body)
 
 
 # ── leagues and rosters ─────────────────────────────────────────────────
@@ -155,6 +156,33 @@ def test_leagues_are_listed(client: TestClient) -> None:
             "url": "https://fantasy.example/leagues/900",
         }
     ]
+
+
+class _Refreshing(FakeProvider):
+    """A competition whose kept reads of a league can be dropped."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.refreshed: list[str] = []
+
+    def refresh(self, league_id: str) -> int:
+        self.refreshed.append(league_id)
+        return 7
+
+
+def test_a_league_is_refreshed_through_its_provider() -> None:
+    provider = _Refreshing()
+
+    body = _client(provider).post("/api/competitions/nba-yahoo/leagues/900/refresh").json()
+
+    assert body == {"dropped": 7}
+    assert provider.refreshed == ["900"]
+
+
+def test_refreshing_is_refused_where_it_is_not_offered(client: TestClient) -> None:
+    response = client.post("/api/competitions/nba-yahoo/leagues/900/refresh")
+
+    assert (response.status_code, response.json()["code"]) == (400, "unsupported")
 
 
 class _Squad(FakeProvider):

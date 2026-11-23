@@ -204,6 +204,14 @@ class FPLSource(Protocol):
         """Abbreviation -> the club in full, keyed the way a player names it."""
         ...
 
+    def forget_league(self, league_id: int) -> int:
+        """Drop what is cached of the league, its managers and the gameweek being played; how many responses went.
+
+        Raises:
+            CacheUnwritableError: they could not be dropped.
+        """
+        ...
+
     def get_entry(self, entry_id: int) -> Entry:
         """A manager's team, with the mini-leagues they are in."""
         ...
@@ -263,6 +271,15 @@ class FPLSource(Protocol):
         ...
 
 
+def _standings_kind(is_h2h: bool) -> str:
+    """The endpoint a table is read from: the two formats are different ones entirely."""
+    return "leagues-h2h" if is_h2h else "leagues-classic"
+
+
+def _standings_key(league_id: int, is_h2h: bool) -> str:
+    return f"standings_{_standings_kind(is_h2h)}_{league_id}"
+
+
 class FPLClient:
     """Read-only access to the Fantasy Premier League game."""
 
@@ -292,6 +309,20 @@ class FPLClient:
                 raise FPLAPIError("FPL returned no player data.")
             self._bootstrap = data
         return self._bootstrap
+
+    def forget_league(self, league_id: int) -> int:
+        """Drop the league's table and ties, every manager's team, picks and moves, and the game's own
+        gameweeks, live points and fixtures by gameweek. A player's past and a gameweek's final
+        results are nobody's league and stay, with the season's fixture list."""
+        self._bootstrap = None
+        league = {f"h2h_season_{league_id}", _standings_key(league_id, True), _standings_key(league_id, False)}
+        moving = ("entry_", "picks_", "history_", "transfers_", "live_", f"h2h_{league_id}_")
+
+        def moves(key: str) -> bool:
+            gameweek = key.startswith("fixtures_") and key != "fixtures_season"
+            return key == "bootstrap" or key in league or gameweek or key.startswith(moving)
+
+        return self._api.forget(moves)
 
     def _short_names(self) -> dict[int, str]:
         """Club id -> the three letters a player and a fixture are named by."""
@@ -644,9 +675,9 @@ class FPLClient:
 
     def get_standings(self, league_id: int, is_h2h: bool) -> list[TableRow]:
         """The league table. The two formats are different endpoints entirely."""
-        kind = "leagues-h2h" if is_h2h else "leagues-classic"
+        kind = _standings_kind(is_h2h)
         data = self._api.cached(
-            f"standings_{kind}_{league_id}",
+            _standings_key(league_id, is_h2h),
             f"{BASE_URL}/{kind}/{league_id}/standings/",
             ENTRY_TTL,
         )
