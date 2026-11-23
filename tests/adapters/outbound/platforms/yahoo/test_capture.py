@@ -54,6 +54,10 @@ YAHOO = {
         team_xml("t2", "Theirs", standings=standings_xml(1, 2, 0, 0, "12")),
     ),
     paths.transactions(KEY).path: "<fantasy_content><league><transactions/></league></fantasy_content>",
+    **{
+        read.path: "<fantasy_content><league><transactions/></league></fantasy_content>"
+        for read in paths.pending(KEY, "t1")
+    },
     **dict(
         zip(
             [read.path for read in paths.available(KEY, 50)],
@@ -153,7 +157,8 @@ def test_a_sweep_fetches_every_teams_roster_and_its_averages_once_the_team_list_
 
 
 def test_a_sync_asks_only_for_what_has_gone_stale_since_the_last(tmp_path: Path) -> None:
-    """Ten minutes on, only the week being played has moved: settled and future weeks, settings and rosters hold."""
+    """Ten minutes on, only the week being played and your waiting claims have moved: settled and future weeks,
+    settings and rosters hold."""
     cache = DiskCache(tmp_path / "cache")
     capture = YahooCapture(cache, games=(GAME,), active=True)
     _sweep(capture)
@@ -163,7 +168,15 @@ def test_a_sync_asks_only_for_what_has_gone_stale_since_the_last(tmp_path: Path)
 
     planned = {step.path for step in capture.plan([KEY]).steps}
 
-    assert planned == {LIST, paths.scoreboard(KEY, 2).path}
+    assert planned == {LIST, paths.scoreboard(KEY, 2).path, *(read.path for read in paths.pending(KEY, "t1"))}
+
+
+def test_only_your_own_teams_waiting_claims_are_planned(tmp_path: Path) -> None:
+    """Yahoo lists a team's waiting moves only to its own manager."""
+    fetched = set(_sweep(_capture(tmp_path)))
+
+    assert {read.path for read in paths.pending(KEY, "t1")} <= fetched
+    assert not {read.path for read in paths.pending(KEY, "t2")} & fetched
 
 
 def test_a_sync_still_takes_what_it_was_planned_once_it_has_been_refreshed_meanwhile(tmp_path: Path) -> None:

@@ -213,7 +213,8 @@ class YahooCapture:
         The scoreboard of every week of the season, since any can be opened, and
         the league's moves, which a player's history reads. A
         roster for every team the held team list names, and its players' recent
-        averages, which the first sync of a league has to learn before it can ask. Both rosters of your matchup in
+        averages, which the first sync of a league has to learn before it can ask;
+        your own team's claims and offers waiting, which nobody else's manager sees. Both rosters of your matchup in
         each week played, as it ended, once that week's scoreboard is held and
         until they are.
         """
@@ -233,6 +234,8 @@ class YahooCapture:
             )
         for team in self._teams(key):
             reads.extend((paths.roster(team.team_key), paths.roster_averages(team.team_key, paths.RECENT_AVERAGE)))
+            if team.is_mine:
+                reads.extend(paths.pending(key, team.team_key))
         reads.extend(read for read in self._played(league) if self._stored(read) is None)
         return reads
 

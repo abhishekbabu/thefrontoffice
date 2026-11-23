@@ -1,8 +1,16 @@
 """Tests for a basketball player's season of league moves: `nba/history.py`."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
-from thefrontoffice.adapters.outbound.competitions.nba.history import ACTIVITY_DAYS, moves, recent
+from thefrontoffice.adapters.outbound.competitions.nba.history import (
+    ACTIVITY_DAYS,
+    PENDING_CLAIM,
+    PENDING_TRADE,
+    claimed,
+    moves,
+    pending,
+    recent,
+)
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import MovedPlayer, YahooTransaction
 
 LOPEZ, MELTON, BARRETT, MURRAY = "478.p.4472", "478.p.6057", "478.p.6165", "478.p.5660"
@@ -78,3 +86,51 @@ def test_a_move_older_than_the_window_is_left_out() -> None:
     old = YahooTransaction(kind="drop", timestamp=int(stale.timestamp()), players=DROP.players)
 
     assert recent([old], NOW) == []
+
+
+WAITING_CLAIM = YahooTransaction(
+    kind="waiver",
+    timestamp=0,
+    players=(MovedPlayer(LOPEZ, "Brook Lopez", "C", "LAC", kind="add", source="waivers", destination="team"),),
+    clears=date(2026, 11, 25),
+)
+OFFER = YahooTransaction(
+    kind=PENDING_TRADE,
+    timestamp=1795079686,
+    players=(
+        MovedPlayer(BARRETT, "RJ Barrett", "SF", "TOR", kind="pending_trade", source="Kalshi", destination="Giddey"),
+    ),
+)
+
+
+def test_your_waiting_moves_read_as_pending_claims_by_the_day_they_process_then_offers() -> None:
+    later = YahooTransaction(
+        kind="waiver",
+        timestamp=0,
+        players=(
+            MovedPlayer(MURRAY, "Dejounte Murray", "PG", "NOP", kind="add", source="waivers", destination="team"),
+        ),
+        clears=date(2026, 11, 26),
+    )
+
+    rows = pending([OFFER, later, WAITING_CLAIM], mine="Kalshi")
+
+    assert [(r.what, r.when) for r in rows] == [
+        (PENDING_CLAIM, "25 Nov"),
+        (PENDING_CLAIM, "26 Nov"),
+        ("Pending trade", "19 Nov"),
+    ]
+    assert all(r.is_mine for r in rows)
+    assert "Brook Lopez" in rows[0].detail
+
+
+def test_an_offer_names_both_teams_and_what_each_would_get() -> None:
+    offer = YahooTransaction(kind=PENDING_TRADE, timestamp=TRADE.timestamp, players=TRADE.players)
+
+    [row] = pending([offer], mine="Justin")
+
+    assert (row.who, row.detail) == ("Justin ↔ Giddey", "+RJ Barrett · +Dejounte Murray")
+
+
+def test_a_waiting_claim_names_whom_it_would_add_and_an_offer_names_nobody_claimed() -> None:
+    assert claimed([WAITING_CLAIM, OFFER]) == {LOPEZ}

@@ -526,6 +526,43 @@ def test_a_vetoed_trade_or_an_edit_moving_nobody_is_no_move(tmp_path: Path) -> N
     assert client.transactions() == []
 
 
+def test_your_waiting_claims_and_offers_are_read_and_anything_settled_since_left_out(tmp_path: Path) -> None:
+    claims = (
+        "<fantasy_content><league><transactions>"
+        + _transaction_xml(
+            "waiver",
+            0,
+            _moved_xml("478.p.1", "Brook Lopez", "add", "waivers", "Mine"),
+            status="pending",
+            extra="<waiver_date>2026-11-25</waiver_date>",
+        )
+        + _transaction_xml("waiver", 0, _moved_xml("478.p.9", "Gone", "add", "waivers", "Mine"), status="failed")
+        + "</transactions></league></fantasy_content>"
+    )
+    offers = (
+        "<fantasy_content><league><transactions>"
+        + _transaction_xml(
+            "pending_trade",
+            0,
+            _moved_xml("478.p.3", "RJ Barrett", "pending_trade", "Mine", "Theirs"),
+            status="proposed",
+            extra="<trade_proposed_time>1795079686</trade_proposed_time>",
+        )
+        + "</transactions></league></fantasy_content>"
+    )
+    claim_read, offer_read = paths.pending(LEAGUE.league_key, "466.l.123.t.1")
+    client, _ = _client(tmp_path, answers={claim_read.query: claims, offer_read.query: offers})
+
+    claim, offer = client.pending("466.l.123.t.1")
+
+    assert (claim.kind, claim.clears, [p.name for p in claim.players]) == (
+        "waiver",
+        date(2026, 11, 25),
+        ["Brook Lopez"],
+    )
+    assert (offer.kind, offer.timestamp, offer.clears) == ("pending_trade", 1795079686, None)
+
+
 # ── the matchup ─────────────────────────────────────────────────────────
 
 

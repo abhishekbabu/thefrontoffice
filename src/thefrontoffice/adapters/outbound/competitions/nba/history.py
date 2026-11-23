@@ -5,8 +5,8 @@ names the team that made it, since "dropped" alone does not say whose mistake
 it was.
 """
 
-from collections.abc import Sequence
-from datetime import datetime, timedelta
+from collections.abc import Collection, Sequence
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from thefrontoffice.adapters.outbound.competitions.dates import day_month
@@ -19,6 +19,12 @@ FROM_WAIVERS = "waivers"
 
 LABELS = {"add": "Add", "drop": "Drop", "add/drop": "Add/drop", "trade": "Trade"}
 """Yahoo's words for a move, as the league's activity names them."""
+
+PENDING_TRADE = "pending_trade"
+"""Yahoo's kind for a trade on offer; anything else your team has waiting is a waiver claim."""
+
+PENDING = {PENDING_TRADE: "Pending trade"}
+PENDING_CLAIM = "Pending claim"
 
 
 ACTIVITY_DAYS = 21
@@ -38,6 +44,35 @@ def recent(transactions: Sequence[LeagueMove], now: datetime, mine: str = "") ->
     return [_row(t, mine) for t in sorted(lately, key=lambda t: t.timestamp, reverse=True)]
 
 
+def pending(waiting: Sequence[LeagueMove], mine: str) -> list[ActivityRow]:
+    """Your team's moves still waiting, as rows of their own: claims by the day each processes, then offers.
+
+    `mine` is your team's name: Yahoo lists a team's waiting moves only to its
+    own manager, so every one is yours.
+    """
+    order = sorted(waiting, key=lambda m: (m.kind == PENDING_TRADE, m.clears or date.max, m.timestamp))
+    return [_waiting(move, mine) for move in order]
+
+
+def _waiting(move: LeagueMove, mine: str) -> ActivityRow:
+    """A move still waiting: 'Pending claim' on the day it processes, or 'Pending trade' on the day it was offered."""
+    row = _row(move, mine)
+    return row.model_copy(
+        update={
+            "what": PENDING.get(move.kind, PENDING_CLAIM),
+            "when": day_month(move.clears) if move.clears else row.when,
+            # A waiting claim names its team by key alone, and every one listed is yours.
+            "who": row.who if move.kind == PENDING_TRADE else mine,
+            "is_mine": True,
+        }
+    )
+
+
+def claimed(waiting: Sequence[LeagueMove]) -> Collection[str]:
+    """Whom your waiting claims would add, by Yahoo key: nobody to suggest claiming again."""
+    return {p.player_key for m in waiting if m.kind != PENDING_TRADE for p in m.players if p.kind == "add"}
+
+
 def moves(transactions: Sequence[LeagueMove], player_key: str, mine: str = "") -> list[ActivityRow]:
     """Each move this season he was part of, oldest first, as the league's activity shows it.
 
@@ -50,7 +85,7 @@ def moves(transactions: Sequence[LeagueMove], player_key: str, mine: str = "") -
 def _row(move: LeagueMove, mine: str) -> ActivityRow:
     moved = [_moved(p) for p in move.players]
     managers = list(dict.fromkeys(m.manager for m in moved if m.manager))
-    if move.kind == "trade":
+    if move.kind in ("trade", PENDING_TRADE):
         who = " ↔ ".join(managers)
         detail = " · ".join(
             "+" + ", ".join(m.player for m in moved if m.change == "added" and m.manager == name) for name in managers

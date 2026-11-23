@@ -3,7 +3,7 @@ across, and the to-do list read off them.
 """
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 
@@ -59,6 +59,7 @@ def decide(
     shown: Mapping[str, PrintedLine] | None = None,
     chances: Mapping[str, float] | None = None,
     their_adds: int = 0,
+    claimed: Collection[str] = (),
 ) -> Decided:
     """Every shown player's week, and the to-do list weighed on it.
 
@@ -76,6 +77,7 @@ def decide(
 
     The wire is enrichment here: one that will not load (a sync that has not
     carried it) leaves the week's rows and starts standing, with nothing to stream.
+    Nobody you already have a claim waiting on (`claimed`, by Yahoo key) is suggested again.
     """
     try:
         free_agents = reads.wire(yahoo, reads.STREAM_DEPTH)
@@ -87,7 +89,8 @@ def decide(
     readings = read_week(feeds, yahoo, weights, [*roster, *theirs, *free_agents], start, end, also or [], averages)
     today = feeds.today(start, end)
     plan = plan_for(feeds, yahoo, (roster, theirs), free_agents, readings, weights, start, end, chances, their_adds)
-    items = actions.build(roster, free_agents, readings, adds_left, weights is not None, today, plan)
+    open_wire = [p for p in free_agents if p.player_key not in claimed]
+    items = actions.build(roster, open_wire, readings, adds_left, weights is not None, today, plan)
     return Decided(readings, items, plan.volume, plan.streams)
 
 
