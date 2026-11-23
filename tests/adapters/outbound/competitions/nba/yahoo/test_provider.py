@@ -1,4 +1,4 @@
-"""Tests for the Yahoo basketball provider: `nba/yahoo.py`.
+"""Tests for the Yahoo basketball provider: `nba/yahoo/provider.py`.
 
 Mostly the context it builds, which is where league rules (add budget, IL
 slots, matchup context) actually get encoded.

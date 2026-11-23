@@ -1,0 +1,176 @@
+"""What the provider reads beside Yahoo, through the collaborators it was handed: Sleeper's form, schedule,
+seasons and box scores, and ESPN's injury report and scoreboard.
+"""
+
+import logging
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime
+
+from thefrontoffice.adapters.outbound.competitions.careers import recent_seasons
+from thefrontoffice.adapters.outbound.competitions.dates import parse_day
+from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
+from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
+from thefrontoffice.adapters.outbound.competitions.nba.model import Player
+from thefrontoffice.adapters.outbound.competitions.nba.rules import (
+    PACIFIC,
+    playable_from,
+    ruled_out,
+)
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
+    Condition,
+    Returning,
+    Teammate,
+    Teammates,
+    conditions,
+    reported,
+)
+from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
+from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
+from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
+from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, InjuryReport
+from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, ScheduledGame
+from thefrontoffice.domain.errors import (
+    FrontOfficeError,
+)
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Feeds:
+    """What the provider reads beside Yahoo: Sleeper's form, schedule and seasons, and ESPN's report and scoreboard.
+
+    Held by the provider, built from the collaborators bootstrap hands it, so
+    each read here names only what it needs.
+    """
+
+    form: FormSource
+    games: ScheduleSource
+    sleeper: SleeperProjectionSource
+    espn: ESPNSource
+
+    def playable(self, player: Player, clubs: Mapping[str, int], back: date | None, end: date) -> int | None:
+        """The games he can play before `end`: his club's left; none while ruled out, or those from his return;
+        on waivers, those after he clears them (`rules.playable_from`).
+
+        None where the schedule would not load. Counted from a later day only once
+        the bulk read has loaded the schedule, so this read cannot fail on its own.
+        """
+        left = clubs.get(player.team.upper())
+        out = ruled_out(player.status)
+        if left is None or (out and back is None):
+            return None if left is None else 0
+        later = [day for day in (back if out else None, playable_from(player)) if day is not None]
+        return self.games.get_remaining_games(player.team, max(later), end) if later else left
+
+    def today(self, start: date, end: date) -> nba_week.Today | None:
+        """Today's games, while today falls inside the week from `start` to `end`.
+
+        None outside it, and where the schedule would not load rather than a day of no games.
+        """
+        on = self.games.games_today()
+        if on is None or not start <= on[0] <= end:
+            return None
+        return nba_week.Today(on[0], on[1], self.tipoff(on[0]))
+
+    def tipoff(self, day: date) -> dict[str, datetime]:
+        """When each club's game on `day` starts, while it has not, by ESPN's abbreviation.
+
+        Empty where ESPN's scoreboard would not load: a row then says he plays
+        today without the hour, which is still what the lineup is set on.
+        """
+        try:
+            games = self.espn.get_day_scoreboard(NBA, day)
+        except ESPNAPIError as e:
+            logger.warning(f"Showing today's games without tip-off times, ESPN's scoreboard would not load: {e}")
+            return {}
+        return {
+            club: game.kickoff
+            for game in games
+            if game.state == "pre" and game.kickoff is not None
+            for club in (game.home, game.away)
+        }
+
+    def recent(self, player: Player) -> list[NBAGameLog]:
+        return self.form.recent_games(player.name)
+
+    def seasons(self, player: Player) -> dict[str, NBASeason | None]:
+        """His totals this season and the two before it, newest first; a season that will not load reads as absent."""
+        current = self.sleeper.get_nba_state().season
+        found: dict[str, NBASeason | None] = {}
+        for season in [current, *recent_seasons(current)]:
+            try:
+                found[season] = self.form.season(player.name, season)
+            except FrontOfficeError as e:
+                logger.warning(f"Leaving {season} out of {player.name}'s seasons: {e}")
+                found[season] = None
+        return found
+
+    def venues(self, player: Player, games: Sequence[NBAGameLog]) -> dict[str, ScheduledGame]:
+        """His club's game on each date of his log, by ISO date, from the schedule already loaded; none where it
+        will not load, which leaves each game's opponent bare."""
+        days = [day for g in games if (day := parse_day(g.date))]
+        if not days:
+            return {}
+        try:
+            slate = self.games.games_between(min(days), max(days))
+        except FrontOfficeError as e:
+            logger.warning(f"Showing {player.name}'s game log without home and away: {e}")
+            return {}
+        played = {g.date: g.team or player.team.upper() for g in games}
+        return {g.date: g for g in slate if played.get(g.date) in (g.home, g.away)}
+
+    def reports(self) -> list[InjuryReport]:
+        """ESPN's NBA injury report; empty where it will not load, which leaves Yahoo's statuses standing alone."""
+        try:
+            return self.espn.get_injuries(NBA)
+        except ESPNAPIError as e:
+            logger.warning(f"Continuing on Yahoo's injury statuses alone: {e}")
+            return []
+
+    def splits(
+        self, players: Sequence[Player], weights: Mapping[str, float] | None, reports: Sequence[InjuryReport]
+    ) -> Callable[[Player], list[Teammate]]:
+        """Each player's teammates worth weighing (`teammates.py`): any at his position due back soon whom he has
+        barely played beside (`Returning`), then his line without each regular who is hurt or lately sat out.
+
+        A teammate's condition is Yahoo's status where his row is among `players`, else ESPN's report; the box
+        scores, and last season's minutes for a teammate with few games this one, are read once for them all.
+        """
+        mates, known = self.teammates(players, weights, reports)
+        today = datetime.now(PACIFIC).date()
+        return lambda player: [*mates.returning(player, known, today), *mates.splits(player, known)]
+
+    def teammates(
+        self, players: Sequence[Player], weights: Mapping[str, float] | None, reports: Sequence[InjuryReport]
+    ) -> tuple[Teammates, Mapping[str, Condition]]:
+        """Every club's regulars from the box scores, and each one's condition: Yahoo's status where his row is
+        among `players`, else ESPN's report."""
+        mates = Teammates(self.form.box_scores(), weights, self.last_season())
+        regulars = mates.regulars()
+        return mates, conditions(regulars, players, reported(regulars, reports))
+
+    def returning(
+        self, wire: Sequence[Player], players: Sequence[Player], weights: Mapping[str, float] | None
+    ) -> dict[str, Returning]:
+        """Each of `wire` whose role leans on a teammate at his position due back soon (`Teammates.returning`), by
+        Yahoo key: the soonest back. None where the box scores will not load: a teammate is enrichment."""
+        try:
+            mates, known = self.teammates(players, weights, self.reports())
+        except FrontOfficeError as e:
+            logger.warning(f"Weighing pickups without teammates due back: {e}")
+            return {}
+        today = datetime.now(PACIFIC).date()
+        return {p.player_key: found[0] for p in wire if (found := mates.returning(p, known, today))}
+
+    def last_season(self) -> Mapping[str, NBASeason]:
+        """Every player's totals last season, by Sleeper's id; none where it will not load, which leaves a
+        teammate hurt early this season out of the regulars."""
+        try:
+            previous = recent_seasons(self.sleeper.get_nba_state().season)
+            return self.form.season_totals(previous[0]) if previous else {}
+        except FrontOfficeError as e:
+            logger.warning(f"Weighing teammates without last season's minutes: {e}")
+            return {}
