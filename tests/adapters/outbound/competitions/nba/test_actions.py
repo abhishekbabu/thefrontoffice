@@ -561,6 +561,95 @@ def test_a_keeper_out_beyond_the_week_or_with_no_week_to_place_his_return_is_not
     assert streams(roster, [hurt], readings, 2, True, set()) == []
 
 
+# ── the week's adds, planned as a sequence ──────────────────────────
+
+FRI, SAT, SUN = (date(2026, 11, day) for day in (27, 28, 29))
+BRIDGED = _week(
+    *((day, "CHA", "ORL") for day in (MON, TUE, WED)),
+    (SAT, "DET", "ORL"),
+    *((day, "PHX", "UTA") for day in (MON, TUE, WED, FRI, SAT, SUN)),
+)
+"""Charlotte plays Monday to Wednesday, Detroit Saturday, Phoenix six nights; nobody plays on Thanksgiving."""
+
+
+def _waiting(*wire: tuple[str, str, float]) -> tuple[list[YahooPlayer], dict[str, Reading], list[YahooPlayer]]:
+    """`_team` with Weak a Hornet, Robinson out until Friday on the wire, and `wire` as (name, club, value a game)."""
+    roster, readings = _team()
+    roster = [replace(p, team="CHA") if p.name == "Weak" else p for p in roster]
+    readings["Weak"] = replace(readings["Weak"], player=roster[2])
+    robinson = _player("Robinson", position="SG,SF", team="DET", status="O")
+    others = [_player(name, position="SF", team=club) for name, club, _ in wire]
+    readings |= {"Robinson": replace(_read(robinson, 30.0, 1), back=date(2026, 11, 27))}
+    readings |= _readings(*((p, value, 0) for p, (_, _, value) in zip(others, wire, strict=True)))
+    return roster, readings, [robinson, *others]
+
+
+def test_a_keeper_out_until_mid_week_is_bridged_by_a_stream_let_go_for_him_on_the_day_nobody_plays() -> None:
+    """Weaker sits idle until Thanksgiving: a Hornet holds his spot three nights, then makes way for Robinson."""
+    roster, readings, wire = _waiting(("Hornet", "CHA", 21.0))
+
+    [item] = streams(roster, wire, readings, adds_left=2, by_points=True, named=set(), plan=Plan(week=BRIDGED))
+
+    assert (item.kind, item.urgency, item.player_id, item.drop, item.pickup) == (
+        "waiver",
+        "now",
+        "Hornet",
+        "Weaker",
+        "streamer",
+    )
+    assert [(p.side, p.name) for p in item.players] == [("in", "Hornet"), ("out", "Weaker"), ("in", "Robinson")]
+    assert weekday_day_month(THANKSGIVING) in item.title and "Robinson" in item.title
+    assert "+63.0" in item.reason  # three nights of 21 over a drop with none
+
+
+def test_with_one_add_left_no_sequence_is_planned() -> None:
+    roster, readings, wire = _waiting(("Hornet", "CHA", 21.0))
+
+    items = streams(roster, wire, readings, adds_left=1, by_points=True, named=set(), plan=Plan(week=BRIDGED))
+
+    assert [(item.player_id, item.pickup) for item in items] == [("Hornet", "streamer")]
+    assert all(len(item.players) == 2 for item in items)
+
+
+def test_a_stream_worth_more_for_the_week_than_the_bridge_keeps_the_single_suggestions() -> None:
+    """Six nights of a Sun beat three of him before Thanksgiving: stream him for the week, add Robinson then."""
+    roster, readings, wire = _waiting(("Sun", "PHX", 21.5))
+
+    items = streams(roster, wire, readings, adds_left=2, by_points=True, named=set(), plan=Plan(week=BRIDGED))
+
+    assert [(item.player_id, item.drop, item.pickup) for item in items] == [
+        ("Sun", "Weak", "streamer"),
+        ("Robinson", "Weaker", "keeper"),
+    ]
+
+
+def test_a_third_add_streams_beside_the_planned_sequence() -> None:
+    roster, readings, wire = _waiting(("Sun", "PHX", 21.5), ("Hornet", "CHA", 21.0))
+
+    items = streams(roster, wire, readings, adds_left=3, by_points=True, named=set(), plan=Plan(week=BRIDGED))
+
+    assert [(item.player_id, item.drop, len(item.players)) for item in items] == [
+        ("Sun", "Weak", 2),
+        ("Hornet", "Weaker", 3),
+    ]
+
+
+def test_a_claim_or_a_player_ruled_out_never_bridges_the_wait() -> None:
+    """Waivers or an injury eat the few nights a bridge is there for: Robinson is added alone on Thanksgiving."""
+    roster, readings, wire = _waiting(("Hornet", "CHA", 21.0))
+    claimed = replace(wire[1], waiver_date=MON)
+    hurt = replace(wire[1], status="O")
+
+    for hornet in (claimed, hurt):
+        readings["Hornet"] = replace(readings["Hornet"], player=hornet)
+        items = streams(roster, [wire[0], hornet], readings, 2, True, set(), plan=Plan(week=BRIDGED))
+
+        assert all(not item.key.startswith("plan:") for item in items)
+        assert ("Robinson", "keeper", weekday_day_month(THANKSGIVING)) in [
+            (item.player_id, item.pickup, item.when) for item in items
+        ]
+
+
 def test_a_stream_is_urged_now_when_the_opponent_can_start_more_games() -> None:
     roster, readings = _team()
     pickup = _player("Pickup", position="SF")
