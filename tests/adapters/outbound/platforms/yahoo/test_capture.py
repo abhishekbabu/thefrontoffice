@@ -6,7 +6,7 @@ runs through the real reader and the real parser.
 """
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -251,6 +251,20 @@ def test_a_player_is_found_by_key_among_every_player_the_league_captured(tmp_pat
     [found] = yahoo.players([guard.player_key, "466.p.unknown"])
 
     assert (found.name, found.status, found.slot) == ("Their Guard", "GTD", "")
+
+
+def test_a_player_found_by_key_keeps_the_day_the_page_said_he_clears_waivers(tmp_path: Path) -> None:
+    first_page = paths.available(KEY, 50)[0].path
+    waiting = players_xml("Free Agent", "Waiver Wire", waivers={"Waiver Wire": "2026-11-25"})
+    capture = _capture(tmp_path)
+    _sweep(capture, {**YAHOO, first_page: waiting})
+    yahoo = YahooClient(LEAGUE, responses=capture)
+
+    found = {p.name: p for p in yahoo.players(["466.p.0", "466.p.1"])}
+
+    assert found["Waiver Wire"].waiver_date == date(2026, 11, 25)
+    assert found["Waiver Wire"].owner == "Waivers"
+    assert found["Free Agent"].waiver_date is None
 
 
 def test_a_name_search_matches_part_of_a_name_as_yahoo_does(tmp_path: Path) -> None:

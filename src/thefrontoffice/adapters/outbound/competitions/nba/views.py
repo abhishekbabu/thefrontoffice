@@ -32,6 +32,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     THREES,
     TURNOVERS,
     Category,
+    clears,
     fantasy_points,
     line,
     ruled_out,
@@ -170,15 +171,31 @@ def cards(
                     **({SLOT_COLUMN: player.slot} if slotted else {}),
                     **cells,
                     **({WITHOUT_COLUMN: split.cell() if split else NO_FIGURE} if splits else {}),
-                    STATUS_COLUMN: player.status,
+                    STATUS_COLUMN: status(player),
                 },
                 notes={
-                    **({STATUS_COLUMN: f"back {approximately(back)}"} if back else {}),
+                    **({STATUS_COLUMN: note} if (note := status_note(player, back)) else {}),
                     **({WITHOUT_COLUMN: split.note()} if split else {}),
                 },
             )
         )
     return ranked(rows, by_points)
+
+
+WAIVERS = "W"
+"""The status cell's word for a player on waivers, before the day he clears them."""
+
+
+def status(player: YahooPlayer) -> str:
+    """His status cell: Yahoo's code, then 'W 25 Nov' while he sits on waivers — 'O · W 25 Nov' for both."""
+    cleared = player.waiver_date
+    waiting = f"{WAIVERS} {day_month(cleared)}" if cleared else ""
+    return " · ".join(part for part in (player.status, waiting) if part)
+
+
+def status_note(player: YahooPlayer, back: date | None) -> str:
+    """The status cell in full: 'back ~3 Dec', 'Waivers · clears Wed 25 Nov', or both; empty for neither."""
+    return "; ".join(part for part in (f"back {approximately(back)}" if back else "", clears(player)) if part)
 
 
 def ranked(rows: list[PlayerCard], by_points: bool) -> list[PlayerCard]:
@@ -345,7 +362,7 @@ def detail(drawer: Drawer) -> PlayerDetail:
         position=player.position,
         team=player.team,
         image_url=player.image_url,
-        owner=player.owner,
+        owner=clears(player) or player.owner,
         headline=headline,
         headline_label=f"{unit}, season" if headline else "No games this season",
         note=status_word(player.status),

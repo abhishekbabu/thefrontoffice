@@ -599,9 +599,9 @@ class ItemMark(BaseModel):
 MoveSide = Literal["in", "out"]
 """Whether a move brings a player in or takes him out."""
 
-Held = Literal["starter", "bench", "reserve", "free agent", "market"]
-"""Where a player stands to the manager: in his lineup, on his bench, in a reserve slot, on the wire, or —
-in a game with no wire, where anybody can be bought — in the transfer market."""
+Held = Literal["starter", "bench", "reserve", "free agent", "waivers", "market"]
+"""Where a player stands to the manager: in his lineup, on his bench, in a reserve slot, free to add, on
+waivers (claimed, not added), or — in a game with no wire, where anybody can be bought — in the transfer market."""
 
 
 class MovePlayer(BaseModel):

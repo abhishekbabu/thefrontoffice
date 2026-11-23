@@ -20,6 +20,7 @@ from xml.sax.saxutils import escape
 from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.yahoo import paths
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import (
+    WAIVERS,
     find_matchup,
     leagues_in,
     parse,
@@ -330,12 +331,22 @@ class YahooCapture:
 
 
 def _players_xml(players: list[YahooPlayer]) -> str:
-    """A league's players response, as Yahoo would serve one listing `players`."""
+    """A league's players response, as Yahoo would serve one listing `players`: on waivers, until when."""
     rows = "".join(
         f"<player><player_key>{escape(p.player_key)}</player_key><name><full>{escape(p.name)}</full></name>"
         f"<display_position>{escape(p.position)}</display_position>"
         f"<editorial_team_abbr>{escape(p.team)}</editorial_team_abbr><status>{escape(p.status)}</status>"
-        f"<injury_note>{escape(p.injury_note)}</injury_note></player>"
+        f"<injury_note>{escape(p.injury_note)}</injury_note>{_ownership(p)}</player>"
         for p in players
     )
     return f"<fantasy_content><league><players>{rows}</players></league></fantasy_content>"
+
+
+def _ownership(player: YahooPlayer) -> str:
+    """His ownership as Yahoo writes it, where a page had him on waivers; nothing otherwise, as a roster carries none."""
+    if player.waiver_date is None:
+        return ""
+    return (
+        f"<ownership><ownership_type>{WAIVERS}</ownership_type>"
+        f"<waiver_date>{player.waiver_date.isoformat()}</waiver_date></ownership>"
+    )

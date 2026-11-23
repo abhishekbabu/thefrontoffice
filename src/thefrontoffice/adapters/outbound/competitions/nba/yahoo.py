@@ -38,6 +38,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     SCOUTED,
     Line,
     amount,
+    playable_from,
     position_filters,
     ruled_out,
 )
@@ -338,15 +339,18 @@ class YahooNBAProvider:
         }
 
     def _games(self, player: YahooPlayer, clubs: Mapping[str, int], back: date | None, end: date) -> int | None:
-        """The games he can play before `end`: his club's left; none while ruled out, or those from his return.
+        """The games he can play before `end`: his club's left; none while ruled out, or those from his return;
+        on waivers, those after he clears them (`rules.playable_from`).
 
-        None where the schedule would not load. Counted from his return only once
+        None where the schedule would not load. Counted from a later day only once
         the bulk read has loaded the schedule, so this read cannot fail on its own.
         """
         left = clubs.get(player.team.upper())
-        if left is None or not ruled_out(player.status):
-            return left
-        return 0 if back is None else self.games.get_remaining_games(player.team, back, end)
+        out = ruled_out(player.status)
+        if left is None or (out and back is None):
+            return None if left is None else 0
+        later = [day for day in (back if out else None, playable_from(player)) if day is not None]
+        return self.games.get_remaining_games(player.team, max(later), end) if later else left
 
     def week_of(self, league_id: str, week: int) -> Summary:
         """Any week of the season: its score as it finished or stands, and no to-do list.
@@ -1212,8 +1216,11 @@ class YahooNBAProvider:
         games = self._games(player, clubs, back, end)
         provisional = bool(self.games.unscheduled(start, end))
         club = player.team.upper()
+        # A claim's games are those after he clears waivers, as `_games` counts them.
+        claimed = playable_from(player)
+        after = claimed.isoformat() if claimed else ""
         try:
-            fixtures = [g for g in self.games.games_left(start, end) if club in (g.home, g.away)]
+            fixtures = [g for g in self.games.games_left(start, end) if club in (g.home, g.away) and g.date >= after]
         except FrontOfficeError as e:
             logger.warning(f"Showing {player.name}'s week without its games: {e}")
             fixtures = []

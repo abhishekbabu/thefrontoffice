@@ -1,6 +1,9 @@
 """Tests for the nine categories: one definition, read the same way everywhere."""
 
+from datetime import date
+
 import pytest
+from support.nba import make_player
 
 from thefrontoffice.adapters.outbound.competitions.availability import QUESTIONABLE
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
@@ -12,9 +15,11 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     TURNOVERS,
     amount,
     chance,
+    clears,
     fantasy_points,
     fits,
     line,
+    playable_from,
     printed,
     status_word,
     stranded,
@@ -138,3 +143,17 @@ def test_only_a_game_time_decision_is_a_chance_a_ruling_counts_in_his_games(stat
 )
 def test_a_status_reads_in_words_and_an_unknown_code_as_yahoo_wrote_it(status: str, expected: str) -> None:
     assert status_word(status) == expected
+
+
+def test_a_claim_plays_from_the_day_after_he_clears_waivers() -> None:
+    """Yahoo's settings do not say whether a claim processed that morning makes that night's lineup."""
+    assert playable_from(make_player("A", waiver_date=date(2026, 11, 25))) == date(2026, 11, 26)
+
+
+def test_a_player_not_on_waivers_has_no_day_to_wait_for() -> None:
+    assert playable_from(make_player("A")) is None
+    assert clears(make_player("A")) == ""
+
+
+def test_a_player_on_waivers_reads_as_when_he_clears_them() -> None:
+    assert "Wed 25 Nov" in clears(make_player("A", waiver_date=date(2026, 11, 25)))

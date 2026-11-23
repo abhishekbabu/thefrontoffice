@@ -119,6 +119,55 @@ def test_the_drawer_heads_with_his_games_left_this_week_and_carries_his_photo_an
     assert (detail.image_url, detail.owner) == ("https://cdn/ab.png", "My Team")
 
 
+CLEARS = date(2026, 2, 11)
+"""A Wednesday inside the fake's matchup week, 9-15 Feb."""
+
+
+def _clubs_play(*days: int) -> FakeNBA:
+    played = [date(2026, 2, day) for day in days]
+    slate = [ScheduledGame(week=0, date=day.isoformat(), home="LAL", away="BOS") for day in played]
+    return FakeNBA(dated={"LAL": played}, slate=slate)
+
+
+def test_the_drawer_on_a_player_on_waivers_says_when_he_clears_and_counts_only_the_games_after() -> None:
+    waiting = make_player("A B", key="ab", waiver_date=CLEARS)
+
+    detail = nba_provider(FakeYahoo(available=[waiting]), nba=_clubs_play(10, 11, 12, 14)).player("", "ab")
+
+    week = {s.label: s.value for s in detail.groups[0].stats}
+    assert "Wed 11 Feb" in detail.owner
+    assert week["G left"] == "2"
+    assert week["Games"].count("vs BOS") == 2  # the 12th and 14th
+
+
+def test_the_drawer_on_a_free_agent_counts_every_game_his_club_has_left() -> None:
+    free = make_player("A B", key="ab")
+
+    detail = nba_provider(FakeYahoo(available=[free]), nba=_clubs_play(10, 11, 12, 14)).player("", "ab")
+
+    assert "clears" not in detail.owner
+    assert {s.label: s.value for s in detail.groups[0].stats}["G left"] == "4"
+
+
+def test_a_row_on_waivers_says_when_he_clears_them_and_a_free_agents_says_nothing() -> None:
+    waiting = make_player("Waits", waiver_date=CLEARS)
+    hurt = make_player("Hurt", status="O", waiver_date=CLEARS)
+    free = make_player("Free")
+
+    rows = {
+        r.columns["Player"]: r for r in cards([waiting, hurt, free], {}, {"hurt": date(2026, 2, 20)}, by_points=True)
+    }
+
+    assert "11 Feb" in rows["Waits"].columns["Status"]
+    assert "Wed 11 Feb" in rows["Waits"].notes["Status"]
+    assert not rows["Waits"].ruled_out
+    assert rows["Hurt"].columns["Status"].startswith("O")
+    assert "11 Feb" in rows["Hurt"].columns["Status"]
+    assert "20 Feb" in rows["Hurt"].notes["Status"]
+    assert "Wed 11 Feb" in rows["Hurt"].notes["Status"]
+    assert (rows["Free"].columns["Status"], rows["Free"].notes) == ("", {})
+
+
 def test_the_drawer_names_his_status_in_words_rather_than_yahoos_code() -> None:
     """'O' alone in a header reads as the figure zero."""
     detail = nba_provider(FakeYahoo(roster=[make_player("A B", key="ab", status="O")])).player("", "ab")

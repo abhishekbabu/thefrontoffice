@@ -129,6 +129,19 @@ def test_a_player_ruled_out_plays_only_from_the_day_he_is_back() -> None:
     assert nights(hurt, _games(1, 3, 5), None) == []
 
 
+def test_a_player_on_waivers_plays_only_the_nights_after_he_clears_them() -> None:
+    waiting = make_player("A", waiver_date=DAY[2])
+
+    assert nights(waiting, _games(1, 3, 4, 5), None) == [DAY[3], DAY[4]]
+
+
+def test_a_player_on_waivers_and_ruled_out_plays_from_whichever_comes_later() -> None:
+    both = make_player("A", status="O", waiver_date=DAY[0])
+
+    assert nights(both, _games(1, 2, 3, 5), DAY[2]) == [DAY[2], DAY[4]]
+    assert nights(both, _games(1, 2, 3, 5), None) == []
+
+
 def test_each_night_starts_the_best_who_play_up_to_the_slots() -> None:
     days = {"best": frozenset(DAY[:2]), "next": frozenset(DAY[:2]), "third": frozenset(DAY[:3])}
 

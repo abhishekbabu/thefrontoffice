@@ -93,11 +93,21 @@ class FakeFrontend:
 # ── Yahoo's XML ─────────────────────────────────────────────────────────
 
 
-def players_xml(*names: str, first: int = 0) -> str:
-    """A league's players response, as Yahoo serves it; keys count up from `first`."""
+def players_xml(*names: str, first: int = 0, waivers: Mapping[str, str] | None = None) -> str:
+    """A league's players response, as Yahoo serves it; keys count up from `first`.
+
+    `waivers` names who sits on them, and the ISO day each clears them, as a page asked with `out=ownership` says.
+    """
+    clearing = waivers or {}
     rows = "".join(
         f"<player><player_key>466.p.{i}</player_key><name><full>{name}</full></name><display_position>PF</display_position>"
-        f"<editorial_team_abbr>LAL</editorial_team_abbr></player>"
+        f"<editorial_team_abbr>LAL</editorial_team_abbr>"
+        + (
+            f"<ownership><waiver_date>{clearing[name]}</waiver_date><ownership_type>waivers</ownership_type></ownership>"
+            if name in clearing
+            else ""
+        )
+        + "</player>"
         for i, name in enumerate(names, start=first)
     )
     return (

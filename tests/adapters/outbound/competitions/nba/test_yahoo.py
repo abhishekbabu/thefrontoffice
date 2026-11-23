@@ -55,7 +55,7 @@ from thefrontoffice.domain.errors import (
     TeamNotFoundError,
     UnsupportedError,
 )
-from thefrontoffice.domain.models import PlayerQuery, ScoutReport, Spot, Stat, TradeProposal
+from thefrontoffice.domain.models import Action, PlayerQuery, ScoutReport, Spot, Stat, TradeProposal, WeekAhead
 from thefrontoffice.domain.ports import ForecastProvider, OutlookProvider, WireProvider
 
 
@@ -1201,6 +1201,27 @@ def test_a_bench_player_playing_today_starts_over_a_starter_who_rests_and_a_free
     assert stream.drop == "spare"
 
 
+def _claimable(cleared: date | None) -> list[Action]:
+    """The week's to-do list with Streamer's club playing 11-14 Feb, and Streamer on waivers until `cleared`."""
+    streamer = replace(STREAMER, waiver_date=cleared)
+    yahoo = _averaged(FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[streamer], weights=WEIGHTS))
+    nyk = [date(2026, 2, day) for day in (11, 12, 13, 14)]
+    nba = FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY, dated={"NYK": nyk})
+    return nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE).summary("").actions or []
+
+
+def test_a_player_on_waivers_streams_in_as_a_claim_weighed_on_the_games_after_he_clears() -> None:
+    [stream] = [a for a in _claimable(date(2026, 2, 12)) if a.kind == "waiver"]
+    [free] = [a for a in _claimable(None) if a.kind == "waiver"]
+
+    assert stream.player_id == free.player_id == "streamer"
+    assert [p.held for p in stream.players] == ["waivers", "bench"]
+    assert "Claim Streamer" in stream.title
+    assert "2 games" in stream.title  # the 13th and 14th
+    games = [[f.value for f in a.players[0].figures if f.label == "G left"] for a in (stream, free)]
+    assert games == [["2"], ["4"]]
+
+
 def test_the_week_reads_streams_from_the_top_of_the_wire_leaving_the_deep_list_to_the_free_agents_page() -> None:
     """The summary is the page opened most: three pages of Yahoo's wire, not sixteen."""
     yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
@@ -1450,6 +1471,20 @@ def test_basketball_plans_its_weeks_ahead_in_games_and_streams_into_a_heavy_one(
     assert "Streamer" in week.fix
     assert "drop Spare" in week.fix
     assert week.gain == 2
+
+
+def test_a_player_on_waivers_weeks_ahead_counts_only_the_nights_after_he_clears() -> None:
+    def week(cleared: date) -> WeekAhead:
+        streamer = replace(STREAMER, waiver_date=cleared)
+        yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[streamer], weights=WEIGHTS)
+        [found] = _ahead(yahoo).weeks_ahead("466.l.1").weeks
+        return found
+
+    claimed = week(date(2026, 12, 8))  # the 9th, 11th and 13th: one more than Spare
+    assert "Claim Streamer" in claimed.fix
+    assert "clears 8 Dec" in claimed.fix
+    assert claimed.gain == 1
+    assert week(date(2026, 12, 10)).fix == ""  # the 11th and 13th: no more than Spare
 
 
 def test_another_managers_weeks_ahead_read_his_roster_and_an_unknown_team_is_refused() -> None:

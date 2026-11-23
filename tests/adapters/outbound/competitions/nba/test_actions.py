@@ -8,6 +8,7 @@ from support.nba import make_player
 from thefrontoffice.adapters.outbound.competitions.nba.actions import (
     PROVISIONAL,
     STREAMS,
+    acquire,
     build,
     droppable,
     fit,
@@ -183,6 +184,41 @@ def test_a_free_agent_with_more_this_week_streams_in_for_the_weakest_drop() -> N
 
     assert (item.kind, item.player_id, item.drop) == ("waiver", "Pickup", "Weaker")
     assert [(p.side, p.held) for p in item.players] == [("in", "free agent"), ("out", "bench")]
+    assert "Claim" not in item.title
+    assert "waivers" not in item.reason
+
+
+def test_a_player_on_waivers_streams_in_as_a_claim_on_the_games_after_he_clears_them() -> None:
+    """His reading already counts only those games; the item says so, and when he clears."""
+    roster, readings = _team()
+    pickup = replace(_player("Pickup", position="SF"), waiver_date=date(2026, 11, 25))
+    readings |= _readings((pickup, 20.0, 3))
+
+    [item] = streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set())
+
+    assert (item.player_id, item.drop) == ("Pickup", "Weaker")
+    assert [(p.side, p.held) for p in item.players] == [("in", "waivers"), ("out", "bench")]
+    assert item.title.startswith("Claim Pickup")
+    assert "25 Nov" in item.title
+    assert "3 games" in item.title
+    assert "Wed 25 Nov" in item.reason
+    assert _figures(item.players, "G left") == ["3", "2"]
+
+
+def test_a_claim_is_weighed_on_the_games_after_he_clears_so_too_few_stream_nothing() -> None:
+    roster, readings = _team()
+    pickup = replace(_player("Pickup", position="SF"), waiver_date=date(2026, 11, 25))
+    readings |= _readings((pickup, 20.0, 1))  # four games for his club, one after he clears
+
+    assert streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set()) == []
+
+
+def test_a_pickup_is_named_by_how_he_is_had_with_what_the_caller_gives() -> None:
+    waiting = replace(_player("Lopez"), waiver_date=date(2026, 11, 25))
+
+    assert acquire(_player("Dunn")) == "Pick up Dunn"
+    assert acquire(_player("Dunn"), 4, "PG", "LAC") == "Pick up Dunn (PG, LAC, 4 games)"
+    assert acquire(waiting, 2, "C", "LAC") == "Claim Lopez (C, LAC, clears 25 Nov, 2 games)"
 
 
 def test_a_category_drop_says_what_drags_him() -> None:
@@ -286,6 +322,7 @@ def test_where_a_player_stands_follows_his_slot() -> None:
         "reserve",
         "free agent",
     ]
+    assert held(replace(_player("A"), waiver_date=date(2026, 11, 25))) == "waivers"
 
 
 def test_a_stream_weighed_on_a_schedule_not_final_says_it_is_provisional() -> None:

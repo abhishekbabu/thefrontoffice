@@ -25,7 +25,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
-from thefrontoffice.adapters.outbound.competitions.nba.actions import droppable, streams_over
+from thefrontoffice.adapters.outbound.competitions.nba.actions import acquire, droppable, streams_over
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nba.strength import club_nights, nights
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, game_value
@@ -103,7 +103,7 @@ def build(
             provisional=provisional,
         )
         if adds > 0 and not provisional and (row.short or row.light or row.heavy or row.missing):
-            row = _streamed(row, roster, wire, readings, days[w.week], used)
+            row = _streamed(row, roster, wire, readings, days[w.week], used, w.start)
         weeks.append(row)
     return Outlook(usual=usual, measure="games", weeks=weeks)
 
@@ -166,21 +166,30 @@ def _streamed(
     readings: Mapping[str, Reading],
     days: Mapping[str, list[date]],
     used: set[str],
+    start: date,
 ) -> WeekAhead:
     """The week with the free agent worth most in it who streams over a drop, where one does.
 
     The drop is the weakest player the to-do list would offer (`actions.droppable`),
     each weighed on this week's games; the pickup has to clear the same margin
     the to-do list's streams do, and play more games than the player he replaces.
-    Neither is one already named for an earlier week.
+    Neither is one already named for an earlier week. A player on waivers
+    counts only the days after he clears them (`rules.playable_from`), and is
+    named as a claim where he still sits on them when the week starts; by then
+    he is free to add otherwise.
     """
     week = {
         key: replace(r, games=len(days.get(key, []))) for key, r in readings.items() if key in days and key not in used
     }
     owned = {p.player_key for p in roster}
     drops = droppable([p for p in roster if p.player_key not in used], week, set())
+    # Each on the wire as it lists him, which is what says whether he sits on waivers.
     pickups = sorted(
-        (r for p in wire if p.player_key not in owned and not ruled_out(p.status) and (r := week.get(p.player_key))),
+        (
+            replace(r, player=p)
+            for p in wire
+            if p.player_key not in owned and not ruled_out(p.status) and (r := week.get(p.player_key))
+        ),
         key=lambda r: -(r.worth or 0.0),
     )
     for pickup in pickups:
@@ -191,12 +200,18 @@ def _streamed(
         p, d = pickup.player, drop.player
         return row.model_copy(
             update={
-                "fix": f"Pick up {p.name} ({p.position}, {p.team}, {pickup.games} games), "
+                "fix": f"{acquire(_as_of(p, start), pickup.games or 0, p.position, p.team)}, "
                 f"drop {d.name} ({drop.games} games)",
                 "gain": float((pickup.games or 0) - (drop.games or 0)),
             }
         )
     return row
+
+
+def _as_of(player: YahooPlayer, start: date) -> YahooPlayer:
+    """Him as he will stand on `start`: off waivers where he clears them before it."""
+    cleared = player.waiver_date
+    return replace(player, waiver_date=None) if cleared is not None and cleared < start else player
 
 
 def _more_games(pickup: Reading, drop: Reading) -> bool:

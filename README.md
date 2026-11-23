@@ -202,6 +202,13 @@ a game over their last 15 Sleeper box scores. The add budget is the league's own
 NBA's free agents are Yahoo's top 300 by season rank and top 100 by last week's,
 taken in turn so the week's risers sit beside the season's best (16 requests
 of 25 players: each ranking's first page cached for 30 minutes, the rest for 6 hours).
+Each wire page carries every player's ownership (`out=ownership`, no extra request), so
+a player on waivers reads `W 25 Nov` in Status ("Waivers · clears Wed 25 Nov" on hover
+and in the drawer's owner). Everything weighing his week counts only his club's games
+after the day he clears — Yahoo's settings do not say whether a claim processed that
+morning plays that night, so it is read the safe way — and a pickup of him is a claim:
+"Claim Brook Lopez (clears 25 Nov, 2 games), drop …" on the to-do list and in the
+weeks ahead, until a week he will have cleared by.
 NBA free agents get the same "Without" column, and every NBA drawer a Teammates
 group: a club regular (28+ minutes a game over his last 15, or its top usage
 player) who is out or day-to-day (Yahoo's status where his Yahoo row is on the
