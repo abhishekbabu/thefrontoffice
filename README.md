@@ -172,8 +172,8 @@ the league's lineup has them, each keeping anybody eligible there. The drawer ha
 the photo and whose roster he is on, then five tabs like NFL's. **This week**: games
 left and against whom (`Thu 20 vs LAL · Sat 22 @ BOS`), what his next opponent gives
 up to his position (points a game, or fantasy points in a points league, ranked
-from Sleeper's box scores), `Value/g` and the week's worth, minutes and usage
-(FGA + 0.44×FTA + TO) over his last five beside the whole window, Sleeper's
+from Sleeper's box scores), `Cat value/g` (`Pts value/g` in a points league) and the week's worth,
+minutes and usage (FGA + 0.44×FTA + TO) a game over his last five beside the last six weeks, Sleeper's
 projected line, his last five games (value or FPTS, minutes, points), Yahoo's
 averages over the season and the last 30 days (the latter only once it differs),
 teammates out, injury, and his profile (experience, age, number, college).
@@ -183,7 +183,7 @@ with minutes, the counts, FG/FT made over tried and each game's value. **Seasons
 Sleeper's season totals for this season and the two before it a game at a time
 (three requests shared by every player, cached 12 hours), every league move he was
 part of (one Yahoo request for the season's transactions, cached an hour, also in
-the browser sync), and ESPN's news for his club naming him. To-do items compare `Value/g` (explained on hover), Yahoo's FPTS in a
+the browser sync), and ESPN's news for his club naming him. To-do items compare `Cat value/g` or `Pts value/g` (explained on hover), Yahoo's FPTS in a
 points league, and in a category league the two categories dragging a player's
 value most (`Weak in: FG% .380 · 2.9 TO`), which a drop's reason names too.
 That costs one request per roster page (the roster's averages) plus, in a category

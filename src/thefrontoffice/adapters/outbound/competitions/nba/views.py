@@ -18,7 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.careers import experience
 from thefrontoffice.adapters.outbound.competitions.dates import WEEKDAYS, day_month, parse_day
 from thefrontoffice.adapters.outbound.competitions.injuries import BODY_PART, approximately
 from thefrontoffice.adapters.outbound.competitions.matchups import Matchup
-from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats
+from thefrontoffice.adapters.outbound.competitions.nba.form import FORM_WEEKS, PlayerStats
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     ASSISTS,
@@ -71,11 +71,12 @@ VALUE = "Value"
 """A category league's column of what a game of him is worth across its categories (`worth.category_value`)."""
 
 VALUE_HINT = (
-    "What a game of him is worth across the league's categories: each one's figure against its spread "
-    "among both rosters and the top of the wire, FG% and FT% weighted by attempts, turnovers counted against. "
-    "Recent form beside this week's projection."
+    "What one game of his is worth across your categories, summed; higher is better, and it only means "
+    "anything against another player's. Each category counts by how scarce it is among both rosters and the "
+    "top of the wire; FG% and FT% by how far his shooting moves a team's, turnovers against him. From recent "
+    "form beside this week's projection."
 )
-POINTS_HINT = "Fantasy points a game this week is weighed on: recent form beside this week's projection."
+POINTS_HINT = "Fantasy points one game of his is worth this week: recent form beside this week's projection."
 
 SEASON = "Season"
 LAST_MONTH = "Last 30 days"
@@ -238,7 +239,14 @@ RECENT = 5
 NEWS_IN_DRAWER = 10
 """Headlines the news tab lists: the window's worth, which is rarely more."""
 
-USAGE_HINT = "Shots, trips to the line and turnovers a game — FGA + 0.44×FTA + TO: the plays that end with him."
+WINDOW = f"last {FORM_WEEKS} wks"
+"""Every game of his in the form window, named by its weeks."""
+
+USAGE_HINT = (
+    f"Plays that end with him a game — FGA + 0.44×FTA + TO — over his last {RECENT} games, then every game "
+    f"of the last {FORM_WEEKS} weeks."
+)
+MINUTES_HINT = f"Minutes a game over his last {RECENT} games, then every game of the last {FORM_WEEKS} weeks."
 
 
 @dataclass(frozen=True)
@@ -371,7 +379,7 @@ def _week(drawer: Drawer) -> list[Stat]:
     if reading is not None and reading.per_game is not None:
         stats.append(
             Stat(
-                label=PER_GAME,
+                label=per_game(drawer.by_points),
                 value=f"{reading.per_game:.1f}",
                 better="higher",
                 hint=POINTS_HINT if drawer.by_points else VALUE_HINT,
@@ -400,20 +408,25 @@ def _next(game: ScheduledGame, club: str, matchup: Matchup) -> Stat:
 
 
 def _trend(games: Sequence[NBAGameLog]) -> list[Stat]:
-    """His minutes and usage a game over his last five, beside every game of the window: '32.4 L5 · 28.1 L14'."""
+    """His minutes and usage a game over his last five, beside every game of the window:
+    '32.4 last 5 · 28.1 last 6 wks'.
+
+    The window is named by its weeks rather than by his games in it, which
+    differ player to player and read as an arbitrary number.
+    """
     if not games:
         return []
     last = games[:RECENT]
 
     def across(measure: Callable[[NBAGameLog], float]) -> str:
-        recent = f"{statistics.fmean(measure(g) for g in last):.1f} L{len(last)}"
+        recent = f"{statistics.fmean(measure(g) for g in last):.1f} last {len(last)}"
         if len(games) <= len(last):
             return recent
-        return f"{recent} · {statistics.fmean(measure(g) for g in games):.1f} L{len(games)}"
+        return f"{recent} · {statistics.fmean(measure(g) for g in games):.1f} {WINDOW}"
 
     return [
-        Stat(label="Minutes", value=across(lambda g: g.minutes)),
-        Stat(label="Usage", value=across(usage), hint=USAGE_HINT),
+        Stat(label="Minutes/g", value=across(lambda g: g.minutes), hint=MINUTES_HINT),
+        Stat(label="Usage/g", value=across(usage), hint=USAGE_HINT),
     ]
 
 
@@ -641,8 +654,17 @@ BACK = "Back"
 WEEK = "Week"
 """What he adds this week: a game's value × minutes nudge × games left (`Reading.worth`)."""
 
-PER_GAME = "Value/g"
-"""What a game of him is worth, in the league's scoring: the figure every weekly call is weighed on."""
+CATEGORY_VALUE = "Cat value/g"
+"""What a game of him is worth across a category league's categories: the figure every weekly call is weighed on."""
+
+POINTS_VALUE = "Pts value/g"
+"""The same in a points league: fantasy points a game."""
+
+
+def per_game(by_points: bool) -> str:
+    """What a game of him is worth is called by the scoring it is in, so a category league's reads as no points."""
+    return POINTS_VALUE if by_points else CATEGORY_VALUE
+
 
 WEAK = "Weak in"
 """The categories that drag a player's value, in a category league."""
@@ -684,7 +706,7 @@ def figures(reading: Reading, by_points: bool) -> list[Stat]:
     return [
         Stat(label=GAMES_LEFT, value=games_left(reading) or NO_FIGURE),
         Stat(
-            label=PER_GAME,
+            label=per_game(by_points),
             value=f"{reading.per_game:.1f}" if reading.per_game is not None else NO_FIGURE,
             hint=POINTS_HINT if by_points else VALUE_HINT,
         ),

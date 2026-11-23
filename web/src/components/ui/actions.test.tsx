@@ -161,14 +161,14 @@ describe("players compared", () => {
     const valued = (name: string): MovePlayer => ({
       ...player("in", name, "free agent", ["", "", ""]),
       figures: [
-        { label: "Value/g", value: "1.2", tone: "neutral", url: "", better: null, hint: "A game's worth across the categories." },
+        { label: "Cat value/g", value: "1.2", tone: "neutral", url: "", better: null, hint: "A game's worth across the categories." },
         { label: "Weak in", value: "FG% .380", tone: "neutral", url: "", better: null, hint: "" },
       ],
     });
     const { container } = await render(<Compared players={[valued("A"), valued("B")]} />);
 
     const explained = [...container.querySelectorAll("[aria-label]")].map((el) => el.getAttribute("aria-label"));
-    expect(explained).toEqual(["Value/g: A game's worth across the categories."]);
+    expect(explained).toEqual(["Cat value/g: A game's worth across the categories."]);
     expect(container.textContent).toContain("Weak inFG% .380FG% .380");
   });
 });
