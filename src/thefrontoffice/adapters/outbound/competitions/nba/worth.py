@@ -21,6 +21,7 @@ from typing import NamedTuple
 from thefrontoffice.adapters.outbound.competitions import worth as shared
 from thefrontoffice.adapters.outbound.competitions.availability import expected_games
 from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES, PlayerStats, Role
+from thefrontoffice.adapters.outbound.competitions.nba.model import LeagueCategory, Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     CATEGORIES,
@@ -30,7 +31,6 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     line,
     ruled_out,
 )
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
 
 
 class MinutesRule(NamedTuple):
@@ -88,7 +88,7 @@ BY_STAT = {c.yahoo_stat: c for c in CATEGORIES}
 class Scale:
     """One category's spread across a pool, which a line's figure in it is read against."""
 
-    scored: StatCategory
+    scored: LeagueCategory
     """The category as the league names it: 'ST', where this app says 'STL'."""
 
     sign: float
@@ -126,7 +126,7 @@ class Scale:
         return None if figure is None else self.sign * (figure - self.mean) / self.spread
 
 
-def scales(scored: Sequence[StatCategory], pool: Iterable[Line]) -> dict[str, Scale]:
+def scales(scored: Sequence[LeagueCategory], pool: Iterable[Line]) -> dict[str, Scale]:
     """Each category the league scores and this app has a figure for, by label, scaled across `pool`.
 
     A percentage's average is the pool's makes over its attempts — every
@@ -157,7 +157,7 @@ def scales(scored: Sequence[StatCategory], pool: Iterable[Line]) -> dict[str, Sc
     return found
 
 
-def category_value(scored: Sequence[StatCategory], pool: Iterable[Line]) -> Valuer:
+def category_value(scored: Sequence[LeagueCategory], pool: Iterable[Line]) -> Valuer:
     """A category league's: his contribution to each category it scores, in that category's spread across `pool`.
 
     A counting category is his figure over the pool's standard deviation, so a
@@ -187,7 +187,7 @@ WEAKEST = 2
 """The weak categories a player's note names: the two that drag his value most."""
 
 
-def weakest(figures: Line | None, found: Mapping[str, Scale]) -> list[StatCategory]:
+def weakest(figures: Line | None, found: Mapping[str, Scale]) -> list[LeagueCategory]:
     """The categories he is weakest in against the pool, worst first, as the league names them: at most `WEAKEST`.
 
     Read against the pool's average rather than from nought, so a guard's few
@@ -260,7 +260,7 @@ def usage(stats: PlayerStats | None, hurt: bool = False) -> float:
 class Reading:
     """One player's week, as every decision about him weighs it."""
 
-    player: YahooPlayer
+    player: Player
     line: Line | None
     """What he gives a game (`per_game`); None with no form and no projection."""
 
@@ -281,11 +281,11 @@ class Reading:
     back: date | None = None
     """The day ESPN expects him back, while it reports him hurt; None otherwise."""
 
-    weak: tuple[StatCategory, ...] = ()
+    weak: tuple[LeagueCategory, ...] = ()
     """The categories that drag his value, worst first, as the league names them (`weakest`); none in a points
     league."""
 
-    average: YahooLine | None = None
+    average: PrintedLine | None = None
     """Yahoo's own average over his last month, the figures every view shows of him; None where not read.
     Shown, never weighed: the week is weighed on `line`, which Sleeper's box scores build game by game."""
 
@@ -317,7 +317,7 @@ def game_value(reading: Reading) -> float | None:
 
 
 def read(
-    player: YahooPlayer,
+    player: Player,
     stats: PlayerStats | None,
     projected: ProjectedTotals | None,
     value: Valuer,

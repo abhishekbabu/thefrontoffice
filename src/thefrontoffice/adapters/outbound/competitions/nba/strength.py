@@ -27,6 +27,7 @@ from statistics import NormalDist
 
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
 from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES
+from thefrontoffice.adapters.outbound.competitions.nba.model import LeagueCategory, Player, WeekSide
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     CATEGORIES,
     Category,
@@ -40,7 +41,6 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, game_value
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, StatCategory, YahooPlayer
 from thefrontoffice.domain.errors import UnsupportedError
 
 POINTS = "points"
@@ -184,7 +184,7 @@ class Scored:
     percentage: bool = False
 
 
-def scored(categories: Sequence[StatCategory]) -> tuple[Scored, ...]:
+def scored(categories: Sequence[LeagueCategory]) -> tuple[Scored, ...]:
     """The league's categories as this compares them.
 
     Raises:
@@ -268,7 +268,7 @@ def club_nights(club: str, games: Iterable[ScheduledGame]) -> list[date]:
     return [day for g in games if club in (g.home.upper(), g.away.upper()) and (day := parse_day(g.date)) is not None]
 
 
-def nights(player: YahooPlayer, games: Iterable[ScheduledGame], back: date | None) -> list[date]:
+def nights(player: Player, games: Iterable[ScheduledGame], back: date | None) -> list[date]:
     """The nights he can play among `games`: his club's; while ruled out, only those from his return, if any;
     on waivers, only those after he clears them (`rules.playable_from`)."""
     days = club_nights(player.team, games)
@@ -472,7 +472,7 @@ def _split(chances: Sequence[float]) -> tuple[float, float]:
     return win, loss
 
 
-def banked(side: MatchupSide, categories: Sequence[Scored], *, points: bool) -> Totals:
+def banked(side: WeekSide, categories: Sequence[Scored], *, points: bool) -> Totals:
     """What a side has already scored this week, from the figures Yahoo prints: its fantasy points, or each
     category's total — a percentage's makes and attempts, from the '109/218' beside it.
 

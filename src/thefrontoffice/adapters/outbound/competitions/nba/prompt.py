@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.dates import span
+from thefrontoffice.adapters.outbound.competitions.nba.model import WeekMatchup
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, COUNTED, fantasy_points
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.tasks import task_lines
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup
 from thefrontoffice.domain.models import Action, CompetitionContext, task_id
 
 OPPONENT_KEY_PLAYERS = 12
@@ -244,7 +244,7 @@ def scored(line: Mapping[str, float], weights: Mapping[str, float] | None) -> st
     return categories(line) + (f" = {points:.1f} fpts" if points is not None else "")
 
 
-def matchup(week: Matchup | None, weights: Mapping[str, float] | None = None) -> str:
+def matchup(week: WeekMatchup | None, weights: Mapping[str, float] | None = None) -> str:
     """The head-to-head as the model reads it: the score, each stat side by side, their threats.
 
     In a points league the score is fantasy points, beside Yahoo's projected
@@ -301,7 +301,7 @@ def recommendation(adds_left: int) -> str:
 
 
 def schedule(
-    week: Matchup | None, remaining_games: Mapping[str, int], projected: bool, unscheduled: Sequence[date] = ()
+    week: WeekMatchup | None, remaining_games: Mapping[str, int], projected: bool, unscheduled: Sequence[date] = ()
 ) -> str:
     """Whether projections stand behind the lines, then each club's games left in the period.
 
@@ -337,7 +337,7 @@ def schedule(
 def scout(
     *,
     roster: str,
-    week: Matchup | None,
+    week: WeekMatchup | None,
     free_agents: str,
     schedule_context: str,
     trans_context: str,
@@ -380,7 +380,7 @@ def week_line(reading: Reading) -> str:
 
 
 def trade(
-    *, giving: str, receiving: str, week: Matchup | None, roster: str, weights: Mapping[str, float] | None = None
+    *, giving: str, receiving: str, week: WeekMatchup | None, roster: str, weights: Mapping[str, float] | None = None
 ) -> str:
     """The trade prompt, in the league's currency: `weights` for a points league, None for categories."""
     league = scoring(weights)
@@ -396,7 +396,7 @@ def trade(
 
 def wire(
     *,
-    week: Matchup | None,
+    week: WeekMatchup | None,
     weights: Mapping[str, float] | None,
     roster: Mapping[str, str],
     candidates: Mapping[str, str],

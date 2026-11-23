@@ -22,11 +22,11 @@ from datetime import date
 from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba import lineup, views
+from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, fits, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import RETURN_SOON, Returning
 from thefrontoffice.adapters.outbound.competitions.nba.week import BENCH, Today, off_il
 from thefrontoffice.adapters.outbound.competitions.nba.worth import ROLE, Reading, game_value
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 from thefrontoffice.domain.models import Action, Held, Pickup
 
 MARGIN = 0.2
@@ -54,8 +54,8 @@ it; what a player gives a game says whether he is one to keep at all.
 
 
 def build(
-    roster: Sequence[YahooPlayer],
-    free_agents: Sequence[YahooPlayer],
+    roster: Sequence[Player],
+    free_agents: Sequence[Player],
     readings: Mapping[str, Reading],
     adds_left: int,
     by_points: bool,
@@ -79,7 +79,7 @@ def beats(theirs: float, mine: float) -> bool:
     return theirs > mine + abs(mine) * MARGIN and theirs > mine
 
 
-def held(player: YahooPlayer) -> Held:
+def held(player: Player) -> Held:
     """Where he stands to you: in the lineup, on the bench, in an injured slot, on waivers, or free to add."""
     if not player.slot:
         return "waivers" if player.waiver_date else "free agent"
@@ -93,7 +93,7 @@ def _unit(by_points: bool) -> str:
 
 
 def starts(
-    roster: Sequence[YahooPlayer], readings: Mapping[str, Reading], by_points: bool, today: Today | None
+    roster: Sequence[Player], readings: Mapping[str, Reading], by_points: bool, today: Today | None
 ) -> list[Action]:
     """Bench players to start today over a starter whose slot they can fill, the biggest gain a game first.
 
@@ -162,7 +162,7 @@ def starts(
     return items
 
 
-def _to_come(today: Today, player: YahooPlayer) -> bool:
+def _to_come(today: Today, player: Player) -> bool:
     """Whether his club plays today and has yet to tip off: the lineup can still be changed for it."""
     game = today.game(player.team)
     return game is not None and game.status not in STARTED
@@ -172,7 +172,7 @@ STARTED = frozenset({"in_game", "complete"})
 """Sleeper's statuses for a game that has tipped off: its players are locked in or out."""
 
 
-def _matchup(today: Today, player: YahooPlayer) -> str:
+def _matchup(today: Today, player: Player) -> str:
     """'vs TOR' or '@ BOS': his game today."""
     game = today.game(player.team)
     found = game.opponent_of(player.team.upper()) if game else None
@@ -182,7 +182,7 @@ def _matchup(today: Today, player: YahooPlayer) -> str:
     return f"vs {opponent}" if home else f"@ {opponent}"
 
 
-def droppable(roster: Sequence[YahooPlayer], readings: Mapping[str, Reading], keep: set[str]) -> list[Reading]:
+def droppable(roster: Sequence[Player], readings: Mapping[str, Reading], keep: set[str]) -> list[Reading]:
     """Who you could let go, least worth this week first.
 
     Never a player in an injured slot — dropping him frees no active spot —
@@ -257,7 +257,7 @@ def settled(reading: Reading) -> bool:
 class Weigh:
     """A roster's week, read once for every pickup and drop weighed against it."""
 
-    def __init__(self, roster: Sequence[YahooPlayer], readings: Mapping[str, Reading], plan: Plan) -> None:
+    def __init__(self, roster: Sequence[Player], readings: Mapping[str, Reading], plan: Plan) -> None:
         self.roster = roster
         self.plan = plan
         self.backs = {key: r.back for key, r in readings.items()}
@@ -327,8 +327,8 @@ class Weigh:
 
 
 def streams(
-    roster: Sequence[YahooPlayer],
-    free_agents: Sequence[YahooPlayer],
+    roster: Sequence[Player],
+    free_agents: Sequence[Player],
     readings: Mapping[str, Reading],
     adds_left: int,
     by_points: bool,
@@ -441,11 +441,14 @@ def _behind(plan: Plan) -> str:
     return f" Behind on games: {mine} to {theirs} left."
 
 
-def acquire(player: YahooPlayer, games: int | None = None, *about: str) -> str:
+def acquire(player: Player, games: int | None = None, *about: str, as_of: date | None = None) -> str:
     """How a to-do item has him: 'Pick up Jalen Duren (C, DET, 3 games)', or for a player on waivers a claim, with
     the day he clears them: 'Claim Brook Lopez (C, MIL, clears 25 Nov, 2 games)'. `about` leads the brackets, and
-    `games` closes them where given; no brackets for nothing in them."""
+    `games` closes them where given; no brackets for nothing in them. `as_of` reads him as he will stand that day:
+    a pickup, not a claim, where he clears waivers before it."""
     cleared = player.waiver_date
+    if cleared is not None and as_of is not None and cleared < as_of:
+        cleared = None
     parts = [
         *about,
         *([f"clears {day_month(cleared)}"] if cleared else []),
@@ -455,7 +458,7 @@ def acquire(player: YahooPlayer, games: int | None = None, *about: str) -> str:
     return f"{named} ({', '.join(parts)})" if parts else named
 
 
-def fit(pickup: Reading, roster: Sequence[YahooPlayer], readings: Mapping[str, Reading], by_points: bool) -> str:
+def fit(pickup: Reading, roster: Sequence[Player], readings: Mapping[str, Reading], by_points: bool) -> str:
     """'streams over Kel'el Ware: +12.3 value this week (4G vs 2G)'; empty where he clears no drop.
 
     The weakest player the to-do list would let go (`droppable`) whom he beats

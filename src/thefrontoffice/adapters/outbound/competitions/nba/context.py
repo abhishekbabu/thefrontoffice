@@ -16,13 +16,13 @@ from datetime import date
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba.form import WINDOWS, FormSource, PlayerStats, Window
+from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, clears
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Teammate
 from thefrontoffice.adapters.outbound.competitions.nba.views import points
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 
 WINDOW_TAGS: tuple[tuple[Window, str], ...] = (("last_5", "L5"), ("last_10", "L10"), ("last_15", "L15"))
 
@@ -30,7 +30,7 @@ POINTS_POOL = 30
 """Free agents a points league's scout reads, best fantasy points per game first."""
 
 
-def rank_free_agents(leaders: Mapping[str, list[YahooPlayer]]) -> tuple[list[YahooPlayer], dict[str, str]]:
+def rank_free_agents(leaders: Mapping[str, Sequence[Player]]) -> tuple[list[Player], dict[str, str]]:
     """Top available players per category, deduplicated, most versatile first.
 
     `leaders` is Yahoo's leaders on the wire, by category label. A player
@@ -39,7 +39,7 @@ def rank_free_agents(leaders: Mapping[str, list[YahooPlayer]]) -> tuple[list[Yah
     it asks for the three best adds.
     """
     categories_by_key: dict[str, list[str]] = {}
-    player_by_key: dict[str, YahooPlayer] = {}
+    player_by_key: dict[str, Player] = {}
     for label, players in leaders.items():
         for p in players:
             key = p.player_key
@@ -55,8 +55,8 @@ def rank_free_agents(leaders: Mapping[str, list[YahooPlayer]]) -> tuple[list[Yah
 
 
 def rank_by_points(
-    available: list[YahooPlayer], stats_for: Callable[[str], PlayerStats | None], weights: Mapping[str, float]
-) -> tuple[list[YahooPlayer], dict[str, str]]:
+    available: Sequence[Player], stats_for: Callable[[str], PlayerStats | None], weights: Mapping[str, float]
+) -> tuple[list[Player], dict[str, str]]:
     """The available players a points league's scout reads: best fantasy points per game first.
 
     `available` is Yahoo's own ranking of the wire, reordered by what the
@@ -96,7 +96,7 @@ class PlayerContextBuilder:
 
     def build_context_for_players(
         self,
-        players: list[YahooPlayer],
+        players: Sequence[Player],
         matchup_start: date | None = None,
         matchup_end: date | None = None,
         annotations: dict[str, str] | None = None,
@@ -119,14 +119,14 @@ class PlayerContextBuilder:
 
     def build_player_lines(
         self,
-        players: list[YahooPlayer],
+        players: Sequence[Player],
         matchup_start: date | None = None,
         matchup_end: date | None = None,
         annotations: dict[str, str] | None = None,
         remaining_games: dict[str, int] | None = None,
         projections: ProjectionIndex | None = None,
         returns: Mapping[str, date] | None = None,
-        splits: Callable[[YahooPlayer], Sequence[Teammate]] | None = None,
+        splits: Callable[[Player], Sequence[Teammate]] | None = None,
         readings: Mapping[str, Reading] | None = None,
     ) -> dict[str, str]:
         """Same as build_context_for_players, keyed by player name.

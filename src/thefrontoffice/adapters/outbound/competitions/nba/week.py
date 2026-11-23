@@ -24,12 +24,12 @@ from thefrontoffice.adapters.outbound.competitions.dates import parse_day, span,
 from thefrontoffice.adapters.outbound.competitions.nba import views
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nba.league import ended
+from thefrontoffice.adapters.outbound.competitions.nba.model import HeadToHead, LeagueCategory, Player, WeekSide
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, PACIFIC, ruled_out, stranded
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNBASource
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, Pairing, StatCategory, YahooPlayer
 from thefrontoffice.domain.models import (
     Action,
     CategoryLine,
@@ -50,7 +50,7 @@ BENCH = "BN"
 
 
 def categories(
-    scored: Sequence[StatCategory], mine: Mapping[str, str], theirs: Mapping[str, str]
+    scored: Sequence[LeagueCategory], mine: Mapping[str, str], theirs: Mapping[str, str]
 ) -> list[CategoryLine]:
     """One line per category the league scores, in its settings' order, each side's figure by stat id.
 
@@ -68,7 +68,7 @@ def categories(
     ]
 
 
-def _figure(category: StatCategory, value: str) -> str:
+def _figure(category: LeagueCategory, value: str) -> str:
     """A side's figure as every page prints it — a rate '.850', not '0.85' — or as Yahoo sent it where not a number."""
     return views.printed(value, rate=views.rate(category)) if views.number(value) is not None else value
 
@@ -76,7 +76,7 @@ def _figure(category: StatCategory, value: str) -> str:
 Lead = Literal["mine", "theirs", "even"]
 
 
-def _lead(category: StatCategory, mine: str, theirs: str) -> Lead | None:
+def _lead(category: LeagueCategory, mine: str, theirs: str) -> Lead | None:
     """Who is ahead, or None where either figure is not a number yet: a week to come prints a dash."""
     try:
         ours, other = float(mine), float(theirs)
@@ -115,7 +115,7 @@ def stage(week: int, current: int) -> Stage:
     return "played" if week < current else "playing" if week == current else "to come"
 
 
-def points(mine: MatchupSide, theirs: MatchupSide, when: Stage) -> list[Stat]:
+def points(mine: WeekSide, theirs: WeekSide, when: Stage) -> list[Stat]:
     """A points week's score in fantasy points, as Yahoo totals them, and its projected final while games are left.
 
     A week to come has no score, only a projection, which each side's card
@@ -139,7 +139,7 @@ def _versus(mine: str, theirs: str) -> Stat | None:
     return Stat(label="", value=f"{mine} – {theirs}", tone=tone)
 
 
-def total(side: MatchupSide, when: Stage) -> str:
+def total(side: WeekSide, when: Stage) -> str:
     """One side's fantasy points as its card heads them: scored, then Yahoo's projection while games are left."""
     scored = f"{side.points} pts" if side.points and when != "to come" else ""
     projected = f"{side.projected} proj" if side.projected and when != "played" else ""
@@ -157,7 +157,7 @@ class Today:
     """When each club's game starts, while it has not, by ESPN's abbreviation: Sleeper publishes the day
     alone. Empty where ESPN's scoreboard would not load, and the rows then say the day without the hour."""
 
-    played: Mapping[str, YahooPlayer] = field(default_factory=dict)
+    played: Mapping[str, Player] = field(default_factory=dict)
     """Each player's line from today's game, by Yahoo's key, as Yahoo keeps it: a dash in every category
     until he tips off. Empty where Yahoo would not give it, and the rows then say the game without it."""
 
@@ -170,10 +170,10 @@ def side(
     name: str,
     record: str,
     points: str,
-    roster: Sequence[YahooPlayer] | None,
+    roster: Sequence[Player] | None,
     readings: Mapping[str, Reading] | None = None,
     by_points: bool = False,
-    scored: Sequence[StatCategory] = (),
+    scored: Sequence[LeagueCategory] = (),
     today: Today | None = None,
 ) -> Side:
     """One team in the week, its roster parted as Yahoo slots it: the lineup, the bench, the injured list.
@@ -190,7 +190,7 @@ def side(
     rows = list(roster or [])
     found = readings or {}
 
-    def spot(player: YahooPlayer) -> Spot:
+    def spot(player: Player) -> Spot:
         row = _spot(player, found.get(player.player_key), by_points, scored)
         if today is None or row.scoring is not None:
             return row
@@ -217,7 +217,7 @@ def side(
     )
 
 
-def played_today(row: Spot, done: YahooPlayer, status: str, by_points: bool, scored: Sequence[StatCategory]) -> Spot:
+def played_today(row: Spot, done: Player, status: str, by_points: bool, scored: Sequence[LeagueCategory]) -> Spot:
     """His row once today's game has tipped off: what he has done in it, beside his week.
 
     In a category league, his line in each category as columns; in a points
@@ -255,7 +255,7 @@ def today_line(game: ScheduledGame | None, club: str) -> str:
 
 
 def _spot(
-    player: YahooPlayer, reading: Reading | None = None, by_points: bool = False, scored: Sequence[StatCategory] = ()
+    player: Player, reading: Reading | None = None, by_points: bool = False, scored: Sequence[LeagueCategory] = ()
 ) -> Spot:
     """A player as his row reads: where he is slotted, his positions and club, and his week or his status.
 
@@ -297,7 +297,7 @@ def _fantasy(printed: str) -> str:
         return printed
 
 
-def line(player: YahooPlayer, scored: Sequence[StatCategory]) -> list[Stat]:
+def line(player: Player, scored: Sequence[LeagueCategory]) -> list[Stat]:
     """His week in each of the league's categories, in its order, as columns: a rate '.456', a count '143'.
 
     None where he played no games: a row of dashes says less than 'no games'.
@@ -318,7 +318,7 @@ def line(player: YahooPlayer, scored: Sequence[StatCategory]) -> list[Stat]:
 RESULT = {"won": "Won", "lost": "Lost", "drawn": "Tied"}
 
 
-def result(found: Pairing) -> list[Stat]:
+def result(found: HeadToHead) -> list[Stat]:
     """How a settled week ended for you, in a word; nothing before it is settled."""
     outcome = ended(found)
     if outcome is None:
@@ -331,7 +331,7 @@ STATUS = {"in_game": "live", "complete": "final"}
 """Sleeper's game status, in the word a fixture row shows; a game still to come shows none."""
 
 
-def match(game: ScheduledGame, roster: Sequence[YahooPlayer]) -> Match:
+def match(game: ScheduledGame, roster: Sequence[Player]) -> Match:
     """One real game, with your players in it.
 
     Sleeper publishes the day and a status, and no score.
@@ -413,12 +413,12 @@ def not_final(unscheduled: Sequence[date]) -> str:
 
 
 def board(
-    found: Pairing,
+    found: HeadToHead,
     weeks: WeekRange,
     records: Mapping[str, str],
-    roster: list[YahooPlayer] | None,
-    theirs: list[YahooPlayer] | None,
-    categories_scored: Sequence[StatCategory] | None,
+    roster: Sequence[Player] | None,
+    theirs: Sequence[Player] | None,
+    categories_scored: Sequence[LeagueCategory] | None,
     readings: Mapping[str, Reading] | None = None,
     unscheduled: Sequence[date] = (),
     today: Today | None = None,
@@ -490,7 +490,7 @@ def board(
     )
 
 
-def off_il(roster: list[YahooPlayer]) -> list[Action]:
+def off_il(roster: Sequence[Player]) -> list[Action]:
     """Each player held in an injured slot his status no longer qualifies him for.
 
     Yahoo holds every add while one sits there, so it comes before any other

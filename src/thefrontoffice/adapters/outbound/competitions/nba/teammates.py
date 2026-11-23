@@ -44,6 +44,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.form import (
     BoxScores,
     nine_cat,
 )
+from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     ASSISTS,
     POINTS,
@@ -56,7 +57,6 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 from thefrontoffice.adapters.outbound.competitions.teammates import surname
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 from thefrontoffice.domain.models import Stat
 
 REGULAR_MINUTES = 28.0
@@ -336,7 +336,7 @@ class Teammates:
         """Every club's regulars: whose condition the caller looks up."""
         return [regular for club in self.by_club.values() for regular in club]
 
-    def splits(self, player: YahooPlayer, conditions: Mapping[str, Condition]) -> list[Split]:
+    def splits(self, player: Player, conditions: Mapping[str, Condition]) -> list[Split]:
         """His line without each regular teammate who is hurt or lately sat out, and with him.
 
         The teammates ruled out first, then by how much more he does without
@@ -361,7 +361,7 @@ class Teammates:
         found = [self._split(tuple(mates), games[key]) for key, mates in grouped.items()]
         return sorted(found, key=lambda s: (s.back, -s.gain))
 
-    def returning(self, player: YahooPlayer, conditions: Mapping[str, Condition], today: date) -> list[Returning]:
+    def returning(self, player: Player, conditions: Mapping[str, Condition], today: date) -> list[Returning]:
         """Each regular at his position who is hurt, due back within `RETURN_SOON` of `today`, and beside whom
         he has played too few games to split, though enough without him: soonest back first.
 
@@ -413,7 +413,7 @@ def reported(regulars: Sequence[Regular], reports: Sequence[InjuryReport]) -> di
 
 
 def conditions(
-    regulars: Iterable[Regular], yahoo: Iterable[YahooPlayer], espn: Mapping[str, Condition]
+    regulars: Iterable[Regular], yahoo: Iterable[Player], espn: Mapping[str, Condition]
 ) -> dict[str, Condition]:
     """Each regular's condition by Sleeper's id: Yahoo's status where his Yahoo row is among `yahoo`, else ESPN's.
 

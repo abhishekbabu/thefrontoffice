@@ -26,11 +26,11 @@ from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba.actions import acquire, droppable, streams_over
+from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nba.strength import club_nights, nights
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, game_value
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 from thefrontoffice.domain.models import Outlook, WeekAhead
 
 WEEKS_AHEAD = 4
@@ -60,8 +60,8 @@ class Window:
 
 def build(
     windows: Sequence[Window],
-    roster: Sequence[YahooPlayer],
-    wire: Sequence[YahooPlayer],
+    roster: Sequence[Player],
+    wire: Sequence[Player],
     readings: Mapping[str, Reading],
     returns: Mapping[str, date],
     adds: int,
@@ -108,7 +108,7 @@ def build(
     return Outlook(usual=usual, measure="games", weeks=weeks)
 
 
-def _regulars(active: Sequence[YahooPlayer], readings: Mapping[str, Reading], slots: int) -> list[YahooPlayer]:
+def _regulars(active: Sequence[Player], readings: Mapping[str, Reading], slots: int) -> list[Player]:
     """The players the lineup leans on: the best `slots` of the active roster by what a game of each is worth."""
     valued = [(value, p) for p in active if (r := readings.get(p.player_key)) and (value := game_value(r)) is not None]
     return [p for _, p in sorted(valued, key=lambda pair: -pair[0])[:slots]]
@@ -119,12 +119,12 @@ def _club_days(club: str, window: Window) -> list[date]:
     return club_nights(club, window.games)
 
 
-def _days(player: YahooPlayer, window: Window, back: date | None) -> list[date]:
+def _days(player: Player, window: Window, back: date | None) -> list[date]:
     """The days he can play inside the window: his club's; while ruled out, only those from his return, if any."""
     return nights(player, window.games, back)
 
 
-def _starts(active: Sequence[YahooPlayer], days: Mapping[str, list[date]], slots: int) -> int:
+def _starts(active: Sequence[Player], days: Mapping[str, list[date]], slots: int) -> int:
     """The games daily lineups can start: each day, the active players playing, never more than the slots."""
     by_day: dict[date, int] = {}
     for p in active:
@@ -133,7 +133,7 @@ def _starts(active: Sequence[YahooPlayer], days: Mapping[str, list[date]], slots
     return sum(min(count, slots) for count in by_day.values())
 
 
-def _missing(player: YahooPlayer, window: Window, days: Mapping[str, list[date]], back: date | None) -> str:
+def _missing(player: Player, window: Window, days: Mapping[str, list[date]], back: date | None) -> str:
     """'Ja Morant (O, back ~3 Dec: 2 of 4 games)': an injured player the week loses games of; empty otherwise."""
     if not ruled_out(player.status):
         return ""
@@ -161,8 +161,8 @@ def _heavy(window: Window) -> bool:
 
 def _streamed(
     row: WeekAhead,
-    roster: Sequence[YahooPlayer],
-    wire: Sequence[YahooPlayer],
+    roster: Sequence[Player],
+    wire: Sequence[Player],
     readings: Mapping[str, Reading],
     days: Mapping[str, list[date]],
     used: set[str],
@@ -200,18 +200,12 @@ def _streamed(
         p, d = pickup.player, drop.player
         return row.model_copy(
             update={
-                "fix": f"{acquire(_as_of(p, start), pickup.games or 0, p.position, p.team)}, "
+                "fix": f"{acquire(p, pickup.games or 0, p.position, p.team, as_of=start)}, "
                 f"drop {d.name} ({drop.games} games)",
                 "gain": float((pickup.games or 0) - (drop.games or 0)),
             }
         )
     return row
-
-
-def _as_of(player: YahooPlayer, start: date) -> YahooPlayer:
-    """Him as he will stand on `start`: off waivers where he clears them before it."""
-    cleared = player.waiver_date
-    return replace(player, waiver_date=None) if cleared is not None and cleared < start else player
 
 
 def _more_games(pickup: Reading, drop: Reading) -> bool:
