@@ -80,6 +80,13 @@ def test_a_week_played_is_read_with_each_players_line_over_it_and_kept_long() ->
     assert read.ttl > paths.ROSTER_TTL
 
 
+def test_a_day_is_read_with_each_players_line_from_it_and_held_as_briefly_as_the_score() -> None:
+    read = paths.day_roster("466.l.1.t.2", date(2026, 11, 21))
+
+    assert read.path == "team/466.l.1.t.2/roster;date=2026-11-21/players/stats;type=date;date=2026-11-21"
+    assert read.ttl == paths.SCOREBOARD_TTL
+
+
 def test_averages_by_key_are_a_read_per_25_players_each_naming_its_keys() -> None:
     keys = [f"466.p.{i}" for i in range(30)]
 

@@ -234,6 +234,10 @@ class YahooSource(Protocol):
         """Each team's roster as it ended a week already played, each player with his line over it, by team key."""
         ...
 
+    def day_rosters(self, team_keys: list[str], day: date) -> dict[str, list[YahooPlayer]]:
+        """Each team's roster as slotted on `day`, each player with his line from that day's game, by team key."""
+        ...
+
     def search_players(self, query: str) -> list[YahooPlayer]:
         """Players in the league whose name matches `query`."""
         ...
@@ -442,6 +446,17 @@ class YahooClient:
         by day, and Yahoo keeps no one lineup for the week. Fetched together.
         """
         raws = self._responses.many({key: paths.played_roster(key, week) for key in team_keys})
+        return {
+            key: readable("roster", lambda raw=raw: player_list(parse(raw)["fantasy_content"]["team"]["roster"]))
+            for key, raw in raws.items()
+        }
+
+    def day_rosters(self, team_keys: list[str], day: date) -> dict[str, list[YahooPlayer]]:
+        """Each team's roster as slotted on `day`, each player with his line from that day's game, by team key.
+
+        A player whose game has not tipped off carries a dash in every category. Fetched together.
+        """
+        raws = self._responses.many({key: paths.day_roster(key, day) for key in team_keys})
         return {
             key: readable("roster", lambda raw=raw: player_list(parse(raw)["fantasy_content"]["team"]["roster"]))
             for key, raw in raws.items()

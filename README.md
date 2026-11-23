@@ -211,6 +211,10 @@ played each row also says whether he plays today, in Pacific: "vs TOR today",
 publishes the day; the hour of a game still to come is ESPN's daily scoreboard's
 ("vs TOR today 4:30 PM", in the viewer's own zone), left off if it will not load.
 A schedule that will not load leaves the line off rather than claiming a day off.
+Once his game today tips off, his row adds what he has done in it, from Yahoo's
+day stats (refreshed every two minutes): his line in each category under his name,
+or in a points league his fantasy points, live or final, beside his week. Left
+off if Yahoo will not give it; the browser sync does not carry it.
 An NFL row whose game is still to come says when it kicks off, from ESPN's
 scoreboard, in the viewer's own zone ("today 5:15 PM", "Sun 1:00 PM"): Thursday's
 players lock days before Monday's. An FPL row does the same from FPL's fixture

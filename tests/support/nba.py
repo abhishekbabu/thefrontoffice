@@ -156,6 +156,10 @@ class FakeYahoo:
         self.played: dict[str, list[YahooPlayer]] = {}
         """Each team's roster as it ended a week played, by team key, each player with his line."""
         self.played_weeks: list[int] = []
+        self.today_lines: dict[str, list[YahooPlayer]] = {}
+        """Each team's roster on a day, by team key, each player with his line from that day's game."""
+        self.today_error: Exception | None = None
+        self.days_read: list[date] = []
         self.winners: dict[int, str] = {}
         """The winning team's key in each week settled, empty for a tie; a week it does not name is unsettled."""
         self.others: dict[str, list[YahooPlayer]] = {}
@@ -194,6 +198,13 @@ class FakeYahoo:
             key: self.played.get(key, [make_player(f"{key} One", selected_position="PF", stats={"12": "-"})])
             for key in team_keys
         }
+
+    def day_rosters(self, team_keys: list[str], day: date) -> dict[str, list[YahooPlayer]]:
+        """Each team on `day`, from `today_lines`; nobody for a team it does not name."""
+        self.days_read.append(day)
+        if self.today_error:
+            raise self.today_error
+        return {key: self.today_lines.get(key, []) for key in team_keys}
 
     def teams(self) -> list[YahooTeam]:
         return self.league_teams
