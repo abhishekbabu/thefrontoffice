@@ -287,6 +287,7 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
     from thefrontoffice.adapters.outbound.platforms.yahoo.budget import BudgetedContext
     from thefrontoffice.adapters.outbound.platforms.yahoo.client import LiveResponses, YahooClient, YahooResponses
     from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionResponses, SessionState, YahooSession
+    from thefrontoffice.application.forecasting import remembered
 
     settings = entry.settings
     leagues: YahooLeagueSource
@@ -324,6 +325,7 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
         sleeper=sleeper,
         espn=_espn_client(settings),
         fallback_weekly_adds=settings.yahoo_max_weekly_adds,
+        forecast=remembered,
     )
 
 

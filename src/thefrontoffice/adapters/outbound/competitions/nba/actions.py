@@ -16,7 +16,7 @@ player on waivers is a claim, weighed on the games after he clears them
 (`rules.playable_from`) and named as one.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -27,7 +27,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, fits, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import RETURN_SOON, Leaning
 from thefrontoffice.adapters.outbound.competitions.nba.week import BENCH, Today, off_il
-from thefrontoffice.adapters.outbound.competitions.nba.worth import ROLE, Reading, game_value
+from thefrontoffice.adapters.outbound.competitions.nba.worth import ROLE, Reading, Targeting, game_value
 from thefrontoffice.domain.models import Action, Held, Pickup
 
 MARGIN = 0.2
@@ -226,6 +226,9 @@ class Plan:
     """What each free agent's role leans on, by Yahoo key: a teammate due back (`teammates.Leaning`)."""
     volume: tuple[int, int] | None = None
     """The games each side's lineups can start over the rest of the week: yours, then your opponent's."""
+    targeting: Targeting | None = None
+    """In a category league with a forecast, each category weighed by how winnable it is this week
+    (`worth.Targeting`): what a pickup or drop is worth this week. None weighs every category alike."""
 
     @property
     def behind(self) -> bool:
@@ -246,6 +249,9 @@ class Swap:
     """The games he would start this week (`lineup.open_nights`); None where there is no week to place them."""
     add_on: date | None = None
     """For a keeper out now, the day without games to add him on: the drop plays until then."""
+    targets: tuple[str, ...] = ()
+    """The close categories this week he adds most to over the drop (`Targeting.targets`), as the league names
+    them."""
 
 
 def settled(reading: Reading) -> bool:
@@ -265,30 +271,47 @@ class Weigh:
         self.backs = {key: r.back for key, r in readings.items()}
         self.costs: dict[tuple[str, date | None], float] = {}
 
+    def game(self, reading: Reading) -> float:
+        """What a game of him adds this week, nudged by his minutes: in a category league with a forecast, each
+        category weighed by how winnable it is (`Plan.targeting`); his value a game otherwise."""
+        targeting = self.plan.targeting
+        value = targeting.value(reading.line) if targeting is not None else None
+        return _game(reading) if value is None else value * reading.usage
+
+    def targets(self, pickup: Reading, drop: Reading) -> tuple[str, ...]:
+        """The close categories this week a game of `pickup` adds most to over one of `drop`; none without a
+        forecast."""
+        targeting = self.plan.targeting
+        return tuple(targeting.targets(pickup.line, drop.line)) if targeting is not None else ()
+
+    def _week(self, reading: Reading) -> float:
+        """His whole week at this week's value a game: every game his club has left."""
+        return self.game(reading) * reading.games if reading.per_game is not None and reading.games else 0.0
+
     def gained(self, pickup: Reading, drop: Reading) -> tuple[float, int | None]:
         """What he adds this week in `drop`'s place, and the games behind it: each night he fills an open slot,
         those from the return of a teammate his role leans on at what is left of it (`Leaning.cut`). Every game his
         club has left without a week to place them."""
         week = self.plan.week
         if week is None:
-            return _worth(pickup), None
+            return self._week(pickup), None
         rest = [p for p in self.roster if p.player_key != drop.player.player_key]
         nights = lineup.open_nights(pickup.player, rest, week, self.backs)
         found = self.plan.returning.get(pickup.player.player_key)
         back = found.returns if found else None
         played = sum(found.cut if found and back is not None and night >= back else 1.0 for night in nights)
-        return _game(pickup) * played, len(nights)
+        return self.game(pickup) * played, len(nights)
 
     def cost(self, drop: Reading, after: date | None = None) -> float:
         """What letting him go costs this week: each night, after `after`, the lineup could seat nobody in his
         place. His whole week where there is no week to place him."""
         week = self.plan.week
         if week is None:
-            return _worth(drop)
+            return self._week(drop)
         key = (drop.player.player_key, after)
         if key not in self.costs:
             nights = lineup.needed_nights(drop.player, self.roster, week, self.backs)
-            self.costs[key] = _game(drop) * sum(1 for night in nights if after is None or night > after)
+            self.costs[key] = self.game(drop) * sum(1 for night in nights if after is None or night > after)
         return self.costs[key]
 
     def back_soon(self, pickup: Reading) -> bool:
@@ -304,8 +327,9 @@ class Weigh:
             return None
         for drop in sorted(drops, key=lambda d: (_game(d), self.cost(d))):
             gain, nights = self.gained(pickup, drop)
-            if worth_an_add(pickup, drop, gain, self.cost(drop)):
-                return Swap(pickup, drop, "streamer", gain - self.cost(drop), nights)
+            if worth_an_add(pickup, drop, gain, self.cost(drop), self.game):
+                cost = self.cost(drop)
+                return Swap(pickup, drop, "streamer", gain - cost, nights, targets=self.targets(pickup, drop))
         return None
 
     def keeper(self, pickup: Reading, drops: Sequence[Reading]) -> Swap | None:
@@ -327,7 +351,8 @@ class Weigh:
         quiet = week.quiet(pickup.back) if week is not None and out and pickup.back is not None else []
         add_on = quiet[0] if quiet else None
         gain, nights = self.gained(pickup, drop)
-        return Swap(pickup, drop, "keeper", gain - self.cost(drop, add_on), nights, add_on)
+        cost = self.cost(drop, add_on)
+        return Swap(pickup, drop, "keeper", gain - cost, nights, add_on, self.targets(pickup, drop))
 
 
 def streams(
@@ -392,7 +417,7 @@ def _item(swap: Swap, by_points: bool, plan: Plan) -> Action:
     if swap.term == "keeper":
         why = (
             f"Keeper: {_game(pickup):.1f} {unit} a game against {_game(drop):.1f}, for the rest of the season. "
-            f"{drop.player.name}: weakest a game you can drop" + _drags(drop) + "." + _out(swap)
+            f"{drop.player.name}: weakest a game you can drop" + _drags(drop) + "." + _targets(swap) + _out(swap)
         )
     else:
         games = f", {swap.nights} games in open slots" if swap.nights is not None else ""
@@ -400,6 +425,7 @@ def _item(swap: Swap, by_points: bool, plan: Plan) -> Action:
             f"Streamer: +{swap.gain:.1f} {unit} this week{games}. {drop.player.name}: weakest you can drop"
             + _drags(drop)
             + "."
+            + _targets(swap)
             + _leans(plan.returning.get(pickup.player.player_key))
             + _behind(plan)
         )
@@ -428,6 +454,11 @@ def _out(swap: Swap) -> str:
     if swap.add_on is None:
         return f" Out, back {approximately(back)}."
     return f" Out, back {approximately(back)}: add him {weekday_day_month(swap.add_on)}, when nobody plays."
+
+
+def _targets(swap: Swap) -> str:
+    """' This week targets BLK, FT%, TO.': the close categories he helps most; nothing without them."""
+    return f" This week targets {', '.join(swap.targets)}." if swap.targets else ""
 
 
 def _leans(found: Leaning | None) -> str:
@@ -483,15 +514,19 @@ def streams_over(pickup: Reading, drop: Reading) -> bool:
     return worth_an_add(pickup, drop, _worth(pickup), _worth(drop))
 
 
-def worth_an_add(pickup: Reading, drop: Reading, gain: float, cost: float) -> bool:
+def worth_an_add(
+    pickup: Reading, drop: Reading, gain: float, cost: float, game: Callable[[Reading], float] | None = None
+) -> bool:
     """Whether `pickup`, adding `gain` this week where `drop` would have added `cost`, is worth an add: by `MARGIN`
-    of the cost, by `STREAM_GAMES` of the drop's games, and at least as good a game.
+    of the cost, by `STREAM_GAMES` of the drop's games, and at least as good a game — each game as `game` reads
+    it, his value a game where none is given.
 
     The extra games are this week's and the player let go is gone for good, so
     a stream never trades down a game for them, nor a solid player for a night.
     """
-    floor = STREAM_GAMES * max(_game(drop), 0.0)
-    return beats(gain, cost) and gain - cost >= floor and _game(pickup) >= _game(drop)
+    per = game or _game
+    floor = STREAM_GAMES * max(per(drop), 0.0)
+    return beats(gain, cost) and gain - cost >= floor and per(pickup) >= per(drop)
 
 
 PROVISIONAL = " Provisional: schedule not final."

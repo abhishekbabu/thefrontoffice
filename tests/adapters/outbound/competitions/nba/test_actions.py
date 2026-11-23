@@ -23,6 +23,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.actions import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.form import Role
 from thefrontoffice.adapters.outbound.competitions.nba.lineup import Week
+from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, POINTS
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
     RETURN_CUT,
     Absent,
@@ -33,7 +34,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
     Split,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.week import Today
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Targeting, category_value, scales
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
 
@@ -570,3 +571,57 @@ def test_a_stream_is_urged_now_when_the_opponent_can_start_more_games() -> None:
 
     assert (behind.urgency, ahead.urgency) == ("now", "soon")
     assert "39" in behind.reason and "44" in behind.reason
+
+
+# ── this week's categories, weighed by how winnable each is ─────────
+
+CATS = (StatCategory(POINTS.yahoo_stat, "PTS"), StatCategory(BLOCKS.yahoo_stat, "BLK"))
+LINES = [{POINTS.label: 10.0, BLOCKS.label: 0.0}, {POINTS.label: 30.0, BLOCKS.label: 2.0}]
+SCORER = {POINTS.label: 20.0, BLOCKS.label: 0.0}
+
+
+def _scorer_against(blocker: dict[str, float]) -> tuple[list[YahooPlayer], dict[str, Reading], YahooPlayer]:
+    """A scorer to drop and a blocker on the wire, two games each, read on the season's scale."""
+    stars = [_player("Star", "PF"), _player("Second", "C")]
+    scorer, wire = _player("Scorer", "BN"), _player("Blocker", position="SF")
+    value = category_value(CATS, LINES)
+    readings = _readings((stars[0], 50.0, 2), (stars[1], 40.0, 2))
+    readings |= {
+        p.player_key: Reading(player=p, line=figures, per_game=value(figures), games=2)
+        for p, figures in ((scorer, SCORER), (wire, blocker))
+    }
+    return [*stars, scorer], readings, wire
+
+
+def _targeting(**chances: float) -> Plan:
+    return Plan(targeting=Targeting.of(scales(CATS, LINES), chances))
+
+
+EVEN_BLOCKER = {POINTS.label: 0.0, BLOCKS.label: 2.0}
+"""As much a game as the scorer on the season's scale: two blocks against twenty points."""
+
+
+def test_a_pickup_is_weighed_on_the_categories_still_in_play_this_week() -> None:
+    """Points all but won, blocks even: the blocker streams over the scorer, and names what he targets."""
+    roster, readings, blocker = _scorer_against(EVEN_BLOCKER)
+
+    assert streams(roster, [blocker], readings, 2, False, set()) == []
+    [item] = streams(roster, [blocker], readings, 2, False, set(), plan=_targeting(PTS=0.98, BLK=0.5))
+
+    assert (item.player_id, item.drop, item.pickup) == ("Blocker", "Scorer", "streamer")
+    assert "BLK" in item.reason and "PTS" not in item.reason
+
+
+def test_a_category_all_but_settled_never_drives_a_pickup() -> None:
+    roster, readings, blocker = _scorer_against(EVEN_BLOCKER)
+
+    assert streams(roster, [blocker], readings, 2, False, set(), plan=_targeting(PTS=0.5, BLK=0.99)) == []
+
+
+def test_a_keeper_is_judged_on_his_value_a_game_whatever_this_weeks_opponent() -> None:
+    """Twice the scorer a game for the season: a keeper even with blocks all but won this week."""
+    roster, readings, blocker = _scorer_against({POINTS.label: 0.0, BLOCKS.label: 4.0})
+
+    [item] = streams(roster, [blocker], readings, 2, False, set(), plan=_targeting(PTS=0.5, BLK=0.99))
+
+    assert (item.player_id, item.pickup) == ("Blocker", "keeper")

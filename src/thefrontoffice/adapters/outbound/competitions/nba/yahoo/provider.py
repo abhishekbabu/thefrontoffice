@@ -68,6 +68,7 @@ from thefrontoffice.domain.errors import (
 )
 from thefrontoffice.domain.models import (
     CompetitionContext,
+    Forecast,
     LeagueSchedule,
     MatchupInput,
     Outlook,
@@ -108,6 +109,7 @@ class YahooNBAProvider:
         sleeper: SleeperProjectionSource,
         espn: ESPNSource,
         fallback_weekly_adds: int,
+        forecast: Callable[[MatchupInput], Forecast],
     ):
         """Every collaborator from bootstrap, which is the one place a real client is built.
 
@@ -115,7 +117,9 @@ class YahooNBAProvider:
         league, and every call names the league it reads. `fallback_weekly_adds`
         is the add limit for a league whose settings name none. `form` and
         `games` are both read from Sleeper: each player's recent run, and the
-        real games inside a matchup week.
+        real games inside a matchup week. `forecast` plays a matchup out — the
+        same simulation the week's chance comes from — so a category league's
+        pickups weigh the categories still in play.
         """
         self._auth = auth
         self._yahoo_for = yahoo_for
@@ -124,6 +128,7 @@ class YahooNBAProvider:
         self.sleeper = sleeper
         self.espn = espn
         self.fallback_weekly_adds = fallback_weekly_adds
+        self.forecast = forecast
         self.feeds = Feeds(form=form, games=games, sleeper=sleeper, espn=espn)
         self._found: list[YahooLeague] | None = None
 
@@ -194,9 +199,21 @@ class YahooNBAProvider:
         def read(found: Pairing, theirs: Sequence[Player]) -> Mapping[str, Reading]:
             adds_left = max(0, limit - my_team.adds_used)
             shown = reads.averages(yahoo, found.mine.team_key, found.opponent.team_key)
+            chances = (
+                None if league.by_points or not week else self._chances(league, yahoo, week, found, (roster, theirs))
+            )
             decided.append(
                 weighing.decide(
-                    self.feeds, yahoo, league, roster, theirs, found.start, found.end, adds_left, shown=shown
+                    self.feeds,
+                    yahoo,
+                    league,
+                    roster,
+                    theirs,
+                    found.start,
+                    found.end,
+                    adds_left,
+                    shown=shown,
+                    chances=chances,
                 )
             )
             return decided[0].readings
@@ -601,10 +618,27 @@ class YahooNBAProvider:
         found = yahoo.pairing(team.team_key, week)
         if found is None:
             return None
+        mine, theirs = yahoo.roster(team.team_key), yahoo.roster(found.opponent.team_key)
+        return self._matchup(league, yahoo, week, found, (mine, theirs))
+
+    def _matchup(
+        self,
+        league: YahooLeague,
+        yahoo: YahooSource,
+        week: int,
+        found: Pairing,
+        sides: tuple[Sequence[Player], Sequence[Player]],
+    ) -> MatchupInput:
+        """Week `week`, which `found` pairs, ready to simulate: what each side has, and every game still to come.
+
+        Raises:
+            UnsupportedError: the league scores something a box score here cannot build.
+            PlatformError: the schedule would not load.
+        """
+        mine, theirs = sides
         rules = yahoo.settings()
         if rules.best_game:
             raise UnsupportedError(league.name, "a forecast where only each player's best game scores")
-        mine, theirs = yahoo.roster(team.team_key), yahoo.roster(found.opponent.team_key)
         week_left = nba_forecast.Week(
             games=self.feeds.recent,
             left=self.games.games_left(found.start, found.end),
@@ -621,6 +655,26 @@ class YahooNBAProvider:
         )
         # Games the NBA has yet to schedule are games nobody is drawn for: the chance is read off a short week.
         return replace(matchup, provisional=bool(self.games.unscheduled(found.start, found.end)))
+
+    def _chances(
+        self,
+        league: YahooLeague,
+        yahoo: YahooSource,
+        week: int,
+        found: Pairing,
+        sides: tuple[Sequence[Player], Sequence[Player]],
+    ) -> dict[str, float] | None:
+        """Your chance of winning each category this week, by the league's name for it: the forecast's own, on the
+        same matchup it is read from, so the page and the to-do list share one simulation.
+
+        Enrichment: None where the week cannot be simulated, and the to-do list
+        then weighs every category alike.
+        """
+        try:
+            return dict(self.forecast(self._matchup(league, yahoo, week, found, sides)).categories) or None
+        except FrontOfficeError as e:
+            logger.warning(f"Weighing pickups on every category alike, without a forecast: {e}")
+            return None
 
     def played_weeks(self, league_id: str) -> list[int]:
         """None: a basketball week is not yet rebuilt as it stood before it began, so it is not backtested."""

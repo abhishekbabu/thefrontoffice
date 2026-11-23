@@ -33,7 +33,17 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     YahooTeam,
     YahooTransaction,
 )
-from thefrontoffice.domain.models import Calibration, CalibrationBucket, OddsCheck, OddsFit, OddsModel
+from thefrontoffice.domain.errors import FrontOfficeError
+from thefrontoffice.domain.models import (
+    Calibration,
+    CalibrationBucket,
+    Forecast,
+    MarginRange,
+    MatchupInput,
+    OddsCheck,
+    OddsFit,
+    OddsModel,
+)
 
 
 def make_player(
@@ -510,6 +520,24 @@ class FakeNBA:
         return {t.upper(): self.get_remaining_games(t, start_date, end_date) for t in team_abbrs}
 
 
+class FakeForecast:
+    """Stands in for the simulation the provider plays a week out with: these chances of winning each category,
+    every matchup it was handed kept, or `error` raised."""
+
+    def __init__(self, categories: Mapping[str, float] | None = None, error: FrontOfficeError | None = None) -> None:
+        self.categories = dict(categories or {})
+        self.error = error
+        self.played: list[MatchupInput] = []
+
+    def __call__(self, matchup: MatchupInput) -> Forecast:
+        self.played.append(matchup)
+        if self.error is not None:
+            raise self.error
+        return Forecast(
+            win=0.5, margin=MarginRange(low=0.0, median=0.0, high=0.0), simulations=1, categories=self.categories
+        )
+
+
 def nba_provider(
     yahoo: FakeYahoo | None = None,
     *,
@@ -519,6 +547,7 @@ def nba_provider(
     sleeper: FakeSleeperProjections | None = None,
     league: YahooLeague | None = None,
     espn: FakeESPN | None = None,
+    forecast: FakeForecast | None = None,
 ) -> YahooNBAProvider:
     """The NBA provider over these stand-ins, as bootstrap would wire it over the real clients.
 
@@ -533,6 +562,7 @@ def nba_provider(
         sleeper=sleeper or FakeSleeperProjections(),
         espn=espn or FakeESPN(),
         fallback_weekly_adds=3,
+        forecast=forecast or FakeForecast(),
     )
 
 
