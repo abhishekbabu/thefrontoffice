@@ -10,7 +10,7 @@ from support.nba import FakeNBA, FakeYahoo, make_player, nba_provider
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.rules import POINTS
-from thefrontoffice.adapters.outbound.competitions.nba.yahoo import ONE_WIN, YahooNBAProvider, reads
+from thefrontoffice.adapters.outbound.competitions.nba.yahoo import ONE_WIN, reads, trading
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooUnavailableError
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague
@@ -21,7 +21,7 @@ POINTS_STAT = POINTS.yahoo_stat
 
 # Each module logs through `getLogger(__name__)`, so a module is its logger's
 # name — and follows the module if it ever moves. A name is resolved in `reads`.
-YAHOO_LOGGER = YahooNBAProvider.__module__
+YAHOO_LOGGER = trading.__name__
 READS_LOGGER = reads.__name__
 
 
