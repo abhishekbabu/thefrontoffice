@@ -17,7 +17,7 @@ from thefrontoffice.adapters.outbound.competitions.careers import recent_seasons
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
 from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries, by_club, matched
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
-from thefrontoffice.adapters.outbound.competitions.nba import actions, defense, history, prompt, views
+from thefrontoffice.adapters.outbound.competitions.nba import actions, defense, drawer, history, prompt, views
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
 from thefrontoffice.adapters.outbound.competitions.nba import lineup as nba_lineup
@@ -1142,8 +1142,8 @@ class YahooNBAProvider:
         profile = self.form.profile(player.name)
         week = self._week_of(yahoo, league, player, reports, weights, profile)
         games = self.form.games(player.name)
-        return views.detail(
-            views.Drawer(
+        return drawer.detail(
+            drawer.Drawer(
                 player=player,
                 season=spans.get(Average.SEASON, {}).get(player_id),
                 recent=spans.get(RECENT_AVERAGE, {}).get(player_id),
@@ -1160,7 +1160,7 @@ class YahooNBAProvider:
         )
 
     def player_tab(self, league_id: str, player_id: str, tab: str) -> PlayerDetail:
-        """One of his drawer's tabs read only when opened (`views.DEFERRED`), each a request of its own.
+        """One of his drawer's tabs read only when opened (`drawer.DEFERRED`), each a request of its own.
 
         Seasons are Sleeper's, this one and the two before it, a request each
         and shared by every player; history is the league's moves on Yahoo, one
@@ -1171,21 +1171,21 @@ class YahooNBAProvider:
             NotFoundError: the drawer defers no tab of that name.
             FrontOfficeError: the tab's one source would not load.
         """
-        if tab not in views.DEFERRED:
+        if tab not in drawer.DEFERRED:
             raise NotFoundError(f"a drawer tab named {tab!r}")
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
         player = self._player(yahoo, player_id)
-        if tab == views.SEASONS_TAB:
-            table = views.seasons(self._seasons(player), self._weights(league, yahoo))
-            return views.deferred_tab(player, tables=[table] if table else [])
-        if tab == views.HISTORY_TAB:
+        if tab == drawer.SEASONS_TAB:
+            table = drawer.seasons(self._seasons(player), self._weights(league, yahoo))
+            return drawer.deferred_tab(player, tables=[table] if table else [])
+        if tab == drawer.HISTORY_TAB:
             mine = yahoo.get_user_team().name
-            return views.deferred_tab(player, moves=history.moves(yahoo.transactions(), player_id, mine))
+            return drawer.deferred_tab(player, moves=history.moves(yahoo.transactions(), player_id, mine))
         club = espn_club(player.team)
         feeds = self.espn.get_team_news(NBA, [club])
         found = news.attach(feeds, by_club([(club, player.name, player_id)]), datetime.now(UTC))
-        return views.deferred_tab(player, groups=views.news(found.stats(player_id, limit=views.NEWS_IN_DRAWER)))
+        return drawer.deferred_tab(player, groups=drawer.news(found.stats(player_id, limit=drawer.NEWS_IN_DRAWER)))
 
     @staticmethod
     def _player(yahoo: YahooSource, player_id: str) -> YahooPlayer:
@@ -1219,7 +1219,7 @@ class YahooNBAProvider:
         reports: Sequence[InjuryReport],
         weights: Mapping[str, float] | None,
         profile: PlayerMeta | None,
-    ) -> tuple[views.DrawerWeek, nba_worth.Valuer | None] | None:
+    ) -> tuple[drawer.DrawerWeek, nba_worth.Valuer | None] | None:
         """His matchup week as the drawer shows it, and what a game is worth on the week's scale; None without one.
 
         Counted as his row counts it (`_games`): none while ruled out, or from
@@ -1261,7 +1261,7 @@ class YahooNBAProvider:
             opponent = fixtures[0].away if fixtures[0].home == club else fixtures[0].home
             matchup = defense.allowed(self.form.box_scores(), weights).get((opponent, profile.position))
         left = views.counted(games, provisional)
-        return views.DrawerWeek(left, fixtures, reading, projected, matchup), value
+        return drawer.DrawerWeek(left, fixtures, reading, projected, matchup), value
 
     def _week_valuer(
         self, yahoo: YahooSource, weights: Mapping[str, float] | None, found: Pairing
