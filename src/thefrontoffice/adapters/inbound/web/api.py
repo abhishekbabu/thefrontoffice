@@ -5,8 +5,9 @@ computes nothing. The engines already return Pydantic models, so a route's
 response schema is the domain model itself — `ScoutReport` crosses the wire
 exactly as the CLI renders it, with no second representation to keep in step.
 
-Every collaborator arrives in the `Wiring` `create_app` is handed: `serve`
-builds the real one for uvicorn, and a test builds one from fakes.
+The routes live in `routes/`, one router per resource. Every collaborator
+arrives in the `Wiring` `create_app` is handed, which it keeps on `app.state`
+for them: `serve` builds the real one for uvicorn, and a test builds one from fakes.
 
 Serves the built front end from `web/dist` when it exists, so one process on one
 port covers both. In development the front end runs its own dev server and calls
@@ -17,219 +18,36 @@ import argparse
 import logging
 import socket
 import sys
-import threading
-import uuid
-from collections import OrderedDict
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Annotated, Literal
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException
 
 from thefrontoffice import bootstrap
-from thefrontoffice.adapters.inbound import presenting
-from thefrontoffice.adapters.inbound.conversation import Conversation, Turn
 from thefrontoffice.adapters.inbound.remedies import ErrorBody
-from thefrontoffice.adapters.inbound.web import data
 from thefrontoffice.adapters.inbound.web.capture import CaptureGate
-from thefrontoffice.application import comparing
-from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
-from thefrontoffice.config.env_file import SettingsGroup
+from thefrontoffice.adapters.inbound.web.routes import ROUTERS
+from thefrontoffice.adapters.inbound.web.routes.state import MAX_CHATS, Chats, Login
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.config.settings import PROJECT_ROOT, settings
 from thefrontoffice.config.telemetry import setup_telemetry
 from thefrontoffice.domain.errors import (
-    ChatExpiredError,
     ErrorCode,
     FrontOfficeError,
     InvalidRequestError,
     NotFoundError,
     PortInUseError,
 )
-from thefrontoffice.domain.models import (
-    MAX_COMPARED,
-    Capture,
-    CapturePlan,
-    CaptureReceipt,
-    CaptureStatus,
-    ItemDecision,
-    ItemMark,
-    Judgment,
-    LeagueSchedule,
-    Outlook,
-    PlayerCall,
-    PlayerCard,
-    PlayerComparison,
-    PlayerDetail,
-    PlayerOrder,
-    PlayerPage,
-    PlayerQuery,
-    PlayerRef,
-    ScoutReport,
-    Slate,
-    Subject,
-    Summary,
-    TeamRef,
-    Trades,
-)
-from thefrontoffice.domain.ports import (
-    AccountLogin,
-    BrowserCapture,
-    CompetitionProvider,
-    LeagueRef,
-    OutlookProvider,
-    PlayerSearchProvider,
-    PlayerTabProvider,
-    TradeMarketProvider,
-    WeekBrowsingProvider,
-    WireProvider,
-)
-from thefrontoffice.wiring import CompetitionEntry, Wiring
+from thefrontoffice.wiring import Wiring
 
 logger = logging.getLogger(__name__)
 
 DIST = PROJECT_ROOT / "web" / "dist"
-
-
-# ── wire types ──────────────────────────────────────────────────────────
-# Only for shapes the domain has no model for. Anything the domain does model
-# is returned as-is rather than copied into a parallel type that can drift.
-
-
-class ChatRequest(BaseModel):
-    """A question, and what was on screen when it was asked."""
-
-    message: str = Field(min_length=1)
-    on_screen: list[Subject] = Field(default_factory=list, max_length=8)
-
-
-class SettingsUpdate(BaseModel):
-    values: dict[str, str]
-
-
-class Limits(BaseModel):
-    """The engines' own bounds, sent so the page can say them rather than restate them."""
-
-    judged: int = Field(description="How many free agents one judging asks about: a screen's worth of the best.")
-
-
-class Capabilities(BaseModel):
-    """What the app can do here, as opposed to what it knows how to do."""
-
-    ai: bool
-    """Whether a model can be called. Everything that needs one hides without it."""
-
-    limits: Limits
-
-
-class LoginState(BaseModel):
-    """Where a platform's login handshake has got to."""
-
-    status: Literal["idle", "running", "ok", "failed"]
-    detail: str = ""
-
-
-class JudgeRequest(BaseModel):
-    """The free agents on screen to judge, best first."""
-
-    player_ids: list[str] = Field(min_length=1, max_length=MAX_JUDGED)
-
-
-class CallsRequest(BaseModel):
-    """The free agents on screen, whose kept calls to show."""
-
-    player_ids: list[str] = Field(min_length=1, max_length=MAX_SHOWN)
-
-
-class Thread(BaseModel):
-    """A conversation opened on the server; asked through the chat endpoint."""
-
-    chat_id: str
-
-
-MAX_CHATS = 64
-"""Conversations held at once. Each carries its whole history, resent to the
-model every turn, so one person's week of conversations is bounded here
-rather than by how long the process happens to run."""
-
-
-class _Chats:
-    """Open conversations, by id, the least recently used dropped past `MAX_CHATS`.
-
-    A chat is a live object holding conversation state, so it cannot cross the
-    wire. It stays here, with what has been said in it, and the client refers
-    to it by id — and reads its turns back from here, so a page reopened shows
-    the conversation the server is still carrying on. One dropped answers as
-    one never opened: `chat_expired`, the client's cue to open another.
-    In-process because this serves exactly one person on one machine; a second
-    worker would need somewhere shared to put these.
-    """
-
-    def __init__(self, limit: int = MAX_CHATS) -> None:
-        self._limit = limit
-        self._open: OrderedDict[str, Conversation] = OrderedDict()
-        self._lock = threading.Lock()
-
-    def remember(self, conversation: Conversation) -> str:
-        chat_id = uuid.uuid4().hex
-        with self._lock:
-            self._open[chat_id] = conversation
-            while len(self._open) > self._limit:
-                self._open.popitem(last=False)
-        return chat_id
-
-    def get(self, chat_id: str) -> Conversation:
-        """Raises:
-        ChatExpiredError: this process does not hold it — it restarted since, or dropped it as the oldest.
-        """
-        with self._lock:
-            if chat_id not in self._open:
-                raise ChatExpiredError()
-            self._open.move_to_end(chat_id)
-            return self._open[chat_id]
-
-
-class _Login:
-    """One platform's handshake, which opens a browser and waits for a click no request can hold open.
-
-    It runs on a thread, and the client watches `state` instead.
-    """
-
-    def __init__(self, platform: str, account: Callable[[], AccountLogin]) -> None:
-        self._platform = platform
-        self._account = account
-        self._lock = threading.Lock()
-        self.state = LoginState(status="idle")
-
-    def start(self) -> LoginState:
-        with self._lock:
-            if self.state.status == "running":
-                return self.state
-            # A stale outcome from a previous attempt would read as this one's.
-            self.state = LoginState(status="running", detail="Authorize in the browser tab that just opened.")
-        threading.Thread(target=self._run, daemon=True).start()
-        return self.state
-
-    def _run(self) -> None:
-        """Authorize, then confirm the grant is real before reporting success."""
-        try:
-            account = self._account()
-            account.login(force=True)
-            account.verify()
-        except FrontOfficeError as e:
-            logger.error(f"{self._platform} authorization failed: {e}")
-            self.state = LoginState(status="failed", detail=str(e))
-        except Exception as e:  # a browser or socket failure, not a domain condition
-            logger.error(f"{self._platform} authorization failed unexpectedly: {e}")
-            self.state = LoginState(status="failed", detail=f"Authorization failed: {e}")
-        else:
-            self.state = LoginState(status="ok", detail="The platform accepted a read with the new grant.")
 
 
 STATUS: dict[ErrorCode, int] = {
@@ -286,7 +104,11 @@ def create_app(wiring: Wiring, *, dist: Path = DIST, max_chats: int = MAX_CHATS)
         return JSONResponse(status_code=exc.status_code, content=body.model_dump())
 
     app.add_middleware(CaptureGate)
-    _register_routes(app, wiring, _Chats(max_chats))
+    app.state.wiring = wiring
+    app.state.chats = Chats(max_chats)
+    app.state.logins = {platform: Login(platform, account) for platform, account in wiring.logins.items()}
+    for router in ROUTERS:
+        app.include_router(router)
     _serve_frontend(app, dist)
     return app
 
@@ -300,289 +122,6 @@ def serve() -> FastAPI:
     setup_logging()
     setup_telemetry("front-office-web")
     return create_app(bootstrap.wiring())
-
-
-def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
-    logins = {platform: _Login(platform, account) for platform, account in wiring.logins.items()}
-
-    def _login(platform: str) -> _Login:
-        if platform not in logins:
-            raise NotFoundError(f"a login to {platform!r}")
-        return logins[platform]
-
-    def _capture(platform: str) -> BrowserCapture:
-        if platform not in wiring.captures:
-            raise NotFoundError(f"a browser sync for {platform!r}")
-        return wiring.captures[platform]()
-
-    def _open(key: str) -> tuple[CompetitionEntry, CompetitionProvider]:
-        """The entry a route names, and its provider."""
-        entry = wiring.registry.find(key)
-        return entry, entry.open()
-
-    def _provider(key: str) -> CompetitionProvider:
-        return wiring.registry.find(key).open()
-
-    @app.get("/api/competitions", response_model=list[data.Competition])
-    def list_sports() -> list[data.Competition]:
-        """Every competition, including ones this machine has no credentials for.
-
-        Unconfigured ones are returned rather than hidden so the UI can say
-        what to set instead of silently offering less than it could.
-        """
-        return [data.competition(entry) for entry in wiring.registry.entries]
-
-    @app.get("/api/capabilities", response_model=Capabilities)
-    def capabilities() -> Capabilities:
-        """What this installation can actually do.
-
-        Read before anything is offered. Without a key there is no analysis to
-        give, so nothing that needs one is shown — rather than shown and then
-        refused, which is a click spent learning the app cannot do it.
-        """
-        return Capabilities(ai=wiring.ai_available(), limits=Limits(judged=MAX_JUDGED))
-
-    @app.get("/api/settings", response_model=list[SettingsGroup])
-    def read_settings() -> list[SettingsGroup]:
-        """Every configurable value, grouped by what it unlocks, with secrets reported as present or absent.
-
-        A secret's contents never leave the process. There is nothing the UI can
-        do with the characters of an API key that it cannot do with the fact
-        that one is set, and a page that renders them puts them in screenshots.
-        """
-        return wiring.env.groups()
-
-    @app.put("/api/settings", response_model=list[SettingsGroup])
-    def save_settings(update: SettingsUpdate) -> list[SettingsGroup]:
-        """Write values to .env and re-read configuration into the running app.
-
-        Rejects any key no setting reads rather than writing it: a line nothing
-        picks up looks saved and changes nothing, which is the exact failure
-        this endpoint exists to prevent.
-        """
-        wiring.env.write_values(update.values)
-        return read_settings()
-
-    @app.get("/api/{platform}/login", response_model=LoginState)
-    def login_state(platform: str) -> LoginState:
-        return _login(platform).state
-
-    @app.post("/api/{platform}/login", response_model=LoginState)
-    def start_login(platform: str) -> LoginState:
-        """Begin the platform's handshake and return at once.
-
-        The browser tab it opens is on this machine — the server and the person
-        are the same place — but the click cannot be waited on inside a request,
-        so progress is reported through the companion GET.
-        """
-        return _login(platform).start()
-
-    @app.get("/api/{platform}/capture", response_model=CaptureStatus)
-    def capture_status(platform: str) -> CaptureStatus:
-        """When the platform's browser sync last stored anything, for Settings to say beside the bookmark."""
-        return _capture(platform).status()
-
-    @app.get("/api/{platform}/capture/plan", response_model=CapturePlan)
-    def capture_plan(platform: str, leagues: str = "") -> CapturePlan:
-        """What the sync bookmark should fetch next, for the comma-separated league keys it has found so far.
-
-        Called from the platform's own page, so the bookmark knows nothing of
-        what the app reads: it fetches what this says, hands it back, and asks
-        again until there is nothing new to fetch.
-        """
-        return _capture(platform).plan([key for key in leagues.split(",") if key])
-
-    @app.post("/api/{platform}/capture", response_model=CaptureReceipt)
-    def ingest_capture(platform: str, capture: Capture) -> CaptureReceipt:
-        """Store what the sync bookmark fetched before replying: the hand-over is the only copy."""
-        return _capture(platform).ingest(capture)
-
-    @app.get("/api/{competition}/leagues", response_model=list[LeagueRef])
-    def list_leagues(competition: str) -> list[LeagueRef]:
-        return _provider(competition).list_leagues()
-
-    @app.get("/api/{competition}/leagues/{league_id}/roster", response_model=list[PlayerCard])
-    def roster(competition: str, league_id: str, order: Annotated[PlayerOrder, Query()]) -> list[PlayerCard]:
-        """One card per player, with per-competition columns rendered generically, in the order asked.
-
-        The columns are the competition's own vocabulary — FPL sends Price and xGI,
-        football sends Depth — so the client reads whatever keys arrive rather
-        than being taught each competition. Ordered here, by the rule a page of
-        the wire is, so a column sorts alike on every table.
-        """
-        return order.ordered(_provider(competition).roster(league_id))
-
-    @app.get("/api/{competition}/leagues/{league_id}/players/{player_id}", response_model=PlayerDetail)
-    def player(competition: str, league_id: str, player_id: str) -> PlayerDetail:
-        """Everything worth knowing about one player, when someone asks."""
-        return _provider(competition).player(league_id, player_id)
-
-    @app.get("/api/{competition}/leagues/{league_id}/players/{player_id}/tabs/{tab}", response_model=PlayerDetail)
-    def player_tab(competition: str, league_id: str, player_id: str, tab: str) -> PlayerDetail:
-        """One tab of a player's drawer that is read only when opened (`PlayerDetail.deferred`)."""
-        provider = wiring.registry.find(competition).open_as(PlayerTabProvider)
-        return provider.player_tab(league_id, player_id, tab)
-
-    @app.get("/api/{competition}/leagues/{league_id}/compare", response_model=PlayerComparison)
-    def compare(competition: str, league_id: str, ids: Annotated[list[str], Query()]) -> PlayerComparison:
-        """Up to four players side by side, from what each one's drawer shows."""
-        if not 1 <= len(ids) <= MAX_COMPARED:
-            raise InvalidRequestError([f"Compare 1 to {MAX_COMPARED} players."])
-        provider = _provider(competition)
-        return comparing.comparison([provider.player(league_id, player_id) for player_id in ids])
-
-    @app.get("/api/{competition}/leagues/{league_id}/players", response_model=list[PlayerRef])
-    def search_players(competition: str, league_id: str, search: str = "") -> list[PlayerRef]:
-        """Players whose name holds `search`, rostered or not, for a comparison to add."""
-        provider = wiring.registry.find(competition).open_as(PlayerSearchProvider)
-        return provider.search_players(league_id, search)
-
-    @app.get("/api/{competition}/leagues/{league_id}/summary", response_model=Summary)
-    def summary(competition: str, league_id: str) -> Summary:
-        """Where the team stands, before any report is asked for.
-
-        The page would otherwise be blank for as long as a model call takes,
-        showing nothing the app already knows. To-do items carry what the
-        manager decided about them — dismissed, snoozed, or back since.
-        """
-        return presenting.week(wiring.week(*_open(competition)).week(league_id))
-
-    @app.get("/api/{competition}/leagues/{league_id}/weeks/{week}", response_model=Summary)
-    def week_of(competition: str, league_id: str, week: int) -> Summary:
-        """Another week of the season: one played as it finished, one to come as the rosters project.
-
-        The week being played is the summary's, with its to-do list and its
-        forecast; this answers the rest, with neither. Offered only where a
-        competition can, so one that cannot refuses rather than answering
-        with the week being played.
-        """
-        provider = wiring.registry.find(competition).open_as(WeekBrowsingProvider)
-        return provider.week_of(league_id, week)
-
-    @app.get("/api/{competition}/leagues/{league_id}/weeks/{week}/games", response_model=Slate)
-    def games_of(competition: str, league_id: str, week: int) -> Slate:
-        """The real games of any week of the season, the week being played included, and its byes."""
-        provider = wiring.registry.find(competition).open_as(WeekBrowsingProvider)
-        return provider.games_of(league_id, week)
-
-    @app.post("/api/{competition}/leagues/{league_id}/items", response_model=ItemMark)
-    def decide(competition: str, league_id: str, decision: ItemDecision) -> ItemMark:
-        """Dismiss, snooze or restore one to-do item; what the decision makes of it, for its row to show."""
-        return wiring.decisions.decide(wiring.registry.find(competition).key, league_id, decision)
-
-    @app.get("/api/{competition}/leagues/{league_id}/free-agents", response_model=PlayerPage)
-    def free_agents(competition: str, league_id: str, query: Annotated[PlayerQuery, Query()]) -> PlayerPage:
-        """One page of who is still out there, best first.
-
-        Ordering happens here rather than in the client because a football pool
-        is four thousand players: a client holding fifty of them can only
-        reorder those fifty, which is a worse answer than none.
-        """
-        return presenting.wire(wiring.week(*_open(competition)), league_id, query)
-
-    @app.get("/api/{competition}/leagues/{league_id}/teams", response_model=list[TeamRef])
-    def teams(competition: str, league_id: str) -> list[TeamRef]:
-        """Everyone in the league, so their rosters can be opened."""
-        return _provider(competition).teams(league_id)
-
-    @app.get("/api/{competition}/leagues/{league_id}/teams/{team_id}/roster", response_model=list[PlayerCard])
-    def team_roster(
-        competition: str, league_id: str, team_id: str, order: Annotated[PlayerOrder, Query()]
-    ) -> list[PlayerCard]:
-        """Somebody else's squad, in the same columns as your own, ordered as yours is."""
-        return order.ordered(_provider(competition).roster_of(league_id, team_id))
-
-    @app.get("/api/{competition}/leagues/{league_id}/schedule", response_model=LeagueSchedule)
-    def schedule(competition: str, league_id: str) -> LeagueSchedule:
-        """The league beyond this week: the season, the table, the real games.
-
-        Separate from `summary` because it answers a different question and
-        costs requests the week does not need — nobody checking their lineup
-        should wait on the whole season's fixtures.
-        """
-        return presenting.season(wiring.week(*_open(competition)).season(league_id))
-
-    @app.get("/api/{competition}/leagues/{league_id}/weeks-ahead", response_model=Outlook)
-    def weeks_ahead(competition: str, league_id: str, team: str = "") -> Outlook:
-        """The next few weeks as a roster stands, yours by default, and a pickup for any that comes up short.
-
-        Offered only where a competition can project them, as trades are, so
-        one that cannot refuses rather than answering with no weeks.
-        """
-        provider = wiring.registry.find(competition).open_as(OutlookProvider)
-        return provider.weeks_ahead(league_id, team)
-
-    @app.get("/api/{competition}/leagues/{league_id}/trades", response_model=Trades)
-    def trades(competition: str, league_id: str) -> Trades:
-        """The trades that would most raise your playoff chance and that the other side gains from too.
-
-        Its own route because it plays the season out once per trade tried —
-        seconds, not the instant a table should take to appear.
-        """
-        provider = wiring.registry.find(competition).open_as(TradeMarketProvider)
-        return wiring.market(provider).trades(league_id)
-
-    @app.post("/api/{competition}/leagues/{league_id}/scout", response_model=ScoutReport)
-    def scout(competition: str, league_id: str) -> ScoutReport:
-        """Judge the week's to-do list — or return the kept judgment where nothing has changed."""
-        return wiring.scout(*_open(competition)).report(league_id)
-
-    @app.get("/api/{competition}/leagues/{league_id}/judgment", response_model=Judgment | None)
-    def judgment(competition: str, league_id: str) -> Judgment | None:
-        """The league's last judgment, or null — read without asking the model anything.
-
-        What lets the week show its verdicts on load: judging is a click,
-        and a reload should not throw the answer away.
-        """
-        return wiring.scout(*_open(competition)).latest(league_id)
-
-    @app.post("/api/{competition}/leagues/{league_id}/assistant", response_model=Thread)
-    def assistant(competition: str, league_id: str) -> Thread:
-        """Open the conversation that follows you around this league.
-
-        Briefed on nothing yet: each question says what is on screen, and is
-        briefed on whatever of that it has not seen. The turns then go through
-        the chat endpoint like any other conversation.
-        """
-        assistant = wiring.ask(*_open(competition)).assistant(league_id)
-        return Thread(chat_id=chats.remember(Conversation(assistant)))
-
-    @app.post("/api/{competition}/leagues/{league_id}/free-agents/judge", response_model=list[PlayerCall])
-    def judge_free_agents(competition: str, league_id: str, request: JudgeRequest) -> list[PlayerCall]:
-        """A call on each of the free agents on screen, to show on their rows."""
-        entry = wiring.registry.find(competition)
-        provider = entry.open_as(WireProvider)
-        return wiring.wire(entry, provider).judge(league_id, request.player_ids)
-
-    @app.post("/api/{competition}/leagues/{league_id}/free-agents/calls", response_model=list[PlayerCall])
-    def free_agent_calls(competition: str, league_id: str, request: CallsRequest) -> list[PlayerCall]:
-        """The kept call on each free agent on screen, without asking the model anything.
-
-        What lets the wire show its calls on load. A player whose situation
-        has moved since his call comes back marked stale.
-        """
-        entry = wiring.registry.find(competition)
-        provider = entry.open_as(WireProvider)
-        return wiring.wire(entry, provider).kept(league_id, request.player_ids)
-
-    @app.get("/api/chat/{chat_id}", response_model=list[Turn])
-    def turns(chat_id: str) -> list[Turn]:
-        """What has been said in a conversation so far — what a page reopened on it shows.
-
-        An id this process does not hold is `chat_expired`, the client's cue to open another.
-        """
-        return chats.get(chat_id).turns
-
-    @app.post("/api/chat/{chat_id}", response_model=list[Turn])
-    def ask(chat_id: str, request: ChatRequest) -> list[Turn]:
-        """Ask the next question in an open conversation; every turn so far, the answer last.
-
-        The whole conversation rather than the answer alone, so the client shows
-        what the server holds instead of keeping a copy of its own in step.
-        """
-        conversation = chats.get(chat_id)
-        conversation.ask(request.message, request.on_screen)
-        return conversation.turns
 
 
 def _serve_frontend(app: FastAPI, dist: Path) -> None:
