@@ -172,6 +172,7 @@ class FakeYahoo:
         self.season_weeks: dict[int, Pairing | None] | None = None
         """Your side of each week's scoreboard; every week against Their Team when None."""
         self.standings_error: Exception | None = None
+        self.teams_error: Exception | None = None
         self.wire_error: Exception | None = None
         self.weekly_lineups = False
         self.best_game = False
@@ -232,6 +233,8 @@ class FakeYahoo:
 
     def teams(self) -> list[YahooTeam]:
         # As Yahoo's teams list: no standings with any team, which only `standings` carries.
+        if self.teams_error is not None:
+            raise self.teams_error
         return [replace(t, standing=None) for t in self.league_teams]
 
     def standings(self) -> list[YahooTeam]:

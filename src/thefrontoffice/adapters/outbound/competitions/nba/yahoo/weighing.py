@@ -42,6 +42,8 @@ class Decided:
     actions: list[Action]
     volume: tuple[int, int] | None = None
     """The games each side's lineups can start over the rest of the week: yours, then your opponent's."""
+    streams: int = 0
+    """The starts your opponent's adds left could still stream into its open slots."""
 
 
 def decide(
@@ -56,6 +58,7 @@ def decide(
     also: Sequence[Player] | None = None,
     shown: Mapping[str, PrintedLine] | None = None,
     chances: Mapping[str, float] | None = None,
+    their_adds: int = 0,
 ) -> Decided:
     """Every shown player's week, and the to-do list weighed on it.
 
@@ -68,7 +71,8 @@ def decide(
 
     `chances` is the forecast's chance of winning each category, by the
     league's name for it: a category league's pickups and drops are then
-    weighed on the categories still in play (`worth.Targeting`).
+    weighed on the categories still in play (`worth.Targeting`). `their_adds`
+    is your opponent's adds left this week, which it could stream with.
 
     The wire is enrichment here: one that will not load (a sync that has not
     carried it) leaves the week's rows and starts standing, with nothing to stream.
@@ -82,9 +86,9 @@ def decide(
     averages = {**(shown or {}), **reads.carried(free_agents)}
     readings = read_week(feeds, yahoo, weights, [*roster, *theirs, *free_agents], start, end, also or [], averages)
     today = feeds.today(start, end)
-    plan = plan_for(feeds, yahoo, (roster, theirs), free_agents, readings, weights, start, end, chances)
+    plan = plan_for(feeds, yahoo, (roster, theirs), free_agents, readings, weights, start, end, chances, their_adds)
     items = actions.build(roster, free_agents, readings, adds_left, weights is not None, today, plan)
-    return Decided(readings, items, plan.volume)
+    return Decided(readings, items, plan.volume, plan.streams)
 
 
 def read_week(
@@ -151,6 +155,7 @@ def plan_for(
     start: date,
     end: date,
     chances: Mapping[str, float] | None = None,
+    their_adds: int = 0,
 ) -> actions.Plan:
     """What weighs a pickup beyond the readings (`actions.Plan`): the nights left and the lineup's slots,
     teammates due back — whose splits are valued on the readings' own scale — and the games each side can start.
@@ -159,6 +164,8 @@ def plan_for(
     week, or the schedule will not load: pickups are then weighed on every
     game their clubs have left. A category league with `chances` weighs each
     category by how winnable it is this week, on the readings' own scales.
+    The race in games counts what your opponent's `their_adds` could still
+    stream in from the same wire (`lineup.streamed`).
     """
     roster, theirs = sides
     pool = [*roster, *theirs, *free_agents]
@@ -178,7 +185,10 @@ def plan_for(
     week = nba_lineup.Week(left, slots, datetime.now(PACIFIC).date(), end)
     backs = {key: r.back for key, r in readings.items()}
     volume = (nba_lineup.starts(roster, week, backs), nba_lineup.starts(theirs, week, backs))
-    return actions.Plan(week=week, returning=returning, volume=volume, targeting=targeting)
+    owned = {p.player_key for p in [*roster, *theirs]}
+    wire = [p for p in free_agents if p.player_key not in owned]
+    streams = nba_lineup.streamed(theirs, wire, week, backs, their_adds)
+    return actions.Plan(week=week, returning=returning, volume=volume, streams=streams, targeting=targeting)
 
 
 def valued(

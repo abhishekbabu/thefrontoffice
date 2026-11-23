@@ -379,3 +379,11 @@ def test_the_games_each_side_can_start_warn_when_you_have_fewer() -> None:
 
     assert (behind.label, behind.value) == ("Games left", "39 vs 44")
     assert (behind.tone, ahead.tone, level.tone) == ("warning", "good", "neutral")
+
+
+def test_the_starts_an_opponent_could_stream_in_are_shown_and_warn_where_they_would_catch_you() -> None:
+    [catchable] = week.volume(41, 39, 3)
+    [safe] = week.volume(44, 39, 3)
+
+    assert catchable.value == "41 vs 39 (+3 if they stream)"
+    assert (catchable.tone, safe.tone) == ("warning", "good")

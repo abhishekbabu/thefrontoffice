@@ -527,14 +527,21 @@ def adds(used: int, limit: int) -> list[Stat]:
     return [Stat(label="Adds left", value=f"{left} of {limit}", tone="good" if left else "warning")]
 
 
-def volume(mine: int, theirs: int) -> list[Stat]:
-    """'Games left 39 vs 44': the games each side's lineups can start over the rest of the week, yours first.
+def volume(mine: int, theirs: int, streams: int = 0) -> list[Stat]:
+    """'Games left 39 vs 41 (+3 if they stream)': the games each side's lineups can start over the rest of the
+    week, yours first, and the starts your opponent's adds left could still stream in.
 
     A basketball week is won on games as much as on who plays them, so being
-    behind on them warns: it is what a stream makes up.
+    behind on them warns, as does a lead their adds left could take back: it
+    is what a stream makes up.
     """
-    tone: Tone = "warning" if mine < theirs else "good" if mine > theirs else "neutral"
-    return [Stat(label="Games left", value=f"{mine} vs {theirs}", tone=tone)]
+    tone: Tone = "warning" if mine < theirs + streams else "good" if mine > theirs else "neutral"
+    return [Stat(label="Games left", value=f"{mine} vs {theirs}{if_streamed(streams)}", tone=tone)]
+
+
+def if_streamed(streams: int) -> str:
+    """' (+3 if they stream)': the starts the opponent's adds left could still add; nothing for none."""
+    return f" (+{streams} if they stream)" if streams else ""
 
 
 # ── the real games, from Sleeper ────────────────────────────────────

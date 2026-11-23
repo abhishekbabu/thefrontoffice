@@ -91,6 +91,24 @@ def open_nights(player: Player, roster: Sequence[Player], week: Week, backs: Bac
     ]
 
 
+def streamed(roster: Sequence[Player], wire: Sequence[Player], week: Week, backs: Backs, adds: int) -> int:
+    """The starts `adds` pickups from `wire` could add to `roster`'s week: each in turn the one who fills the most
+    nights its lineup leaves a slot open (`open_nights`), joining it before the next.
+
+    What a side that streams can still make up: it drops a player who would
+    not have started, so nobody's games are lost to the add.
+    """
+    held, pool, extra = list(roster), list(wire), 0
+    for _ in range(max(0, adds)):
+        found = max(((len(open_nights(p, held, week, backs)), p) for p in pool), key=lambda f: f[0], default=None)
+        if found is None or not found[0]:
+            break
+        extra += found[0]
+        held.append(found[1])
+        pool.remove(found[1])
+    return extra
+
+
 def needed_nights(player: Player, roster: Sequence[Player], week: Week, backs: Backs) -> list[date]:
     """The nights `roster` would start one fewer without `player`: what dropping him costs."""
     others = [p for p in roster if p.player_key != player.player_key]

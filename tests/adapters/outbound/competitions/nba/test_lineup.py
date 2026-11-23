@@ -11,6 +11,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.lineup import (
     seated,
     slots,
     starts,
+    streamed,
 )
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
@@ -89,3 +90,14 @@ def test_a_roster_starts_each_night_as_many_as_its_slots_seat() -> None:
 def test_the_days_without_games_before_a_return_are_the_free_adds() -> None:
     assert _week("SF").quiet(date(2026, 11, 28)) == [THU, date(2026, 11, 27)]
     assert _week("SF").quiet(THU) == []
+
+
+def test_a_sides_adds_left_could_stream_in_the_starts_its_open_slots_leave() -> None:
+    """SF and Util with one Laker: a Knick fills Tuesday and Wednesday, then a Nugget Monday and Tuesday; a Celtic
+    finds Monday full by then."""
+    roster = [_player("Starter", "SF", "LAL", "SF")]
+    wire = [_player("Knick", "SF", "NYK"), _player("Nugget", "SF", "DEN"), _player("Celtic", "SF", "BOS")]
+    wire.append(_player("Hurt", "SF", "MIA", status="O"))
+    week = _week("SF", "Util")
+
+    assert [streamed(roster, wire, week, {}, adds) for adds in (0, 1, 2, 3)] == [0, 2, 4, 4]

@@ -185,6 +185,19 @@ class YahooNBAProvider:
         limit = yahoo.settings().max_weekly_adds
         return self.fallback_weekly_adds if limit is None else limit
 
+    @staticmethod
+    def _adds_left(yahoo: YahooSource, team_key: str, limit: int) -> int:
+        """What is left of a team's weekly adds, by Yahoo's count of those it has made (`YahooTeam.adds_used`).
+
+        Enrichment: none where the league's teams will not load, so its streaming is not counted.
+        """
+        try:
+            team = next((t for t in yahoo.teams() if t.team_key == team_key), None)
+        except FrontOfficeError as e:
+            logger.warning(f"Counting the race in games without {team_key}'s adds left: {e}")
+            return 0
+        return max(0, limit - team.adds_used) if team is not None else 0
+
     def summary(self, league_id: str) -> Summary:
         """The week being played: the add budget, the score, both rosters with each player's week, and the to-do list.
 
@@ -219,6 +232,7 @@ class YahooNBAProvider:
                     adds_left,
                     shown=shown,
                     chances=chances,
+                    their_adds=self._adds_left(yahoo, found.opponent.team_key, limit),
                 )
             )
             return decided[0].readings
@@ -226,7 +240,7 @@ class YahooNBAProvider:
         board = self._board(yahoo, league, my_team, week, roster, read) if week else Summary()
         # Without a matchup this week there is no week to weigh anybody on: only the IL moves stand.
         items = decided[0].actions if decided else nba_week.off_il(roster)
-        volume = nba_week.volume(*decided[0].volume) if decided and decided[0].volume else []
+        volume = nba_week.volume(*decided[0].volume, decided[0].streams) if decided and decided[0].volume else []
         return board.model_copy(update={"headline": [*adds, *volume, *board.headline], "actions": items or None})
 
     def week_of(self, league_id: str, week: int) -> Summary:

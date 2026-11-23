@@ -662,6 +662,18 @@ def test_a_stream_is_urged_now_when_the_opponent_can_start_more_games() -> None:
     assert "39" in behind.reason and "44" in behind.reason
 
 
+def test_a_lead_in_games_the_opponents_streams_could_take_back_still_urges_a_stream() -> None:
+    roster, readings = _team()
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 21.0, 4))
+
+    [catchable] = streams(roster, [pickup], readings, 2, True, set(), plan=Plan(volume=(41, 39), streams=3))
+    [safe] = streams(roster, [pickup], readings, 2, True, set(), plan=Plan(volume=(44, 39), streams=3))
+
+    assert (catchable.urgency, safe.urgency) == ("now", "soon")
+    assert "+3" in catchable.reason
+
+
 # ── this week's categories, weighed by how winnable each is ─────────
 
 CATS = (StatCategory(POINTS.yahoo_stat, "PTS"), StatCategory(BLOCKS.yahoo_stat, "BLK"))
