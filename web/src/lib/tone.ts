@@ -1,4 +1,4 @@
-import type { Stat, TaskVerdict } from "@/lib/api";
+import type { Stat, TaskVerdict } from "@/lib/types";
 
 /** The badge's vocabulary: semantic, so a caller maps its own meaning onto it. */
 export type Variant = "ok" | "info" | "warn" | "fail" | "muted";

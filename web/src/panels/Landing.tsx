@@ -1,13 +1,14 @@
 import { useQueries } from "@tanstack/react-query";
 import { Meta } from "@/components/ui/label";
 import { ChevronRight, Trophy } from "lucide-react";
-import { api, type League, type Competition } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type League, type Competition } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink } from "@/components/ui/external-link";
+import { ExternalLink } from "@/components/ui/controls/external-link";
 import { ListCard, ListRow } from "@/components/ui/list";
 import { CardNote } from "@/components/ui/state";
 import { m } from "motion/react";
-import { list, listItem } from "@/lib/motion";
+import { list, listItem } from "@/lib/motion/lists";
 import { keys } from "@/lib/queries";
 import { RemedyAction } from "@/components/ui/error-note";
 
@@ -55,6 +56,7 @@ export function Landing({
       <m.div variants={list} initial="hidden" animate="shown" className="mt-8 flex flex-col gap-4">
         {configured.map((competition, i) => {
           const result = results[i];
+
           return (
             <m.div key={competition.key} variants={listItem}>
             <ListCard
@@ -94,7 +96,7 @@ export function Landing({
                   and a keyboard cannot tell apart. The button's hit area is
                   stretched over the row instead, with the link raised above it. */}
               {result?.data?.map((league) => (
-                <ListRow key={league.league_id} className="relative items-center py-3 transition-colors hover:bg-muted">
+                <ListRow key={league.league_id} className="relative items-center py-3 transition-colors hover:bg-muted motion-reduce:transition-none">
                   <button
                     type="button"
                     onClick={() => onPick(competition, league)}

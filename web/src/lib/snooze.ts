@@ -15,7 +15,10 @@ export const SNOOZES: Snooze[] = [
 /** 8am local, `days` after `now`'s date — a time to look again, not a moment to the second. */
 export function morningAfter(now: Date, days: number): Date {
   const when = new Date(now);
+
   when.setDate(when.getDate() + days);
+
   when.setHours(8, 0, 0, 0);
+
   return when;
 }

@@ -1,32 +1,35 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { useKept } from "@/lib/useKept";
+import { useKept } from "@/lib/hooks/useKept";
 import { GitCompareArrows, X } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
-import { fade, list, listItem, portrait } from "@/lib/motion";
-import { useLoadedImage } from "@/lib/useLoadedImage";
-import { IconButton } from "@/components/ui/icon-button";
-import { ExternalLink } from "@/components/ui/external-link";
+import { list, listItem, portrait } from "@/lib/motion/lists";
+import { fade } from "@/lib/motion/enter";
+import { useLoadedImage } from "@/lib/hooks/useLoadedImage";
+import { IconButton } from "@/components/ui/controls/icon-button";
+import { ExternalLink } from "@/components/ui/controls/external-link";
 import { Empty, QueryState } from "@/components/ui/state";
-import { BackLink, SlideOver, type Back } from "@/components/ui/dialog";
+import { BackLink, SlideOver, type Back } from "@/components/ui/overlays/dialog";
 import { useShown } from "@/lib/screen";
-import { api, type ActivityRow, type PlayerDetail, type Stat, type StatTable } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type ActivityRow, type PlayerDetail, type Stat, type StatTable } from "@/lib/types";
 import { keys } from "@/lib/queries";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { toneText } from "@/lib/tone";
 import { Badge } from "@/components/ui/badge";
 import { Linked, StatCells, StatList } from "@/components/ui/stat";
-import { Hint } from "@/components/ui/tooltip";
+import { Hint } from "@/components/ui/overlays/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Label, Meta } from "@/components/ui/label";
 import { Table, Td, Th } from "@/components/ui/table";
-import { Tabs } from "@/components/ui/tabs";
+import { Tabs } from "@/components/ui/controls/tabs";
 import { MoveDrawer, MoveRow, backTo } from "@/components/league/move";
 import { ListCard } from "@/components/ui/list";
 
 /** What labels his ranking at his position, wherever it is shown. */
 const RANK = "Pos rank";
+
 /** What labels whose roster he is on, wherever it is shown. */
 const OWNER = "Owner";
 
@@ -47,6 +50,7 @@ function facts(detail: PlayerDetail): Stat[] {
     better: null,
     hint: "",
   });
+
   return [
     ...(detail.headline ? [fact(detail.headline_label || "Value", detail.headline)] : []),
     ...(detail.rank ? [fact(RANK, detail.rank)] : []),
@@ -144,7 +148,9 @@ function Headlines({ stats }: { stats: Stat[] }) {
 function TeamLine({ detail }: { detail: PlayerDetail }) {
   const crest = useLoadedImage(detail.team_logo_url);
   const club = detail.team_name || detail.team;
+
   if (!detail.position && !club) return null;
+
   return (
     <Meta as="p" className="mt-1 flex items-center gap-1.5">
       {detail.position && <span className="uppercase tracking-[0.06em]">{detail.position}</span>}
@@ -177,6 +183,7 @@ function TeamLine({ detail }: { detail: PlayerDetail }) {
  */
 export function Chips({ detail, className }: { detail: PlayerDetail; className?: string }) {
   if (!detail.owner && !detail.rank) return null;
+
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
       {detail.rank && (
@@ -207,6 +214,7 @@ export function Chips({ detail, className }: { detail: PlayerDetail; className?:
  */
 export function Portrait({ src, className }: { src: string; className?: string }) {
   const loaded = useLoadedImage(src);
+
   return (
     <AnimatePresence initial={false}>
       {loaded && (
@@ -260,11 +268,13 @@ export function PlayerPanel({
   const shown = useKept(playerId) ?? "";
 
   const compared = useCompared(competition, league);
+
   const player = useQuery<PlayerDetail, Error>({
     queryKey: keys.player(competition, league, shown),
     queryFn: () => api.league(competition, league).player(shown),
     enabled: Boolean(shown),
   });
+
   // Each section in its tab: one with none of its own sits in the first. A
   // tab with nothing in it is not offered, and with one tab there is no bar.
   const [tab, setTab] = useState("");
@@ -275,6 +285,7 @@ export function PlayerPanel({
   // A deferred tab is offered before anyone knows what it holds: it is read
   // only once opened, since each costs a request the first tab does not.
   const deferred = detail?.deferred ?? [];
+
   const present = (detail?.tabs ?? []).filter(
     (t) =>
       deferred.includes(t) ||
@@ -282,13 +293,16 @@ export function PlayerPanel({
       detail?.tables.some((x) => tabOf(x) === t) ||
       (t === movesTab && (detail?.moves.length ?? 0) > 0),
   );
+
   const current = present.includes(tab) ? tab : present[0];
   const opened = current && deferred.includes(current) ? current : "";
+
   const part = useQuery<PlayerDetail, Error>({
     queryKey: keys.playerTab(competition, league, shown, opened),
     queryFn: () => api.league(competition, league).playerTab(shown, opened),
     enabled: Boolean(shown && opened),
   });
+
   const source = opened ? part.data : detail;
   const shownHere = (section: { tab: string }) => present.length <= 1 || tabOf(section) === current;
   const tables = (source?.tables ?? []).filter(shownHere);
@@ -452,16 +466,21 @@ export function PlayerPanel({
       back={player.data ? { label: player.data.name, onBack: () => setMove(null) } : undefined}
       onClose={() => {
         setMove(null);
+
         onClose();
       }}
       onOpenPlayer={(id) => {
         const from = move!;
+
         setMove(null);
+
         onPick(id, backTo(from, () => setMove(from)));
       }}
       onCompare={(ids) => {
         const from = move!;
+
         setMove(null);
+
         onCompare(ids, backTo(from, () => setMove(from)));
       }}
     />

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_VIEW, VIEWS, href, offers, parse } from "./route";
+import { href, parse } from "./route";
+import { DEFAULT_VIEW, VIEWS } from "./views";
 
 describe("parse", () => {
   it("reads the landing page", () => {
@@ -48,16 +49,6 @@ describe("href", () => {
         leagueId: "123",
         view,
       });
-    }
-  });
-});
-
-describe("offers", () => {
-  it("offers trades only to a competition that finds them, and every other view to all", () => {
-    expect(offers({ finds_trades: false }, "trades")).toBe(false);
-    expect(offers({ finds_trades: true }, "trades")).toBe(true);
-    for (const view of VIEWS.filter((v) => v !== "trades")) {
-      expect(offers({ finds_trades: false }, view)).toBe(true);
     }
   });
 });

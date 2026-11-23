@@ -1,7 +1,7 @@
 import { m } from "motion/react";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LoadingBar } from "@/components/ui/progress";
-import { fade, rise } from "@/lib/motion";
+import { fade, rise } from "@/lib/motion/enter";
 import { cn } from "@/lib/utils";
 
 /**
@@ -52,7 +52,9 @@ export function QueryState({
   className?: string;
 }) {
   if (query.isLoading) return <Loading lines={lines} />;
+
   if (query.isError) return <ErrorNote error={query.error} className={className} />;
+
   return null;
 }
 

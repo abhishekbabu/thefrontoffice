@@ -26,8 +26,11 @@ export function prePaint(stored: Stored): void {
   try {
     const mode = localStorage.getItem(stored.modeKey);
     const dark = mode === "dark" || mode === "light" ? mode === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+
     document.documentElement.classList.toggle("dark", dark);
+
     const palette = localStorage.getItem(stored.paletteKey);
+
     if (palette && palette !== stored.fallback && stored.palettes.includes(palette)) {
       document.documentElement.setAttribute("data-theme", palette);
     }
@@ -44,5 +47,6 @@ export function prePaintScript(): string {
     palettes: PALETTES.map((p) => p.id),
     fallback: DEFAULT_PALETTE,
   };
+
   return `(${prePaint.toString()})(${JSON.stringify(stored)});`;
 }

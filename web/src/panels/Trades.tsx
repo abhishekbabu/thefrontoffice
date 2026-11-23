@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown } from "lucide-react";
-import { api, type Competition, type League, type TradeIdea, type Trades } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type Competition, type League, type TradeIdea, type Trades } from "@/lib/types";
 import { ListCard } from "@/components/ui/list";
 import { Table, Td, Th } from "@/components/ui/table";
-import { Hint } from "@/components/ui/tooltip";
+import { Hint } from "@/components/ui/overlays/tooltip";
 import { Meta } from "@/components/ui/label";
 import { percent, percentPoints, signed } from "@/lib/format";
 import { CardNote } from "@/components/ui/state";
@@ -12,7 +13,7 @@ import { LeagueHeader } from "@/components/league/page-header";
 import { cn } from "@/lib/utils";
 import { clickable } from "@/lib/clickable";
 import { useDrawers } from "@/components/league/drawers";
-import { traded, type Comparing } from "@/components/league/compare";
+import { traded, type Comparing } from "@/lib/comparing";
 
 /**
  * Half a point — of playoff chance, or of starters' points a week — below
@@ -28,6 +29,7 @@ type Measure = Trades["measure"];
 /** The trades worth offering, and the day trading closes where the league's settings name one. */
 export function TradesPanel({ competition, league }: { competition: Competition; league: League }) {
   const { openComparison, drawer } = useDrawers(competition, league);
+
   return (
     <>
       <LeagueHeader competition={competition} league={league} />
@@ -104,12 +106,15 @@ function TradeIdeas({
   const ideas = trades.data?.ideas;
   const ranked = trades.data?.ranked_by;
   const measure = trades.data?.measure ?? "points";
+
   // Playoff weeks the platform has not projected yet have no column rather than one of dashes.
   const figures = FIGURES[measure].filter(
     (f) => f.key !== "playoff_points" || ideas?.some((i) => i.playoff_points != null),
   );
+
   const pricing = priced(ideas ?? []);
   const closes = trades.data?.deadline ? ` · deadline ${day(trades.data.deadline)}` : "";
+
   return (
     <ListCard
       title="Trades worth offering"
@@ -183,6 +188,7 @@ function Players({ names, pricing }: { names: string[]; pricing: Map<string, str
     <>
       {names.map((name) => {
         const why = pricing.get(name);
+
         return (
           <span key={name} className="block whitespace-nowrap">
             {why ? (
@@ -203,6 +209,7 @@ function Players({ names, pricing }: { names: string[]; pricing: Map<string, str
 function Figure({ idea, figure, measure }: { idea: TradeIdea; figure: Figured; measure: Measure }) {
   if (figure === "playoffs_change") {
     const change = idea.playoffs_change * 100;
+
     return (
       <>
         <span className={tint(change)}>{percentPoints(idea.playoffs_change)}</span>
@@ -210,9 +217,13 @@ function Figure({ idea, figure, measure }: { idea: TradeIdea; figure: Figured; m
       </>
     );
   }
+
   const value = figure === "points" ? idea.points : figure === "total" ? idea.total : idea.playoff_points;
+
   if (value == null) return <span className="text-muted-foreground">—</span>;
+
   const categories = measure === "categories";
+
   return (
     <span className={tint(value, categories ? NOTICEABLE_CATEGORIES : NOTICEABLE)}>
       {signed(value, categories ? 2 : 1)}
@@ -239,11 +250,14 @@ export function day(iso: string): string {
 export function priced(ideas: TradeIdea[]): Map<string, string> {
   const lines = ideas.flatMap((idea) => idea.form);
   const named = new Map<string, string>();
+
   for (const name of ideas.flatMap((idea) => [...idea.giving, ...idea.receiving])) {
     // A trade lists "Matthew Golden (WR)"; his pricing is under "Matthew Golden".
     const line = lines.find((l) => name === l.label || name.startsWith(`${l.label} (`));
+
     if (line) named.set(name, line.value);
   }
+
   return named;
 }
 
@@ -254,6 +268,8 @@ export function priced(ideas: TradeIdea[]): Map<string, string> {
  */
 export function theirCase(idea: TradeIdea, measure: Measure = "points"): string {
   if (measure === "categories") return `their cats ${signed(idea.their_points, 2)} /wk`;
+
   if (idea.their_playoffs < 0.05) return `out of the race, ${percent(idea.their_playoffs)}`;
+
   return `their starters ${signed(idea.their_points)} /wk`;
 }

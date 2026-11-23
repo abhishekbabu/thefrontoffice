@@ -1,16 +1,17 @@
 import { useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react";
-import { api, type League, type PlayerCall, type PlayerPage, type Competition } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type League, type PlayerCall, type PlayerPage, type Competition } from "@/lib/types";
 import { Card, CardHeader } from "@/components/ui/card";
-import { IconButton } from "@/components/ui/icon-button";
+import { IconButton } from "@/components/ui/controls/icon-button";
 import { RosterTable, toOrder } from "@/components/league/roster-table";
 import type { SortState } from "@/components/ui/data-table";
 import { Busy, QueryState } from "@/components/ui/state";
-import { ToggleChip, ToggleGroup } from "@/components/ui/toggle";
-import { Tabs } from "@/components/ui/tabs";
+import { ToggleChip, ToggleGroup } from "@/components/ui/controls/toggle";
+import { Tabs } from "@/components/ui/controls/tabs";
 import { useDrawers } from "@/components/league/drawers";
-import { SearchInput } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/controls/input";
 import { Meta } from "@/components/ui/label";
 import { Verdict } from "@/components/ui/verdict";
 import { ErrorNote } from "@/components/ui/error-note";
@@ -27,6 +28,7 @@ const CALL: Record<PlayerCall["decision"], { label: string; variant: Variant }> 
 /** The model's call on one player, under his row — said in words, not only color. */
 function CallLine({ call }: { call: PlayerCall }) {
   const { label, variant } = CALL[call.decision];
+
   return (
     <Verdict
       label={call.drop ? `${label}, drop ${call.drop}` : label}
@@ -40,6 +42,7 @@ function CallLine({ call }: { call: PlayerCall }) {
 /** `kept` with each call in `made` in place of any earlier one on the same player. */
 export function withCalls(kept: PlayerCall[], made: PlayerCall[]): PlayerCall[] {
   const replaced = new Set(made.map((call) => call.player_id));
+
   return [...kept.filter((call) => !replaced.has(call.player_id)), ...made];
 }
 
@@ -62,6 +65,7 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
   const [view, setView] = useState("");
 
   const leagueApi = api.league(competition.key, league.league_id);
+
   const page = useQuery<PlayerPage, Error>({
     queryKey: [...keys.freeAgents(competition.key, league.league_id), search, position, sort, offset, view],
     // No limit asked for: a page is the server's size, which it says on the page.
@@ -74,6 +78,7 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
   /** Any change to what is being asked for starts again at the first page. */
   const reset = <T,>(set: (value: T) => void) => (value: T) => {
     set(value);
+
     setOffset(0);
   };
 
@@ -88,13 +93,16 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
   // marked stale rather than gone.
   const visible = page.data?.players.map((p) => p.player_id) ?? [];
   const callsKey = keys.freeAgentCalls(competition.key, league.league_id);
+
   const kept = useQuery<PlayerCall[], Error>({
     queryKey: [...callsKey, visible.join(",")],
     queryFn: () => leagueApi.freeAgentCalls(visible),
     enabled: canJudge && visible.length > 0,
   });
+
   const calls = Object.fromEntries((kept.data ?? []).map((c) => [c.player_id, c]));
   const queryClient = useQueryClient();
+
   // The judging answers with the calls it made, which go straight into the
   // kept calls of every page read so far: reading them back is a request for
   // what is already in hand.
@@ -181,7 +189,9 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
                   icon={<X />}
                   onClick={() => {
                     setSearch("");
+
                     setPosition("");
+
                     setOffset(0);
                   }}
                 />
@@ -200,6 +210,7 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
               onOpen={openPlayer}
               detail={(player) => {
                 const call = calls[player.player_id];
+
                 return call && <CallLine call={call} />;
               }}
             />

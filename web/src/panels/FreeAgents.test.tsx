@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PlayerCall } from "@/lib/api";
+import type { PlayerCall } from "@/lib/types";
 import { withCalls } from "@/panels/FreeAgents";
 
 const call = (player_id: string, decision: PlayerCall["decision"], stale = false): PlayerCall => ({

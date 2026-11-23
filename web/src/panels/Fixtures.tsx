@@ -1,8 +1,9 @@
 import { Fragment, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api, type Competition, type League, type LeagueSchedule, type Match, type Slate, type Summary } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type Competition, type League, type LeagueSchedule, type Match, type Slate, type Summary } from "@/lib/types";
 import { keys } from "@/lib/queries";
-import { kickoff } from "@/lib/format";
+import { kickoff } from "@/lib/times";
 import { toneText } from "@/lib/tone";
 import { cn } from "@/lib/utils";
 import { ListCard, ListHeading, ListRow } from "@/components/ui/list";
@@ -10,7 +11,7 @@ import { Label, Meta } from "@/components/ui/label";
 import { Empty, QueryState } from "@/components/ui/state";
 import { LeagueHeader } from "@/components/league/page-header";
 import { WeekPane, WeekStepper, useWeekParam } from "@/components/league/week-stepper";
-import { SlideOver, SlideOverHeader } from "@/components/ui/dialog";
+import { SlideOver, SlideOverHeader } from "@/components/ui/overlays/dialog";
 import { useDrawers } from "@/components/league/drawers";
 
 /**
@@ -32,6 +33,7 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
     queryFn: leagueApi.week,
     enabled: browses,
   });
+
   const { shown, step, swipe } = useWeekParam(browses ? (summary.data?.weeks ?? undefined) : undefined);
 
   const games = useQuery<Slate, Error>({
@@ -40,6 +42,7 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
     enabled: browses && shown !== undefined,
     placeholderData: keepPreviousData,
   });
+
   const schedule = useQuery<LeagueSchedule, Error>({
     queryKey: keys.season(competition.key, league.league_id),
     queryFn: leagueApi.season,
@@ -49,6 +52,7 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
   const rows = browses ? games.data?.games : schedule.data?.matches;
   const byes = (browses && games.data?.byes) || [];
   const note = (browses && games.data?.note) || "";
+
   return (
     <>
       <LeagueHeader competition={competition} league={league}>
@@ -78,7 +82,9 @@ export function FixturesPanel({ competition, league }: { competition: Competitio
             onClose={() => setOpen(null)}
             onOpen={(id) => {
               const from = open;
+
               setOpen(null);
+
               openPlayer(id, { label: `${from.away} at ${from.home}`, onBack: () => setOpen(from) });
             }}
           />
@@ -102,18 +108,20 @@ function GameDetail({ game, onClose, onOpen }: { game: Match; onClose: () => voi
         {[
           { title: "Yours", players: game.yours },
           { title: "Your opponent's", players: game.theirs },
-        ]
-          .filter((side) => side.players.length > 0)
-          .map((side) => (
-            <ListCard key={side.title} title={side.title} count={`${side.players.length}`}>
-              {side.players.map((p) => (
-                <ListRow key={p.player_id} onClick={() => onOpen(p.player_id)}>
-                  <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                  <Meta className="shrink-0">{p.detail}</Meta>
-                </ListRow>
-              ))}
-            </ListCard>
-          ))}
+        ].flatMap((side) =>
+          side.players.length === 0
+            ? []
+            : [
+                <ListCard key={side.title} title={side.title} count={`${side.players.length}`}>
+                  {side.players.map((p) => (
+                    <ListRow key={p.player_id} onClick={() => onOpen(p.player_id)}>
+                      <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                      <Meta className="shrink-0">{p.detail}</Meta>
+                    </ListRow>
+                  ))}
+                </ListCard>,
+              ],
+        )}
       </div>
     </>
   );
@@ -155,6 +163,7 @@ export function Games({
       )}
       {rows.map((row, i) => {
         const before = rows[i - 1];
+
         return (
           <Fragment key={`${row.home}-${row.away}-${i}`}>
             {(!before || slot(before) !== slot(row)) && <ListHeading>{slot(row)}</ListHeading>}
@@ -190,7 +199,9 @@ function Holders({ game }: { game: Match }) {
     { label: "You", players: game.yours, tone: "" },
     { label: "Opp", players: game.theirs, tone: "text-muted-foreground" },
   ].filter((side) => side.players.length > 0);
+
   if (sides.length === 0) return null;
+
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[12px]">
       {sides.map((side) => (
@@ -206,7 +217,9 @@ function Holders({ game }: { game: Match }) {
 /** A club, and its score once the game has kicked off; the side ahead in weight, which reads without color. */
 function Side({ club, score, other }: { club: string; score?: number | null; other?: number | null }) {
   if (score == null) return <>{club}</>;
+
   const ahead = other != null && score > other;
+
   return (
     <span className={cn(ahead && "font-semibold")}>
       {club} <span className="tabular-nums">{score}</span>

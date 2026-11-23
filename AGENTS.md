@@ -104,7 +104,7 @@ rather than offered and refused. Never ship a canned report in the package.
 whatever else had no home. Reach for `ui/` before writing a card, table, loading state or
 control: those drifted per panel, and waiting should look the same everywhere.
 Controls are `IconButton`, whose one required `label` is both tooltip and
-accessible name. Motion lives in `lib/motion.ts`, via `LazyMotion` from its own
+accessible name. Motion lives in `lib/motion/`, via `LazyMotion` from its own
 module, or the library lands in the entry bundle.
 
 In `web/`, color comes only from semantic tokens (`bg-card`,

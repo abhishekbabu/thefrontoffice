@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Meta } from "@/components/ui/label";
 import { useNavigate } from "react-router-dom";
-import { api, type Competition, type League, type LeagueSchedule } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type Competition, type League, type LeagueSchedule } from "@/lib/types";
 import { keys } from "@/lib/queries";
 import { href } from "@/lib/route";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,7 @@ export function LeaguePanel({ competition, league }: { competition: Competition;
     queryKey: keys.season(competition.key, league.league_id),
     queryFn: api.league(competition.key, league.league_id).season,
   });
+
   const navigate = useNavigate();
   const rosters = href(competition.key, league.league_id, "rosters");
 
@@ -50,6 +52,7 @@ function Standings({
   // that is not simulated has no playoff chance.
   const has = (key: "record" | "points_against" | "waiver_budget" | "waiver_order" | "playoffs") =>
     rows.some((row) => row[key]);
+
   return (
     <Card>
       <CardHeader>

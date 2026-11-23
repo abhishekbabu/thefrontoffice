@@ -101,7 +101,7 @@ Algorithmic and architectural wins, not micro-optimizations.
 - **Front end.** What the first paint loads — the entry and the chunks it
   preloads — has a hard budget checked by the build. Watch
   for a heavyweight dependency pulled in for trivial use, motion imported
-  outside `lib/motion.ts` (which lands the library in the entry bundle), and
+  outside `lib/motion/` (which lands the library in the entry bundle), and
   anything that should be deferred past first paint.
 - **CI.** Redundant steps, missing caching, a gate that duplicates another.
 

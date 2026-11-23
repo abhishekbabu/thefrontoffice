@@ -1,11 +1,11 @@
 import { GitCompareArrows } from "lucide-react";
 import { Meta } from "@/components/ui/label";
-import type { ActivityRow } from "@/lib/api";
+import type { ActivityRow } from "@/lib/types";
 import { MAX_COMPARED } from "@/lib/compare";
 import { Badge } from "@/components/ui/badge";
-import { IconButton } from "@/components/ui/icon-button";
+import { IconButton } from "@/components/ui/controls/icon-button";
 import { ListCard, ListRow } from "@/components/ui/list";
-import { SlideOver, SlideOverHeader, type Back } from "@/components/ui/dialog";
+import { SlideOver, SlideOverHeader, type Back } from "@/components/ui/overlays/dialog";
 
 /**
  * One league move on one line: when, who, what, and "+A, -B". Read the same in
@@ -81,6 +81,7 @@ function MoveDetail({
   onCompare: () => void;
 }) {
   const players = new Set(move.moves.map((m) => m.player_id).filter(Boolean)).size;
+
   return (
     <>
       <SlideOverHeader
@@ -131,12 +132,14 @@ function MoveDetail({
  */
 export function sections(move: ActivityRow): { title: string; moves: ActivityRow["moves"] }[] {
   const managers = [...new Set(move.moves.filter((m) => m.change === "added").map((m) => m.manager))];
+
   if (managers.length > 1) {
     return managers.map((manager) => ({
       title: `To ${manager}`,
       moves: move.moves.filter((m) => m.change === "added" && m.manager === manager),
     }));
   }
+
   return [
     { title: "Added", moves: move.moves.filter((m) => m.change === "added") },
     { title: "Dropped", moves: move.moves.filter((m) => m.change === "dropped") },

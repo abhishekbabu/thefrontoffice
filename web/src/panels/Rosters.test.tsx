@@ -1,18 +1,20 @@
 import { act } from "react";
 import { describe, expect, it } from "vitest";
-import type { Competition, League, Outlook, PlayerCard, TeamRef } from "@/lib/api";
+import type { League, Outlook, PlayerCard, TeamRef } from "@/lib/types";
 import { keys } from "@/lib/queries";
 import { RostersPanel } from "@/panels/Rosters";
 import { offlineClient, render, settle } from "@/test/render";
+import { competitionOf } from "@/test/leagues";
 
-const competition = { key: "nfl-sleeper", plans_weeks: false } as Competition;
-const PLANNING = { ...competition, plans_weeks: true } as Competition;
+const competition = competitionOf({ key: "nfl-sleeper", plans_weeks: false });
+const PLANNING = { ...competition, plans_weeks: true };
 const league: League = { league_id: "R1", name: "Sunday Money", detail: "", url: "" };
 
 const teams: TeamRef[] = [
   { team_id: "1", name: "Me", detail: "6-4", url: "", is_mine: true },
   { team_id: "2", name: "Rival", detail: "3-7", url: "", is_mine: false },
 ];
+
 const card = (id: string, name: string): PlayerCard => ({
   player_id: id,
   columns: { Player: name, Pos: "WR" },
@@ -23,6 +25,7 @@ const card = (id: string, name: string): PlayerCard => ({
 });
 
 type Week = Outlook["weeks"][number];
+
 const week = (n: number, more: Partial<Week> = {}): Week => ({
   week: n,
   points: 120,
@@ -40,26 +43,35 @@ const week = (n: number, more: Partial<Week> = {}): Week => ({
 /** A league's teams and your roster, with the weeks ahead where the competition plans them. */
 function rosters(key: string, mine: PlayerCard, outlook?: Outlook) {
   const client = offlineClient();
+
   client.setQueryData(keys.teams(key, league.league_id), teams);
+
   client.setQueryData([...keys.roster(key, league.league_id), null], [mine]);
+
   if (outlook) client.setQueryData(keys.outlook(key, league.league_id, ""), outlook);
+
   return client;
 }
 
 describe("Rosters", () => {
   it("opens on yours and shows anybody else's from the chips", async () => {
     const client = rosters(competition.key, card("a", "Lamb"));
+
     client.setQueryData([...keys.teamRoster(competition.key, league.league_id, "2"), null], [card("b", "Nacua")]);
+
     const { container } = await render(<RostersPanel competition={competition} league={league} />, client);
 
     expect(container.textContent).toContain("Lamb");
     // The record is the league table's; the card names the team and counts its players.
     expect(container.textContent).toContain("1 players");
     expect(container.textContent).not.toContain("6-4");
+
     const rival = [...container.querySelectorAll<HTMLButtonElement>("button[aria-pressed]")].find((b) =>
       b.textContent?.includes("Rival"),
     )!;
+
     await act(async () => rival.click());
+
     await settle();
 
     expect(container.textContent).toContain("Nacua");
@@ -77,11 +89,13 @@ describe("Rosters", () => {
       measure: "proj",
       weeks: [week(12), week(13, { missing: ["Josh Allen (bye)"] }), week(14)],
     });
+
     expect(some).toContain("Week 13");
     expect(some).not.toContain("Week 12");
     expect(some).not.toContain("Week 14");
 
     const none = await show({ ...NO_GRID, usual: 120, measure: "proj", weeks: [week(12), week(13), week(14)] });
+
     expect(none).toContain("through week 14");
     expect(none).not.toContain("Week 12");
   });
@@ -98,6 +112,7 @@ describe("Rosters", () => {
         week(9, { points: 40, provisional: true }),
       ],
     });
+
     const text = (await render(<RostersPanel competition={PLANNING} league={league} />, client)).container.textContent;
 
     expect(text).not.toContain("Week 6");
@@ -111,7 +126,8 @@ describe("Rosters", () => {
   });
 
   it("shows FPL's weeks ahead as a fixture grid of only the players to watch", async () => {
-    const fpl = { key: "premier-league-fpl", plans_weeks: true } as Competition;
+    const fpl = competitionOf({ key: "premier-league-fpl", plans_weeks: true });
+
     const client = rosters(fpl.key, card("a", "Haaland"), {
       usual: null,
       measure: "proj",
@@ -132,6 +148,7 @@ describe("Rosters", () => {
       clear: 14,
       warnings: [{ label: "GW12", value: "1 blank: Haaland", tone: "warning", url: "", better: null, hint: "" }],
     });
+
     const text = (await render(<RostersPanel competition={fpl} league={league} />, client)).container.textContent;
 
     expect(text).toContain("1 to watch");

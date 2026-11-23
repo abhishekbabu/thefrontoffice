@@ -2,7 +2,7 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/server";
-import type { CaptureStatus, Setting, SettingsGroup } from "@/lib/api";
+import type { CaptureStatus, Setting, SettingsGroup } from "@/lib/types";
 import { keys } from "@/lib/queries";
 import { SettingsPanel } from "@/panels/Settings";
 import { offlineClient, render } from "@/test/render";
@@ -22,36 +22,47 @@ const YAHOO_CARD = '[role=group][aria-label="NBA on Yahoo"]';
 
 async function settingsWith(status: CaptureStatus, groups: SettingsGroup[] = [YAHOO]) {
   const client = offlineClient();
+
   client.setQueryData(keys.settings, groups);
+
   client.setQueryData(keys.capture("yahoo"), status);
+
   const { container } = await render(<SettingsPanel onBack={() => {}} />, client);
+
   const card = container.querySelector(YAHOO_CARD);
+
   return { container, card: card?.textContent ?? "" };
 }
 
 describe("Yahoo status", () => {
   it("is not shown without a Yahoo group", async () => {
     const { container } = await settingsWith({ active: true, synced_at: null, leagues: [], session: null }, []);
+
     expect(container.textContent).not.toContain("Sync Yahoo");
   });
 
   it("offers the bookmark, built to call back the app it is served from", async () => {
     const { container } = await settingsWith({ active: true, synced_at: null, leagues: [], session: null });
+
     const link = [...container.querySelectorAll("a")].find((a) => a.textContent === "Sync Yahoo");
 
     const href = link?.getAttribute("href") ?? "";
+
     expect(href.startsWith("javascript:")).toBe(true);
     expect(decodeURIComponent(href)).toContain(JSON.stringify(window.location.origin));
   });
 
   it("says it has never run before the first sync", async () => {
     const { card } = await settingsWith({ active: true, synced_at: null, leagues: [], session: null });
+
     expect(card).toContain("Never synced");
   });
 
   it("says when it last ran, and how many leagues it holds, in its status", async () => {
     const synced = new Date();
+
     synced.setHours(9, 5);
+
     const { card } = await settingsWith({
       active: true,
       synced_at: synced.toISOString(),
@@ -65,13 +76,16 @@ describe("Yahoo status", () => {
 
   it("says how to copy the session cookie, and where it goes, while read with one", async () => {
     const { card } = await settingsWith({ active: false, synced_at: null, leagues: [], session: { fetched_at: null, expired: false } });
+
     expect(card).toContain("pub-api-ro.fantasysports.yahoo.com");
     expect(card).toContain("YAHOO_SESSION_COOKIE");
   });
 
   it("read with the session, says when it last fetched", async () => {
     const fetched = new Date();
+
     fetched.setHours(9, 5);
+
     const { card } = await settingsWith({
       active: false,
       synced_at: null,
@@ -122,15 +136,24 @@ const GROUPS: SettingsGroup[] = [
 async function fixedValues() {
   const saved: Record<string, string>[] = [];
   const capture: CaptureStatus = { active: false, synced_at: null, leagues: [], session: null };
+
   server.use(
     http.all("*", async ({ request }) => {
-      if (request.method === "PUT") saved.push(((await request.json()) as { values: Record<string, string> }).values);
+      if (request.method === "PUT") {
+        // SAFETY: the settings page PUTs `{ values }`, which the assertions on `saved` read back.
+        saved.push(((await request.json()) as { values: Record<string, string> }).values);
+      }
+
       return HttpResponse.json(new URL(request.url).pathname.endsWith("/capture") ? capture : GROUPS);
     }),
   );
+
   const client = offlineClient();
+
   client.setQueryData(keys.settings, GROUPS);
+
   client.setQueryData(keys.capture("yahoo"), capture);
+
   const { container } = await render(<SettingsPanel onBack={() => {}} />, client);
 
   const group = (key: string) => container.querySelector<HTMLElement>(`[role=group][aria-label="${key}"]`)!;
@@ -141,6 +164,7 @@ async function fixedValues() {
   const save = () => container.querySelector<HTMLButtonElement>("button[aria-label^=Save]");
   const discard = () => container.querySelector<HTMLButtonElement>("button[aria-label^=Discard]");
   const status = () => container.querySelector("[role=status]")?.textContent;
+
   return { container, saved, chips, pressed, chip, click, save, discard, status };
 }
 
@@ -158,10 +182,13 @@ describe("Fixed-value settings", () => {
     const { saved, pressed, chip, chips, click, save } = await fixedValues();
 
     await click(chip("YAHOO_SOURCE", "browser"));
+
     await click(chips("DEBUG_MODE").find((c) => c.getAttribute("aria-pressed") === "false")!);
+
     expect(pressed("YAHOO_SOURCE")).toEqual(["browser"]);
 
     await click(save()!);
+
     expect(saved).toEqual([{ YAHOO_SOURCE: "browser", DEBUG_MODE: "true" }]);
   });
 
@@ -169,8 +196,11 @@ describe("Fixed-value settings", () => {
     const { chip, click, save } = await fixedValues();
 
     await click(chip("LOG_LEVEL", "DEBUG"));
+
     expect(save()?.disabled).toBe(false);
+
     await click(chip("LOG_LEVEL", "INFO"));
+
     expect(save()).toBeNull();
   });
 });
@@ -180,8 +210,11 @@ describe("Saving", () => {
     const { chip, click, save, status } = await fixedValues();
 
     await click(chip("LOG_LEVEL", "DEBUG"));
+
     expect(status()).toBe("1 unsaved");
+
     await click(save()!);
+
     await vi.waitFor(() => expect(status()).toBe("Saved"));
   });
 
@@ -189,7 +222,9 @@ describe("Saving", () => {
     const { chip, click, discard, pressed, saved, status } = await fixedValues();
 
     await click(chip("LOG_LEVEL", "DEBUG"));
+
     await click(chip("YAHOO_SOURCE", "session"));
+
     await click(discard()!);
 
     expect(pressed("LOG_LEVEL")).toEqual(["INFO"]);
@@ -228,15 +263,19 @@ describe("A group read more than one way", () => {
     switch: "YAHOO_SOURCE",
     modes: { oauth: "needs a developer app", browser: "run the bookmark", session: "reads your cookie" },
   };
+
   const session = { active: false, synced_at: null, leagues: [], session: { fetched_at: null, expired: false } };
 
   async function switched() {
     const { container } = await settingsWith(session, [SWITCHED]);
+
     const card = container.querySelector<HTMLElement>(YAHOO_CARD)!;
     const other = () => [...card.querySelectorAll("details")].find((d) => d.textContent?.startsWith("Other methods"));
     const shown = (key: string) => [...card.querySelectorAll("code")].some((c) => c.textContent === key && !other()?.contains(c));
+
     const chip = (text: string) =>
       [...card.querySelectorAll<HTMLButtonElement>("[aria-label=YAHOO_SOURCE] button")].find((c) => c.textContent === text)!;
+
     return { card, other, shown, chip };
   }
 
@@ -262,6 +301,7 @@ describe("A group read more than one way", () => {
 
   it("says what a setting does where it carries a hint", async () => {
     const { card } = await switched();
+
     expect(card.textContent).toContain("fallback only");
   });
 });

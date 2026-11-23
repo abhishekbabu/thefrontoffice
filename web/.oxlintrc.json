@@ -10,11 +10,12 @@
   // diagnostics `tsc -b` gave, from the program the rules already built, so
   // there is no separate `tsc` pass anywhere (`just check-web`, `pnpm build`).
   "options": { "typeAware": true, "typeCheck": true },
-  "ignorePatterns": ["dist/**", ".shots/**", "scripts/**", "src/lib/schema.ts"],
+  // `lint/anti-slop/` is vendored upstream source (its README: copied, not installed).
+  "ignorePatterns": ["dist/**", ".shots/**", "scripts/**", "src/lib/schema.ts", "lint/anti-slop/**"],
   "jsPlugins": [
     "./lint/front-office.ts",
-    { "name": "landmines-testing", "specifier": "@interfere/landmines/testing" },
-    { "name": "landmines-structure", "specifier": "@interfere/landmines/structure" }
+    { "name": "landmines", "specifier": "@interfere/landmines" },
+    { "name": "anti-slop", "specifier": "./lint/anti-slop/index.ts" }
   ],
   "rules": {
     "react/rules-of-hooks": "error",
@@ -33,7 +34,7 @@
     // `m` components carry no animation code of their own; the feature set
     // arrives in a second chunk after first paint. Importing `motion` itself,
     // or a feature bundle, pulls the whole library into the entry bundle,
-    // which is what check-bundle budgets.
+    // which is what the build's bundle budget (vite.config.ts) counts.
     "no-restricted-imports": [
       "error",
       {
@@ -61,13 +62,67 @@
     "typescript/restrict-template-expressions": "error",
     "typescript/switch-exhaustiveness-check": "error",
 
-    // Tests that cannot lie (https://github.com/interfere-inc/landmines).
-    "landmines-testing/no-test-doubles": "error",
-    "landmines-testing/no-fixed-sleep": "error",
-    "landmines-testing/no-flake-masking": "error",
-    "landmines-testing/no-unsignaled-poll": "error",
-    "landmines-structure/colocated-tests": "error",
-    "landmines-structure/test-file-names": "error"
+    // Every landmines rule (https://github.com/interfere-inc/landmines) but two
+    // that contradict this repo: `no-comments` (rationale lives beside the code
+    // here, not only in the PR) and `no-explicit-return-types`.
+    "landmines/colocated-tests": "error",
+    "landmines/declared-test-inputs": "error",
+    // `lib/types.ts` names each generated API type once, one alias a line:
+    // a facade over `schema.ts`, not a module mixing jobs. Held at its size, so
+    // it can only shrink.
+    "landmines/max-exports-per-module": ["error", { "allow": { "src/lib/types.ts": 46 } }],
+    "landmines/max-file-lines": "error",
+    "landmines/max-files-per-directory": "error",
+    "landmines/no-clipboard-read-text": "error",
+    "landmines/no-cold-import-in-test": "error",
+    "landmines/no-cold-start-in-test": "error",
+    "landmines/no-conditional-expect": "error",
+    "landmines/no-elapsed-time-bound": "error",
+    "landmines/no-fixed-sleep": "error",
+    "landmines/no-flake-masking": "error",
+    "landmines/no-github-scripts": "error",
+    "landmines/no-imported-mutation": "error",
+    "landmines/no-inline-hex-encoding": "error",
+    "landmines/no-parameter-branch": "error",
+    "landmines/no-prefix-cluster": "error",
+    "landmines/no-project-max-workers": "error",
+    "landmines/no-scripts-directory": "error",
+    "landmines/no-self-container-query": "error",
+    "landmines/no-shared-signal": "error",
+    "landmines/no-silent-catch": "error",
+    "landmines/no-stale-render-assertion": "error",
+    "landmines/no-styling-class-assertion": "error",
+    "landmines/no-test-doubles": "error",
+    "landmines/no-unsignaled-poll": "error",
+    "landmines/package-exports": "error",
+    "landmines/package-scripts": "error",
+    "landmines/padding-between-statements": "error",
+    "landmines/strict-msw": "error",
+    "landmines/test-dir-only-cross-functional": "error",
+    "landmines/test-file-names": "error",
+
+    // anti-slop (https://github.com/dmmulroy/anti-slop), every generic rule.
+    // `typeof` stays allowed inside a type guard: guards are how this client
+    // parses at its boundary, with no schema library.
+    "oxc/no-accumulating-spread": "error",
+    "anti-slop/no-array-filter-map": "error",
+    "anti-slop/no-reduce-accumulator-copy": "error",
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }],
+    "anti-slop/no-shape-in-symbol-names": "error",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-readable-spacing": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error"
   },
   "overrides": [
     {
@@ -76,7 +131,7 @@
       "rules": { "front-office/semantic-color": "off" }
     },
     {
-      "files": ["src/lib/motion-features.ts"],
+      "files": ["src/lib/motion/features.ts"],
       "rules": { "no-restricted-imports": "off" }
     }
   ]

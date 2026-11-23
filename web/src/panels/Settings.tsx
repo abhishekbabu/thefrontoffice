@@ -1,25 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, Save, Undo2 } from "lucide-react";
-import { api, type CaptureStatus, type Setting, type SettingsGroup } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type CaptureStatus, type Setting, type SettingsGroup } from "@/lib/types";
 import { bookmarklet } from "@/lib/bookmarklet";
-import { moment } from "@/lib/format";
+import { moment } from "@/lib/times";
 import { keys } from "@/lib/queries";
 import type { Variant } from "@/lib/tone";
-import { useTheme } from "@/lib/useTheme";
+import { useTheme } from "@/lib/hooks/useTheme";
 import { PALETTES } from "@/themes/registry";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/controls/button";
 import { Card, CardHeader } from "@/components/ui/card";
-import { Disclosure } from "@/components/ui/disclosure";
+import { Disclosure } from "@/components/ui/overlays/disclosure";
 import { ErrorNote } from "@/components/ui/error-note";
-import { IconButton } from "@/components/ui/icon-button";
-import { Input } from "@/components/ui/input";
+import { IconButton } from "@/components/ui/controls/icon-button";
+import { Input } from "@/components/ui/controls/input";
 import { Label, META } from "@/components/ui/label";
 import { PageHeader } from "@/components/league/page-header";
 import { QueryState } from "@/components/ui/state";
-import { ToggleChip, ToggleGroup } from "@/components/ui/toggle";
-import { Tooltip } from "@/components/ui/tooltip";
+import { ToggleChip, ToggleGroup } from "@/components/ui/controls/toggle";
+import { Tooltip } from "@/components/ui/overlays/tooltip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -48,6 +49,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
     mutationFn: api.saveSettings,
     onSuccess: () => {
       setDrafts({});
+
       // Everything downstream depends on configuration: which sports appear,
       // which leagues they hold. Drop it all rather than guess what moved.
       void queryClient.invalidateQueries();
@@ -55,14 +57,18 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   });
 
   const pending = Object.keys(drafts).length;
+
   const edit = (setting: Setting) => (value: string) =>
     setDrafts((current) => {
       const next = { ...current };
+
       // Typing back to the stored value is not a change.
       if (value === (setting.secret ? "" : setting.value)) delete next[setting.key];
       else next[setting.key] = value;
+
       return next;
     });
+
   const section = (id: SettingsGroup["section"]) =>
     (settings.data ?? [])
       .filter((group) => group.section === id)
@@ -152,19 +158,23 @@ function GroupCard({
   onEdit: (setting: Setting) => (value: string) => void;
 }) {
   const yahoo = group.platform === "yahoo";
+
   const status = useQuery<CaptureStatus, Error>({
     queryKey: keys.capture("yahoo"),
     queryFn: () => api.captureStatus("yahoo"),
     enabled: yahoo,
   });
+
   const switched = group.settings.find((setting) => setting.key === group.switch);
   const chosen = switched ? (drafts[switched.key] ?? switched.effective) : "";
   const needed = (setting: Setting) => !setting.mode || setting.mode === chosen;
   const others = group.settings.filter((setting) => !needed(setting));
   const note = [group.note, group.modes[chosen]].filter(Boolean);
+
   const row = (setting: Setting) => (
     <Row key={setting.key} setting={setting} draft={drafts[setting.key]} onChange={onEdit(setting)} />
   );
+
   return (
     <Card role="group" aria-label={group.title}>
       <CardHeader>
@@ -193,27 +203,35 @@ function readBy(status: CaptureStatus): string {
   return status.session ? "session" : status.active ? "browser" : "oauth";
 }
 
+/** A line of status and the tone that finds it. */
+type Readout = { text: string; variant: Variant };
+
 /**
  * How reading Yahoo is going, said in the header's corner: in words, with the tone only to find it.
  *
  * Leads with how many leagues were read, once any were — "5 leagues · last
  * fetched 02:07 AM" — rather than listing them on a line of their own.
  */
-export function yahooState(status: CaptureStatus): { text: string; variant: Variant } {
+export function yahooState(status: CaptureStatus): Readout {
   const { session, leagues } = status;
+
   const read = (when: string) =>
     leagues.length ? `${leagues.length} league${leagues.length === 1 ? "" : "s"} · ${when}` : capitalized(when);
+
   if (session) {
     if (session.expired) return { text: "Session expired", variant: "warn" };
+
     return session.fetched_at
       ? { text: read(`last fetched ${moment(session.fetched_at)}`), variant: "ok" }
       : { text: "Not fetched yet", variant: "muted" };
   }
+
   if (status.active) {
     return status.synced_at
       ? { text: read(`last synced ${moment(status.synced_at)}`), variant: "ok" }
       : { text: "Never synced", variant: "muted" };
   }
+
   return { text: "Reading OAuth", variant: "muted" };
 }
 
@@ -221,6 +239,7 @@ const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(
 
 function YahooState({ status }: { status: CaptureStatus }) {
   const { text, variant } = yahooState(status);
+
   return (
     <Badge variant={variant} appearance="status" className="normal-case tracking-normal">
       {text}
@@ -239,11 +258,14 @@ function YahooState({ status }: { status: CaptureStatus }) {
  */
 function YahooHowTo({ status, mode }: { status: CaptureStatus; mode: string }) {
   const link = useRef<HTMLAnchorElement>(null);
+
   useEffect(() => {
     link.current?.setAttribute("href", bookmarklet(window.location.origin));
   }, []);
+
   const { session } = status;
   const steps = "max-w-[70ch] list-decimal pl-5";
+
   return (
     <>
       <Disclosure
@@ -297,6 +319,7 @@ function YahooHowTo({ status, mode }: { status: CaptureStatus; mode: string }) {
  */
 function Appearance() {
   const { palette, setPalette } = useTheme();
+
   return (
     <Card>
       <CardHeader>
@@ -337,6 +360,7 @@ function Row({
   // A row of chips is several controls, so it cannot sit in a `<label>`: a
   // click on the key would press whichever chip came first.
   const Wrapper = setting.kind === "boolean" || setting.kind === "choice" ? "div" : "label";
+
   return (
     <Wrapper className="grid grid-cols-1 items-center gap-1.5 border-b border-border/45 py-2.5 last:border-b-0 sm:grid-cols-[16rem_minmax(0,42rem)] sm:gap-4">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -388,6 +412,7 @@ function Control({
             { value: "false", label: "Off" },
           ]
         : setting.choices.map((choice) => ({ value: choice, label: choice }));
+
     return (
       <div role="group" aria-label={setting.key} className="flex flex-wrap gap-1.5">
         <ToggleGroup>

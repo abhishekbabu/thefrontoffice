@@ -2,10 +2,10 @@ import type { CSSProperties, ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CardNote } from "@/components/ui/state";
-import type { Side, Spot, Stat } from "@/lib/api";
+import type { Side, Spot, Stat } from "@/lib/types";
 import { clickable } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
-import { clock, startsAt } from "@/lib/format";
+import { clock, startsAt } from "@/lib/times";
 import { Label, Meta } from "@/components/ui/label";
 import { ListHeading } from "@/components/ui/list";
 
@@ -32,8 +32,10 @@ export function LineupCard({
   onOpen?: (id: string) => void;
 }) {
   if (!lineup.length && !bench.length) return null;
+
   // With no opponent's kickoff to wait for, the points column is always drawn.
-  const rows = { ...shapeOf([...lineup, ...bench, ...reserve], []), started: true };
+  const rows = { ...rowsAcross([...lineup, ...bench, ...reserve], []), started: true };
+
   return (
     <Card>
       <CardHeader>
@@ -79,17 +81,19 @@ export type Rows = {
   reserve: number;
 };
 
-/** The rows' shape across every list of every side given: one side alone, or both of a matchup. */
+/** The rows' layout across every list of every side given: one side alone, or both of a matchup. */
 export function rowsOf(...sides: (Side | null | undefined)[]): Rows {
   const shown = sides.filter((side): side is Side => !!side);
-  return shapeOf(
+
+  return rowsAcross(
     shown.flatMap((side) => [...side.lineup, ...side.bench, ...side.reserve]),
     shown,
   );
 }
 
-function shapeOf(spots: Spot[], sides: Side[]): Rows {
+function rowsAcross(spots: Spot[], sides: Side[]): Rows {
   const most = (count: (side: Side) => number) => Math.max(0, ...sides.map(count));
+
   return {
     started: spots.some((spot) => spot.scoring === "live" || spot.scoring === "final"),
     scored: spots.some((spot) => spot.scoring),
@@ -132,12 +136,15 @@ function SpotList({
   if (!spots.length && open <= 0 && pad <= 0) {
     return <CardNote>{empty ?? "Nothing set."}</CardNote>;
   }
+
   const slotted = spots.some((spot) => spot.slot);
+
   return (
     <div className="flex flex-col">
       {spots.map((spot, i) => {
         // A place with nobody in it has nothing to open.
         const opens = spot.player_id && onOpen ? () => onOpen(spot.player_id) : undefined;
+
         return (
           <div
             key={`${spot.player}-${i}`}
@@ -287,6 +294,7 @@ function LineHeads({
 function SpotScore({ spot, started }: { spot: Spot; started: boolean }) {
   const played = spot.scoring !== "projected";
   const warn = spot.tone === "warning";
+
   return (
     <div className="flex shrink-0 items-start gap-3 text-right">
       <span
@@ -345,9 +353,11 @@ function ScoreHeads({
       </LineHeads>
     );
   }
+
   if (!rows.scored) {
     return children ? <ListHeading className={className}>{children}</ListHeading> : null;
   }
+
   return (
     <ListHeading className={cn("flex items-baseline gap-3", className)}>
       <span className="flex-1">{children}</span>
@@ -376,8 +386,10 @@ export function SideCard({
   rows?: Rows;
 }) {
   if (!side) return null;
-  const shape = rows ?? rowsOf(side);
+
+  const layout = rows ?? rowsOf(side);
   const open = Math.max(side.open_spots, 0);
+
   return (
     <Card>
       <CardHeader>
@@ -391,30 +403,30 @@ export function SideCard({
         </span>
         <span className="normal-case tracking-normal">{[side.record, side.detail, side.points].filter(Boolean).join(" · ")}</span>
       </CardHeader>
-      <ScoreHeads spots={side.lineup} rows={shape} className="border-t-0" />
-      <SpotList spots={side.lineup} rows={shape} pad={shape.lineup - side.lineup.length} onOpen={onOpen} />
+      <ScoreHeads spots={side.lineup} rows={layout} className="border-t-0" />
+      <SpotList spots={side.lineup} rows={layout} pad={layout.lineup - side.lineup.length} onOpen={onOpen} />
       {/* Headed wherever either side has one, so the two cards' lists start level. */}
-      {shape.bench > 0 && (
+      {layout.bench > 0 && (
         <>
-          <ScoreHeads spots={side.bench} rows={shape}>
+          <ScoreHeads spots={side.bench} rows={layout}>
             Bench
           </ScoreHeads>
           <SpotList
             spots={side.bench}
             open={open}
-            pad={shape.bench - side.bench.length - open}
-            rows={shape}
+            pad={layout.bench - side.bench.length - open}
+            rows={layout}
             onOpen={onOpen}
           />
         </>
       )}
       {/* Apart from the bench: these cost no roster spot and cannot start. */}
-      {shape.reserve > 0 && (
+      {layout.reserve > 0 && (
         <>
-          <ScoreHeads spots={side.reserve} rows={shape}>
+          <ScoreHeads spots={side.reserve} rows={layout}>
             Reserve
           </ScoreHeads>
-          <SpotList spots={side.reserve} rows={shape} pad={shape.reserve - side.reserve.length} onOpen={onOpen} />
+          <SpotList spots={side.reserve} rows={layout} pad={layout.reserve - side.reserve.length} onOpen={onOpen} />
         </>
       )}
     </Card>

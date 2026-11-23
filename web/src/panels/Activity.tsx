@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, type ActivityRow, type Competition, type League, type LeagueSchedule } from "@/lib/api";
+import { api } from "@/lib/api";
+import { type ActivityRow, type Competition, type League, type LeagueSchedule } from "@/lib/types";
 import { keys } from "@/lib/queries";
 import { ListCard } from "@/components/ui/list";
 import { Empty, QueryState } from "@/components/ui/state";
@@ -19,7 +20,9 @@ export function ActivityPanel({ competition, league }: { competition: Competitio
     queryKey: keys.season(competition.key, league.league_id),
     queryFn: api.league(competition.key, league.league_id).season,
   });
+
   const rows = schedule.data?.activity;
+
   return (
     <>
       <LeagueHeader competition={competition} league={league} />
@@ -37,6 +40,7 @@ export function ActivityPanel({ competition, league }: { competition: Competitio
 function Moves({ competition, league, rows }: { competition: Competition; league: League; rows: ActivityRow[] }) {
   const [open, setOpen] = useState<ActivityRow | null>(null);
   const { openPlayer, openComparison, drawer } = useDrawers(competition, league);
+
   return (
     <>
       <ListCard title="Recent activity" count={`${rows.length} moves`}>
@@ -49,12 +53,16 @@ function Moves({ competition, league, rows }: { competition: Competition; league
         onClose={() => setOpen(null)}
         onOpenPlayer={(id) => {
           const from = open!;
+
           setOpen(null);
+
           openPlayer(id, backTo(from, () => setOpen(from)));
         }}
         onCompare={(ids) => {
           const from = open!;
+
           setOpen(null);
+
           openComparison({ ids }, backTo(from, () => setOpen(from)));
         }}
       />

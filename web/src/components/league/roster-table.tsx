@@ -3,9 +3,9 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { DataTable, type SortState } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Empty } from "@/components/ui/state";
-import { Hint } from "@/components/ui/tooltip";
+import { Hint } from "@/components/ui/overlays/tooltip";
 import { Meta } from "@/components/ui/label";
-import type { PlayerCard, PlayerOrder } from "@/lib/api";
+import type { PlayerCard, PlayerOrder } from "@/lib/types";
 
 /** A header's sort as the server takes it: no column is the competition's own order. */
 export function toOrder(sort: SortState | null): PlayerOrder {
@@ -21,12 +21,14 @@ export function toOrder(sort: SortState | null): PlayerOrder {
  */
 export function useSortedRoster(key: readonly unknown[], fetch: (order: PlayerOrder) => Promise<PlayerCard[]>, enabled = true) {
   const [sort, setSort] = useState<SortState | null>(null);
+
   const roster = useQuery<PlayerCard[], Error>({
     queryKey: [...key, sort],
     queryFn: () => fetch(toOrder(sort)),
     placeholderData: keepPreviousData,
     enabled,
   });
+
   return { roster, sort, onSort: setSort };
 }
 
@@ -60,9 +62,11 @@ export function RosterTable({
   onSort: (next: SortState | null) => void;
 }) {
   if (players.length === 0) return <Empty title={empty.title} detail={empty.detail} />;
+
   // A column is a figure where the provider sent the number behind it: that
   // is what sorts it as one, and what aligns it like one.
   const numeric = new Set(players.flatMap((p) => Object.keys(p.values)));
+
   return (
     <DataTable
       rows={players}
@@ -76,6 +80,7 @@ export function RosterTable({
         const role = row.roles[column];
         // A cell that abbreviates something says it in full on hover and focus.
         const note = row.notes[column];
+
         // The status in the platform's own words; whether it rules him out is the provider's to say.
         if (role === "status" && value) {
           const badge = (
@@ -83,15 +88,20 @@ export function RosterTable({
               {value}
             </Badge>
           );
+
           if (!note) return badge;
+
           return (
             <Hint label={note} name={`${value}: ${note}`}>
               {badge}
             </Hint>
           );
         }
+
         if (role === "player") return <span className="font-medium">{value}</span>;
+
         if (role === "slot") return <Meta>{value}</Meta>;
+
         if (note) {
           return (
             <Hint label={note} name={`${value}: ${note}`} dotted>
@@ -99,6 +109,7 @@ export function RosterTable({
             </Hint>
           );
         }
+
         return undefined;
       }}
     />

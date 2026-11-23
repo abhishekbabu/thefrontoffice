@@ -14,6 +14,7 @@ export type Rule = Parameters<RuleTester["run"]>[1];
 const PALETTE =
   "slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|" +
   "teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose";
+
 const RAW_COLOR = new RegExp(`\\b(text|bg|border|ring|fill|stroke|from|via|to)-(${PALETTE})-[0-9]{2,3}\\b`);
 
 /**
@@ -24,16 +25,18 @@ const RAW_COLOR = new RegExp(`\\b(text|bg|border|ring|fill|stroke|from|via|to)-(
 export const semanticColor: Rule = {
   meta: { type: "problem", docs: { description: "Color comes from semantic tokens, never Tailwind's palette." } },
   create(context) {
-    const check = (node: NonNullable<Parameters<typeof context.report>[0]["node"]>, text: unknown) => {
-      const found = typeof text === "string" ? RAW_COLOR.exec(text) : null;
+    const check = (node: NonNullable<Parameters<typeof context.report>[0]["node"]>, text: string) => {
+      const found = RAW_COLOR.exec(text);
+
       if (found)
         context.report({
           node,
           message: `\`${found[0]}\`: color comes from semantic tokens (bg-card, text-muted-foreground), which follow a palette change.`,
         });
     };
+
     return {
-      Literal: (node) => check(node, node.value),
+      Literal: (node) => check(node, String(node.value)),
       TemplateElement: (node) => check(node, node.value.raw),
     };
   },
@@ -52,6 +55,7 @@ export const noNativeTitle: Rule = {
     return {
       JSXOpeningElement(element) {
         if (element.name.type !== "JSXIdentifier" || !/^[a-z]/.test(element.name.name)) return;
+
         for (const attribute of element.attributes) {
           if (attribute.type === "JSXAttribute" && attribute.name.type === "JSXIdentifier" && attribute.name.name === "title")
             context.report({

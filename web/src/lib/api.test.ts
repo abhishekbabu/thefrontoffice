@@ -20,16 +20,21 @@ describe("reading a failed response", () => {
 });
 
 /** The paths `ask` requested, each answered with an empty list. */
-async function pathsAsked(ask: () => Promise<unknown>): Promise<string[]> {
+async function pathsAsked<T>(ask: () => Promise<T>): Promise<string[]> {
   const asked: string[] = [];
+
   server.use(
     http.get("*", ({ request }) => {
       const url = new URL(request.url);
+
       asked.push(url.pathname + url.search);
+
       return HttpResponse.json([]);
     }),
   );
+
   await ask();
+
   return asked;
 }
 
@@ -42,10 +47,13 @@ describe("addressing a league", () => {
 
   it("asks a roster in the order clicked, leaving out what the server defaults", async () => {
     const league = leagueApi("nfl-sleeper", "1");
+
     const asked = await pathsAsked(async () => {
       await league.roster({ sort: "Proj", descending: false });
+
       await league.roster({ sort: "", descending: true });
     });
+
     expect(asked).toEqual([
       "/api/competitions/nfl-sleeper/leagues/1/roster?sort=Proj&descending=false",
       "/api/competitions/nfl-sleeper/leagues/1/roster?descending=true",

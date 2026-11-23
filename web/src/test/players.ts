@@ -1,4 +1,4 @@
-import type { PlayerComparison, PlayerDetail } from "@/lib/api";
+import type { PlayerComparison, PlayerDetail } from "@/lib/types";
 
 /** A player as the drawer receives him, with nothing in it but what a test sets. */
 export function playerDetail(extra: Partial<PlayerDetail> = {}): PlayerDetail {

@@ -4,12 +4,10 @@
   "type": "module",
   "packageManager": "pnpm@12.15.0",
   "scripts": {
-    "api-types": "node scripts/api-types.mjs",
-    "build": "vite build && node scripts/check-bundle.mjs",
+    "build": "vite build",
     "dev": "vite",
     "lint": "oxlint",
     "preview": "vite preview",
-    "shoot": "node scripts/shoot.mjs",
     "test": "vitest run"
   },
   "dependencies": {
@@ -26,7 +24,8 @@
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
-    "@interfere/landmines": "0.1.1",
+    "@interfere/landmines": "0.3.0",
+    "@oxlint/plugins": "1.94.0",
     "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.3.0",
@@ -37,7 +36,7 @@
     "openapi-typescript": "^7.13.0",
     "oxlint": "1.94.0",
     "tailwindcss": "^4.3.3",
-    "tsrs": "7.1.0-beta.tsrs3",
+    "tsrs": "7.1.0-beta.tsrs4",
     "typescript": "^6.0.3",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"

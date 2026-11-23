@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { m } from "motion/react";
-import { stepped } from "@/lib/motion";
+import { stepped } from "@/lib/motion/enter";
 import { ChevronLeft, ChevronRight, Undo2 } from "lucide-react";
-import type { WeekRange } from "@/lib/api";
-import { IconButton } from "@/components/ui/icon-button";
-import { Button } from "@/components/ui/button";
+import type { WeekRange } from "@/lib/types";
+import { IconButton } from "@/components/ui/controls/icon-button";
+import { Button } from "@/components/ui/controls/button";
 import { Badge } from "@/components/ui/badge";
 
 /**
@@ -29,10 +29,12 @@ export function WeekStepper({
 }) {
   const { week, current, first, last } = range;
   const Word = word.charAt(0).toUpperCase() + word.slice(1);
+
   useArrowKeys(
     () => week > first && onStep(week - 1),
     () => week < last && onStep(week + 1),
   );
+
   return (
     <div className="flex items-center gap-1" role="group" aria-label={Word}>
       <IconButton
@@ -98,7 +100,9 @@ export function WeekPane({
   // The previous week, kept in state and compared during render: React's way
   // to derive from a change without an effect painting the old frame first.
   const [seen, setSeen] = useState({ week, direction: 0 });
+
   if (!pending && seen.week !== week) setSeen({ week, direction: Math.sign(week - seen.week) });
+
   return (
     <m.div
       key={seen.week}
@@ -117,22 +121,29 @@ export function WeekPane({
 /** Whether a key press belongs to something being typed into, which an arrow key must stay with. */
 function typing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
+
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
 function useArrowKeys(onLeft: () => void, onRight: () => void) {
   // Read through a ref so the listener is attached once, not on every week.
   const handlers = useRef({ onLeft, onRight });
+
   useEffect(() => {
     handlers.current = { onLeft, onRight };
   });
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || typing(event.target)) return;
+
       if (event.key === "ArrowLeft") handlers.current.onLeft();
+
       if (event.key === "ArrowRight") handlers.current.onRight();
     };
+
     window.addEventListener("keydown", onKey);
+
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 }
@@ -148,17 +159,23 @@ export const SWIPE_DISTANCE = 60;
  */
 export function useSwipe(onNext: () => void, onPrevious: () => void) {
   const start = useRef<{ x: number; y: number } | null>(null);
+
   return {
     onPointerDown: (event: React.PointerEvent) => {
       start.current = event.pointerType === "touch" ? { x: event.clientX, y: event.clientY } : null;
     },
     onPointerUp: (event: React.PointerEvent) => {
       const from = start.current;
+
       start.current = null;
+
       if (!from) return;
+
       const dx = event.clientX - from.x;
       const dy = event.clientY - from.y;
+
       if (Math.abs(dx) < SWIPE_DISTANCE || Math.abs(dx) < 2 * Math.abs(dy)) return;
+
       if (dx < 0) onNext();
       else onPrevious();
     },
@@ -176,13 +193,17 @@ export function useSwipe(onNext: () => void, onPrevious: () => void) {
 export function useWeekParam(range: WeekRange | undefined) {
   const [params, setParams] = useSearchParams();
   const asked = Number(params.get("week")) || null;
+
   const browsing =
     range && asked !== null && asked !== range.current && asked >= range.first && asked <= range.last ? asked : null;
+
   const step = (to: number) => setParams(range && to !== range.current ? { week: String(to) } : {});
   const shown = range ? { ...range, week: browsing ?? range.current } : undefined;
+
   const swipe = useSwipe(
     () => shown && shown.week < shown.last && step(shown.week + 1),
     () => shown && shown.week > shown.first && step(shown.week - 1),
   );
+
   return { browsing, shown, step, swipe };
 }

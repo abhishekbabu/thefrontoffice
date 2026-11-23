@@ -19,6 +19,7 @@ export type Block =
 const BULLET = /^\s*[-*•]\s+(.*)$/;
 const NUMBERED = /^\s*\d+[.)]\s+(.*)$/;
 const HEADING = /^\s*#{1,6}\s+(.*)$/;
+
 /** A line that is nothing but bold reads as a heading, which is how it is meant. */
 const BOLD_LINE = /^\s*\*\*([^*]+)\*\*:?\s*$/;
 
@@ -28,6 +29,7 @@ export function parseProse(text: string): Block[] {
 
   const flush = () => {
     if (paragraph.length) blocks.push({ kind: "paragraph", spans: parseSpans(paragraph.join(" ")) });
+
     paragraph = [];
   };
 
@@ -35,15 +37,19 @@ export function parseProse(text: string): Block[] {
     const bullet = BULLET.exec(line);
     const numbered = bullet ? null : NUMBERED.exec(line);
     const heading = HEADING.exec(line) ?? BOLD_LINE.exec(line);
+
     if (bullet || numbered) {
       flush();
+
       const ordered = Boolean(numbered);
       const item = parseSpans((bullet ?? numbered)?.[1] ?? "");
       const last = blocks.at(-1);
+
       if (last?.kind === "list" && last.ordered === ordered) last.items.push(item);
       else blocks.push({ kind: "list", ordered, items: [item] });
     } else if (heading) {
       flush();
+
       blocks.push({ kind: "heading", spans: parseSpans(heading[1] ?? "") });
     } else if (line.trim() === "") {
       flush();
@@ -51,7 +57,9 @@ export function parseProse(text: string): Block[] {
       paragraph.push(line.trim());
     }
   }
+
   flush();
+
   return blocks;
 }
 
@@ -61,14 +69,20 @@ const INLINE = /\*\*([^*]+)\*\*|`([^`]+)`|\*([^*\s][^*]*?)\*/g;
 export function parseSpans(line: string): Span[] {
   const spans: Span[] = [];
   let at = 0;
+
   for (const match of line.matchAll(INLINE)) {
     if (match.index > at) spans.push({ text: line.slice(at, match.index) });
+
     const [, bold, code, italic] = match;
+
     if (bold !== undefined) spans.push({ text: bold, bold: true });
     else if (code !== undefined) spans.push({ text: code, code: true });
     else spans.push({ text: italic ?? "", italic: true });
+
     at = match.index + match[0].length;
   }
+
   if (at < line.length) spans.push({ text: line.slice(at) });
+
   return spans;
 }

@@ -1,7 +1,8 @@
 import { useState } from "react";
-import type { Competition, League } from "@/lib/api";
-import type { Back } from "@/components/ui/dialog";
-import { ComparisonDrawer, type Comparing } from "@/components/league/compare";
+import type { Competition, League } from "@/lib/types";
+import type { Back } from "@/components/ui/overlays/dialog";
+import { ComparisonDrawer } from "@/components/league/compare";
+import { type Comparing } from "@/lib/comparing";
 import { PlayerPanel } from "@/components/league/player";
 
 type Open = ({ kind: "player"; id: string } | ({ kind: "compare" } & Comparing)) & { back?: Back };
@@ -23,15 +24,19 @@ type Open = ({ kind: "player"; id: string } | ({ kind: "compare" } & Comparing))
 export function useDrawers(competition: Competition, league: League) {
   const [open, setOpen] = useState<Open | null>(null);
   const comparing = open?.kind === "compare" ? open : null;
+
   // Back out of a drawer: shut it, then reopen whatever it replaced.
   const back = open?.back && {
     label: open.back.label,
     onBack: () => {
       setOpen(null);
+
       open.back!.onBack();
     },
   };
+
   const openComparison = (with_: Comparing, from?: Back) => setOpen({ kind: "compare", ...with_, back: from });
+
   return {
     /** Open a player; `back` is the drawer he replaced, which his own offers to return to. */
     openPlayer: (id: string, from?: Back) => setOpen({ kind: "player", id, back: from }),
