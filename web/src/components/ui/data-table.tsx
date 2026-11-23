@@ -25,8 +25,11 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
   sort,
   onSort,
   detail,
+  hints = {},
 }: {
   rows: Row[];
+  /** What a column measures, by its heading, where the heading alone would mislead: said on hover. */
+  hints?: Record<string, string>;
   /**
    * A full-width line under a row, where there is one. For a note about the
    * row that a cell is too narrow to hold — the model's call on a player —
@@ -103,8 +106,9 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
   };
 
   const sortLabel = (column: string) => {
-    if (!isActive(column)) return `Sort by ${column}, highest first`;
-    return sort?.descending ? `Sort by ${column}, lowest first` : `Clear sorting by ${column}`;
+    const hint = hints[column] ? `${hints[column]}. ` : "";
+    if (!isActive(column)) return `${hint}Sort by ${column}, highest first`;
+    return hint + (sort?.descending ? `Sort by ${column}, lowest first` : `Clear sorting by ${column}`);
   };
 
   return (
@@ -154,6 +158,10 @@ export function DataTable<Row extends { player_id: string; columns: Record<strin
                       (sort?.descending ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />)}
                   </span>
                   </button>
+                </Tooltip>
+              ) : hints[column] ? (
+                <Tooltip label={hints[column]} side={isNumeric(column) ? "left" : "right"}>
+                  <span tabIndex={0}>{column}</span>
                 </Tooltip>
               ) : (
                 column

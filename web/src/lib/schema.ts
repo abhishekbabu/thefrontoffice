@@ -1670,6 +1670,13 @@ export interface components {
              * @description Other lists of the pool the competition offers, by name: 'Trending', 'IR'. Empty where none.
              */
             views: string[];
+            /**
+             * Hints
+             * @description What a column measures, by its heading, where the heading alone would mislead: said on hover.
+             */
+            hints: {
+                [key: string]: string;
+            };
         };
         /**
          * PlayerRef

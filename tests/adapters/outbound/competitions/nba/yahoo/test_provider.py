@@ -911,6 +911,26 @@ def test_a_week_played_shows_both_rosters_as_they_ended_it_with_each_line() -> N
     assert week.weeks is not None and (week.weeks.week, week.weeks.current) == (3, 5)
 
 
+def test_a_week_played_shows_each_teams_record_as_it_stood_once_that_week_was_settled() -> None:
+    """The table says today's 4-2-1; in a league won on the week, each side was 1-1 after week 2."""
+    yahoo = FakeYahoo()
+    yahoo.winners.update({1: "t.1", 2: "t.2", 3: "t.1"})
+
+    week = nba_provider(yahoo, league=yahoo_league(scoring_type="headone")).week_of("", 2)
+
+    assert week.mine is not None and week.opponent is not None
+    assert (week.mine.record, week.opponent.record) == ("1-1", "1-1")
+
+
+def test_the_week_being_played_shows_todays_records() -> None:
+    yahoo = FakeYahoo()
+    yahoo.winners.update({1: "t.1"})
+
+    week = nba_provider(yahoo).summary("")
+
+    assert week.mine is not None and week.mine.record == "4-2-1"
+
+
 @pytest.mark.parametrize(("winner", "said"), [("t.2", "Lost"), ("", "Tied")])
 def test_a_week_settled_says_how_it_ended(winner: str, said: str) -> None:
     yahoo = FakeYahoo()

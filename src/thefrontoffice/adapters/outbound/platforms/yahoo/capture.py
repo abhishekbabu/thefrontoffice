@@ -14,7 +14,7 @@ without notice. Nothing of the session reaches this side — only response bodie
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from xml.sax.saxutils import escape
 
 from thefrontoffice.adapters.outbound.cache import DiskCache
@@ -31,7 +31,13 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.client import (
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooCaptureMissingError
 from thefrontoffice.adapters.outbound.platforms.yahoo.paths import YahooRead
 from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import Timeframe, YahooLeague, YahooPlayer, YahooTeam
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
+    Pairing,
+    Timeframe,
+    YahooLeague,
+    YahooPlayer,
+    YahooTeam,
+)
 from thefrontoffice.domain.errors import InvalidRequestError
 from thefrontoffice.domain.models import (
     Capture,
@@ -74,6 +80,10 @@ class YahooGame:
 
     per_stat: int
     """How many leaders it reads per stat."""
+
+    today: Callable[[], date] | None = None
+    """The day being played on the league's own clock, whose lines your matchup shows; None for a game whose
+    matchup reads no day's lines."""
 
 
 class YahooCapture:
@@ -237,17 +247,28 @@ class YahooCapture:
             if team.is_mine:
                 reads.extend(paths.pending(key, team.team_key))
         reads.extend(read for read in self._played(league) if self._stored(read) is None)
+        reads.extend(self._today(game, league))
         return reads
+
+    def _today(self, game: YahooGame, league: YahooLeague) -> list[YahooRead]:
+        """Both rosters of your matchup as slotted today, each player with his line from today's game, while the
+        week being played holds today and its scoreboard is held: what the matchup shows of a night under way."""
+        found = self._matchup(league, league.current_week) if game.today and league.current_week else None
+        if game.today is None or found is None or not found.start <= (day := game.today()) <= found.end:
+            return []
+        return [paths.day_roster(side.team_key, day) for side in (found.mine, found.opponent)]
+
+    def _matchup(self, league: YahooLeague, week: int) -> Pairing | None:
+        """Your matchup in `week`, from its held scoreboard; None where either is not held."""
+        mine = next((team.team_key for team in self._teams(league.league_key) if team.is_mine), None)
+        raw = self._stored(paths.scoreboard(league.league_key, week)) if mine else None
+        return readable("scoreboard", lambda: find_matchup(parse(raw), mine)) if raw and mine else None
 
     def _played(self, league: YahooLeague) -> list[YahooRead]:
         """Both rosters of your matchup in each week played whose scoreboard is held, as they ended it."""
-        mine = next((team.team_key for team in self._teams(league.league_key) if team.is_mine), None)
-        if mine is None:
-            return []
         reads = []
         for week in range(league.first_week, league.current_week or 0):
-            raw = self._stored(paths.scoreboard(league.league_key, week))
-            found = readable("scoreboard", lambda raw=raw: find_matchup(parse(raw), mine)) if raw else None
+            found = self._matchup(league, week)
             if found is not None:
                 reads.extend(paths.played_roster(side.team_key, week) for side in (found.mine, found.opponent))
         return reads

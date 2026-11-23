@@ -5,7 +5,13 @@ from datetime import date, datetime
 
 import pytest
 
-from thefrontoffice.adapters.outbound.competitions.nba.league import season, season_year, table, week_dates
+from thefrontoffice.adapters.outbound.competitions.nba.league import (
+    records_through,
+    season,
+    season_year,
+    table,
+    week_dates,
+)
 from thefrontoffice.adapters.outbound.competitions.nba.rules import PACIFIC
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     LeagueSettings,
@@ -195,3 +201,24 @@ def test_a_drawn_week_is_dated_by_its_scoreboard_and_one_not_drawn_follows_the_w
 
 def test_a_week_with_nothing_before_it_to_follow_has_no_dates() -> None:
     assert week_dates({19: [], 20: [_week()]}) == {20: (date(2026, 11, 16), date(2026, 11, 22))}
+
+
+def test_a_record_through_a_week_counts_each_settled_regular_season_week_once() -> None:
+    weeks = {
+        1: [_week(status="postevent", winner="t.1")],
+        2: [_week(status="postevent", tied=True)],
+        3: [_week(status="postevent", winner="t.2")],
+        4: [_week(status="midevent")],
+        19: [_week(status="postevent", winner="t.1", playoffs=True)],
+    }
+
+    assert records_through(weeks, by_category=False) == {"t.1": "1-1-1", "t.2": "1-1-1"}
+
+
+def test_a_record_through_a_week_counts_categories_where_every_one_does() -> None:
+    weeks = {
+        1: [_week("6", "3", status="postevent", winner="t.1", tied_categories=0)],
+        2: [_week("4", "4", status="postevent", tied_categories=1)],
+    }
+
+    assert records_through(weeks, by_category=True) == {"t.1": "10-7-1", "t.2": "7-10-1"}

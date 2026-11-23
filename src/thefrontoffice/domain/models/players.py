@@ -82,6 +82,10 @@ class PlayerPage(BaseModel):
         default_factory=list,
         description="Other lists of the pool the competition offers, by name: 'Trending', 'IR'. Empty where none.",
     )
+    hints: dict[str, str] = Field(
+        default_factory=dict,
+        description="What a column measures, by its heading, where the heading alone would mislead: said on hover.",
+    )
 
 
 PLAYER_COLUMN = "Player"

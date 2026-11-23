@@ -190,6 +190,7 @@ export function FreeAgentsPanel({ competition, league }: { competition: Competit
 
             <RosterTable
               players={page.data.players}
+              hints={page.data.hints}
               empty={{
                 title: filtered ? "Nothing matches" : view ? `No ${view} free agents` : "Nobody available",
                 detail: filtered ? "Try another position, or clear the search." : "",

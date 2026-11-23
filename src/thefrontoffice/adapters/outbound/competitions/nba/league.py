@@ -147,6 +147,39 @@ def season(
     return rows
 
 
+EVERY_CATEGORY = "head"
+"""Yahoo's scoring type for a league where every category won counts toward the record, not just the week."""
+
+
+def records_through(weeks: Mapping[int, Sequence[HeadToHead]], *, by_category: bool) -> dict[str, str]:
+    """Each team's record once the last of `weeks` was settled, by key: the table as it stood then.
+
+    Counted from every regular-season head-to-head settled in them, as Yahoo's
+    table counts: a week a result in a league won on the week ('headone', points),
+    each category one in a league where every category counts ('head'). A
+    playoff week is no part of a record, and an unsettled one has nothing to count.
+    """
+    tally: dict[str, list[int]] = {}
+    for found in (h for pairings in weeks.values() for h in pairings if h.settled and not h.playoffs):
+        mine, theirs = found.mine.team_key, found.opponent.team_key
+        if by_category:
+            won, lost, tied = (
+                int(_amount(found.mine.points)),
+                int(_amount(found.opponent.points)),
+                found.tied_categories,
+            )
+        else:
+            won = int(found.winner == mine)
+            lost = int(found.winner == theirs)
+            tied = int(found.tied)
+        for team, (w, lo) in ((mine, (won, lost)), (theirs, (lost, won))):
+            counts = tally.setdefault(team, [0, 0, 0])
+            counts[0] += w
+            counts[1] += lo
+            counts[2] += tied
+    return {team: record(*counts) for team, counts in tally.items()}
+
+
 def _round(rules: LeagueRules, week: int) -> str:
     """The bracket round a week is, or empty for the regular season.
 
