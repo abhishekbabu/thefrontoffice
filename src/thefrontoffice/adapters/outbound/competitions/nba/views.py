@@ -35,6 +35,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     fantasy_points,
     line,
     ruled_out,
+    status_word,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Valuer, game_value
@@ -322,7 +323,7 @@ def detail(drawer: Drawer) -> PlayerDetail:
     headline = figure if number(figure) is not None else ""
     unit = "fpts/game" if by_points else "pts/game"
     hurt = drawer.reported or [
-        *([Stat(label="Status", value=player.status, tone="warning")] if player.status else []),
+        *([Stat(label="Status", value=status_word(player.status), tone="warning")] if player.status else []),
         *([Stat(label=BODY_PART, value=player.injury_note)] if player.injury_note else []),
     ]
     spans = ((SEASON, season), (LAST_MONTH, None if recent == season else recent))
@@ -339,7 +340,7 @@ def detail(drawer: Drawer) -> PlayerDetail:
         owner=player.owner,
         headline=headline,
         headline_label=f"{unit}, season" if headline else "No games this season",
-        note=player.status,
+        note=status_word(player.status),
         tone="warning" if player.status else "neutral",
         tabs=[WEEK_TAB, GAME_LOG_TAB, *DEFERRED],
         deferred=list(DEFERRED),

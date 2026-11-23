@@ -179,6 +179,25 @@ def ruled_out(status: str) -> bool:
 GAME_TIME = frozenset({"GTD", "DTD", "Q"})
 """Yahoo's statuses for a player who may yet play: a game-time decision, day-to-day, questionable."""
 
+STATUS_WORDS = {
+    "O": "Out",
+    "INJ": "Injured",
+    "SUSP": "Suspended",
+    "IL": "Injured list",
+    "IL+": "Injured list+",
+    "NA": "Not active",
+    "GTD": "Game-time decision",
+    "DTD": "Day-to-day",
+    "Q": "Questionable",
+}
+"""Yahoo's status codes in words. A table column has room for 'O'; a drawer's header does not need to
+make anyone decode it, and 'O' set alone reads as the figure zero."""
+
+
+def status_word(status: str) -> str:
+    """A Yahoo status as a person would say it, 'O' as 'Out'; a code it does not know, as Yahoo wrote it."""
+    return STATUS_WORDS.get(status.upper(), status)
+
 
 def chance(status: str) -> float:
     """The chance he plays his next game: discounted for a game-time decision (`availability.QUESTIONABLE`), else

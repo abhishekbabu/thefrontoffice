@@ -42,6 +42,15 @@ async function opened(detail: PlayerDetail, tabs: Record<string, PlayerDetail> =
   return document.querySelector<HTMLElement>('[role="dialog"]')!;
 }
 
+/** The facts under his name, each label to its value: the first list in the drawer, its header's. */
+function facts(dialog: HTMLElement): Record<string, string> {
+  const terms = dialog.querySelector("dl");
+  if (!terms) return {};
+  return Object.fromEntries(
+    [...terms.querySelectorAll("dt")].map((dt) => [dt.textContent, dt.nextElementSibling?.textContent ?? ""]),
+  );
+}
+
 describe("the player drawer", () => {
   it("shows one tab at a time, offers only tabs with something in them, and names his owner", async () => {
     const tabbed: PlayerDetail = {
@@ -66,6 +75,19 @@ describe("the player drawer", () => {
     await settle();
     expect(dialog.textContent).toContain("Round 1");
     expect(dialog.textContent).not.toContain("Projected");
+  });
+
+  it("sets each fact under his name as its label over its value, and his status in words", async () => {
+    const dialog = await opened({ ...ALLEN, rank: "QB3", owner: "Rival", note: "Questionable", tone: "warning" });
+    expect(facts(dialog)).toEqual({ "proj pts": "24.1", "Pos rank": "QB3", Owner: "Rival" });
+    expect(dialog.textContent).toContain("Questionable");
+  });
+
+  it("says why there is no figure, and shows only the facts he has", async () => {
+    const dialog = await opened({ ...ALLEN, headline: "", headline_label: "Not projected in week 11", owner: "Free agent" });
+
+    expect(facts(dialog)).toEqual({ Owner: "Free agent" });
+    expect(dialog.textContent).toContain("Not projected in week 11");
   });
 
   it("offers a deferred tab before it is read, and shows what its own read holds once opened", async () => {
