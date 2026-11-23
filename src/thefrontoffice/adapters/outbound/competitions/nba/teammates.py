@@ -21,7 +21,10 @@ A teammate's game counts as missed where he did not play, or played under
 one or two games either way is a single night reported as a rate. Where his
 games are nearly all without a teammate at his position who is due back within
 `RETURN_SOON` (`Returning`), there is no split to read, and that is the warning:
-his role so far is the one the teammate's absence gave him.
+his role so far is the one the teammate's absence gave him. Where there is a
+split, and it says he does clearly more without a teammate who is out and due
+back within `KEEPER_HORIZON` (`Propped`), the split says how much of his game
+is left once that teammate is back.
 
 Sleeper's box scores carry the club each game was played for, which is the
 only club read here: a player whose Sleeper club is not his Yahoo one gets no
@@ -54,6 +57,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     fantasy_points,
     ruled_out,
 )
+from thefrontoffice.adapters.outbound.competitions.nba.worth import ROLE, Valuer
 from thefrontoffice.adapters.outbound.competitions.teammates import surname
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason
@@ -71,6 +75,24 @@ SEASON_GAMES = 20
 
 RETURN_SOON = timedelta(days=7)
 """How soon a teammate's expected return reads as one a pickup's week runs into: a matchup week."""
+
+KEEPER_HORIZON = timedelta(days=21)
+"""How soon a teammate's return ends a pickup's role too early for him to be a keeper: three matchup weeks.
+
+A keeper is an add spent on the weeks after this one; a role that lasts fewer
+than three of them is a streamer's, better spent a week at a time.
+"""
+
+BUMP = 0.2
+"""How much more a game he must be worth without a teammate for his role to lean on him: a fifth, the margin the
+to-do list calls a clear difference (`actions.MARGIN`). Below it the split is a few games' noise."""
+
+RETURN_CUT = 0.5
+"""What a game is worth once a teammate at his position is back (`Returning`): half.
+
+His role so far is the one that teammate's absence gave him, and almost none
+of it has been played beside him, so there is no split to say how much is left.
+"""
 
 GROUPS = {"PG": "G", "SG": "G", "G": "G", "SF": "F", "PF": "F", "F": "F", "C": "C"}
 """Each position's group: who takes whose minutes when a teammate returns."""
@@ -168,6 +190,9 @@ class Split:
     without_points: float | None = None
     """Fantasy points a game without him, in a points league; None in a category league."""
     alongside_points: float | None = None
+    without_minutes: float = 0.0
+    """His minutes a game without him."""
+    alongside_minutes: float = 0.0
 
     @property
     def back(self) -> bool:
@@ -246,9 +271,19 @@ class Returning:
     """His games beside him: under `MIN_FORM_GAMES`, or there would be a split."""
 
     @property
+    def returns(self) -> date | None:
+        """The day ESPN expects the teammate back."""
+        return self.teammate.condition.returns
+
+    @property
+    def cut(self) -> float:
+        """What a game of his is worth once the teammate is back: `RETURN_CUT`, with no split to say better."""
+        return RETURN_CUT
+
+    @property
     def back(self) -> str:
         """' back ~24 Nov'; empty where ESPN dates no return."""
-        returns = self.teammate.condition.returns
+        returns = self.returns
         return f" back {approximately(returns)}" if returns else ""
 
     def label(self) -> str:
@@ -279,6 +314,31 @@ class Returning:
 
 Teammate = Split | Returning
 """What a teammate's condition says of a player: his split without him, or the warning that he returns."""
+
+
+@dataclass(frozen=True)
+class Propped:
+    """A split saying his role leans on teammates out now, the soonest due back within `KEEPER_HORIZON`: without
+    them he is worth `BUMP` more a game, or plays `ROLE.moved` more minutes.
+
+    Unlike `Returning`, there are games beside them to read, so what is left of
+    his game once they are back is the split's, not a guess.
+    """
+
+    split: Split
+    returns: date
+    """The day the soonest of them is due back."""
+    cut: float
+    """His value a game beside them over his value without them, at most 1: what a game is worth once back."""
+
+    def cell(self) -> str:
+        """'Reaves back ~27 Nov'."""
+        return f"{', '.join(surname(m.regular.name) for m in self.split.teammates)} back {approximately(self.returns)}"
+
+
+Leaning = Returning | Propped
+"""What a pickup's role leans on: a teammate due back beside whom he has too few games to split, or a split
+saying he does clearly more without one."""
 
 
 class Teammates:
@@ -385,6 +445,28 @@ class Teammates:
                 found.append((back, Returning(Absent(mate, condition), len(parted.without), len(parted.alongside))))
         return [returning for _, returning in sorted(found, key=lambda pair: pair[0])]
 
+    def propped(self, player: Player, conditions: Mapping[str, Condition], today: date, value: Valuer) -> list[Propped]:
+        """Each of his splits (`splits`) whose teammates are ruled out, the soonest due back within
+        `KEEPER_HORIZON` of `today`, and without whom he does clearly more (`Propped`): soonest back first.
+
+        `value` is a game's worth in the league's scoring. None where ESPN dates
+        no return: a return is never guessed.
+        """
+        found: list[Propped] = []
+        for split in self.splits(player, conditions):
+            dated = [r for m in split.teammates if (r := m.condition.returns) is not None]
+            if split.back or not dated or not today <= min(dated) <= today + KEEPER_HORIZON:
+                continue
+            without, alongside = value(split.without), value(split.alongside)
+            if without is None or alongside is None:
+                continue
+            worth_more = without > 0 and without > alongside + abs(alongside) * BUMP
+            plays_more = split.without_minutes - split.alongside_minutes >= ROLE.moved
+            if worth_more or plays_more:
+                cut = min(1.0, max(0.0, alongside / without)) if without > 0 else 1.0
+                found.append(Propped(split, min(dated), cut))
+        return sorted(found, key=lambda propped: propped.returns)
+
     def _split(self, mates: tuple[Absent, ...], parted: teammates.Parted[Outing]) -> Split:
         apart, beside = nine_cat([g.log for g in parted.without]), nine_cat([g.log for g in parted.alongside])
         return Split(
@@ -395,6 +477,8 @@ class Teammates:
             alongside_games=len(parted.alongside),
             without_points=fantasy_points(apart, self.weights) if self.weights else None,
             alongside_points=fantasy_points(beside, self.weights) if self.weights else None,
+            without_minutes=teammates.mean([g.minutes for g in parted.without]),
+            alongside_minutes=teammates.mean([g.minutes for g in parted.alongside]),
         )
 
 

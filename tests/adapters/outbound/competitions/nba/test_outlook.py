@@ -94,7 +94,7 @@ def _streamable() -> tuple[list[YahooPlayer], list[YahooPlayer], dict[str, Readi
     window = _window(
         6, {"AAA": [1, 3, 5, 7], "BBB": [1, 3, 5, 7], "CCC": [2, 4, 6], "DDD": [1, 2], "EEE": [1, 3, 5, 7]}
     )
-    readings = _readings((STAR, 40.0), (SECOND, 30.0), (BENCH, 12.0), (weak, 10.0), (pickup, 11.0))
+    readings = _readings((STAR, 40.0), (SECOND, 30.0), (BENCH, 12.0), (weak, 10.0), (pickup, 14.0))
     return roster, [pickup], readings, window
 
 

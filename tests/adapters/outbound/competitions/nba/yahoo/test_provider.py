@@ -1234,15 +1234,20 @@ def _claimable(cleared: date | None) -> list[Action]:
 
 
 def test_a_player_on_waivers_streams_in_as_a_claim_weighed_on_the_games_after_he_clears() -> None:
-    [stream] = [a for a in _claimable(date(2026, 2, 12)) if a.kind == "waiver"]
+    [stream] = [a for a in _claimable(date(2026, 2, 11)) if a.kind == "waiver"]
     [free] = [a for a in _claimable(None) if a.kind == "waiver"]
 
     assert stream.player_id == free.player_id == "streamer"
     assert [p.held for p in stream.players] == ["waivers", "bench"]
     assert "Claim Streamer" in stream.title
-    assert "2 games" in stream.title  # the 13th and 14th
+    assert "3 games" in stream.title  # the 12th to the 14th
     games = [[f.value for f in a.players[0].figures if f.label == "G left"] for a in (stream, free)]
-    assert games == [["2"], ["4"]]
+    assert games == [["3"], ["4"]]
+
+
+def test_a_claim_whose_games_after_clearing_add_less_than_the_streaming_floor_is_not_suggested() -> None:
+    """Two games of Streamer for one of Spare is a game and a bit of Spare's: short of `STREAM_GAMES`."""
+    assert [a for a in _claimable(date(2026, 2, 12)) if a.kind == "waiver"] == []
 
 
 def test_the_week_reads_streams_from_the_top_of_the_wire_leaving_the_deep_list_to_the_free_agents_page() -> None:
@@ -1762,3 +1767,25 @@ def test_box_scores_that_will_not_load_weigh_pickups_without_teammates() -> None
     [item] = _reed_week(scores_error=SleeperAPIError("down"))
 
     assert (item.player_id, item.pickup) == ("reed", "keeper")
+
+
+def test_a_pickup_whose_split_leans_on_a_teammate_due_back_is_a_streamer_never_a_keeper() -> None:
+    """The Thybulle case: five games beside Reaves and five without, enough for a split rather than a `Returning`
+    flag, and fourteen points without him against six beside him; Reaves is back in three days."""
+    today = datetime.now(PACIFIC).date()
+    logs = {
+        "a1": [game_log("a1", d, 34.0, team="DET", pts=20) for d in range(1, 6)],
+        "t1": [game_log("t1", d, 26.0, team="DET", pts=6 if d <= 5 else 14) for d in range(1, 11)],
+    }
+    names = {"a1": "Austin Reaves", "t1": "Matisse Thybulle"}
+    scores = box_scores(logs, names, team="DET", positions={"a1": "SG", "t1": "SF"})
+    nba = FakeNBA(stats={**WEEK_FORM, "Matisse Thybulle": _line(24)}, games={**WEEK_GAMES, "DET": 3}, scores=scores)
+    espn = FakeESPN(injuries=[_espn_report("Austin Reaves", "DET", back=today + timedelta(days=3))])
+    thybulle = make_player("Matisse Thybulle", "SG,SF", "DET", key="thybulle")
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[thybulle], weights=WEIGHTS)
+
+    actions = nba_provider(yahoo, nba=nba, espn=espn, league=POINTS_LEAGUE).summary("").actions or []
+    [item] = [a for a in actions if a.kind == "waiver"]
+
+    assert (item.player_id, item.pickup) == ("thybulle", "streamer")
+    assert "Reaves" in item.reason

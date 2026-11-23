@@ -147,14 +147,17 @@ def plan_for(
     end: date,
 ) -> actions.Plan:
     """What weighs a pickup beyond the readings (`actions.Plan`): the nights left and the lineup's slots,
-    teammates due back, and the games each side can start.
+    teammates due back — whose splits are valued on the readings' own scale — and the games each side can start.
 
     No week where the settings list no lineup slots, lineups are set for the
     week, or the schedule will not load: pickups are then weighed on every
     game their clubs have left.
     """
     roster, theirs = sides
-    returning = feeds.returning(free_agents, [*roster, *theirs, *free_agents], weights)
+    pool = [*roster, *theirs, *free_agents]
+    lines = [r.line for p in pool if (r := readings.get(p.player_key)) and r.line]
+    value, _ = reads.valuer(yahoo, weights, lines)
+    returning = feeds.leaning(free_agents, pool, weights, value)
     rules = yahoo.settings()
     slots = nba_lineup.slots(rules.slots)
     if not slots or rules.weekly_lineups:
