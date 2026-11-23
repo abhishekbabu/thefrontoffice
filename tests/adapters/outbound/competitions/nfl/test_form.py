@@ -38,9 +38,20 @@ def test_a_changed_role_is_priced_on_the_games_since_it_changed() -> None:
 
     found = forms(_played("rb", 4, 4, 4, 18, 20, recent=14, trend=trend), _projected("rb", 12.0), WEEKS)
 
-    # A rate of 19 over a projection of 12, pulled halfway: 15.5, under the 30% bound.
-    assert found["rb"].factor == pytest.approx(15.5 / 12)
+    # A rate of 19 over a projection of 12; two games count for 2 / (2 + 4) of the halfway pull: 13 1/6.
+    assert found["rb"].factor * 12 == pytest.approx(12 + 7 / 2 / 3)
     assert "snaps 30→80%" in found["rb"].reason and "2 games since" in found["rb"].reason
+
+
+def test_the_more_games_in_a_changed_role_the_further_they_move_his_price() -> None:
+    """Two big games after a jump in carries are as often a hot fortnight as a new back."""
+
+    def priced(games: int) -> float:
+        trend = Trend(measure="carries", before=10, now=18, week=9, rise=2.0, games=games)
+        played = _played("rb", 4, 4, *([18.0] * games), recent=18, trend=trend)
+        return forms(played, _projected("rb", 12.0), WEEKS)["rb"].factor
+
+    assert 1 < priced(2) < priced(4) < 1 + 0.5 * (18 / 12 - 1)
 
 
 def test_one_big_game_cannot_move_his_price_more_than_thirty_percent() -> None:

@@ -29,6 +29,12 @@ RECENT_WEIGHT = 0.6
 MOST = 0.3
 """The furthest his price may sit from his projection, either way."""
 
+SETTLED = 4
+"""Games in a new role it takes before they count for as much as the projection, against it: the games
+since a role changed count for `games / (games + SETTLED)` of the pull, so two of them move his price a
+third as far as a role long settled. Two big games after a jump in carries are as often a hot fortnight
+as a new back, and the platform's projection has read the jump by then too."""
+
 SAID_FROM = 0.05
 """The least change in price worth saying beside a trade."""
 
@@ -101,30 +107,37 @@ def forms(
         rate = _rate(evidence, pid)
         if rate is None:
             continue
-        played, reason = rate
+        played, reason, weight = rate
         per_week = sum(points) / len(points)
-        pull = FORM_WEIGHT * (played / per_week - 1)
+        pull = FORM_WEIGHT * weight * (played / per_week - 1)
         factor = 1 + max(-MOST, min(MOST, pull))
         if factor != 1:
             found[pid] = Form(factor=factor, projected=per_week, reason=reason)
     return found
 
 
-def _rate(evidence: Evidence, player_id: str) -> tuple[float, str] | None:
-    """The points a game his own games say he scores, and what that rests on; None with too few games."""
+def _rate(evidence: Evidence, player_id: str) -> tuple[float, str, float] | None:
+    """The points a game his own games say he scores, what that rests on, and how much it counts; None with
+    too few games.
+
+    The games since a role changed count by how many there are (`SETTLED`); a
+    rate over his recent games and his season counts in full, the season
+    steadying it already.
+    """
     games = evidence.games.get(player_id, ())
     trend = evidence.trends.get(player_id)
     if trend is not None and len(games) >= trend.games:
         since = games[-trend.games :]
         rate = sum(since) / len(since)
         count = "the game" if trend.games == 1 else f"{trend.games} games"
-        return rate, f"{trend.short()} in week {trend.week}, {rate:.1f} pts in {count} since"
+        weight = trend.games / (trend.games + SETTLED)
+        return rate, f"{trend.short()} in week {trend.week}, {rate:.1f} pts in {count} since", weight
     season, role = average(evidence, player_id), evidence.roles.get(player_id)
     if season is None or role is None:
         return None
     rate = RECENT_WEIGHT * role.points + (1 - RECENT_WEIGHT) * season
     games_back = "last game" if role.games == 1 else f"last {role.games}"
-    return rate, f"{role.points:.1f}/game {games_back}, {season:.1f} season"
+    return rate, f"{role.points:.1f}/game {games_back}, {season:.1f} season", 1.0
 
 
 def bent(
