@@ -13,7 +13,6 @@ from support.ai import FakeAI
 from support.settings import NOWHERE, isolated_settings
 from support.stores import FakeAnswers, FakeItemStates
 from thefrontoffice.application.items import ItemDecisions
-from thefrontoffice.bootstrap import CompetitionEntry, Registry, Wiring
 from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import AppSettings
 from thefrontoffice.domain.errors import PlayerNotFoundError, TeamNotFoundError
@@ -33,6 +32,7 @@ from thefrontoffice.domain.models import (
     TeamRef,
 )
 from thefrontoffice.domain.ports import AnalysisModel, AnswerStore, CompetitionProvider, LeagueRef
+from thefrontoffice.wiring import CompetitionEntry, Registry, Wiring
 
 ABSENT = Path(__file__).with_name("absent.env")
 """A `.env` no test writes: configuration read from it is all defaults."""

@@ -13,10 +13,10 @@ from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound.cli import commands
 from thefrontoffice.adapters.inbound.cli.output import configure_console, header, print_error
 from thefrontoffice.adapters.inbound.cli.session import Session
-from thefrontoffice.bootstrap import Wiring
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.config.telemetry import setup_telemetry
 from thefrontoffice.domain.errors import FrontOfficeError
+from thefrontoffice.wiring import Wiring
 
 # Graceful fallback on systems without readline
 with contextlib.suppress(ImportError):

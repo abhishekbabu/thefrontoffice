@@ -5,7 +5,6 @@ from thefrontoffice.adapters.inbound.cli import output
 from thefrontoffice.adapters.inbound.cli.output import print_error
 from thefrontoffice.adapters.inbound.cli.render import render_scout_report, render_trade_verdict, render_week
 from thefrontoffice.adapters.inbound.cli.session import Session
-from thefrontoffice.bootstrap import CompetitionEntry, Registry
 from thefrontoffice.domain.errors import (
     FrontOfficeError,
     NotConfiguredError,
@@ -13,6 +12,7 @@ from thefrontoffice.domain.errors import (
     UnsupportedError,
 )
 from thefrontoffice.domain.ports import TradeProvider
+from thefrontoffice.wiring import CompetitionEntry, Registry
 
 TRADES = "trade evaluation"
 

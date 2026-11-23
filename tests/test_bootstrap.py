@@ -9,14 +9,13 @@ from pathlib import Path
 
 import pytest
 from support.settings import NOWHERE, isolated_settings
-from support.wiring import FakeCompetition, entry
+from support.wiring import FakeCompetition
 
 from thefrontoffice import bootstrap
 from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.storage.items import DiskItemStateStore
-from thefrontoffice.bootstrap import Registry
-from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionError, UnsupportedError
-from thefrontoffice.domain.models import Action, CompetitionContext, ItemState, Summary, TradeProposal
+from thefrontoffice.domain.errors import NotConfiguredError, UnknownCompetitionError
+from thefrontoffice.domain.models import Action, ItemState, Summary
 from thefrontoffice.domain.ports import (
     CompetitionProvider,
     OddsTuning,
@@ -25,6 +24,7 @@ from thefrontoffice.domain.ports import (
     TradeProvider,
     WireProvider,
 )
+from thefrontoffice.wiring import Registry
 
 
 def _registry(tmp_path: Path = NOWHERE, **values: object) -> Registry:
@@ -196,35 +196,6 @@ def test_what_each_competition_can_do_is_read_off_its_provider() -> None:
         "nfl-sleeper": (True, True, True, True),
         "premier-league-fpl": (False, False, True, False),
     }
-
-
-class _Trades(FakeCompetition):
-    def build_trade_context(self, league_id: str, proposal: TradeProposal) -> CompetitionContext:
-        raise AssertionError("not asked")
-
-
-def test_asking_what_a_competition_can_do_builds_nothing() -> None:
-    """A client asks before anything is chosen, and building one reads its settings and opens its caches."""
-    built: list[int] = []
-    trades = entry(_Trades(), built=built)
-
-    assert (trades.can(TradeProvider), trades.can(WireProvider), trades.can(OutlookProvider)) == (True, False, False)
-    assert built == []
-
-
-def test_a_capability_it_lacks_is_refused_by_name_without_building() -> None:
-    built: list[int] = []
-    plain = entry(FakeCompetition(), label="Plain", built=built)
-
-    with pytest.raises(UnsupportedError, match="Plain"):
-        plain.open_as(WireProvider, "judging free agents")
-    assert built == []
-
-
-def test_a_capability_it_has_comes_back_as_that_port() -> None:
-    provider = _Trades()
-
-    assert entry(provider).open_as(TradeProvider, "trade evaluation") is provider
 
 
 # ── the wiring ──────────────────────────────────────────────────────────

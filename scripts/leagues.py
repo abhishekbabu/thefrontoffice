@@ -1,8 +1,8 @@
 """The competition and league a script runs over, chosen the same way by each."""
 
-from thefrontoffice.bootstrap import CompetitionEntry, Registry
 from thefrontoffice.domain.errors import LeagueNotFoundError
 from thefrontoffice.domain.ports import CompetitionProvider, LeagueRef
+from thefrontoffice.wiring import CompetitionEntry, Registry
 
 DEFAULT_KEY = "nfl-sleeper"
 """The competition a script runs over when none is named: the only one that simulates its matchups."""

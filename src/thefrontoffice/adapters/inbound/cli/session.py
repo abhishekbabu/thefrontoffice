@@ -2,8 +2,8 @@
 
 from collections.abc import Callable
 
-from thefrontoffice.bootstrap import CompetitionEntry, Wiring
 from thefrontoffice.domain.ports import CompetitionProvider
+from thefrontoffice.wiring import CompetitionEntry, Wiring
 
 
 class Session:

@@ -44,7 +44,7 @@ class ScoutEngine:
 
         Deliberately no default: constructing one here would mean naming a
         vendor from the application layer, which is the dependency this layer
-        exists to avoid. `bootstrap.Wiring` does the wiring; `key` is the
+        exists to avoid. `wiring.Wiring` does the wiring; `key` is the
         competition's registry key, which its judgments are kept under.
         """
         self.provider = provider

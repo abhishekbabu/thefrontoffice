@@ -15,8 +15,8 @@ Run with `just doctor`.
 
 from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound.remedies import remedy
-from thefrontoffice.bootstrap import CompetitionEntry, Registry
 from thefrontoffice.config.env_file import EnvFile, Setting
+from thefrontoffice.wiring import CompetitionEntry, Registry
 
 TRACING = "Tracing (Logfire)"
 

@@ -40,7 +40,6 @@ from thefrontoffice.adapters.inbound.web import data
 from thefrontoffice.adapters.inbound.web.capture import CaptureGate
 from thefrontoffice.application import comparing
 from thefrontoffice.application.wire import MAX_JUDGED, MAX_SHOWN
-from thefrontoffice.bootstrap import CompetitionEntry, Wiring
 from thefrontoffice.config.env_file import SettingsGroup
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.config.settings import PROJECT_ROOT, settings
@@ -91,6 +90,7 @@ from thefrontoffice.domain.ports import (
     WeekBrowsingProvider,
     WireProvider,
 )
+from thefrontoffice.wiring import CompetitionEntry, Wiring
 
 logger = logging.getLogger(__name__)
 

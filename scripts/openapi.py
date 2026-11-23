@@ -13,7 +13,7 @@ import sys
 
 from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound.web.api import create_app
-from thefrontoffice.bootstrap import Wiring
+from thefrontoffice.wiring import Wiring
 
 
 def schema(wiring: Wiring) -> dict[str, object]:

@@ -20,11 +20,11 @@ from leagues import chosen, open_league
 from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound.cli.output import print_error
 from thefrontoffice.application.forecasting import ForecastEngine, score_ranges
-from thefrontoffice.bootstrap import Registry
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.models import RangeScore
 from thefrontoffice.domain.ports import RangeTuningProvider
+from thefrontoffice.wiring import Registry
 
 MEANINGFUL = 0.01
 """A held-out loss at least this much lower, as a share, before a change is worth making:
