@@ -527,7 +527,9 @@ def test_a_season_with_no_chips_issued_shows_no_chips() -> None:
 
 def test_the_week_carries_a_to_do_list_even_when_there_is_nothing_to_do() -> None:
     """An empty list is an answer — nothing to do — where None would say nothing was computed."""
-    from thefrontoffice.adapters.outbound.competitions.premier_league.rules import best_lineup, effective_points
+    from support.fpl import effective_points
+
+    from thefrontoffice.adapters.outbound.competitions.premier_league.rules import best_lineup
 
     best = best_lineup(list(SQUAD_PLAYERS.values()), effective_points)
     picks = [

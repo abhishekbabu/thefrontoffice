@@ -141,6 +141,7 @@ league but the game itself, so its rules are FPL's and read its types.
 NAMES_ITS_PLATFORM = {
     "nba/actions.py",
     "nba/context.py",
+    "nba/drawer.py",
     "nba/forecast.py",
     "nba/history.py",
     "nba/league.py",

@@ -86,15 +86,6 @@ def likely(player: Player) -> bool:
     return plays(player) and (player.chance_of_playing is None or player.chance_of_playing >= LIKELY_TO_PLAY)
 
 
-def effective_points(player: Player) -> float:
-    """Expected points, zeroed for a player who will not feature.
-
-    The game leaves a stale `ep_next` on a ruled-out player, and starting one is
-    a guaranteed blank rather than a small return.
-    """
-    return player.expected_points if plays(player) else 0.0
-
-
 def free_transfers(history: list[GameweekResult], upcoming: int, *, chips: Iterable[ChipPlay]) -> int:
     """How many free transfers are available going into gameweek `upcoming`.
 

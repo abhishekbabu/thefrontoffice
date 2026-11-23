@@ -5,6 +5,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 
 from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
+from thefrontoffice.adapters.outbound.competitions.premier_league.rules import plays
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
     Chip,
@@ -65,6 +66,14 @@ def player(
         corners_order=corners_order,
         news_added=news_added,
     )
+
+
+def effective_points(player: Player) -> float:
+    """A gameweek's worth the plain way: FPL's expected points, nought for a player who will not feature.
+
+    The arithmetic under test takes any `Value`; this one has an answer a test can work out by hand.
+    """
+    return player.expected_points if plays(player) else 0.0
 
 
 def game(event: int, points: int, minutes: int = 90, opponent: str = "LIV", **stats: int) -> PlayerGame:

@@ -45,7 +45,7 @@ platform that owns the **league** — `nba/yahoo.py`, `nfl/sleeper.py` — and i
 the rules beside it read the competition's own `model.py`, so a second league platform is one more provider
 (NBA's unmigrated modules are a shrink-only allowlist; the Premier League is exempt, as FPL is the game itself). Other
 platforms a competition reads from are role-named helpers (`projections.py`, `lineup.py`), never a second file named after a platform. A provider that
-outgrows one file splits the same way each time — `week.py` (state), `views.py` (how a player reads),
+outgrows one file splits the same way each time — `week.py` (state), `views.py` (how a player reads), `drawer.py` (the player drawer),
 `league.py` (season, table), `prompt.py` (model text), `rules.py` (shared facts) — leaving the port behind.
 
 **Types.** Avoid `Any`; prefer builtin generics and PEP 604 unions, which ruff's
