@@ -270,7 +270,7 @@ def test_a_week_with_no_opponent_reports_no_matchup_figures(matchups: list[Sleep
 
 
 def test_the_header_and_the_prompt_read_the_same_score() -> None:
-    """The scoreboard changes minute to minute; that it is fetched once is `test_sleeper.py`'s."""
+    """The scoreboard changes minute to minute; that it is fetched once is `sleeper/test_provider.py`'s."""
     context = nfl_provider(_kicked_off("in_game")).build_context("L1")
 
     live = next(s.value for s in context.headline if s.label == "Live")

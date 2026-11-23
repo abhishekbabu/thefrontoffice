@@ -12,7 +12,8 @@ import logging
 import statistics
 from collections.abc import Callable, Mapping, Sequence
 
-from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item, drop_candidate, insurance_note, join
+from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item, drop_candidate, join
+from thefrontoffice.adapters.outbound.competitions.nfl.handcuffs import insurance_note
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, lineup_points
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Game, NFLSource, Projection, active, by_club
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import (

@@ -1,6 +1,6 @@
 """Tests for the Sleeper football provider.
 
-Covers `nfl/sleeper.py`: the port itself — leagues, rosters, players, the
+Covers `nfl/sleeper/provider.py`: the port itself — leagues, rosters, players, the
 wire, and the links out. The week, the league and the prompt have their own
 modules beside this one.
 """
