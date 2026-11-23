@@ -40,8 +40,8 @@ Competition-specific constants lead with it: `NBA_SCOUT_PROMPT`,
 `MOCK_NFL_REPORT`. The word for a set of players a manager owns is **roster**,
 everywhere. Test modules mirror the module they cover.
 
-Under `adapters/outbound/competitions/<competition>/`, the provider file is named for the
-platform that owns the **league** — `nba/yahoo.py`, `nfl/sleeper.py` — and is the only file naming its types:
+Under `adapters/outbound/competitions/<competition>/`, the provider module or package is named for the
+platform that owns the **league** — `nba/yahoo/`, `nfl/sleeper.py` — and is the only one naming its types:
 the rules beside it read the competition's own `model.py`, so a second league platform is one more provider
 (the Premier League is exempt: FPL is the game itself). Other
 platforms a competition reads from are role-named helpers (`projections.py`, `lineup.py`), never a second file named after a platform. A provider that

@@ -174,13 +174,15 @@ def test_a_competitions_rules_read_its_own_model_and_only_its_provider_names_the
 ) -> None:
     """The rules are the competition's, so a second platform for one is a provider and nothing else.
 
-    Only the provider, named for the platform that owns the league (`nfl/sleeper.py`),
-    imports that platform; everything beside it reads the competition's `model.py`.
+    Only the provider, the module or package named for the platform that owns the
+    league (`nfl/sleeper.py`, `nba/yahoo/`), imports that platform; everything beside
+    it reads the competition's `model.py`.
     """
+    provider = PACKAGE / COMPETITIONS / competition / platform
     named = [
         f"{path.relative_to(PACKAGE)}:{line} imports {module}"
         for path in _modules(f"{COMPETITIONS}/{competition}")
-        if path.name != f"{platform}.py"
+        if path != provider.with_suffix(".py") and not path.is_relative_to(provider)
         for line, module in _imports(path)
         if module.startswith(f"thefrontoffice.adapters.outbound.platforms.{platform}")
     ]

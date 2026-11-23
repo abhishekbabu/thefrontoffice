@@ -17,13 +17,13 @@ several platforms, and one platform hosts several competitions of a sport.
 
 ## The five pieces
 
-1. **Provider** — `adapters/outbound/competitions/<competition>/<platform>.py`, implementing
+1. **Provider** — `adapters/outbound/competitions/<competition>/<platform>.py` (or a `<platform>/` package), implementing
    `CompetitionProvider` from `domain/ports.py`. The filename is the platform that
    owns the **league**, not every platform the competition reads from: NBA leagues
-   live on Yahoo, so the provider is `nba/yahoo.py` even though it also reads
+   live on Yahoo, so the provider is `nba/yahoo/` even though it also reads
    Sleeper for both stats and projections. Naming it this way leaves room for
    the same competition on a second platform — `nba/sleeper.py` beside
-   `nba/yahoo.py`.
+   `nba/yahoo/`.
    - `list_leagues() -> list[LeagueRef]`
    - `build_context(league_id) -> CompetitionContext`
    - `roster(league_id) -> list[PlayerCard]` — cheap; no projections or
@@ -50,7 +50,7 @@ A competition usually reads from more than one platform. Only the league platfor
 names a file; everything else is a role-named helper beside the provider:
 
 ```text
-competitions/nba/yahoo.py        provider — Yahoo owns the league
+competitions/nba/yahoo/           provider — Yahoo owns the league
 competitions/nba/projections.py  projected totals, read from Sleeper
 competitions/nba/form.py         recent form, read from Sleeper
 competitions/nba/week.py         the matchup week, its real games read from Sleeper

@@ -10,7 +10,7 @@ from support.nba import FakeNBA, FakeYahoo, make_player, nba_provider
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.rules import POINTS
-from thefrontoffice.adapters.outbound.competitions.nba.yahoo import ONE_WIN, YahooNBAProvider
+from thefrontoffice.adapters.outbound.competitions.nba.yahoo import ONE_WIN, YahooNBAProvider, reads
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooUnavailableError
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague
@@ -19,9 +19,10 @@ from thefrontoffice.domain.models import CompetitionContext, TradeMarket, TradeP
 
 POINTS_STAT = POINTS.yahoo_stat
 
-# The module logs through `getLogger(__name__)`, so the class's module is the
-# logger's name — and follows the module if it ever moves.
+# Each module logs through `getLogger(__name__)`, so a module is its logger's
+# name — and follows the module if it ever moves. A name is resolved in `reads`.
 YAHOO_LOGGER = YahooNBAProvider.__module__
+READS_LOGGER = reads.__name__
 
 
 def _giving(yahoo: FakeYahoo, *names: str) -> str:
@@ -60,7 +61,7 @@ def test_an_ambiguous_surname_resolves_to_nobody_rather_than_the_first() -> None
     """Pricing whichever Williams Yahoo listed first would evaluate a trade
     nobody proposed."""
     yahoo = FakeYahoo(search_results={"Williams": [make_player("Jalen Williams"), make_player("Jaylen Williams")]})
-    with capture_logs(YAHOO_LOGGER, logging.WARNING) as logs, pytest.raises(PlayerNotFoundError) as excinfo:
+    with capture_logs(READS_LOGGER, logging.WARNING) as logs, pytest.raises(PlayerNotFoundError) as excinfo:
         _giving(yahoo, "Williams")
     assert excinfo.value.names == ["Williams"]
     assert len(logs.at(logging.WARNING)) == 1
