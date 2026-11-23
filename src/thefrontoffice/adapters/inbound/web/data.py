@@ -8,13 +8,7 @@ whether it is ready off its settings and a cheap readiness check.
 from pydantic import BaseModel
 
 from thefrontoffice.adapters.inbound.remedies import ErrorBody
-from thefrontoffice.domain.ports import (
-    OutlookProvider,
-    PlayerSearchProvider,
-    TradeMarketProvider,
-    WeekBrowsingProvider,
-    WireProvider,
-)
+from thefrontoffice.application.capabilities import CAPABILITIES
 from thefrontoffice.wiring import CompetitionEntry
 
 
@@ -39,6 +33,7 @@ class Competition(BaseModel):
     week_word: str
     """What it calls a round, lowercase — 'week', or 'gameweek' in FPL — for the stepper and every week label."""
 
+    # One flag per `CAPABILITIES` row that names one, filled from that table.
     judges_wire: bool
     """Whether its free agents can be judged — offered only where it is."""
 
@@ -83,11 +78,7 @@ def competition(entry: CompetitionEntry) -> Competition:
         label=entry.label,
         name=entry.name,
         week_word=entry.week_word,
-        judges_wire=entry.can(WireProvider),
-        plans_weeks=entry.can(OutlookProvider),
-        browses_weeks=entry.can(WeekBrowsingProvider),
-        finds_trades=entry.can(TradeMarketProvider),
-        searches_players=entry.can(PlayerSearchProvider),
+        **{capability.flag: entry.can(port) for port, capability in CAPABILITIES.items() if capability.flag},
         syncs=entry.capture is not None,
         configured=entry.is_configured(),
         requires=entry.requires,

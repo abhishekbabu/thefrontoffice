@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from thefrontoffice.application.asking import AskEngine
+from thefrontoffice.application.capabilities import CAPABILITIES
 from thefrontoffice.application.forecasting import ForecastEngine
 from thefrontoffice.application.items import ItemDecisions
 from thefrontoffice.application.scouting import ScoutEngine
@@ -152,7 +153,11 @@ class CompetitionEntry:
             raise NotConfiguredError(self.label, self.requires)
         return self.build(self)
 
-    def open_as[P](self, port: type[P], what: str) -> P:
+    def refusal(self, port: type[object]) -> UnsupportedError:
+        """Why it cannot do what `port` offers, worded once in `CAPABILITIES`."""
+        return UnsupportedError(self.label, CAPABILITIES[port].refusal)
+
+    def open_as[P](self, port: type[P]) -> P:
         """Its provider, as the port a route needs — refused, unbuilt, where it has no such capability.
 
         Raises:
@@ -160,17 +165,17 @@ class CompetitionEntry:
             NotConfiguredError: this machine has no credentials for it.
         """
         if not self.can(port):
-            raise UnsupportedError(self.label, what)
-        return self.as_port(self.open(), port, what)
+            raise self.refusal(port)
+        return self.as_port(self.open(), port)
 
-    def as_port[P](self, provider: CompetitionProvider, port: type[P], what: str) -> P:
+    def as_port[P](self, provider: CompetitionProvider, port: type[P]) -> P:
         """`provider`, already built, as the port a caller needs.
 
         Raises:
             UnsupportedError: it does not implement `port`.
         """
         if not isinstance(provider, port):
-            raise UnsupportedError(self.label, what)
+            raise self.refusal(port)
         return provider
 
 

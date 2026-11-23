@@ -3,6 +3,7 @@
 import pytest
 from support.wiring import FakeCompetition, entry
 
+from thefrontoffice.application.capabilities import CAPABILITIES
 from thefrontoffice.domain.errors import UnsupportedError
 from thefrontoffice.domain.models import CompetitionContext, TradeProposal
 from thefrontoffice.domain.ports import OutlookProvider, TradeProvider, WireProvider
@@ -27,11 +28,18 @@ def test_a_capability_it_lacks_is_refused_by_name_without_building() -> None:
     plain = entry(FakeCompetition(), label="Plain", built=built)
 
     with pytest.raises(UnsupportedError, match="Plain"):
-        plain.open_as(WireProvider, "judging free agents")
+        plain.open_as(WireProvider)
     assert built == []
 
 
 def test_a_capability_it_has_comes_back_as_that_port() -> None:
     provider = _Trades()
 
-    assert entry(provider).open_as(TradeProvider, "trade evaluation") is provider
+    assert entry(provider).open_as(TradeProvider) is provider
+
+
+def test_a_refusal_is_worded_once_in_the_capability_table() -> None:
+    """Two routes needing one port refuse it alike, because neither words it."""
+    refused = entry(FakeCompetition(), label="Plain").refusal(WireProvider)
+
+    assert "Plain" in str(refused) and CAPABILITIES[WireProvider].refusal in str(refused)

@@ -43,7 +43,7 @@ def main() -> int:
 def run(registry: Registry, key: str) -> int:
     """Tune the competition `key` names; 1 where there is too little played to hold a week out."""
     try:
-        _, provider, league = open_league(registry, key, RangeTuningProvider, "tuning player ranges")
+        _, provider, league = open_league(registry, key, RangeTuningProvider)
         weeks = provider.played_weeks(league.league_id)
         if len(weeks) < 2:
             print("  Not enough finished weeks to tune and hold one out.")
