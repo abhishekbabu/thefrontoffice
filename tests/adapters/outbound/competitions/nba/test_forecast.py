@@ -1,6 +1,7 @@
 """Tests for a basketball week as the simulation reads it: `competitions/nba/forecast.py`."""
 
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -75,6 +76,21 @@ def test_on_a_crowded_night_only_the_best_the_slots_hold_start() -> None:
     counts = _counts(roster, _week(), slots=1, worth={"star": 40.0, "role": 15.0})
 
     assert counts == {"star": 3}
+
+
+def test_on_a_night_the_leagues_slots_seat_only_who_fits_them() -> None:
+    """One C slot and one PG: the better centre starts, and the guard beside him, never a second centre."""
+    roster = [
+        make_player("Big", position="C", team="DEN", selected_position="C"),
+        make_player("Other Big", position="C", team="LAL", selected_position="BN"),
+        make_player("Guard", position="PG", team="LAL", selected_position="PG"),
+    ]
+    week = replace(_week(), lineup=("C", "PG"))
+
+    counts = _counts(roster, week, slots=3, worth={"big": 30.0, "other-big": 25.0, "guard": 10.0})
+
+    assert counts == {"big": 3, "guard": 3}
+    assert _counts(roster, _week(), slots=3) == {"big": 3, "other-big": 3, "guard": 3}
 
 
 def test_nobody_on_an_injured_slot_plays() -> None:

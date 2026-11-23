@@ -116,6 +116,27 @@ def test_nothing_streams_without_adds_or_without_more_games() -> None:
     assert build([level], roster, wire, readings, {}, adds=3).weeks[0].fix == ""
 
 
+def test_a_night_counts_only_the_players_the_leagues_slots_seat() -> None:
+    """Three forwards on the 1st, a lineup of one PF and one C: one starts, where a cap of two would start two."""
+    window = _window(6, {"AAA": [1], "BBB": [1], "CCC": [1]})
+    readings = _readings((STAR, 40.0), (SECOND, 30.0), (BENCH, 10.0))
+
+    fitted = build([window], [STAR, SECOND, BENCH], [], readings, {}, adds=0, lineup=("PF", "C"))
+    capped = build([window], [STAR, SECOND, BENCH], [], readings, {}, adds=0)
+
+    assert (fitted.weeks[0].points, capped.weeks[0].points) == (1, 2)
+
+
+def test_a_stream_counts_only_the_nights_he_would_start_in_the_drops_place() -> None:
+    """Two forward slots, both taken by Star and Second on every night the pickup plays: he would start none."""
+    roster, wire, readings, window = _streamable()
+
+    assert build([window], roster, wire, readings, {}, adds=3).weeks[0].fix != ""
+    assert build([window], roster, wire, readings, {}, adds=3, lineup=("PF", "PF")).weeks[0].fix == ""
+    [opened] = build([window], roster, wire, readings, {}, adds=3, lineup=("PF", "PF", "Util")).weeks
+    assert opened.gain == 2  # four nights in an open slot for the two Weak is needed on
+
+
 def test_a_pickup_is_named_in_one_week_only() -> None:
     roster, wire, readings, window = _streamable()
     again = _window(7, {club: [day + 7 for day in days] for club, days in _days(window).items()}, first=8)

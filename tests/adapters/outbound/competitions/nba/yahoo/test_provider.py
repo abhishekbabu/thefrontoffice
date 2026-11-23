@@ -1795,6 +1795,24 @@ def test_the_week_heads_with_the_games_each_side_can_start_and_labels_each_picku
     ]
 
 
+def test_the_forecast_counts_the_starts_the_to_do_list_does() -> None:
+    """Benched (PF) and Spare (C) both play today with PF, C and Util open: two starts, though one slot is filled."""
+    yahoo, _ = _slotted()
+    spare = replace(SPARE, team="BOS")
+    yahoo.roster_players = [STARTER, BENCHED, spare]
+    played = [game_log("p", 1, pts=10.0)]
+    logs = {p.name: played for p in [STARTER, BENCHED, spare, *yahoo.roster("t.2")]}
+    nba = FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY, logs=logs)
+    provider = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE)
+
+    matchup = provider.matchup_input("")
+
+    assert matchup is not None
+    mine = sum(o.games for o in matchup.mine)
+    assert _games_left(provider.summary("").headline) == [f"{mine} vs {sum(o.games for o in matchup.theirs)}"]
+    assert mine == 2
+
+
 @pytest.mark.parametrize("broken", ["weekly", "schedule"])
 def test_without_nights_to_place_them_pickups_are_weighed_on_games_left_and_no_race_is_shown(broken: str) -> None:
     yahoo, nba = _slotted(weekly=broken == "weekly")

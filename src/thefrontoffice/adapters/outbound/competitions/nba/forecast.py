@@ -3,8 +3,9 @@
 The generic engine in `application/forecasting.py` plays it out; this says
 what a basketball week is made of. Each player's games are his last fifteen,
 drawn one at a time for every game his club has left that he would start: a
-lineup is set day by day, so on a night more of a roster plays than it has
-active slots, only the best of them count. A player ruled out plays none until
+lineup is set day by day, so on a night more of a roster plays than its slots
+can seat, only the best of them the league's real slots fit count
+(`lineup.seated`), as the to-do list counts them. A player ruled out plays none until
 the day ESPN expects him back. What a side has already scored is Yahoo's,
 straight off the scoreboard.
 
@@ -19,6 +20,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
+from thefrontoffice.adapters.outbound.competitions.nba.lineup import seated
 from thefrontoffice.adapters.outbound.competitions.nba.model import HeadToHead, LeagueCategory, Player, WeekSide
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     CATEGORIES,
@@ -67,6 +69,10 @@ class Week:
     """Lineups are set once for the week (`LeagueSettings.weekly_lineups`): today's starters play every game."""
 
     seed: int = 0
+
+    lineup: tuple[str, ...] = ()
+    """The league's scoring slots, one per place (`lineup.slots`); none where its settings list none, and a night
+    then starts as many as either roster fills today."""
 
 
 def points(
@@ -193,12 +199,16 @@ def _active(player: Player) -> bool:
 
 
 def starts(roster: Sequence[Player], week: Week, slots: int, worth: Mapping[str, float]) -> dict[str, int]:
-    """How many of the games left each player would start, by Yahoo key: on each night, the best `slots` who play.
+    """How many of the games left each player would start, by Yahoo key: on each night, the best who play that
+    the league's slots seat (`Week.lineup`), or the best `slots` where it lists none.
 
-    Nobody on an injured slot plays, and nobody ruled out until the day ESPN
-    expects him back. Where lineups are set for the week, today's starters
-    play every game they have and nobody else any; where no roster fills a
-    slot today, every player who plays counts.
+    Each night is filled best first: a player starts where the lineup seats
+    him beside those already in, so a third centre on a night with one C slot
+    and the Util taken sits however good he is. Nobody on an injured slot
+    plays, and nobody ruled out until the day ESPN expects him back. Where
+    lineups are set for the week, today's starters play every game they have
+    and nobody else any; where no roster fills a slot today, every player who
+    plays counts.
     """
     nights: dict[date, set[str]] = {}
     for game in week.left:
@@ -211,9 +221,18 @@ def starts(roster: Sequence[Player], week: Week, slots: int, worth: Mapping[str,
     for day, clubs in sorted(nights.items()):
         playing = [p for p in able if p.team.upper() in clubs and _available(p, day, week.returns)]
         playing.sort(key=lambda p: worth.get(p.player_key, 0.0), reverse=True)
-        for player in playing[: cap or len(playing)]:
+        for player in _seated(playing, week.lineup) if cap and week.lineup else playing[: cap or len(playing)]:
             counts[player.player_key] = counts.get(player.player_key, 0) + 1
     return counts
+
+
+def _seated(playing: Sequence[Player], lineup: Sequence[str]) -> list[Player]:
+    """The players of `playing`, best first, the lineup starts: each in where it seats him beside those before."""
+    chosen: list[Player] = []
+    for player in playing:
+        if seated([*chosen, player], lineup) > len(chosen):
+            chosen.append(player)
+    return chosen
 
 
 def _available(player: Player, day: date, returns: Mapping[str, date]) -> bool:
