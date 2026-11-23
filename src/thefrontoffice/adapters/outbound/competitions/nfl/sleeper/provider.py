@@ -13,16 +13,16 @@ The port, and the gathering of a week: everything else is a role beside it —
 absence), `forecast.py` (the matchup simulated),
 `league.py` (the season), `outlook.py` and `market.py` (the weeks ahead and
 the trades), `prompt.py` (what a model reads).
+
+What a week is gathered from is `gather.py`; the rosters as a week saw them, `rostered.py`.
 """
 
 import logging
-import statistics
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions import paging
-from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex, normalize_name
 from thefrontoffice.adapters.outbound.competitions.news import PlayerNews
 from thefrontoffice.adapters.outbound.competitions.nfl import (
@@ -33,16 +33,14 @@ from thefrontoffice.adapters.outbound.competitions.nfl import (
     injuries,
     league,
     market,
-    news,
     outlook,
     prompt,
     stash,
     tuning,
     views,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.forecast import Forecasts
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import current_lineup, optimal_lineup
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import current_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     FREE_AGENT,
     Game,
@@ -50,7 +48,6 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     PlayerInfo,
     Projection,
     Team,
-    Trending,
     active,
     fielded,
     open_spots,
@@ -58,40 +55,33 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     FANTASY_POSITIONS,
     SEASON_WEEKS,
-    ruled_out,
     scoring_name,
     season_end,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import gather, rostered
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,
     Scoreboard,
     Week,
     counted,
-    pairings,
     projections_for,
     team_name,
     week_dates,
-    weeks_played,
     zero_projection,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.worth import lineup_value
 from thefrontoffice.adapters.outbound.competitions.seeds import seed
 from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
-from thefrontoffice.adapters.outbound.platforms.espn import types as espn
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
-from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNFLSource
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
-    PlayerMeta,
     SleeperLeague,
-    SleeperMatchup,
     SleeperRoster,
 )
 from thefrontoffice.domain.errors import (
     LeagueNotFoundError,
     NotFoundError,
-    PlatformError,
     PlayerNotFoundError,
     TeamNotFoundError,
 )
@@ -117,7 +107,6 @@ from thefrontoffice.domain.models import (
     TradeMarket,
     TradeProposal,
     WeekRange,
-    outcome,
     urgency_rank,
 )
 from thefrontoffice.domain.ports import LeagueRef
@@ -388,7 +377,7 @@ class SleeperNFLProvider:
         context = prompt.build(
             state,
             [item.action for item in self._tasks(state)],
-            self._trending(),
+            gather.trending(self.client),
             kicked_off=bool(self.scoreboard.started(state)),
             over=self.scoreboard.over(state.season, state.week),
         )
@@ -404,19 +393,6 @@ class SleeperNFLProvider:
             for pid, meta in state.players.items()
             if (pid in mine or pid not in state.owned) and meta.team not in started
         )
-
-    def _trending(self) -> Sequence[Trending] | None:
-        """Who the crowd is adding; None where it will not load — an independent signal, not load-bearing."""
-        try:
-            return self.client.get_trending("add", lookback_hours=prompt.TRENDING_HOURS, limit=prompt.TRENDING_LIMIT)
-        except PlatformError as e:
-            logger.warning(f"Skipping trending players: {e}")
-            return None
-
-    @staticmethod
-    def _current_week(phase: Phase) -> int:
-        """The week the report is about; the opener while still in preseason."""
-        return max(1, phase.week if phase.is_regular_season else 1)
 
     def _week(self, league_id: str, browse: int | None = None) -> Week:
         """The week being played, or the one `browse` names, gathered once per provider — which is once per request."""
@@ -438,30 +414,30 @@ class SleeperNFLProvider:
         which only the week being played's to-do list and prompt read.
         """
         phase = self.client.get_nfl_state()
-        current, season = self._current_week(phase), phase.season
+        current, season = gather.current_week(phase), phase.season
         league = self._league(league_id, season)
-        matchups = self._matchups(league_id, current)
+        matchups = gather.matchups(self.client, league_id, current)
         rosters = self.client.get_rosters(league_id)
         if self._played_out(phase, current):
-            rosters = banked(rosters, matchups, current, league)
+            rosters = rostered.banked(rosters, matchups, current, league)
             current += 1
-            matchups = self._matchups(league_id, current)
+            matchups = gather.matchups(self.client, league_id, current)
 
         week = current if browse is None else browse
         if browse is not None and not 1 <= browse <= max(season_end(league), current):
             raise NotFoundError(f"week {week} of the {season} season")
         if week != current:
-            matchups = self._matchups(league_id, week)
+            matchups = gather.matchups(self.client, league_id, week)
         if week > current and league.playoff_week_start and week >= league.playoff_week_start:
             # Sleeper fills the bracket weeks with placeholder pairings until the
             # regular season ends; a name there is not who you will play.
             matchups = []
         if week < current:
-            rosters = as_played(self._records_before(league_id, week, rosters, league), matchups)
-        rosters = with_lineups(rosters, matchups)
+            rosters = rostered.as_played(gather.records_before(self.client, league_id, week, rosters, league), matchups)
+        rosters = rostered.with_lineups(rosters, matchups)
 
         catalog = self.client.get_nfl_players()
-        reports = self._injuries(catalog, season)
+        reports = gather.reports_for(self.espn, catalog, season)
         designations = injuries.designations(reports.by_player)
         players = injuries.catalog(catalog, designations, lambda meta, status: replace(meta, injury_status=status))
         published = self.client.get_projections(
@@ -471,7 +447,7 @@ class SleeperNFLProvider:
         if week > current:
             # Sleeper copies a roster's standing lineup into weeks to come, a dropped
             # player and all: what a week ahead holds is the best each roster can field.
-            rosters = best_lineups(rosters, league.starting_slots, projections, players)
+            rosters = rostered.best_lineups(rosters, league.starting_slots, projections, players)
         roster = self._mine(rosters, league_id)
         browsing = week != current
         projected = projections_for(fielded(roster), projections, players)
@@ -479,8 +455,8 @@ class SleeperNFLProvider:
         return Week(
             evidence=evidence.Evidence()
             if browsing
-            else self._evidence(season, week, league, phase.is_regular_season, players),
-            news=PlayerNews() if browsing else self._news(catalog),
+            else gather.season_evidence(self.client, season, week, league, phase.is_regular_season, players),
+            news=PlayerNews() if browsing else gather.player_news(self.espn, catalog),
             injuries=reports,
             current=current if browsing else 0,
             is_regular_season=phase.is_regular_season,
@@ -498,28 +474,6 @@ class SleeperNFLProvider:
             rank=lineup_value,
         )
 
-    def _records_before(
-        self, league_id: str, week: int, rosters: list[SleeperRoster], league: SleeperLeague
-    ) -> list[SleeperRoster]:
-        """The records as they stood going into `week`; today's where a week before it will not load.
-
-        A count missing a week would be the record of no moment at all; today's
-        is at least one the team really had.
-        """
-        before = self.client.get_matchups_bulk(league_id, list(range(1, week)))
-        if before.failures:
-            logger.warning(f"Showing today's records on week {week}: weeks {sorted(before.failures)} would not load")
-            return rosters
-        return as_of(rosters, before.values, league)
-
-    def _matchups(self, league_id: str, week: int) -> list[SleeperMatchup]:
-        """The week's head-to-heads; none where they will not load, which leaves the week without an opponent."""
-        try:
-            return self.client.get_matchups(league_id, week)
-        except SleeperAPIError as e:
-            logger.warning(f"Continuing without the week's matchups, so its opponent, live score and lineups: {e}")
-            return []
-
     def _played_out(self, phase: Phase, week: int) -> bool:
         """Whether the week Sleeper calls current has nothing left to play.
 
@@ -528,67 +482,6 @@ class SleeperNFLProvider:
         the finished week answers a question nobody can act on.
         """
         return phase.is_regular_season and week < SEASON_WEEKS and self.scoreboard.over(phase.season, week)
-
-    def _evidence(
-        self, season: str, week: int, league: SleeperLeague, is_regular_season: bool, players: Mapping[str, PlayerMeta]
-    ) -> evidence.Evidence:
-        """Roles and matchups from every week finished so far that loads."""
-        played = weeks_played(week, is_regular_season)
-        if not played:
-            return evidence.Evidence()
-        scoring = league.scoring_format
-        lines = evidence.season_lines(
-            self.client.get_nfl_game_lines(season, played, FANTASY_POSITIONS, scoring, league.scoring_rules).values
-        )
-        out = {pid for pid, meta in players.items() if ruled_out(meta.injury_status)}
-        return evidence.gather(lines, scoring, out)
-
-    def _injuries(self, players: dict[str, PlayerMeta], season: str) -> PlayerInjuries:
-        """Each player's row on ESPN's injury report as it stands now, where it names him.
-
-        Then, for whoever Sleeper has ruled out and the report has dropped,
-        his own latest entry from ESPN.
-        """
-        try:
-            reports = self.espn.get_injuries(espn.NFL)
-        except ESPNAPIError as e:
-            # Sleeper's own designations stand: older, but still a designation.
-            logger.warning(f"Continuing on Sleeper's injury designations alone: {e}")
-            return PlayerInjuries()
-        espn_ids = {meta.espn_id: pid for pid, meta in players.items() if meta.espn_id}
-        found = injuries.matched(reports, players, espn_ids)
-        return PlayerInjuries(by_player=found | self._backfilled(players, found, espn_ids, season))
-
-    def _backfilled(
-        self, players: dict[str, PlayerMeta], found: dict[str, espn.InjuryReport], espn_ids: dict[str, str], season: str
-    ) -> dict[str, espn.InjuryReport]:
-        """The latest entry of each player ruled out whom the report has dropped, keyed by Sleeper's id.
-
-        The rosters are read only for a player Sleeper carries no ESPN id for.
-        Enrichment like the news: what will not load leaves the report as it was.
-        """
-        wanted = injuries.unreported(players, found)
-        if not wanted:
-            return {}
-        try:
-            roster = self.espn.get_rosters(espn.NFL) if any(not players[pid].espn_id for pid in wanted) else []
-            athletes = injuries.athletes(wanted, players, espn_ids, roster)
-            entries = self.espn.get_athlete_injuries(espn.NFL, season, list(athletes.values()))
-        except ESPNAPIError as e:
-            logger.warning(f"Continuing on the injury report alone, without the players it has dropped: {e}")
-            return {}
-        return {pid: entries[a.athlete_id] for pid, a in athletes.items() if a.athlete_id in entries}
-
-    def _news(self, players: dict[str, PlayerMeta]) -> PlayerNews:
-        """Recent articles about every player, from each club's own feed."""
-        clubs = sorted({espn_club(m.team) for m in players.values() if m.team != FREE_AGENT})
-        try:
-            feeds = self.espn.get_team_news(espn.NFL, clubs)
-        except ESPNAPIError as e:
-            # Enrichment, like the evidence: the week stands without it.
-            logger.warning(f"Continuing without player news: {e}")
-            return PlayerNews()
-        return news.attach(feeds, players, datetime.now(UTC))
 
     def summary(self, league_id: str) -> Summary:
         """The week as it stands: both lineups and the to-do list, which carries the swaps. No model."""
@@ -761,126 +654,3 @@ class SleeperNFLProvider:
         """The rest of the season, with the one-for-one trades that would help both lineups."""
         state = self._week(league_id)
         return market.build(self.client, state, seed=self._season_seed(league_id, state), scoreboard=self.scoreboard)
-
-
-# ── the week's teams ────────────────────────────────────────────────────
-
-
-def with_lineups(rosters: Sequence[SleeperRoster], matchups: Sequence[SleeperMatchup]) -> list[SleeperRoster]:
-    """Every team, each starting the lineup it set for this week.
-
-    A roster's own `starters` lags: Sleeper can keep serving the lineup as
-    it stood days after the manager changed it, while the week's matchup
-    already carries the new one. So the lineup is read from there, and
-    from the roster only for a team with no matchup this week.
-    """
-    lineups = {entry.roster_id: entry.starters for entry in matchups if entry.starters}
-    return [
-        replace(roster, starter_ids=list(lineups[roster.roster_id])) if roster.roster_id in lineups else roster
-        for roster in rosters
-    ]
-
-
-def banked(
-    rosters: Sequence[SleeperRoster], matchups: Sequence[SleeperMatchup], week: int, league: SleeperLeague
-) -> list[SleeperRoster]:
-    """The records with a finished week counted, where Sleeper has not counted it yet.
-
-    Sleeper settles a week's results a day or so after its last game, and the
-    page moves on before then: without this the table, and every simulation
-    standing on it, would lose a week of wins. Whether Sleeper has counted it is
-    read off the records themselves — a week each, two in a league that also
-    plays its median — since they arrive in the same response that would carry it.
-    A playoff week is never counted: the records are the regular season's.
-    """
-    per_week = 2 if league.median_game else 1
-    if _in_playoffs(week, league) or any(r.wins + r.losses + r.ties >= week * per_week for r in rosters):
-        return list(rosters)
-    return _counted(rosters, matchups, league)
-
-
-def as_of(
-    rosters: Sequence[SleeperRoster], by_week: Mapping[int, Sequence[SleeperMatchup]], league: SleeperLeague
-) -> list[SleeperRoster]:
-    """The records as they stood going into a week: each of `by_week`'s results counted from none.
-
-    What a week browsed back to is read against — its place in the table, the
-    record beside each lineup — rather than the record the season has reached
-    since. A playoff week is never counted, as in `banked`.
-    """
-    counted = [replace(r, wins=0, losses=0, ties=0, points_for=0.0) for r in rosters]
-    for week, matchups in sorted(by_week.items()):
-        if not _in_playoffs(week, league):
-            counted = _counted(counted, matchups, league)
-    return counted
-
-
-def _in_playoffs(week: int, league: SleeperLeague) -> bool:
-    return bool(league.playoff_week_start) and week >= league.playoff_week_start
-
-
-def _counted(
-    rosters: Sequence[SleeperRoster], matchups: Sequence[SleeperMatchup], league: SleeperLeague
-) -> list[SleeperRoster]:
-    """Each record with one week's result added: its head-to-head, and its median game where the league plays one."""
-    sides = {mine.roster_id: (mine, theirs) for a, b in pairings(matchups) for mine, theirs in ((a, b), (b, a))}
-    scores = [entry.points for entry in matchups]
-    middle = statistics.median(scores) if league.median_game and scores else None
-    counted: list[SleeperRoster] = []
-    for roster in rosters:
-        side = sides.get(roster.roster_id)
-        if side is None:
-            counted.append(roster)
-            continue
-        mine, theirs = side
-        results = [outcome(mine.points, theirs.points)]
-        if middle is not None:
-            results.append(outcome(mine.points, middle))
-        counted.append(
-            replace(
-                roster,
-                wins=roster.wins + results.count("won"),
-                losses=roster.losses + results.count("lost"),
-                ties=roster.ties + results.count("drawn"),
-                points_for=round(roster.points_for + mine.points, 2),
-            )
-        )
-    return counted
-
-
-def as_played(rosters: Sequence[SleeperRoster], matchups: Sequence[SleeperMatchup]) -> list[SleeperRoster]:
-    """Every team holding who it held that week, which its matchup keeps after a drop or a trade.
-
-    A team the week's matchups do not name keeps the roster it holds now.
-    """
-    held = {entry.roster_id: entry.players for entry in matchups if entry.players}
-    return [
-        replace(
-            roster,
-            player_ids=list(held[roster.roster_id]),
-            reserve_ids=[pid for pid in roster.reserve_ids if pid in held[roster.roster_id]],
-            ir_ids=[pid for pid in roster.ir_ids if pid in held[roster.roster_id]],
-        )
-        if roster.roster_id in held
-        else roster
-        for roster in rosters
-    ]
-
-
-def best_lineups(
-    rosters: Sequence[SleeperRoster],
-    slots: list[str],
-    projections: Mapping[str, Projection],
-    players: Mapping[str, PlayerInfo],
-) -> list[SleeperRoster]:
-    """Every team starting the best lineup its roster makes on these projections, slot by slot."""
-    return [
-        replace(
-            roster,
-            starter_ids=[
-                slot.player.player_id if slot.player else ""
-                for slot in optimal_lineup(slots, projections_for(active(roster), projections, players))
-            ],
-        )
-        for roster in rosters
-    ]

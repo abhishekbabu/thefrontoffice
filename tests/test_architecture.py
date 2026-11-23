@@ -186,7 +186,7 @@ def test_a_competitions_rules_read_its_own_model_and_only_its_provider_names_the
     """The rules are the competition's, so a second platform for one is a provider and nothing else.
 
     Only the provider, the module or package named for the platform that owns the
-    league (`nfl/sleeper.py`, `nba/yahoo/`), imports that platform; everything beside
+    league (`nfl/sleeper/`, `nba/yahoo/`), imports that platform; everything beside
     it reads the competition's `model.py`.
     """
     provider = PACKAGE / COMPETITIONS / competition / platform

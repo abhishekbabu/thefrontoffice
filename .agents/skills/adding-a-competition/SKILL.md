@@ -50,12 +50,12 @@ A competition usually reads from more than one platform. Only the league platfor
 names a file; everything else is a role-named helper beside the provider:
 
 ```text
-competitions/nba/yahoo/           provider — Yahoo owns the league
+competitions/nba/yahoo/          provider — Yahoo owns the league
 competitions/nba/projections.py  projected totals, read from Sleeper
 competitions/nba/form.py         recent form, read from Sleeper
 competitions/nba/week.py         the matchup week, its real games read from Sleeper
 competitions/nba/context.py      prompt lines, built from both
-competitions/nfl/sleeper.py      provider — Sleeper owns the league
+competitions/nfl/sleeper/        provider — Sleeper owns the league
 competitions/nfl/lineup.py       optimal lineup, computed from projections
 ```
 

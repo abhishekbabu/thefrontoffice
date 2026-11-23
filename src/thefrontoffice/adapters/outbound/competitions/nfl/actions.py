@@ -25,7 +25,11 @@ from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
     REGULAR,
     average,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.handcuffs import handcuffs, understudies
+from thefrontoffice.adapters.outbound.competitions.nfl.handcuffs import (
+    UNKNOWN,
+    insurance_note,
+    insured,
+)
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupChange,
     best_upgrade,
@@ -543,84 +547,6 @@ def _worth_a_spot(state: Week, player_id: str, drop: Projection | None) -> bool:
     return value(state, pickup) > value(state, drop)
 
 
-def cuffed(state: Week) -> dict[str, PlayerInfo]:
-    """Each of your backs held as a handcuff, mapped to the starter he backs up (see `handcuffs`)."""
-    starting = state.starter_ids | {slot.player.player_id for slot in state.best if slot.player}
-    return handcuffs(state.players, state.roster.player_ids, starting)
-
-
-WORKHORSE = 0.6
-"""Snap share over a club's first back's last `ROLE_GAMES` games at which the backfield is his.
-
-Most of the snaps, not half: below it the room is a committee, and the back
-next on the chart inherits a share of a share when the first one sits.
-"""
-
-
-def stashed(state: Week) -> dict[str, PlayerInfo]:
-    """Each of your backs held as a stash, mapped to the workhorse he would replace.
-
-    A stash is an understudy (see `understudies`) whose club's first back is:
-
-    - not ruled out — where he is, the understudy is already the starter, and
-      his own figures say so;
-    - a workhorse: `WORKHORSE` of the snaps over his last games, at least
-      `MIN_GAMES_FOR_AVERAGE` of them;
-    - worth starting for you: his points a game over those games beat the
-      `worth` of the weakest player your best lineup starts in a slot a back
-      can fill.
-
-    Wherever any of that is unknown he is not a stash: protecting every backup
-    keeps the dead weight on the bench.
-    """
-    bar = _weakest_back_slot(state)
-    if bar is None:
-        return {}
-    stashes = {}
-    for player_id, ahead in understudies(state.players, state.roster.player_ids).items():
-        role = state.evidence.roles.get(ahead.player_id)
-        if (
-            not ruled_out(ahead.injury_status)
-            and role is not None
-            and role.games >= MIN_GAMES_FOR_AVERAGE
-            and role.snap_share is not None
-            and role.snap_share >= WORKHORSE
-            and role.points > bar
-        ):
-            stashes[player_id] = ahead
-    return stashes
-
-
-def _weakest_back_slot(state: Week) -> float | None:
-    """The `worth` of the weakest player the best lineup starts in a slot a running back can fill."""
-    values = [
-        value
-        for slot in state.best
-        if slot.player is not None
-        and "RB" in eligible_positions(slot.slot)
-        and (value := worth(state, slot.player)) is not None
-    ]
-    return min(values, default=None)
-
-
-def insured(state: Week) -> dict[str, tuple[int, str]]:
-    """Each back held as insurance, as his place in the drop order and what the drop says of him.
-
-    A stash goes before a handcuff. A handcuff insures points you already
-    score: the week your starter sits, he is the one who scores them. A stash
-    is a lineup upgrade only if someone else's back gets hurt; losing him
-    costs a chance, losing a handcuff costs points. A back who is both is a
-    handcuff.
-    """
-    held = {pid: (STASH, f"stash behind {surname(ahead.name)}") for pid, ahead in stashed(state).items()}
-    held |= {pid: (HANDCUFF, f"handcuff to {surname(starter.name)}") for pid, starter in cuffed(state).items()}
-    return held
-
-
-STASH, HANDCUFF, UNKNOWN = 1, 2, 3
-"""Places in the drop order after an ordinary player's nought: a stash, a handcuff, then one with nothing to go on."""
-
-
 def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> Projection | None:
     """The player it costs least to lose, by his `worth`: never one kept, one the best lineup starts, nor one whose role is growing.
 
@@ -646,11 +572,6 @@ def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> 
         return rank, value or 0.0, player.points
 
     return min(candidates, key=weakest, default=None)
-
-
-def insurance_note(state: Week, player: Projection) -> str:
-    """'handcuff to McCaffrey' or 'stash behind McCaffrey' where he is one; empty where he is neither."""
-    return insured(state).get(player.player_id, (0, ""))[1]
 
 
 def drop_note(state: Week, player: Projection) -> str:
