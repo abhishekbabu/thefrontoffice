@@ -106,6 +106,23 @@ class PlayerInjuries:
         )
 
 
+def in_words(status: str, words: Mapping[str, str]) -> str:
+    """A platform's status code as a person would say it, 'O' as 'Out'; a code `words` lacks, as written.
+
+    A table column has room for 'O'; a drawer's header should not make anyone
+    decode it, and 'O' set alone reads as the figure zero.
+    """
+    return words.get(status.upper(), status)
+
+
+def designation(status: str, body: str = "") -> list[Stat]:
+    """The platform's own status and what is hurt, for a player ESPN's report does not have; empty for neither."""
+    return [
+        *([Stat(label="Status", value=status, tone="warning")] if status else []),
+        *([Stat(label=BODY_PART, value=body)] if body else []),
+    ]
+
+
 def injury_stats(
     status: str,
     *,

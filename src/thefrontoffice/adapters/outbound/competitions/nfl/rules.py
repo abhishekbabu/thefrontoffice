@@ -9,6 +9,7 @@ the to-do list's module.
 """
 
 from thefrontoffice.adapters.outbound.competitions import brackets
+from thefrontoffice.adapters.outbound.competitions.injuries import in_words
 from thefrontoffice.adapters.outbound.competitions.nfl.model import LeagueRules, Scoring
 
 SEASON_WEEKS = 18
@@ -95,6 +96,29 @@ RULED_OUT_SHORT = {
     "DNR": "no team",
 }
 """The same designations, short enough to stand where a row names his opponent."""
+
+
+STATUS_WORDS = {
+    "Q": "Questionable",
+    "QUESTIONABLE": "Questionable",
+    "D": "Doubtful",
+    "DOUBTFUL": "Doubtful",
+    "O": "Out",
+    "OUT": "Out",
+    "IR": "Injured reserve",
+    "PUP": "PUP",
+    "SUS": "Suspended",
+    "NA": "Not active",
+    "COV": "COVID list",
+    "DNR": "Not with a team",
+}
+"""Sleeper's designations in words (`injuries.in_words`): it spells the injury report's in full and its
+own lists as codes. The codes stay where a row has room for no more (`RULED_OUT_SHORT`)."""
+
+
+def status_word(status: str) -> str:
+    """A Sleeper designation as a person would say it, 'IR' as 'Injured reserve'; one it does not know, as written."""
+    return in_words(status, STATUS_WORDS)
 
 
 def ruled_out(status: str) -> bool:

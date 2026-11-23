@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from thefrontoffice.adapters.outbound.competitions.careers import experience
 from thefrontoffice.adapters.outbound.competitions.dates import WEEKDAYS, day_month, parse_day
-from thefrontoffice.adapters.outbound.competitions.injuries import BODY_PART
+from thefrontoffice.adapters.outbound.competitions.injuries import designation
 from thefrontoffice.adapters.outbound.competitions.matchups import Matchup
 from thefrontoffice.adapters.outbound.competitions.nba.form import FORM_WEEKS
 from thefrontoffice.adapters.outbound.competitions.nba.model import LeagueCategory, Player, PrintedLine
@@ -162,10 +162,7 @@ def detail(drawer: Drawer) -> PlayerDetail:
     figure = "" if season is None else season.points if by_points else season.stats.get(POINTS.yahoo_stat, "")
     headline = figure if number(figure) is not None else ""
     unit = "fpts/game" if by_points else "pts/game"
-    hurt = drawer.reported or [
-        *([Stat(label="Status", value=status_word(player.status), tone="warning")] if player.status else []),
-        *([Stat(label=BODY_PART, value=player.injury_note)] if player.injury_note else []),
-    ]
+    hurt = drawer.reported or designation(status_word(player.status), player.injury_note)
     spans = ((SEASON, season), (LAST_MONTH, None if recent == season else recent))
     week = _week(drawer)
     projected = drawer.week.projected if drawer.week else None
