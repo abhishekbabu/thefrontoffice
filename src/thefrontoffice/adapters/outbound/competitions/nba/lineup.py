@@ -7,7 +7,7 @@ most of them any arrangement seats, a maximum matching of players to slots.
 So a pickup is worth the nights he fills a slot that would otherwise sit
 empty, and a drop costs the nights the lineup cannot seat somebody in his
 place. A player ruled out counts from the day ESPN expects him back, a claim
-from the day after he clears waivers (`strength.nights`); nobody in an
+from the day he clears waivers (`strength.nights`); nobody in an
 injured slot plays.
 """
 

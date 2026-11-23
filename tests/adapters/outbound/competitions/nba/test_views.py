@@ -123,15 +123,17 @@ def _clubs_play(*days: int) -> FakeNBA:
     return FakeNBA(dated={"LAL": played}, slate=slate)
 
 
-def test_the_drawer_on_a_player_on_waivers_says_when_he_clears_and_counts_only_the_games_after() -> None:
+def test_the_drawer_on_a_player_on_waivers_says_when_he_clears_and_counts_the_games_from_then() -> None:
     waiting = make_player("A B", key="ab", waiver_date=CLEARS)
+    yahoo = FakeYahoo(available=[waiting])
+    yahoo.priority = 7
 
-    detail = nba_provider(FakeYahoo(available=[waiting]), nba=_clubs_play(10, 11, 12, 14)).player("", "ab")
+    detail = nba_provider(yahoo, nba=_clubs_play(10, 11, 12, 14)).player("", "ab")
 
     week = {s.label: s.value for s in detail.groups[0].stats}
-    assert "Wed 11 Feb" in detail.owner
-    assert week["G left"] == "2"
-    assert week["Games"].count("vs BOS") == 2  # the 12th and 14th
+    assert "Wed 11 Feb" in detail.owner and "#7" in detail.owner
+    assert week["G left"] == "3"
+    assert week["Games"].count("vs BOS") == 3  # the 11th, 12th and 14th
 
 
 def test_the_drawer_on_a_free_agent_counts_every_game_his_club_has_left() -> None:

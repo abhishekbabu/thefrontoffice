@@ -202,9 +202,13 @@ class FakeYahoo:
         self.moves_error: Exception | None = None
         self.forgotten = 0
         """How many times the league's kept reads were dropped."""
+        self.priority = 0
+        """Your place in the waiver order; 0 for none known."""
 
     def get_user_team(self) -> YahooTeam:
-        return YahooTeam(team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used)
+        return YahooTeam(
+            team_key="t.1", name="My Team", is_mine=True, adds_used=self.adds_used, waiver_priority=self.priority
+        )
 
     def roster(self, team_key: str) -> list[YahooPlayer]:
         if team_key in self.others:

@@ -155,7 +155,7 @@ class PlayerContextBuilder:
             games_left = remaining_games.get(p.team.upper(), None)
             reading = readings.get(p.player_key) if readings else None
             if p.waiver_date and reading is not None:
-                # A claim plays only the games after he clears waivers, which his reading counts.
+                # A claim plays only the games from the day he clears waivers, which his reading counts.
                 games_left = reading.games
             games_str = f" [{games_left}G left]" if games_left is not None else ""
 

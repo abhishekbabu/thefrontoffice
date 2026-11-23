@@ -174,21 +174,22 @@ def plan_for(
     returning = feeds.leaning(free_agents, pool, weights, value)
     targeting = nba_worth.Targeting.of(found, chances) if found and chances else None
     rules = yahoo.settings()
+    plain = actions.Plan(returning=returning, targeting=targeting, priority=yahoo.get_user_team().waiver_priority)
     slots = nba_lineup.slots(rules.slots)
     if not slots or rules.weekly_lineups:
-        return actions.Plan(returning=returning, targeting=targeting)
+        return plain
     try:
         left = feeds.games.games_left(start, end)
     except FrontOfficeError as e:
         logger.warning(f"Weighing pickups on games left, without the nights: {e}")
-        return actions.Plan(returning=returning, targeting=targeting)
+        return plain
     week = nba_lineup.Week(left, slots, datetime.now(PACIFIC).date(), end)
     backs = {key: r.back for key, r in readings.items()}
     volume = (nba_lineup.starts(roster, week, backs), nba_lineup.starts(theirs, week, backs))
     owned = {p.player_key for p in [*roster, *theirs]}
     wire = [p for p in free_agents if p.player_key not in owned]
     streams = nba_lineup.streamed(theirs, wire, week, backs, their_adds)
-    return actions.Plan(week=week, returning=returning, volume=volume, streams=streams, targeting=targeting)
+    return replace(plain, week=week, volume=volume, streams=streams)
 
 
 def valued(

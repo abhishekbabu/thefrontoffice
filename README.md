@@ -216,9 +216,9 @@ of 25 players: each ranking's first page cached for 30 minutes, the rest for 6 h
 Each wire page carries every player's ownership and rostered share
 (`out=ownership,percent_owned`, no extra request), so
 a player on waivers reads `W 25 Nov` in Status ("Waivers · clears Wed 25 Nov" on hover
-and in the drawer's owner). Everything weighing his week counts only his club's games
-after the day he clears — Yahoo's settings do not say whether a claim processed that
-morning plays that night, so it is read the safe way — and a pickup of him is a claim:
+and in the drawer's owner, with your waiver order: "· you're #7"). Everything weighing his
+week counts only his club's games from the day he clears — a claim processes overnight
+and plays that night — and a pickup of him is a claim:
 "Claim Brook Lopez (clears 25 Nov, 2 games), drop …" on the to-do list and in the
 weeks ahead, until a week he will have cleared by.
 NBA free agents get the same "Without" column, and every NBA drawer a Teammates
