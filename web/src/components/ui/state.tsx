@@ -1,6 +1,6 @@
 import { m } from "motion/react";
 import { ErrorNote } from "@/components/ui/error-note";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingBar } from "@/components/ui/progress";
 import { fade, rise } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -13,29 +13,32 @@ import { cn } from "@/lib/utils";
  * same thing everywhere.
  */
 
-/** A placeholder shaped like the thing that is coming. */
+/**
+ * Something is on its way: a loading bar at the top of where it will land.
+ *
+ * `lines` is roughly how many rows are coming, and holds that much room open
+ * so the page does not jump when they arrive.
+ */
 export function Loading({ lines = 3, className }: { lines?: number; className?: string }) {
   return (
     <m.div
       variants={fade}
       initial="hidden"
       animate="shown"
-      className={cn("flex flex-col gap-3 p-5", className)}
+      className={cn("p-5", className)}
+      style={{ minHeight: `${lines * 3.75 + 2.5}rem` }}
       // Announced politely: a screen reader should hear that something is
       // coming, not have the page read out again as rows arrive.
       role="status"
       aria-live="polite"
-      aria-label="Loading"
     >
-      {Array.from({ length: lines }, (_, i) => (
-        <Skeleton key={i} className={cn("h-12 w-full", i === 0 && "h-8 w-64")} />
-      ))}
+      <LoadingBar />
     </m.div>
   );
 }
 
 /**
- * What a query shows before it has an answer: a placeholder while it is
+ * What a query shows before it has an answer: a loading bar while it is
  * asked, the failure if it fails, and nothing once the data is in — the caller
  * renders that.
  */
