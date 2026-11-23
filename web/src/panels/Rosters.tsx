@@ -9,11 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { ListCard, ListRow } from "@/components/ui/list";
 import { signed } from "@/lib/format";
 import { Card, CardHeader } from "@/components/ui/card";
-import { RosterTable, useSortedRoster } from "@/components/ui/roster-table";
+import { RosterTable, useSortedRoster } from "@/components/league/roster-table";
 import { CardNote, QueryState } from "@/components/ui/state";
-import { useDrawers } from "@/components/ui/drawers";
+import { useDrawers } from "@/components/league/drawers";
 import { keys } from "@/lib/queries";
-import { LeagueHeader } from "@/components/ui/page-header";
+import { LeagueHeader } from "@/components/league/page-header";
 import { Label } from "@/components/ui/label";
 
 /**

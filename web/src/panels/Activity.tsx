@@ -4,9 +4,9 @@ import { api, type ActivityRow, type Competition, type League, type LeagueSchedu
 import { keys } from "@/lib/queries";
 import { ListCard } from "@/components/ui/list";
 import { Empty, QueryState } from "@/components/ui/state";
-import { LeagueHeader } from "@/components/ui/page-header";
-import { useDrawers } from "@/components/ui/drawers";
-import { MoveDrawer, MoveRow, backTo } from "@/components/ui/move";
+import { LeagueHeader } from "@/components/league/page-header";
+import { useDrawers } from "@/components/league/drawers";
+import { MoveDrawer, MoveRow, backTo } from "@/components/league/move";
 
 /**
  * What the league did lately, newest first; a row opens the move in full.

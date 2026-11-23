@@ -10,7 +10,7 @@ import { Table, Td, Th } from "@/components/ui/table";
 import { clickable } from "@/lib/clickable";
 import { Empty, QueryState } from "@/components/ui/state";
 import { cn } from "@/lib/utils";
-import { LeagueHeader } from "@/components/ui/page-header";
+import { LeagueHeader } from "@/components/league/page-header";
 
 /**
  * The league table: who, then how they stand — record, points for and

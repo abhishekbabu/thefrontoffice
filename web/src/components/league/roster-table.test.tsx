@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlayerCard } from "@/lib/api";
-import { RosterTable } from "@/components/ui/roster-table";
+import { RosterTable } from "@/components/league/roster-table";
 import { render } from "@/test/render";
 
 const card = (id: string, without: string, notes: Record<string, string> = {}): PlayerCard => ({

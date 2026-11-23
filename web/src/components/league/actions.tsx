@@ -16,7 +16,7 @@ import { decisionTone, toneText, type Variant } from "@/lib/tone";
 import { clickable } from "@/lib/clickable";
 import { collapse, pressableRow } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import type { Comparing } from "@/components/ui/compare";
+import type { Comparing } from "@/components/league/compare";
 import { Label, Meta } from "@/components/ui/label";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Linked } from "@/components/ui/stat";

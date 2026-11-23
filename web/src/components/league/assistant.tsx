@@ -6,7 +6,7 @@ import type { Competition, League } from "@/lib/api";
 import { dock } from "@/lib/motion";
 import type { Route } from "@/lib/route";
 import { onScreen, useAssistantOpen, useAsked, useOpened, type Shown } from "@/lib/screen";
-import { AssistantChat, type Asked } from "@/components/ui/chat";
+import { AssistantChat, type Asked } from "@/components/league/chat";
 import { IconButton } from "@/components/ui/icon-button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";

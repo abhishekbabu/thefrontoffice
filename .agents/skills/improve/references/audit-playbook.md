@@ -143,7 +143,8 @@ The goal is not a percentage — it is *which untested code is dangerous*. See t
   the platform owning the league, and other platforms are role-named helpers —
   never a second file named after a platform.
 - **Front-end structure.** `panels/` holds one page each; anything used by a
-  second caller belongs in `components/ui/`. A card, table, loading state or
+  second caller belongs in `components/ui/` (primitives) or `components/league/`
+  (app widgets). A card, table, loading state or
   control reimplemented per panel is the specific drift this rule exists to stop.
   Color from a raw Tailwind palette utility instead of a semantic token cannot
   follow a palette change.

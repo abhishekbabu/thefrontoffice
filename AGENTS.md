@@ -99,9 +99,9 @@ from the `Wiring` they are built with; `data.py` stays free of any web framework
 The model is optional: without `GOOGLE_API_KEY` nothing needing one is offered,
 rather than offered and refused. Never ship a canned report in the package.
 
-`panels/` holds one page each; `components/ui/` all reused across them — a
-second caller moves a component there, never a file shared with whatever else
-had no home. Reach for it before writing a card, table, loading state or
+`panels/` holds one page each; a second caller moves a component to `components/ui/`
+(primitives) or `components/league/` (app widgets), never a file shared with
+whatever else had no home. Reach for `ui/` before writing a card, table, loading state or
 control: those drifted per panel, and waiting should look the same everywhere.
 Controls are `IconButton`, whose one required `label` is both tooltip and
 accessible name. Motion lives in `lib/motion.ts`, via `LazyMotion` from its own

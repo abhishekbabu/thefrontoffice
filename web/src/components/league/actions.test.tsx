@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Action, MovePlayer, TaskVerdict } from "@/lib/api";
-import { ActionList, Compared, opener, staleVerdicts } from "@/components/ui/actions";
-import type { Comparing } from "@/components/ui/compare";
+import { ActionList, Compared, opener, staleVerdicts } from "@/components/league/actions";
+import type { Comparing } from "@/components/league/compare";
 import { render, settle } from "@/test/render";
 
 function action(key: string, verdict: TaskVerdict | null = null, stale = false): Action {

@@ -9,9 +9,9 @@ import { SearchInput } from "@/components/ui/input";
 import { Meta } from "@/components/ui/label";
 import { ListRow } from "@/components/ui/list";
 import { Empty, QueryState } from "@/components/ui/state";
-import { LeagueHeader } from "@/components/ui/page-header";
-import { useDrawers } from "@/components/ui/drawers";
-import { ComparisonGrid, useComparison } from "@/components/ui/compare";
+import { LeagueHeader } from "@/components/league/page-header";
+import { useDrawers } from "@/components/league/drawers";
+import { ComparisonGrid, useComparison } from "@/components/league/compare";
 
 /**
  * Up to four players side by side.

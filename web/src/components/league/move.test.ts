@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityRow } from "@/lib/api";
-import { sections } from "@/components/ui/move";
+import { sections } from "@/components/league/move";
 
 describe("sections", () => {
   it("reads one manager's move as what he added and what he let go", () => {

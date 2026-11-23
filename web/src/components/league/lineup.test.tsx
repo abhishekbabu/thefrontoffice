@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Spot } from "@/lib/api";
-import { LineupCard, SideCard, rowsOf } from "@/components/ui/lineup";
+import { LineupCard, SideCard, rowsOf } from "@/components/league/lineup";
 import { render } from "@/test/render";
 import { clock, startsAt } from "@/lib/format";
 

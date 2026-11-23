@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { keys } from "@/lib/queries";
-import { ComparisonDrawer, compareLabel, sides, traded, type Comparing } from "@/components/ui/compare";
+import { ComparisonDrawer, compareLabel, sides, traded, type Comparing } from "@/components/league/compare";
 import type { TradeIdea } from "@/lib/api";
 import { offlineClient, render, settle } from "@/test/render";
 import { REED_WHITE } from "@/test/players";
