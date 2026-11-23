@@ -129,8 +129,8 @@ def test_a_player_ruled_out_plays_only_from_the_day_he_is_back() -> None:
     assert nights(hurt, _games(1, 3, 5), None) == []
 
 
-def test_a_player_on_waivers_plays_only_the_nights_after_he_clears_them() -> None:
-    waiting = make_player("A", waiver_date=DAY[2])
+def test_a_player_on_waivers_plays_only_the_nights_from_the_day_he_clears_them() -> None:
+    waiting = make_player("A", waiver_date=DAY[3])
 
     assert nights(waiting, _games(1, 3, 4, 5), None) == [DAY[3], DAY[4]]
 

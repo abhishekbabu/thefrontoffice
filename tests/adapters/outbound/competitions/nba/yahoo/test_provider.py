@@ -1247,17 +1247,19 @@ def test_a_bench_player_playing_today_starts_over_a_starter_who_rests_and_a_free
     assert stream.drop == "spare"
 
 
-def _claimable(cleared: date | None) -> list[Action]:
-    """The week's to-do list with Streamer's club playing 11-14 Feb, and Streamer on waivers until `cleared`."""
+def _claimable(cleared: date | None, priority: int = 0) -> list[Action]:
+    """The week's to-do list with Streamer's club playing 11-14 Feb, and Streamer on waivers until `cleared`;
+    you at `priority` in the waiver order."""
     streamer = replace(STREAMER, waiver_date=cleared)
     yahoo = _averaged(FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[streamer], weights=WEIGHTS))
+    yahoo.priority = priority
     nyk = [date(2026, 2, day) for day in (11, 12, 13, 14)]
     nba = FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY, dated={"NYK": nyk})
     return nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE).summary("").actions or []
 
 
-def test_a_player_on_waivers_streams_in_as_a_claim_weighed_on_the_games_after_he_clears() -> None:
-    [stream] = [a for a in _claimable(date(2026, 2, 11)) if a.kind == "waiver"]
+def test_a_player_on_waivers_streams_in_as_a_claim_weighed_on_the_games_from_the_day_he_clears() -> None:
+    [stream] = [a for a in _claimable(date(2026, 2, 12)) if a.kind == "waiver"]
     [free] = [a for a in _claimable(None) if a.kind == "waiver"]
 
     assert stream.player_id == free.player_id == "streamer"
@@ -1268,9 +1270,15 @@ def test_a_player_on_waivers_streams_in_as_a_claim_weighed_on_the_games_after_he
     assert games == [["3"], ["4"]]
 
 
+def test_a_claim_says_where_you_stand_in_the_waiver_order() -> None:
+    [stream] = [a for a in _claimable(date(2026, 2, 12), priority=7) if a.kind == "waiver"]
+
+    assert "#7" in stream.reason and "Thu 12 Feb" in stream.reason
+
+
 def test_a_claim_whose_games_after_clearing_add_less_than_the_streaming_floor_is_not_suggested() -> None:
     """Two games of Streamer for one of Spare is a game and a bit of Spare's: short of `STREAM_GAMES`."""
-    assert [a for a in _claimable(date(2026, 2, 12)) if a.kind == "waiver"] == []
+    assert [a for a in _claimable(date(2026, 2, 13)) if a.kind == "waiver"] == []
 
 
 def test_the_week_reads_streams_from_the_top_of_the_wire_leaving_the_deep_list_to_the_free_agents_page() -> None:

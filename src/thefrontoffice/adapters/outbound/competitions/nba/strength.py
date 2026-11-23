@@ -270,7 +270,7 @@ def club_nights(club: str, games: Iterable[ScheduledGame]) -> list[date]:
 
 def nights(player: Player, games: Iterable[ScheduledGame], back: date | None) -> list[date]:
     """The nights he can play among `games`: his club's; while ruled out, only those from his return, if any;
-    on waivers, only those after he clears them (`rules.playable_from`)."""
+    on waivers, only those from the day he clears them (`rules.playable_from`)."""
     days = club_nights(player.team, games)
     claimed = playable_from(player)
     if claimed is not None:

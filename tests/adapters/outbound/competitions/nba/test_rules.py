@@ -145,9 +145,9 @@ def test_a_status_reads_in_words_and_an_unknown_code_as_yahoo_wrote_it(status: s
     assert status_word(status) == expected
 
 
-def test_a_claim_plays_from_the_day_after_he_clears_waivers() -> None:
-    """Yahoo's settings do not say whether a claim processed that morning makes that night's lineup."""
-    assert playable_from(make_player("A", waiver_date=date(2026, 11, 25))) == date(2026, 11, 26)
+def test_a_claim_plays_the_night_he_clears_waivers() -> None:
+    """Yahoo processes it overnight, and a daily lineup takes him that day."""
+    assert playable_from(make_player("A", waiver_date=date(2026, 11, 25))) == date(2026, 11, 25)
 
 
 def test_a_player_not_on_waivers_has_no_day_to_wait_for() -> None:
@@ -157,3 +157,8 @@ def test_a_player_not_on_waivers_has_no_day_to_wait_for() -> None:
 
 def test_a_player_on_waivers_reads_as_when_he_clears_them() -> None:
     assert "Wed 25 Nov" in clears(make_player("A", waiver_date=date(2026, 11, 25)))
+    assert "#" not in clears(make_player("A", waiver_date=date(2026, 11, 25)))
+
+
+def test_a_claim_says_where_you_stand_in_the_waiver_order() -> None:
+    assert "#7" in clears(make_player("A", waiver_date=date(2026, 11, 25)), priority=7)

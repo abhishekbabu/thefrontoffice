@@ -12,7 +12,7 @@ weighed on worth this week — a game's value × minutes nudge × the nights he
 would fill an open slot (`lineup`) — but never at the cost of a better player
 a game, nor for less than `STREAM_GAMES` of the player let go: the games are
 this week's, the player let go is gone for good, and an add is one of few. A
-player on waivers is a claim, weighed on the games after he clears them
+player on waivers is a claim, weighed on the games from the day he clears them
 (`rules.playable_from`) and named as one.
 """
 
@@ -24,7 +24,7 @@ from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekd
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba import lineup, views
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player
-from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, fits, ruled_out
+from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, clears, fits, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import RETURN_SOON, Leaning
 from thefrontoffice.adapters.outbound.competitions.nba.week import BENCH, Today, if_streamed, off_il
 from thefrontoffice.adapters.outbound.competitions.nba.worth import ROLE, Reading, Targeting, game_value
@@ -231,6 +231,8 @@ class Plan:
     targeting: Targeting | None = None
     """In a category league with a forecast, each category weighed by how winnable it is this week
     (`worth.Targeting`): what a pickup or drop is worth this week. None weighs every category alike."""
+    priority: int = 0
+    """Your place in the league's waiver order, which decides a claim others make too; 0 where unknown."""
 
     @property
     def behind(self) -> bool:
@@ -528,7 +530,7 @@ def _item(swap: Swap, by_points: bool, plan: Plan) -> Action:
         kind="waiver",
         urgency="now" if swap.term == "streamer" and plan.behind else "soon",
         title=f"{acquire(pickup.player, pickup.games if claimed else None)}, drop {drop.player.name}",
-        reason=why + _pending(pickup) + _waiting(pickup),
+        reason=why + _pending(pickup) + _waiting(pickup, plan.priority),
         when=weekday_day_month(swap.add_on) if swap.add_on else "",
         player_id=pickup.player.player_key,
         drop=drop.player.player_key,
@@ -635,12 +637,12 @@ def _drags(reading: Reading) -> str:
     return f" ({drags})" if drags else ""
 
 
-def _waiting(reading: Reading) -> str:
-    """For a claim, which of his games count: ' On waivers until Wed 25 Nov: 2 games after.'; nothing otherwise."""
-    cleared = reading.player.waiver_date
-    if cleared is None:
+def _waiting(reading: Reading, priority: int = 0) -> str:
+    """For a claim, when he clears, your place in the order, and which of his games count:
+    ' Waivers · clears Wed 25 Nov · you're #7: 2 games from then.'; nothing otherwise."""
+    if reading.player.waiver_date is None:
         return ""
-    return f" On waivers until {weekday_day_month(cleared)}: {views.games_left(reading) or 'no'} games after."
+    return f" {clears(reading.player, priority)}: {views.games_left(reading) or 'no'} games from then."
 
 
 def _pending(reading: Reading) -> str:

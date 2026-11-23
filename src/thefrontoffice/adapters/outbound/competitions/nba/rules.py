@@ -177,12 +177,19 @@ def ruled_out(status: str) -> bool:
     return status.upper() in RULED_OUT
 
 
-CLAIM_LAG = timedelta(days=1)
-"""How long after the day he clears waivers a claimed player's games count from.
+CLAIM_LAG = timedelta(days=0)
+"""How long after the day he clears waivers a claimed player's games count from: none, he plays that night.
 
-Yahoo's settings say how long a dropped player waits (`waiver_time`), not
-whether a claim processed that morning makes that night's lineup, so it is
-read the safe way: from the day after.
+Yahoo's `waiver_date` is the day a claim processes, overnight, before any
+game: GM 3 (478.l.69598, `waiver_type` R, `waiver_time` 2) put Georges Niang,
+dropped Sun 22 Nov 2026, on waivers clearing Wed 25 Nov — Mon and Tue waiting,
+the period starting "the following day" (help.yahoo.com/kb/SLN8367.html) —
+and its one claim this season, Precious Achiuwa, processed 01:31 PT on Thu 29
+Oct and started at C that night for 24 points. Its lineups are daily and
+`intraday`, which Yahoo's deadlines page reads as "Today roster changes - No
+deadline; rosters update immediately after a transaction"
+(help.yahoo.com/kb/SLN6775.html), so a player on the roster by morning can
+be slotted for that night.
 """
 
 
@@ -191,10 +198,13 @@ def playable_from(player: Player) -> date | None:
     return player.waiver_date + CLAIM_LAG if player.waiver_date else None
 
 
-def clears(player: Player) -> str:
-    """'Waivers · clears Wed 25 Nov' for a player on waivers; empty for anyone else."""
+def clears(player: Player, priority: int = 0) -> str:
+    """'Waivers · clears Wed 25 Nov' for a player on waivers, with your waiver `priority` where known —
+    '… · you're #7' — since a claim goes to whoever claims him first in that order; empty for anyone else."""
     cleared = player.waiver_date
-    return f"Waivers · clears {weekday_day_month(cleared)}" if cleared else ""
+    if not cleared:
+        return ""
+    return f"Waivers · clears {weekday_day_month(cleared)}" + (f" · you're #{priority}" if priority else "")
 
 
 GAME_TIME = frozenset({"GTD", "DTD", "Q"})

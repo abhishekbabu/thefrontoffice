@@ -136,6 +136,9 @@ class Drawer:
     profile: PlayerMeta | None = None
     """Who Sleeper says he is; None where it cannot place him."""
 
+    priority: int = 0
+    """Your place in the league's waiver order, said beside the day he clears them; 0 where unknown."""
+
     @property
     def by_points(self) -> bool:
         return self.weights is not None
@@ -174,7 +177,7 @@ def detail(drawer: Drawer) -> PlayerDetail:
         position=player.position,
         team=player.team,
         image_url=player.image_url,
-        owner=clears(player) or player.owner,
+        owner=clears(player, drawer.priority) or player.owner,
         headline=headline,
         headline_label=f"{unit}, season" if headline else "No games this season",
         note=status_word(player.status),

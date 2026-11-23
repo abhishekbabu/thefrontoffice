@@ -947,6 +947,7 @@ class YahooNBAProvider:
                 venues=self.feeds.venues(player, games),
                 value=week[1] if week else reads.points_valuer(weights),
                 profile=profile,
+                priority=yahoo.get_user_team().waiver_priority if player.waiver_date else 0,
             )
         )
 
@@ -1010,7 +1011,7 @@ class YahooNBAProvider:
         games = self.feeds.playable(player, clubs, back, end)
         provisional = bool(self.games.unscheduled(start, end))
         club = player.team.upper()
-        # A claim's games are those after he clears waivers, as `Feeds.playable` counts them.
+        # A claim's games are those from the day he clears waivers, as `Feeds.playable` counts them.
         claimed = playable_from(player)
         after = claimed.isoformat() if claimed else ""
         try:

@@ -181,7 +181,7 @@ def _streamed(
     each weighed on this week's games; the pickup has to clear the same margin
     the to-do list's streams do, and play more games than the player he replaces.
     Neither is one already named for an earlier week. A player on waivers
-    counts only the days after he clears them (`rules.playable_from`), and is
+    counts only the days from the one he clears them (`rules.playable_from`), and is
     named as a claim where he still sits on them when the week starts; by then
     he is free to add otherwise. Where the league's slots are known (`lineup`),
     the pickup's games are the nights he would start in the drop's place and

@@ -54,7 +54,7 @@ class Feeds:
 
     def playable(self, player: Player, clubs: Mapping[str, int], back: date | None, end: date) -> int | None:
         """The games he can play before `end`: his club's left; none while ruled out, or those from his return;
-        on waivers, those after he clears them (`rules.playable_from`).
+        on waivers, those from the day he clears them (`rules.playable_from`).
 
         None where the schedule would not load. Counted from a later day only once
         the bulk read has loaded the schedule, so this read cannot fail on its own.
