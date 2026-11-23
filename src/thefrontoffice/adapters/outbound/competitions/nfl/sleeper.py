@@ -8,7 +8,7 @@ Unlike the Yahoo path there is no OAuth — Sleeper's API is public, so a userna
 is the only configuration.
 
 The port, and the gathering of a week: everything else is a role beside it —
-`week.py` (state, the live scoreboard), `views.py` (how a player reads),
+`week.py` (state, the live scoreboard), `views.py` (how a player reads), `drawer.py` (the player drawer),
 `actions.py` and `stash.py` (the to-do list), `teammates.py` (a hurt teammate's
 absence), `forecast.py` (the matchup simulated),
 `league.py` (the season), `outlook.py` and `market.py` (the weeks ahead and
@@ -27,6 +27,7 @@ from thefrontoffice.adapters.outbound.competitions.names import NameIndex, norma
 from thefrontoffice.adapters.outbound.competitions.news import PlayerNews
 from thefrontoffice.adapters.outbound.competitions.nfl import (
     actions,
+    drawer,
     evidence,
     history,
     injuries,
@@ -321,7 +322,7 @@ class SleeperNFLProvider:
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
         """One player: the week, what makes the projection, and who they are."""
         state = self._week(league_id)
-        detail = views.detail(self.client, state, player_id, self.scoreboard.schedule(state.season))
+        detail = drawer.detail(self.client, state, player_id, self.scoreboard.schedule(state.season))
         return detail.model_copy(
             update={
                 "url": PLAYER_URL.format(player_id=player_id),
