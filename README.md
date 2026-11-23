@@ -61,9 +61,12 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   your playoff weeks, your total and your playoff odds. Ranked by the odds, or
   once those are 80%+ by the total: points over every regular-season week left
   plus each playoff week weighed by the odds. None that lose points both before
-  and in the playoffs; the ranked column is marked. Pricing notes are on hover;
-  a pickup most trades share is said once. NBA (Yahoo) offers one or two of yours
-  for one of theirs, priced at a game's value in the league's scoring over the
+  and in the playoffs; the ranked column is marked. Pricing notes are on hover.
+  An NFL player is priced at his projection pulled halfway toward his recent
+  scoring (at most 30% either way); after a role change, the games since count
+  by their number, games / (games + 4), so two big games move his price a third
+  as far as a settled role. A pickup most trades share is said once. NBA
+  (Yahoo) offers one or two of yours for one of theirs, priced at a game's value in the league's scoring over the
   best free agent's, times his club's games left; only trades both sides gain on
   (10+ fantasy points or 0.1+ categories a week for them). A week is measured from
   each roster's daily lineups (the best who play each night, capped at the
