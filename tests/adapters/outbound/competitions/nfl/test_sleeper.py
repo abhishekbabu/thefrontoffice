@@ -1162,21 +1162,21 @@ def test_a_finished_week_counts_in_the_record_before_sleeper_settles_it() -> Non
 def test_a_week_sleeper_has_already_counted_is_not_counted_twice() -> None:
     summary = nfl_provider(_week_three(wins=2, losses=1, points_for=320.0)).summary("L1")
 
-    assert mine(summary).detail == "2-1"
+    assert mine(summary).record == "2-1"
 
 
 def test_a_league_that_plays_its_median_counts_a_second_game_for_the_top_half() -> None:
     client = _week_three(wins=2, losses=2)
     client.league = replace(client.league, median_game=True)
 
-    assert mine(nfl_provider(client).summary("L1")).detail == "4-2"
+    assert mine(nfl_provider(client).summary("L1")).record == "4-2"
 
 
 def test_a_playoff_week_leaves_the_regular_seasons_record_alone() -> None:
     client = _week_three()
     client.league = replace(client.league, playoff_teams=2, playoff_week_start=3)
 
-    assert mine(nfl_provider(client).summary("L1")).detail == "1-1"
+    assert mine(nfl_provider(client).summary("L1")).record == "1-1"
 
 
 def _let_go() -> FakeSleeper:
@@ -1285,15 +1285,15 @@ def test_a_week_played_reads_each_record_as_it_stood_going_into_it() -> None:
 
     summary = nfl_provider(client).week_of("L1", 3)
 
-    assert mine(summary).detail == "1-0"
-    assert summary.opponent is not None and summary.opponent.detail.startswith("0-1")
+    assert mine(summary).record == "1-0"
+    assert summary.opponent is not None and summary.opponent.record.startswith("0-1")
 
 
 def test_a_week_played_keeps_todays_records_when_a_week_before_it_will_not_load() -> None:
     client = _week_five()
     client.unloaded_weeks = {1}
 
-    assert mine(nfl_provider(client).week_of("L1", 3)).detail == "1-1"
+    assert mine(nfl_provider(client).week_of("L1", 3)).record == "1-1"
 
 
 def test_a_week_to_come_starts_each_rosters_best_lineup_rather_than_sleepers_copy() -> None:

@@ -625,7 +625,7 @@ class SleeperNFLProvider:
             ),
             mine=Side(
                 name="Your lineup",
-                detail=state.roster.record,
+                record=state.roster.record,
                 points=views.side_total(state, live),
                 lineup=[
                     views.released(views.lineup_spot(slot, state.scheduled, live), state.roster)

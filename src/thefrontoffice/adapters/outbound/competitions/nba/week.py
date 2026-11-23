@@ -168,7 +168,7 @@ class Today:
 
 def side(
     name: str,
-    detail: str,
+    record: str,
     points: str,
     roster: Sequence[YahooPlayer] | None,
     readings: Mapping[str, Reading] | None = None,
@@ -208,7 +208,7 @@ def side(
 
     return Side(
         name=name,
-        detail=detail,
+        record=record,
         points=points,
         lineup=[spot(p) for p in rows if p.slot not in INJURED_SLOTS and p.slot != BENCH],
         bench=[spot(p).model_copy(update={"slot": ""}) for p in rows if p.slot == BENCH],
