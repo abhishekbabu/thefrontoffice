@@ -44,7 +44,10 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   fifth) beats Y's; otherwise nothing is listed. A starter's "Keep X in" holds
   to the same rule against the best bench player for his slot. The trade-deadline item shows the
   Trades page's best offer and links there. The lineup's points column appears
-  once the week's first game kicks off.
+  once the week's first game kicks off. Every lineup, bench, reserve and open-spot
+  row is one fixed height on both teams: a line a row may lack (today's game, its
+  kickoff, a score, a line of category figures) keeps its room blank, and long
+  text truncates, so slot N on your side sits beside slot N on theirs.
 - **Win chance and playoff odds**: the week is simulated 10,000 times and the
   season 5,000, each player's range centred on his projection. The week's chance
   is for the lineup the to-do list's swaps make; each of those swaps shows what

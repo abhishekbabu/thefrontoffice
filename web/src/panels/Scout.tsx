@@ -29,7 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Busy, QueryState } from "@/components/ui/state";
 import { StatGrid, StatList, StatStrip } from "@/components/ui/stat";
-import { LineupCard, SideCard, underWay } from "@/components/ui/lineup";
+import { LineupCard, SideCard, rowsOf } from "@/components/ui/lineup";
 import { useDrawers } from "@/components/ui/drawers";
 import { ErrorNote } from "@/components/ui/error-note";
 import { LeagueHeader } from "@/components/ui/page-header";
@@ -256,18 +256,18 @@ export function ScoutPanel({
                 {/* Side by side once their column fits two (about 470px each,
                     what an NBA row's per-game line needs), stacked before that:
                     a 1920px screen has the to-do beside them, not room for both across. */}
-                {/* Both sides draw a points column from the week's first kickoff on either, so they stay aligned. */}
+                {/* Both sides draw the same columns and row heights, read from either, so slot N sits beside slot N. */}
                 <SideCard
                   side={shown.data.mine}
                   label="You"
                   onOpen={openPlayer}
-                  started={underWay(shown.data.mine, shown.data.opponent)}
+                  rows={rowsOf(shown.data.mine, shown.data.opponent)}
                 />
                 <SideCard
                   side={shown.data.opponent}
                   label="Opponent"
                   onOpen={openPlayer}
-                  started={underWay(shown.data.mine, shown.data.opponent)}
+                  rows={rowsOf(shown.data.mine, shown.data.opponent)}
                 />
               </div>
             ) : (
