@@ -3,16 +3,24 @@
 from dataclasses import replace
 
 import pytest
-from support.nba import make_player
+from support.nba import FakeSleeperNBA, make_player
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
+from thefrontoffice.adapters.outbound.competitions.nba.form import (
+    ROLE_GAMES,
+    PlayerStats,
+    RecentForm,
+    SleeperNBAForm,
+    nine_cat,
+)
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, FIELD_GOALS, POINTS, TURNOVERS
 from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     MINUTES,
+    ROLE,
     Reading,
     category_value,
     game_value,
+    moved,
     per_game,
     points_value,
     read,
@@ -20,7 +28,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     usage,
     weakest,
 )
-from thefrontoffice.adapters.outbound.competitions.worth import USAGE_SWING
+from thefrontoffice.adapters.outbound.competitions.worth import USAGE_SWING, settled
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory
 
@@ -212,3 +220,76 @@ def test_an_average_line_is_weak_nowhere() -> None:
 
 def test_a_category_with_no_spread_across_the_pool_scales_nothing() -> None:
     assert BLOCKS.label not in scales(SCORED, [{BLOCKS.label: 1.0}, {BLOCKS.label: 1.0}])
+
+
+# ── a role that has moved ───────────────────────────────────────────────
+
+
+def _career(*runs: tuple[int, float, float]) -> PlayerStats:
+    """His form, read by Sleeper's reader from runs of (games, minutes, points), oldest run first."""
+    played = [(minutes, pts) for games, minutes, pts in runs for _ in range(games)]
+    logs = [
+        NBAGameLog(player_id="p1", date=f"2026-11-{day + 1:02d}", opponent="BOS", stats={"pts": pts}, minutes=minutes)
+        for day, (minutes, pts) in enumerate(played)
+    ]
+    stats = SleeperNBAForm(FakeSleeperNBA(logs={"p1": logs[::-1]}), season="2026").get_player_stats("Nikola Jokic")
+    assert stats is not None
+    return stats
+
+
+def _points(stats: PlayerStats) -> float:
+    line = per_game(stats, None)
+    assert line is not None
+    return line[POINTS.label]
+
+
+STEADY = _career((15, 30.0, 13.0))
+
+
+def test_a_riser_outranks_a_steadier_player_with_a_better_window() -> None:
+    """Handed a starter's minutes five games ago: fifteen games average his new role away."""
+    riser = _career((10, 25.0, 8.0), (5, 38.0, 22.0))
+
+    assert riser["recent"].line[POINTS.label] < STEADY["recent"].line[POINTS.label]
+    assert _points(riser) > _points(STEADY)
+
+
+def test_a_riser_is_pulled_toward_his_last_five_only_as_far_as_they_have_settled() -> None:
+    riser = _career((10, 25.0, 8.0), (5, 38.0, 22.0))
+    window = riser["recent"].line[POINTS.label]
+
+    pull = settled(ROLE_GAMES, ROLE.settling)
+    assert _points(riser) == pytest.approx(window + pull * (22.0 - window))
+    assert _points(riser) < 22.0
+
+
+def test_a_faller_drops_below_a_steadier_player_his_window_beats() -> None:
+    faller = _career((10, 32.0, 18.0), (5, 20.0, 6.0))
+
+    assert faller["recent"].line[POINTS.label] > STEADY["recent"].line[POINTS.label]
+    assert _points(faller) < _points(STEADY)
+
+
+def test_one_big_night_on_steady_minutes_is_no_new_role() -> None:
+    """Points without the minutes behind them: the night counts its share of the run, and no more."""
+    outlier = _career((14, 30.0, 13.0), (1, 30.0, 45.0))
+
+    assert _points(outlier) == pytest.approx((14 * 13 + 45) / 15)
+
+
+def test_one_long_night_does_not_move_a_role() -> None:
+    """An overtime game lifts his last five's minutes by a fraction of the move a role needs."""
+    overtime = _career((14, 30.0, 13.0), (1, 45.0, 30.0))
+
+    assert not moved(overtime["role"])
+    assert _points(overtime) == pytest.approx(overtime["recent"].line[POINTS.label])
+
+
+def test_a_reading_carries_his_role_for_the_wire_to_show() -> None:
+    riser = _career((10, 25.0, 8.0), (5, 38.0, 22.0))
+
+    reading = read(make_player("A"), riser, None, points_value({POINTS.yahoo_stat: 1.0}), 3)
+
+    assert reading.role == (ROLE_GAMES, 38.0, pytest.approx((10 * 25 + 5 * 38) / 15))
+    assert moved(reading.role)
+    assert not moved(None)

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import SNAP_POSITIONS, Evidence, average
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection
+from thefrontoffice.adapters.outbound.competitions.worth import settled
 from thefrontoffice.domain.models import Stat
 
 FORM_WEIGHT = 0.5
@@ -31,7 +32,7 @@ MOST = 0.3
 
 SETTLED = 4
 """Games in a new role it takes before they count for as much as the projection, against it: the games
-since a role changed count for `games / (games + SETTLED)` of the pull, so two of them move his price a
+since a role changed count for `worth.settled(games, SETTLED)` of the pull, so two of them move his price a
 third as far as a role long settled. Two big games after a jump in carries are as often a hot fortnight
 as a new back, and the platform's projection has read the jump by then too."""
 
@@ -130,7 +131,7 @@ def _rate(evidence: Evidence, player_id: str) -> tuple[float, str, float] | None
         since = games[-trend.games :]
         rate = sum(since) / len(since)
         count = "the game" if trend.games == 1 else f"{trend.games} games"
-        weight = trend.games / (trend.games + SETTLED)
+        weight = settled(trend.games, SETTLED)
         return rate, f"{trend.short()} in week {trend.week}, {rate:.1f} pts in {count} since", weight
     season, role = average(evidence, player_id), evidence.roles.get(player_id)
     if season is None or role is None:

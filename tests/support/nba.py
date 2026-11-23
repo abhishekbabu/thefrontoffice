@@ -70,12 +70,20 @@ def game_log(pid: str, day: int, minutes: float = 30.0, team: str = "TOR", **sta
     return NBAGameLog(player_id=pid, date=f"2026-11-{day:02d}", opponent="BOS", stats=stats, team=team, minutes=minutes)
 
 
-def box_scores(logs: dict[str, list[NBAGameLog]], names: dict[str, str], team: str = "TOR") -> BoxScores:
-    """These games, each player named in Sleeper's catalog and found by his name."""
+def box_scores(
+    logs: dict[str, list[NBAGameLog]],
+    names: dict[str, str],
+    team: str = "TOR",
+    positions: Mapping[str, str] | None = None,
+) -> BoxScores:
+    """These games, each player named in Sleeper's catalog — at his position in `positions` — and found by his name."""
     index: NameIndex[str] = NameIndex()
     for pid, name in names.items():
         index.add(name, pid)
-    players = {pid: PlayerMeta(player_id=pid, name=name, team=team) for pid, name in names.items()}
+    players = {
+        pid: PlayerMeta(player_id=pid, name=name, team=team, position=(positions or {}).get(pid, ""))
+        for pid, name in names.items()
+    }
     return BoxScores(logs=logs, players=players, index=index)
 
 
@@ -476,6 +484,11 @@ class FakeNBA:
         if self.season_error:
             raise self.season_error
         return self.seasons.get((full_name, season))
+
+    def season_totals(self, season: str) -> Mapping[str, NBASeason]:
+        if self.season_error:
+            raise self.season_error
+        return {totals.player_id: totals for (_, year), totals in self.seasons.items() if year == season}
 
     def get_remaining_games(self, team_abbr: str, start_date: date, end_date: date, now: datetime | None = None) -> int:
         club = team_abbr.upper()

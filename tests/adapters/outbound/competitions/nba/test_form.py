@@ -14,6 +14,7 @@ from support.nba import FakeSleeperNBA
 from thefrontoffice.adapters.outbound.competitions.nba.form import (
     MIN_FORM_GAMES,
     RECENT_GAMES,
+    ROLE_GAMES,
     SleeperNBAForm,
     nine_cat,
 )
@@ -71,14 +72,14 @@ def test_a_window_is_reported_only_once_it_can_be_filled() -> None:
     stats = _form(logs=_run(7)).get_player_stats("Nikola Jokic")
 
     assert stats is not None
-    assert set(stats) == {"last_5", "recent", "minutes"}
+    assert set(stats) == {"last_5", "recent", "minutes", "role"}
 
 
 def test_every_window_appears_once_there_are_enough_games() -> None:
     stats = _form(logs=_run(20)).get_player_stats("Nikola Jokic")
 
     assert stats is not None
-    assert set(stats) == {"last_5", "last_10", "last_15", "recent", "minutes"}
+    assert set(stats) == {"last_5", "last_10", "last_15", "recent", "minutes", "role"}
 
 
 def test_the_recent_run_is_every_game_while_short_of_fifteen() -> None:
@@ -101,6 +102,30 @@ def test_the_recent_run_stops_at_the_last_fifteen() -> None:
     assert stats is not None
     assert stats["recent"] == (RECENT_GAMES, stats["last_15"])
     assert stats["recent"].line["PTS"] == 20.0
+
+
+def test_a_role_is_his_last_five_games_minutes_beside_the_whole_windows() -> None:
+    """The drawer's 'last 5 · last 6 wks', so the wire's trend and the drawer read alike."""
+    logs = {"p1": [replace(_game(f"2026-01-{20 - i:02d}"), minutes=38.0 if i < 5 else 30.0) for i in range(10)]}
+
+    stats = _form(logs=logs).get_player_stats("Nikola Jokic")
+
+    assert stats is not None
+    assert stats["role"] == (ROLE_GAMES, 38.0, 34.0)
+
+
+def test_no_role_is_read_without_games_before_the_last_five() -> None:
+    """With nothing to compare them against, five games are the window, not a move within it."""
+    stats = _form(logs=_run(ROLE_GAMES)).get_player_stats("Nikola Jokic")
+
+    assert stats is not None
+    assert "role" not in stats
+
+
+def test_every_players_season_totals_are_one_read_by_sleepers_id() -> None:
+    totals = NBASeason(player_id="p1", season="2025", games=70, minutes=2100.0, totals={})
+
+    assert _form(seasons={"2025": {"p1": totals}}).season_totals("2025") == {"p1": totals}
 
 
 def test_a_player_under_the_minimum_games_carries_no_form() -> None:

@@ -266,6 +266,34 @@ def test_the_wire_carries_each_players_clear_date_in_the_page_itself(tmp_path: P
     assert len(ctx.requests) == 1
 
 
+def test_the_wire_carries_each_players_rostered_share_and_its_change_in_the_page_itself(tmp_path: Path) -> None:
+    """Who managers are adding, as Yahoo's own free-agent page shows it: no read beyond the page."""
+    page = (
+        "<fantasy_content><league><players><player><player_key>466.p.0</player_key><name><full>Cam Spencer</full>"
+        "</name><percent_owned><coverage_type>week</coverage_type><week>5</week><value>44</value>"
+        "<delta>-3</delta></percent_owned></player></players></league></fantasy_content>"
+    )
+    client, ctx = _client(tmp_path, answers={SEASON_RANK: page})
+
+    [player] = client.fetch_available({Timeframe.SEASON: 25})[Timeframe.SEASON]
+
+    assert (player.rostered, player.rostered_change) == (44.0, -3.0)
+    assert len(ctx.requests) == 1
+
+
+@pytest.mark.parametrize("share", ["", "<percent_owned><value>-</value><delta></delta></percent_owned>"])
+def test_a_player_read_without_a_rostered_share_carries_none(tmp_path: Path, share: str) -> None:
+    page = (
+        "<fantasy_content><league><players><player><player_key>466.p.0</player_key><name><full>Cam Spencer</full>"
+        f"</name>{share}</player></players></league></fantasy_content>"
+    )
+    client, _ = _client(tmp_path, answers={SEASON_RANK: page})
+
+    [player] = client.fetch_available({Timeframe.SEASON: 25})[Timeframe.SEASON]
+
+    assert (player.rostered, player.rostered_change) == (None, None)
+
+
 @pytest.mark.parametrize(
     "read",
     [

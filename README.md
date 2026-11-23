@@ -168,7 +168,17 @@ points) times the games he can play — none while ruled out, those from ESPN's
 return day once he is back, and a game-time decision's (GTD, DTD, Q) next game
 at 0.8, the rate NFL's simulation gives a questionable player. A player out for
 the week stays on the list, status and return shown, below everyone who plays;
-a column click still sorts by that column. Lineup rows show
+a column click still sorts by that column. A game's value (`Value`, FPTS) leans on his
+last five games where his minutes have moved: when his minutes a game over his last
+five differ from the six-week window's by 3 or more, either way, his line is pulled
+from the usual reading (form beside projection) toward those five games' by
+`games / (games + 5)`, halfway, the settling weight NFL's form uses
+(`competitions/worth.settled`). With his minutes where they were, a big night
+counts only its share of the average. The to-do list, streams, the weeks ahead,
+the drawer and the free-agent order all read this one figure. Free agents also show
+`Min`, his minutes a game over his last five, with an arrow and the window's figure
+where they moved (`37.7 ↑ (33.5)`), and `Rost`, the share of Yahoo leagues rostering
+him and its change this week (`34% ↑12`), which is shown and not weighed. Lineup rows show
 games left and Yahoo's PTS/REB/AST (FPTS in a points league); a week played shows
 each category as a column. Position filters are PG/SG/SF/PF/C, plus G and F where
 the league's lineup has them, each keeping anybody eligible there. The drawer has
@@ -202,7 +212,8 @@ a game over their last 15 Sleeper box scores. The add budget is the league's own
 NBA's free agents are Yahoo's top 300 by season rank and top 100 by last week's,
 taken in turn so the week's risers sit beside the season's best (16 requests
 of 25 players: each ranking's first page cached for 30 minutes, the rest for 6 hours).
-Each wire page carries every player's ownership (`out=ownership`, no extra request), so
+Each wire page carries every player's ownership and rostered share
+(`out=ownership,percent_owned`, no extra request), so
 a player on waivers reads `W 25 Nov` in Status ("Waivers · clears Wed 25 Nov" on hover
 and in the drawer's owner). Everything weighing his week counts only his club's games
 after the day he clears — Yahoo's settings do not say whether a claim processed that
@@ -215,8 +226,14 @@ player) who is out or day-to-day (Yahoo's status where his Yahoo row is on the
 page, else ESPN's, with its return day) or sat one of the club's last 5 games,
 with the player's PTS/REB/AST (and fantasy points in a points league) a game
 without him and with him, from Sleeper's box scores; a game the regular played
-under 12 minutes counts as missed, and both sides need 3 games. Regulars who
-missed the same games share one row naming them all. The scout's
+under 12 minutes counts as missed, and both sides need 3 games. A regular with
+fewer than 3 games this season counts by last season's minutes (28+ over 20+ games,
+one Sleeper request shared by every player). Regulars who
+missed the same games share one row naming them all. Where a regular at the
+player's position (G, F or C) is out, ESPN dates his return within 7 days, and the
+player has fewer than 3 games beside him but 3 or more without, "Without" warns
+instead (`Duren back ~24 Nov`, "Jalen Duren (C, O) back ~24 Nov: 14 games without
+him · 2 with"): his role may be the one the absence gave him. The scout's
 roster and free-agent lines carry the same.
 Each NBA lineup row, both teams, shows games left this week and a game's value
 ("3G · 41.5 fpts/g", or "3G · 22.1p 8.3r 4.0a" in categories). In the week being

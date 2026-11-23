@@ -2,7 +2,7 @@
 
 import pytest
 
-from thefrontoffice.adapters.outbound.competitions.worth import FORM_WEIGHT, USAGE_SWING, blend, usage
+from thefrontoffice.adapters.outbound.competitions.worth import FORM_WEIGHT, USAGE_SWING, blend, settled, usage
 
 
 def test_form_and_outlook_blend_by_the_form_weight() -> None:
@@ -38,3 +38,10 @@ def test_a_trend_the_caller_knows_of_spares_a_swing() -> None:
 
 def test_too_few_games_say_nothing() -> None:
     assert _usage([35, 36]) == 1.0
+
+
+def test_games_in_a_new_role_count_by_how_many_there_are() -> None:
+    """As many games as it takes to settle count for half; one counts for a fraction."""
+    assert settled(4, 4) == pytest.approx(0.5)
+    assert settled(1, 4) == pytest.approx(0.2)
+    assert settled(0, 4) == 0.0

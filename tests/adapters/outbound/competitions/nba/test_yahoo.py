@@ -5,7 +5,7 @@ slots, matchup context) actually get encoded.
 """
 
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -17,6 +17,8 @@ from support.nba import (
     FakeSleeperProjections,
     FakeYahoo,
     FakeYahooAuth,
+    box_scores,
+    game_log,
     make_player,
     nba_provider,
     toronto,
@@ -27,15 +29,15 @@ from support.reports import MOCK_NBA_REPORT
 from support.stores import FakeAnswers
 
 from thefrontoffice.adapters.outbound.competitions.nba.actions import PROVISIONAL
-from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
+from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, Role, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
-from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES
+from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, PACIFIC
 from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASchedule
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooCaptureMissingError
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Average,
@@ -1569,3 +1571,100 @@ def test_a_week_ahead_the_nba_has_yet_to_schedule_is_provisional() -> None:
 
     assert (week.provisional, week.fix) == (True, "")
     assert _ahead().weeks_ahead("466.l.1").weeks[0].provisional is False
+
+
+# ── who is trending on the wire ─────────────────────────────────────────
+
+
+def _role(window: float, latest: float, minutes: float, before: float) -> PlayerStats:
+    """Fifteen games averaging `window` points, the last five `latest` on `minutes` a game against `before`."""
+    return PlayerStats(
+        recent=RecentForm(games=15, line={"PTS": window}),
+        last_5={"PTS": latest},
+        minutes=(minutes,) * 5,
+        role=Role(games=5, minutes=minutes, window=before),
+    )
+
+
+RISER = replace(make_player("Riser", "SF", "SAC", key="riser"), rostered=34.0, rostered_change=12.0)
+STEADIER = replace(make_player("Steadier", "SF", "NYK", key="steadier"), rostered=60.0, rostered_change=-2.0)
+FALLER = replace(make_player("Faller", "SG", "LAC", key="faller"), rostered=20.0, rostered_change=0.0)
+TRENDS = {
+    "Riser": _role(window=12.0, latest=22.0, minutes=37.7, before=33.5),
+    "Steadier": _role(window=14.0, latest=14.0, minutes=30.0, before=30.0),
+    "Faller": _role(window=16.0, latest=6.0, minutes=20.6, before=25.9),
+}
+
+
+@pytest.mark.parametrize("league", [yahoo_league(), POINTS_LEAGUE], ids=["categories", "points"])
+def test_the_wire_ranks_a_riser_over_a_steadier_player_and_drops_a_faller(league: YahooLeague) -> None:
+    """Every club plays three: the order is a game's value, which leans on the last five where minutes moved."""
+    weights = WEIGHTS if league is POINTS_LEAGUE else None
+    yahoo = FakeYahoo(roster=[STARTER], available=[FALLER, STEADIER, RISER], weights=weights)
+    nba = FakeNBA(stats={**TRENDS, "Starter": _line(20)}, games={"SAC": 3, "NYK": 3, "LAC": 3, "LAL": 3})
+
+    agents = nba_provider(yahoo, nba=nba, league=league).free_agents("", PlayerQuery()).players
+
+    assert [card.player_id for card in agents] == ["riser", "steadier", "faller"]
+
+
+def test_the_wire_shows_which_way_his_minutes_and_his_rostered_share_moved_in_text() -> None:
+    yahoo = FakeYahoo(roster=[STARTER], available=[RISER, STEADIER, FALLER])
+    nba = FakeNBA(stats={**TRENDS, "Starter": _line(20)}, games={"SAC": 3, "NYK": 3, "LAC": 3, "LAL": 3})
+
+    agents = nba_provider(yahoo, nba=nba).free_agents("", PlayerQuery()).players
+    rows = {card.player_id: card for card in agents}
+
+    assert rows["riser"].columns["Min"] == "37.7 ↑ (33.5)"
+    assert rows["faller"].columns["Min"] == "20.6 ↓ (25.9)"
+    assert rows["steadier"].columns["Min"] == "30.0"
+    assert rows["riser"].values["Min"] == pytest.approx(37.7)
+    assert (rows["riser"].columns["Rost"], rows["riser"].values["Rost"]) == ("34% ↑12", 34.0)
+    assert rows["steadier"].columns["Rost"] == "60% ↓2"
+    assert rows["faller"].columns["Rost"] == "20%"
+    assert "33.5" in rows["riser"].notes["Min"] and "12" in rows["riser"].notes["Rost"]
+
+
+def test_a_roster_carries_no_trend_columns_and_a_wire_without_shares_no_rostered_one() -> None:
+    yahoo = FakeYahoo(roster=[STARTER], available=[make_player("Plain", key="plain")])
+
+    provider = nba_provider(yahoo, nba=FakeNBA(stats={"Plain": _line(12)}))
+
+    assert "Rost" not in provider.free_agents("", PlayerQuery()).players[0].columns
+    assert "Min" not in provider.roster()[0].columns
+
+
+def test_a_backup_whose_role_a_returning_starter_propped_up_is_flagged_on_the_wire() -> None:
+    """Duren played two games before getting hurt: too few for a split, and Reed's role is the one he left."""
+    today = datetime.now(PACIFIC).date()
+    logs = {
+        "d1": [game_log("d1", d, 20.0, team="DET") for d in (1, 2)],
+        "r1": [game_log("r1", d, 26.0, team="DET", pts=12) for d in range(1, 11)],
+    }
+    scores = box_scores(logs, {"d1": "Jalen Duren", "r1": "Paul Reed"}, team="DET", positions={"d1": "C", "r1": "C"})
+    nba = FakeNBA(stats={"Paul Reed": _line(12)}, scores=scores)
+    nba.seasons[("Jalen Duren", "2025")] = NBASeason(player_id="d1", season="2025", games=70, minutes=2100.0, totals={})
+    espn = FakeESPN(injuries=[_espn_report("Jalen Duren", "DET", back=today + timedelta(days=2))])
+    reed = make_player("Paul Reed", "PF,C", "DET", key="reed")
+
+    [row] = nba_provider(FakeYahoo(available=[reed]), nba=nba, espn=espn).free_agents("", PlayerQuery()).players
+
+    assert row.columns["Without"].startswith("Duren back")
+    assert "Jalen Duren" in row.notes["Without"]
+
+
+def test_last_seasons_minutes_that_will_not_load_leave_the_returning_starter_unflagged() -> None:
+    today = datetime.now(PACIFIC).date()
+    logs = {
+        "d1": [game_log("d1", d, 20.0, team="DET") for d in (1, 2)],
+        "r1": [game_log("r1", d, 26.0, team="DET", pts=12) for d in range(1, 11)],
+    }
+    scores = box_scores(logs, {"d1": "Jalen Duren", "r1": "Paul Reed"}, team="DET", positions={"d1": "C", "r1": "C"})
+    nba = FakeNBA(stats={"Paul Reed": _line(12)}, scores=scores)
+    nba.season_error = SleeperAPIError("down")
+    espn = FakeESPN(injuries=[_espn_report("Jalen Duren", "DET", back=today + timedelta(days=2))])
+    reed = make_player("Paul Reed", "PF,C", "DET", key="reed")
+
+    [row] = nba_provider(FakeYahoo(available=[reed]), nba=nba, espn=espn).free_agents("", PlayerQuery()).players
+
+    assert row.columns["Without"] == "—"

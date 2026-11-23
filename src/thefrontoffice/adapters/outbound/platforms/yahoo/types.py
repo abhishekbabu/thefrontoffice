@@ -160,6 +160,13 @@ class YahooPlayer:
     """The day he clears waivers, while nobody holds him and he sits on them: he can be claimed, not added, until
     then. None for a free agent, a rostered player, or where his ownership was not asked for."""
 
+    rostered: float | None = None
+    """The share of Yahoo's leagues that roster him, in percent; None where it was not asked for."""
+
+    rostered_change: float | None = None
+    """How far `rostered` moved over the last week, in points: managers adding him, or dropping him. None where
+    it was not asked for."""
+
     @property
     def line(self) -> YahooLine:
         return YahooLine(stats=self.stats, points=self.points)
