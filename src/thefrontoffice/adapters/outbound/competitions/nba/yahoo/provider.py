@@ -6,7 +6,8 @@ period crossed with recent form — per category, or summed under the league's
 weights — and the budget constraint is the league's weekly add limit.
 
 The ports, and the plumbing that finds the league each one reads. What they read is beside it:
-`reads.py` (Yahoo), `feeds.py` (Sleeper and ESPN), `weighing.py` (the week weighed).
+`reads.py` (Yahoo), `feeds.py` (Sleeper and ESPN), `weighing.py` (the week weighed), `scouting.py` (the
+scout's prompts), `trading.py` (trades) and `drawn.py` (a player's week in the drawer).
 """
 
 import logging
@@ -16,42 +17,28 @@ from datetime import UTC, datetime
 
 from thefrontoffice.adapters.outbound.competitions import news, paging, places
 from thefrontoffice.adapters.outbound.competitions.injuries import by_club
-from thefrontoffice.adapters.outbound.competitions.nba import actions, defense, drawer, history, prompt, views
+from thefrontoffice.adapters.outbound.competitions.nba import drawer, history, views
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
 from thefrontoffice.adapters.outbound.competitions.nba import lineup as nba_lineup
-from thefrontoffice.adapters.outbound.competitions.nba import market as nba_market
 from thefrontoffice.adapters.outbound.competitions.nba import outlook as nba_outlook
-from thefrontoffice.adapters.outbound.competitions.nba import strength as nba_strength
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
-from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
-from thefrontoffice.adapters.outbound.competitions.nba.context import (
-    PlayerContextBuilder,
-    rank_by_points,
-    rank_free_agents,
-)
 from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player, PrintedLine
-from thefrontoffice.adapters.outbound.competitions.nba.projections import index_for
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
-    PACIFIC,
-    amount,
-    playable_from,
     position_filters,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
-from thefrontoffice.adapters.outbound.competitions.nba.yahoo import reads, weighing
+from thefrontoffice.adapters.outbound.competitions.nba.yahoo import drawn, reads, scouting, trading, weighing
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo.feeds import Feeds
 from thefrontoffice.adapters.outbound.competitions.seeds import seed
-from thefrontoffice.adapters.outbound.competitions.trades import resolve_sides
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
-from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, InjuryReport
+from thefrontoffice.adapters.outbound.platforms.espn.types import NBA
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
-from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource, once
+from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.paths import RECENT_AVERAGE
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Average,
@@ -63,7 +50,6 @@ from thefrontoffice.domain.errors import (
     FrontOfficeError,
     LeagueNotFoundError,
     NotFoundError,
-    PlayerNotFoundError,
     TeamNotFoundError,
     UnsupportedError,
 )
@@ -81,7 +67,6 @@ from thefrontoffice.domain.models import (
     PlayerRef,
     Slate,
     Summary,
-    TeamRecord,
     TeamRef,
     TradeMarket,
     TradeProposal,
@@ -380,196 +365,22 @@ class YahooNBAProvider:
         )
 
     def build_context(self, league_id: str = "") -> CompetitionContext:
-        """Gather league state and render the scouting prompt.
-
-        Returns the prompt plus the pieces that make it up, so a follow-up
-        briefing can be assembled without re-deriving or re-sending everything.
-        """
+        """Gather league state and render the scouting prompt."""
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
-        weights = reads.weights(league, yahoo)
-        my_team = yahoo.get_user_team()
-        week = yahoo.get_matchup(my_team.team_key)
-        start, end = (week.start, week.end) if week else (None, None)
-        used_adds, limit = my_team.adds_used, self._add_limit(yahoo)
-
-        # Gathered before the schedule so one bulk lookup covers every team
-        # either of them touches.
-        rostered = yahoo.roster(my_team.team_key)
-        free_agents, annotations = (
-            rank_by_points(reads.wire(yahoo), self.form.get_player_stats, weights)
-            if weights
-            else rank_free_agents(yahoo.fetch_top_by_stat(reads.LEADERS, per_stat=reads.LEADERS_PER_STAT))
-        )
-        logger.debug(f"Building context for {len(rostered)} rostered and {len(free_agents)} free agents")
-
-        remaining_games: dict[str, int] = {}
-        if start and end:
-            teams = [p.team for p in (*rostered, *free_agents)]
-            remaining_games = self.games.get_remaining_games_bulk(teams, start, end)
-
-        projections = index_for(self.sleeper, start, end)
-        reports = self.feeds.reports()
-        returns = reads.returns([*rostered, *free_agents], reports)
-        splits = self.feeds.splits([*rostered, *free_agents], weights, reports)
-        decided = (
-            weighing.decide(
-                self.feeds,
-                yahoo,
-                league,
-                rostered,
-                week.opponent_roster,
-                week.start,
-                week.end,
-                max(0, limit - used_adds),
-                free_agents,
-                reads.averages(yahoo, my_team.team_key, week.opponent.team_key),
-            )
-            if week
-            else weighing.Decided({}, nba_week.off_il(rostered))
-        )
-        tasks = decided.actions
-        # A pickup the list names is a free agent the model judges, so it reads his line too.
-        named = {pid for task in tasks for pid in (task.player_id, task.replaces, task.drop) if pid}
-        held = {p.player_key for p in rostered}
-        free_agents += [
-            r.player
-            for key, r in decided.readings.items()
-            if key in named and key not in held and all(p.player_key != key for p in free_agents)
-        ]
-        builder = PlayerContextBuilder(self.form, self.games, weights)
-        roster_lines = builder.build_player_lines(
-            rostered,
-            start,
-            end,
-            remaining_games=remaining_games,
-            projections=projections,
-            returns=returns,
-            splits=splits,
-            readings=decided.readings,
-        )
-        fa_lines = builder.build_player_lines(
-            free_agents,
-            start,
-            end,
-            annotations,
-            remaining_games,
-            projections=projections,
-            returns=returns,
-            splits=splits,
-            readings=decided.readings,
-        )
-
-        unscheduled = self.games.unscheduled(start, end) if start and end else []
-        schedule_context = prompt.schedule(
-            week, remaining_games, projected=projections is not None, unscheduled=unscheduled
-        )
-        trans_context = prompt.transactions(used_adds, limit)
-        by_key = {p.player_key: p for p in (*rostered, *free_agents)}
-        return CompetitionContext(
-            prompt=prompt.scout(
-                roster="".join(roster_lines.values()),
-                week=week,
-                free_agents="".join(fa_lines.values()),
-                schedule_context=schedule_context,
-                trans_context=trans_context,
-                adds_left=max(0, limit - used_adds),
-                weights=weights,
-                tasks=tasks,
-            ),
-            situation=prompt.matchup(week, weights),
-            constraints=trans_context,
-            extra=schedule_context,
-            roster_lines=roster_lines,
-            candidate_lines=fa_lines,
-            headline=nba_week.adds(used_adds, limit),
-            tasks=tasks,
-            # What a game of each is worth, so a model's add never costs a better player than it brings.
-            worth={
-                r.player.name: game
-                for key, r in decided.readings.items()
-                if key in by_key and (game := nba_worth.game_value(r)) is not None
-            },
-            listed=frozenset(by_key[pid].name for pid in named if pid in by_key),
-            # A kept judgment's add of somebody another manager has since claimed is no move at all.
-            movable=frozenset(p.name for p in (*rostered, *free_agents)),
-        )
+        return scouting.context(self.feeds, yahoo, league, self._add_limit(yahoo))
 
     # ── the wire ────────────────────────────────────────────────────
 
     def build_wire_context(self, league_id: str, player_ids: list[str]) -> CompetitionContext:
         """The prompt asking for one call per listed free agent.
 
-        Each candidate's line is the scout's — form, status and return, games
-        left, projection, teammates out, worth this week — plus the weakest
-        player he streams over by the to-do list's margin (`actions.fit`), and
-        the id the call has to name. Every figure is read over the same players
-        whichever are asked about: the roster, the opponent and the top of the
-        wire, as the to-do list reads them, so a call kept against a line is
-        checked against that same line on any page.
-
         Raises:
             PlayerNotFoundError: an id is rostered in this league, or not on the wire.
         """
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
-        weights = reads.weights(league, yahoo)
-        team = yahoo.get_user_team()
-        rostered = yahoo.roster(team.team_key)
-        held = {p.player_key for p in rostered}
-        everyone = reads.wire(yahoo)
-        available = {p.player_key: p for p in everyone if p.player_key not in held}
-        unavailable = [pid for pid in player_ids if pid not in available]
-        if unavailable:
-            raise PlayerNotFoundError(unavailable)
-        candidates = [available[pid] for pid in player_ids]
-        week = yahoo.get_matchup(team.team_key)
-        limit = self._add_limit(yahoo)
-        reports = self.feeds.reports()
-        known = [*rostered, *everyone]
-        returns = reads.returns(known, reports)
-        splits = self.feeds.splits(known, weights, reports)
-        readings: dict[str, Reading] = {}
-        remaining: dict[str, int] = {}
-        start, end = (week.start, week.end) if week else (None, None)
-        if week:
-            pool = [*rostered, *week.opponent_roster, *reads.wire(yahoo, reads.STREAM_DEPTH)]
-            readings = weighing.read_week(
-                self.feeds, yahoo, weights, pool, week.start, week.end, candidates, reads.carried(everyone)
-            )
-            remaining = self.games.get_remaining_games_bulk(
-                [p.team for p in (*rostered, *candidates)], week.start, week.end
-            )
-        builder = PlayerContextBuilder(self.form, self.games, weights)
-        projections = index_for(self.sleeper, start, end)
-
-        def lines(players: Sequence[Player]) -> dict[str, str]:
-            return builder.build_player_lines(
-                players,
-                start,
-                end,
-                remaining_games=remaining,
-                projections=projections,
-                returns=returns,
-                splits=splits,
-                readings=readings,
-            )
-
-        candidate_lines = lines(candidates)
-        fits = {
-            p.player_key: actions.fit(r, rostered, readings, weights is not None)
-            for p in candidates
-            if (r := readings.get(p.player_key))
-        }
-        return prompt.wire(
-            week=week,
-            weights=weights,
-            roster=lines(rostered),
-            candidates={p.player_key: candidate_lines[p.name] for p in candidates},
-            names={p.player_key: p.name for p in candidates},
-            fits=fits,
-            constraints=prompt.transactions(team.adds_used, limit),
-        )
+        return scouting.wire_context(self.feeds, yahoo, league, self._add_limit(yahoo), player_ids)
 
     # ── the weeks ahead ─────────────────────────────────────────────
 
@@ -714,38 +525,10 @@ class YahooNBAProvider:
     def build_trade_context(self, league_id: str, proposal: TradeProposal) -> CompetitionContext:
         """Price both sides of a trade against the current roster, in the league's own scoring."""
         league = self._league(league_id)
-        yahoo = self._yahoo_for(league)
-        weights = reads.weights(league, yahoo)
-        builder = PlayerContextBuilder(self.form, self.games, weights)
-        giving, receiving = resolve_sides(proposal, lambda name: reads.find_player(yahoo, name))
-
-        my_team = yahoo.get_user_team()
-        week = yahoo.get_matchup(my_team.team_key)
-
-        # Not enrichment: a trade is judged against the roster it changes, and
-        # one judged without it is an answer to a different question.
-        rostered = yahoo.roster(my_team.team_key)
-        returns = reads.returns([*rostered, *giving, *receiving], self.feeds.reports())
-        roster = builder.build_player_lines(
-            rostered, week.start if week else None, week.end if week else None, returns=returns
-        )
-
-        text = prompt.trade(
-            giving=builder.build_context_for_players(giving, returns=returns),
-            receiving=builder.build_context_for_players(receiving, returns=returns),
-            week=week,
-            roster="".join(roster.values()),
-            weights=weights,
-        )
-        return CompetitionContext(prompt=text, situation=prompt.matchup(week, weights), roster_lines=roster)
+        return trading.context(self.feeds, self._yahoo_for(league), league, proposal)
 
     def trade_market(self, league_id: str) -> TradeMarket | None:
         """The rest of the season, and every trade near even in worth that improves your weeks (`market.build`).
-
-        None between seasons, once the regular season is over, and past the
-        trade deadline the league's settings name. A category league is
-        searched where a week counts as one win (Yahoo's "H2H Cat One"), which
-        is what its table and the season's simulation count.
 
         Raises:
             UnsupportedError: a league whose table counts every category, scores only a best game, or whose points
@@ -753,77 +536,7 @@ class YahooNBAProvider:
             PlatformError: the schedule would not load.
         """
         league = self._league(league_id)
-        current = league.current_week
-        if not current:
-            return None
-        yahoo = self._yahoo_for(league)
-        rules = yahoo.settings()
-        if not rules.playoff_start_week or current >= rules.playoff_start_week:
-            return None
-        if rules.trade_end is not None and datetime.now(PACIFIC).date() > rules.trade_end:
-            return None
-        categories = reads.judged_on(league, rules)
-        mine = yahoo.get_user_team().team_key
-        standings = yahoo.standings()
-        drawn = yahoo.matchups(list(range(current, league.last_week(current) + 1)))
-        dates = nba_league.week_dates(drawn)
-        if current not in dates:
-            return None
-        rosters = yahoo.rosters([team.team_key for team in standings])
-        try:
-            wire = reads.wire(yahoo, reads.STREAM_DEPTH)
-        except FrontOfficeError as e:
-            logger.warning(f"Pricing trades without the wire, which would not load: {e}")
-            wire = []
-        players = once(p for roster in [*rosters.values(), wire] for p in roster)
-        weights = reads.weights(league, yahoo)
-        start, end = dates[current]
-        readings = weighing.read_week(self.feeds, yahoo, weights, players, start, end)
-        returns = reads.returns(players, self.feeds.reports())
-        weeks = [
-            nba_market.Week(
-                week=week,
-                days={
-                    p.player_key: frozenset(nba_strength.nights(p, games, returns.get(p.player_key))) for p in players
-                },
-                pairs=[(found.mine.team_key, found.opponent.team_key) for found in drawn.get(week, [])],
-            )
-            for week, (first, last) in sorted(dates.items())
-            for games in [
-                self.games.games_left(first, last) if week == current else self.games.games_between(first, last)
-            ]
-        ]
-        this_week = {
-            side.team_key: nba_strength.banked(side, categories, points=weights is not None)
-            for found in drawn.get(current, [])
-            for side in (found.mine, found.opponent)
-        }
-        return nba_market.build(
-            nba_market.League(
-                mine=mine,
-                teams=[
-                    TeamRecord(t.team_key, t.name, s.wins, s.losses, s.ties, amount(s.points_for))
-                    for t in standings
-                    if (s := t.standing) is not None
-                ],
-                rosters=rosters,
-                profiles={
-                    key: nba_strength.profile(reading, self.feeds.recent(reading.player), weights)
-                    for key, reading in readings.items()
-                },
-                weeks=weeks,
-                playoff_start=rules.playoff_start_week,
-                spots=rules.playoff_teams,
-                slots=rules.starting or nba_forecast.active_slots(*rosters.values()),
-                roster_size=rules.roster_size,
-                categories=categories,
-                banked=this_week,
-                wire=wire,
-                weekly=rules.weekly_lineups,
-                deadline=rules.trade_end,
-                seed=seed(league.league_key, current),
-            )
-        )
+        return trading.market(self.feeds, self._yahoo_for(league), league)
 
     # ── players and teams ───────────────────────────────────────────
 
@@ -933,7 +646,7 @@ class YahooNBAProvider:
         weights = reads.weights(league, yahoo)
         reports = self.feeds.reports()
         profile = self.form.profile(player.name)
-        week = self._week_of(yahoo, league, player, reports, weights, profile)
+        week = drawn.week_of(self.feeds, yahoo, league, player, reports, weights, profile)
         games = self.form.games(player.name)
         return drawer.detail(
             drawer.Drawer(
@@ -980,55 +693,3 @@ class YahooNBAProvider:
         feeds = self.espn.get_team_news(NBA, [club])
         found = news.attach(feeds, by_club([(club, player.name, player_id)]), datetime.now(UTC))
         return drawer.deferred_tab(player, groups=drawer.news(found.stats(player_id, limit=drawer.NEWS_IN_DRAWER)))
-
-    def _week_of(
-        self,
-        yahoo: YahooSource,
-        league: YahooLeague,
-        player: Player,
-        reports: Sequence[InjuryReport],
-        weights: Mapping[str, float] | None,
-        profile: PlayerMeta | None,
-    ) -> tuple[drawer.DrawerWeek, nba_worth.Valuer | None] | None:
-        """His matchup week as the drawer shows it, and what a game is worth on the week's scale; None without one.
-
-        Counted as his row counts it (`Feeds.playable`): none while ruled out, or from
-        his return. Weighed on the to-do list's own pool (`weighing.valued`), so the
-        value it shows is the one his row shows. Each part is enrichment:
-        whatever will not load is left out, and the rest stands.
-        """
-        week = league.current_week
-        if not week:
-            return None
-        try:
-            found = yahoo.pairing(yahoo.get_user_team().team_key, week)
-        except FrontOfficeError as e:
-            logger.warning(f"Showing {player.name} without his week: {e}")
-            return None
-        if found is None:
-            return None
-        start, end = found.start, found.end
-        back = reads.returns([player], reports).get(player.player_key)
-        clubs = self.games.get_remaining_games_bulk([player.team], start, end)
-        games = self.feeds.playable(player, clubs, back, end)
-        provisional = bool(self.games.unscheduled(start, end))
-        club = player.team.upper()
-        # A claim's games are those from the day he clears waivers, as `Feeds.playable` counts them.
-        claimed = playable_from(player)
-        after = claimed.isoformat() if claimed else ""
-        try:
-            fixtures = [g for g in self.games.games_left(start, end) if club in (g.home, g.away) and g.date >= after]
-        except FrontOfficeError as e:
-            logger.warning(f"Showing {player.name}'s week without its games: {e}")
-            fixtures = []
-        projections = index_for(self.sleeper, start, end)
-        stats = self.form.get_player_stats(player.name)
-        projected = projections.find(player.name, player.team, stats) if projections else None
-        value = weighing.week_valuer(self.feeds, yahoo, weights, found)
-        reading = nba_worth.read(player, stats, projected, value, games, provisional, back) if value else None
-        matchup = None
-        if fixtures and profile:
-            opponent = fixtures[0].away if fixtures[0].home == club else fixtures[0].home
-            matchup = defense.allowed(self.form.box_scores(), weights).get((opponent, profile.position))
-        left = views.counted(games, provisional)
-        return drawer.DrawerWeek(left, fixtures, reading, projected, matchup), value
