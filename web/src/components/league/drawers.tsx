@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { Competition, League } from "@/lib/api";
 import type { Back } from "@/components/ui/dialog";
-import { ComparisonDrawer, type Comparing } from "@/components/ui/compare";
-import { PlayerPanel } from "@/components/ui/player";
+import { ComparisonDrawer, type Comparing } from "@/components/league/compare";
+import { PlayerPanel } from "@/components/league/player";
 
 type Open = ({ kind: "player"; id: string } | ({ kind: "compare" } & Comparing)) & { back?: Back };
 

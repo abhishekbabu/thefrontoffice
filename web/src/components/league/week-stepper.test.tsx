@@ -1,7 +1,7 @@
 import { act } from "react";
 import { describe, expect, it } from "vitest";
 import type { WeekRange } from "@/lib/api";
-import { SWIPE_DISTANCE, WeekPane, WeekStepper, useSwipe } from "@/components/ui/week-stepper";
+import { SWIPE_DISTANCE, WeekPane, WeekStepper, useSwipe } from "@/components/league/week-stepper";
 import { press, render } from "@/test/render";
 
 describe("WeekPane", () => {

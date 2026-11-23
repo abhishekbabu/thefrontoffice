@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import { server as msw } from "@/test/server";
 import { QueryClient } from "@tanstack/react-query";
 import type { Subject, Turn } from "@/lib/api";
-import { AssistantChat, type Asked } from "@/components/ui/chat";
+import { AssistantChat, type Asked } from "@/components/league/chat";
 import { render, settle, typeInto } from "@/test/render";
 
 const ASKED: Turn[] = [

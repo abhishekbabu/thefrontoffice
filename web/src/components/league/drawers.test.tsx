@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Competition, League } from "@/lib/api";
 import { keys } from "@/lib/queries";
-import type { Comparing } from "@/components/ui/compare";
-import { useDrawers } from "@/components/ui/drawers";
+import type { Comparing } from "@/components/league/compare";
+import { useDrawers } from "@/components/league/drawers";
 import { drawerClient, render, settle } from "@/test/render";
 import { REED_WHITE } from "@/test/players";
 

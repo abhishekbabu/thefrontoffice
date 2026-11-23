@@ -16,7 +16,7 @@ import { ErrorNote } from "@/components/ui/error-note";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Label, META } from "@/components/ui/label";
-import { PageHeader } from "@/components/ui/page-header";
+import { PageHeader } from "@/components/league/page-header";
 import { QueryState } from "@/components/ui/state";
 import { ToggleChip, ToggleGroup } from "@/components/ui/toggle";
 import { Tooltip } from "@/components/ui/tooltip";

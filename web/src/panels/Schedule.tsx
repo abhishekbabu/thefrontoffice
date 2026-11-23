@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ListCard, ListHeading, ListRow } from "@/components/ui/list";
 import { Hint } from "@/components/ui/tooltip";
 import { Empty, QueryState } from "@/components/ui/state";
-import { LeagueHeader } from "@/components/ui/page-header";
+import { LeagueHeader } from "@/components/league/page-header";
 import { Label, Meta } from "@/components/ui/label";
 
 /**

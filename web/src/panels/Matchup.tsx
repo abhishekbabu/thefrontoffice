@@ -23,25 +23,25 @@ import { Link } from "react-router-dom";
 import { keys, useCapabilities } from "@/lib/queries";
 import { moment, percent, percentPoints, signed } from "@/lib/format";
 import { href, offers } from "@/lib/route";
-import { ActionList, WhyButton, staleVerdicts } from "@/components/ui/actions";
+import { ActionList, WhyButton, staleVerdicts } from "@/components/league/actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Busy, QueryState } from "@/components/ui/state";
 import { StatGrid, StatList, StatStrip } from "@/components/ui/stat";
-import { LineupCard, SideCard, rowsOf } from "@/components/ui/lineup";
-import { useDrawers } from "@/components/ui/drawers";
+import { LineupCard, SideCard, rowsOf } from "@/components/league/lineup";
+import { useDrawers } from "@/components/league/drawers";
 import { ErrorNote } from "@/components/ui/error-note";
-import { LeagueHeader } from "@/components/ui/page-header";
+import { LeagueHeader } from "@/components/league/page-header";
 import {
   WeekPane,
   WeekStepper,
   useWeekParam,
-} from "@/components/ui/week-stepper";
+} from "@/components/league/week-stepper";
 import { Label } from "@/components/ui/label";
 import { Table, Td, Th } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { traded, type Comparing } from "@/components/ui/compare";
+import { traded, type Comparing } from "@/components/league/compare";
 
 /**
  * Judge again on arrival where the server says the week has moved on from the
@@ -79,7 +79,7 @@ export function useJudgeWhenDue(
  * shows that week's lineups and score and no to-do list, which is only ever
  * about the week being played.
  */
-export function ScoutPanel({
+export function MatchupPanel({
   competition,
   league,
 }: {

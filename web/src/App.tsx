@@ -15,11 +15,11 @@ import { Empty, Loading } from "@/components/ui/state";
 import { ErrorNote } from "@/components/ui/error-note";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
-import { Assistant } from "@/components/ui/assistant";
+import { Assistant } from "@/components/league/assistant";
 
 // Each page loads when it is first opened rather than in the first download:
 // the entry bundle is what every visit waits on, and it was carrying all six.
-const ScoutPanel = lazy(() => import("@/panels/Scout").then((m) => ({ default: m.ScoutPanel })));
+const MatchupPanel = lazy(() => import("@/panels/Matchup").then((m) => ({ default: m.MatchupPanel })));
 const LeaguePanel = lazy(() => import("@/panels/LeaguePanel").then((m) => ({ default: m.LeaguePanel })));
 const FreeAgentsPanel = lazy(() => import("@/panels/FreeAgents").then((m) => ({ default: m.FreeAgentsPanel })));
 const RostersPanel = lazy(() => import("@/panels/Rosters").then((m) => ({ default: m.RostersPanel })));
@@ -38,7 +38,7 @@ type PanelProps = { competition: Competition; league: League };
  * entry a type error rather than a view that silently never renders.
  */
 const PANELS: Record<View, (props: PanelProps) => React.ReactNode> = {
-  matchup: ScoutPanel,
+  matchup: MatchupPanel,
   schedule: SchedulePanel,
   fixtures: FixturesPanel,
   rosters: RostersPanel,

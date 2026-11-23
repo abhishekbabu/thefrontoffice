@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Competition, League, TradeIdea, Trades } from "@/lib/api";
 import { keys } from "@/lib/queries";
 import { offlineClient, render } from "@/test/render";
-import { BestTrade, Categories, JudgedAt, gain, undated, useJudgeWhenDue } from "@/panels/Scout";
+import { BestTrade, Categories, JudgedAt, gain, undated, useJudgeWhenDue } from "@/panels/Matchup";
 
 describe("the best trade under the deadline item", () => {
   const competition = { key: "nfl-sleeper" } as Competition;

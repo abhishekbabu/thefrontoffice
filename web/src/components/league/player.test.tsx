@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Competition, League, PlayerDetail } from "@/lib/api";
 import { keys } from "@/lib/queries";
-import { useDrawers } from "@/components/ui/drawers";
+import { useDrawers } from "@/components/league/drawers";
 import { drawerClient, render, settle } from "@/test/render";
 import { playerDetail } from "@/test/players";
 

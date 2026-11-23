@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { Label, Meta } from "@/components/ui/label";
 import { Table, Td, Th } from "@/components/ui/table";
 import { Tabs } from "@/components/ui/tabs";
-import { MoveDrawer, MoveRow, backTo } from "@/components/ui/move";
+import { MoveDrawer, MoveRow, backTo } from "@/components/league/move";
 import { ListCard } from "@/components/ui/list";
 
 /** What labels his ranking at his position, wherever it is shown. */

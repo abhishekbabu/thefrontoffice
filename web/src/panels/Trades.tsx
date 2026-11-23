@@ -8,11 +8,11 @@ import { Meta } from "@/components/ui/label";
 import { percent, percentPoints, signed } from "@/lib/format";
 import { CardNote } from "@/components/ui/state";
 import { keys } from "@/lib/queries";
-import { LeagueHeader } from "@/components/ui/page-header";
+import { LeagueHeader } from "@/components/league/page-header";
 import { cn } from "@/lib/utils";
 import { clickable } from "@/lib/clickable";
-import { useDrawers } from "@/components/ui/drawers";
-import { traded, type Comparing } from "@/components/ui/compare";
+import { useDrawers } from "@/components/league/drawers";
+import { traded, type Comparing } from "@/components/league/compare";
 
 /**
  * Half a point — of playoff chance, or of starters' points a week — below

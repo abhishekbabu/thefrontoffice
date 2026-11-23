@@ -8,10 +8,10 @@ import { cn } from "@/lib/utils";
 import { ListCard, ListHeading, ListRow } from "@/components/ui/list";
 import { Label, Meta } from "@/components/ui/label";
 import { Empty, QueryState } from "@/components/ui/state";
-import { LeagueHeader } from "@/components/ui/page-header";
-import { WeekPane, WeekStepper, useWeekParam } from "@/components/ui/week-stepper";
+import { LeagueHeader } from "@/components/league/page-header";
+import { WeekPane, WeekStepper, useWeekParam } from "@/components/league/week-stepper";
 import { SlideOver, SlideOverHeader } from "@/components/ui/dialog";
-import { useDrawers } from "@/components/ui/drawers";
+import { useDrawers } from "@/components/league/drawers";
 
 /**
  * The real games a fantasy week is made of, by kickoff, with whose players are in each and who has a bye.

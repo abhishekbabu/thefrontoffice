@@ -12,7 +12,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { LABEL, Meta } from "@/components/ui/label";
 import { QueryState } from "@/components/ui/state";
 import { Table, Td, Th } from "@/components/ui/table";
-import { Chips, Portrait } from "@/components/ui/player";
+import { Chips, Portrait } from "@/components/league/player";
 import { cn } from "@/lib/utils";
 
 /**
