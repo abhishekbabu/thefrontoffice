@@ -246,6 +246,9 @@ class YahooTransaction:
     bid: str = ""
     """The FAAB a waiver claim was won with, as Yahoo prints it; empty for none."""
 
+    clears: date | None = None
+    """For a waiver claim still waiting, the day it processes; None for anything else."""
+
 
 @dataclass(frozen=True)
 class StatCategory:

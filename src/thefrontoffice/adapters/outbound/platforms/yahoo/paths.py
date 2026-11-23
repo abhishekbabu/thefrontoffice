@@ -50,6 +50,8 @@ AVERAGES_TTL = timedelta(hours=3)
 """A player's averages move once a game night, and only for those who played in it."""
 TRANSACTIONS_TTL = timedelta(hours=1)
 """The league's moves: one request carries the season's, read only when a player's history is opened."""
+PENDING_TTL = timedelta(minutes=5)
+"""Your claims and offers still waiting: they move only when somebody acts, and a refresh drops them at once."""
 PLAYED_TTL = timedelta(days=7)
 """A week once played stands, bar the stat corrections Yahoo makes in the days after it."""
 
@@ -165,6 +167,20 @@ def standings(league_key: str) -> YahooRead:
 def transactions(league_key: str) -> YahooRead:
     """Every move the league has made this season, newest first: adds, drops and trades, in one response."""
     return YahooRead("transactions", TRANSACTIONS_TTL, league=league_key)
+
+
+PENDING = ("waiver", "pending_trade")
+"""The kinds of a team's moves Yahoo holds back until they go through: waiver claims, and trades on offer."""
+
+
+def pending(league_key: str, team_key: str) -> list[YahooRead]:
+    """A team's waiver claims waiting to process and its trades waiting on an answer: a read for each kind.
+
+    Yahoo lists them only to the team's own manager, so only your team's are asked for.
+    """
+    return [
+        YahooRead(f"transactions;types={kind};team_key={team_key}", PENDING_TTL, league=league_key) for kind in PENDING
+    ]
 
 
 def roster(team_key: str) -> YahooRead:

@@ -445,6 +445,31 @@ def test_the_schedule_carries_the_leagues_moves_lately_yours_marked() -> None:
     assert (row.what, row.who, row.detail, row.is_mine) == ("Drop", "My Team", "-Jaxson Hayes", True)
 
 
+def _waiting_claim(player_key: str, name: str) -> YahooTransaction:
+    added = MovedPlayer(player_key, name, "C", "UTA", kind="add", source="waivers", destination="team")
+    return YahooTransaction(kind="waiver", timestamp=0, players=(added,), clears=date(2026, 11, 25))
+
+
+def test_your_waiting_claims_lead_the_activity_as_pending_rows() -> None:
+    yahoo = FakeYahoo()
+    dropped = MovedPlayer("478.p.1", "Jaxson Hayes", "C", "UTA", kind="drop", source="Rival", destination="waivers")
+    yahoo.moves = [YahooTransaction(kind="drop", timestamp=int(datetime.now(UTC).timestamp()), players=(dropped,))]
+    yahoo.waiting = [_waiting_claim("478.p.2", "Brook Lopez")]
+
+    waiting, done = nba_provider(yahoo).schedule("").activity
+
+    assert (waiting.what, waiting.when, waiting.who, waiting.is_mine) == ("Pending claim", "25 Nov", "My Team", True)
+    assert "Brook Lopez" in waiting.detail
+    assert (done.what, done.is_mine) == ("Drop", False)
+
+
+def test_waiting_claims_that_will_not_load_leave_the_leagues_moves_standing() -> None:
+    yahoo = FakeYahoo()
+    yahoo.waiting_error = YahooAPIError("down")
+
+    assert nba_provider(yahoo).schedule("").activity == []
+
+
 def test_moves_that_will_not_load_leave_the_table_standing() -> None:
     yahoo = FakeYahoo()
     yahoo.moves_error = YahooAPIError("down")
@@ -1256,6 +1281,17 @@ def _claimable(cleared: date | None, priority: int = 0) -> list[Action]:
     nyk = [date(2026, 2, day) for day in (11, 12, 13, 14)]
     nba = FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY, dated={"NYK": nyk})
     return nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE).summary("").actions or []
+
+
+def test_nobody_you_already_have_a_claim_waiting_on_is_suggested_again() -> None:
+    yahoo = _averaged(FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS))
+    nba = FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY)
+    provider = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE)
+    assert any(a.player_id == "streamer" for a in provider.summary("").actions or [])
+
+    yahoo.waiting = [_waiting_claim("streamer", "Streamer")]
+
+    assert not any(a.player_id == "streamer" for a in provider.summary("").actions or [])
 
 
 def test_a_player_on_waivers_streams_in_as_a_claim_weighed_on_the_games_from_the_day_he_clears() -> None:

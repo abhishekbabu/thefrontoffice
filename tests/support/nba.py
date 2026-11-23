@@ -204,6 +204,9 @@ class FakeYahoo:
         """How many times the league's kept reads were dropped."""
         self.priority = 0
         """Your place in the waiver order; 0 for none known."""
+        self.waiting: list[YahooTransaction] = []
+        """Your team's claims and offers still waiting."""
+        self.waiting_error: Exception | None = None
 
     def get_user_team(self) -> YahooTeam:
         return YahooTeam(
@@ -347,6 +350,11 @@ class FakeYahoo:
     def forget(self) -> int:
         self.forgotten += 1
         return 3
+
+    def pending(self, team_key: str) -> list[YahooTransaction]:
+        if self.waiting_error:
+            raise self.waiting_error
+        return self.waiting if team_key == "t.1" else []
 
     def players(self, player_keys: list[str]) -> list[YahooPlayer]:
         """Anybody this league was built with, on a roster or not."""

@@ -30,6 +30,8 @@ from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     YahooLeague,
     YahooLine,
     YahooPlayer,
+    YahooTeam,
+    YahooTransaction,
 )
 from thefrontoffice.domain.errors import (
     FrontOfficeError,
@@ -107,14 +109,25 @@ def played_today(yahoo: YahooSource, team_keys: list[str], day: date) -> dict[st
     return {p.player_key: p for players in rosters.values() for p in players}
 
 
-def activity(yahoo: YahooSource, mine: str) -> list[ActivityRow]:
-    """The league's moves lately, newest first; none where Yahoo would not give them, rather than no table."""
+def activity(yahoo: YahooSource, team: YahooTeam) -> list[ActivityRow]:
+    """Your team's moves still waiting, then the league's moves lately, newest first; none where Yahoo would not
+    give them, rather than no table."""
+    waiting = history.pending(pending(yahoo, team.team_key), team.name)
     try:
         transactions = yahoo.transactions()
     except FrontOfficeError as e:
         logger.warning(f"Showing the league without its activity, Yahoo would not give its moves: {e}")
+        return waiting
+    return [*waiting, *history.recent(transactions, datetime.now(UTC), team.name)]
+
+
+def pending(yahoo: YahooSource, team_key: str) -> list[YahooTransaction]:
+    """The team's claims and offers still waiting; none where Yahoo would not say, which costs only their rows."""
+    try:
+        return yahoo.pending(team_key)
+    except FrontOfficeError as e:
+        logger.warning(f"Reading the league without your waiting claims, Yahoo would not give them: {e}")
         return []
-    return history.recent(transactions, datetime.now(UTC), mine)
 
 
 def judged_on(league: YahooLeague, rules: LeagueSettings) -> tuple[nba_strength.Scored, ...]:

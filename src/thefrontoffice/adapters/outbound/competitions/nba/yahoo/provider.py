@@ -216,6 +216,7 @@ class YahooNBAProvider:
 
         def read(found: Pairing, theirs: Sequence[Player]) -> Mapping[str, Reading]:
             adds_left = max(0, limit - my_team.adds_used)
+            claimed = history.claimed(reads.pending(yahoo, my_team.team_key))
             shown = reads.averages(yahoo, found.mine.team_key, found.opponent.team_key)
             chances = (
                 None if league.by_points or not week else self._chances(league, yahoo, week, found, (roster, theirs))
@@ -233,6 +234,7 @@ class YahooNBAProvider:
                     shown=shown,
                     chances=chances,
                     their_adds=self._adds_left(yahoo, found.opponent.team_key, limit),
+                    claimed=claimed,
                 )
             )
             return decided[0].readings
@@ -374,7 +376,7 @@ class YahooNBAProvider:
                 yahoo.season(mine, weeks), yahoo.settings(), current, records, points=league.by_points
             )
         return LeagueSchedule(
-            headline=headline, season=season, standings=standings, activity=reads.activity(yahoo, team.name)
+            headline=headline, season=season, standings=standings, activity=reads.activity(yahoo, team)
         )
 
     def build_context(self, league_id: str = "") -> CompetitionContext:

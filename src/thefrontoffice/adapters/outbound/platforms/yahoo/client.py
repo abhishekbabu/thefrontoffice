@@ -301,6 +301,10 @@ class YahooSource(Protocol):
         """
         ...
 
+    def pending(self, team_key: str) -> list[YahooTransaction]:
+        """The team's waiver claims waiting to process and its trades waiting on an answer; none is an answer."""
+        ...
+
 
 class YahooClient:
     """Reads one Yahoo league, from whichever `YahooResponses` it is handed."""
@@ -445,6 +449,18 @@ class YahooClient:
         """
         raw = self._responses.raw(paths.transactions(self.league.league_key))
         return readable("transactions", lambda: transaction_list(parse(raw)["fantasy_content"]["league"]))
+
+    def pending(self, team_key: str) -> list[YahooTransaction]:
+        """The team's waiver claims waiting to process and its trades waiting on an answer, each kind a read."""
+        reads = paths.pending(self.league.league_key, team_key)
+        raws = self._responses.many({read.path: read for read in reads})
+        return [
+            move
+            for read in reads
+            for move in readable(
+                "transactions", lambda raw=raws[read.path]: pending_list(parse(raw)["fantasy_content"]["league"])
+            )
+        ]
 
     def get_user_team(self) -> YahooTeam:
         """Identify the team owned by the current user.
@@ -647,11 +663,25 @@ def transaction_list(league: Any) -> list[YahooTransaction]:
     return [move for move, status in moves if status == "successful" and move.players]
 
 
+WAITING = frozenset({"pending", "proposed"})
+"""Yahoo's words for a move not yet gone through: a claim before it processes, a trade before it is answered."""
+
+
+def pending_list(league: Any) -> list[YahooTransaction]:
+    """The moves a team has waiting, as Yahoo lists them; any that have since gone through or failed are left out."""
+    moves = (_transaction(t) for t in _items(_node(league, "transactions"), "transaction"))
+    return [move for move, status in moves if status in WAITING and move.players]
+
+
 def _transaction(data: Any) -> tuple[YahooTransaction, str]:
     """One transaction, and Yahoo's word for whether it went through."""
     players = tuple(_moved(p) for p in _items(_node(data, "players"), "player"))
     move = YahooTransaction(
-        kind=_text(data, "type"), timestamp=_number(data, "timestamp"), players=players, bid=_text(data, "faab_bid")
+        kind=_text(data, "type"),
+        timestamp=_number(data, "timestamp") or _number(data, "trade_proposed_time"),
+        players=players,
+        bid=_text(data, "faab_bid"),
+        clears=_date_or_none(_value(data, "waiver_date")),
     )
     return move, _text(data, "status")
 
