@@ -55,6 +55,7 @@ def decide(
     adds_left: int,
     also: Sequence[Player] | None = None,
     shown: Mapping[str, PrintedLine] | None = None,
+    chances: Mapping[str, float] | None = None,
 ) -> Decided:
     """Every shown player's week, and the to-do list weighed on it.
 
@@ -64,6 +65,10 @@ def decide(
     that same scale without joining the pool: the prompt's free agents.
     `shown` is Yahoo's averages for the rostered players, which every row and
     item shows of them; the wire carries its own.
+
+    `chances` is the forecast's chance of winning each category, by the
+    league's name for it: a category league's pickups and drops are then
+    weighed on the categories still in play (`worth.Targeting`).
 
     The wire is enrichment here: one that will not load (a sync that has not
     carried it) leaves the week's rows and starts standing, with nothing to stream.
@@ -77,7 +82,7 @@ def decide(
     averages = {**(shown or {}), **reads.carried(free_agents)}
     readings = read_week(feeds, yahoo, weights, [*roster, *theirs, *free_agents], start, end, also or [], averages)
     today = feeds.today(start, end)
-    plan = plan_for(feeds, yahoo, (roster, theirs), free_agents, readings, weights, start, end)
+    plan = plan_for(feeds, yahoo, (roster, theirs), free_agents, readings, weights, start, end, chances)
     items = actions.build(roster, free_agents, readings, adds_left, weights is not None, today, plan)
     return Decided(readings, items, plan.volume)
 
@@ -145,32 +150,35 @@ def plan_for(
     weights: Mapping[str, float] | None,
     start: date,
     end: date,
+    chances: Mapping[str, float] | None = None,
 ) -> actions.Plan:
     """What weighs a pickup beyond the readings (`actions.Plan`): the nights left and the lineup's slots,
     teammates due back — whose splits are valued on the readings' own scale — and the games each side can start.
 
     No week where the settings list no lineup slots, lineups are set for the
     week, or the schedule will not load: pickups are then weighed on every
-    game their clubs have left.
+    game their clubs have left. A category league with `chances` weighs each
+    category by how winnable it is this week, on the readings' own scales.
     """
     roster, theirs = sides
     pool = [*roster, *theirs, *free_agents]
     lines = [r.line for p in pool if (r := readings.get(p.player_key)) and r.line]
-    value, _ = reads.valuer(yahoo, weights, lines)
+    value, found = reads.valuer(yahoo, weights, lines)
     returning = feeds.leaning(free_agents, pool, weights, value)
+    targeting = nba_worth.Targeting.of(found, chances) if found and chances else None
     rules = yahoo.settings()
     slots = nba_lineup.slots(rules.slots)
     if not slots or rules.weekly_lineups:
-        return actions.Plan(returning=returning)
+        return actions.Plan(returning=returning, targeting=targeting)
     try:
         left = feeds.games.games_left(start, end)
     except FrontOfficeError as e:
         logger.warning(f"Weighing pickups on games left, without the nights: {e}")
-        return actions.Plan(returning=returning)
+        return actions.Plan(returning=returning, targeting=targeting)
     week = nba_lineup.Week(left, slots, datetime.now(PACIFIC).date(), end)
     backs = {key: r.back for key, r in readings.items()}
     volume = (nba_lineup.starts(roster, week, backs), nba_lineup.starts(theirs, week, backs))
-    return actions.Plan(week=week, returning=returning, volume=volume)
+    return actions.Plan(week=week, returning=returning, volume=volume, targeting=targeting)
 
 
 def valued(

@@ -175,7 +175,8 @@ from the usual reading (form beside projection) toward those five games' by
 `games / (games + 5)`, halfway, the settling weight NFL's form uses
 (`competitions/worth.settled`). With his minutes where they were, a big night
 counts only its share of the average. The to-do list, streams, the weeks ahead,
-the drawer and the free-agent order all read this one figure. Free agents also show
+the drawer and the free-agent order all read this one figure, though a category league's
+to-do adds and drops weigh each category by how close the forecast has it (4p(1−p), floor 0.25). Free agents also show
 `Min`, his minutes a game over his last five, with an arrow and the window's figure
 where they moved (`37.7 ↑ (33.5)`), and `Rost`, the share of Yahoo leagues rostering
 him and its change this week (`34% ↑12`), which is shown and not weighed. Lineup rows show

@@ -12,6 +12,7 @@ import pytest
 from support.ai import FakeAI
 from support.espn import FakeESPN
 from support.nba import (
+    FakeForecast,
     FakeNBA,
     FakeSleeperNBA,
     FakeSleeperProjections,
@@ -240,6 +241,7 @@ def _two_league_provider(auth: FakeYahooAuth | None = None) -> YahooNBAProvider:
         sleeper=FakeSleeperProjections(),
         espn=FakeESPN(),
         fallback_weekly_adds=3,
+        forecast=FakeForecast(),
     )
 
 
@@ -1264,6 +1266,54 @@ def test_with_no_adds_left_nothing_streams() -> None:
 
     assert actions is not None
     assert [a.key.split(":")[0] for a in actions] == ["start"]
+
+
+def _categories(forecast: FakeForecast) -> YahooNBAProvider:
+    """`_decisions` in a category league, its week played out by `forecast`."""
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER])
+    nba = FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY)
+    return nba_provider(yahoo, nba=nba, league=yahoo_league(), forecast=forecast)
+
+
+def test_a_category_leagues_pickups_are_weighed_on_the_matchup_its_forecast_plays() -> None:
+    """One simulation for the page and the list: the summary hands over the very matchup the week's chance reads."""
+    forecast = FakeForecast(dict.fromkeys((c.label for c in CATEGORIES), 0.5))
+    provider = _categories(forecast)
+
+    provider.summary("")
+
+    assert forecast.played == [provider.matchup_input("")]
+
+
+def test_a_category_leagues_stream_names_the_close_categories_it_targets() -> None:
+    """Every category but points all but settled: what the streamer adds to points is what he targets."""
+    chances = dict.fromkeys((c.label for c in CATEGORIES), 0.99) | {"PTS": 0.5}
+
+    [stream] = [a for a in _categories(FakeForecast(chances)).summary("").actions or [] if a.kind == "waiver"]
+
+    assert stream.player_id == "streamer"
+    assert "PTS" in stream.reason and "REB" not in stream.reason
+
+
+def test_a_week_that_cannot_be_simulated_weighs_its_pickups_on_every_category_alike() -> None:
+    failing = FakeForecast(error=UnsupportedError("One", "a forecast"))
+
+    with_chances = _categories(FakeForecast()).summary("").actions
+    without = _categories(failing).summary("").actions
+
+    assert failing.played
+    assert [a.key for a in without or []] == [a.key for a in with_chances or []]
+
+
+def test_a_points_league_plays_no_forecast_for_its_pickups() -> None:
+    forecast = FakeForecast()
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+
+    nba_provider(
+        yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES), league=POINTS_LEAGUE, forecast=forecast
+    ).summary("")
+
+    assert forecast.played == []
 
 
 def test_a_hurt_player_counts_only_the_games_from_his_return() -> None:

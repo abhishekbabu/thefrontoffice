@@ -17,7 +17,9 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, FIEL
 from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     MINUTES,
     ROLE,
+    TARGET_FLOOR,
     Reading,
+    Targeting,
     category_value,
     game_value,
     moved,
@@ -28,6 +30,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     scales,
     usage,
     weakest,
+    winnable,
 )
 from thefrontoffice.adapters.outbound.competitions.worth import USAGE_SWING, settled
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
@@ -221,6 +224,55 @@ def test_an_average_line_is_weak_nowhere() -> None:
 
 def test_a_category_with_no_spread_across_the_pool_scales_nothing() -> None:
     assert BLOCKS.label not in scales(SCORED, [{BLOCKS.label: 1.0}, {BLOCKS.label: 1.0}])
+
+
+# ── this week's categories, weighed by how winnable each is ─────────
+
+
+def test_a_category_near_even_counts_in_full_and_a_sure_one_only_to_the_floor() -> None:
+    assert winnable(0.5) == pytest.approx(1.0)
+    assert winnable(0.25) == pytest.approx(winnable(0.75))
+    assert winnable(0.75) < 1.0
+    assert winnable(0.99) == winnable(0.0) == TARGET_FLOOR
+
+
+EVEN = {"FG%": 0.5, "BLK": 0.5, "PTS": 0.5, "TO": 0.5}
+BLOCKER = {FG: 0.46, FGA: 12.0, BLOCKS.label: 2.0, POINTS.label: 8.0, TURNOVERS.label: 1.5}
+SCORER = {FG: 0.46, FGA: 12.0, BLOCKS.label: 0.0, POINTS.label: 26.0, TURNOVERS.label: 1.5}
+
+
+def test_at_even_odds_everywhere_a_game_this_week_is_his_value_a_game() -> None:
+    even = Targeting.of(scales(SCORED, POOL), EVEN)
+
+    assert even.value(BLOCKER) == pytest.approx(category_value(SCORED, POOL)(BLOCKER))
+
+
+def test_a_game_this_week_weighs_each_category_by_how_winnable_it_is() -> None:
+    """Blocks all but won and points even: the scorer outweighs the blocker this week, not over a season."""
+    found = scales(SCORED, POOL)
+    even = Targeting.of(found, EVEN)
+    targeted = Targeting.of(found, {**EVEN, "BLK": 0.98})
+
+    assert (even.value(BLOCKER) or 0) > (even.value(SCORER) or 0)
+    assert (targeted.value(SCORER) or 0) > (targeted.value(BLOCKER) or 0)
+
+
+def test_a_sure_category_still_counts_for_something() -> None:
+    found = scales(SCORED, POOL)
+    sure = Targeting.of(found, dict.fromkeys(EVEN, 1.0))
+
+    assert sure.value(POOL[0]) == pytest.approx(TARGET_FLOOR * (category_value(SCORED, POOL)(POOL[0]) or 0))
+
+
+def test_the_targets_are_the_close_categories_a_pickup_adds_most_to_over_the_drop() -> None:
+    """Points are all but won and FG% all but lost, so neither is a target; blocks and turnovers are close."""
+    targeting = Targeting.of(scales(SCORED, POOL), {"FG%": 0.05, "BLK": 0.5, "PTS": 0.98, "TO": 0.45})
+    pickup = {FG: 0.50, FGA: 12.0, BLOCKS.label: 2.0, POINTS.label: 25.0, TURNOVERS.label: 0.5}
+    drop = {FG: 0.40, FGA: 12.0, BLOCKS.label: 0.0, POINTS.label: 10.0, TURNOVERS.label: 2.5}
+
+    assert targeting.targets(pickup, drop) == ["BLK", "TO"]
+    assert targeting.targets(None, drop) == []
+    assert targeting.value(None) is None
 
 
 # ── a role that has moved ───────────────────────────────────────────────

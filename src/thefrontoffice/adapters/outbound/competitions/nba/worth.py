@@ -180,6 +180,77 @@ def category_value(scored: Sequence[LeagueCategory], pool: Iterable[Line]) -> Va
     return value
 
 
+TARGET_FLOOR = 0.25
+"""The least a category counts this week, however sure it is: a forecast is not a result, and a lead can go."""
+
+IN_PLAY = 0.5
+"""How winnable a category must be (`winnable`) to be one a move targets: a chance between about 15% and 85%."""
+
+TARGETS = 3
+"""The targeted categories a to-do item names: the three a move helps most."""
+
+
+def winnable(chance: float) -> float:
+    """How much a category counts this week, from your chance of winning it: 1 at even, down to `TARGET_FLOOR`
+    as it nears certain either way (4p(1 − p)). A category near 50/50 is the one a move can swing."""
+    return max(TARGET_FLOOR, 4.0 * chance * (1.0 - chance))
+
+
+@dataclass(frozen=True)
+class Targeting:
+    """This week's categories, each weighed by how winnable it is against the actual opponent (`winnable`).
+
+    For the week's adds and drops only: what a player is worth for the rest of
+    the season is opponent-neutral, so it never reads this.
+    """
+
+    scales: Mapping[str, Scale]
+    """Each category's scale, by label: the pool the week is read across (`scales`)."""
+
+    weights: Mapping[str, float]
+    """How much each category counts this week, by label; one missing counts in full."""
+
+    @classmethod
+    def of(cls, found: Mapping[str, Scale], chances: Mapping[str, float]) -> Targeting:
+        """From the forecast's chance of winning each category, by the league's name for it."""
+        return cls(
+            scales=found,
+            weights={
+                label: winnable(chances[scale.scored.name])
+                for label, scale in found.items()
+                if scale.scored.name in chances
+            },
+        )
+
+    def value(self, figures: Line | None) -> float | None:
+        """A game of `figures` this week: his contribution to each category, times how much it counts."""
+        if not figures:
+            return None
+        parts = self._parts(figures)
+        return sum(parts.values()) if parts else None
+
+    def targets(self, pickup: Line | None, drop: Line | None) -> list[str]:
+        """The categories in play (`IN_PLAY`) a game of `pickup` adds most to over one of `drop`, as the league
+        names them: at most `TARGETS`, the biggest gain first."""
+        if not pickup:
+            return []
+        gains, losses = self._parts(pickup), self._parts(drop or {})
+        better = {
+            label: gain - losses.get(label, 0.0)
+            for label, gain in gains.items()
+            if self.weights.get(label, 1.0) >= IN_PLAY and gain > losses.get(label, 0.0)
+        }
+        ranked = sorted(better, key=lambda label: -better[label])[:TARGETS]
+        return [self.scales[label].scored.name for label in ranked]
+
+    def _parts(self, figures: Line) -> dict[str, float]:
+        return {
+            label: self.weights.get(label, 1.0) * worth
+            for label, scale in self.scales.items()
+            if (worth := scale.worth(figures)) is not None
+        }
+
+
 WEAK_BELOW = -0.5
 """How far under the pool's average, in its spreads, a category must sit to be one he is weak in."""
 
