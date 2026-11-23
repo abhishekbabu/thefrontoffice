@@ -416,6 +416,23 @@ def test_between_seasons_there_is_a_table_and_no_weeks() -> None:
     assert (len(schedule.standings), schedule.season) == (2, [])
 
 
+def test_a_matchup_without_the_table_shows_both_sides_without_records() -> None:
+    yahoo = FakeYahoo(roster=[make_player("Mine One", selected_position="PG")])
+    yahoo.standings_error = YahooCaptureMissingError("no standings")
+
+    summary = nba_provider(yahoo).summary("")
+
+    assert summary.mine is not None and summary.opponent is not None
+    assert (summary.mine.record, summary.opponent.record) == ("", "")
+    assert [s.player for s in summary.mine.lineup] == ["Mine One"]
+
+
+def test_the_teams_list_says_each_teams_record_from_the_table() -> None:
+    refs = nba_provider(FakeYahoo()).teams("")
+
+    assert {ref.name: ref.detail for ref in refs} == {"My Team": "4-2-1", "Their Team": "5-1"}
+
+
 def test_a_sync_without_the_table_asks_for_the_sync_rather_than_showing_none() -> None:
     yahoo = FakeYahoo()
     yahoo.standings_error = YahooCaptureMissingError("no standings")
@@ -776,7 +793,7 @@ def test_the_week_being_played_shows_its_categories_and_both_rosters() -> None:
     assert summary.mine is not None and summary.opponent is not None
     assert [s.player for s in summary.mine.lineup] == ["Mine One"]
     assert [s.player for s in summary.opponent.lineup] == ["Their Team One"]
-    assert (summary.mine.detail, summary.opponent.detail) == ("4-2-1", "5-1")
+    assert (summary.mine.record, summary.opponent.record) == ("4-2-1", "5-1")
     labels = {stat.label: stat.value for stat in summary.headline}
     assert labels["Adds left"] == "3 of 3"
     assert labels["Categories"] == "0-1-0"

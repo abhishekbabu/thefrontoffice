@@ -184,7 +184,14 @@ class Side(BaseModel):
     """One team in a matchup — yours, or the one you are playing."""
 
     name: str
-    detail: str = Field(default="", description="Record, manager, or however the league identifies a team.")
+    record: str = Field(
+        default="",
+        description=(
+            "Their season record now, in the league's own terms: '7-4', '6W 1D 4L'. Empty where the "
+            "league keeps none — a classic FPL table — or would not say."
+        ),
+    )
+    detail: str = Field(default="", description="Anything else the league identifies a team by: 'GW12 picks'.")
     points: str = Field(default="", description="What they have scored, or are projected to.")
     lineup: list[Spot] = Field(default_factory=list)
     bench: list[Spot] = Field(default_factory=list)

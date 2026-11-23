@@ -80,6 +80,24 @@ def test_a_head_to_head_league_shows_who_you_are_playing() -> None:
     assert summary.opponent.lineup
 
 
+def test_both_sides_of_a_tie_carry_their_record_from_the_table() -> None:
+    summary = provider().summary(H2H_LEAGUE_ID)
+
+    assert summary.opponent is not None
+    assert (mine(summary).record, summary.opponent.record) == ("1W 0D 1L", "2W 0D 0L")
+
+
+def test_a_classic_league_keeps_no_record() -> None:
+    assert mine(provider().summary(LEAGUE_ID)).record == ""
+
+
+def test_a_table_that_will_not_load_leaves_the_tie_without_records() -> None:
+    summary = provider(standings_error=FPLAPIError("down")).summary(H2H_LEAGUE_ID)
+
+    assert summary.opponent is not None
+    assert (mine(summary).record, summary.opponent.record) == ("", "")
+
+
 def test_a_classic_league_has_no_opponent_to_show() -> None:
     """A table is not a fixture, so inventing one would be a lie."""
     assert provider().summary(LEAGUE_ID).opponent is None

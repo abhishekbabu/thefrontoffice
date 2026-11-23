@@ -77,6 +77,7 @@ describe("SideCard", () => {
   it("keeps the reserve slots apart from the bench", async () => {
     const side = {
       name: "Rival",
+      record: "",
       detail: "",
       points: "",
       lineup: [spot("Starter")],
@@ -93,9 +94,21 @@ describe("SideCard", () => {
   });
 });
 
+describe("a side's header", () => {
+  it("says the team's record ahead of anything else it reads", async () => {
+    const side = { name: "Mine", record: "7-4", detail: "GW12 picks", points: "88", lineup: [spot("Starter")], bench: [], reserve: [], open_spots: 0 };
+    const { container } = await render(<SideCard side={side} label="You" />);
+    const text = container.textContent ?? "";
+
+    expect(text).toContain("7-4");
+    expect(text.indexOf("7-4")).toBeLessThan(text.indexOf("GW12 picks"));
+    expect(text.indexOf("GW12 picks")).toBeLessThan(text.indexOf("88"));
+  });
+});
+
 describe("open roster spots", () => {
   it("draws each spot nobody holds at the foot of the bench, and only there", async () => {
-    const side = { name: "Mine", detail: "", points: "", lineup: [spot("Starter")], bench: [spot("Backup")], reserve: [], open_spots: 2 };
+    const side = { name: "Mine", record: "", detail: "", points: "", lineup: [spot("Starter")], bench: [spot("Backup")], reserve: [], open_spots: 2 };
     const { container } = await render(<SideCard side={side} label="You" />);
     const text = container.textContent ?? "";
 
@@ -119,7 +132,7 @@ describe("the points column", () => {
     scored: points,
     projection: "10.0",
   });
-  const side = (...lineup: Spot[]) => ({ name: "Mine", detail: "", points: "", lineup, bench: [], reserve: [], open_spots: 0 });
+  const side = (...lineup: Spot[]) => ({ name: "Mine", record: "", detail: "", points: "", lineup, bench: [], reserve: [], open_spots: 0 });
 
   it("is not drawn before any game of the week kicks off", async () => {
     const { container } = await render(<SideCard side={side(scored("Waiting", "projected"))} label="You" />);
@@ -148,7 +161,7 @@ describe("the points column", () => {
 
 describe("underWay", () => {
   it("is true from the first live or final score on either side", () => {
-    const quiet = { name: "", detail: "", points: "", lineup: [spot("A")], bench: [], reserve: [], open_spots: 0 };
+    const quiet = { name: "", record: "", detail: "", points: "", lineup: [spot("A")], bench: [], reserve: [], open_spots: 0 };
     const done = { ...quiet, bench: [{ ...spot("B"), scoring: "final" as const }] };
 
     expect(underWay(quiet, null)).toBe(false);
@@ -165,7 +178,7 @@ describe("a week played in categories", () => {
   });
 
   it("sets each category as a column under one heading, in place of a sentence", async () => {
-    const side = { name: "Mine", detail: "", points: "", lineup: [played("A", ".511", "134"), played("B", "—", "0")], bench: [], reserve: [], open_spots: 0 };
+    const side = { name: "Mine", record: "", detail: "", points: "", lineup: [played("A", ".511", "134"), played("B", "—", "0")], bench: [], reserve: [], open_spots: 0 };
     const { container } = await render(<SideCard side={side} label="You" />);
 
     expect(container.textContent).toContain("FG%PTS");
@@ -175,7 +188,7 @@ describe("a week played in categories", () => {
 
   it("keeps his week beside his line from a game today", async () => {
     const live = { ...played("A", ".500", "25"), value: "3 left", today: "vs TOR live" };
-    const side = { name: "Mine", detail: "", points: "", lineup: [live], bench: [], reserve: [], open_spots: 0 };
+    const side = { name: "Mine", record: "", detail: "", points: "", lineup: [live], bench: [], reserve: [], open_spots: 0 };
     const { container } = await render(<SideCard side={side} label="You" />);
 
     expect(container.textContent).toContain("3 left");

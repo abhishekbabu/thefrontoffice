@@ -155,6 +155,21 @@ def tie(client: FPLSource, league_id: str, entry_id: int, week: int) -> H2HMatch
         return None
 
 
+def records(client: FPLSource, league_id: str) -> dict[int, str]:
+    """Each entry's head-to-head record now, by entry id: '6W 1D 4L'.
+
+    Empty where the table will not load, which leaves the tie without records
+    rather than fail the page around your own squad.
+    """
+    mini_league = int(league_id)
+    try:
+        table = client.get_standings(mini_league, True)
+    except FPLAPIError as e:
+        logger.warning(f"Showing the tie without records, the table would not load: {e}")
+        return {}
+    return {row.entry: row.record for row in table}
+
+
 def tie_roster(client: FPLSource, found: H2HMatch | None, week: int) -> Roster | None:
     """The squad your opponent picked for `week`; None without a tie, or where it will not load."""
     if found is None:
@@ -265,9 +280,12 @@ def gather(client: FPLSource, entry_id: int, league_id: str, gameweek: Gameweek,
         scored = points_in(client, entry_id, gameweek.id)
 
     fixtures = fixtures_by_club(week_fixtures, (p.team for p in mine.players))
+    # Only a head-to-head league keeps records, and only it has a tie.
+    standing = records(client, league_id) if found is not None else {}
     detail = f"GW{gameweek.id}" if squad_week == gameweek.id else f"GW{squad_week} picks"
     mine_side = Side(
         name=client.get_entry(entry_id).name,
+        record=standing.get(entry_id, ""),
         detail=detail,
         points=side_points(scored, mine, fixtures, projected),
         lineup=spots(mine, starting=True, fixtures=fixtures, live=live, projected=projected),
@@ -278,6 +296,7 @@ def gather(client: FPLSource, entry_id: int, league_id: str, gameweek: Gameweek,
         their_fixtures = fixtures_by_club(week_fixtures, (p.team for p in theirs.players))
         opponent = Side(
             name=found.opponent_name,
+            record=standing.get(found.opponent_entry, ""),
             detail=detail,
             # The game's own total rather than a sum of the rows: it already
             # accounts for auto-subs, which a squad list cannot show.

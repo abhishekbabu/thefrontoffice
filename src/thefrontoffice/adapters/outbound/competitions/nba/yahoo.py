@@ -433,7 +433,7 @@ class YahooNBAProvider:
         found = yahoo.pairing(team.team_key, week)
         if found is None:
             return Summary(window=f"Week {week}", weeks=weeks)
-        records = {t.team_key: t.standing.record for t in yahoo.teams() if t.standing}
+        records = self._records(yahoo)
         if played:
             kept = yahoo.played_rosters([team.team_key, found.opponent.team_key], week)
             roster, theirs = kept[team.team_key], kept[found.opponent.team_key]
@@ -460,6 +460,20 @@ class YahooNBAProvider:
         if on is None or not start <= on[0] <= end:
             return None
         return nba_week.Today(on[0], on[1], self._tipoff(on[0]))
+
+    @staticmethod
+    def _records(yahoo: YahooSource) -> dict[str, str]:
+        """Each team's record now, by key, from the table: Yahoo's teams list carries none.
+
+        Empty where the table will not load — a browser sync that has not
+        carried it — which leaves a matchup without records rather than fail it.
+        """
+        try:
+            standings = yahoo.standings()
+        except FrontOfficeError as e:
+            logger.warning(f"Showing teams without their records, the table would not load: {e}")
+            return {}
+        return {t.team_key: t.standing.record for t in standings if t.standing}
 
     @staticmethod
     def _played_today(yahoo: YahooSource, team_keys: list[str], day: date) -> dict[str, YahooPlayer]:
@@ -954,15 +968,17 @@ class YahooNBAProvider:
 
     def teams(self, league_id: str) -> list[TeamRef]:
         """Everyone in the league, yours first."""
+        yahoo = self._yahoo(league_id)
+        records = self._records(yahoo)
         refs = [
             TeamRef(
                 team_id=team.team_key,
                 name=team.name,
-                detail=team.standing.record if team.standing else "",
+                detail=records.get(team.team_key, ""),
                 url=nba_league.team_url(team.team_key),
                 is_mine=team.is_mine,
             )
-            for team in self._yahoo(league_id).teams()
+            for team in yahoo.teams()
         ]
         return sorted([r for r in refs if r.team_id], key=lambda ref: (not ref.is_mine, ref.name.lower()))
 

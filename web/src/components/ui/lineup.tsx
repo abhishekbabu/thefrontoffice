@@ -323,7 +323,7 @@ export function SideCard({
             {side.name}
           </span>
         </span>
-        <span className="normal-case tracking-normal">{[side.detail, side.points].filter(Boolean).join(" · ")}</span>
+        <span className="normal-case tracking-normal">{[side.record, side.detail, side.points].filter(Boolean).join(" · ")}</span>
       </CardHeader>
       <ScoreHeads spots={side.lineup} started={on} className="border-t-0" />
       <SpotList spots={side.lineup} onOpen={onOpen} started={on} />

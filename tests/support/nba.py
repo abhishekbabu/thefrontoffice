@@ -1,6 +1,7 @@
 """Fantasy basketball on Yahoo, standing in: the league platform, Sleeper's form and projections beside it."""
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import date, datetime
 from typing import Any
 
@@ -207,7 +208,8 @@ class FakeYahoo:
         return {key: self.today_lines.get(key, []) for key in team_keys}
 
     def teams(self) -> list[YahooTeam]:
-        return self.league_teams
+        # As Yahoo's teams list: no standings with any team, which only `standings` carries.
+        return [replace(t, standing=None) for t in self.league_teams]
 
     def standings(self) -> list[YahooTeam]:
         if self.standings_error:

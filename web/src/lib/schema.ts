@@ -1888,8 +1888,14 @@ export interface components {
             /** Name */
             name: string;
             /**
+             * Record
+             * @description Their season record now, in the league's own terms: '7-4', '6W 1D 4L'. Empty where the league keeps none — a classic FPL table — or would not say.
+             * @default
+             */
+            record: string;
+            /**
              * Detail
-             * @description Record, manager, or however the league identifies a team.
+             * @description Anything else the league identifies a team by: 'GW12 picks'.
              * @default
              */
             detail: string;

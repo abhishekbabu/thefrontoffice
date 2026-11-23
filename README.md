@@ -151,7 +151,8 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Light and dark mode**, several palettes, and a terminal CLI.
 
 NFL has the deepest analysis. FPL and NBA share the matchup, schedule, fixtures,
-team and league pages. NBA averages are Yahoo's own, as Yahoo prints them (a rate
+team and league pages. Each side of a matchup names its record now, from the
+league's table (FPL: head-to-head leagues only; a classic table keeps none). NBA averages are Yahoo's own, as Yahoo prints them (a rate
 reads `.850`), one figure per stat on every page: in a category league, Free agents
 and Rosters show every category the league scores over the last 30 days plus
 `Value`, a game's worth across the categories (the to-do list's own figure, read on
