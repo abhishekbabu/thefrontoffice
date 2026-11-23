@@ -94,7 +94,7 @@ on the `AppSettings` field, never listed beside it; a secret is reported as pres
 never by value (`EnvFile.describe`). A write reloads `settings` in place.
 
 **UI.** The API returns the domain models themselves — never a parallel response
-type for something `domain/models.py` already models. Routes take every collaborator
+type for something `domain/models/` already models. Routes take every collaborator
 from the `Wiring` they are built with; `data.py` stays free of any web framework.
 The model is optional: without `GOOGLE_API_KEY` nothing needing one is offered,
 rather than offered and refused. Never ship a canned report in the package.
