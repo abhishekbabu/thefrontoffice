@@ -17,7 +17,7 @@ from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba.form import WINDOWS, FormSource, PlayerStats, Window
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
-from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS
+from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, clears
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split
 from thefrontoffice.adapters.outbound.competitions.nba.views import points
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
@@ -153,6 +153,10 @@ class PlayerContextBuilder:
             stats_dict = self.form.get_player_stats(p.name)
 
             games_left = remaining_games.get(p.team.upper(), None)
+            reading = readings.get(p.player_key) if readings else None
+            if p.waiver_date and reading is not None:
+                # A claim plays only the games after he clears waivers, which his reading counts.
+                games_left = reading.games
             games_str = f" [{games_left}G left]" if games_left is not None else ""
 
             status_str = ""
@@ -162,6 +166,8 @@ class PlayerContextBuilder:
                     status_str += f" ({p.injury_note})"
             if returns and (back := returns.get(p.player_key)):
                 status_str += f" [back {approximately(back)}]"
+            if waiting := clears(p):
+                status_str += f" [{waiting}]"
 
             il_str = " [IN IL SPOT]" if p.slot in INJURED_SLOTS else ""
 
@@ -176,7 +182,7 @@ class PlayerContextBuilder:
                 line += f" | PROJ {projected.games}G {prompt.scored(projected.line, self.weights)}"
             for split in splits(p) if splits else ():
                 line += f" | {split.prompt()}"
-            if readings and (reading := readings.get(p.player_key)):
+            if reading is not None:
                 line += prompt.week_line(reading)
             lines[p.name] = line + "\n"
 

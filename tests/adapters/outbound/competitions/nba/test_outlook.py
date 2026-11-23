@@ -1,5 +1,6 @@
 """Tests for the basketball weeks ahead: `nba/outlook.py`."""
 
+from dataclasses import replace
 from datetime import date
 
 from support.nba import make_player
@@ -122,6 +123,41 @@ def test_a_pickup_is_named_in_one_week_only() -> None:
     weeks = build([window, again], roster, wire, readings, {}, adds=3).weeks
 
     assert ["Pickup" in w.fix for w in weeks] == [True, False]
+
+
+def _waiting(wire: list[YahooPlayer], cleared: date) -> list[YahooPlayer]:
+    return [replace(p, waiver_date=cleared) for p in wire]
+
+
+def test_a_player_on_waivers_counts_only_the_games_after_he_clears_them() -> None:
+    """His club plays the 1st, 3rd, 5th and 7th; cleared on the 2nd, he has three of them, a game over the drop."""
+    roster, wire, readings, window = _streamable()
+
+    [week] = build([window], roster, _waiting(wire, date(2026, 12, 2)), readings, {}, adds=3).weeks
+
+    assert week.fix.startswith("Claim Pickup")
+    assert "clears 2 Dec" in week.fix
+    assert "3 games" in week.fix
+    assert week.gain == 1
+
+
+def test_a_player_on_waivers_with_no_more_games_left_after_clearing_streams_nothing() -> None:
+    roster, wire, readings, window = _streamable()
+
+    [week] = build([window], roster, _waiting(wire, date(2026, 12, 4)), readings, {}, adds=3).weeks
+
+    assert week.fix == ""
+
+
+def test_a_player_clear_of_waivers_by_a_later_week_is_picked_up_in_it_not_claimed() -> None:
+    roster, wire, readings, window = _streamable()
+    again = _window(7, {club: [day + 7 for day in days] for club, days in _days(window).items()}, first=8)
+
+    weeks = build([window, again], roster, _waiting(wire, date(2026, 12, 6)), readings, {}, adds=3).weeks
+
+    assert weeks[0].fix == ""
+    assert weeks[1].fix.startswith("Pick up Pickup")
+    assert weeks[1].gain == 2
 
 
 def _days(window: Window) -> dict[str, list[int]]:

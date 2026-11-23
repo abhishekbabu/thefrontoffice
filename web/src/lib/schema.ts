@@ -1337,7 +1337,7 @@ export interface components {
              * Held
              * @enum {string}
              */
-            held: "starter" | "bench" | "reserve" | "free agent" | "market";
+            held: "starter" | "bench" | "reserve" | "free agent" | "waivers" | "market";
             /**
              * Figures
              * @description The rows he is compared on, labelled alike for every player on the item; '—' where he has none.

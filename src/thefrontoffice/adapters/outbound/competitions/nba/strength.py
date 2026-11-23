@@ -34,6 +34,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     amount,
     fantasy_points,
     line,
+    playable_from,
     printed,
     ruled_out,
 )
@@ -268,8 +269,12 @@ def club_nights(club: str, games: Iterable[ScheduledGame]) -> list[date]:
 
 
 def nights(player: YahooPlayer, games: Iterable[ScheduledGame], back: date | None) -> list[date]:
-    """The nights he can play among `games`: his club's; while ruled out, only those from his return, if any."""
+    """The nights he can play among `games`: his club's; while ruled out, only those from his return, if any;
+    on waivers, only those after he clears them (`rules.playable_from`)."""
     days = club_nights(player.team, games)
+    claimed = playable_from(player)
+    if claimed is not None:
+        days = [day for day in days if day >= claimed]
     if not ruled_out(player.status):
         return days
     return [day for day in days if back is not None and day >= back]

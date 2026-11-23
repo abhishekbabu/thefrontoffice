@@ -156,6 +156,10 @@ class YahooPlayer:
     """Whose roster he is on — a team's name, 'Free agent' or 'Waivers' — where his ownership was asked for;
     empty otherwise."""
 
+    waiver_date: date | None = None
+    """The day he clears waivers, while nobody holds him and he sits on them: he can be claimed, not added, until
+    then. None for a free agent, a rostered player, or where his ownership was not asked for."""
+
     @property
     def line(self) -> YahooLine:
         return YahooLine(stats=self.stats, points=self.points)

@@ -11,9 +11,11 @@ league keeps, the injured slots and the statuses that rule a player out.
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
 from thefrontoffice.adapters.outbound.competitions.availability import QUESTIONABLE
+from thefrontoffice.adapters.outbound.competitions.dates import weekday_day_month
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import INJURED, YahooPlayer
 from thefrontoffice.domain.models import Better
 
@@ -174,6 +176,26 @@ those players mostly play, and flagging them as out buries the ones who will not
 def ruled_out(status: str) -> bool:
     """Whether a Yahoo status means he will not play."""
     return status.upper() in RULED_OUT
+
+
+CLAIM_LAG = timedelta(days=1)
+"""How long after the day he clears waivers a claimed player's games count from.
+
+Yahoo's settings say how long a dropped player waits (`waiver_time`), not
+whether a claim processed that morning makes that night's lineup, so it is
+read the safe way: from the day after.
+"""
+
+
+def playable_from(player: YahooPlayer) -> date | None:
+    """The first day a player on waivers can play for whoever claims him (`CLAIM_LAG`); None for anyone else."""
+    return player.waiver_date + CLAIM_LAG if player.waiver_date else None
+
+
+def clears(player: YahooPlayer) -> str:
+    """'Waivers · clears Wed 25 Nov' for a player on waivers; empty for anyone else."""
+    cleared = player.waiver_date
+    return f"Waivers · clears {weekday_day_month(cleared)}" if cleared else ""
 
 
 GAME_TIME = frozenset({"GTD", "DTD", "Q"})

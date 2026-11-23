@@ -10,11 +10,14 @@ today or is ruled out of it, or for one clearly weaker a game. Nobody with no
 game today is ever started, however much his week is worth. A stream is
 weighed on worth this week (`worth.Reading.worth`: a game's value × minutes
 nudge × games left), but never at the cost of a better player a game: the
-games are this week's, the player let go is gone for good.
+games are this week's, the player let go is gone for good. A player on
+waivers is a claim, weighed on the games after he clears them
+(`rules.playable_from`) and named as one.
 """
 
 from collections.abc import Mapping, Sequence
 
+from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nba import views
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, fits, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nba.week import BENCH, Today, off_il
@@ -68,9 +71,9 @@ def beats(theirs: float, mine: float) -> bool:
 
 
 def held(player: YahooPlayer) -> Held:
-    """Where he stands to you: in the lineup, on the bench, in an injured slot, or on the wire."""
+    """Where he stands to you: in the lineup, on the bench, in an injured slot, on waivers, or free to add."""
     if not player.slot:
-        return "free agent"
+        return "waivers" if player.waiver_date else "free agent"
     if player.slot in INJURED_SLOTS:
         return "reserve"
     return "bench" if player.slot == BENCH else "starter"
@@ -230,27 +233,43 @@ def streams(
             continue
         drops.remove(drop)
         gain = _worth(pickup) - _worth(drop)
+        claimed = pickup.player.waiver_date is not None
         items.append(
             Action(
                 kind="waiver",
                 urgency="soon",
-                title=f"Pick up {pickup.player.name}, drop {drop.player.name}",
+                title=f"{acquire(pickup.player, pickup.games if claimed else None)}, drop {drop.player.name}",
                 reason=(
                     f"+{gain:.1f} {_unit(by_points)} this week. {drop.player.name}: weakest you can drop"
                     + _drags(drop)
                     + "."
                     + _pending(pickup)
+                    + _waiting(pickup)
                 ),
                 player_id=pickup.player.player_key,
                 drop=drop.player.player_key,
                 players=views.compared(
-                    [("in", "free agent", pickup), ("out", held(drop.player), drop)],
+                    [("in", held(pickup.player), pickup), ("out", held(drop.player), drop)],
                     by_points,
                 ),
                 key=f"stream:{pickup.player.player_key}:{drop.player.player_key}",
             )
         )
     return items
+
+
+def acquire(player: YahooPlayer, games: int | None = None, *about: str) -> str:
+    """How a to-do item has him: 'Pick up Jalen Duren (C, DET, 3 games)', or for a player on waivers a claim, with
+    the day he clears them: 'Claim Brook Lopez (C, MIL, clears 25 Nov, 2 games)'. `about` leads the brackets, and
+    `games` closes them where given; no brackets for nothing in them."""
+    cleared = player.waiver_date
+    parts = [
+        *about,
+        *([f"clears {day_month(cleared)}"] if cleared else []),
+        *([f"{games} games"] if games is not None else []),
+    ]
+    named = f"{'Claim' if cleared else 'Pick up'} {player.name}"
+    return f"{named} ({', '.join(parts)})" if parts else named
 
 
 def fit(pickup: Reading, roster: Sequence[YahooPlayer], readings: Mapping[str, Reading], by_points: bool) -> str:
@@ -286,6 +305,14 @@ def _drags(reading: Reading) -> str:
     """What drags his value, in a category league: ' (FG% .380 · 2.9 TO)'; nothing where nothing does."""
     drags = views.weak(reading)
     return f" ({drags})" if drags else ""
+
+
+def _waiting(reading: Reading) -> str:
+    """For a claim, which of his games count: ' On waivers until Wed 25 Nov: 2 games after.'; nothing otherwise."""
+    cleared = reading.player.waiver_date
+    if cleared is None:
+        return ""
+    return f" On waivers until {weekday_day_month(cleared)}: {views.games_left(reading) or 'no'} games after."
 
 
 def _pending(reading: Reading) -> str:

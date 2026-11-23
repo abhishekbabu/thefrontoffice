@@ -47,6 +47,7 @@ def make_player(
     stats: dict[str, str] | None = None,
     points: str = "",
     coverage: str = "",
+    waiver_date: date | None = None,
 ) -> YahooPlayer:
     return YahooPlayer(
         player_key=key or name.lower().replace(" ", "-"),
@@ -59,6 +60,8 @@ def make_player(
         stats=stats or {},
         points=points,
         coverage=coverage or ("week" if stats or points else ""),
+        owner="Waivers" if waiver_date else "",
+        waiver_date=waiver_date,
     )
 
 

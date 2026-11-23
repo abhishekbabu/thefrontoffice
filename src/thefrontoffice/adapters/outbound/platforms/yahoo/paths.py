@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 # the league claims players; a name search resolves to the same player for as
 # long as anyone is looking.
 LEADERS_TTL = timedelta(minutes=30)
+"""Also how long a waiver clear date on the first page holds: a claim, or a drop putting a player on waivers,
+shows within it."""
 DEEP_TTL = timedelta(hours=6)
 """The wire past its first page: who sits 200th by season rank moves slowly, and is rarely the one claimed."""
 SEARCH_TTL = timedelta(hours=6)
@@ -228,7 +230,9 @@ def player_page(
 ) -> YahooRead:
     """A page of the league's players, filtered and sorted, `start` places down the order.
 
-    With `average`, each player carries his averages over it, in the same response.
+    Each player carries his ownership (`out=ownership`), which is where Yahoo
+    says the day one on waivers clears them: no read beyond the page. With
+    `average`, he carries his averages over it, in the same response.
     """
     params: dict[str, str] = {"count": str(count), "status": status.value}
     if sort is not None:
@@ -237,6 +241,7 @@ def player_page(
         params["sort_type"] = sort_type.value
     if start:
         params["start"] = str(start)
+    params["out"] = "ownership"
     stats = f"/stats;type={average}" if average else ""
     return YahooRead("players;" + ";".join(f"{k}={v}" for k, v in params.items()) + stats, ttl, league=league_key)
 

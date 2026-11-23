@@ -571,6 +571,7 @@ def _player(data: Any) -> YahooPlayer:
         coverage=_text(data, "player_stats", "coverage_type"),
         image_url=full_size(_text(data, "image_url")),
         owner=_owner(_node(data, "ownership")),
+        waiver_date=_waiver_date(_node(data, "ownership")),
     )
 
 
@@ -584,7 +585,10 @@ def full_size(url: str) -> str:
     return url[start:] if start > 0 else url
 
 
-OWNERSHIP = {"freeagents": "Free agent", "waivers": "Waivers"}
+WAIVERS = "waivers"
+"""Yahoo's ownership type for a player nobody holds who sits on waivers until a date."""
+
+OWNERSHIP = {"freeagents": "Free agent", WAIVERS: "Waivers"}
 """Yahoo's ownership types for a player nobody holds, in the words a chip shows."""
 
 
@@ -594,6 +598,13 @@ def _owner(ownership: Any) -> str:
         return ""
     held = _text(ownership, "owner_team_name")
     return held or OWNERSHIP.get(_text(ownership, "ownership_type"), "")
+
+
+def _waiver_date(ownership: Any) -> date | None:
+    """The day he clears waivers, where his `ownership` has him on them; None otherwise."""
+    if _text(ownership, "ownership_type") != WAIVERS:
+        return None
+    return _date_or_none(_value(ownership, "waiver_date"))
 
 
 def transaction_list(league: Any) -> list[YahooTransaction]:

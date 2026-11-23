@@ -224,6 +224,46 @@ def test_a_player_read_without_his_ownership_has_no_owner(tmp_path: Path) -> Non
     client, _ = _client(tmp_path, players_xml("LeBron James"))
 
     assert client.players(["466.p.0"])[0].owner == ""
+    assert client.players(["466.p.0"])[0].waiver_date is None
+
+
+def test_a_player_on_waivers_carries_the_day_he_clears_them(tmp_path: Path) -> None:
+    waiting = "<waiver_date>2026-11-25</waiver_date><ownership_type>waivers</ownership_type>"
+    client, _ = _client(tmp_path, _owned_xml(waiting))
+
+    [player] = client.players(["466.p.0"])
+
+    assert player.owner == "Waivers"
+    assert player.waiver_date == date(2026, 11, 25)
+
+
+@pytest.mark.parametrize(
+    "ownership",
+    [
+        "<ownership_type>freeagents</ownership_type>",
+        "<ownership_type>waivers</ownership_type>",
+        "<ownership_type>waivers</ownership_type><waiver_date>soon</waiver_date>",
+        "<ownership_type>team</ownership_type><waiver_date>2026-11-25</waiver_date>",
+    ],
+)
+def test_no_clear_date_is_read_but_a_real_one_for_a_player_on_waivers(tmp_path: Path, ownership: str) -> None:
+    client, _ = _client(tmp_path, _owned_xml(ownership))
+
+    assert client.players(["466.p.0"])[0].waiver_date is None
+
+
+def test_the_wire_carries_each_players_clear_date_in_the_page_itself(tmp_path: Path) -> None:
+    page = (
+        "<fantasy_content><league><players><player><player_key>466.p.0</player_key><name><full>Brook Lopez</full>"
+        "</name><ownership><waiver_date>2026-11-25</waiver_date><ownership_type>waivers</ownership_type></ownership>"
+        "</player></players></league></fantasy_content>"
+    )
+    client, ctx = _client(tmp_path, answers={SEASON_RANK: page})
+
+    [player] = client.fetch_available({Timeframe.SEASON: 25})[Timeframe.SEASON]
+
+    assert player.waiver_date == date(2026, 11, 25)
+    assert len(ctx.requests) == 1
 
 
 @pytest.mark.parametrize(

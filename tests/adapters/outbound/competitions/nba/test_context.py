@@ -10,6 +10,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, 
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import Line
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Condition, Teammates
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import GameProjection
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 
@@ -110,6 +111,28 @@ def test_the_day_espn_expects_a_hurt_player_back_is_on_his_line() -> None:
 
     assert "~22 Nov" in line
     assert "~22 Nov" not in _builder().build_context_for_players([hurt], returns={"other": date(2026, 11, 22)})
+
+
+def test_a_player_on_waivers_says_when_he_clears_and_counts_only_the_games_after() -> None:
+    """His club has four left; his reading, which the to-do list weighs too, counts the one after he clears."""
+    waiting = make_player("A B", key="ab", team="LAL", waiver_date=date(2026, 2, 13))
+    reading = Reading(player=waiting, line=None, per_game=None, games=1)
+
+    [line] = _builder(games={"LAL": 4}).build_player_lines([waiting], START, END, readings={"ab": reading}).values()
+
+    assert "13 Feb" in line
+    assert "[1G left]" in line
+    assert "[4G left]" not in line
+
+
+def test_a_free_agent_counts_his_clubs_games_left_whatever_his_reading() -> None:
+    free = make_player("A B", key="ab", team="LAL")
+    reading = Reading(player=free, line=None, per_game=None, games=4)
+
+    [line] = _builder(games={"LAL": 4}).build_player_lines([free], START, END, readings={"ab": reading}).values()
+
+    assert "[4G left]" in line
+    assert "Waivers" not in line
 
 
 def test_il_plus_counts_as_an_il_slot() -> None:
