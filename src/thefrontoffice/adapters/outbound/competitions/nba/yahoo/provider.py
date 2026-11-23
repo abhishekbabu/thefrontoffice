@@ -876,7 +876,8 @@ class YahooNBAProvider:
         return paging.page(cards, query, position_filters(wire, yahoo.settings().positions))
 
     def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
-        """Anyone in the league whose name holds `text`, rostered or not, in Yahoo's order.
+        """Anyone in the league whose name holds `text`, rostered or not, in Yahoo's order: each with his
+        position, club and status cell — 'W 25 Nov' while he sits on waivers (`views.status`).
 
         Read from a browser sync, only the players it carried — every roster and the wire it read.
         """
@@ -885,7 +886,9 @@ class YahooNBAProvider:
         found = self._yahoo(league_id).search_players(text.strip())
         return [
             PlayerRef(
-                player_id=p.player_key, name=p.name, detail=" · ".join(part for part in (p.position, p.team) if part)
+                player_id=p.player_key,
+                name=p.name,
+                detail=" · ".join(part for part in (p.position, p.team, views.status(p)) if part),
             )
             for p in found[:limit]
         ]
