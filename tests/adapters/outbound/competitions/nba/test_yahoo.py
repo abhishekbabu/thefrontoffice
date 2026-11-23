@@ -36,7 +36,7 @@ from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
-from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooCaptureMissingError
+from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooCaptureMissingError
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Average,
     MatchupSide,
@@ -677,6 +677,87 @@ def test_tip_off_times_are_left_out_rather_than_failing_the_week_when_espn_will_
 
     assert rows["Plays Home"].today == "vs BOS today"
     assert not any(row.kickoff for row in rows.values())
+
+
+LIVE_DAY = [
+    ScheduledGame(week=0, date="2026-02-11", home="LAL", away="BOS", status="in_game"),
+    ScheduledGame(week=0, date="2026-02-11", home="DEN", away="MIA", status="pre_game"),
+]
+"""Today: LAL and BOS under way, DEN still to tip off."""
+
+
+def _played_today(yahoo: FakeYahoo, league: YahooLeague | None = None) -> tuple[dict[str, Spot], dict[str, Spot]]:
+    """Both sides' rows on `LIVE_DAY`, by player."""
+    yahoo.roster_players = [
+        make_player("Plays Home", team="LAL", selected_position="PG"),
+        make_player("Sits Today", team="DEN", selected_position="C"),
+        make_player("On The Bench", team="BOS", selected_position="BN"),
+    ]
+    yahoo.others["t.2"] = [make_player("Theirs Live", team="BOS", selected_position="SG")]
+    summary = nba_provider(yahoo, nba=FakeNBA(slate=LIVE_DAY, today=date(2026, 2, 11)), league=league).summary("")
+    assert summary.mine is not None and summary.opponent is not None
+    mine = {s.player: s for s in (*summary.mine.lineup, *summary.mine.bench)}
+    return mine, {s.player: s for s in summary.opponent.lineup}
+
+
+def test_a_game_under_way_shows_what_each_side_has_done_in_it_category_by_category() -> None:
+    """His line today in the league's categories, beside his week; nothing for a game still to come."""
+    yahoo = FakeYahoo()
+    yahoo.today_lines = {
+        "t.1": [
+            make_player("Plays Home", team="LAL", stats={"12": "25", "15": "6"}),
+            make_player("On The Bench", team="BOS", stats={"12": "-", "15": "-"}),
+            make_player("Sits Today", team="DEN", stats={"12": "-"}),
+        ],
+        "t.2": [make_player("Theirs Live", team="BOS", stats={"12": "9"})],
+    }
+
+    mine, theirs = _played_today(yahoo)
+
+    figures = {stat.label: stat.value for stat in mine["Plays Home"].line}
+    assert (figures["PTS"], figures["REB"]) == ("25", "6")
+    assert len(mine["Plays Home"].line) == len(CATEGORIES)  # every category the league scores
+    assert {stat.label: stat.value for stat in theirs["Theirs Live"].line}["PTS"] == "9"
+    assert mine["On The Bench"].line == []  # on the floor, nothing yet
+    assert mine["Sits Today"].line == []  # still to tip off
+    assert yahoo.days_read == [date(2026, 2, 11)]
+
+
+def test_a_game_under_way_in_a_points_league_shows_his_points_live_beside_his_week() -> None:
+    yahoo = FakeYahoo(weights=WEIGHTS)
+    yahoo.today_lines = {
+        "t.1": [
+            make_player("Plays Home", team="LAL", points="31.50", stats={"12": "20"}),
+            # Yahoo totals a game he never checked into as nought: no score, rather than a zero he did not earn.
+            make_player("On The Bench", team="BOS", points="0", stats={"12": "-"}),
+        ]
+    }
+
+    mine, _ = _played_today(yahoo, POINTS_LEAGUE)
+
+    row = mine["Plays Home"]
+    assert (row.scored, row.scoring, row.line) == ("31.5", "live", [])
+    assert row.projection == row.value
+    assert mine["Sits Today"].scoring is None
+    assert mine["On The Bench"].scoring is None
+
+
+def test_todays_lines_are_left_out_rather_than_failing_the_week_when_yahoo_will_not_give_them() -> None:
+    yahoo = FakeYahoo()
+    yahoo.today_error = YahooAPIError("down")
+
+    mine, _ = _played_today(yahoo)
+
+    assert mine["Plays Home"].today == "vs BOS live"
+    assert not any(row.line for row in mine.values())
+
+
+def test_a_week_not_being_played_reads_no_days_lines() -> None:
+    yahoo = FakeYahoo()
+
+    nba_provider(yahoo, nba=FakeNBA(slate=LIVE_DAY, today=date(2026, 2, 20))).summary("")
+
+    assert yahoo.days_read == []
 
 
 def test_a_day_the_nba_rests_leaves_every_starter_without_a_game() -> None:

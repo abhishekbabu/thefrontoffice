@@ -172,4 +172,13 @@ describe("a week played in categories", () => {
     const cells = [...container.querySelectorAll("[aria-label]")].map((el) => el.getAttribute("aria-label"));
     expect(cells).toEqual(["FG% .511", "PTS 134", "FG% —", "PTS 0"]);
   });
+
+  it("keeps his week beside his line from a game today", async () => {
+    const live = { ...played("A", ".500", "25"), value: "3 left", today: "vs TOR live" };
+    const side = { name: "Mine", detail: "", points: "", lineup: [live], bench: [], reserve: [], open_spots: 0 };
+    const { container } = await render(<SideCard side={side} label="You" />);
+
+    expect(container.textContent).toContain("3 left");
+    expect(container.querySelector('[aria-label="PTS 25"]')).not.toBeNull();
+  });
 });

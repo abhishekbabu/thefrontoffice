@@ -139,17 +139,18 @@ function SpotList({
               {!spot.today && spot.kickoff && <span className="shrink-0">· {startsAt(spot.kickoff)}</span>}
             </Meta>
           </div>
-          {spot.line.length > 0 ? (
-            <LineFigures line={spot.line} indent={slotted} />
-          ) : spot.scoring ? (
+          {/* His figure beside his name, and his line in each category, where he has one, on a row of its
+              own under it: a week played has the line alone, a game today the line beside his week. */}
+          {spot.scoring ? (
             <SpotScore spot={spot} started={started} />
           ) : spot.tone === "warning" ? (
             <Badge variant="warn" appearance="pill" className="tabular-nums">
               {spot.value}
             </Badge>
           ) : (
-            <span className="shrink-0 font-mono text-[12.5px] tabular-nums">{spot.value}</span>
+            spot.value && <span className="shrink-0 font-mono text-[12.5px] tabular-nums">{spot.value}</span>
           )}
+          {spot.line.length > 0 && <LineFigures line={spot.line} indent={slotted} />}
         </div>
         );
       })}

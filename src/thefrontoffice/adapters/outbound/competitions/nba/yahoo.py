@@ -445,6 +445,10 @@ class YahooNBAProvider:
         # Only while the week shown is the one being played: a week ahead has no today, and one played
         # was set day by day already. None where the schedule would not load, rather than a day of no games.
         today = None if played or week != current else self._today(found.start, found.end)
+        if today is not None and roster is not None:
+            today = replace(
+                today, played=self._played_today(yahoo, [team.team_key, found.opponent.team_key], today.day)
+            )
         return nba_week.board(found, weeks, records, roster, theirs, scored, readings, unscheduled, today)
 
     def _today(self, start: date, end: date) -> nba_week.Today | None:
@@ -456,6 +460,20 @@ class YahooNBAProvider:
         if on is None or not start <= on[0] <= end:
             return None
         return nba_week.Today(on[0], on[1], self._tipoff(on[0]))
+
+    @staticmethod
+    def _played_today(yahoo: YahooSource, team_keys: list[str], day: date) -> dict[str, YahooPlayer]:
+        """Each of these teams' players' line from `day`'s games, by Yahoo's key.
+
+        Empty where Yahoo would not give it: the rows then say the game is on
+        or over without what he did in it, rather than fail the page.
+        """
+        try:
+            rosters = yahoo.day_rosters(team_keys, day)
+        except FrontOfficeError as e:
+            logger.warning(f"Showing today's games without the players' lines, Yahoo would not give them: {e}")
+            return {}
+        return {p.player_key: p for players in rosters.values() for p in players}
 
     def _tipoff(self, day: date) -> dict[str, datetime]:
         """When each club's game on `day` starts, while it has not, by ESPN's abbreviation.

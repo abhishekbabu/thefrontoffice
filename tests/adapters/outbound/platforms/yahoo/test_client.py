@@ -358,6 +358,22 @@ def test_a_week_played_reads_each_roster_as_it_ended_with_each_players_line(tmp_
     assert sorted(path for path, _ in ctx.requests) == sorted(answers)
 
 
+def test_a_day_reads_each_roster_as_slotted_on_it_with_each_players_line_from_it(tmp_path: Path) -> None:
+    day = date(2026, 11, 21)
+    answers = {
+        paths.day_roster("t1", day).query: roster_xml(rostered_xml("A B", "PG", stats={"12": "25"})),
+        paths.day_roster("t2", day).query: roster_xml(rostered_xml("C D", "BN", stats={"12": "-"})),
+    }
+    client, ctx = _client(tmp_path, answers=answers)
+
+    rosters = client.day_rosters(["t1", "t2"], day)
+
+    [mine], [theirs] = rosters["t1"], rosters["t2"]
+    assert (mine.slot, mine.stats) == ("PG", {"12": "25"})
+    assert (theirs.slot, theirs.stats) == ("BN", {"12": "-"})
+    assert sorted(path for path, _ in ctx.requests) == sorted(answers)
+
+
 def test_every_teams_roster_is_read_together_by_team_key(tmp_path: Path) -> None:
     answers = {
         paths.roster("t1").query: roster_xml(rostered_xml("A B", "PG")),

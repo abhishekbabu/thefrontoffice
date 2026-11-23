@@ -148,6 +148,16 @@ def played_roster(team_key: str, week: int) -> YahooRead:
     return YahooRead(f"team/{team_key}/roster;week={week}/players/stats;type=week;week={week}", PLAYED_TTL)
 
 
+def day_roster(team_key: str, day: date) -> YahooRead:
+    """A team's roster as slotted on `day`, each player with his line from that day's game.
+
+    Asked for the day being played, whose lines move with every basket while
+    games are on: held as briefly as the scoreboard that totals them.
+    """
+    on = day.isoformat()
+    return YahooRead(f"team/{team_key}/roster;date={on}/players/stats;type=date;date={on}", SCOREBOARD_TTL)
+
+
 def roster_averages(team_key: str, average: Average) -> YahooRead:
     """A team's roster, each player with his averages over `average`: one read for the whole roster."""
     return YahooRead(f"team/{team_key}/roster/players/stats;type={average}", AVERAGES_TTL)

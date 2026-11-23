@@ -174,7 +174,8 @@ class Spot(BaseModel):
         default_factory=list,
         description=(
             "His figures in each category the league scores, in its order, where a row shows them as "
-            "columns — a category week played. Labelled alike on every row of the side; empty for most."
+            "columns — a category week played, or his game today once it tips off. Labelled alike on every "
+            "row of the side; empty for most."
         ),
     )
 

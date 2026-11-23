@@ -157,6 +157,10 @@ class Today:
     """When each club's game starts, while it has not, by ESPN's abbreviation: Sleeper publishes the day
     alone. Empty where ESPN's scoreboard would not load, and the rows then say the day without the hour."""
 
+    played: Mapping[str, YahooPlayer] = field(default_factory=dict)
+    """Each player's line from today's game, by Yahoo's key, as Yahoo keeps it: a dash in every category
+    until he tips off. Empty where Yahoo would not give it, and the rows then say the game without it."""
+
     def game(self, club: str) -> ScheduledGame | None:
         """His club's game today, or None on a day it rests."""
         return next((g for g in self.games if g.opponent_of(club.upper()) is not None), None)
@@ -180,7 +184,8 @@ def side(
     his row reads its games left and Yahoo's averages from (`views.cell`).
     `today` is the day's real games while the week is being played, None in
     any other: each row then says whether he plays today (`today_line`), and
-    when, while his game is still to come.
+    when, while his game is still to come; once it has tipped off, what he has
+    done in it (`played_today`).
     """
     rows = list(roster or [])
     found = readings or {}
@@ -190,13 +195,16 @@ def side(
         if today is None or row.scoring is not None:
             return row
         game = today.game(player.team)
-        return row.model_copy(
+        row = row.model_copy(
             update={
                 "today": today_line(game, player.team),
                 "idle": game is None,
                 "kickoff": today.tipoff.get(espn_club(player.team)) if game is not None else None,
             }
         )
+        if game is None or game.status not in STATUS or (done := today.played.get(player.player_key)) is None:
+            return row
+        return played_today(row, done, game.status, by_points, scored)
 
     return Side(
         name=name,
@@ -207,6 +215,28 @@ def side(
         # A player on the injured list was never going to play: no warning on his row.
         reserve=[spot(p).model_copy(update={"slot": "", "tone": "neutral"}) for p in rows if p.slot in INJURED_SLOTS],
     )
+
+
+def played_today(row: Spot, done: YahooPlayer, status: str, by_points: bool, scored: Sequence[StatCategory]) -> Spot:
+    """His row once today's game has tipped off: what he has done in it, beside his week.
+
+    In a category league, his line in each category as columns; in a points
+    league, his fantasy points, live or final, with the week's figure beside
+    them as the guess. Unchanged while Yahoo has nothing for him: a dash in
+    every category is a game he has not checked into, which Yahoo still totals
+    as nought points.
+    """
+    if all(views.number(figure) is None for figure in done.stats.values()):
+        return row
+    if by_points:
+        return row.model_copy(
+            update={
+                "scored": _fantasy(done.points),
+                "scoring": "live" if status == "in_game" else "final",
+                "projection": row.value,
+            }
+        )
+    return row.model_copy(update={"line": line(done, scored)})
 
 
 def today_line(game: ScheduledGame | None, club: str) -> str:
