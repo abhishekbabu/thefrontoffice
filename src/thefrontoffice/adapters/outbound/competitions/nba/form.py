@@ -53,6 +53,21 @@ class RecentForm(NamedTuple):
     line: Line
 
 
+ROLE_GAMES = min(WINDOWS)
+"""The run a changed role is read over, against every game of the window: his last five."""
+
+
+class Role(NamedTuple):
+    """His minutes over his last `ROLE_GAMES` games beside every game of the window: whether his role moved."""
+
+    games: int
+    """The games of the recent run: `ROLE_GAMES`."""
+    minutes: float
+    """His minutes a game over them."""
+    window: float
+    """His minutes a game over every game of the window, them included, as the drawer shows it."""
+
+
 class PlayerStats(TypedDict, total=False):
     last_5: Line
     last_10: Line
@@ -60,12 +75,24 @@ class PlayerStats(TypedDict, total=False):
     recent: RecentForm
     minutes: tuple[float, ...]
     """The minutes he played in each game of `recent`, newest first: how steady his role is."""
+    role: Role
+    """His recent minutes against the window's, once the window holds games before the recent run."""
 
 
 def nine_cat(games: list[NBAGameLog]) -> Line:
     """Average a run of games into a nine-category line."""
     totals = {key: sum(g.get(key) for g in games) for key in BOX_SCORE}
     return line(totals, games=len(games))
+
+
+def role(games: Sequence[NBAGameLog]) -> Role:
+    """His minutes a game over his last `ROLE_GAMES` of `games` (newest first), and over all of them."""
+    last = games[:ROLE_GAMES]
+    return Role(
+        games=len(last),
+        minutes=sum(g.minutes for g in last) / len(last),
+        window=sum(g.minutes for g in games) / len(games),
+    )
 
 
 @dataclass(frozen=True)
@@ -105,6 +132,14 @@ class FormSource(Protocol):
 
     def season(self, full_name: str, season: str) -> NBASeason | None:
         """A player's totals over one season, or None where he played none of it or cannot be placed.
+
+        Raises:
+            SleeperAPIError: the season would not load.
+        """
+        ...
+
+    def season_totals(self, season: str) -> Mapping[str, NBASeason]:
+        """Every player's totals over one season, by Sleeper's id.
 
         Raises:
             SleeperAPIError: the season would not load.
@@ -151,6 +186,8 @@ class SleeperNBAForm:
             run = games[:RECENT_GAMES]
             stats["recent"] = RecentForm(games=len(run), line=nine_cat(run))
             stats["minutes"] = tuple(game.minutes for game in run)
+        if len(games) > ROLE_GAMES:
+            stats["role"] = role(games)
         return stats or None
 
     def box_scores(self) -> BoxScores:
@@ -188,6 +225,14 @@ class SleeperNBAForm:
         """
         player_id = self._name_index().lookup(full_name)
         return self.client.get_nba_season(season).get(player_id) if player_id else None
+
+    def season_totals(self, season: str) -> Mapping[str, NBASeason]:
+        """Every player's totals over one season, by Sleeper's id: the request `season` reads, shared.
+
+        Raises:
+            SleeperAPIError: the season would not load.
+        """
+        return self.client.get_nba_season(season)
 
     # ── loading, once ───────────────────────────────────────────────
 

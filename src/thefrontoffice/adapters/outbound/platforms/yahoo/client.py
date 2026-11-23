@@ -572,7 +572,19 @@ def _player(data: Any) -> YahooPlayer:
         image_url=full_size(_text(data, "image_url")),
         owner=_owner(_node(data, "ownership")),
         waiver_date=_waiver_date(_node(data, "ownership")),
+        rostered=_share(data, "value"),
+        rostered_change=_share(data, "delta"),
     )
+
+
+def _share(data: Any, field: str) -> float | None:
+    """A figure of his `percent_owned` — the share of Yahoo's leagues rostering him, or its week's change — or None
+    where his page did not ask for it."""
+    value = _value(data, "percent_owned", field)
+    try:
+        return float(value) if value not in (None, "") else None
+    except ValueError:
+        return None
 
 
 RESIZER = "https://"

@@ -42,7 +42,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     position_filters,
     ruled_out,
 )
-from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split, Teammates, conditions, reported
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import Teammate, Teammates, conditions, reported
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.seeds import seed
@@ -1045,7 +1045,7 @@ class YahooNBAProvider:
         scored = [] if weights else yahoo.settings().categories
         readings = self._valued(yahoo, league, players, weights) if wire or not weights else {}
         rows = views.cards(
-            players, recent, self._returns(players, reports), weights is not None, splits, scored, readings
+            players, recent, self._returns(players, reports), weights is not None, splits, scored, readings, wire=wire
         )
         return views.by_worth(rows, readings) if wire else rows
 
@@ -1309,16 +1309,28 @@ class YahooNBAProvider:
 
     def _splits(
         self, players: list[YahooPlayer], weights: Mapping[str, float] | None, reports: Sequence[InjuryReport]
-    ) -> Callable[[YahooPlayer], list[Split]]:
-        """Each player's line without each regular teammate who is hurt or lately sat out (`teammates.py`).
+    ) -> Callable[[YahooPlayer], list[Teammate]]:
+        """Each player's teammates worth weighing (`teammates.py`): any at his position due back soon whom he has
+        barely played beside (`Returning`), then his line without each regular who is hurt or lately sat out.
 
-        A teammate's condition is Yahoo's status where his row is among
-        `players`, else ESPN's report; the box scores are read once for them all.
+        A teammate's condition is Yahoo's status where his row is among `players`, else ESPN's report; the box
+        scores, and last season's minutes for a teammate with few games this one, are read once for them all.
         """
-        mates = Teammates(self.form.box_scores(), weights)
+        mates = Teammates(self.form.box_scores(), weights, self._last_season())
         regulars = mates.regulars()
         known = conditions(regulars, players, reported(regulars, reports))
-        return lambda player: mates.splits(player, known)
+        today = datetime.now(PACIFIC).date()
+        return lambda player: [*mates.returning(player, known, today), *mates.splits(player, known)]
+
+    def _last_season(self) -> Mapping[str, NBASeason]:
+        """Every player's totals last season, by Sleeper's id; none where it will not load, which leaves a
+        teammate hurt early this season out of the regulars."""
+        try:
+            previous = recent_seasons(self.sleeper.get_nba_state().season)
+            return self.form.season_totals(previous[0]) if previous else {}
+        except FrontOfficeError as e:
+            logger.warning(f"Weighing teammates without last season's minutes: {e}")
+            return {}
 
 
 def _valuer(

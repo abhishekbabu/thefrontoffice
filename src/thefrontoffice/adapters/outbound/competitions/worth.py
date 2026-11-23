@@ -36,6 +36,17 @@ def blend(recent: float | None, ahead: float | None) -> float | None:
     return FORM_WEIGHT * recent + (1 - FORM_WEIGHT) * ahead
 
 
+def settled(games: int, settling: int) -> float:
+    """How much `games` in a new role count against what was read of him before: `games / (games + settling)`.
+
+    `settling` is the games it takes before the new role counts for as much as
+    the old reading, so one big night after a jump in playing time moves a
+    player a fraction as far as a role long settled: a hot week is as often
+    that as a new role.
+    """
+    return games / (games + settling) if games > 0 else 0.0
+
+
 def usage(readings: Sequence[float], *, steady_from: float, swings_by: float, fewest: int, grew: bool = False) -> float:
     """What a player's usage over his last games multiplies his worth by: 1 ± `USAGE_SWING`, or 1.
 

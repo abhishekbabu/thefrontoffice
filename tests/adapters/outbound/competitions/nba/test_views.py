@@ -792,3 +792,15 @@ def test_a_player_whose_week_cannot_be_read_follows_in_his_own_order() -> None:
     order = _wire(("Unread", "", None, 3), ("Unscheduled", "", 9.0, None), ("Read", "", 5.0, 1))
 
     assert order == ["Read", "Unscheduled", "Unread"]  # the rest as the table ranks them: by value a game, blanks last
+
+
+def test_a_wire_row_without_his_minutes_or_his_rostered_share_shows_dashes() -> None:
+    """Shown where others on the page have them: a dash, not a nought that reads as nobody rostering him."""
+    held = replace(make_player("Held", key="held"), rostered=40.0, rostered_change=1.0)
+    [bare, _] = sorted(
+        cards([make_player("Bare", key="bare"), held], {}, {}, by_points=False, wire=True),
+        key=lambda card: card.player_id,
+    )
+
+    assert (bare.columns["Min"], bare.columns["Rost"]) == ("—", "—")
+    assert "Min" not in bare.values and "Rost" not in bare.values

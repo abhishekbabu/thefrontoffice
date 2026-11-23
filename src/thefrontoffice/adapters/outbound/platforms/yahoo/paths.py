@@ -231,8 +231,9 @@ def player_page(
     """A page of the league's players, filtered and sorted, `start` places down the order.
 
     Each player carries his ownership (`out=ownership`), which is where Yahoo
-    says the day one on waivers clears them: no read beyond the page. With
-    `average`, he carries his averages over it, in the same response.
+    says the day one on waivers clears them, and the share of Yahoo's leagues
+    rostering him with its week's change (`percent_owned`): no read beyond the
+    page. With `average`, he carries his averages over it, in the same response.
     """
     params: dict[str, str] = {"count": str(count), "status": status.value}
     if sort is not None:
@@ -241,7 +242,7 @@ def player_page(
         params["sort_type"] = sort_type.value
     if start:
         params["start"] = str(start)
-    params["out"] = "ownership"
+    params["out"] = "ownership,percent_owned"
     stats = f"/stats;type={average}" if average else ""
     return YahooRead("players;" + ";".join(f"{k}={v}" for k, v in params.items()) + stats, ttl, league=league_key)
 

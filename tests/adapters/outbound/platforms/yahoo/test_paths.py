@@ -28,13 +28,16 @@ def test_a_read_naming_its_own_subject_is_its_own_path() -> None:
 def test_available_players_include_those_on_waivers_by_season_rank() -> None:
     [read] = paths.available("466.l.1", 25)
 
-    assert read.query == "players;count=25;status=A;sort=AR;sort_type=season;out=ownership/stats;type=average_lastmonth"
+    assert (
+        read.query
+        == "players;count=25;status=A;sort=AR;sort_type=season;out=ownership,percent_owned/stats;type=average_lastmonth"
+    )
 
 
 def test_a_deeper_wire_is_a_page_of_25_per_read_the_last_only_as_long_as_needed() -> None:
     reads = paths.available("466.l.1", 60, Timeframe.LAST_WEEK)
 
-    assert [read.query.removesuffix(";out=ownership/stats;type=average_lastmonth") for read in reads] == [
+    assert [read.query.removesuffix(";out=ownership,percent_owned/stats;type=average_lastmonth") for read in reads] == [
         "players;count=25;status=A;sort=AR;sort_type=lastweek",
         "players;count=25;status=A;sort=AR;sort_type=lastweek;start=25",
         "players;count=10;status=A;sort=AR;sort_type=lastweek;start=50",
@@ -51,7 +54,7 @@ def test_a_search_cannot_reach_past_its_term_into_the_rest_of_the_path() -> None
 def test_a_page_with_no_sort_says_none() -> None:
     assert (
         paths.player_page("466.l.1", 5, PlayerStatus.FREE_AGENT, None, None).query
-        == "players;count=5;status=FA;out=ownership"
+        == "players;count=5;status=FA;out=ownership,percent_owned"
     )
 
 
@@ -59,8 +62,8 @@ def test_leaders_are_one_read_per_stat_keyed_as_asked() -> None:
     reads = paths.leaders("466.l.1", {"PTS": "12", "BLK": "18"}, per_stat=3)
 
     assert {name: read.query for name, read in reads.items()} == {
-        "PTS": "players;count=3;status=A;sort=12;sort_type=lastweek;out=ownership",
-        "BLK": "players;count=3;status=A;sort=18;sort_type=lastweek;out=ownership",
+        "PTS": "players;count=3;status=A;sort=12;sort_type=lastweek;out=ownership,percent_owned",
+        "BLK": "players;count=3;status=A;sort=18;sort_type=lastweek;out=ownership,percent_owned",
     }
 
 

@@ -38,8 +38,8 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     ruled_out,
     status_word,
 )
-from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Valuer, game_value
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import Teammate
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Valuer, game_value, moved
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, PlayerMeta, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
@@ -76,9 +76,20 @@ VALUE_HINT = (
     "What one game of his is worth across your categories, summed; higher is better, and it only means "
     "anything against another player's. Each category counts by how scarce it is among both rosters and the "
     "top of the wire; FG% and FT% by how far his shooting moves a team's, turnovers against him. From recent "
-    "form beside this week's projection."
+    "form beside this week's projection, leaning on his last 5 games where his minutes have moved."
 )
-POINTS_HINT = "Fantasy points one game of his is worth this week: recent form beside this week's projection."
+POINTS_HINT = (
+    "Fantasy points one game of his is worth this week: recent form beside this week's projection, leaning on "
+    "his last 5 games where his minutes have moved."
+)
+
+MINUTES_COLUMN = "Min"
+"""The wire's minutes a game over his last five, with which way they moved against the window: '37.7 ↑ (33.5)'."""
+
+ROSTERED_COLUMN = "Rost"
+"""The wire's share of Yahoo's leagues rostering him, with its week's change: '44% ↑20' — who managers are adding."""
+
+UP, DOWN = "↑", "↓"
 
 SEASON = "Season"
 LAST_MONTH = "Last 30 days"
@@ -123,9 +134,10 @@ def cards(
     recent: Mapping[str, YahooLine],
     returns: Mapping[str, date],
     by_points: bool,
-    splits: Callable[[YahooPlayer], Sequence[Split]] | None = None,
+    splits: Callable[[YahooPlayer], Sequence[Teammate]] | None = None,
     scored: Sequence[StatCategory] = (),
     readings: Mapping[str, Reading] | None = None,
+    wire: bool = False,
 ) -> list[PlayerCard]:
     """One table shape for every list of players this sport shows, best a game first (`ranked`).
 
@@ -136,10 +148,13 @@ def cards(
     is a column only where somebody holds one: on the wire nobody does, and
     the column would be blank down its whole length. `returns` is the day ESPN
     expects each player back, by Yahoo's key. `splits`, on the wire, adds the
-    teammate whose absence matters most to each (`teammates.Split`), the rest
-    being in his drawer.
+    teammate whose absence matters most to each (`teammates.Teammate`), the rest
+    being in his drawer. The `wire` adds who is trending: his minutes against
+    the window's (`MINUTES_COLUMN`), and how many leagues are adding him
+    (`ROSTERED_COLUMN`) where his page carried it.
     """
     slotted = any(p.slot for p in players)
+    rostered = wire and any(p.rostered is not None for p in players)
     valued = readings or {}
     rows = []
     for player in players:
@@ -159,6 +174,11 @@ def cards(
             game = reading.per_game if reading else None
             shown[VALUE] = f"{game:.2f}" if game is not None else ""
             cells[VALUE] = f"{game:.1f}" if game is not None else NO_FIGURE
+        trends = trending(player, valued.get(player.player_key), rostered) if wire else {}
+        for column, (cell, figure, _) in trends.items():
+            cells[column] = cell
+            if figure is not None:
+                shown[column] = str(figure)
         rows.append(
             PlayerCard(
                 player_id=player.player_key,
@@ -176,10 +196,54 @@ def cards(
                 notes={
                     **({STATUS_COLUMN: note} if (note := status_note(player, back)) else {}),
                     **({WITHOUT_COLUMN: split.note()} if split else {}),
+                    **{column: said for column, (_, _, said) in trends.items() if said},
                 },
             )
         )
     return ranked(rows, by_points)
+
+
+Trend = tuple[str, float | None, str]
+"""A trend column's cell, the number it sorts by, and its tooltip."""
+
+
+def trending(player: YahooPlayer, reading: Reading | None, rostered: bool) -> dict[str, Trend]:
+    """His trend cells on the wire: his minutes (`minutes_trend`), and his rostered share where it was read."""
+    return {
+        MINUTES_COLUMN: minutes_trend(reading),
+        **({ROSTERED_COLUMN: rostered_trend(player)} if rostered else {}),
+    }
+
+
+def minutes_trend(reading: Reading | None) -> Trend:
+    """'37.7 ↑ (33.5)' where his minutes over his last five moved from the window's by `worth.ROLE.moved`, and his
+    value leans on those five; '33.8' where they held; a dash without his minutes."""
+    role = reading.role if reading else None
+    if role is None:
+        minutes = reading.minutes if reading else None
+        return (NO_FIGURE, None, "") if minutes is None else (f"{minutes:.1f}", minutes, "")
+    over = f"{role.minutes:.1f} a game over his last {role.games} · {role.window:.1f} {WINDOW}"
+    if not moved(role):
+        return f"{role.minutes:.1f}", role.minutes, over
+    arrow, way = (UP, "up") if role.minutes > role.window else (DOWN, "down")
+    return (
+        f"{role.minutes:.1f} {arrow} ({role.window:.1f})",
+        role.minutes,
+        f"Minutes {way}: {over}; value leans on the last {role.games}",
+    )
+
+
+def rostered_trend(player: YahooPlayer) -> Trend:
+    """'44% ↑20': the share of Yahoo's leagues rostering him, and its change over the week in points; a dash
+    without it."""
+    share, change = player.rostered, player.rostered_change
+    if share is None:
+        return NO_FIGURE, None, ""
+    said = f"Rostered in {share:.0f}% of Yahoo leagues"
+    if not change:
+        return f"{share:.0f}%", share, said
+    arrow, way = (UP, "up") if change > 0 else (DOWN, "down")
+    return f"{share:.0f}% {arrow}{abs(change):.0f}", share, f"{said}, {way} {abs(change):.0f} this week"
 
 
 WAIVERS = "W"
@@ -305,7 +369,7 @@ class Drawer:
     reported: list[Stat] = field(default_factory=list)
     """ESPN's report on him; empty where it has none."""
 
-    splits: Sequence[Split] = ()
+    splits: Sequence[Teammate] = ()
     week: DrawerWeek | None = None
     """None without a matchup this week."""
 

@@ -9,14 +9,19 @@ How the games part, and how a split reads, is shared with football
 
 - the same club, and a regular there: `REGULAR_MINUTES` a game over his last
   `RECENT_GAMES` for it, or its top usage player — the most possessions ended a
-  game (`usage`) among those with `MIN_FORM_GAMES` for it;
+  game (`usage`) among those with `MIN_FORM_GAMES` for it; with fewer games than
+  that for it, hurt early in the season, `REGULAR_MINUTES` a game over the
+  `SEASON_GAMES` or more he played last season;
 - carrying a status in `HURT` today — Yahoo's where his Yahoo row is on hand,
   else ESPN's injury report (`Condition`) — or having sat out one of his club's
   last `ABSENCE_GAMES` games.
 
 A teammate's game counts as missed where he did not play, or played under
 `LEFT_EARLY_MINUTES`. A split is shown only with `MIN_FORM_GAMES` on each side:
-one or two games either way is a single night reported as a rate.
+one or two games either way is a single night reported as a rate. Where his
+games are nearly all without a teammate at his position who is due back within
+`RETURN_SOON` (`Returning`), there is no split to read, and that is the warning:
+his role so far is the one the teammate's absence gave him.
 
 Sleeper's box scores carry the club each game was played for, which is the
 only club read here: a player whose Sleeper club is not his Yahoo one gets no
@@ -26,7 +31,7 @@ split rather than another club's.
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from thefrontoffice.adapters.outbound.competitions import teammates
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
@@ -50,7 +55,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 )
 from thefrontoffice.adapters.outbound.competitions.teammates import surname
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 from thefrontoffice.domain.models import Stat
 
@@ -60,6 +65,15 @@ absence frees enough of it for someone else's line to move."""
 
 LEFT_EARLY_MINUTES = 12.0
 """Minutes under which a regular's game counts as one he missed: hurt in the first half, or on a restriction."""
+
+SEASON_GAMES = 20
+"""Games last season that make his minutes then a regular's, where this season has too few: a quarter of one."""
+
+RETURN_SOON = timedelta(days=7)
+"""How soon a teammate's expected return reads as one a pickup's week runs into: a matchup week."""
+
+GROUPS = {"PG": "G", "SG": "G", "G": "G", "SF": "F", "PF": "F", "F": "F", "C": "C"}
+"""Each position's group: who takes whose minutes when a teammate returns."""
 
 ABSENCE_GAMES = 5
 """How far back a club's games are read for a regular who sat out: about a week and a half of them."""
@@ -98,6 +112,8 @@ class Regular:
     name: str
     team: str
     espn_id: str = ""
+    position: str = ""
+    """Sleeper's position for him: 'C'. Empty where it gives none."""
 
 
 @dataclass(frozen=True)
@@ -209,11 +225,76 @@ def _tagged(line: Line, fpts: float | None) -> str:
     return f"{counts} = {fpts:.1f} fpts" if fpts is not None else counts
 
 
+def shares_position(eligible: str, position: str) -> bool:
+    """Whether a player eligible at `eligible` ('PF,C') plays a position in `position`'s group ('C')."""
+    group = GROUPS.get(position.upper())
+    return group is not None and any(GROUPS.get(p.strip().upper()) == group for p in eligible.split(","))
+
+
+@dataclass(frozen=True)
+class Returning:
+    """A teammate at his position, out now and due back soon, beside whom he has played too few games to split.
+
+    Nearly all he has done, he has done without him: the role the table shows
+    may be the one the absence gave him, and it ends on the teammate's return.
+    """
+
+    teammate: Absent
+    without: int
+    """His games without the teammate."""
+    alongside: int
+    """His games beside him: under `MIN_FORM_GAMES`, or there would be a split."""
+
+    @property
+    def back(self) -> str:
+        """' back ~24 Nov'; empty where ESPN dates no return."""
+        returns = self.teammate.condition.returns
+        return f" back {approximately(returns)}" if returns else ""
+
+    def label(self) -> str:
+        """'Jalen Duren (C, O) back ~24 Nov'."""
+        mate = self.teammate.regular
+        return f"{mate.name} ({mate.position}, {self.teammate.status}){self.back}"
+
+    def cell(self) -> str:
+        """'Duren back ~24 Nov'."""
+        return f"{surname(self.teammate.regular.name)}{self.back}"
+
+    def figures(self) -> str:
+        """'14 games without him · 2 with': how much of his role is the absence."""
+        return f"{teammates.games(self.without)} without him · {self.alongside} with"
+
+    def note(self) -> str:
+        """The cell's tooltip: who, when, and how few games beside him."""
+        return f"{self.label()}: {self.figures()}"
+
+    def stat(self) -> Stat:
+        """The drawer's row: a warning, since the role he has shown ends on the return."""
+        return Stat(label=self.label(), value=self.figures(), tone="warning")
+
+    def prompt(self) -> str:
+        """'RETURNING Jalen Duren (C, O) back ~24 Nov: 14G without him, 2G with'."""
+        return f"RETURNING {self.label()}: {self.without}G without him, {self.alongside}G with"
+
+
+Teammate = Split | Returning
+"""What a teammate's condition says of a player: his split without him, or the warning that he returns."""
+
+
 class Teammates:
     """Every club's regulars, and who of them sat out lately, read once from the window's box scores."""
 
-    def __init__(self, scores: BoxScores, weights: Mapping[str, float] | None = None):
-        """`weights` are a points league's, by Yahoo stat id: each side of a split then carries its fantasy points."""
+    def __init__(
+        self,
+        scores: BoxScores,
+        weights: Mapping[str, float] | None = None,
+        before: Mapping[str, NBASeason] | None = None,
+    ):
+        """`weights` are a points league's, by Yahoo stat id: each side of a split then carries its fantasy points.
+
+        `before` is last season's totals by Sleeper's id, which settle whether a
+        teammate with too few games this season is a regular.
+        """
         self.index = scores.index
         self.weights = weights
         self.outings: dict[str, list[Outing]] = {
@@ -235,9 +316,14 @@ class Teammates:
             meta = scores.players.get(pid)
             if meta is None or not meta.name:
                 continue
-            regular = Regular(player_id=pid, name=meta.name, team=club, espn_id=meta.espn_id)
+            regular = Regular(player_id=pid, name=meta.name, team=club, espn_id=meta.espn_id, position=meta.position)
             recent = [g for g in self.outings[pid] if g.team == club][-RECENT_GAMES:]
-            if teammates.mean([g.minutes for g in recent]) >= REGULAR_MINUTES:
+            last = (before or {}).get(pid) if len(recent) < MIN_FORM_GAMES else None
+            if last is not None and last.games >= SEASON_GAMES:
+                minutes = last.minutes / last.games
+            else:
+                minutes = teammates.mean([g.minutes for g in recent])
+            if minutes >= REGULAR_MINUTES:
                 self.by_club[club].append(regular)
             ended = usage([g.log for g in recent]) if len(recent) >= MIN_FORM_GAMES else None
             if ended is not None and (club not in top or ended > top[club][0]):
@@ -274,6 +360,30 @@ class Teammates:
                 games[key] = parted
         found = [self._split(tuple(mates), games[key]) for key, mates in grouped.items()]
         return sorted(found, key=lambda s: (s.back, -s.gain))
+
+    def returning(self, player: YahooPlayer, conditions: Mapping[str, Condition], today: date) -> list[Returning]:
+        """Each regular at his position who is hurt, due back within `RETURN_SOON` of `today`, and beside whom
+        he has played too few games to split, though enough without him: soonest back first.
+
+        None where Sleeper cannot place him at his Yahoo club, as for a split,
+        or where ESPN dates no return: a return is never guessed.
+        """
+        pid = self.index.lookup(player.name)
+        club = self.club.get(pid) if pid is not None else None
+        if pid is None or club is None or club != player.team.upper():
+            return []
+        found: list[tuple[date, Returning]] = []
+        for mate in self.by_club.get(club, []):
+            condition = conditions.get(mate.player_id, Condition())
+            back = condition.returns
+            if mate.player_id == pid or condition.status.upper() not in HURT or back is None:
+                continue
+            if not today <= back <= today + RETURN_SOON or not shares_position(player.position, mate.position):
+                continue
+            parted = teammates.parted(self.outings[pid], self.outings[mate.player_id], club)
+            if len(parted.alongside) < MIN_FORM_GAMES <= len(parted.without):
+                found.append((back, Returning(Absent(mate, condition), len(parted.without), len(parted.alongside))))
+        return [returning for _, returning in sorted(found, key=lambda pair: pair[0])]
 
     def _split(self, mates: tuple[Absent, ...], parted: teammates.Parted[Outing]) -> Split:
         apart, beside = nine_cat([g.log for g in parted.without]), nine_cat([g.log for g in parted.alongside])

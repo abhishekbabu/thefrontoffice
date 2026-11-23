@@ -5,24 +5,28 @@ four and sat the last four; Jakob Poeltl, its centre, played all eight —
 six points a game beside Barnes, twelve without him.
 """
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from support.nba import box_scores, game_log, make_player
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import BoxScores
+from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES, BoxScores
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
     LEFT_EARLY_MINUTES,
     REGULAR_MINUTES,
+    RETURN_SOON,
+    SEASON_GAMES,
     Condition,
     Regular,
+    Returning,
     Teammates,
     conditions,
     espn_status,
     reported,
+    shares_position,
 )
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
-from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason
 
 STAR, CENTRE, GUARD = "s1", "c1", "g1"
 NAMES = {STAR: "Scottie Barnes", CENTRE: "Jakob Poeltl", GUARD: "Jamal Shead"}
@@ -250,3 +254,96 @@ def test_one_out_and_one_due_back_are_not_merged() -> None:
     found = _splits(_together(), {**OUT, GUARD: Condition(status="GTD")})
 
     assert [s.back for s in found] == [False, True]
+
+
+# ── a teammate due back soon ────────────────────────────────────────────
+
+BIG, BACKUP = "d1", "r1"
+DETROIT = {BIG: "Jalen Duren", BACKUP: "Paul Reed", GUARD: "Jamal Shead"}
+POSITIONS = {BIG: "C", BACKUP: "C", GUARD: "PG"}
+TODAY = date(2026, 11, 22)
+DUE = {BIG: Condition(status="O", returns=date(2026, 11, 24))}
+LAST_SEASON = {BIG: NBASeason(player_id=BIG, season="2025", games=70, minutes=70 * 30.0, totals={})}
+
+
+def _detroit(together: int = 2) -> dict[str, list[NBAGameLog]]:
+    """Duren played the first `together` games, under a regular's minutes, and has sat since; Reed played all ten."""
+    return {
+        BIG: [_log(BIG, d, 20.0, team="DET", pts=12) for d in range(1, together + 1)],
+        BACKUP: [_log(BACKUP, d, 26.0, team="DET", pts=12, reb=8) for d in range(1, 11)],
+        GUARD: [_log(GUARD, d, 18.0, team="DET", pts=4) for d in range(1, 11)],
+    }
+
+
+def _returning(
+    logs: dict[str, list[NBAGameLog]] | None = None,
+    known: dict[str, Condition] | None = None,
+    before: dict[str, NBASeason] | None = None,
+    position: str = "PF,C",
+    name: str = "Paul Reed",
+) -> list[Returning]:
+    scores = box_scores(logs or _detroit(), DETROIT, team="DET", positions=POSITIONS)
+    mates = Teammates(scores, before=LAST_SEASON if before is None else before)
+    return mates.returning(make_player(name, team="DET", position=position), DUE if known is None else known, TODAY)
+
+
+def test_a_starter_due_back_whom_he_has_barely_played_beside_is_flagged() -> None:
+    """Two games together is no split, and that is the point: his role is the one the absence gave him."""
+    (found,) = _returning()
+
+    assert found.teammate.regular.name == "Jalen Duren"
+    assert (found.without, found.alongside) == (8, 2)
+    assert found.teammate.condition.returns == date(2026, 11, 24)
+    assert "Duren" in found.cell() and "24 Nov" in found.cell()
+    assert "Jalen Duren" in found.note() and "Jalen Duren" in found.prompt()
+    assert found.stat().tone == "warning"
+
+
+def test_a_teammate_hurt_early_is_a_regular_by_last_seasons_minutes() -> None:
+    """Two games this season, at twenty minutes, say nothing of the starter he was all of last season."""
+    this_season = Teammates(box_scores(_detroit(), DETROIT, team="DET")).regulars()
+    with_last = Teammates(box_scores(_detroit(), DETROIT, team="DET"), before=LAST_SEASON).regulars()
+
+    assert BIG not in {r.player_id for r in this_season}
+    assert BIG in {r.player_id for r in with_last}
+
+
+def test_a_short_last_season_does_not_make_a_regular() -> None:
+    brief = {BIG: NBASeason(player_id=BIG, season="2025", games=SEASON_GAMES - 1, minutes=40.0 * 19, totals={})}
+
+    assert _returning(before=brief) == []
+
+
+@pytest.mark.parametrize(
+    "known",
+    [
+        {BIG: Condition(status="O", returns=TODAY + RETURN_SOON + timedelta(days=1))},
+        {BIG: Condition(status="O")},
+        {BIG: Condition(returns=date(2026, 11, 24))},
+    ],
+)
+def test_only_a_hurt_teammate_with_a_return_date_soon_is_flagged(known: dict[str, Condition]) -> None:
+    """A return never guessed: no date, one past the week, or a teammate playing, is no warning."""
+    assert _returning(known=known) == []
+
+
+def test_a_teammate_at_another_position_is_not_flagged() -> None:
+    assert _returning(name="Jamal Shead", position="PG") == []
+
+
+def test_enough_games_beside_him_leave_it_to_the_split() -> None:
+    assert _returning(_detroit(together=MIN_FORM_GAMES)) == []
+
+
+def test_a_player_sleeper_cannot_place_at_his_club_gets_no_flag() -> None:
+    mates = Teammates(box_scores(_detroit(), DETROIT, team="DET", positions=POSITIONS), before=LAST_SEASON)
+
+    assert mates.returning(make_player("Paul Reed", team="BOS", position="C"), DUE, TODAY) == []
+
+
+@pytest.mark.parametrize(
+    ("eligible", "position", "shares"),
+    [("PF,C", "C", True), ("SF,PF", "PF", True), ("G", "SG", True), ("PG,SG", "C", False), ("C", "", False)],
+)
+def test_a_position_is_shared_within_its_group(eligible: str, position: str, shares: bool) -> None:
+    assert shares_position(eligible, position) is shares

@@ -7,7 +7,9 @@ made of, so the page, the to-do list and the model never rank him two ways.
 A game's value is his recent form beside Sleeper's projection for the week
 (`competitions.worth.blend`), category by category, read in the league's own
 scoring: fantasy points under its weights, or his contribution across the
-categories it scores (`category_value`). His minutes nudge it (`MINUTES`).
+categories it scores (`category_value`). Where his minutes have moved, his
+last few games pull it toward the role he plays now (`ROLE`), and his minutes
+nudge it (`MINUTES`).
 """
 
 import statistics
@@ -18,7 +20,7 @@ from typing import NamedTuple
 
 from thefrontoffice.adapters.outbound.competitions import worth as shared
 from thefrontoffice.adapters.outbound.competitions.availability import expected_games
-from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES, PlayerStats
+from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES, PlayerStats, Role
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, Line, chance, fantasy_points, line
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
@@ -38,6 +40,26 @@ between his most and least, without his latest game being his most, is a role
 that comes and goes — a sixth man behind a returning starter, a big in foul
 trouble, a rookie in and out: a tenth less. Basketball has no snap count, and
 minutes are the share of the game a player is on the floor.
+"""
+
+
+class RoleRule(NamedTuple):
+    moved: float
+    settling: int
+
+
+ROLE = RoleRule(moved=3.0, settling=5)
+"""When his last few games outweigh the rest of his window (`form.Role`), and by how much.
+
+His recent run is the window's half-life: a starter's minutes handed to a
+bench player, or taken back from him, show in the last five games and are
+averaged away over fifteen, while Sleeper's projection reads the season and is
+slower still. So where his minutes a game over his last five differ from the
+window's by `moved` or more — a tenth of a starter's — his line is pulled from
+the usual reading toward those five games' by `worth.settled(5, settling)`: as
+far as halfway, since five games of a new role are as often a hot week. With
+his minutes where they were, a big night moves nothing beyond its share of the
+average: points without the minutes behind them are not a role.
 """
 
 Valuer = Callable[[Line], float | None]
@@ -171,8 +193,14 @@ def weakest(figures: Line | None, found: Mapping[str, Scale]) -> list[StatCatego
     return [found[label].scored for label in sorted(below, key=lambda label: below[label])[:WEAKEST]]
 
 
+def moved(role: Role | None) -> bool:
+    """Whether his minutes over his last few have moved from the window's by `ROLE.moved`, either way."""
+    return role is not None and abs(role.minutes - role.window) >= ROLE.moved
+
+
 def per_game(stats: PlayerStats | None, projected: ProjectedTotals | None) -> Line | None:
-    """His line a game: his recent run beside Sleeper's projection a game this week, category by category.
+    """His line a game: his recent run beside Sleeper's projection a game this week, category by category,
+    pulled toward his last few games where his role has moved (`ROLE`).
 
     Either alone where the other is missing; None with neither.
     """
@@ -181,9 +209,15 @@ def per_game(stats: PlayerStats | None, projected: ProjectedTotals | None) -> Li
     if not recent and not ahead:
         return None
     labels = dict.fromkeys([*recent, *ahead])
-    return {
+    usual = {
         label: value for label in labels if (value := shared.blend(recent.get(label), ahead.get(label))) is not None
     }
+    role = (stats or PlayerStats()).get("role")
+    latest = (stats or PlayerStats()).get("last_5")
+    if role is None or not moved(role) or not latest:
+        return usual
+    pull = shared.settled(role.games, ROLE.settling)
+    return {label: value + pull * (latest.get(label, value) - value) for label, value in usual.items()}
 
 
 def minutes(stats: PlayerStats | None) -> tuple[float, ...]:
@@ -229,6 +263,9 @@ class Reading:
     """Yahoo's own average over his last month, the figures every view shows of him; None where not read.
     Shown, never weighed: the week is weighed on `line`, which Sleeper's box scores build game by game."""
 
+    role: Role | None = None
+    """His recent minutes against the window's (`form.Role`); None with too few games to compare."""
+
     @property
     def worth(self) -> float | None:
         """`per_game` × `usage` × `games`: what he adds this week. None where either is unknown."""
@@ -272,4 +309,5 @@ def read(
         minutes=statistics.fmean(played) if played else None,
         provisional=provisional,
         back=back,
+        role=(stats or PlayerStats()).get("role"),
     )

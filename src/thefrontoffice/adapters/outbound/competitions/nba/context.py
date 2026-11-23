@@ -18,7 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba.form import WINDOWS, FormSource, PlayerStats, Window
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectionIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, clears
-from thefrontoffice.adapters.outbound.competitions.nba.teammates import Split
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import Teammate
 from thefrontoffice.adapters.outbound.competitions.nba.views import points
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
@@ -126,7 +126,7 @@ class PlayerContextBuilder:
         remaining_games: dict[str, int] | None = None,
         projections: ProjectionIndex | None = None,
         returns: Mapping[str, date] | None = None,
-        splits: Callable[[YahooPlayer], Sequence[Split]] | None = None,
+        splits: Callable[[YahooPlayer], Sequence[Teammate]] | None = None,
         readings: Mapping[str, Reading] | None = None,
     ) -> dict[str, str]:
         """Same as build_context_for_players, keyed by player name.
