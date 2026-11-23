@@ -17,7 +17,7 @@ player on waivers is a claim, weighed on the games after he clears them
 """
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
@@ -269,7 +269,7 @@ class Weigh:
         self.roster = roster
         self.plan = plan
         self.backs = {key: r.back for key, r in readings.items()}
-        self.costs: dict[tuple[str, date | None], float] = {}
+        self.costs: dict[tuple[str, date | None, date | None], float] = {}
 
     def game(self, reading: Reading) -> float:
         """What a game of him adds this week, nudged by his minutes: in a category league with a forecast, each
@@ -288,30 +288,36 @@ class Weigh:
         """His whole week at this week's value a game: every game his club has left."""
         return self.game(reading) * reading.games if reading.per_game is not None and reading.games else 0.0
 
-    def gained(self, pickup: Reading, drop: Reading) -> tuple[float, int | None]:
+    def gained(self, pickup: Reading, drop: Reading, before: date | None = None) -> tuple[float, int | None]:
         """What he adds this week in `drop`'s place, and the games behind it: each night he fills an open slot,
-        those from the return of a teammate his role leans on at what is left of it (`Leaning.cut`). Every game his
-        club has left without a week to place them."""
+        before `before` where given, those from the return of a teammate his role leans on at what is left of it
+        (`Leaning.cut`). Every game his club has left without a week to place them."""
         week = self.plan.week
         if week is None:
             return self._week(pickup), None
         rest = [p for p in self.roster if p.player_key != drop.player.player_key]
-        nights = lineup.open_nights(pickup.player, rest, week, self.backs)
+        nights = [
+            night
+            for night in lineup.open_nights(pickup.player, rest, week, self.backs)
+            if before is None or night < before
+        ]
         found = self.plan.returning.get(pickup.player.player_key)
         back = found.returns if found else None
         played = sum(found.cut if found and back is not None and night >= back else 1.0 for night in nights)
         return self.game(pickup) * played, len(nights)
 
-    def cost(self, drop: Reading, after: date | None = None) -> float:
-        """What letting him go costs this week: each night, after `after`, the lineup could seat nobody in his
-        place. His whole week where there is no week to place him."""
+    def cost(self, drop: Reading, after: date | None = None, before: date | None = None) -> float:
+        """What letting him go costs this week: each night, after `after` and before `before` where given, the
+        lineup could seat nobody in his place. His whole week where there is no week to place him."""
         week = self.plan.week
         if week is None:
             return self._week(drop)
-        key = (drop.player.player_key, after)
+        key = (drop.player.player_key, after, before)
         if key not in self.costs:
             nights = lineup.needed_nights(drop.player, self.roster, week, self.backs)
-            self.costs[key] = self.game(drop) * sum(1 for night in nights if after is None or night > after)
+            self.costs[key] = self.game(drop) * sum(
+                1 for night in nights if (after is None or night > after) and (before is None or night < before)
+            )
         return self.costs[key]
 
     def back_soon(self, pickup: Reading) -> bool:
@@ -354,6 +360,24 @@ class Weigh:
         cost = self.cost(drop, add_on)
         return Swap(pickup, drop, "keeper", gain - cost, nights, add_on, self.targets(pickup, drop))
 
+    def bridge(self, keeper: Swap, day: date, wire: Sequence[Reading]) -> Swap | None:
+        """For a keeper added on `day`, when nobody plays (`Swap.add_on`), the stream to hold his drop's spot until it:
+        the one of `wire` adding most over the drop on the nights before it, worth an add on them alone
+        (`worth_an_add`). He is let go for the keeper that day, so the drop goes now rather than then.
+
+        Never one ruled out, nor a claim: waivers would eat the few nights he is there for.
+        """
+        drop = keeper.drop
+        cost = self.cost(drop, before=day)
+        found = []
+        for pickup in wire:
+            if ruled_out(pickup.player.status) or pickup.player.waiver_date is not None:
+                continue
+            gain, nights = self.gained(pickup, drop, before=day)
+            if worth_an_add(pickup, drop, gain, cost, self.game):
+                found.append(Swap(pickup, drop, "streamer", gain - cost, nights, targets=self.targets(pickup, drop)))
+        return max(found, key=lambda s: s.gain, default=None)
+
 
 def streams(
     roster: Sequence[Player],
@@ -377,6 +401,12 @@ def streams(
     where another is left for a stream or the best of them adds more this week
     than the best stream; up to `KEEPERS` are named, the best a game first, as
     alternatives that may share a drop.
+
+    A keeper out now, added on the week's day without games, plans the adds as
+    one sequence where two are left: a stream now in his drop's place, let go
+    for him that day (`Weigh.bridge`). The plan takes the place of the stream
+    the second add would have bought, where it adds more than that stream; a
+    stream that still fits beside it stays. No more adds are planned than are left.
     """
     if adds_left <= 0:
         return []
@@ -406,7 +436,69 @@ def streams(
     while len(streamed) < room - bool(kept) and (found := best_stream()):
         streamed.append(found)
         chosen.append(found)
-    return [_item(s, by_points, plan) for s in [*streamed, *kept]]
+    planned = _sequence(weigh, kept, streamed, wire, adds_left, room)
+    if planned is None:
+        return [_item(s, by_points, plan) for s in [*streamed, *kept]]
+    bridge, beside = planned
+    return [
+        *(_item(s, by_points, plan) for s in beside),
+        _chained(bridge, kept[0], by_points, plan),
+        *(_item(s, by_points, plan) for s in kept[1:]),
+    ]
+
+
+PLAN_ADDS = 2
+"""What a planned sequence spends: the stream now, and the keeper on the day nobody plays."""
+
+
+def _sequence(
+    weigh: Weigh, kept: Sequence[Swap], streamed: Sequence[Swap], wire: Sequence[Reading], adds_left: int, room: int
+) -> tuple[Swap, list[Swap]] | None:
+    """The stream to bridge the first keeper's wait, and the streams still beside it; None where no plan beats the
+    single suggestions.
+
+    The streams that fit beside it are those the adds left after the plan
+    still cover; the plan must add more than those it displaces.
+    """
+    day = kept[0].add_on if kept else None
+    if day is None or adds_left < PLAN_ADDS:
+        return None
+    fits = max(0, min(room - 1, adds_left - PLAN_ADDS))
+    beside = list(streamed[:fits])
+    taken = {s.pickup.player.player_key for s in [*kept, *beside]} | {s.drop.player.player_key for s in beside}
+    bridge = weigh.bridge(kept[0], day, [r for r in wire if r.player.player_key not in taken])
+    if bridge is None or bridge.gain < sum(s.gain for s in streamed[fits:]):
+        return None
+    return bridge, beside
+
+
+def _chained(bridge: Swap, keeper: Swap, by_points: bool, plan: Plan) -> Action:
+    """A stream now and the keeper it makes way for, as one item: 'Stream Turner now, drop Gobert; Thu 26 Nov drop
+    Turner for Robinson'."""
+    stream, drop, kept = bridge.pickup.player, bridge.drop.player, keeper.pickup.player
+    day = weekday_day_month(keeper.add_on) if keeper.add_on else ""
+    games = f", {bridge.nights} games in open slots" if bridge.nights is not None else ""
+    lead = f"Streamer until {day}: +{bridge.gain:.1f} {_unit(by_points)}{games}." + _targets(bridge) + " Then keeper: "
+    return Action(
+        kind="waiver",
+        urgency="now",
+        title=f"Stream {stream.name} now, drop {drop.name}; {day} drop {stream.name} for {kept.name}",
+        reason=lead
+        + _item(replace(keeper, targets=()), by_points, plan).reason.removeprefix("Keeper: ")
+        + _pending(bridge.pickup),
+        player_id=stream.player_key,
+        drop=drop.player_key,
+        pickup="streamer",
+        players=views.compared(
+            [
+                ("in", held(stream), bridge.pickup),
+                ("out", held(drop), bridge.drop),
+                ("in", held(kept), keeper.pickup),
+            ],
+            by_points,
+        ),
+        key=f"plan:{stream.player_key}:{drop.player_key}:{kept.player_key}",
+    )
 
 
 def _item(swap: Swap, by_points: bool, plan: Plan) -> Action:
