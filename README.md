@@ -130,9 +130,9 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Rosters**: any team's squad, yours by default, and the weeks ahead where
   somebody is out on a bye or hurt (one line when nobody is). NBA counts each of
   the next 4 weeks in games its daily lineups can start (active players playing
-  each day, capped at the lineup's slots) against the median week, naming
+  each day that the lineup's slots seat) against the median week, naming
   regulars with 2 games or fewer, injured players with ESPN's return day,
-  "heavy" weeks (most clubs play 4+), and a stream with more games than its drop
+  "heavy" weeks (most clubs play 4+), and a stream with more games in open slots than its drop
   at the to-do list's margin, one week each, none in a league without adds.
   A week the NBA has yet to finish scheduling (the Cup knockouts) is marked
   provisional: its count is a floor, so it is never short or light, streams

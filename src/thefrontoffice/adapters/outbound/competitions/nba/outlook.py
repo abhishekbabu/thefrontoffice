@@ -6,8 +6,9 @@ schedule is known all season, so a week where your regulars' clubs barely play
 can be seen a month out, while a pickup with four games can still stand in.
 
 Each coming week counts the games your daily lineups can start — each day, the
-active players whose clubs play, capped at the lineup's slots — and sets it
-beside the usual one of these weeks. It names the regulars with few games, the
+most of the active players whose clubs play that the lineup's real slots can
+seat (`lineup.seated`), as the to-do list counts them — and sets it beside the
+usual one of these weeks. It names the regulars with few games, the
 injured and when ESPN expects them back, and whether most clubs play four that
 week. A stream is named only where it clears the margin every pickup on the
 to-do list has to (`actions.streams_over`) and brings more games than the
@@ -26,6 +27,7 @@ from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba.actions import acquire, droppable, streams_over
+from thefrontoffice.adapters.outbound.competitions.nba.lineup import seated
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nba.strength import club_nights, nights
@@ -65,14 +67,17 @@ def build(
     readings: Mapping[str, Reading],
     returns: Mapping[str, date],
     adds: int,
+    lineup: Sequence[str] = (),
 ) -> Outlook:
     """Each week of `windows`, soonest first, with a stream for any week worth one.
 
     `readings` give what a game of each player is worth, for everyone on
     `roster` and the `wire`; `returns` the day ESPN expects each injured
     player back. `adds` is the league's weekly limit: without any, nothing is
-    streamed. A pickup or drop is named in one week only — once he is added,
-    he is yours for the weeks after.
+    streamed. `lineup` is the league's scoring slots, one per place
+    (`lineup.slots`); without them a night seats as many as the roster
+    starts today. A pickup or drop is named in one week only — once he is
+    added, he is yours for the weeks after.
     """
     if not windows:
         return Outlook(measure="games")
@@ -80,7 +85,7 @@ def build(
     slots = sum(1 for p in active if p.slot and p.slot != "BN") or len(active)
     regulars = _regulars(active, readings, slots)
     days = {w.week: {p.player_key: _days(p, w, returns.get(p.player_key)) for p in [*roster, *wire]} for w in windows}
-    starts = {w.week: _starts(active, days[w.week], slots) for w in windows}
+    starts = {w.week: _starts(active, days[w.week], slots, lineup) for w in windows}
     final = [starts[w.week] for w in windows if not w.unscheduled]
     usual = statistics.median(final or starts.values())
     used: set[str] = set()
@@ -103,7 +108,7 @@ def build(
             provisional=provisional,
         )
         if adds > 0 and not provisional and (row.short or row.light or row.heavy or row.missing):
-            row = _streamed(row, roster, wire, readings, days[w.week], used, w.start)
+            row = _streamed(row, roster, wire, readings, days[w.week], used, w.start, lineup)
         weeks.append(row)
     return Outlook(usual=usual, measure="games", weeks=weeks)
 
@@ -124,13 +129,14 @@ def _days(player: Player, window: Window, back: date | None) -> list[date]:
     return nights(player, window.games, back)
 
 
-def _starts(active: Sequence[Player], days: Mapping[str, list[date]], slots: int) -> int:
-    """The games daily lineups can start: each day, the active players playing, never more than the slots."""
-    by_day: dict[date, int] = {}
+def _starts(active: Sequence[Player], days: Mapping[str, list[date]], slots: int, lineup: Sequence[str]) -> int:
+    """The games daily lineups can start: each day, the most of the active players playing that `lineup`'s slots
+    seat at once (`lineup.seated`); without them, never more than `slots`."""
+    by_day: dict[date, list[Player]] = {}
     for p in active:
         for day in days.get(p.player_key, []):
-            by_day[day] = by_day.get(day, 0) + 1
-    return sum(min(count, slots) for count in by_day.values())
+            by_day.setdefault(day, []).append(p)
+    return sum(seated(playing, lineup) if lineup else min(len(playing), slots) for playing in by_day.values())
 
 
 def _missing(player: Player, window: Window, days: Mapping[str, list[date]], back: date | None) -> str:
@@ -167,6 +173,7 @@ def _streamed(
     days: Mapping[str, list[date]],
     used: set[str],
     start: date,
+    lineup: Sequence[str] = (),
 ) -> WeekAhead:
     """The week with the free agent worth most in it who streams over a drop, where one does.
 
@@ -176,7 +183,10 @@ def _streamed(
     Neither is one already named for an earlier week. A player on waivers
     counts only the days after he clears them (`rules.playable_from`), and is
     named as a claim where he still sits on them when the week starts; by then
-    he is free to add otherwise.
+    he is free to add otherwise. Where the league's slots are known (`lineup`),
+    the pickup's games are the nights he would start in the drop's place and
+    the drop's those the lineup would start one fewer without him, as the
+    to-do list counts them (`lineup.open_nights`, `lineup.needed_nights`).
     """
     week = {
         key: replace(r, games=len(days.get(key, []))) for key, r in readings.items() if key in days and key not in used
@@ -192,20 +202,57 @@ def _streamed(
         ),
         key=lambda r: -(r.worth or 0.0),
     )
-    for pickup in pickups:
-        drop = next((d for d in drops if _more_games(pickup, d) and streams_over(pickup, d)), None)
-        if drop is None:
+    active = [p for p in roster if p.slot not in INJURED_SLOTS]
+    for found in pickups:
+        swap = next(
+            (
+                (pickup, drop)
+                for d in drops
+                for pickup, drop in [_fitted(found, d, active, days, lineup)]
+                if _more_games(pickup, drop) and streams_over(pickup, drop)
+            ),
+            None,
+        )
+        if swap is None:
             continue
+        pickup, drop = swap
         used |= {pickup.player.player_key, drop.player.player_key}
         p, d = pickup.player, drop.player
         return row.model_copy(
             update={
                 "fix": f"{acquire(p, pickup.games or 0, p.position, p.team, as_of=start)}, "
-                f"drop {d.name} ({drop.games} games)",
+                f"drop {d.name} ({drop.games} game{'' if drop.games == 1 else 's'})",
                 "gain": float((pickup.games or 0) - (drop.games or 0)),
             }
         )
     return row
+
+
+def _fitted(
+    pickup: Reading, drop: Reading, active: Sequence[Player], days: Mapping[str, list[date]], lineup: Sequence[str]
+) -> tuple[Reading, Reading]:
+    """Both read on the games the lineup would start of them: the nights `pickup` would start in `drop`'s place,
+    and those it would start one fewer without `drop`. As read, every game his club plays, without `lineup`."""
+    if not lineup:
+        return pickup, drop
+    by_night: dict[date, list[Player]] = {}
+    for p in active:
+        for day in days.get(p.player_key, []):
+            by_night.setdefault(day, []).append(p)
+    key = drop.player.player_key
+
+    def without(night: date) -> list[Player]:
+        return [p for p in by_night.get(night, []) if p.player_key != key]
+
+    opened = sum(
+        1
+        for night in days.get(pickup.player.player_key, [])
+        if seated([*without(night), pickup.player], lineup) > seated(without(night), lineup)
+    )
+    needed = sum(
+        1 for night in days.get(key, []) if seated(by_night.get(night, []), lineup) > seated(without(night), lineup)
+    )
+    return replace(pickup, games=opened), replace(drop, games=needed)
 
 
 def _more_games(pickup: Reading, drop: Reading) -> bool:

@@ -19,6 +19,7 @@ from thefrontoffice.adapters.outbound.competitions.injuries import by_club
 from thefrontoffice.adapters.outbound.competitions.nba import actions, defense, drawer, history, prompt, views
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
+from thefrontoffice.adapters.outbound.competitions.nba import lineup as nba_lineup
 from thefrontoffice.adapters.outbound.competitions.nba import market as nba_market
 from thefrontoffice.adapters.outbound.competitions.nba import outlook as nba_outlook
 from thefrontoffice.adapters.outbound.competitions.nba import strength as nba_strength
@@ -598,7 +599,8 @@ class YahooNBAProvider:
         weights = reads.weights(league, yahoo)
         readings = weighing.read_week(self.feeds, yahoo, weights, [*roster, *wire], windows[0].start, windows[-1].end)
         returns = reads.returns([*roster, *wire], self.feeds.reports())
-        return nba_outlook.build(windows, roster, wire, readings, returns, self._add_limit(yahoo))
+        lineup = nba_lineup.slots(yahoo.settings().slots)
+        return nba_outlook.build(windows, roster, wire, readings, returns, self._add_limit(yahoo), lineup)
 
     # ── the week, simulated ─────────────────────────────────────────
 
@@ -649,6 +651,7 @@ class YahooNBAProvider:
             returns=reads.returns([*mine, *theirs], self.feeds.reports()),
             weekly=rules.weekly_lineups,
             seed=seed(league.league_key, week),
+            lineup=nba_lineup.slots(rules.slots),
         )
         if league.by_points and not rules.weights:
             raise UnsupportedError(league.name, "a forecast without the points its settings would sum")
