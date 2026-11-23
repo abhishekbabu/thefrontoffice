@@ -420,7 +420,7 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
     @app.get("/api/{competition}/leagues/{league_id}/players/{player_id}/tabs/{tab}", response_model=PlayerDetail)
     def player_tab(competition: str, league_id: str, player_id: str, tab: str) -> PlayerDetail:
         """One tab of a player's drawer that is read only when opened (`PlayerDetail.deferred`)."""
-        provider = wiring.registry.find(competition).open_as(PlayerTabProvider, "a player's deferred tabs")
+        provider = wiring.registry.find(competition).open_as(PlayerTabProvider)
         return provider.player_tab(league_id, player_id, tab)
 
     @app.get("/api/{competition}/leagues/{league_id}/compare", response_model=PlayerComparison)
@@ -434,7 +434,7 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
     @app.get("/api/{competition}/leagues/{league_id}/players", response_model=list[PlayerRef])
     def search_players(competition: str, league_id: str, search: str = "") -> list[PlayerRef]:
         """Players whose name holds `search`, rostered or not, for a comparison to add."""
-        provider = wiring.registry.find(competition).open_as(PlayerSearchProvider, "finding players by name")
+        provider = wiring.registry.find(competition).open_as(PlayerSearchProvider)
         return provider.search_players(league_id, search)
 
     @app.get("/api/{competition}/leagues/{league_id}/summary", response_model=Summary)
@@ -456,13 +456,13 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         competition can, so one that cannot refuses rather than answering
         with the week being played.
         """
-        provider = wiring.registry.find(competition).open_as(WeekBrowsingProvider, "browsing other weeks")
+        provider = wiring.registry.find(competition).open_as(WeekBrowsingProvider)
         return provider.week_of(league_id, week)
 
     @app.get("/api/{competition}/leagues/{league_id}/weeks/{week}/games", response_model=Slate)
     def games_of(competition: str, league_id: str, week: int) -> Slate:
         """The real games of any week of the season, the week being played included, and its byes."""
-        provider = wiring.registry.find(competition).open_as(WeekBrowsingProvider, "browsing other weeks")
+        provider = wiring.registry.find(competition).open_as(WeekBrowsingProvider)
         return provider.games_of(league_id, week)
 
     @app.post("/api/{competition}/leagues/{league_id}/items", response_model=ItemMark)
@@ -509,7 +509,7 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         Offered only where a competition can project them, as trades are, so
         one that cannot refuses rather than answering with no weeks.
         """
-        provider = wiring.registry.find(competition).open_as(OutlookProvider, "planning the weeks ahead")
+        provider = wiring.registry.find(competition).open_as(OutlookProvider)
         return provider.weeks_ahead(league_id, team)
 
     @app.get("/api/{competition}/leagues/{league_id}/trades", response_model=Trades)
@@ -519,7 +519,7 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         Its own route because it plays the season out once per trade tried —
         seconds, not the instant a table should take to appear.
         """
-        provider = wiring.registry.find(competition).open_as(TradeMarketProvider, "finding trades")
+        provider = wiring.registry.find(competition).open_as(TradeMarketProvider)
         return wiring.market(provider).trades(league_id)
 
     @app.post("/api/{competition}/leagues/{league_id}/scout", response_model=ScoutReport)
@@ -551,7 +551,7 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
     def judge_free_agents(competition: str, league_id: str, request: JudgeRequest) -> list[PlayerCall]:
         """A call on each of the free agents on screen, to show on their rows."""
         entry = wiring.registry.find(competition)
-        provider = entry.open_as(WireProvider, "judging free agents")
+        provider = entry.open_as(WireProvider)
         return wiring.wire(entry, provider).judge(league_id, request.player_ids)
 
     @app.post("/api/{competition}/leagues/{league_id}/free-agents/calls", response_model=list[PlayerCall])
@@ -562,7 +562,7 @@ def _register_routes(app: FastAPI, wiring: Wiring, chats: _Chats) -> None:
         has moved since his call comes back marked stale.
         """
         entry = wiring.registry.find(competition)
-        provider = entry.open_as(WireProvider, "judging free agents")
+        provider = entry.open_as(WireProvider)
         return wiring.wire(entry, provider).kept(league_id, request.player_ids)
 
     @app.get("/api/chat/{chat_id}", response_model=list[Turn])

@@ -5,16 +5,16 @@ from thefrontoffice.adapters.inbound.cli import output
 from thefrontoffice.adapters.inbound.cli.output import print_error
 from thefrontoffice.adapters.inbound.cli.render import render_scout_report, render_trade_verdict, render_week
 from thefrontoffice.adapters.inbound.cli.session import Session
+from thefrontoffice.application.capabilities import CAPABILITIES
 from thefrontoffice.domain.errors import (
     FrontOfficeError,
     NotConfiguredError,
     UnknownCompetitionError,
-    UnsupportedError,
 )
 from thefrontoffice.domain.ports import TradeProvider
 from thefrontoffice.wiring import CompetitionEntry, Registry
 
-TRADES = "trade evaluation"
+TRADES = CAPABILITIES[TradeProvider].refusal
 
 
 def print_help(session: Session) -> None:
@@ -62,11 +62,11 @@ def match(entries: list[CompetitionEntry], token: str) -> CompetitionEntry | Non
         return None
 
 
-def _not_available(session: Session, token: str, needs: tuple[type[object], str] | None = None) -> bool:
+def _not_available(session: Session, token: str, needs: type[object] | None = None) -> bool:
     """Say why `token` names nothing in the session, where it names a competition at all.
 
     Args:
-        needs: the port the command needs and what it is called, where the
+        needs: the port the command needs, where the
             competition may be known and unable to do it.
 
     Returns:
@@ -76,8 +76,8 @@ def _not_available(session: Session, token: str, needs: tuple[type[object], str]
         known = session.wiring.registry.find(token)
     except FrontOfficeError:
         return False
-    if needs is not None and not known.can(needs[0]):
-        print_error(UnsupportedError(known.label, needs[1]))
+    if needs is not None and not known.can(needs):
+        print_error(known.refusal(needs))
     else:
         print_error(NotConfiguredError(known.label, known.requires))
     return True
@@ -183,7 +183,7 @@ def trade_competition(session: Session, args: list[str]) -> tuple[CompetitionEnt
     # Falling through would fold its name into the trade description and price
     # the trade against whichever competition happened to be the only tradeable
     # one — silently, because a description is free text.
-    if args and _not_available(session, args[0], needs=(TradeProvider, TRADES)):
+    if args and _not_available(session, args[0], needs=TradeProvider):
         return None, args
 
     if len(tradeable) == 1:
@@ -212,7 +212,7 @@ def trade(session: Session, args: list[str]) -> None:
     trade_text = " ".join(args)
     try:
         provider = session.provider(entry)
-        engine = session.wiring.trade(entry.as_port(provider, TradeProvider, TRADES))
+        engine = session.wiring.trade(entry.as_port(provider, TradeProvider))
         refs = provider.list_leagues()
     except FrontOfficeError as e:
         print_error(e, entry.label)

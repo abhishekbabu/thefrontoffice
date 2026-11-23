@@ -30,7 +30,7 @@ def main() -> int:
 def run(registry: Registry, key: str) -> int:
     """Backtest the competition `key` names; 1 where there is nothing to score."""
     try:
-        entry, provider, league = open_league(registry, key, ForecastProvider, "simulating a matchup")
+        entry, provider, league = open_league(registry, key, ForecastProvider)
         weeks = provider.played_weeks(league.league_id)
         if not weeks:
             print("  No finished week to backtest yet.")

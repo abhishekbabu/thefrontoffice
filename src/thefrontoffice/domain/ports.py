@@ -156,60 +156,13 @@ class ContextProvider(Protocol):
         ...
 
 
-class SubjectProvider(ContextProvider, Protocol):
-    """A competition as a conversation about what is on screen sees it: its pages, and its players.
+class LeagueProvider(Protocol):
+    """A competition's league beyond the week: its season, and the players nobody holds.
 
-    What the ask engine reads to brief a conversation on a to-do item, a
-    player or a page, and no more, for the same reason `ContextProvider` exists.
+    Both the week engine and a conversation about what is on screen read
+    these, so each port that needs them extends this one rather than
+    declaring them again.
     """
-
-    def schedule(self, league_id: str) -> LeagueSchedule:
-        """The league beyond this week. See `WeekProvider.schedule`."""
-        ...
-
-    def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
-        """One window onto the players nobody holds. See `WeekProvider.free_agents`."""
-        ...
-
-    def roster(self, league_id: str) -> list[PlayerCard]:
-        """The user's roster, one card per player, for a team view.
-
-        Cheaper than build_context — a roster listing should not pull a waiver
-        pool — and richer than a lineup, which shows only what a week turns on.
-        """
-        ...
-
-    def player(self, league_id: str, player_id: str) -> PlayerDetail:
-        """Everything worth knowing about one player.
-
-        Raises:
-            PlayerNotFoundError: nothing in this league has that identifier.
-        """
-        ...
-
-
-class WeekProvider(Protocol):
-    """A competition as the week engine reads it: its week, its season, and its wire.
-
-    Split out for the reason `ContextProvider` is: that is all putting the
-    week together needs, and an engine that asks for the whole provider makes
-    every test of it fake one.
-    """
-
-    def summary(self, league_id: str) -> Summary:
-        """Where this team stands, without producing an analysis.
-
-        The same figures a finished report carries in its header, available
-        before one is asked for — a page that shows nothing until a model has
-        been called is empty for the whole time it takes to call one, and every
-        number here is already known.
-
-        Cheaper than build_context: no candidate pool, no market, no model.
-
-        Raises:
-            FrontOfficeError: the league or the user's team within it is missing.
-        """
-        ...
 
     def schedule(self, league_id: str) -> LeagueSchedule:
         """The league beyond this week: the season, the table, the real games.
@@ -237,6 +190,54 @@ class WeekProvider(Protocol):
         A page rather than a list because a football pool is four thousand
         players — which also means the ordering has to happen here, where the
         whole list is, rather than in a client holding fifty rows of it.
+
+        Raises:
+            FrontOfficeError: the league or the user's team within it is missing.
+        """
+        ...
+
+
+class SubjectProvider(ContextProvider, LeagueProvider, Protocol):
+    """A competition as a conversation about what is on screen sees it: its pages, and its players.
+
+    What the ask engine reads to brief a conversation on a to-do item, a
+    player or a page, and no more, for the same reason `ContextProvider` exists.
+    """
+
+    def roster(self, league_id: str) -> list[PlayerCard]:
+        """The user's roster, one card per player, for a team view.
+
+        Cheaper than build_context — a roster listing should not pull a waiver
+        pool — and richer than a lineup, which shows only what a week turns on.
+        """
+        ...
+
+    def player(self, league_id: str, player_id: str) -> PlayerDetail:
+        """Everything worth knowing about one player.
+
+        Raises:
+            PlayerNotFoundError: nothing in this league has that identifier.
+        """
+        ...
+
+
+class WeekProvider(LeagueProvider, Protocol):
+    """A competition as the week engine reads it: its week, its season, and its wire.
+
+    Split out for the reason `ContextProvider` is: that is all putting the
+    week together needs, and an engine that asks for the whole provider makes
+    every test of it fake one.
+    """
+
+    def summary(self, league_id: str) -> Summary:
+        """Where this team stands, without producing an analysis.
+
+        The same figures a finished report carries in its header, available
+        before one is asked for — a page that shows nothing until a model has
+        been called is empty for the whole time it takes to call one, and every
+        number here is already known.
+
+        Cheaper than build_context: no candidate pool, no market, no model.
 
         Raises:
             FrontOfficeError: the league or the user's team within it is missing.

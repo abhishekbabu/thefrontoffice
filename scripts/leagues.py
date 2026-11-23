@@ -25,13 +25,13 @@ def first_league(provider: CompetitionProvider, label: str) -> LeagueRef:
     return refs[0]
 
 
-def open_league[P](registry: Registry, key: str, port: type[P], what: str) -> tuple[CompetitionEntry, P, LeagueRef]:
+def open_league[P](registry: Registry, key: str, port: type[P]) -> tuple[CompetitionEntry, P, LeagueRef]:
     """The competition `key` names, as the port a script needs, and the league it runs over.
 
     Raises:
-        FrontOfficeError: no such competition, it is not configured, cannot do `what`, or has no league.
+        FrontOfficeError: no such competition, it is not configured, cannot do what `port` offers, or has no league.
     """
     entry = registry.find(key)
     competition = entry.open()
-    provider = entry.as_port(competition, port, what)
+    provider = entry.as_port(competition, port)
     return entry, provider, first_league(competition, entry.label)
