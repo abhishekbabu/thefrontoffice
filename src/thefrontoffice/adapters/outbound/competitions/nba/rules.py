@@ -16,7 +16,8 @@ from zoneinfo import ZoneInfo
 
 from thefrontoffice.adapters.outbound.competitions.availability import QUESTIONABLE
 from thefrontoffice.adapters.outbound.competitions.dates import weekday_day_month
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import INJURED, YahooPlayer
+from thefrontoffice.adapters.outbound.competitions.nba.model import INJURED_SLOTS as INJURED_SLOTS
+from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.domain.models import Better
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
@@ -99,9 +100,6 @@ turnovers is not a reason to add anybody."""
 BOX_SCORE = tuple(dict.fromkeys(key for c in CATEGORIES for key in (c.made, c.attempts) if key))
 """Every Sleeper box-score key the categories are built from."""
 
-INJURED_SLOTS = INJURED
-"""Roster slots that hold an injured player outside the active roster."""
-
 NOT_TAKEN: dict[str, frozenset[str]] = {
     "IL": frozenset({"", "DTD", "GTD"}),
     "IL+": frozenset({""}),
@@ -153,7 +151,7 @@ def eligible(positions: str) -> frozenset[str]:
     return frozenset(p.strip().upper() for p in positions.split(",") if p.strip())
 
 
-def position_filters(players: Iterable[YahooPlayer], slots: Sequence[str]) -> dict[str, frozenset[str]]:
+def position_filters(players: Iterable[Player], slots: Sequence[str]) -> dict[str, frozenset[str]]:
     """The position filters a list of players offers, each with the eligibilities it keeps.
 
     One per position anybody in `players` is eligible at, rather than one per
@@ -187,12 +185,12 @@ read the safe way: from the day after.
 """
 
 
-def playable_from(player: YahooPlayer) -> date | None:
+def playable_from(player: Player) -> date | None:
     """The first day a player on waivers can play for whoever claims him (`CLAIM_LAG`); None for anyone else."""
     return player.waiver_date + CLAIM_LAG if player.waiver_date else None
 
 
-def clears(player: YahooPlayer) -> str:
+def clears(player: Player) -> str:
     """'Waivers · clears Wed 25 Nov' for a player on waivers; empty for anyone else."""
     cleared = player.waiver_date
     return f"Waivers · clears {weekday_day_month(cleared)}" if cleared else ""

@@ -12,8 +12,8 @@ from datetime import date, datetime, timedelta
 
 from thefrontoffice.adapters.outbound.competitions import brackets
 from thefrontoffice.adapters.outbound.competitions.dates import span
+from thefrontoffice.adapters.outbound.competitions.nba.model import HeadToHead, LeagueRules, Team
 from thefrontoffice.adapters.outbound.competitions.nba.rules import PACIFIC
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import LeagueSettings, Pairing, YahooTeam
 from thefrontoffice.domain.models import Outcome, ScheduleRow, StandingRow, record
 
 BYE = "bye"
@@ -68,7 +68,7 @@ def _key_numbers(key: str, *kinds: str) -> list[str]:
 WEEK = timedelta(days=7)
 
 
-def week_dates(drawn: Mapping[int, Sequence[Pairing]]) -> dict[int, tuple[date, date]]:
+def week_dates(drawn: Mapping[int, Sequence[HeadToHead]]) -> dict[int, tuple[date, date]]:
     """Each week's first and last day: its scoreboard's, or for a week nobody is drawn in yet — a playoff week
     before the bracket — the seven days after the week before it.
 
@@ -85,7 +85,7 @@ def week_dates(drawn: Mapping[int, Sequence[Pairing]]) -> dict[int, tuple[date, 
     return dates
 
 
-def table(teams: list[YahooTeam], mine: str) -> list[StandingRow]:
+def table(teams: Sequence[Team], mine: str) -> list[StandingRow]:
     """The table in rank order; a team Yahoo sent without its standings has no row in it.
 
     Yours is marked by `mine`, the key of the team you own, rather than by the
@@ -114,8 +114,8 @@ def table(teams: list[YahooTeam], mine: str) -> list[StandingRow]:
 
 
 def season(
-    weeks: Mapping[int, Pairing | None],
-    rules: LeagueSettings,
+    weeks: Mapping[int, HeadToHead | None],
+    rules: LeagueRules,
     current: int,
     records: Mapping[str, str],
     *,
@@ -147,7 +147,7 @@ def season(
     return rows
 
 
-def _round(rules: LeagueSettings, week: int) -> str:
+def _round(rules: LeagueRules, week: int) -> str:
     """The bracket round a week is, or empty for the regular season.
 
     A week from the playoff start that the bracket does not reach — a league
@@ -160,7 +160,7 @@ def _round(rules: LeagueSettings, week: int) -> str:
     return brackets.round_name(rounds, start, week) or "Playoffs"
 
 
-def _result(found: Pairing | None, week: int, current: int, *, points: bool) -> str:
+def _result(found: HeadToHead | None, week: int, current: int, *, points: bool) -> str:
     """The score in the league's terms — points, or categories won-lost-tied — once there is one.
 
     A week to come has no score, and nor has the week being played before anything is on the board.
@@ -182,7 +182,7 @@ def _amount(printed: str) -> float:
         return 0.0
 
 
-def ended(found: Pairing | None) -> Outcome | None:
+def ended(found: HeadToHead | None) -> Outcome | None:
     """How a settled week ended for you; None before then, and for a week you did not play."""
     if found is None or not found.settled:
         return None

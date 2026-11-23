@@ -14,6 +14,7 @@ from thefrontoffice.adapters.outbound.competitions.dates import WEEKDAYS, day_mo
 from thefrontoffice.adapters.outbound.competitions.injuries import BODY_PART
 from thefrontoffice.adapters.outbound.competitions.matchups import Matchup
 from thefrontoffice.adapters.outbound.competitions.nba.form import FORM_WEEKS
+from thefrontoffice.adapters.outbound.competitions.nba.model import LeagueCategory, Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     ASSISTS,
@@ -49,7 +50,6 @@ from thefrontoffice.adapters.outbound.competitions.nba.views import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Valuer
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, PlayerMeta, ScheduledGame
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
     ActivityRow,
@@ -106,14 +106,14 @@ class DrawerWeek:
 class Drawer:
     """Everything the drawer's first two tabs show of one player, gathered by the provider."""
 
-    player: YahooPlayer
-    season: YahooLine | None
+    player: Player
+    season: PrintedLine | None
     """Yahoo's averages this season; None where it has none."""
 
-    recent: YahooLine | None
+    recent: PrintedLine | None
     """Yahoo's averages over the last month; None where it has none."""
 
-    scored: Sequence[StatCategory]
+    scored: Sequence[LeagueCategory]
     weights: Mapping[str, float] | None
     """A points league's weights by Yahoo stat id; None in a category league."""
 
@@ -424,7 +424,7 @@ def seasons(by_season: Mapping[str, NBASeason | None], weights: Mapping[str, flo
 
 
 def deferred_tab(
-    player: YahooPlayer,
+    player: Player,
     *,
     groups: Sequence[StatGroup] = (),
     tables: Sequence[StatTable] = (),

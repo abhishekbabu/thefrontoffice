@@ -33,6 +33,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.context import (
     rank_free_agents,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
+from thefrontoffice.adapters.outbound.competitions.nba.model import Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.projections import index_for
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     PACIFIC,
@@ -250,7 +251,7 @@ class YahooNBAProvider:
         week = league.current_week
         decided: list[Decided] = []
 
-        def read(found: Pairing, theirs: list[YahooPlayer]) -> Mapping[str, Reading]:
+        def read(found: Pairing, theirs: Sequence[Player]) -> Mapping[str, Reading]:
             adds_left = max(0, limit - my_team.adds_used)
             shown = self._averages(yahoo, found.mine.team_key, found.opponent.team_key)
             decided.append(self._decide(yahoo, league, roster, theirs, found.start, found.end, adds_left, shown=shown))
@@ -266,13 +267,13 @@ class YahooNBAProvider:
         self,
         yahoo: YahooSource,
         league: YahooLeague,
-        roster: list[YahooPlayer],
-        theirs: list[YahooPlayer],
+        roster: Sequence[Player],
+        theirs: Sequence[Player],
         start: date,
         end: date,
         adds_left: int,
-        also: list[YahooPlayer] | None = None,
-        shown: Mapping[str, YahooLine] | None = None,
+        also: Sequence[Player] | None = None,
+        shown: Mapping[str, PrintedLine] | None = None,
     ) -> Decided:
         """Every shown player's week, and the to-do list weighed on it.
 
@@ -303,11 +304,11 @@ class YahooNBAProvider:
         self,
         yahoo: YahooSource,
         weights: Mapping[str, float] | None,
-        players: list[YahooPlayer],
+        players: Sequence[Player],
         start: date,
         end: date,
-        also: list[YahooPlayer] | None = None,
-        averages: Mapping[str, YahooLine] | None = None,
+        also: Sequence[Player] | None = None,
+        averages: Mapping[str, PrintedLine] | None = None,
     ) -> dict[str, Reading]:
         """Each of `players`' week between `start` and `end`, by Yahoo's key (`worth.read`), and `also`'s.
 
@@ -352,7 +353,7 @@ class YahooNBAProvider:
             for r in readings
         }
 
-    def _games(self, player: YahooPlayer, clubs: Mapping[str, int], back: date | None, end: date) -> int | None:
+    def _games(self, player: Player, clubs: Mapping[str, int], back: date | None, end: date) -> int | None:
         """The games he can play before `end`: his club's left; none while ruled out, or those from his return;
         on waivers, those after he clears them (`rules.playable_from`).
 
@@ -385,7 +386,7 @@ class YahooNBAProvider:
         roster = yahoo.roster(my_team.team_key)
         weights = self._weights(league, yahoo)
 
-        def read(found: Pairing, theirs: list[YahooPlayer]) -> Mapping[str, Reading]:
+        def read(found: Pairing, theirs: Sequence[Player]) -> Mapping[str, Reading]:
             shown = self._averages(yahoo, found.mine.team_key, found.opponent.team_key)
             return self._readings(yahoo, weights, [*roster, *theirs], found.start, found.end, averages=shown)
 
@@ -433,8 +434,8 @@ class YahooNBAProvider:
         league: YahooLeague,
         team: YahooTeam,
         week: int,
-        roster: list[YahooPlayer] | None,
-        read: Callable[[Pairing, list[YahooPlayer]], Mapping[str, Reading]] | None = None,
+        roster: Sequence[Player] | None,
+        read: Callable[[Pairing, Sequence[Player]], Mapping[str, Reading]] | None = None,
         *,
         played: bool = False,
     ) -> Summary:
@@ -725,7 +726,7 @@ class YahooNBAProvider:
         builder = PlayerContextBuilder(self.form, self.games, weights)
         projections = index_for(self.sleeper, start, end)
 
-        def lines(players: list[YahooPlayer]) -> dict[str, str]:
+        def lines(players: Sequence[Player]) -> dict[str, str]:
             return builder.build_player_lines(
                 players,
                 start,
@@ -842,7 +843,7 @@ class YahooNBAProvider:
         # Games the NBA has yet to schedule are games nobody is drawn for: the chance is read off a short week.
         return replace(matchup, provisional=bool(self.games.unscheduled(found.start, found.end)))
 
-    def _recent(self, player: YahooPlayer) -> list[NBAGameLog]:
+    def _recent(self, player: Player) -> list[NBAGameLog]:
         return self.form.recent_games(player.name)
 
     def played_weeks(self, league_id: str) -> list[int]:
@@ -1057,8 +1058,8 @@ class YahooNBAProvider:
         self,
         yahoo: YahooSource,
         league: YahooLeague,
-        players: list[YahooPlayer],
-        recent: Mapping[str, YahooLine],
+        players: Sequence[Player],
+        recent: Mapping[str, PrintedLine],
         wire: bool = False,
     ) -> list[PlayerCard]:
         """One table shape for every list of players this sport shows (`views.cards`); the wire's with teammate splits.
@@ -1077,7 +1078,7 @@ class YahooNBAProvider:
         return views.by_worth(rows, readings) if wire else rows
 
     def _valued(
-        self, yahoo: YahooSource, league: YahooLeague, players: list[YahooPlayer], weights: Mapping[str, float] | None
+        self, yahoo: YahooSource, league: YahooLeague, players: Sequence[Player], weights: Mapping[str, float] | None
     ) -> dict[str, Reading]:
         """Each of `players`' week, a category league's read on the week's own scale: the pool the to-do list weighs,
         so a value reads alike.
@@ -1199,7 +1200,7 @@ class YahooNBAProvider:
             raise PlayerNotFoundError([player_id])
         return found[0]
 
-    def _seasons(self, player: YahooPlayer) -> dict[str, NBASeason | None]:
+    def _seasons(self, player: Player) -> dict[str, NBASeason | None]:
         """His totals this season and the two before it, newest first; a season that will not load reads as absent."""
         current = self.sleeper.get_nba_state().season
         found: dict[str, NBASeason | None] = {}
@@ -1215,7 +1216,7 @@ class YahooNBAProvider:
         self,
         yahoo: YahooSource,
         league: YahooLeague,
-        player: YahooPlayer,
+        player: Player,
         reports: Sequence[InjuryReport],
         weights: Mapping[str, float] | None,
         profile: PlayerMeta | None,
@@ -1297,7 +1298,7 @@ class YahooNBAProvider:
         """A points league's fantasy points, which need no pool; None in a category league, which does."""
         return nba_worth.points_value(weights) if weights else None
 
-    def _venues(self, player: YahooPlayer, games: Sequence[NBAGameLog]) -> dict[str, ScheduledGame]:
+    def _venues(self, player: Player, games: Sequence[NBAGameLog]) -> dict[str, ScheduledGame]:
         """His club's game on each date of his log, by ISO date, from the schedule already loaded; none where it
         will not load, which leaves each game's opponent bare."""
         days = [day for g in games if (day := parse_day(g.date))]
@@ -1320,7 +1321,7 @@ class YahooNBAProvider:
             return []
 
     @staticmethod
-    def _injuries(players: list[YahooPlayer], reports: Sequence[InjuryReport]) -> PlayerInjuries:
+    def _injuries(players: Sequence[Player], reports: Sequence[InjuryReport]) -> PlayerInjuries:
         """Each of `players` on ESPN's injury report, keyed by Yahoo's key, where it names him.
 
         Yahoo carries no ESPN id, so the join is by full name within his club
@@ -1329,14 +1330,14 @@ class YahooNBAProvider:
         clubs = by_club((espn_club(p.team), p.name, p.player_key) for p in players)
         return PlayerInjuries(by_player=matched(reports, clubs, {}))
 
-    def _returns(self, players: list[YahooPlayer], reports: Sequence[InjuryReport]) -> dict[str, date]:
+    def _returns(self, players: Sequence[Player], reports: Sequence[InjuryReport]) -> dict[str, date]:
         """The day ESPN expects each of `players` back, keyed by Yahoo's key; nobody it gives none for."""
         injuries = self._injuries(players, reports)
         return {p.player_key: back for p in players if (back := injuries.returns(p.player_key))}
 
     def _splits(
-        self, players: list[YahooPlayer], weights: Mapping[str, float] | None, reports: Sequence[InjuryReport]
-    ) -> Callable[[YahooPlayer], list[Teammate]]:
+        self, players: Sequence[Player], weights: Mapping[str, float] | None, reports: Sequence[InjuryReport]
+    ) -> Callable[[Player], list[Teammate]]:
         """Each player's teammates worth weighing (`teammates.py`): any at his position due back soon whom he has
         barely played beside (`Returning`), then his line without each regular who is hurt or lately sat out.
 
@@ -1348,7 +1349,7 @@ class YahooNBAProvider:
         return lambda player: [*mates.returning(player, known, today), *mates.splits(player, known)]
 
     def _teammates(
-        self, players: list[YahooPlayer], weights: Mapping[str, float] | None, reports: Sequence[InjuryReport]
+        self, players: Sequence[Player], weights: Mapping[str, float] | None, reports: Sequence[InjuryReport]
     ) -> tuple[Teammates, Mapping[str, Condition]]:
         """Every club's regulars from the box scores, and each one's condition: Yahoo's status where his row is
         among `players`, else ESPN's report."""
@@ -1357,7 +1358,7 @@ class YahooNBAProvider:
         return mates, conditions(regulars, players, reported(regulars, reports))
 
     def _returning(
-        self, wire: list[YahooPlayer], players: list[YahooPlayer], weights: Mapping[str, float] | None
+        self, wire: Sequence[Player], players: Sequence[Player], weights: Mapping[str, float] | None
     ) -> dict[str, Returning]:
         """Each of `wire` whose role leans on a teammate at his position due back soon (`Teammates.returning`), by
         Yahoo key: the soonest back. None where the box scores will not load: a teammate is enrichment."""
@@ -1372,8 +1373,8 @@ class YahooNBAProvider:
     def _plan(
         self,
         yahoo: YahooSource,
-        sides: tuple[list[YahooPlayer], list[YahooPlayer]],
-        free_agents: list[YahooPlayer],
+        sides: tuple[Sequence[Player], Sequence[Player]],
+        free_agents: Sequence[Player],
         readings: Mapping[str, Reading],
         weights: Mapping[str, float] | None,
         start: date,
@@ -1424,7 +1425,7 @@ def _valuer(
     return nba_worth.category_value(scored, lines), nba_worth.scales(scored, lines)
 
 
-def _carried(players: Sequence[YahooPlayer]) -> dict[str, YahooLine]:
+def _carried(players: Sequence[Player]) -> dict[str, PrintedLine]:
     """The averages over the last month each of `players` carries, by key, where his page read them."""
     return {p.player_key: p.line for p in players if p.coverage == RECENT_AVERAGE}
 

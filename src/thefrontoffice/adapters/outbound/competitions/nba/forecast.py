@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
+from thefrontoffice.adapters.outbound.competitions.nba.model import HeadToHead, LeagueCategory, Player, WeekSide
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     CATEGORIES,
     INJURED_SLOTS,
@@ -31,7 +32,6 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.week import BENCH
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, Pairing, StatCategory, YahooPlayer
 from thefrontoffice.domain.errors import UnsupportedError
 from thefrontoffice.domain.models import CategoryMatchup, MatchupInput, Outcomes, ScoredCategory, StatLines
 
@@ -48,7 +48,7 @@ may be off the week to come — a new role, a coach's rotation — beyond how th
 PERCENT_PLACES = 3
 """Yahoo prints a percentage '.478', and two sides level to three places tie the category."""
 
-Games = Callable[[YahooPlayer], list[NBAGameLog]]
+Games = Callable[[Player], list[NBAGameLog]]
 """A player's recent games, newest first: none for one Sleeper cannot place."""
 
 
@@ -70,9 +70,9 @@ class Week:
 
 
 def points(
-    found: Pairing,
-    mine: Sequence[YahooPlayer],
-    theirs: Sequence[YahooPlayer],
+    found: HeadToHead,
+    mine: Sequence[Player],
+    theirs: Sequence[Player],
     week: Week,
     weights: Mapping[str, float],
 ) -> MatchupInput:
@@ -83,7 +83,7 @@ def points(
     """
     slots = active_slots(mine, theirs)
 
-    def side(score: MatchupSide, roster: Sequence[YahooPlayer]) -> tuple[Outcomes, ...]:
+    def side(score: WeekSide, roster: Sequence[Player]) -> tuple[Outcomes, ...]:
         sampled = {p.player_key: _scored(week.games(p), weights) for p in roster}
         counts = starts(roster, week, slots, {key: _mean(s) for key, s in sampled.items()})
         board = amount(score.points)
@@ -107,11 +107,11 @@ def points(
 
 
 def categories(
-    found: Pairing,
-    mine: Sequence[YahooPlayer],
-    theirs: Sequence[YahooPlayer],
+    found: HeadToHead,
+    mine: Sequence[Player],
+    theirs: Sequence[Player],
     week: Week,
-    scored: Sequence[StatCategory],
+    scored: Sequence[LeagueCategory],
 ) -> MatchupInput:
     """A category week: each side's totals so far, plus every game its players have left, box score by box score.
 
@@ -126,7 +126,7 @@ def categories(
     stats = tuple(dict.fromkeys(key for c in used for key in (c.made, c.attempts) if key))
     slots = active_slots(mine, theirs)
 
-    def side(roster: Sequence[YahooPlayer]) -> tuple[StatLines, ...]:
+    def side(roster: Sequence[Player]) -> tuple[StatLines, ...]:
         played = {p.player_key: week.games(p) for p in roster}
         worth = {key: _mean(_scored(logs, RANKING_WEIGHTS)) for key, logs in played.items()}
         counts = starts(roster, week, slots, worth)
@@ -164,7 +164,7 @@ def categories(
     )
 
 
-def board(side: MatchupSide, used: Sequence[Category], stats: Sequence[str]) -> tuple[float, ...]:
+def board(side: WeekSide, used: Sequence[Category], stats: Sequence[str]) -> tuple[float, ...]:
     """One side's totals so far, in `stats` order, from the figures Yahoo prints: a percentage's from its makes over attempts.
 
     A figure not yet printed — a dash before the first game — is nothing scored.
@@ -178,7 +178,7 @@ def board(side: MatchupSide, used: Sequence[Category], stats: Sequence[str]) -> 
     return tuple(totals.get(stat, 0.0) for stat in stats)
 
 
-def active_slots(*rosters: Sequence[YahooPlayer]) -> int:
+def active_slots(*rosters: Sequence[Player]) -> int:
     """How many players a side starts on a night: the most active slots either roster fills today.
 
     Read off the rosters, which every league sets the same way; a slot left
@@ -187,12 +187,12 @@ def active_slots(*rosters: Sequence[YahooPlayer]) -> int:
     return max((sum(1 for p in roster if _active(p)) for roster in rosters), default=0)
 
 
-def _active(player: YahooPlayer) -> bool:
+def _active(player: Player) -> bool:
     """Whether he is in today's lineup: slotted, and neither benched nor on an injured slot."""
     return bool(player.slot) and player.slot != BENCH and player.slot not in INJURED_SLOTS
 
 
-def starts(roster: Sequence[YahooPlayer], week: Week, slots: int, worth: Mapping[str, float]) -> dict[str, int]:
+def starts(roster: Sequence[Player], week: Week, slots: int, worth: Mapping[str, float]) -> dict[str, int]:
     """How many of the games left each player would start, by Yahoo key: on each night, the best `slots` who play.
 
     Nobody on an injured slot plays, and nobody ruled out until the day ESPN
@@ -216,7 +216,7 @@ def starts(roster: Sequence[YahooPlayer], week: Week, slots: int, worth: Mapping
     return counts
 
 
-def _available(player: YahooPlayer, day: date, returns: Mapping[str, date]) -> bool:
+def _available(player: Player, day: date, returns: Mapping[str, date]) -> bool:
     """Whether he can play on `day`: not ruled out, or ruled out with ESPN expecting him back by then."""
     if not ruled_out(player.status):
         return True

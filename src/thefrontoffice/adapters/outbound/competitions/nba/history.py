@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from thefrontoffice.adapters.outbound.competitions.dates import day_month
+from thefrontoffice.adapters.outbound.competitions.nba.model import LeagueMove, MovedPlayer
 from thefrontoffice.adapters.outbound.competitions.nba.rules import PACIFIC
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import MovedPlayer, YahooTransaction
 from thefrontoffice.domain.models import ActivityMove, ActivityRow
 
 FROM_WAIVERS = "waivers"
@@ -28,7 +28,7 @@ This is "what did I miss", and a season of October waivers is not that.
 """
 
 
-def recent(transactions: Sequence[YahooTransaction], now: datetime, mine: str = "") -> list[ActivityRow]:
+def recent(transactions: Sequence[LeagueMove], now: datetime, mine: str = "") -> list[ActivityRow]:
     """What the league has done in the last `ACTIVITY_DAYS`, newest first.
 
     `mine` is your team's name, so your own moves can be found among everyone else's.
@@ -38,7 +38,7 @@ def recent(transactions: Sequence[YahooTransaction], now: datetime, mine: str = 
     return [_row(t, mine) for t in sorted(lately, key=lambda t: t.timestamp, reverse=True)]
 
 
-def moves(transactions: Sequence[YahooTransaction], player_key: str, mine: str = "") -> list[ActivityRow]:
+def moves(transactions: Sequence[LeagueMove], player_key: str, mine: str = "") -> list[ActivityRow]:
     """Each move this season he was part of, oldest first, as the league's activity shows it.
 
     `mine` is your team's name, so your own moves can be found among everyone else's.
@@ -47,7 +47,7 @@ def moves(transactions: Sequence[YahooTransaction], player_key: str, mine: str =
     return [_row(t, mine) for t in sorted(involved, key=lambda t: t.timestamp)]
 
 
-def _row(move: YahooTransaction, mine: str) -> ActivityRow:
+def _row(move: LeagueMove, mine: str) -> ActivityRow:
     moved = [_moved(p) for p in move.players]
     managers = list(dict.fromkeys(m.manager for m in moved if m.manager))
     if move.kind == "trade":

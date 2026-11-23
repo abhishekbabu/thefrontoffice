@@ -31,6 +31,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
+from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nba.strength import (
     FITTED,
@@ -47,7 +48,6 @@ from thefrontoffice.adapters.outbound.competitions.nba.strength import (
     week_totals,
 )
 from thefrontoffice.adapters.outbound.competitions.trades import offers
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
 from thefrontoffice.domain.models import (
     Fixture,
     SeasonInput,
@@ -95,7 +95,7 @@ class League:
 
     mine: str
     teams: Sequence[TeamRecord]
-    rosters: Mapping[str, Sequence[YahooPlayer]]
+    rosters: Mapping[str, Sequence[Player]]
     profiles: Mapping[str, Profile]
     """What a game of each player gives, rostered or free, by key."""
     weeks: Sequence[Week]
@@ -110,7 +110,7 @@ class League:
     """What a week is won on; none in a points league."""
     banked: Mapping[str, Totals] = field(default_factory=dict)
     """What each team has scored this week so far, by key."""
-    wire: Sequence[YahooPlayer] = ()
+    wire: Sequence[Player] = ()
     weekly: bool = False
     deadline: date | None = None
     seed: int = 0

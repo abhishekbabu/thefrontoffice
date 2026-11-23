@@ -15,6 +15,7 @@ from datetime import date
 from thefrontoffice.adapters.outbound.competitions.dates import day_month
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba.form import FORM_WEEKS, PlayerStats
+from thefrontoffice.adapters.outbound.competitions.nba.model import NO_LINE, LeagueCategory, Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     ASSISTS,
     CATEGORIES,
@@ -27,7 +28,6 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Teammate
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, game_value, moved
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
 from thefrontoffice.domain.models import (
     PLAYER_COLUMN,
     POSITION_COLUMN,
@@ -108,12 +108,12 @@ def number(value: str) -> float | None:
 
 
 def cards(
-    players: list[YahooPlayer],
-    recent: Mapping[str, YahooLine],
+    players: Sequence[Player],
+    recent: Mapping[str, PrintedLine],
     returns: Mapping[str, date],
     by_points: bool,
-    splits: Callable[[YahooPlayer], Sequence[Teammate]] | None = None,
-    scored: Sequence[StatCategory] = (),
+    splits: Callable[[Player], Sequence[Teammate]] | None = None,
+    scored: Sequence[LeagueCategory] = (),
     readings: Mapping[str, Reading] | None = None,
     wire: bool = False,
 ) -> list[PlayerCard]:
@@ -136,7 +136,7 @@ def cards(
     valued = readings or {}
     rows = []
     for player in players:
-        line = recent.get(player.player_key, YahooLine())
+        line = recent.get(player.player_key, NO_LINE)
         split = next(iter(splits(player)), None) if splits else None
         back = returns.get(player.player_key) if player.status else None
         if by_points:
@@ -185,7 +185,7 @@ Trend = tuple[str, float | None, str]
 """A trend column's cell, the number it sorts by, and its tooltip."""
 
 
-def trending(player: YahooPlayer, reading: Reading | None, rostered: bool) -> dict[str, Trend]:
+def trending(player: Player, reading: Reading | None, rostered: bool) -> dict[str, Trend]:
     """His trend cells on the wire: his minutes (`minutes_trend`), and his rostered share where it was read."""
     return {
         MINUTES_COLUMN: minutes_trend(reading),
@@ -211,7 +211,7 @@ def minutes_trend(reading: Reading | None) -> Trend:
     )
 
 
-def rostered_trend(player: YahooPlayer) -> Trend:
+def rostered_trend(player: Player) -> Trend:
     """'44% ↑20': the share of Yahoo's leagues rostering him, and its change over the week in points; a dash
     without it."""
     share, change = player.rostered, player.rostered_change
@@ -228,14 +228,14 @@ WAIVERS = "W"
 """The status cell's word for a player on waivers, before the day he clears them."""
 
 
-def status(player: YahooPlayer) -> str:
+def status(player: Player) -> str:
     """His status cell: Yahoo's code, then 'W 25 Nov' while he sits on waivers — 'O · W 25 Nov' for both."""
     cleared = player.waiver_date
     waiting = f"{WAIVERS} {day_month(cleared)}" if cleared else ""
     return " · ".join(part for part in (player.status, waiting) if part)
 
 
-def status_note(player: YahooPlayer, back: date | None) -> str:
+def status_note(player: Player, back: date | None) -> str:
     """The status cell in full: 'back ~3 Dec', 'Waivers · clears Wed 25 Nov', or both; empty for neither."""
     return "; ".join(part for part in (f"back {approximately(back)}" if back else "", clears(player)) if part)
 
@@ -265,12 +265,12 @@ def by_worth(rows: list[PlayerCard], readings: Mapping[str, Reading]) -> list[Pl
     return sorted(rows, key=key)
 
 
-def rate(category: StatCategory) -> bool:
+def rate(category: LeagueCategory) -> bool:
     """Whether a category is a rate, '.536', rather than a count."""
     return category.name.endswith("%")
 
 
-def averages(line: YahooLine, scored: Sequence[StatCategory], by_points: bool) -> list[Stat]:
+def averages(line: PrintedLine, scored: Sequence[LeagueCategory], by_points: bool) -> list[Stat]:
     """A line in every category the league scores, in its order, as Yahoo prints it; a points league's points first."""
     return [
         *([Stat(label=FANTASY_POINTS, value=printed(line.points), better="higher")] if by_points else []),
@@ -311,7 +311,7 @@ def cell(reading: Reading, by_points: bool) -> str:
     """
     left = games_left(reading)
     games = f"{left}G" if left else ""
-    line = reading.average or YahooLine()
+    line = reading.average or NO_LINE
     if by_points:
         figure = f"{line.points} fpts/g" if number(line.points) is not None else ""
     else:
@@ -352,7 +352,7 @@ def weak(reading: Reading) -> str:
     the number his row and his drawer show — and his figure the value is read
     off where it does not.
     """
-    line = reading.average or YahooLine()
+    line = reading.average or NO_LINE
     figures = reading.line or {}
     parts = []
     for category in reading.weak:
@@ -375,7 +375,7 @@ def figures(reading: Reading, by_points: bool) -> list[Stat]:
     """
     worth = reading.worth
     status = reading.player.status
-    average = reading.average or YahooLine()
+    average = reading.average or NO_LINE
     return [
         Stat(label=GAMES_LEFT, value=games_left(reading) or NO_FIGURE),
         Stat(
