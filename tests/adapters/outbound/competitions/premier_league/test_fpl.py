@@ -274,7 +274,9 @@ def test_points_left_on_the_bench_are_the_figure_that_warns() -> None:
 
 
 def test_an_optimal_eleven_leaves_nothing_on_the_bench_to_report() -> None:
-    from thefrontoffice.adapters.outbound.competitions.premier_league.rules import best_lineup, effective_points
+    from support.fpl import effective_points
+
+    from thefrontoffice.adapters.outbound.competitions.premier_league.rules import best_lineup
 
     best = best_lineup(list(SQUAD_PLAYERS.values()), effective_points)
     # Captained, because FPL always is — and the comparison only holds between

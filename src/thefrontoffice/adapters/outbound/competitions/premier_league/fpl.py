@@ -27,6 +27,7 @@ from thefrontoffice.adapters.outbound.competitions import paging
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.premier_league import (
     actions,
+    drawer,
     forecast,
     league,
     outlook,
@@ -148,12 +149,12 @@ class FPLProvider:
         return fpl_week.squad_of(self.client, entry_id, fpl_week.picked(self.client).id)
 
     def player(self, league_id: str, player_id: str) -> PlayerDetail:
-        """One player, grouped the way a manager actually weighs them (`views.detail`)."""
+        """One player, grouped the way a manager actually weighs them (`drawer.detail`)."""
         catalog = self.client.get_players()
         player = catalog.get(int(player_id)) if player_id.isdigit() else None
         if player is None:
             raise PlayerNotFoundError([player_id])
-        return views.detail(self.client, player)
+        return drawer.detail(self.client, player)
 
     def search_players(self, league_id: str, text: str, limit: int = 10) -> list[PlayerRef]:
         """Anyone in the game whose name holds `text`, the most worth first (`worth.py`), then the most owned.

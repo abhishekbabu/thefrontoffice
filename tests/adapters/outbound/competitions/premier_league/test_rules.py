@@ -7,7 +7,7 @@ than left to the model.
 from datetime import UTC, datetime
 
 import pytest
-from support.fpl import player
+from support.fpl import effective_points, player
 
 from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
     MAX_FREE_TRANSFERS,
@@ -17,7 +17,6 @@ from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
     armbands,
     best_lineup,
     club_counts,
-    effective_points,
     fixtures_by_club,
     formations,
     free_transfers,
@@ -67,20 +66,6 @@ FIFTEEN = squad_of(
     ("FWD", 4.0),
     ("FWD", 3.0),
 )
-
-
-# ── availability ────────────────────────────────────────────────────────
-
-
-def test_a_ruled_out_player_is_worth_nothing() -> None:
-    """The game leaves a stale projection on a player it has already ruled out."""
-    assert effective_points(player(1, "MID", 6.0, chance_of_playing=0)) == 0.0
-    assert effective_points(player(1, "MID", 6.0, status="i")) == 0.0
-    assert effective_points(player(1, "MID", 6.0, status="s")) == 0.0
-
-
-def test_a_doubt_is_not_a_ruling_out() -> None:
-    assert effective_points(player(1, "MID", 6.0, status="d", chance_of_playing=75)) == 6.0
 
 
 # ── formations ──────────────────────────────────────────────────────────
