@@ -4,7 +4,7 @@ import { fade } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { toneText } from "@/lib/tone";
 import type { Stat } from "@/lib/api";
-import { Label } from "@/components/ui/label";
+import { LABEL, Label } from "@/components/ui/label";
 
 /**
  * Figures as the server sends them — a label, a value already written, and
@@ -21,27 +21,40 @@ export function StatStrip({ stats }: { stats: Stat[] }) {
     // A band under the header, so it spans the column like the header does,
     // its rule reaching the edge while the figures keep to the page's width.
     <div data-bleed className="border-b border-border">
-      {/* Each figure's divider is on its left, and the row is pulled a pixel
-          left under a clip: whichever figure starts a line — the first, or
-          the first after a wrap on a phone — has its divider cut off, and no
-          line ends on a divider with nothing after it. */}
-      <div className="mx-auto max-w-(--page-max) overflow-hidden">
-        <div className="-ml-px flex flex-wrap">
-          {stats.map((stat) => (
-            <div key={stat.label} className="min-w-[7rem] border-l border-border px-5 py-2.5">
-              <Label>{stat.label}</Label>
-              <div
-                className={cn(
-                  "relative mt-0.5 font-display text-[19px] font-semibold tracking-tight tabular-nums",
-                  toneText(stat.tone),
-                )}
-              >
-                <Changing value={stat.value} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <StatCells stats={stats} className="mx-auto max-w-(--page-max)" />
+    </div>
+  );
+}
+
+/**
+ * Figures side by side, each its label over its value and a rule between:
+ * the strip under a page title, and the facts under a player's name.
+ *
+ * Each figure's divider is on its left, and the row is pulled a pixel left
+ * under a clip: whichever figure starts a line — the first, or the first
+ * after a wrap on a phone — has its divider cut off, and no line ends on a
+ * divider with nothing after it. A value longer than its line (a manager's
+ * team name) is cut short rather than widening the row.
+ */
+export function StatCells({ stats, className }: { stats: Stat[]; className?: string }) {
+  return (
+    <div className={cn("overflow-hidden", className)}>
+      {/* A list of terms: each value is read out with what it is. */}
+      <dl className="-ml-px flex flex-wrap">
+        {stats.map((stat) => (
+          <div key={stat.label} className="min-w-[7rem] max-w-full border-l border-border px-5 py-2.5">
+            <dt className={cn(LABEL, "truncate")}>{stat.label}</dt>
+            <dd
+              className={cn(
+                "relative mt-0.5 truncate font-display text-[19px] font-semibold tracking-tight tabular-nums",
+                toneText(stat.tone),
+              )}
+            >
+              <Changing value={stat.value} />
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
@@ -56,7 +69,14 @@ export function StatStrip({ stats }: { stats: Stat[] }) {
 function Changing({ value }: { value: string }) {
   return (
     <AnimatePresence initial={false} mode="popLayout">
-      <m.span key={value} variants={fade} initial="hidden" animate="shown" exit="gone" className="inline-block">
+      <m.span
+        key={value}
+        variants={fade}
+        initial="hidden"
+        animate="shown"
+        exit="gone"
+        className="inline-block max-w-full truncate align-top"
+      >
         {value}
       </m.span>
     </AnimatePresence>

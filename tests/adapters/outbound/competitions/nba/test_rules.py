@@ -16,6 +16,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     fits,
     line,
     printed,
+    status_word,
     stranded,
 )
 
@@ -130,3 +131,10 @@ def test_a_figure_not_yet_printed_is_nothing_scored() -> None:
 @pytest.mark.parametrize(("status", "expected"), [("", 1.0), ("GTD", QUESTIONABLE), ("dtd", QUESTIONABLE), ("O", 1.0)])
 def test_only_a_game_time_decision_is_a_chance_a_ruling_counts_in_his_games(status: str, expected: float) -> None:
     assert chance(status) == expected
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"), [("O", "Out"), ("gtd", "Game-time decision"), ("NEW", "NEW"), ("", "")]
+)
+def test_a_status_reads_in_words_and_an_unknown_code_as_yahoo_wrote_it(status: str, expected: str) -> None:
+    assert status_word(status) == expected

@@ -119,6 +119,13 @@ def test_the_drawer_heads_with_his_games_left_this_week_and_carries_his_photo_an
     assert (detail.image_url, detail.owner) == ("https://cdn/ab.png", "My Team")
 
 
+def test_the_drawer_names_his_status_in_words_rather_than_yahoos_code() -> None:
+    """'O' alone in a header reads as the figure zero."""
+    detail = nba_provider(FakeYahoo(roster=[make_player("A B", key="ab", status="O")])).player("", "ab")
+
+    assert (detail.note, detail.tone) == ("Out", "warning")
+
+
 def test_a_drawer_without_a_matchup_this_week_has_no_week_group() -> None:
     detail = nba_provider(FakeYahoo(roster=[make_player("A B", key="ab")], matchup_dates=None)).player("", "ab")
 

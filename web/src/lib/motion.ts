@@ -178,9 +178,10 @@ export const listItem: Variants = {
  *
  * Opens its own room rather than appearing in it: the width grows from nothing
  * and the negative margin cancels the row's gap until it does, so the name
- * slides over once instead of jumping. 96px and the 16px gap are the drawer's.
+ * slides over once instead of jumping. It grows to the photo's own width, so a
+ * smaller one leaves no blank beside it; the 16px gap is the drawer's.
  */
 export const portrait: Variants = {
   hidden: { opacity: 0, width: 0, marginRight: -16 },
-  shown: { opacity: 1, width: 96, marginRight: 0, transition: glide },
+  shown: { opacity: 1, width: "auto", marginRight: 0, transition: glide },
 };

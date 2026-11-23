@@ -467,7 +467,13 @@ class PlayerDetail(BaseModel):
             "rather than as a number that failed to arrive."
         ),
     )
-    note: str = Field(default="", description="Injury or availability news, in the platform's words.")
+    note: str = Field(
+        default="",
+        description=(
+            "Injury or availability news, in words — 'Out', 'Questionable', FPL's own sentence — never a "
+            "platform's bare code, which alone in a header reads as a figure ('O' as zero)."
+        ),
+    )
     url: str = Field(
         default="",
         description="This player on the platform's own site, where one exists.",

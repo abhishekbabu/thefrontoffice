@@ -1544,7 +1544,7 @@ export interface components {
             headline_label: string;
             /**
              * Note
-             * @description Injury or availability news, in the platform's words.
+             * @description Injury or availability news, in words — 'Out', 'Questionable', FPL's own sentence — never a platform's bare code, which alone in a header reads as a figure ('O' as zero).
              * @default
              */
             note: string;

@@ -15,7 +15,8 @@ import { keys } from "@/lib/queries";
 import { MAX_COMPARED, useCompared } from "@/lib/compare";
 import { toneText } from "@/lib/tone";
 import { Badge } from "@/components/ui/badge";
-import { Linked, StatList } from "@/components/ui/stat";
+import { Linked, StatCells, StatList } from "@/components/ui/stat";
+import { Hint } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Label, Meta } from "@/components/ui/label";
@@ -24,36 +25,33 @@ import { Tabs } from "@/components/ui/tabs";
 import { MoveDrawer, MoveRow, backTo } from "@/components/ui/move";
 import { ListCard } from "@/components/ui/list";
 
+/** What labels his ranking at his position, wherever it is shown. */
+const RANK = "Pos rank";
+/** What labels whose roster he is on, wherever it is shown. */
+const OWNER = "Owner";
+
 /**
- * The one figure this player is judged on, beside their name.
+ * His key facts under his name, as the matchup page sets its own: each its
+ * label over its value. The figure he is judged on leads, then his rank at
+ * his position, then whose roster he is on — whichever of the three he has.
  *
- * A figure gets display type; the absence of one gets a sentence. Setting
- * "no projection" at that size renders a missing number as though it were
- * the number.
+ * The figure is never tinted by his status: the status badge above says that
+ * in words, and a gold number read as a different number.
  */
-function Headline({ detail }: { detail: PlayerDetail }) {
-  if (!detail.headline) {
-    return detail.headline_label ? (
-      <p className="mt-1.5 text-[13px] leading-snug text-muted-foreground">{detail.headline_label}</p>
-    ) : null;
-  }
-  return (
-    <div className="mt-1.5 flex items-baseline gap-2">
-      <span
-        className={cn(
-          "font-display text-[28px] font-semibold leading-none tracking-tight tabular-nums",
-          detail.tone === "warning" && "text-warn",
-        )}
-      >
-        {detail.headline}
-      </span>
-      {detail.headline_label && (
-        <span className="min-w-0 font-mono text-[11px] leading-snug text-muted-foreground">
-          {detail.headline_label}
-        </span>
-      )}
-    </div>
-  );
+function facts(detail: PlayerDetail): Stat[] {
+  const fact = (label: string, value: string): Stat => ({
+    label,
+    value,
+    tone: "neutral",
+    url: "",
+    better: null,
+    hint: "",
+  });
+  return [
+    ...(detail.headline ? [fact(detail.headline_label || "Value", detail.headline)] : []),
+    ...(detail.rank ? [fact(RANK, detail.rank)] : []),
+    ...(detail.owner ? [fact(OWNER, detail.owner)] : []),
+  ];
 }
 
 /**
@@ -173,21 +171,28 @@ function TeamLine({ detail }: { detail: PlayerDetail }) {
   );
 }
 
-/** Whose roster he is on, and where he ranks at his position: the two facts every header of him carries. */
+/**
+ * Whose roster he is on, and where he ranks at his position, as compact chips
+ * for a comparison's narrow column; each names what it is on hover and focus.
+ */
 export function Chips({ detail, className }: { detail: PlayerDetail; className?: string }) {
   if (!detail.owner && !detail.rank) return null;
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
       {detail.rank && (
-        <Badge variant="info" appearance="label" className="tabular-nums">
-          {detail.rank}
-        </Badge>
+        <Hint label={RANK} name={`${RANK} ${detail.rank}`}>
+          <Badge variant="info" appearance="label" className="tabular-nums">
+            {detail.rank}
+          </Badge>
+        </Hint>
       )}
       {/* Truncated rather than overflowing: a manager's team name is as long as he likes. */}
       {detail.owner && (
-        <Badge variant="muted" appearance="label" className="max-w-full truncate">
-          {detail.owner}
-        </Badge>
+        <Hint label={OWNER} name={`${OWNER} ${detail.owner}`} className="min-w-0 max-w-full">
+          <Badge variant="muted" appearance="label" className="block max-w-full truncate leading-5">
+            {detail.owner}
+          </Badge>
+        </Hint>
       )}
     </div>
   );
@@ -214,10 +219,10 @@ export function Portrait({ src, className }: { src: string; className?: string }
         >
           {/* Square and centre-cropped, which suits both: FPL ships a 500px
               square cut-out, Sleeper a 350x254 studio card whose only loss to
-              a square is white margin. 96px is as large as the smaller of the
-              two stays sharp at 2x, so this is the size the sources actually
-              support rather than the size that would look boldest. */}
-          <img src={src} alt="" aria-hidden className={cn("size-24 max-w-none bg-photo object-cover", className)} />
+              a square is white margin. 64px: beside a name and one meta line,
+              not towering over the facts under them, and well inside the 96px
+              the smaller source stays sharp at 2x. */}
+          <img src={src} alt="" aria-hidden className={cn("size-16 max-w-none bg-photo object-cover", className)} />
         </m.div>
       )}
     </AnimatePresence>
@@ -291,6 +296,7 @@ export function PlayerPanel({
   const moves = source && shownHere({ tab: movesTab }) ? source.moves : [];
   const nothing = Boolean(opened && part.data && !tables.length && !groups.length && !moves.length);
   const [move, setMove] = useState<ActivityRow | null>(null);
+  const shownFacts = detail ? facts(detail) : [];
 
   // On screen while open, so a question to the assistant docked over the
   // drawer is about him.
@@ -320,27 +326,36 @@ export function PlayerPanel({
           <BackLink back={back} />
         </div>
       )}
-      <div className="flex items-start gap-4 px-5 py-4">
+      <div className="flex items-start gap-4 px-5 py-3.5">
         {player.data && <Portrait src={player.data.image_url} />}
 
-        <div className="min-w-0 flex-1 pt-0.5">
+        <div className="min-w-0 flex-1">
           {player.data ? (
             <>
-              <h2 className="font-display text-[22px] font-semibold leading-tight tracking-tight">
+              <h2 className="font-display text-[21px] font-semibold leading-tight tracking-tight">
                 {player.data.name}
               </h2>
               <TeamLine detail={player.data} />
-              <Chips detail={player.data} className="mt-1.5" />
-              <Headline detail={player.data} />
               {player.data.note && (
-                <Badge variant="warn" appearance="status" className="mt-2">
+                // Wraps rather than running off the drawer: FPL's news is a sentence.
+                <Badge
+                  variant="warn"
+                  appearance="status"
+                  className="mt-1.5 h-auto min-h-5 max-w-full items-start whitespace-normal rounded-md py-[3px] leading-snug before:mt-[3.5px]"
+                >
                   {player.data.note}
                 </Badge>
               )}
+              {/* No figure to lead with: why not, as a sentence rather than a blank cell. */}
+              {!player.data.headline && player.data.headline_label && (
+                <p className="mt-1 text-[12.5px] leading-snug text-muted-foreground">
+                  {player.data.headline_label}
+                </p>
+              )}
             </>
           ) : (
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-6 w-44" />
+            <div className="flex flex-col gap-2 pt-0.5">
+              <Skeleton className="h-5 w-44" />
               <Skeleton className="h-3 w-24" />
             </div>
           )}
@@ -368,12 +383,13 @@ export function PlayerPanel({
           <IconButton label="Close" side="left" icon={<X />} onClick={onClose} />
         </div>
       </div>
+      {shownFacts.length > 0 && <StatCells stats={shownFacts} className="border-t border-border" />}
       {present.length > 1 && (
         <Tabs
           tabs={present.map((t) => ({ id: t, label: t }))}
           current={current}
           onPick={setTab}
-          className="px-5 pb-2"
+          className={cn("px-5 pb-2", shownFacts.length > 0 && "border-t border-border pt-2")}
         />
       )}
       </div>

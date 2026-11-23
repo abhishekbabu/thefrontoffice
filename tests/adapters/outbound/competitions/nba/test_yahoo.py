@@ -953,7 +953,7 @@ def test_off_espns_report_the_drawer_shows_yahoos_status_and_note() -> None:
     detail = nba_provider(FakeYahoo(roster=[CURRY])).player("", "curry")
 
     [injury] = [g for g in detail.groups if g.title == "Injury"]
-    assert [(s.label, s.value) for s in injury.stats] == [("Status", "O"), ("Body part", "Calf")]
+    assert [(s.label, s.value) for s in injury.stats] == [("Status", "Out"), ("Body part", "Calf")]
 
 
 def test_a_healthy_player_has_no_injury_group() -> None:
