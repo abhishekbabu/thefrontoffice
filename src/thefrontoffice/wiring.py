@@ -204,6 +204,17 @@ class Registry:
             raise UnknownCompetitionError(token)
         return found
 
+    def by_key(self, key: str) -> CompetitionEntry:
+        """The entry `key` names exactly: what a route addresses, where a bare competition would be ambiguous.
+
+        Raises:
+            UnknownCompetitionError: no entry has that key.
+        """
+        found = next((e for e in self.entries if e.key == key), None)
+        if found is None:
+            raise UnknownCompetitionError(key)
+        return found
+
     def configured(self) -> list[CompetitionEntry]:
         """Only the competitions this machine has credentials for."""
         return [entry for entry in self.entries if entry.is_configured()]

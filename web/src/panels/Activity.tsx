@@ -16,8 +16,8 @@ import { MoveDrawer, MoveRow, backTo } from "@/components/league/move";
  */
 export function ActivityPanel({ competition, league }: { competition: Competition; league: League }) {
   const schedule = useQuery<LeagueSchedule, Error>({
-    queryKey: keys.schedule(competition.key, league.league_id),
-    queryFn: api.league(competition.key, league.league_id).schedule,
+    queryKey: keys.season(competition.key, league.league_id),
+    queryFn: api.league(competition.key, league.league_id).season,
   });
   const rows = schedule.data?.activity;
   return (

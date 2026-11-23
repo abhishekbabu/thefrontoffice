@@ -1,11 +1,12 @@
-"""What this installation offers: its competitions, and what it can do with them."""
+"""What this installation offers: its competitions, what it can do with them, and the leagues in each."""
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from thefrontoffice.adapters.inbound.web import data
-from thefrontoffice.adapters.inbound.web.routes.deps import CurrentWiring
+from thefrontoffice.adapters.inbound.web.routes.deps import CurrentWiring, Provider
 from thefrontoffice.application.wire import MAX_JUDGED
+from thefrontoffice.domain.ports import LeagueRef
 
 router = APIRouter()
 
@@ -44,3 +45,9 @@ def capabilities(wiring: CurrentWiring) -> Capabilities:
     refused, which is a click spent learning the app cannot do it.
     """
     return Capabilities(ai=wiring.ai_available(), limits=Limits(judged=MAX_JUDGED))
+
+
+@router.get("/api/competitions/{key}/leagues", response_model=list[LeagueRef])
+def list_leagues(key: str, provider: Provider) -> list[LeagueRef]:
+    """Every league this account plays in for the competition `key` names: 'nba-yahoo', never a bare 'nba'."""
+    return provider.list_leagues()

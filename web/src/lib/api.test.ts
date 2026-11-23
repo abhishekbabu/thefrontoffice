@@ -36,7 +36,7 @@ async function pathsAsked(ask: () => Promise<unknown>): Promise<string[]> {
 describe("addressing a league", () => {
   it("encodes every segment, so an id with a slash in it stays one segment", async () => {
     expect(await pathsAsked(() => leagueApi("nfl-sleeper", "a/b").teamRoster("t 1"))).toEqual([
-      "/api/nfl-sleeper/leagues/a%2Fb/teams/t%201/roster",
+      "/api/competitions/nfl-sleeper/leagues/a%2Fb/teams/t%201/roster",
     ]);
   });
 
@@ -47,8 +47,8 @@ describe("addressing a league", () => {
       await league.roster({ sort: "", descending: true });
     });
     expect(asked).toEqual([
-      "/api/nfl-sleeper/leagues/1/roster?sort=Proj&descending=false",
-      "/api/nfl-sleeper/leagues/1/roster?descending=true",
+      "/api/competitions/nfl-sleeper/leagues/1/roster?sort=Proj&descending=false",
+      "/api/competitions/nfl-sleeper/leagues/1/roster?descending=true",
     ]);
   });
 });

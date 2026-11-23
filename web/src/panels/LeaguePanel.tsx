@@ -19,8 +19,8 @@ import { LeagueHeader } from "@/components/league/page-header";
  */
 export function LeaguePanel({ competition, league }: { competition: Competition; league: League }) {
   const schedule = useQuery<LeagueSchedule, Error>({
-    queryKey: keys.schedule(competition.key, league.league_id),
-    queryFn: api.league(competition.key, league.league_id).schedule,
+    queryKey: keys.season(competition.key, league.league_id),
+    queryFn: api.league(competition.key, league.league_id).season,
   });
   const navigate = useNavigate();
   const rosters = href(competition.key, league.league_id, "rosters");

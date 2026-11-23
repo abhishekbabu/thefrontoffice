@@ -31,7 +31,7 @@ type Receipt = { stored: number; leagues: string[]; errors: string[] };
  * it, and every request is the person's own.
  */
 export async function sync(app: string, http: typeof fetch = fetch, page: Document = document): Promise<string> {
-  const endpoint = `${app}/api/yahoo/capture`;
+  const endpoint = `${app}/api/platforms/yahoo/capture`;
   const banner = page.createElement("div");
   banner.setAttribute("role", "status");
   // Inline, and in fixed colors: this lands on Yahoo's page, where the app's tokens do not exist.

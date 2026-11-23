@@ -23,11 +23,11 @@ function server(said: Turn[] = [], expired?: string) {
   msw.use(
     http.all("*", async ({ request }) => {
       const path = new URL(request.url).pathname;
-      if (path.endsWith("/assistant")) {
+      if (path.endsWith("/chats")) {
         state.opened += 1;
         return HttpResponse.json({ chat_id: `chat-${state.opened}` });
       }
-      if (expired && path.endsWith(`/${expired}`) && request.method === "POST") {
+      if (expired && path.endsWith(`/${expired}/turns`) && request.method === "POST") {
         return HttpResponse.json({ detail: "Gone.", code: "chat_expired", remedy: null }, { status: 404 });
       }
       if (request.method === "POST") {

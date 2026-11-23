@@ -101,7 +101,7 @@ async function main() {
     // this run to the shape of a control, and break whenever that changes.
     const competitions = await (await fetch(`${BASE}/api/competitions`)).json();
     for (const competition of competitions.filter((c) => !c.blocked)) {
-      const leagues = await (await fetch(`${BASE}/api/${competition.key}/leagues`)).json();
+      const leagues = await (await fetch(`${BASE}/api/competitions/${competition.key}/leagues`)).json();
       const league = leagues[0];
       if (!league) continue;
 

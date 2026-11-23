@@ -1,13 +1,19 @@
-"""A conversation already open: what has been said in it, and the next question."""
+"""Conversations: opened in a league, then read back and asked by id."""
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from thefrontoffice.adapters.inbound.conversation import Turn
-from thefrontoffice.adapters.inbound.web.routes.deps import OpenChats
+from thefrontoffice.adapters.inbound.conversation import Conversation, Turn
+from thefrontoffice.adapters.inbound.web.routes.deps import LEAGUE, CurrentWiring, Entry, OpenChats, Provider
 from thefrontoffice.domain.models import Subject
 
 router = APIRouter()
+
+
+class Thread(BaseModel):
+    """A conversation opened on the server; asked through its turns."""
+
+    chat_id: str
 
 
 class ChatRequest(BaseModel):
@@ -17,7 +23,21 @@ class ChatRequest(BaseModel):
     on_screen: list[Subject] = Field(default_factory=list, max_length=8)
 
 
-@router.get("/api/chat/{chat_id}", response_model=list[Turn])
+@router.post(f"{LEAGUE}/chats", response_model=Thread)
+def open_chat(
+    key: str, league_id: str, wiring: CurrentWiring, chats: OpenChats, entry: Entry, provider: Provider
+) -> Thread:
+    """Open the conversation that follows you around this league.
+
+    Briefed on nothing yet: each question says what is on screen, and is
+    briefed on whatever of that it has not seen. Its turns are then read and
+    asked by its id, like any other conversation.
+    """
+    opened = wiring.ask(entry, provider).assistant(league_id)
+    return Thread(chat_id=chats.remember(Conversation(opened)))
+
+
+@router.get("/api/chats/{chat_id}", response_model=list[Turn])
 def turns(chat_id: str, chats: OpenChats) -> list[Turn]:
     """What has been said in a conversation so far — what a page reopened on it shows.
 
@@ -26,7 +46,7 @@ def turns(chat_id: str, chats: OpenChats) -> list[Turn]:
     return chats.get(chat_id).turns
 
 
-@router.post("/api/chat/{chat_id}", response_model=list[Turn])
+@router.post("/api/chats/{chat_id}/turns", response_model=list[Turn])
 def ask(chat_id: str, request: ChatRequest, chats: OpenChats) -> list[Turn]:
     """Ask the next question in an open conversation; every turn so far, the answer last.
 

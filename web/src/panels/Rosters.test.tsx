@@ -42,7 +42,7 @@ function rosters(key: string, mine: PlayerCard, outlook?: Outlook) {
   const client = offlineClient();
   client.setQueryData(keys.teams(key, league.league_id), teams);
   client.setQueryData([...keys.roster(key, league.league_id), null], [mine]);
-  if (outlook) client.setQueryData(keys.weeksAhead(key, league.league_id, ""), outlook);
+  if (outlook) client.setQueryData(keys.outlook(key, league.league_id, ""), outlook);
   return client;
 }
 

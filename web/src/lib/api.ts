@@ -126,98 +126,122 @@ function present<Query extends object>(query: Query): Query {
  * `openapi-fetch` encodes each parameter, so an id with a slash in it stays
  * one segment rather than addressing a different route.
  */
-export function leagueApi(competition: string, league: string) {
-  const at = { competition, league_id: league };
+export function leagueApi(key: string, league: string) {
+  const at = { key, league_id: league };
   return {
     roster: (order: PlayerOrder = {}) =>
-      settle(client.GET("/api/{competition}/leagues/{league_id}/roster", { params: { path: at, query: present(order) } })),
+      settle(client.GET("/api/competitions/{key}/leagues/{league_id}/roster", { params: { path: at, query: present(order) } })),
     player: (id: string) =>
       settle(
-        client.GET("/api/{competition}/leagues/{league_id}/players/{player_id}", {
+        client.GET("/api/competitions/{key}/leagues/{league_id}/players/{player_id}", {
           params: { path: { ...at, player_id: id } },
         }),
       ),
     /** One tab of his drawer read only when opened (`PlayerDetail.deferred`). */
     playerTab: (id: string, tab: string) =>
       settle(
-        client.GET("/api/{competition}/leagues/{league_id}/players/{player_id}/tabs/{tab}", {
+        client.GET("/api/competitions/{key}/leagues/{league_id}/players/{player_id}/tabs/{tab}", {
           params: { path: { ...at, player_id: id, tab } },
         }),
       ),
     compare: (ids: string[]) =>
-      settle(client.GET("/api/{competition}/leagues/{league_id}/compare", { params: { path: at, query: { ids } } })),
+      settle(client.GET("/api/competitions/{key}/leagues/{league_id}/compare", { params: { path: at, query: { ids } } })),
     searchPlayers: (search: string) =>
       settle(
-        client.GET("/api/{competition}/leagues/{league_id}/players", { params: { path: at, query: present({ search }) } }),
+        client.GET("/api/competitions/{key}/leagues/{league_id}/players", {
+          params: { path: at, query: present({ search }) },
+        }),
       ),
-    summary: () => settle(client.GET("/api/{competition}/leagues/{league_id}/summary", { params: { path: at } })),
-    /** Another week of the season, as played or as it projects; the week being played is `summary`. */
+    /** The week being played, with its to-do list and its forecast. */
+    week: () => settle(client.GET("/api/competitions/{key}/leagues/{league_id}/week", { params: { path: at } })),
+    /** Another week of the season, as played or as it projects; the week being played is `week`. */
     weekOf: (week: number) =>
-      settle(client.GET("/api/{competition}/leagues/{league_id}/weeks/{week}", { params: { path: { ...at, week } } })),
+      settle(
+        client.GET("/api/competitions/{key}/leagues/{league_id}/weeks/{week}", { params: { path: { ...at, week } } }),
+      ),
     /** The real games of any week of the season, the week being played included. */
     gamesOf: (week: number) =>
       settle(
-        client.GET("/api/{competition}/leagues/{league_id}/weeks/{week}/games", { params: { path: { ...at, week } } }),
+        client.GET("/api/competitions/{key}/leagues/{league_id}/weeks/{week}/games", {
+          params: { path: { ...at, week } },
+        }),
       ),
-    schedule: () => settle(client.GET("/api/{competition}/leagues/{league_id}/schedule", { params: { path: at } })),
-    weeksAhead: (team = "") =>
+    season: () => settle(client.GET("/api/competitions/{key}/leagues/{league_id}/season", { params: { path: at } })),
+    /** A team's next few weeks: your own unless another team is named. */
+    outlook: (team = "") =>
       settle(
-        client.GET("/api/{competition}/leagues/{league_id}/weeks-ahead", { params: { path: at, query: present({ team }) } }),
+        team
+          ? client.GET("/api/competitions/{key}/leagues/{league_id}/teams/{team_id}/outlook", {
+              params: { path: { ...at, team_id: team } },
+            })
+          : client.GET("/api/competitions/{key}/leagues/{league_id}/outlook", { params: { path: at } }),
       ),
-    trades: () => settle(client.GET("/api/{competition}/leagues/{league_id}/trades", { params: { path: at } })),
-    teams: () => settle(client.GET("/api/{competition}/leagues/{league_id}/teams", { params: { path: at } })),
+    trades: () => settle(client.GET("/api/competitions/{key}/leagues/{league_id}/trades", { params: { path: at } })),
+    teams: () => settle(client.GET("/api/competitions/{key}/leagues/{league_id}/teams", { params: { path: at } })),
     teamRoster: (team: string, order: PlayerOrder = {}) =>
       settle(
-        client.GET("/api/{competition}/leagues/{league_id}/teams/{team_id}/roster", {
+        client.GET("/api/competitions/{key}/leagues/{league_id}/teams/{team_id}/roster", {
           params: { path: { ...at, team_id: team }, query: present(order) },
         }),
       ),
     decide: (decision: ItemDecision) =>
-      settle(client.POST("/api/{competition}/leagues/{league_id}/items", { params: { path: at }, body: decision })),
+      settle(
+        client.POST("/api/competitions/{key}/leagues/{league_id}/items", { params: { path: at }, body: decision }),
+      ),
     freeAgents: (query: FreeAgentQuery = {}) =>
       settle(
-        client.GET("/api/{competition}/leagues/{league_id}/free-agents", { params: { path: at, query: present(query) } }),
+        client.GET("/api/competitions/{key}/leagues/{league_id}/free-agents", {
+          params: { path: at, query: present(query) },
+        }),
       ),
+    /** The calls already made on these free agents, without asking the model. */
     freeAgentCalls: (playerIds: string[]) =>
       settle(
-        client.POST("/api/{competition}/leagues/{league_id}/free-agents/calls", {
-          params: { path: at },
-          body: { player_ids: playerIds },
+        client.GET("/api/competitions/{key}/leagues/{league_id}/free-agents/calls", {
+          params: { path: at, query: { ids: playerIds } },
         }),
       ),
+    /** Ask the model for a call on each of these free agents. */
     judgeFreeAgents: (playerIds: string[]) =>
       settle(
-        client.POST("/api/{competition}/leagues/{league_id}/free-agents/judge", {
+        client.POST("/api/competitions/{key}/leagues/{league_id}/free-agents/calls", {
           params: { path: at },
           body: { player_ids: playerIds },
         }),
       ),
-    scout: () => settle(client.POST("/api/{competition}/leagues/{league_id}/scout", { params: { path: at } })),
-    judgment: () => settle(client.GET("/api/{competition}/leagues/{league_id}/judgment", { params: { path: at } })),
+    /** Judge the week's to-do list, or return the kept judgment where nothing has changed. */
+    judge: () => settle(client.POST("/api/competitions/{key}/leagues/{league_id}/judgment", { params: { path: at } })),
+    /** The kept judgment, without asking the model. */
+    judgment: () =>
+      settle(client.GET("/api/competitions/{key}/leagues/{league_id}/judgment", { params: { path: at } })),
     /** Open the assistant's conversation in this league; asked through `api.ask`. */
-    assistant: () => settle(client.POST("/api/{competition}/leagues/{league_id}/assistant", { params: { path: at } })),
+    openChat: () => settle(client.POST("/api/competitions/{key}/leagues/{league_id}/chats", { params: { path: at } })),
   };
 }
 
 export const api = {
   competitions: () => settle(client.GET("/api/competitions")),
   capabilities: () => settle(client.GET("/api/capabilities")),
-  leagues: (competition: string) =>
-    settle(client.GET("/api/{competition}/leagues", { params: { path: { competition } } })),
+  leagues: (key: string) => settle(client.GET("/api/competitions/{key}/leagues", { params: { path: { key } } })),
   league: leagueApi,
   /** What has been said in a conversation: the server keeps it, so a reopened chat shows it. */
-  turns: (chatId: string) => settle(client.GET("/api/chat/{chat_id}", { params: { path: { chat_id: chatId } } })),
+  turns: (chatId: string) => settle(client.GET("/api/chats/{chat_id}", { params: { path: { chat_id: chatId } } })),
   /** Ask the next question with what is on screen; answered with every turn so far, the answer last. */
   ask: (chatId: string, message: string, onScreen: Subject[] = []) =>
     settle(
-      client.POST("/api/chat/{chat_id}", { params: { path: { chat_id: chatId } }, body: { message, on_screen: onScreen } }),
+      client.POST("/api/chats/{chat_id}/turns", {
+        params: { path: { chat_id: chatId } },
+        body: { message, on_screen: onScreen },
+      }),
     ),
   settings: () => settle(client.GET("/api/settings")),
   saveSettings: (values: Record<string, string>) => settle(client.PUT("/api/settings", { body: { values } })),
   /** Start a platform's login, named as a remedy names it: `yahoo`. */
-  login: (platform: string) => settle(client.POST("/api/{platform}/login", { params: { path: { platform } } })),
-  loginState: (platform: string) => settle(client.GET("/api/{platform}/login", { params: { path: { platform } } })),
+  login: (platform: string) =>
+    settle(client.POST("/api/platforms/{platform}/login", { params: { path: { platform } } })),
+  loginState: (platform: string) =>
+    settle(client.GET("/api/platforms/{platform}/login", { params: { path: { platform } } })),
   /** When a platform's browser sync last stored anything, and which leagues it holds. */
   captureStatus: (platform: string) =>
-    settle(client.GET("/api/{platform}/capture", { params: { path: { platform } } })),
+    settle(client.GET("/api/platforms/{platform}/capture", { params: { path: { platform } } })),
 };

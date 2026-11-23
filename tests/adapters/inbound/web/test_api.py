@@ -146,7 +146,7 @@ def test_a_competition_says_what_it_can_do() -> None:
 
 
 def test_leagues_are_listed(client: TestClient) -> None:
-    body = client.get("/api/premier-league/leagues").json()
+    body = client.get("/api/competitions/premier-league-fpl/leagues").json()
     assert body == [
         {
             "league_id": "900",
@@ -170,7 +170,9 @@ def test_a_roster_is_ordered_by_the_column_asked_for_as_a_page_of_the_wire_is() 
     """By the number behind the column: '£15.5m' sorted as text sits below '£9.0m'."""
     client = _client(_Squad())
 
-    body = client.get("/api/premier-league/leagues/900/roster", params={"sort": "Price", "descending": True}).json()
+    body = client.get(
+        "/api/competitions/premier-league-fpl/leagues/900/roster", params={"sort": "Price", "descending": True}
+    ).json()
 
     assert [card["player_id"] for card in body] == ["2", "3", "1"]
 
@@ -179,7 +181,7 @@ def test_an_unconfigured_competition_is_a_readable_400() -> None:
     """These are conditions the user can act on, not faults in the server."""
     client = TestClient(web.create_app(fake_wiring(registry=REGISTRY.entries)))
 
-    response = client.get("/api/nba-yahoo/leagues")
+    response = client.get("/api/competitions/nba-yahoo/leagues")
 
     assert response.status_code == 400
     assert "YAHOO_CLIENT_ID" in response.json()["detail"]
@@ -187,7 +189,7 @@ def test_an_unconfigured_competition_is_a_readable_400() -> None:
 
 
 def test_an_unknown_competition_is_a_404(client: TestClient) -> None:
-    response = client.get("/api/cricket/leagues")
+    response = client.get("/api/competitions/cricket/leagues")
 
     assert response.status_code == 404
     assert response.json()["code"] == "unknown_competition"
@@ -198,7 +200,7 @@ def test_a_platform_failure_reaches_the_client_in_words() -> None:
 
     error = SleeperAPIError("Sleeper is down")
 
-    response = _client(FakeProvider(error)).get("/api/nfl/leagues")
+    response = _client(FakeProvider(error)).get("/api/competitions/nfl-sleeper/leagues")
 
     assert response.status_code == 400
     assert response.json() == {"detail": str(error), "code": error.code, "remedy": None}
@@ -208,7 +210,7 @@ def test_a_domain_error_carries_a_code_the_client_can_act_on() -> None:
     """The message deliberately names no command, so the client needs this to know it can offer a button."""
     from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooLoginRequiredError
 
-    body = _client(FakeProvider(YahooLoginRequiredError())).get("/api/nba/leagues").json()
+    body = _client(FakeProvider(YahooLoginRequiredError())).get("/api/competitions/nba-yahoo/leagues").json()
 
     assert body["code"] == YahooLoginRequiredError.code
     assert (body["remedy"]["action"], body["remedy"]["platform"]) == ("authorize", "yahoo")
@@ -227,14 +229,18 @@ def test_the_app_says_its_limits_rather_than_leaving_the_page_to_restate_them(cl
 
 def test_a_report_crosses_the_wire_as_the_domain_model() -> None:
     """No second representation to keep in step with ScoutReport."""
-    body = _client(ai=FakeAI(report=MOCK_FPL_REPORT)).post("/api/premier-league/leagues/900/scout").json()
+    body = (
+        _client(ai=FakeAI(report=MOCK_FPL_REPORT))
+        .post("/api/competitions/premier-league-fpl/leagues/900/judgment")
+        .json()
+    )
 
     assert body["situation"] == MOCK_FPL_REPORT.situation
     assert body["moves"][0]["action"] == "CAPTAIN"
 
 
 def test_a_league_never_judged_has_no_judgment_to_show(client: TestClient) -> None:
-    response = client.get("/api/premier-league/leagues/900/judgment")
+    response = client.get("/api/competitions/premier-league-fpl/leagues/900/judgment")
 
     assert response.status_code == 200
     assert response.json() is None
@@ -248,7 +254,7 @@ def test_the_last_judgment_is_shown_without_running_the_model() -> None:
     )
     ai = FakeAI()
 
-    body = _client(ai=ai, answers=answers).get("/api/premier-league/leagues/900/judgment").json()
+    body = _client(ai=ai, answers=answers).get("/api/competitions/premier-league-fpl/leagues/900/judgment").json()
 
     assert body["answer"]["strategy"] == MOCK_FPL_REPORT.strategy
     assert body["answered_at"]
@@ -265,7 +271,7 @@ def test_the_summary_is_served_without_calling_a_model() -> None:
         mine=Side(name="Mine", lineup=[Spot(player="P", detail="d", value="1.0")]),
     )
 
-    body = _client(_SummaryProvider(week), ai=ai).get("/api/nfl/leagues/L1/summary").json()
+    body = _client(_SummaryProvider(week), ai=ai).get("/api/competitions/nfl-sleeper/leagues/L1/week").json()
 
     assert body["headline"][0]["label"] == "Week"
     assert body["mine"]["lineup"][0]["player"] == "P"
@@ -280,7 +286,7 @@ def test_free_agents_are_judged_where_the_competition_can() -> None:
 
     body = (
         _client(_Wire(), ai=ai)
-        .post("/api/nfl-sleeper/leagues/900/free-agents/judge", json={"player_ids": ["p1", "p2"]})
+        .post("/api/competitions/nfl-sleeper/leagues/900/free-agents/calls", json={"player_ids": ["p1", "p2"]})
         .json()
     )
 
@@ -298,7 +304,7 @@ def test_the_kept_calls_on_free_agents_are_shown_without_judging() -> None:
 
     body = (
         _client(_Wire(), ai=ai, answers=answers)
-        .post("/api/nfl-sleeper/leagues/900/free-agents/calls", json={"player_ids": ["p1"]})
+        .get("/api/competitions/nfl-sleeper/leagues/900/free-agents/calls", params={"ids": ["p1"]})
         .json()
     )
 
@@ -307,7 +313,9 @@ def test_the_kept_calls_on_free_agents_are_shown_without_judging() -> None:
 
 
 def test_judging_free_agents_is_refused_where_it_is_not_offered(client: TestClient) -> None:
-    response = client.post("/api/premier-league-fpl/leagues/900/free-agents/judge", json={"player_ids": ["p1"]})
+    response = client.post(
+        "/api/competitions/premier-league-fpl/leagues/900/free-agents/calls", json={"player_ids": ["p1"]}
+    )
 
     assert response.status_code == 400
     assert response.json()["code"] == "unsupported"
@@ -318,7 +326,10 @@ def test_judging_is_bounded_to_a_screen_of_players(client: TestClient) -> None:
 
     ids = [f"p{i}" for i in range(MAX_JUDGED + 1)]
 
-    assert client.post("/api/nfl-sleeper/leagues/900/free-agents/judge", json={"player_ids": ids}).status_code == 422
+    assert (
+        client.post("/api/competitions/nfl-sleeper/leagues/900/free-agents/calls", json={"player_ids": ids}).status_code
+        == 422
+    )
 
 
 # ── conversations ───────────────────────────────────────────────────────
@@ -326,7 +337,7 @@ def test_judging_is_bounded_to_a_screen_of_players(client: TestClient) -> None:
 
 def _opened(client: TestClient) -> str:
     """The assistant's conversation in one league, as the page opens it."""
-    return client.post("/api/premier-league/leagues/900/assistant").json()["chat_id"]
+    return client.post("/api/competitions/premier-league-fpl/leagues/900/chats").json()["chat_id"]
 
 
 def test_the_assistant_is_asked_with_what_is_on_screen() -> None:
@@ -335,7 +346,7 @@ def test_the_assistant_is_asked_with_what_is_on_screen() -> None:
 
     on_screen = [{"kind": "page", "key": "matchup"}, {"kind": "task", "key": ITEM.key}]
     body = client.post(
-        f"/api/chat/{_opened(client)}", json={"message": "Why bench him?", "on_screen": on_screen}
+        f"/api/chats/{_opened(client)}/turns", json={"message": "Why bench him?", "on_screen": on_screen}
     ).json()
 
     assert body[-1] == {"role": "model", "text": "Because he has no fixture."}
@@ -346,7 +357,7 @@ def test_a_question_about_an_item_since_settled_says_so(client: TestClient) -> N
     from thefrontoffice.domain.errors import SubjectGoneError
 
     on_screen = [{"kind": "task", "key": "gone"}]
-    response = client.post(f"/api/chat/{_opened(client)}", json={"message": "Why?", "on_screen": on_screen})
+    response = client.post(f"/api/chats/{_opened(client)}/turns", json={"message": "Why?", "on_screen": on_screen})
 
     assert response.json()["code"] == SubjectGoneError.code
 
@@ -356,17 +367,21 @@ def test_a_turn_keeps_the_question_not_the_briefing_that_rode_with_it() -> None:
     chat_id = _opened(client)
 
     body = client.post(
-        f"/api/chat/{chat_id}", json={"message": "Why?", "on_screen": [{"kind": "page", "key": "matchup"}]}
+        f"/api/chats/{chat_id}/turns", json={"message": "Why?", "on_screen": [{"kind": "page", "key": "matchup"}]}
     )
 
     assert [t["text"] for t in body.json() if t["role"] == "you"] == ["Why?"]
 
 
-@pytest.mark.parametrize("method", ["get", "post"])
-def test_an_expired_conversation_says_so_with_a_code_the_page_can_act_on(client: TestClient, method: str) -> None:
+@pytest.mark.parametrize(
+    ("method", "path"), [("get", "/api/chats/does-not-exist"), ("post", "/api/chats/does-not-exist/turns")]
+)
+def test_an_expired_conversation_says_so_with_a_code_the_page_can_act_on(
+    client: TestClient, method: str, path: str
+) -> None:
     """Chats live in memory, so a restart loses them. The page kept the old id
     and was stuck on it: the code is what tells it to open a fresh one."""
-    response = client.request(method.upper(), "/api/chat/does-not-exist", json={"message": "Hi"})
+    response = client.request(method.upper(), path, json={"message": "Hi"})
 
     assert (response.status_code, response.json()["code"]) == (404, "chat_expired")
 
@@ -375,9 +390,9 @@ def test_a_reopened_conversation_reads_back_what_was_said() -> None:
     """The server carries the conversation on, so a page reopened on it shows it rather than a blank."""
     client = _client(ai=FakeAI(chat=FakeChat(reply="Because he has no fixture.")))
     chat_id = _opened(client)
-    client.post(f"/api/chat/{chat_id}", json={"message": "Why bench him?"})
+    client.post(f"/api/chats/{chat_id}/turns", json={"message": "Why bench him?"})
 
-    turns = client.get(f"/api/chat/{chat_id}").json()
+    turns = client.get(f"/api/chats/{chat_id}").json()
 
     assert [(t["role"], t["text"]) for t in turns] == [
         ("you", "Why bench him?"),
@@ -389,11 +404,11 @@ def test_a_follow_up_answers_with_the_whole_conversation_as_the_server_holds_it(
     """The page shows what it is sent rather than appending a copy it must keep in step."""
     client = _client(ai=FakeAI(chat=FakeChat(reply="Because.")))
     chat_id = _opened(client)
-    client.post(f"/api/chat/{chat_id}", json={"message": "Why?"})
+    client.post(f"/api/chats/{chat_id}/turns", json={"message": "Why?"})
 
-    body = client.post(f"/api/chat/{chat_id}", json={"message": "Really?"}).json()
+    body = client.post(f"/api/chats/{chat_id}/turns", json={"message": "Really?"}).json()
 
-    assert body == client.get(f"/api/chat/{chat_id}").json()
+    assert body == client.get(f"/api/chats/{chat_id}").json()
     assert [t["text"] for t in body if t["role"] == "you"] == ["Why?", "Really?"]
 
 
@@ -402,18 +417,18 @@ def test_the_server_holds_a_bounded_number_of_conversations_dropping_the_least_r
     fpl = entry(FakeProvider(), competition="premier-league", platform="fpl")
     client = TestClient(web.create_app(fake_wiring(fpl), max_chats=2))
     first, second = (_opened(client) for _ in range(2))
-    client.get(f"/api/chat/{first}")  # read since, so the second is now the oldest
+    client.get(f"/api/chats/{first}")  # read since, so the second is now the oldest
 
     _opened(client)
 
-    assert client.get(f"/api/chat/{first}").status_code == 200
-    assert client.get(f"/api/chat/{second}").json()["code"] == "chat_expired"
+    assert client.get(f"/api/chats/{first}").status_code == 200
+    assert client.get(f"/api/chats/{second}").json()["code"] == "chat_expired"
 
 
 def test_a_model_failure_is_a_bad_gateway_not_a_crash() -> None:
     client = _client(ai=FakeAI(chat=FakeChat(error=RuntimeError("quota exhausted"))))
 
-    response = client.post(f"/api/chat/{_opened(client)}", json={"message": "Why?"})
+    response = client.post(f"/api/chats/{_opened(client)}/turns", json={"message": "Why?"})
 
     assert (response.status_code, response.json()["code"]) == (502, "ai_failed")
     assert "quota exhausted" not in response.json()["detail"]  # a vendor's repr belongs in the log
@@ -422,7 +437,7 @@ def test_a_model_failure_is_a_bad_gateway_not_a_crash() -> None:
 def test_an_empty_follow_up_is_rejected(client: TestClient) -> None:
     chat_id = _opened(client)
 
-    response = client.post(f"/api/chat/{chat_id}", json={"message": ""})
+    response = client.post(f"/api/chats/{chat_id}/turns", json={"message": ""})
 
     assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
     assert isinstance(response.json()["detail"], str)  # one sentence, not FastAPI's field list
@@ -476,7 +491,7 @@ def test_a_route_that_does_not_exist_carries_a_code_like_any_failure(client: Tes
 
 
 def test_a_platform_with_no_login_is_a_404_with_its_code(client: TestClient) -> None:
-    response = client.post("/api/cricket/login")
+    response = client.post("/api/platforms/cricket/login")
     assert (response.status_code, response.json()["code"]) == (404, "not_found")
 
 
@@ -488,7 +503,9 @@ YAHOO_PAGE = {"Origin": "https://basketball.fantasysports.yahoo.com"}
 def test_the_sync_plan_covers_each_league_the_bookmark_names() -> None:
     client = _client()
 
-    plan = client.get("/api/yahoo/capture/plan", params={"leagues": "466.l.1,466.l.2"}, headers=YAHOO_PAGE).json()
+    plan = client.get(
+        "/api/platforms/yahoo/capture/plan", params={"leagues": "466.l.1,466.l.2"}, headers=YAHOO_PAGE
+    ).json()
 
     assert [step["league"] for step in plan["steps"]] == ["", "466.l.1", "466.l.2"]
 
@@ -499,7 +516,9 @@ def test_a_hand_over_is_stored_before_the_reply_says_what_landed() -> None:
     profile = {"path": "profile", "status": 200, "body": "<x/>"}
     responses = [{"path": "leagues", "status": 200, "body": "<x/>"}]
 
-    response = client.post("/api/yahoo/capture", json={"profile": profile, "responses": responses}, headers=YAHOO_PAGE)
+    response = client.post(
+        "/api/platforms/yahoo/capture", json={"profile": profile, "responses": responses}, headers=YAHOO_PAGE
+    )
 
     assert response.json()["stored"] == 1
     assert [r.path for c in capture.ingested for r in c.responses] == ["leagues"]
@@ -511,14 +530,34 @@ def test_a_hand_over_carrying_anything_but_bodies_is_refused() -> None:
     client = _client(capture=capture)
     profile = {"path": "profile", "status": 200, "body": "<x/>", "cookie": "Y=secret"}
 
-    response = client.post("/api/yahoo/capture", json={"profile": profile, "responses": []}, headers=YAHOO_PAGE)
+    response = client.post(
+        "/api/platforms/yahoo/capture", json={"profile": profile, "responses": []}, headers=YAHOO_PAGE
+    )
 
     assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
     assert capture.ingested == []
 
 
+def test_a_bookmark_installed_before_the_move_still_syncs_through_the_old_paths() -> None:
+    """Its code lives in the browser, so `/api/yahoo/capture` answers, through the same gate, for as long as one might."""
+    capture = FakeCapture()
+    client = _client(capture=capture)
+    profile = {"path": "profile", "status": 200, "body": "<x/>"}
+
+    plan = client.get("/api/yahoo/capture/plan", params={"leagues": "466.l.1"}, headers=YAHOO_PAGE)
+    handed = client.post("/api/yahoo/capture", json={"profile": profile, "responses": []}, headers=YAHOO_PAGE)
+
+    assert [step["league"] for step in plan.json()["steps"]] == ["", "466.l.1"]
+    assert plan.headers["access-control-allow-origin"] == YAHOO_PAGE["Origin"]
+    assert (handed.status_code, len(capture.ingested)) == (200, 1)
+
+
+def test_the_old_sync_paths_stay_out_of_the_schema() -> None:
+    assert not any(path.startswith("/api/yahoo/") for path in _client().get("/api/openapi.json").json()["paths"])
+
+
 def test_a_platform_with_no_browser_sync_is_a_404_with_its_code(client: TestClient) -> None:
-    response = client.get("/api/sleeper/capture/plan")
+    response = client.get("/api/platforms/sleeper/capture/plan")
     assert (response.status_code, response.json()["code"]) == (404, "not_found")
 
 
@@ -615,7 +654,9 @@ def test_saving_a_model_key_turns_analysis_on_without_a_restart(
 def _settled(client: TestClient) -> dict[str, str]:
     """The handshake's state once it has stopped running."""
     deadline = time.monotonic() + 5
-    while (state := client.get("/api/yahoo/login").json())["status"] == "running" and time.monotonic() < deadline:
+    while (state := client.get("/api/platforms/yahoo/login").json())[
+        "status"
+    ] == "running" and time.monotonic() < deadline:
         time.sleep(0.01)
     return state
 
@@ -625,7 +666,7 @@ def test_starting_the_handshake_returns_at_once() -> None:
     clicked = threading.Event()
     client = TestClient(web.create_app(fake_wiring(login=FakeLogin(hold=clicked))))
     try:
-        assert client.post("/api/yahoo/login").json()["status"] == "running"
+        assert client.post("/api/platforms/yahoo/login").json()["status"] == "running"
     finally:
         clicked.set()
 
@@ -635,8 +676,8 @@ def test_a_second_start_does_not_open_a_second_browser_tab() -> None:
     login = FakeLogin(hold=clicked)
     client = TestClient(web.create_app(fake_wiring(login=login)))
     try:
-        client.post("/api/yahoo/login")
-        client.post("/api/yahoo/login")
+        client.post("/api/platforms/yahoo/login")
+        client.post("/api/platforms/yahoo/login")
     finally:
         clicked.set()
     _settled(client)
@@ -649,12 +690,12 @@ def test_a_previous_outcome_does_not_leak_into_a_new_attempt() -> None:
     clicked = threading.Event()
     clicked.set()
     client = TestClient(web.create_app(fake_wiring(login=FakeLogin(hold=clicked))))
-    client.post("/api/yahoo/login")
+    client.post("/api/platforms/yahoo/login")
     assert _settled(client)["status"] == "ok"
 
     clicked.clear()
     try:
-        assert client.post("/api/yahoo/login").json()["status"] == "running"
+        assert client.post("/api/platforms/yahoo/login").json()["status"] == "running"
     finally:
         clicked.set()
 
@@ -663,7 +704,7 @@ def test_a_failed_handshake_is_reported_in_the_domains_words() -> None:
     from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAuthError
 
     client = TestClient(web.create_app(fake_wiring(login=FakeLogin(error=YahooAuthError()))))
-    client.post("/api/yahoo/login")
+    client.post("/api/platforms/yahoo/login")
 
     state = _settled(client)
 
@@ -674,7 +715,7 @@ def test_success_is_only_reported_once_the_grant_is_verified() -> None:
     """A login that completes and hands back an inert token is not a success."""
     login = FakeLogin()
     client = TestClient(web.create_app(fake_wiring(login=login)))
-    client.post("/api/yahoo/login")
+    client.post("/api/platforms/yahoo/login")
 
     assert _settled(client)["status"] == "ok"
     assert login.verified.is_set()
@@ -703,10 +744,10 @@ def test_a_dismissed_item_comes_back_marked_rather_than_gone() -> None:
     client = _week_with_one_item()
 
     kept = client.post(
-        "/api/nfl-sleeper/leagues/L1/items",
+        "/api/competitions/nfl-sleeper/leagues/L1/items",
         json={"key": ITEM.key, "decision": "dismiss", "fingerprint": ITEM.fingerprint},
     ).json()
-    [shown] = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["actions"]
+    [shown] = client.get("/api/competitions/nfl-sleeper/leagues/L1/week").json()["actions"]
 
     assert kept == shown["mark"]
     assert shown["mark"]["hidden"] == "dismissed"
@@ -724,24 +765,18 @@ def test_the_week_carries_the_last_verdict_on_each_item() -> None:
 
     [shown] = (
         _client(_SummaryProvider(Summary(actions=[changed])), answers=answers)
-        .get("/api/nfl-sleeper/leagues/L1/summary")
+        .get("/api/competitions/nfl-sleeper/leagues/L1/week")
         .json()["actions"]
     )
 
     assert (shown["verdict"]["decision"], shown["stale"]) == ("WAIT", True)
 
 
-def test_a_decision_made_under_a_bare_competition_holds_under_its_key() -> None:
-    """Kept by the entry it names, however the route spelled it."""
-    client = _week_with_one_item()
+def test_a_bare_competition_names_no_route() -> None:
+    """A route is addressed by its entry's key: 'nfl' alone stops naming one once a second platform carries it."""
+    response = _week_with_one_item().get("/api/competitions/nfl/leagues/L1/week")
 
-    client.post(
-        "/api/nfl/leagues/L1/items",
-        json={"key": ITEM.key, "decision": "dismiss", "fingerprint": ITEM.fingerprint},
-    )
-    [shown] = client.get("/api/nfl-sleeper/leagues/L1/summary").json()["actions"]
-
-    assert shown["mark"]["hidden"] == "dismissed"
+    assert (response.status_code, response.json()["code"]) == (404, "unknown_competition")
 
 
 # ── the week, simulated ─────────────────────────────────────────────────
@@ -786,14 +821,16 @@ class _WireProvider(_ForecastProvider):
 def test_free_agents_carry_what_each_does_to_the_chance() -> None:
     client = _client(_WireProvider(None))
 
-    rows = {p["player_id"]: p for p in client.get("/api/nfl-sleeper/leagues/L1/free-agents").json()["players"]}
+    rows = {
+        p["player_id"]: p for p in client.get("/api/competitions/nfl-sleeper/leagues/L1/free-agents").json()["players"]
+    }
 
     assert rows["starter"]["values"]["Win"] == 1.0  # a sure loss turned a sure win
     assert rows["bench"]["columns"]["Win"] == "—"
 
 
 def test_a_free_agent_page_is_bounded_as_the_query_is() -> None:
-    response = _client(_WireProvider(None)).get("/api/nfl-sleeper/leagues/L1/free-agents?limit=500")
+    response = _client(_WireProvider(None)).get("/api/competitions/nfl-sleeper/leagues/L1/free-agents?limit=500")
 
     assert response.status_code == 422
 
@@ -842,7 +879,7 @@ def test_trades_are_priced_in_playoff_chance() -> None:
 
     client = _client(_SeasonProvider(Summary()))
 
-    [idea] = client.get("/api/nfl-sleeper/leagues/L1/trades").json()["ideas"]
+    [idea] = client.get("/api/competitions/nfl-sleeper/leagues/L1/trades").json()["ideas"]
 
     assert (idea["team"], idea["giving"], idea["receiving"]) == ("Them", ["A (QB)"], ["B (WR)"])
     assert idea["playoffs_change"] > 0
@@ -855,7 +892,15 @@ class _OutlookProvider(_SummaryProvider):
         week = WeekAhead(
             week=8, points=98.0, short_by=23.0, missing=["A (bye)"], short=True, fix="Pick up B", gain=12.0
         )
-        return Outlook(usual=121.0, weeks=[week])
+        return Outlook(usual=121.0 if not team_id else 99.0, weeks=[week])
+
+
+def test_another_teams_weeks_ahead_are_read_under_that_team() -> None:
+    from thefrontoffice.domain.models import Summary
+
+    client = _client(_OutlookProvider(Summary()))
+
+    assert client.get("/api/competitions/nfl-sleeper/leagues/L1/teams/T2/outlook").json()["usual"] == 99.0
 
 
 def test_the_weeks_ahead_come_back_with_their_fixes() -> None:
@@ -863,7 +908,7 @@ def test_the_weeks_ahead_come_back_with_their_fixes() -> None:
 
     client = _client(_OutlookProvider(Summary()))
 
-    outlook = client.get("/api/nfl-sleeper/leagues/L1/weeks-ahead").json()
+    outlook = client.get("/api/competitions/nfl-sleeper/leagues/L1/outlook").json()
     [week] = outlook["weeks"]
 
     assert outlook["usual"] == 121.0
@@ -883,7 +928,7 @@ class _BrowsingProvider(_SummaryProvider):
 def test_another_week_comes_back_with_where_it_sits_in_the_season() -> None:
     from thefrontoffice.domain.models import Summary
 
-    body = _client(_BrowsingProvider(Summary())).get("/api/nfl-sleeper/leagues/L1/weeks/4").json()
+    body = _client(_BrowsingProvider(Summary())).get("/api/competitions/nfl-sleeper/leagues/L1/weeks/4").json()
 
     assert (body["window"], body["weeks"]["week"], body["weeks"]["current"], body["actions"]) == (
         "Week 4",
@@ -896,7 +941,7 @@ def test_another_week_comes_back_with_where_it_sits_in_the_season() -> None:
 def test_a_weeks_real_games_come_back_by_number() -> None:
     from thefrontoffice.domain.models import Summary
 
-    body = _client(_BrowsingProvider(Summary())).get("/api/nfl-sleeper/leagues/L1/weeks/4/games").json()
+    body = _client(_BrowsingProvider(Summary())).get("/api/competitions/nfl-sleeper/leagues/L1/weeks/4/games").json()
     [game] = body["games"]
 
     assert (game["label"], game["detail"], body["byes"]) == ("Week 4", "Final", ["KC"])
@@ -907,7 +952,7 @@ def test_the_table_carries_each_teams_playoff_chance() -> None:
 
     client = _client(_SeasonProvider(Summary()))
 
-    [row] = client.get("/api/nfl-sleeper/leagues/L1/schedule").json()["standings"]
+    [row] = client.get("/api/competitions/nfl-sleeper/leagues/L1/season").json()["standings"]
 
     assert row["playoffs"] == "100%"
 
@@ -919,7 +964,7 @@ def test_a_platform_that_is_down_is_a_503_that_says_so() -> None:
 
     client = _client(FakeProvider(FPLUnavailableError("it answered 503")))
 
-    response = client.get("/api/premier-league-fpl/leagues")
+    response = client.get("/api/competitions/premier-league-fpl/leagues")
 
     assert response.status_code == 503
     assert response.json()["code"] == PlatformUnavailableError.code
@@ -993,7 +1038,7 @@ class _Comparable(FakeProvider):
 
 
 def test_players_compare_side_by_side_in_the_order_asked() -> None:
-    body = _client(_Comparable()).get("/api/nfl/leagues/900/compare?ids=2&ids=1").json()
+    body = _client(_Comparable()).get("/api/competitions/nfl-sleeper/leagues/900/compare?ids=2&ids=1").json()
 
     assert [p["player_id"] for p in body["players"]] == ["2", "1"]
     [table] = body["tables"]
@@ -1001,13 +1046,15 @@ def test_players_compare_side_by_side_in_the_order_asked() -> None:
 
 
 def test_more_than_four_players_is_refused() -> None:
-    response = _client(_Comparable()).get("/api/nfl/leagues/900/compare?" + "&".join(f"ids={i}" for i in range(5)))
+    response = _client(_Comparable()).get(
+        "/api/competitions/nfl-sleeper/leagues/900/compare?" + "&".join(f"ids={i}" for i in range(5))
+    )
 
     assert response.status_code == 422
 
 
 def test_players_are_found_by_name_where_the_competition_can() -> None:
-    assert _client(_Comparable()).get("/api/nfl/leagues/900/players?search=lamb").json() == [
+    assert _client(_Comparable()).get("/api/competitions/nfl-sleeper/leagues/900/players?search=lamb").json() == [
         {"player_id": "7", "name": "Found lamb", "detail": ""}
     ]
 
@@ -1021,18 +1068,27 @@ class _Tabbed(_Comparable):
 
 
 def test_a_deferred_tab_is_its_own_read_where_the_competition_defers_any() -> None:
-    body = _client(_Tabbed()).get("/api/nfl/leagues/900/players/7/tabs/Seasons").json()
+    body = _client(_Tabbed()).get("/api/competitions/nfl-sleeper/leagues/900/players/7/tabs/Seasons").json()
 
     assert [(t["title"], t["tab"]) for t in body["tables"]] == [("By season", "Seasons")]
 
 
 @pytest.mark.parametrize(
-    "path", ["weeks-ahead", "weeks/4", "weeks/4/games", "trades", "players?search=lamb", "players/7/tabs/Seasons"]
+    "path",
+    [
+        "outlook",
+        "teams/T2/outlook",
+        "weeks/4",
+        "weeks/4/games",
+        "trades",
+        "players?search=lamb",
+        "players/7/tabs/Seasons",
+    ],
 )
 def test_a_read_the_competition_cannot_serve_is_refused_rather_than_answered_empty(
     client: TestClient, path: str
 ) -> None:
     """Each is offered only where a competition can serve it, so asking anyway is refused, not answered with nothing."""
-    response = client.get(f"/api/nfl-sleeper/leagues/L1/{path}")
+    response = client.get(f"/api/competitions/nfl-sleeper/leagues/L1/{path}")
 
     assert (response.status_code, response.json()["code"]) == (400, "unsupported")

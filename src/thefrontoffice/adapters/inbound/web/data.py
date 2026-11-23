@@ -50,7 +50,7 @@ class Competition(BaseModel):
     """Whether any player can be found by name, rostered or not: who a comparison adds."""
 
     syncs: bool
-    """Whether its platform can be read from a browser sync (`/api/{platform}/capture`), which
+    """Whether its platform can be read from a browser sync (`/api/platforms/{platform}/capture`), which
     then knows only the players the sync carried."""
 
     configured: bool

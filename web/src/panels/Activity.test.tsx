@@ -38,7 +38,7 @@ const STAR_QB: PlayerDetail = playerDetail({ player_id: "qb1", name: "Star QB", 
 describe("League activity", () => {
   it("opens a trade in full, by who got whom", async () => {
     const client = offlineClient();
-    client.setQueryData(keys.schedule(competition.key, league.league_id), schedule);
+    client.setQueryData(keys.season(competition.key, league.league_id), schedule);
     client.setQueryData(keys.teams(competition.key, league.league_id), []);
     client.setQueryData(keys.player(competition.key, league.league_id, "qb1"), STAR_QB);
     const { container } = await render(<ActivityPanel competition={competition} league={league} />, client);

@@ -91,10 +91,10 @@ export function MatchupPanel({
   const ai = useCapabilities().data?.ai ?? false;
   const leagueApi = api.league(competition.key, league.league_id);
 
-  const summaryKey = keys.summary(competition.key, league.league_id);
+  const summaryKey = keys.week(competition.key, league.league_id);
   const week = useQuery<Summary, Error>({
     queryKey: summaryKey,
-    queryFn: leagueApi.summary,
+    queryFn: leagueApi.week,
   });
 
   // The week being played is the summary's; any other is asked for by number.
@@ -127,7 +127,7 @@ export function MatchupPanel({
   // The week carries each item's verdict, so a new judgment is read back
   // through it as well as through the judgment's own time and moves.
   const judge = useMutation<ScoutReport, Error>({
-    mutationFn: leagueApi.scout,
+    mutationFn: leagueApi.judge,
     onSuccess: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: judgmentKey }),

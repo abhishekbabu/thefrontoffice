@@ -51,6 +51,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/competitions/{key}/leagues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Leagues
+         * @description Every league this account plays in for the competition `key` names: 'nba-yahoo', never a bare 'nba'.
+         */
+        get: operations["list_leagues"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -83,7 +103,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{platform}/login": {
+    "/api/platforms/{platform}/login": {
         parameters: {
             query?: never;
             header?: never;
@@ -108,7 +128,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{platform}/capture": {
+    "/api/platforms/{platform}/capture": {
         parameters: {
             query?: never;
             header?: never;
@@ -132,7 +152,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{platform}/capture/plan": {
+    "/api/platforms/{platform}/capture/plan": {
         parameters: {
             query?: never;
             header?: never;
@@ -156,24 +176,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Leagues */
-        get: operations["list_leagues"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/{competition}/leagues/{league_id}/roster": {
+    "/api/competitions/{key}/leagues/{league_id}/roster": {
         parameters: {
             query?: never;
             header?: never;
@@ -198,7 +201,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/players/{player_id}": {
+    "/api/competitions/{key}/leagues/{league_id}/players/{player_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -218,7 +221,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/players/{player_id}/tabs/{tab}": {
+    "/api/competitions/{key}/leagues/{league_id}/players/{player_id}/tabs/{tab}": {
         parameters: {
             query?: never;
             header?: never;
@@ -238,7 +241,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/compare": {
+    "/api/competitions/{key}/leagues/{league_id}/compare": {
         parameters: {
             query?: never;
             header?: never;
@@ -258,7 +261,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/players": {
+    "/api/competitions/{key}/leagues/{league_id}/players": {
         parameters: {
             query?: never;
             header?: never;
@@ -278,7 +281,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/summary": {
+    "/api/competitions/{key}/leagues/{league_id}/week": {
         parameters: {
             query?: never;
             header?: never;
@@ -286,14 +289,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Summary
-         * @description Where the team stands, before any report is asked for.
+         * Week
+         * @description Where the team stands this week, before any report is asked for.
          *
          *     The page would otherwise be blank for as long as a model call takes,
          *     showing nothing the app already knows. To-do items carry what the
          *     manager decided about them — dismissed, snoozed, or back since.
          */
-        get: operations["summary"];
+        get: operations["week"];
         put?: never;
         post?: never;
         delete?: never;
@@ -302,7 +305,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/weeks/{week}": {
+    "/api/competitions/{key}/leagues/{league_id}/weeks/{week}": {
         parameters: {
             query?: never;
             header?: never;
@@ -313,7 +316,7 @@ export interface paths {
          * Week Of
          * @description Another week of the season: one played as it finished, one to come as the rosters project.
          *
-         *     The week being played is the summary's, with its to-do list and its
+         *     The week being played is `/week`'s, with its to-do list and its
          *     forecast; this answers the rest, with neither. Offered only where a
          *     competition can, so one that cannot refuses rather than answering
          *     with the week being played.
@@ -327,7 +330,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/weeks/{week}/games": {
+    "/api/competitions/{key}/leagues/{league_id}/weeks/{week}/games": {
         parameters: {
             query?: never;
             header?: never;
@@ -347,7 +350,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/items": {
+    "/api/competitions/{key}/leagues/{league_id}/items": {
         parameters: {
             query?: never;
             header?: never;
@@ -367,7 +370,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/free-agents": {
+    "/api/competitions/{key}/leagues/{league_id}/free-agents": {
         parameters: {
             query?: never;
             header?: never;
@@ -391,7 +394,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/teams": {
+    "/api/competitions/{key}/leagues/{league_id}/free-agents/calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kept Calls
+         * @description The kept call on each free agent on screen, without asking the model anything.
+         *
+         *     What lets the wire show its calls on load. A player whose situation
+         *     has moved since his call comes back marked stale.
+         */
+        get: operations["kept_calls"];
+        put?: never;
+        /**
+         * Judge Free Agents
+         * @description A call on each of the free agents on screen, to show on their rows.
+         */
+        post: operations["judge_free_agents"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/competitions/{key}/leagues/{league_id}/teams": {
         parameters: {
             query?: never;
             header?: never;
@@ -411,7 +441,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/teams/{team_id}/roster": {
+    "/api/competitions/{key}/leagues/{league_id}/teams/{team_id}/roster": {
         parameters: {
             query?: never;
             header?: never;
@@ -431,7 +461,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/schedule": {
+    "/api/competitions/{key}/leagues/{league_id}/teams/{team_id}/outlook": {
         parameters: {
             query?: never;
             header?: never;
@@ -439,14 +469,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Schedule
-         * @description The league beyond this week: the season, the table, the real games.
-         *
-         *     Separate from `summary` because it answers a different question and
-         *     costs requests the week does not need — nobody checking their lineup
-         *     should wait on the whole season's fixtures.
+         * Team Outlook
+         * @description Somebody else's next few weeks as their roster stands, as `/outlook` reads your own.
          */
-        get: operations["schedule"];
+        get: operations["team_outlook"];
         put?: never;
         post?: never;
         delete?: never;
@@ -455,7 +481,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/weeks-ahead": {
+    "/api/competitions/{key}/leagues/{league_id}/season": {
         parameters: {
             query?: never;
             header?: never;
@@ -463,13 +489,37 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Weeks Ahead
-         * @description The next few weeks as a roster stands, yours by default, and a pickup for any that comes up short.
+         * Season
+         * @description The league beyond this week: the season, the table, the real games.
+         *
+         *     Separate from `/week` because it answers a different question and
+         *     costs requests the week does not need — nobody checking their lineup
+         *     should wait on the whole season's fixtures.
+         */
+        get: operations["season"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/competitions/{key}/leagues/{league_id}/outlook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Outlook
+         * @description Your next few weeks as your roster stands, and a pickup for any that comes up short.
          *
          *     Offered only where a competition can project them, as trades are, so
          *     one that cannot refuses rather than answering with no weeks.
          */
-        get: operations["weeks_ahead"];
+        get: operations["outlook"];
         put?: never;
         post?: never;
         delete?: never;
@@ -478,7 +528,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/trades": {
+    "/api/competitions/{key}/leagues/{league_id}/trades": {
         parameters: {
             query?: never;
             header?: never;
@@ -501,27 +551,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/scout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Scout
-         * @description Judge the week's to-do list — or return the kept judgment where nothing has changed.
-         */
-        post: operations["scout"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/{competition}/leagues/{league_id}/judgment": {
+    "/api/competitions/{key}/leagues/{league_id}/judgment": {
         parameters: {
             query?: never;
             header?: never;
@@ -537,14 +567,18 @@ export interface paths {
          */
         get: operations["judgment"];
         put?: never;
-        post?: never;
+        /**
+         * Judge
+         * @description Judge the week's to-do list — or return the kept judgment where nothing has changed.
+         */
+        post: operations["judge"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/assistant": {
+    "/api/competitions/{key}/leagues/{league_id}/chats": {
         parameters: {
             query?: never;
             header?: never;
@@ -554,64 +588,21 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Assistant
+         * Open Chat
          * @description Open the conversation that follows you around this league.
          *
          *     Briefed on nothing yet: each question says what is on screen, and is
-         *     briefed on whatever of that it has not seen. The turns then go through
-         *     the chat endpoint like any other conversation.
+         *     briefed on whatever of that it has not seen. Its turns are then read and
+         *     asked by its id, like any other conversation.
          */
-        post: operations["assistant"];
+        post: operations["open_chat"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/{competition}/leagues/{league_id}/free-agents/judge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Judge Free Agents
-         * @description A call on each of the free agents on screen, to show on their rows.
-         */
-        post: operations["judge_free_agents"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/{competition}/leagues/{league_id}/free-agents/calls": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Free Agent Calls
-         * @description The kept call on each free agent on screen, without asking the model anything.
-         *
-         *     What lets the wire show its calls on load. A player whose situation
-         *     has moved since his call comes back marked stale.
-         */
-        post: operations["free_agent_calls"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat/{chat_id}": {
+    "/api/chats/{chat_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -625,6 +616,22 @@ export interface paths {
          *     An id this process does not hold is `chat_expired`, the client's cue to open another.
          */
         get: operations["turns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
         put?: never;
         /**
          * Ask
@@ -823,14 +830,6 @@ export interface components {
              * @default
              */
             bid: string;
-        };
-        /**
-         * CallsRequest
-         * @description The free agents on screen, whose kept calls to show.
-         */
-        CallsRequest: {
-            /** Player Ids */
-            player_ids: string[];
         };
         /**
          * Capabilities
@@ -2323,7 +2322,7 @@ export interface components {
         };
         /**
          * Thread
-         * @description A conversation opened on the server; asked through the chat endpoint.
+         * @description A conversation opened on the server; asked through its turns.
          */
         Thread: {
             /** Chat Id */
@@ -2628,6 +2627,82 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_leagues: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeagueRef"][];
                 };
             };
             /** @description Bad Request */
@@ -3224,82 +3299,6 @@ export interface operations {
             };
         };
     };
-    list_leagues: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                competition: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LeagueRef"][];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Bad Gateway */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
     roster: {
         parameters: {
             query?: {
@@ -3309,7 +3308,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -3386,7 +3385,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
                 player_id: string;
             };
@@ -3464,7 +3463,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
                 player_id: string;
                 tab: string;
@@ -3545,7 +3544,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -3624,7 +3623,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -3696,12 +3695,12 @@ export interface operations {
             };
         };
     };
-    summary: {
+    week: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -3778,7 +3777,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
                 week: number;
             };
@@ -3856,7 +3855,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
                 week: number;
             };
@@ -3934,7 +3933,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -4027,7 +4026,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -4099,12 +4098,172 @@ export interface operations {
             };
         };
     };
+    kept_calls: {
+        parameters: {
+            query: {
+                ids: string[];
+            };
+            header?: never;
+            path: {
+                key: string;
+                league_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerCall"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    judge_free_agents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                league_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JudgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerCall"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     teams: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -4185,7 +4344,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
                 team_id: string;
             };
@@ -4258,12 +4417,90 @@ export interface operations {
             };
         };
     };
-    schedule: {
+    team_outlook: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
+                league_id: string;
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Outlook"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    season: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -4335,14 +4572,12 @@ export interface operations {
             };
         };
     };
-    weeks_ahead: {
+    outlook: {
         parameters: {
-            query?: {
-                team?: string;
-            };
+            query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -4419,7 +4654,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -4491,89 +4726,12 @@ export interface operations {
             };
         };
     };
-    scout: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                competition: string;
-                league_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ScoutReport"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Bad Gateway */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
     judgment: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -4645,12 +4803,89 @@ export interface operations {
             };
         };
     };
-    assistant: {
+    judge: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                competition: string;
+                key: string;
+                league_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoutReport"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    open_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
                 league_id: string;
             };
             cookie?: never;
@@ -4664,168 +4899,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Thread"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Bad Gateway */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    judge_free_agents: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                competition: string;
-                league_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["JudgeRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PlayerCall"][];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Bad Gateway */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    free_agent_calls: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                competition: string;
-                league_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CallsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PlayerCall"][];
                 };
             };
             /** @description Bad Request */
