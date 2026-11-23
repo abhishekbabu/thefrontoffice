@@ -7,8 +7,8 @@ import tune
 from support.simulation import FakeForecast
 from support.wiring import FakeCompetition, entry
 
-from thefrontoffice.bootstrap import Registry
 from thefrontoffice.domain.models import Outcomes, RangeSearch
+from thefrontoffice.wiring import Registry
 
 SEARCH = RangeSearch(current={"spread": 1.0}, grid={"spread": (1.0, 4.0)})
 

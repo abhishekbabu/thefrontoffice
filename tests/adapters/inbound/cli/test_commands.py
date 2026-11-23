@@ -10,10 +10,10 @@ from support.wiring import LEAGUE, FakeCompetition, entry, wiring
 from thefrontoffice.adapters.inbound import remedies
 from thefrontoffice.adapters.inbound.cli import commands
 from thefrontoffice.adapters.inbound.cli.session import Session
-from thefrontoffice.bootstrap import CompetitionEntry
 from thefrontoffice.domain.errors import LeagueNotFoundError, PlayerNotFoundError, TeamNotFoundError
 from thefrontoffice.domain.models import Action, CompetitionContext, ItemMark, PlayerCard, Stat, Summary, TradeProposal
 from thefrontoffice.domain.ports import LeagueRef
+from thefrontoffice.wiring import CompetitionEntry
 
 
 class _Roster(FakeCompetition):

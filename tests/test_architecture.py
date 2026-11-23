@@ -76,6 +76,7 @@ def test_the_core_names_no_vendor(layer: str) -> None:
 
 INBOUND = (
     "thefrontoffice.bootstrap",
+    "thefrontoffice.wiring",
     "thefrontoffice.domain",
     "thefrontoffice.application",
     "thefrontoffice.config",
@@ -165,7 +166,17 @@ def test_a_competition_never_imports_another(competition: str) -> None:
 
 def test_outbound_adapters_never_reach_an_entry_point_or_the_composition_root() -> None:
     """An outbound adapter is handed what it needs; reaching back up for it would make a cycle."""
-    assert _reaching("adapters/outbound", ("thefrontoffice.adapters.inbound", "thefrontoffice.bootstrap")) == []
+    reaching_up = ("thefrontoffice.adapters.inbound", "thefrontoffice.bootstrap", "thefrontoffice.wiring")
+    assert _reaching("adapters/outbound", reaching_up) == []
+
+
+def test_the_wiring_types_name_no_adapter() -> None:
+    """`wiring` is what every entry point reads; a concrete class named there is one only `bootstrap` may name."""
+    assert [
+        f"wiring.py:{line} imports {module}"
+        for line, module in _imports(PACKAGE / "wiring.py")
+        if module.startswith("thefrontoffice.adapters")
+    ] == []
 
 
 @pytest.mark.parametrize(("competition", "platform"), sorted(LEAGUE_PLATFORMS.items()))

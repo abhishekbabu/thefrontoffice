@@ -32,7 +32,7 @@ class WireEngine:
     """Turns any WireProvider into calls on the players asked about."""
 
     def __init__(self, provider: WireProvider, *, key: str, ai: AnalysisModel, answers: AnswerStore):
-        """Every collaborator is a port, wired by `bootstrap.Wiring`; `key` names the competition."""
+        """Every collaborator is a port, wired by `wiring.Wiring`; `key` names the competition."""
         self.provider = provider
         self.key = key
         self.ai = ai

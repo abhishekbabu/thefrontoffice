@@ -5,7 +5,7 @@ import pytest
 from support.simulation import FakeForecast
 from support.wiring import FakeCompetition, entry
 
-from thefrontoffice.bootstrap import Registry
+from thefrontoffice.wiring import Registry
 
 
 class _Forecasts(FakeForecast, FakeCompetition):

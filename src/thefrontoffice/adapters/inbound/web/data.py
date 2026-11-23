@@ -8,7 +8,6 @@ whether it is ready off its settings and a cheap readiness check.
 from pydantic import BaseModel
 
 from thefrontoffice.adapters.inbound.remedies import ErrorBody
-from thefrontoffice.bootstrap import CompetitionEntry
 from thefrontoffice.domain.ports import (
     OutlookProvider,
     PlayerSearchProvider,
@@ -16,6 +15,7 @@ from thefrontoffice.domain.ports import (
     WeekBrowsingProvider,
     WireProvider,
 )
+from thefrontoffice.wiring import CompetitionEntry
 
 
 class Competition(BaseModel):

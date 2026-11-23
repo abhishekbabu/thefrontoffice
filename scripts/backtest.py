@@ -16,10 +16,10 @@ from leagues import chosen, open_league
 from thefrontoffice import bootstrap
 from thefrontoffice.adapters.inbound.cli.output import print_error
 from thefrontoffice.application.forecasting import ForecastEngine
-from thefrontoffice.bootstrap import Registry
 from thefrontoffice.config.logging import setup_logging
 from thefrontoffice.domain.errors import FrontOfficeError
 from thefrontoffice.domain.ports import ForecastProvider
+from thefrontoffice.wiring import Registry
 
 
 def main() -> int:

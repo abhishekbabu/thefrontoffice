@@ -106,7 +106,7 @@ class AskEngine:
     """Opens the conversation that is briefed on what is on screen."""
 
     def __init__(self, provider: SubjectProvider, *, key: str, ai: AnalysisModel, answers: AnswerStore):
-        """Every collaborator is a port, supplied by `bootstrap.Wiring`; `key` names the competition."""
+        """Every collaborator is a port, supplied by `wiring.Wiring`; `key` names the competition."""
         self.provider = provider
         self.key = key
         self.ai = ai
