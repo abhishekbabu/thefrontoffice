@@ -5,9 +5,14 @@ from datetime import date
 
 from support.nba import make_player
 
+from thefrontoffice.adapters.outbound.competitions.dates import weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nba.actions import (
+    KEEPERS,
     PROVISIONAL,
+    RETURN_CUT,
     STREAMS,
+    Plan,
+    Weigh,
     acquire,
     build,
     droppable,
@@ -16,6 +21,9 @@ from thefrontoffice.adapters.outbound.competitions.nba.actions import (
     starts,
     streams,
 )
+from thefrontoffice.adapters.outbound.competitions.nba.form import Role
+from thefrontoffice.adapters.outbound.competitions.nba.lineup import Week
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import Absent, Condition, Regular, Returning
 from thefrontoffice.adapters.outbound.competitions.nba.week import Today
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
@@ -334,3 +342,161 @@ def test_a_stream_weighed_on_a_schedule_not_final_says_it_is_provisional() -> No
 
     assert item.reason.endswith(PROVISIONAL)
     assert _figures(item.players, "G left")[0] == "4+"
+
+
+# ── streamers and keepers ───────────────────────────────────────────
+
+
+def test_a_player_whose_minutes_are_growing_is_never_the_drop() -> None:
+    """His value a game still reads the role he had; the one he is growing into is the one you would lose."""
+    roster, readings = _team()
+    readings["Weaker"] = replace(readings["Weaker"], rising=True)
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 21.0, 4))
+
+    assert [r.player.name for r in droppable(roster, readings, set())] == ["Weak"]
+    [item] = streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set())
+    assert item.drop == "Weak"
+
+
+def test_a_pickup_no_better_a_game_is_a_streamer_and_one_clearly_better_a_keeper() -> None:
+    roster, readings = _team()
+    streamer, keeper = _player("Streamer", position="SF"), _player("Keeper", position="SF")
+    readings |= _readings((streamer, 21.0, 4), (keeper, 30.0, 3))
+
+    items = streams(roster, [streamer, keeper], readings, adds_left=2, by_points=True, named=set())
+
+    assert [(item.player_id, item.pickup, item.drop) for item in items] == [
+        ("Streamer", "streamer", "Weak"),
+        ("Keeper", "keeper", "Weaker"),  # the weakest a game, whatever his week
+    ]
+
+
+def test_a_role_just_grown_streams_until_it_holds() -> None:
+    """Minutes up by ten over his last five: as often a teammate's absence as a promotion."""
+    roster, readings = _team()
+    riser = _player("Riser", position="SF")
+    readings |= {"Riser": replace(_read(riser, 30.0, 3), role=Role(games=5, minutes=30.0, window=20.0))}
+
+    [item] = streams(roster, [riser], readings, adds_left=2, by_points=True, named=set())
+
+    assert item.pickup == "streamer"
+
+
+def test_up_to_the_keepers_limit_are_named_as_alternatives_for_one_drop() -> None:
+    roster, readings = _team()
+    wire = [_player(f"Keeper {i}", position="SF") for i in range(KEEPERS + 1)]
+    readings |= _readings(*((p, 30.0 - i, 3) for i, p in enumerate(wire)))
+
+    items = streams(roster, wire, readings, adds_left=2, by_points=True, named=set())
+    keepers = [item for item in items if item.pickup == "keeper"]
+
+    assert [item.player_id for item in keepers] == [p.player_key for p in wire[:KEEPERS]]
+    assert {item.drop for item in keepers} == {"Weaker"}
+
+
+def test_with_one_add_left_the_week_comes_before_a_keeper_who_adds_less_to_it() -> None:
+    roster, readings = _team()
+    streamer, keeper = _player("Streamer", position="SF"), _player("Keeper", position="SF")
+    readings |= _readings((streamer, 21.0, 4), (keeper, 30.0, 1))
+
+    items = streams(roster, [streamer, keeper], readings, adds_left=1, by_points=True, named=set())
+
+    assert [(item.player_id, item.pickup) for item in items] == [("Streamer", "streamer")]
+
+
+MON, TUE, WED = (date(2026, 11, day) for day in (23, 24, 25))
+THANKSGIVING = date(2026, 11, 26)
+
+
+def _week(*nights: tuple[date, str, str], lineup: tuple[str, ...] = ("PF", "SF", "Util")) -> Week:
+    games = [ScheduledGame(week=0, date=day.isoformat(), home=h, away=a) for day, h, a in nights]
+    return Week(games=games, slots=lineup, today=MON, end=date(2026, 11, 29))
+
+
+DETROIT = _week((MON, "DET", "BOS"), (TUE, "DET", "NYK"), (WED, "DET", "MIA"), (date(2026, 11, 28), "DET", "PHX"))
+"""The Pistons play Monday to Wednesday and Saturday; nobody plays on Thanksgiving."""
+
+
+def _duren(back: date) -> Returning:
+    regular = Regular(player_id="d1", name="Jalen Duren", team="DET", position="C")
+    return Returning(Absent(regular, Condition(status="O", returns=back)), without=12, alongside=1)
+
+
+def test_a_pickup_counts_the_games_after_a_teammates_return_at_a_cut() -> None:
+    """Reed's role is Duren's absence: Monday counts in full, the three from Duren's return on Tuesday at a cut."""
+    roster, readings = _team()
+    reed = _player("Reed", position="PF,C", team="DET")
+    readings |= _readings((reed, 10.0, 4))
+    weak = readings["Weak"]
+
+    alone, _ = Weigh(roster, readings, Plan(week=DETROIT)).gained(readings["Reed"], weak)
+    behind, nights = Weigh(roster, readings, Plan(week=DETROIT, returning={"Reed": _duren(TUE)})).gained(
+        readings["Reed"], weak
+    )
+
+    assert nights == 4
+    assert alone == 40.0
+    assert behind == 10.0 + 3 * 10.0 * RETURN_CUT
+
+
+def test_a_pickup_whose_role_leans_on_a_teammate_due_back_is_never_a_keeper() -> None:
+    roster, readings = _team()
+    reed = _player("Reed", position="PF,C", team="DET")
+    readings |= _readings((reed, 30.0, 4))
+    plan = Plan(week=DETROIT, returning={"Reed": _duren(TUE)})
+
+    [item] = streams(roster, [reed], readings, adds_left=2, by_points=True, named=set(), plan=plan)
+
+    assert item.pickup == "streamer"
+    assert "Duren" in item.reason
+
+
+def test_only_the_nights_a_slot_is_open_count_toward_a_pickups_week() -> None:
+    """A lone forward slot, taken by a Celtic on Monday: a forward from Detroit fills it the other three nights."""
+    celtic = _player("Celtic", "SF", position="SF", team="BOS")
+    spare = _player("Spare", "BN", position="C", team="LAL")
+    pickup = _player("Pickup", position="SF", team="DET")
+    readings = _readings((celtic, 30.0, 1), (spare, 1.0, 0), (pickup, 10.0, 4))
+
+    gained, nights = Weigh([celtic, spare], readings, Plan(week=replace(DETROIT, slots=("SF",)))).gained(
+        readings["Pickup"], readings["Spare"]
+    )
+
+    assert (gained, nights) == (30.0, 3)
+
+
+def test_a_keeper_out_a_few_days_is_added_on_the_day_nobody_plays() -> None:
+    roster, readings = _team()
+    robinson = _player("Robinson", position="SG,SF", team="DET", status="O")
+    readings |= {"Robinson": replace(_read(robinson, 30.0, 1), back=date(2026, 11, 27))}
+
+    [item] = streams(roster, [robinson], readings, adds_left=2, by_points=True, named=set(), plan=Plan(week=DETROIT))
+
+    assert item.pickup == "keeper"
+    assert item.when == weekday_day_month(THANKSGIVING)
+    readings["Robinson"] = replace(readings["Robinson"], back=WED)  # every day before then has games
+    [sooner] = streams(roster, [robinson], readings, 2, True, set(), plan=Plan(week=DETROIT))
+    assert (sooner.pickup, sooner.when) == ("keeper", "")
+
+
+def test_a_keeper_out_beyond_the_week_or_with_no_week_to_place_his_return_is_not_offered() -> None:
+    roster, readings = _team()
+    hurt = _player("Hurt", position="SF", team="DET", status="O")
+    readings |= {"Hurt": replace(_read(hurt, 30.0, 0), back=date(2026, 12, 20))}
+
+    assert streams(roster, [hurt], readings, 2, True, set(), plan=Plan(week=DETROIT)) == []
+    readings["Hurt"] = replace(readings["Hurt"], back=WED)
+    assert streams(roster, [hurt], readings, 2, True, set()) == []
+
+
+def test_a_stream_is_urged_now_when_the_opponent_can_start_more_games() -> None:
+    roster, readings = _team()
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 21.0, 4))
+
+    [behind] = streams(roster, [pickup], readings, 2, True, set(), plan=Plan(volume=(39, 44)))
+    [ahead] = streams(roster, [pickup], readings, 2, True, set(), plan=Plan(volume=(44, 39)))
+
+    assert (behind.urgency, ahead.urgency) == ("now", "soon")
+    assert "39" in behind.reason and "44" in behind.reason

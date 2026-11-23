@@ -24,6 +24,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     per_game,
     points_value,
     read,
+    rising,
     scales,
     usage,
     weakest,
@@ -282,6 +283,7 @@ def test_one_long_night_does_not_move_a_role() -> None:
     overtime = _career((14, 30.0, 13.0), (1, 45.0, 30.0))
 
     assert not moved(overtime["role"])
+    assert not rising(overtime)
     assert _points(overtime) == pytest.approx(overtime["recent"].line[POINTS.label])
 
 
@@ -293,3 +295,23 @@ def test_a_reading_carries_his_role_for_the_wire_to_show() -> None:
     assert reading.role == (ROLE_GAMES, 38.0, pytest.approx((10 * 25 + 5 * 38) / 15))
     assert moved(reading.role)
     assert not moved(None)
+
+
+def test_two_games_of_new_minutes_pull_his_line_before_his_last_five_move_by_a_role() -> None:
+    """Twenty a night, then 26 twice: his last five are up under three, but his role is growing now."""
+    grower = _career((13, 20.0, 8.0), (2, 26.0, 16.0))
+    reading = read(make_player("A"), grower, None, points_value({POINTS.yahoo_stat: 1.0}), 3)
+
+    assert not moved(grower["role"])
+    assert rising(grower) and reading.rising
+    assert _points(grower) > grower["recent"].line[POINTS.label]
+
+
+def test_the_game_a_player_ruled_out_got_hurt_in_says_nothing_of_his_role() -> None:
+    """Thirty a night, then twelve the night he went down: a swing for a healthy player, none for one out."""
+    stats = PlayerStats(minutes=(12.0, 30.0, 31.0, 29.0, 32.0, 30.0))
+
+    assert usage(stats) == 1 - USAGE_SWING
+    assert usage(stats, hurt=True) == 1.0
+    # A short night earlier in the run, not his latest, is still a swing.
+    assert usage(PlayerStats(minutes=(30.0, 31.0, 29.0, 12.0, 32.0)), hurt=True) == 1 - USAGE_SWING

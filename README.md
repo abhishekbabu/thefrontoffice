@@ -170,7 +170,7 @@ at 0.8, the rate NFL's simulation gives a questionable player. A player out for
 the week stays on the list, status and return shown, below everyone who plays;
 a column click still sorts by that column. A game's value (`Value`, FPTS) leans on his
 last five games where his minutes have moved: when his minutes a game over his last
-five differ from the six-week window's by 3 or more, either way, his line is pulled
+five differ from the six-week window's by 3 or more, either way (or each of his last two is 3 above it), his line is pulled
 from the usual reading (form beside projection) toward those five games' by
 `games / (games + 5)`, halfway, the settling weight NFL's form uses
 (`competitions/worth.settled`). With his minutes where they were, a big night
@@ -263,9 +263,9 @@ today's starts: a bench player whose game today is still to come, over a starter
 whose slot he fits who has no game today or is ruled out of it, or who plays and
 is a fifth worse a game. Nobody resting today is started, nobody whose game has
 tipped off is moved, and without today's schedule there are no starts. Then up to
-two streams (from the wire's top 50 by season and top 25 by last week, three
-requests) within the adds left, each a fifth more worth this week and at least as
-good a game as its drop — never from IL or the better half of the roster.
+two streamers (from the wire's top 50 by season and top 25 by last week, three
+requests) within the adds left, each a fifth more worth this week on the nights he fills an open slot and at least as
+good a game as its drop, and up to two keepers taking one add, a fifth better a game — never dropping from IL, the better half of the roster or minutes that are growing.
 While the NBA has yet to schedule days of a week (3+ days in a row with under 3
 games, 1–20 Dec: the Cup knockouts, before eliminated clubs get games), the header
 says "Schedule: not final", games left read "3+G", Fixtures carries a note naming

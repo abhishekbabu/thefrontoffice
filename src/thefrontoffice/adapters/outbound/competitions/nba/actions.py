@@ -1,29 +1,33 @@
 """What a basketball week asks of the manager, as a list of things to do.
 
 Three kinds besides the IL move (`week.off_il`): a bench player to start over
-a starter today, a free agent to stream in for the weakest player you could
-drop, and that drop.
+a starter today, a free agent to add — a streamer for this week's games or a
+keeper for the season's — and the player to drop for him.
 
 Yahoo sets a basketball lineup day by day, so a start is today's: a bench
 player whose game today is still to come, in for a starter who has no game
 today or is ruled out of it, or for one clearly weaker a game. Nobody with no
 game today is ever started, however much his week is worth. A stream is
-weighed on worth this week (`worth.Reading.worth`: a game's value × minutes
-nudge × games left), but never at the cost of a better player a game: the
-games are this week's, the player let go is gone for good. A player on
+weighed on worth this week — a game's value × minutes nudge × the nights he
+would fill an open slot (`lineup`) — but never at the cost of a better player
+a game: the games are this week's, the player let go is gone for good. A player on
 waivers is a claim, weighed on the games after he clears them
 (`rules.playable_from`) and named as one.
 """
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
-from thefrontoffice.adapters.outbound.competitions.nba import views
+from thefrontoffice.adapters.outbound.competitions.injuries import approximately
+from thefrontoffice.adapters.outbound.competitions.nba import lineup, views
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, fits, ruled_out
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import RETURN_SOON, Returning
 from thefrontoffice.adapters.outbound.competitions.nba.week import BENCH, Today, off_il
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, game_value
+from thefrontoffice.adapters.outbound.competitions.nba.worth import ROLE, Reading, game_value
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
-from thefrontoffice.domain.models import Action, Held
+from thefrontoffice.domain.models import Action, Held, Pickup
 
 MARGIN = 0.2
 """How much more a player must be worth than the one he would replace — a game, or this week: a fifth.
@@ -37,6 +41,9 @@ STARTS = 3
 
 STREAMS = 2
 """Pickups at once, and never more than the adds left."""
+
+KEEPERS = 2
+"""Keepers named at once: alternatives for the one add the list spends on the rest of the season."""
 
 KEPT = 0.5
 """The share of your roster never offered as a drop: the better half by value a game.
@@ -53,15 +60,17 @@ def build(
     adds_left: int,
     by_points: bool,
     today: Today | None = None,
+    plan: Plan | None = None,
 ) -> list[Action]:
     """Every decision the week asks for: IL moves first, then today's starts, then pickups each with its drop.
 
     `today` is the day's games while it falls inside the week; None leaves out starts, which turn on it.
+    `plan` is what weighs a pickup beyond the readings (`Plan`).
     """
     items = off_il(list(roster))
     items += starts(roster, readings, by_points, today)
     named = {pid for item in items for pid in (item.player_id, item.replaces) if pid}
-    items += streams(roster, free_agents, readings, adds_left, by_points, named)
+    items += streams(roster, free_agents, readings, adds_left, by_points, named, plan)
     return items
 
 
@@ -177,9 +186,10 @@ def droppable(roster: Sequence[YahooPlayer], readings: Mapping[str, Reading], ke
     """Who you could let go, least worth this week first.
 
     Never a player in an injured slot — dropping him frees no active spot —
-    nor one in the better `KEPT` of the roster by value a game, nor one
-    another item already moves, nor one with nothing to read him by: an
-    unknown is not a weak player.
+    nor one in the better `KEPT` of the roster by value a game, nor one whose
+    minutes are growing now (`worth.rising`): his value a game is still
+    catching up with his role. Nor one another item already moves, nor one
+    with nothing to read him by: an unknown is not a weak player.
     """
     active = [
         r
@@ -188,8 +198,132 @@ def droppable(roster: Sequence[YahooPlayer], readings: Mapping[str, Reading], ke
     ]
     ranked = sorted(active, key=lambda r: -_game(r))
     kept = {r.player.player_key for r in ranked[: round(len(ranked) * KEPT)]}
-    open_to = [r for r in active if r.player.player_key not in kept | keep and r.worth is not None]
+    open_to = [r for r in active if r.player.player_key not in kept | keep and r.worth is not None and not r.rising]
     return sorted(open_to, key=_worth)
+
+
+RETURN_CUT = 0.5
+"""What a pickup's game is worth once a teammate at his position is back (`teammates.Returning`): half.
+
+His role so far is the one that teammate's absence gave him, and almost none
+of it has been played beside him, so there is no split to say how much is left.
+"""
+
+
+@dataclass(frozen=True)
+class Plan:
+    """What weighs a pickup beyond each player's reading: the week's nights, teammates due back, the race in games.
+
+    Without a `week` (no lineup slots in the settings, lineups set weekly, or a
+    schedule that would not load) a pickup is weighed on every game his club
+    has left, as his reading counts them, and no keeper hurt now is offered.
+    """
+
+    week: lineup.Week | None = None
+    returning: Mapping[str, Returning] = field(default_factory=dict)
+    """Each free agent's teammate at his position who is due back soon, by Yahoo key (`Teammates.returning`)."""
+    volume: tuple[int, int] | None = None
+    """The games each side's lineups can start over the rest of the week: yours, then your opponent's."""
+
+    @property
+    def behind(self) -> bool:
+        """Whether your opponent can start more games than you this week: a stream is then urged now."""
+        return self.volume is not None and self.volume[0] < self.volume[1]
+
+
+@dataclass(frozen=True)
+class Swap:
+    """One pickup weighed against one drop."""
+
+    pickup: Reading
+    drop: Reading
+    term: Pickup
+    gain: float
+    """What the swap adds this week."""
+    nights: int | None
+    """The games he would start this week (`lineup.open_nights`); None where there is no week to place them."""
+    add_on: date | None = None
+    """For a keeper out now, the day without games to add him on: the drop plays until then."""
+
+
+def settled(reading: Reading) -> bool:
+    """Whether his role has held: his minutes not grown lately (`worth.rising`), nor his last five above the
+    window's by `ROLE.moved`. A role just handed to him is as often a teammate's absence as a promotion, so it
+    streams until it holds."""
+    role = reading.role
+    return not reading.rising and (role is None or role.minutes - role.window < ROLE.moved)
+
+
+class Weigh:
+    """A roster's week, read once for every pickup and drop weighed against it."""
+
+    def __init__(self, roster: Sequence[YahooPlayer], readings: Mapping[str, Reading], plan: Plan) -> None:
+        self.roster = roster
+        self.plan = plan
+        self.backs = {key: r.back for key, r in readings.items()}
+        self.costs: dict[tuple[str, date | None], float] = {}
+
+    def gained(self, pickup: Reading, drop: Reading) -> tuple[float, int | None]:
+        """What he adds this week in `drop`'s place, and the games behind it: each night he fills an open slot,
+        those after a teammate's return at `RETURN_CUT`. Every game his club has left without a week to place them."""
+        week = self.plan.week
+        if week is None:
+            return _worth(pickup), None
+        rest = [p for p in self.roster if p.player_key != drop.player.player_key]
+        nights = lineup.open_nights(pickup.player, rest, week, self.backs)
+        found = self.plan.returning.get(pickup.player.player_key)
+        back = found.teammate.condition.returns if found else None
+        played = sum(RETURN_CUT if back is not None and night >= back else 1.0 for night in nights)
+        return _game(pickup) * played, len(nights)
+
+    def cost(self, drop: Reading, after: date | None = None) -> float:
+        """What letting him go costs this week: each night, after `after`, the lineup could seat nobody in his
+        place. His whole week where there is no week to place him."""
+        week = self.plan.week
+        if week is None:
+            return _worth(drop)
+        key = (drop.player.player_key, after)
+        if key not in self.costs:
+            nights = lineup.needed_nights(drop.player, self.roster, week, self.backs)
+            self.costs[key] = _game(drop) * sum(1 for night in nights if after is None or night > after)
+        return self.costs[key]
+
+    def back_soon(self, pickup: Reading) -> bool:
+        """Whether he plays now, or is out with ESPN expecting him back within `RETURN_SOON`: a keeper may be."""
+        if not ruled_out(pickup.player.status):
+            return True
+        week = self.plan.week
+        return week is not None and pickup.back is not None and pickup.back <= week.today + RETURN_SOON
+
+    def streamer(self, pickup: Reading, drops: Sequence[Reading]) -> Swap | None:
+        """Him against the weakest drop this week he beats by `MARGIN` this week, and is not worse than a game."""
+        if ruled_out(pickup.player.status):
+            return None
+        for drop in sorted(drops, key=self.cost):
+            gain, nights = self.gained(pickup, drop)
+            if beats(gain, self.cost(drop)) and _game(pickup) >= _game(drop):
+                return Swap(pickup, drop, "streamer", gain - self.cost(drop), nights)
+        return None
+
+    def keeper(self, pickup: Reading, drops: Sequence[Reading]) -> Swap | None:
+        """Him against the weakest drop a game he beats by `MARGIN` a game: better for the rest of the season.
+
+        Never one whose role leans on a teammate due back (`Plan.returning`),
+        nor one whose minutes have just grown (`settled`), nor one out beyond `RETURN_SOON`. One out now is added on the week's
+        first day without games before his return, where it has one, so the
+        drop plays until then.
+        """
+        if pickup.player.player_key in self.plan.returning or not settled(pickup) or not self.back_soon(pickup):
+            return None
+        drop = next((d for d in sorted(drops, key=_game) if beats(_game(pickup), _game(d))), None)
+        if drop is None:
+            return None
+        week = self.plan.week
+        out = ruled_out(pickup.player.status) and pickup.back is not None
+        quiet = week.quiet(pickup.back) if week is not None and out and pickup.back is not None else []
+        add_on = quiet[0] if quiet else None
+        gain, nights = self.gained(pickup, drop)
+        return Swap(pickup, drop, "keeper", gain - self.cost(drop, add_on), nights, add_on)
 
 
 def streams(
@@ -199,63 +333,112 @@ def streams(
     adds_left: int,
     by_points: bool,
     named: set[str],
+    plan: Plan | None = None,
 ) -> list[Action]:
-    """Free agents worth more this week than a player you could drop, each paired with the weakest such drop.
+    """Free agents to add, each paired with a drop and labelled a streamer or a keeper.
 
-    Best free agent first, each against the weakest drop left that he beats by
-    `MARGIN` this week (`droppable`) — and is not worse than by `MARGIN` a game:
-    a stream is one week's games, and the player let go is gone for good. Never
-    a free agent ruled out: a return date is an estimate, and a stream is games
-    now. Never more than `STREAMS`, nor than the adds left — with none left
-    there is nothing to stream.
+    A streamer is this week's games: he beats the weakest drop this week by
+    `MARGIN` on the nights he would start (`Plan.week`), and is no worse a game,
+    since the player let go is gone for good. A keeper is the rest of the
+    season: better a game than the weakest drop a game by `MARGIN`, whatever
+    his week, even out for a few days, but never one whose role leans on a
+    teammate due back or has only just grown (`settled`).
+
+    The week comes first: streams take the adds, never more than `STREAMS`
+    nor than the adds left. Keepers take one add between them, offered only
+    where another is left for a stream or the best of them adds more this week
+    than the best stream; up to `KEEPERS` are named, the best a game first, as
+    alternatives that may share a drop.
     """
     if adds_left <= 0:
         return []
+    plan = plan or Plan()
+    weigh = Weigh(roster, readings, plan)
     owned = {p.player_key for p in roster}
-    wire = sorted(
-        (
-            r
-            for p in free_agents
-            if p.player_key not in owned
-            and not ruled_out(p.status)
-            and (r := readings.get(p.player_key))
-            and r.worth is not None
-        ),
-        key=lambda r: -_worth(r),
-    )
+    wire = [
+        r
+        for p in free_agents
+        if p.player_key not in owned and (r := readings.get(p.player_key)) and r.per_game is not None
+    ]
     drops = droppable(roster, readings, named)
-    items = []
-    for pickup in wire:
-        if len(items) == min(STREAMS, adds_left):
-            break
-        drop = next((d for d in drops if streams_over(pickup, d)), None)
-        if drop is None:
-            continue
-        drops.remove(drop)
-        gain = _worth(pickup) - _worth(drop)
-        claimed = pickup.player.waiver_date is not None
-        items.append(
-            Action(
-                kind="waiver",
-                urgency="soon",
-                title=f"{acquire(pickup.player, pickup.games if claimed else None)}, drop {drop.player.name}",
-                reason=(
-                    f"+{gain:.1f} {_unit(by_points)} this week. {drop.player.name}: weakest you can drop"
-                    + _drags(drop)
-                    + "."
-                    + _pending(pickup)
-                    + _waiting(pickup)
-                ),
-                player_id=pickup.player.player_key,
-                drop=drop.player.player_key,
-                players=views.compared(
-                    [("in", held(pickup.player), pickup), ("out", held(drop.player), drop)],
-                    by_points,
-                ),
-                key=f"stream:{pickup.player.player_key}:{drop.player.player_key}",
-            )
+    room = min(STREAMS, adds_left)
+    keepers = sorted((s for r in wire if (s := weigh.keeper(r, drops))), key=lambda s: (-_game(s.pickup), -s.gain))
+    chosen: list[Swap] = []
+
+    def best_stream() -> Swap | None:
+        taken = {key for s in chosen for key in (s.pickup.player.player_key, s.drop.player.player_key)}
+        left = [d for d in drops if d.player.player_key not in taken]
+        found = (s for r in wire if r.player.player_key not in taken and (s := weigh.streamer(r, left)))
+        return max(found, key=lambda s: s.gain, default=None)
+
+    first = best_stream()
+    kept = keepers[:KEEPERS] if keepers and (room > 1 or first is None or keepers[0].gain >= first.gain) else []
+    chosen.extend(kept)
+    streamed: list[Swap] = []
+    while len(streamed) < room - bool(kept) and (found := best_stream()):
+        streamed.append(found)
+        chosen.append(found)
+    return [_item(s, by_points, plan) for s in [*streamed, *kept]]
+
+
+def _item(swap: Swap, by_points: bool, plan: Plan) -> Action:
+    """A pickup as the to-do list words it."""
+    pickup, drop = swap.pickup, swap.drop
+    claimed = pickup.player.waiver_date is not None
+    unit = _unit(by_points)
+    if swap.term == "keeper":
+        why = (
+            f"Keeper: {_game(pickup):.1f} {unit} a game against {_game(drop):.1f}, for the rest of the season. "
+            f"{drop.player.name}: weakest a game you can drop" + _drags(drop) + "." + _out(swap)
         )
-    return items
+    else:
+        games = f", {swap.nights} games in open slots" if swap.nights is not None else ""
+        why = (
+            f"Streamer: +{swap.gain:.1f} {unit} this week{games}. {drop.player.name}: weakest you can drop"
+            + _drags(drop)
+            + "."
+            + _leans(plan.returning.get(pickup.player.player_key))
+            + _behind(plan)
+        )
+    return Action(
+        kind="waiver",
+        urgency="now" if swap.term == "streamer" and plan.behind else "soon",
+        title=f"{acquire(pickup.player, pickup.games if claimed else None)}, drop {drop.player.name}",
+        reason=why + _pending(pickup) + _waiting(pickup),
+        when=weekday_day_month(swap.add_on) if swap.add_on else "",
+        player_id=pickup.player.player_key,
+        drop=drop.player.player_key,
+        pickup=swap.term,
+        players=views.compared(
+            [("in", held(pickup.player), pickup), ("out", held(drop.player), drop)],
+            by_points,
+        ),
+        key=f"stream:{pickup.player.player_key}:{drop.player.player_key}",
+    )
+
+
+def _out(swap: Swap) -> str:
+    """For a keeper out now: ' Out, back ~27 Nov: add him Thu 26 Nov, when nobody plays.'; nothing otherwise."""
+    back = swap.pickup.back
+    if not ruled_out(swap.pickup.player.status) or back is None:
+        return ""
+    if swap.add_on is None:
+        return f" Out, back {approximately(back)}."
+    return f" Out, back {approximately(back)}: add him {weekday_day_month(swap.add_on)}, when nobody plays."
+
+
+def _leans(found: Returning | None) -> str:
+    """For a streamer whose role leans on an absent teammate: ' Role leans on Duren back ~24 Nov: games after count
+    half.'; nothing otherwise."""
+    return f" Role leans on {found.cell()}: games after count half." if found else ""
+
+
+def _behind(plan: Plan) -> str:
+    """' Behind on games: 39 to 44 left.' where the opponent can start more; nothing otherwise."""
+    if not plan.behind or plan.volume is None:
+        return ""
+    mine, theirs = plan.volume
+    return f" Behind on games: {mine} to {theirs} left."
 
 
 def acquire(player: YahooPlayer, games: int | None = None, *about: str) -> str:

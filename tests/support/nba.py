@@ -449,12 +449,18 @@ class FakeNBA:
         self.seasons: dict[tuple[str, str], NBASeason] = {}
         """Each player's totals over a season, by name and season."""
         self.season_error: Exception | None = None
+        self.scores_error: Exception | None = None
+        """What reading the box scores raises, where they will not load."""
+        self.left_error: Exception | None = None
+        """What reading the games left raises, where the schedule will not load."""
 
     def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
         return [g for g in self.slate if start_date.isoformat() <= g.date <= end_date.isoformat()]
 
     def games_left(self, start_date: date, end_date: date, now: datetime | None = None) -> list[ScheduledGame]:
         """Every game of the slate inside the window: whatever a test builds it with is still to come."""
+        if self.left_error:
+            raise self.left_error
         return self.games_between(start_date, end_date)
 
     def unscheduled(self, start_date: date, end_date: date) -> list[date]:
@@ -469,6 +475,8 @@ class FakeNBA:
         return self.stats.get(full_name)
 
     def box_scores(self) -> BoxScores:
+        if self.scores_error:
+            raise self.scores_error
         return self.scores
 
     def recent_games(self, full_name: str) -> list[NBAGameLog]:

@@ -20,6 +20,7 @@ from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nba import actions, defense, history, prompt, views
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
+from thefrontoffice.adapters.outbound.competitions.nba import lineup as nba_lineup
 from thefrontoffice.adapters.outbound.competitions.nba import market as nba_market
 from thefrontoffice.adapters.outbound.competitions.nba import outlook as nba_outlook
 from thefrontoffice.adapters.outbound.competitions.nba import strength as nba_strength
@@ -42,7 +43,14 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     position_filters,
     ruled_out,
 )
-from thefrontoffice.adapters.outbound.competitions.nba.teammates import Teammate, Teammates, conditions, reported
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
+    Condition,
+    Returning,
+    Teammate,
+    Teammates,
+    conditions,
+    reported,
+)
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.seeds import seed
@@ -120,6 +128,8 @@ class Decided:
 
     readings: dict[str, Reading]
     actions: list[Action]
+    volume: tuple[int, int] | None = None
+    """The games each side's lineups can start over the rest of the week: yours, then your opponent's."""
 
 
 LEADERS = {c.label: c.yahoo_stat for c in SCOUTED}
@@ -249,7 +259,8 @@ class YahooNBAProvider:
         board = self._board(yahoo, league, my_team, week, roster, read) if week else Summary()
         # Without a matchup this week there is no week to weigh anybody on: only the IL moves stand.
         items = decided[0].actions if decided else nba_week.off_il(roster)
-        return board.model_copy(update={"headline": [*adds, *board.headline], "actions": items or None})
+        volume = nba_week.volume(*decided[0].volume) if decided and decided[0].volume else []
+        return board.model_copy(update={"headline": [*adds, *volume, *board.headline], "actions": items or None})
 
     def _decide(
         self,
@@ -284,7 +295,9 @@ class YahooNBAProvider:
         averages = {**(shown or {}), **_carried(free_agents)}
         readings = self._readings(yahoo, weights, [*roster, *theirs, *free_agents], start, end, also or [], averages)
         today = self._today(start, end)
-        return Decided(readings, actions.build(roster, free_agents, readings, adds_left, weights is not None, today))
+        plan = self._plan(yahoo, (roster, theirs), free_agents, readings, weights, start, end)
+        items = actions.build(roster, free_agents, readings, adds_left, weights is not None, today, plan)
+        return Decided(readings, items, plan.volume)
 
     def _readings(
         self,
@@ -1330,11 +1343,64 @@ class YahooNBAProvider:
         A teammate's condition is Yahoo's status where his row is among `players`, else ESPN's report; the box
         scores, and last season's minutes for a teammate with few games this one, are read once for them all.
         """
-        mates = Teammates(self.form.box_scores(), weights, self._last_season())
-        regulars = mates.regulars()
-        known = conditions(regulars, players, reported(regulars, reports))
+        mates, known = self._teammates(players, weights, reports)
         today = datetime.now(PACIFIC).date()
         return lambda player: [*mates.returning(player, known, today), *mates.splits(player, known)]
+
+    def _teammates(
+        self, players: list[YahooPlayer], weights: Mapping[str, float] | None, reports: Sequence[InjuryReport]
+    ) -> tuple[Teammates, Mapping[str, Condition]]:
+        """Every club's regulars from the box scores, and each one's condition: Yahoo's status where his row is
+        among `players`, else ESPN's report."""
+        mates = Teammates(self.form.box_scores(), weights, self._last_season())
+        regulars = mates.regulars()
+        return mates, conditions(regulars, players, reported(regulars, reports))
+
+    def _returning(
+        self, wire: list[YahooPlayer], players: list[YahooPlayer], weights: Mapping[str, float] | None
+    ) -> dict[str, Returning]:
+        """Each of `wire` whose role leans on a teammate at his position due back soon (`Teammates.returning`), by
+        Yahoo key: the soonest back. None where the box scores will not load: a teammate is enrichment."""
+        try:
+            mates, known = self._teammates(players, weights, self._reports())
+        except FrontOfficeError as e:
+            logger.warning(f"Weighing pickups without teammates due back: {e}")
+            return {}
+        today = datetime.now(PACIFIC).date()
+        return {p.player_key: found[0] for p in wire if (found := mates.returning(p, known, today))}
+
+    def _plan(
+        self,
+        yahoo: YahooSource,
+        sides: tuple[list[YahooPlayer], list[YahooPlayer]],
+        free_agents: list[YahooPlayer],
+        readings: Mapping[str, Reading],
+        weights: Mapping[str, float] | None,
+        start: date,
+        end: date,
+    ) -> actions.Plan:
+        """What weighs a pickup beyond the readings (`actions.Plan`): the nights left and the lineup's slots,
+        teammates due back, and the games each side can start.
+
+        No week where the settings list no lineup slots, lineups are set for the
+        week, or the schedule will not load: pickups are then weighed on every
+        game their clubs have left.
+        """
+        roster, theirs = sides
+        returning = self._returning(free_agents, [*roster, *theirs, *free_agents], weights)
+        rules = yahoo.settings()
+        slots = nba_lineup.slots(rules.slots)
+        if not slots or rules.weekly_lineups:
+            return actions.Plan(returning=returning)
+        try:
+            left = self.games.games_left(start, end)
+        except FrontOfficeError as e:
+            logger.warning(f"Weighing pickups on games left, without the nights: {e}")
+            return actions.Plan(returning=returning)
+        week = nba_lineup.Week(left, slots, datetime.now(PACIFIC).date(), end)
+        backs = {key: r.back for key, r in readings.items()}
+        volume = (nba_lineup.starts(roster, week, backs), nba_lineup.starts(theirs, week, backs))
+        return actions.Plan(week=week, returning=returning, volume=volume)
 
     def _last_season(self) -> Mapping[str, NBASeason]:
         """Every player's totals last season, by Sleeper's id; none where it will not load, which leaves a

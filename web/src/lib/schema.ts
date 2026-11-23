@@ -704,6 +704,11 @@ export interface components {
              */
             drop: string;
             /**
+             * Pickup
+             * @description For an add, what he is added for: 'streamer' (this week's games) or 'keeper' (the rest of the season). None for anything else, and where the league does not say.
+             */
+            pickup: ("streamer" | "keeper") | null;
+            /**
              * Win Change
              * @description How much the move changes the chance of winning this week, from simulating the matchup — 0.028 for +2.8 points of probability.
              */

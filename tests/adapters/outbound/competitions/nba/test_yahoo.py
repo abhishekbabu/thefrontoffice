@@ -1689,3 +1689,76 @@ def test_last_seasons_minutes_that_will_not_load_leave_the_returning_starter_unf
     [row] = nba_provider(FakeYahoo(available=[reed]), nba=nba, espn=espn).free_agents("", PlayerQuery()).players
 
     assert row.columns["Without"] == "—"
+
+
+# ── pickups weighed on the week's open slots ───────────────────────
+
+SLOTTED = {"PF": 1, "C": 1, "Util": 1, "BN": 2, "IL": 1}
+
+
+def _slotted(*, weekly: bool = False) -> tuple[FakeYahoo, FakeNBA]:
+    """The week's to-do list with a lineup of PF, C and Util: today only Boston and New York play."""
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+    yahoo.slots = SLOTTED
+    yahoo.weekly_lineups = weekly
+    stats = {**WEEK_FORM, "Streamer": _line(24)}
+    return yahoo, FakeNBA(stats=stats, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY)
+
+
+def _games_left(headline: list[Stat]) -> list[str]:
+    return [stat.value for stat in headline if stat.label == "Games left"]
+
+
+def test_the_week_heads_with_the_games_each_side_can_start_and_labels_each_pickup() -> None:
+    """Only Benched plays among yours, nobody among theirs; Streamer is three times Spare's points a game."""
+    yahoo, nba = _slotted()
+
+    summary = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE).summary("")
+
+    assert _games_left(summary.headline) == ["1 vs 0"]
+    assert [(a.player_id, a.drop, a.pickup) for a in summary.actions or [] if a.kind == "waiver"] == [
+        ("streamer", "spare", "keeper")
+    ]
+
+
+@pytest.mark.parametrize("broken", ["weekly", "schedule"])
+def test_without_nights_to_place_them_pickups_are_weighed_on_games_left_and_no_race_is_shown(broken: str) -> None:
+    yahoo, nba = _slotted(weekly=broken == "weekly")
+    if broken == "schedule":
+        nba.left_error = SleeperAPIError("down")
+
+    summary = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE).summary("")
+
+    assert _games_left(summary.headline) == []
+    assert [a.player_id for a in summary.actions or [] if a.kind == "waiver"] == ["streamer"]
+
+
+def _reed_week(scores_error: Exception | None = None) -> list[Action]:
+    """Paul Reed on the wire, Duren due back in two days with two games beside him: the #238 case."""
+    today = datetime.now(PACIFIC).date()
+    logs = {
+        "d1": [game_log("d1", d, 20.0, team="DET") for d in (1, 2)],
+        "r1": [game_log("r1", d, 26.0, team="DET", pts=12) for d in range(1, 11)],
+    }
+    scores = box_scores(logs, {"d1": "Jalen Duren", "r1": "Paul Reed"}, team="DET", positions={"d1": "C", "r1": "C"})
+    nba = FakeNBA(stats={**WEEK_FORM, "Paul Reed": _line(24)}, games={**WEEK_GAMES, "DET": 3}, scores=scores)
+    nba.seasons[("Jalen Duren", "2025")] = NBASeason(player_id="d1", season="2025", games=70, minutes=2100.0, totals={})
+    nba.scores_error = scores_error
+    espn = FakeESPN(injuries=[_espn_report("Jalen Duren", "DET", back=today + timedelta(days=2))])
+    reed = make_player("Paul Reed", "PF,C", "DET", key="reed")
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[reed], weights=WEIGHTS)
+    provider = nba_provider(yahoo, nba=nba, espn=espn, league=POINTS_LEAGUE)
+    return [a for a in provider.summary("").actions or [] if a.kind == "waiver"]
+
+
+def test_a_pickup_whose_role_a_returning_starter_propped_up_is_a_streamer_never_a_keeper() -> None:
+    """Three times Spare's points a game: a keeper, but for Duren coming back."""
+    [item] = _reed_week()
+
+    assert (item.player_id, item.pickup) == ("reed", "streamer")
+
+
+def test_box_scores_that_will_not_load_weigh_pickups_without_teammates() -> None:
+    [item] = _reed_week(scores_error=SleeperAPIError("down"))
+
+    assert (item.player_id, item.pickup) == ("reed", "keeper")
