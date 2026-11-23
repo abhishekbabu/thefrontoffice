@@ -11,7 +11,9 @@ import pytest
 from support.nba import box_scores, game_log, make_player
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES, BoxScores
+from thefrontoffice.adapters.outbound.competitions.nba.rules import Line
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
+    KEEPER_HORIZON,
     LEFT_EARLY_MINUTES,
     REGULAR_MINUTES,
     RETURN_SOON,
@@ -347,3 +349,58 @@ def test_a_player_sleeper_cannot_place_at_his_club_gets_no_flag() -> None:
 )
 def test_a_position_is_shared_within_its_group(eligible: str, position: str, shares: bool) -> None:
     assert shares_position(eligible, position) is shares
+
+
+# ── a role propped up by a teammate due back ────────────────────────
+# Poeltl's split says twelve points a game without Barnes and six beside him: four games each side.
+
+PROPPED_TODAY = date(2026, 11, 20)
+
+
+def _points(line: Line) -> float | None:
+    return line.get("PTS")
+
+
+def _propped(logs: dict[str, list[NBAGameLog]] | None = None, known: dict[str, Condition] | None = None):
+    mates = Teammates(_scores(logs or _season()))
+    poeltl = make_player("Jakob Poeltl", team="TOR")
+    return mates.propped(poeltl, OUT if known is None else known, PROPPED_TODAY, _points)
+
+
+def test_a_split_clearly_better_without_a_teammate_due_back_props_his_role_and_says_how_much_is_left() -> None:
+    (found,) = _propped()
+
+    assert [m.regular.name for m in found.split.teammates] == ["Scottie Barnes"]
+    assert found.returns == date(2026, 11, 22)
+    assert found.cut == pytest.approx(0.5)  # six beside him over twelve without
+    assert "Barnes" in found.cell() and "22 Nov" in found.cell()
+
+
+def test_a_split_barely_better_without_him_props_nothing() -> None:
+    logs = _season()
+    logs[CENTRE] = [_log(CENTRE, d, 20.0, pts=11 if d <= 4 else 12) for d in range(1, 9)]
+
+    assert _propped(logs) == []
+
+
+def test_minutes_up_without_him_prop_his_role_whatever_the_points() -> None:
+    logs = _season()
+    logs[CENTRE] = [_log(CENTRE, d, 20.0 if d <= 4 else 26.0, pts=10) for d in range(1, 9)]
+
+    (found,) = _propped(logs)
+
+    assert found.cut == 1.0  # no fewer points beside him: nothing to take off a game
+
+
+@pytest.mark.parametrize(
+    "known",
+    [
+        {STAR: Condition(status="O")},  # no return dated: never guessed
+        {STAR: Condition(status="O", returns=PROPPED_TODAY + KEEPER_HORIZON + timedelta(days=1))},
+        {STAR: Condition(status="GTD", returns=date(2026, 11, 22))},  # due to play: the split already reads "with"
+    ],
+)
+def test_only_a_teammate_ruled_out_and_dated_back_within_the_keeper_horizon_props_a_role(
+    known: dict[str, Condition],
+) -> None:
+    assert _propped(known=known) == []

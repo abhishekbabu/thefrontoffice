@@ -19,13 +19,14 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
     Condition,
-    Returning,
+    Leaning,
     Teammate,
     Teammates,
     conditions,
     reported,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Valuer
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, InjuryReport
@@ -152,18 +153,25 @@ class Feeds:
         regulars = mates.regulars()
         return mates, conditions(regulars, players, reported(regulars, reports))
 
-    def returning(
-        self, wire: Sequence[Player], players: Sequence[Player], weights: Mapping[str, float] | None
-    ) -> dict[str, Returning]:
-        """Each of `wire` whose role leans on a teammate at his position due back soon (`Teammates.returning`), by
-        Yahoo key: the soonest back. None where the box scores will not load: a teammate is enrichment."""
+    def leaning(
+        self, wire: Sequence[Player], players: Sequence[Player], weights: Mapping[str, float] | None, value: Valuer
+    ) -> dict[str, Leaning]:
+        """Each of `wire` whose role leans on a teammate due back, by Yahoo key: one at his position he has barely
+        played beside (`Teammates.returning`), else one his split says he does clearly more without
+        (`Teammates.propped`) — the soonest back. None where the box scores will not load: a teammate is
+        enrichment."""
         try:
             mates, known = self.teammates(players, weights, self.reports())
         except FrontOfficeError as e:
             logger.warning(f"Weighing pickups without teammates due back: {e}")
             return {}
         today = datetime.now(PACIFIC).date()
-        return {p.player_key: found[0] for p in wire if (found := mates.returning(p, known, today))}
+        found: dict[str, Leaning] = {}
+        for p in wire:
+            leans: list[Leaning] = [*mates.returning(p, known, today), *mates.propped(p, known, today, value)]
+            if leans:
+                found[p.player_key] = leans[0]
+        return found
 
     def last_season(self) -> Mapping[str, NBASeason]:
         """Every player's totals last season, by Sleeper's id; none where it will not load, which leaves a

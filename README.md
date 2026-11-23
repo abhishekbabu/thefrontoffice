@@ -264,8 +264,8 @@ whose slot he fits who has no game today or is ruled out of it, or who plays and
 is a fifth worse a game. Nobody resting today is started, nobody whose game has
 tipped off is moved, and without today's schedule there are no starts. Then up to
 two streamers (from the wire's top 50 by season and top 25 by last week, three
-requests) within the adds left, each a fifth more worth this week on the nights he fills an open slot and at least as
-good a game as its drop, and up to two keepers taking one add, a fifth better a game — never dropping from IL, the better half of the roster or minutes that are growing.
+requests) within the adds left, each a fifth more worth this week on the nights he fills an open slot, by at least 1.5 of its drop's games, and at least as
+good a game as it, and up to two keepers taking one add, a fifth better a game — never dropping from IL, the better half of the roster or minutes that are growing.
 While the NBA has yet to schedule days of a week (3+ days in a row with under 3
 games, 1–20 Dec: the Cup knockouts, before eliminated clubs get games), the header
 says "Schedule: not final", games left read "3+G", Fixtures carries a note naming

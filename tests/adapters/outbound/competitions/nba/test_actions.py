@@ -9,7 +9,7 @@ from thefrontoffice.adapters.outbound.competitions.dates import weekday_day_mont
 from thefrontoffice.adapters.outbound.competitions.nba.actions import (
     KEEPERS,
     PROVISIONAL,
-    RETURN_CUT,
+    STREAM_GAMES,
     STREAMS,
     Plan,
     Weigh,
@@ -23,7 +23,15 @@ from thefrontoffice.adapters.outbound.competitions.nba.actions import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.form import Role
 from thefrontoffice.adapters.outbound.competitions.nba.lineup import Week
-from thefrontoffice.adapters.outbound.competitions.nba.teammates import Absent, Condition, Regular, Returning
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
+    RETURN_CUT,
+    Absent,
+    Condition,
+    Propped,
+    Regular,
+    Returning,
+    Split,
+)
 from thefrontoffice.adapters.outbound.competitions.nba.week import Today
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
@@ -200,7 +208,7 @@ def test_a_player_on_waivers_streams_in_as_a_claim_on_the_games_after_he_clears_
     """His reading already counts only those games; the item says so, and when he clears."""
     roster, readings = _team()
     pickup = replace(_player("Pickup", position="SF"), waiver_date=date(2026, 11, 25))
-    readings |= _readings((pickup, 20.0, 3))
+    readings |= _readings((pickup, 25.0, 3))
 
     [item] = streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set())
 
@@ -308,6 +316,43 @@ def test_a_stream_never_gives_up_a_better_player_a_game_for_more_games() -> None
     readings |= _readings((pickup, 17.0, 4))  # 68 this week against Weaker's 36, but 17 a game against 18
 
     assert streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set()) == []
+
+
+def test_a_marginal_stream_one_game_over_a_player_barely_weaker_is_not_suggested() -> None:
+    """Turner for Buzelis: 19 a game against 18, three games against two. +21 clears the margin on the week,
+    but is barely more than one of Weaker's games, short of `STREAM_GAMES`: not worth one of the week's adds."""
+    roster, readings = _team()
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 19.0, 3))
+
+    assert STREAM_GAMES * 18.0 > 19.0 * 3 - 18.0 * 2
+    assert streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set()) == []
+    assert fit(readings["Pickup"], roster, readings, by_points=True) == ""
+
+
+def test_a_clearly_better_stream_is_still_suggested() -> None:
+    """The same player with a fourth game adds +40, over two of Weaker's games: a stream worth an add."""
+    roster, readings = _team()
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 19.0, 4))
+
+    [item] = streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set())
+
+    assert (item.pickup, item.drop) == ("streamer", "Weaker")
+    assert "+40.0" in item.reason
+
+
+def test_a_stream_lets_go_the_weakest_player_a_game_before_the_one_weakest_this_week() -> None:
+    """Weak plays once, so his week is the smaller; Weaker is the player you would miss least for good."""
+    roster, readings = _team()
+    readings["Weak"] = replace(readings["Weak"], games=1)
+    readings["Weaker"] = replace(readings["Weaker"], per_game=12.0, games=3)
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 22.0, 4))
+
+    [item] = streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set())
+
+    assert item.drop == "Weaker"
 
 
 def test_the_week_lists_il_moves_then_starts_then_streams() -> None:
@@ -438,6 +483,31 @@ def test_a_pickup_counts_the_games_after_a_teammates_return_at_a_cut() -> None:
     assert nights == 4
     assert alone == 40.0
     assert behind == 10.0 + 3 * 10.0 * RETURN_CUT
+
+
+def _reaves(back: date, cut: float) -> Propped:
+    """Thybulle's split without Reaves, five games each side: enough to read, so no `Returning` flag."""
+    regular = Regular(player_id="a1", name="Austin Reaves", team="DET", position="SG")
+    absent = Absent(regular, Condition(status="O", returns=back))
+    split = Split(teammates=(absent,), without={}, games=5, alongside={}, alongside_games=12)
+    return Propped(split, back, cut)
+
+
+def test_a_pickup_propped_up_by_a_teammate_due_back_is_a_streamer_with_his_games_after_at_the_splits_cut() -> None:
+    """Clearly better a game than any drop reads as a keeper; but his split without Reaves, back Wednesday, is
+    his role."""
+    roster, readings = _team()
+    thybulle = _player("Thybulle", position="SG,SF", team="DET")
+    readings |= _readings((thybulle, 30.0, 4))
+    plan = Plan(week=DETROIT, returning={"Thybulle": _reaves(WED, 0.75)})
+
+    [item] = streams(roster, [thybulle], readings, adds_left=2, by_points=True, named=set(), plan=plan)
+    gained, _ = Weigh(roster, readings, plan).gained(readings["Thybulle"], readings["Weak"])
+
+    assert item.pickup == "streamer"
+    assert "Reaves" in item.reason and "75%" in item.reason
+    assert gained == 30.0 * 2 + 30.0 * 2 * 0.75  # Monday and Tuesday in full; Wednesday and Saturday at the cut
+    assert streams(roster, [thybulle], readings, 2, True, set(), plan=Plan(week=DETROIT))[0].pickup == "keeper"
 
 
 def test_a_pickup_whose_role_leans_on_a_teammate_due_back_is_never_a_keeper() -> None:
