@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Spot } from "@/lib/api";
-import { LineupCard, SideCard, underWay } from "@/components/ui/lineup";
+import { LineupCard, SideCard, rowsOf } from "@/components/ui/lineup";
 import { render } from "@/test/render";
 import { clock, startsAt } from "@/lib/format";
 
@@ -153,19 +153,102 @@ describe("the points column", () => {
   });
 
   it("follows the caller where only the other side's game is under way", async () => {
-    const { container } = await render(<SideCard side={side(scored("Waiting", "projected"))} label="You" started />);
+    const waiting = side(scored("Waiting", "projected"));
+    const playing = side(scored("Playing", "live", "12.4"));
+    const { container } = await render(<SideCard side={waiting} label="You" rows={rowsOf(waiting, playing)} />);
 
     expect(container.textContent).toContain("Pts");
   });
 });
 
-describe("underWay", () => {
-  it("is true from the first live or final score on either side", () => {
-    const quiet = { name: "", record: "", detail: "", points: "", lineup: [spot("A")], bench: [], reserve: [], open_spots: 0 };
+describe("rowsOf", () => {
+  const quiet = { name: "", record: "", detail: "", points: "", lineup: [spot("A")], bench: [], reserve: [], open_spots: 0 };
+
+  it("is under way from the first live or final score on either side", () => {
     const done = { ...quiet, bench: [{ ...spot("B"), scoring: "final" as const }] };
 
-    expect(underWay(quiet, null)).toBe(false);
-    expect(underWay(quiet, done)).toBe(true);
+    expect(rowsOf(quiet, null).started).toBe(false);
+    expect(rowsOf(quiet, done).started).toBe(true);
+  });
+
+  it("makes room for a line of figures once anyone on either side has one", () => {
+    const pts = { label: "PTS", value: "25", tone: "neutral" as const, url: "", better: null, hint: "" };
+    const lined = { ...quiet, reserve: [{ ...spot("C"), line: [pts] }] };
+
+    expect(rowsOf(quiet).line).toEqual([]);
+    expect(rowsOf(quiet, lined).line).toEqual([pts]);
+  });
+});
+
+describe("rows side by side", () => {
+  const figure = (label: string, value: string) => ({ label, value, tone: "neutral" as const, url: "", better: null, hint: "" });
+  const live = (player: string): Spot => ({
+    ...spot(player, "C", { today: "@ UTA final" }),
+    slot: "PG",
+    scoring: "final",
+    scored: "31.5",
+    projection: "28.0",
+    line: [figure("FG%", ".511"), figure("PTS", "25")],
+  });
+  const quiet = (player: string): Spot => ({ ...spot(player), slot: "PG", detail: "", value: "" });
+
+  /** The two cards, yours then the opponent's. */
+  const sides = (container: Element): [Element, Element] => {
+    const [left, right] = container.children;
+    if (!left || !right) throw new Error("expected two cards");
+    return [left, right];
+  };
+  /** The fixed height each row's body is drawn at, in order: what sets how tall the row stands. */
+  const rowBodies = (card: Element): string[] =>
+    [...card.querySelectorAll("[data-row] > div")].map((el) => el.className.split(" ").filter((c) => /^h-/.test(c)).join());
+  /** How many lines each player's row draws under his name: its detail, and its figures where any row has them. */
+  const linesUnder = (card: Element): number[] =>
+    [...card.querySelectorAll('[data-row="spot"]')].map((row) => row.querySelectorAll(".h-4").length);
+
+  it("stand one height whatever each row holds, so slot N sits beside slot N", async () => {
+    const mine = { name: "Mine", record: "", detail: "", points: "", lineup: [live("A"), quiet("B")], bench: [live("C")], reserve: [], open_spots: 1 };
+    const theirs = { name: "Theirs", record: "", detail: "", points: "", lineup: [quiet("D"), quiet("E")], bench: [quiet("F"), quiet("G")], reserve: [], open_spots: 0 };
+    const rows = rowsOf(mine, theirs);
+    const { container } = await render(
+      <>
+        <SideCard side={mine} label="You" rows={rows} />
+        <SideCard side={theirs} label="Opponent" rows={rows} />
+      </>,
+    );
+    const [left, right] = sides(container);
+
+    // Every row, a player's with a game, a score and a line, a bare one, or an open spot, takes the same fixed body.
+    const bodies = [...rowBodies(left), ...rowBodies(right)];
+    expect(bodies).toHaveLength(8);
+    expect(new Set(bodies)).toEqual(new Set(["h-14"]));
+    // The detail line and the figures' line are drawn on every player's row, empty or not.
+    expect(linesUnder(left)).toEqual([2, 2, 2]);
+    expect(linesUnder(right)).toEqual([2, 2, 2, 2]);
+    // Both cards head the lineup and the bench with the categories, though only one side has a line.
+    expect(left.textContent?.match(/FG%PTS/g)).toHaveLength(2);
+    expect(right.textContent?.match(/FG%PTS/g)).toHaveLength(2);
+  });
+
+  it("are no taller for a game today, a kickoff or a mark than without", async () => {
+    const plain = { name: "A", record: "", detail: "", points: "", lineup: [quiet("A")], bench: [], reserve: [], open_spots: 0 };
+    const busy = {
+      ...plain,
+      lineup: [{ ...quiet("B"), mark: "C", today: "vs LAL today", kickoff: new Date(Date.now() + 3_600_000).toISOString() }],
+    };
+    const rows = rowsOf(plain, busy);
+    const { container } = await render(
+      <>
+        <SideCard side={plain} label="You" rows={rows} />
+        <SideCard side={busy} label="Opponent" rows={rows} />
+      </>,
+    );
+    const [left, right] = sides(container);
+
+    expect(rowBodies(left)).toEqual(["h-9"]);
+    expect(rowBodies(right)).toEqual(["h-9"]);
+    expect(linesUnder(left)).toEqual([1]);
+    expect(linesUnder(right)).toEqual([1]);
+    expect(right.textContent).toContain("vs LAL today");
   });
 });
 

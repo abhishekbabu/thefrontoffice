@@ -32,6 +32,8 @@ export function LineupCard({
   onOpen?: (id: string) => void;
 }) {
   if (!lineup.length && !bench.length) return null;
+  // With no opponent's kickoff to wait for, the points column is always drawn.
+  const rows = { ...shapeOf([...lineup, ...bench, ...reserve]), started: true };
   return (
     <Card>
       <CardHeader>
@@ -40,18 +42,15 @@ export function LineupCard({
       </CardHeader>
 
       <div className="grid grid-cols-1 md:grid-cols-2">
-        <SpotList spots={lineup} onOpen={onOpen} />
+        <SpotList spots={lineup} rows={rows} onOpen={onOpen} />
         <div className="border-t border-border md:border-l md:border-t-0">
           {/* The open spots are rows of their own below, so the heading does not count them again. */}
           <ListHeading>Bench</ListHeading>
-          {(bench.length > 0 || openSpots === 0) && (
-            <SpotList spots={bench} empty="Nobody on the bench." onOpen={onOpen} />
-          )}
-          <OpenSpots count={openSpots} />
+          <SpotList spots={bench} open={openSpots} rows={rows} empty="Nobody on the bench." onOpen={onOpen} />
           {reserve.length > 0 && (
             <>
               <ListHeading>Reserve</ListHeading>
-              <SpotList spots={reserve} onOpen={onOpen} />
+              <SpotList spots={reserve} rows={rows} onOpen={onOpen} />
             </>
           )}
         </div>
@@ -61,36 +60,60 @@ export function LineupCard({
 }
 
 /**
- * A roster spot nobody holds, as a row of its own at the foot of the bench:
- * room to add a player without dropping one. Drawn dashed and said in words,
- * so it reads as a place rather than as a player with no name.
+ * What every row of a lineup makes room for, whether or not it has it: the
+ * points column once a game is under way, and a line of category figures once
+ * anyone has one. Read from both sides of a matchup, so the two cards draw the
+ * same headings and the same row heights, and slot N sits beside slot N.
  */
-function OpenSpots({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <div className="flex flex-col gap-1.5 px-4 py-2">
-      {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="rounded-md border border-dashed border-border px-3 py-1.5">
-          <div className="text-[13px] font-medium text-muted-foreground">Open roster spot</div>
-        </div>
-      ))}
-    </div>
-  );
+export type Rows = {
+  /** Whether any game of the week has kicked off: a player's points exist from then. */
+  started: boolean;
+  /** Whether any row says how it scores, so the projection and the points get columns of their own. */
+  scored: boolean;
+  /** The first line anyone has, whose categories head the columns; empty while nobody has one. */
+  line: Stat[];
+};
+
+/** The rows' shape across every list of every side given: one side alone, or both of a matchup. */
+export function rowsOf(...sides: (Side | null | undefined)[]): Rows {
+  return shapeOf(sides.flatMap((side) => (side ? [...side.lineup, ...side.bench, ...side.reserve] : [])));
+}
+
+function shapeOf(spots: Spot[]): Rows {
+  return {
+    started: spots.some((spot) => spot.scoring === "live" || spot.scoring === "final"),
+    scored: spots.some((spot) => spot.scoring),
+    line: spots.find((spot) => spot.line.length > 0)?.line ?? [],
+  };
+}
+
+/**
+ * The frame every row shares, a player's or an open spot's. Its body is one
+ * fixed height (`rowBody`), so a row with a game today, a kickoff, a live
+ * score or a line stands exactly as tall as one with none of them.
+ */
+const ROW = "border-b border-border/45 px-4 py-2 last:border-b-0";
+
+/** Name over detail (h-9), and under them a line of figures (gap-1, h-4) wherever any row has one. */
+function rowBody(rows: Rows): string {
+  return rows.line.length > 0 ? "h-14" : "h-9";
 }
 
 function SpotList({
   spots,
+  rows,
+  open = 0,
   empty,
   onOpen,
-  started = true,
 }: {
   spots: Spot[];
+  rows: Rows;
+  /** Roster spots nobody holds, drawn as rows of their own after the players. */
+  open?: number;
   empty?: string;
   onOpen?: (id: string) => void;
-  /** Whether any game of the week has kicked off: before then there are no points to give a column. */
-  started?: boolean;
 }) {
-  if (!spots.length) {
+  if (!spots.length && open <= 0) {
     return <CardNote>{empty ?? "Nothing set."}</CardNote>;
   }
   const slotted = spots.some((spot) => spot.slot);
@@ -98,69 +121,83 @@ function SpotList({
     <div className="flex flex-col">
       {spots.map((spot, i) => {
         // A place with nobody in it has nothing to open.
-        const open = spot.player_id && onOpen ? () => onOpen(spot.player_id) : undefined;
+        const opens = spot.player_id && onOpen ? () => onOpen(spot.player_id) : undefined;
         return (
-        <div
-          key={`${spot.player}-${i}`}
-          {...clickable(open)}
-          className={cn(
-            "flex items-baseline gap-3 border-b border-border/45 px-4 py-2 last:border-b-0",
-            // His line in each category takes a row of its own under his name, column under column.
-            spot.line.length > 0 && "flex-wrap gap-y-1",
-            open && "cursor-pointer hover:bg-muted",
-          )}
-        >
-          {spot.slot && (
-            <Label className="w-16 shrink-0">{spot.slot}</Label>
-          )}
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className={cn("truncate text-[13.5px] font-medium", spot.idle && "text-muted-foreground")}>
-                {spot.player}
-              </span>
-              {spot.mark && (
-                <Badge variant="info" appearance="label" className="shrink-0">
-                  {spot.mark}
-                </Badge>
-              )}
+          <div
+            key={`${spot.player}-${i}`}
+            data-row="spot"
+            {...clickable(opens)}
+            className={cn(ROW, opens && "cursor-pointer hover:bg-muted")}
+          >
+            <div className={cn("flex flex-col gap-1", rowBody(rows))}>
+              <div className="flex h-9 items-baseline gap-3">
+                {spot.slot && <Label className="w-16 shrink-0 truncate leading-5">{spot.slot}</Label>}
+                <div className="min-w-0 flex-1">
+                  <div className="flex h-5 min-w-0 items-center gap-2">
+                    <span
+                      className={cn("truncate text-[13.5px] font-medium leading-5", spot.idle && "text-muted-foreground")}
+                    >
+                      {spot.player}
+                    </span>
+                    {spot.mark && (
+                      <Badge variant="info" appearance="label" className="shrink-0">
+                        {spot.mark}
+                      </Badge>
+                    )}
+                  </div>
+                  {/* Drawn whether or not there is anything to say, so a row without it is no shorter. */}
+                  <Meta as="div" className="flex h-4 min-w-0 gap-1 overflow-hidden whitespace-nowrap leading-4">
+                    <span className="truncate">{spot.detail}</span>
+                    {/* Whether he plays today, where a lineup is set day by day: never the part cut
+                        off, since it is what the day's decision turns on. Said in words; a game today
+                        is set in the foreground, a day off left muted with the rest of his row. */}
+                    {spot.today && (
+                      <span className={cn("shrink-0", !spot.idle && "font-medium text-foreground")}>
+                        · {spot.today}
+                        {spot.kickoff && ` ${clock(spot.kickoff)}`}
+                      </span>
+                    )}
+                    {/* A weekly lineup's version of the same: when his game starts, while it has not. */}
+                    {!spot.today && spot.kickoff && <span className="shrink-0">· {startsAt(spot.kickoff)}</span>}
+                  </Meta>
+                </div>
+                {/* His figure beside his name: a week played has the line alone, a game today the line beside his week. */}
+                {spot.scoring ? (
+                  <SpotScore spot={spot} started={rows.started} />
+                ) : spot.tone === "warning" ? (
+                  <Badge variant="warn" appearance="pill" className="tabular-nums">
+                    {spot.value}
+                  </Badge>
+                ) : (
+                  spot.value && (
+                    <span className="shrink-0 whitespace-nowrap font-mono text-[12.5px] tabular-nums">{spot.value}</span>
+                  )
+                )}
+              </div>
+              {/* His line in each category on a row of its own under his name, left blank on a row
+                  without one wherever another row has it, so the rows stay one height. */}
+              {rows.line.length > 0 && <LineFigures line={spot.line} indent={slotted} />}
             </div>
-            <Meta as="div" className="flex min-w-0 gap-1">
-              <span className="truncate">{spot.detail}</span>
-              {/* Whether he plays today, where a lineup is set day by day: never the part cut
-                  off, since it is what the day's decision turns on. Said in words; a game today
-                  is set in the foreground, a day off left muted with the rest of his row. */}
-              {spot.today && (
-                <span className={cn("shrink-0", !spot.idle && "font-medium text-foreground")}>
-                  · {spot.today}
-                  {spot.kickoff && ` ${clock(spot.kickoff)}`}
-                </span>
-              )}
-              {/* A weekly lineup's version of the same: when his game starts, while it has not. */}
-              {!spot.today && spot.kickoff && <span className="shrink-0">· {startsAt(spot.kickoff)}</span>}
-            </Meta>
           </div>
-          {/* His figure beside his name, and his line in each category, where he has one, on a row of its
-              own under it: a week played has the line alone, a game today the line beside his week. */}
-          {spot.scoring ? (
-            <SpotScore spot={spot} started={started} />
-          ) : spot.tone === "warning" ? (
-            <Badge variant="warn" appearance="pill" className="tabular-nums">
-              {spot.value}
-            </Badge>
-          ) : (
-            spot.value && <span className="shrink-0 font-mono text-[12.5px] tabular-nums">{spot.value}</span>
-          )}
-          {spot.line.length > 0 && <LineFigures line={spot.line} indent={slotted} />}
-        </div>
         );
       })}
+      {/* A roster spot nobody holds, as a row of its own at the foot of the bench: room to add a
+          player without dropping one. Drawn dashed and said in words, so it reads as a place
+          rather than as a player with no name, and as tall as a player's row. */}
+      {Array.from({ length: Math.max(open, 0) }, (_, i) => (
+        <div key={`open-${i}`} data-row="open" className={ROW}>
+          <div className={cn("flex items-center rounded-md border border-dashed border-border px-3", rowBody(rows))}>
+            <span className="truncate text-[13px] font-medium text-muted-foreground">Open roster spot</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
 /** The grid a row of category figures and its heading share, so each figure sits under its label. */
-function lineGrid(count: number): CSSProperties {
-  return { gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` };
+function lineGrid(count: number): CSSProperties | undefined {
+  return count > 0 ? { gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` } : undefined;
 }
 
 /** Clears the slot label (w-16) and the gap after it, so the figures start under the name. */
@@ -169,18 +206,19 @@ const UNDER_NAME = "pl-[4.75rem]";
 /**
  * His line in each category the league scores, a column each, under his
  * name: nine figures do not fit beside it, and as one sentence they truncated.
+ * One line high whether he has a line or not.
  */
 function LineFigures({ line, indent }: { line: Stat[]; indent: boolean }) {
   return (
     <div
-      className={cn("grid basis-full gap-x-1 font-mono text-[12px] tabular-nums", indent && UNDER_NAME)}
+      className={cn("grid h-4 gap-x-1 overflow-hidden font-mono text-[12px] leading-4 tabular-nums", indent && UNDER_NAME)}
       style={lineGrid(line.length)}
     >
       {line.map((figure) => (
         <span
           key={figure.label}
           aria-label={`${figure.label} ${figure.value}`}
-          className={cn("text-right", figure.value === "—" && "text-muted-foreground/50")}
+          className={cn("truncate text-right", figure.value === "—" && "text-muted-foreground/50")}
         >
           {figure.value}
         </span>
@@ -190,15 +228,25 @@ function LineFigures({ line, indent }: { line: Stat[]; indent: boolean }) {
 }
 
 /** The categories' names over rows that carry a line, column for column with `LineFigures`. */
-function LineHeads({ spots, children, className }: { spots: Spot[]; children?: ReactNode; className?: string }) {
-  const line = spots.find((spot) => spot.line.length > 0)?.line ?? [];
-  const indent = spots.some((spot) => spot.slot);
+function LineHeads({
+  line,
+  indent,
+  children,
+  className,
+}: {
+  line: Stat[];
+  indent: boolean;
+  children?: ReactNode;
+  className?: string;
+}) {
   return (
     <ListHeading className={className}>
       {children && <div>{children}</div>}
       <div className={cn("grid gap-x-1 text-right", indent && UNDER_NAME)} style={lineGrid(line.length)}>
         {line.map((figure) => (
-          <span key={figure.label}>{figure.label}</span>
+          <span key={figure.label} className="truncate">
+            {figure.label}
+          </span>
         ))}
       </div>
     </ListHeading>
@@ -212,6 +260,7 @@ function LineHeads({ spots, children, className }: { spots: Spot[]; children?: R
  * column is not drawn at all; once any game is on, a player still to play
  * says so with a dash, and one under way leads with his points while the
  * projection steps back. Live and final are said in words, not left to a color.
+ * Two lines high at most: the name and detail beside it.
  */
 function SpotScore({ spot, started }: { spot: Spot; started: boolean }) {
   const played = spot.scoring !== "projected";
@@ -220,17 +269,17 @@ function SpotScore({ spot, started }: { spot: Spot; started: boolean }) {
     <div className="flex shrink-0 items-start gap-3 text-right">
       <span
         className={cn(
-          "w-14 font-mono text-[12px] tabular-nums",
+          "w-14 font-mono text-[12px] leading-5 tabular-nums",
           played ? "text-muted-foreground" : warn ? "text-warn" : "text-foreground",
         )}
       >
         {spot.projection}
       </span>
       {started && (
-        <div className="flex w-16 flex-col items-end gap-0.5">
+        <div className="flex w-16 flex-col items-end">
           <span
             className={cn(
-              "font-mono text-[14px] font-semibold tabular-nums",
+              "font-mono text-[14px] font-semibold leading-5 tabular-nums",
               !played ? "text-muted-foreground/50" : warn ? "text-warn" : "text-foreground",
             )}
           >
@@ -239,7 +288,7 @@ function SpotScore({ spot, started }: { spot: Spot; started: boolean }) {
           {played && (
             <span
               className={cn(
-                "font-mono text-[10.5px] uppercase tracking-wide",
+                "font-mono text-[10.5px] uppercase leading-4 tracking-wide",
                 spot.scoring === "live" ? "text-ok" : "text-muted-foreground",
               )}
             >
@@ -252,42 +301,36 @@ function SpotScore({ spot, started }: { spot: Spot; started: boolean }) {
   );
 }
 
-/** Whether any game of the week has kicked off, on any of `sides`: a player's points exist from then. */
-export function underWay(...sides: (Side | null | undefined)[]): boolean {
-  return sides.some((side) =>
-    [...(side?.lineup ?? []), ...(side?.bench ?? []), ...(side?.reserve ?? [])].some(
-      (spot) => spot.scoring === "live" || spot.scoring === "final",
-    ),
-  );
-}
-
-/** The score columns' names, set over rows that carry them, flush with `SpotScore`. */
+/**
+ * The score columns' names over a list, flush with `SpotScore`. Chosen from
+ * `rows`, not from the list under it, so both sides of a matchup draw the same heading.
+ */
 function ScoreHeads({
   spots,
-  started,
+  rows,
   children,
   className,
 }: {
   spots: Spot[];
-  started: boolean;
+  rows: Rows;
   children?: ReactNode;
   className?: string;
 }) {
-  if (spots.some((spot) => spot.line.length > 0)) {
+  if (rows.line.length > 0) {
     return (
-      <LineHeads spots={spots} className={className}>
+      <LineHeads line={rows.line} indent={spots.some((spot) => spot.slot)} className={className}>
         {children}
       </LineHeads>
     );
   }
-  if (!spots.some((spot) => spot.scoring)) {
+  if (!rows.scored) {
     return children ? <ListHeading className={className}>{children}</ListHeading> : null;
   }
   return (
     <ListHeading className={cn("flex items-baseline gap-3", className)}>
       <span className="flex-1">{children}</span>
       <span className="w-14 text-right">Proj</span>
-      {started && <span className="w-16 text-right">Pts</span>}
+      {rows.started && <span className="w-16 text-right">Pts</span>}
     </ListHeading>
   );
 }
@@ -302,16 +345,16 @@ export function SideCard({
   side,
   label,
   onOpen,
-  started,
+  rows,
 }: {
   side: Side | null;
   label: string;
   onOpen?: (id: string) => void;
-  /** Whether the week's first game has kicked off; read from this side alone where the caller does not say. */
-  started?: boolean;
+  /** What every row makes room for, from both sides (`rowsOf`); read from this side alone where the caller does not say. */
+  rows?: Rows;
 }) {
   if (!side) return null;
-  const on = started ?? underWay(side);
+  const shape = rows ?? rowsOf(side);
   return (
     <Card>
       <CardHeader>
@@ -325,24 +368,23 @@ export function SideCard({
         </span>
         <span className="normal-case tracking-normal">{[side.record, side.detail, side.points].filter(Boolean).join(" · ")}</span>
       </CardHeader>
-      <ScoreHeads spots={side.lineup} started={on} className="border-t-0" />
-      <SpotList spots={side.lineup} onOpen={onOpen} started={on} />
+      <ScoreHeads spots={side.lineup} rows={shape} className="border-t-0" />
+      <SpotList spots={side.lineup} rows={shape} onOpen={onOpen} />
       {(side.bench.length > 0 || side.open_spots > 0) && (
         <>
-          <ScoreHeads spots={side.bench} started={on}>
+          <ScoreHeads spots={side.bench} rows={shape}>
             Bench
           </ScoreHeads>
-          {side.bench.length > 0 && <SpotList spots={side.bench} onOpen={onOpen} started={on} />}
-          <OpenSpots count={side.open_spots} />
+          <SpotList spots={side.bench} open={side.open_spots} rows={shape} onOpen={onOpen} />
         </>
       )}
       {/* Apart from the bench: these cost no roster spot and cannot start. */}
       {side.reserve.length > 0 && (
         <>
-          <ScoreHeads spots={side.reserve} started={on}>
+          <ScoreHeads spots={side.reserve} rows={shape}>
             Reserve
           </ScoreHeads>
-          <SpotList spots={side.reserve} onOpen={onOpen} started={on} />
+          <SpotList spots={side.reserve} rows={shape} onOpen={onOpen} />
         </>
       )}
     </Card>
