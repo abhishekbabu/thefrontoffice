@@ -5,7 +5,9 @@ and a trade or release worded as nothing the rules read goes unnoticed. Sleeper'
 depth chart moves either way. So each day the week is read, each club's depth-chart
 starter is kept (`StarterLog`), and a club whose starter differs from an earlier
 day's within `news.NEWS_WINDOW` has a quarterback change, dated the first day it
-read differently, and labelled as the depth chart's.
+read differently, and labelled as the depth chart's — once both the new starter
+and the one before him have each read so on `SETTLED` readings in a row, on as many days, so a day's
+noise in Sleeper's chart, either way, is no change.
 
 A club with no listed starter on a day says nothing that day: an empty depth chart
 is Sleeper between updates, not a club without a quarterback.
@@ -20,6 +22,10 @@ from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club, o
 from thefrontoffice.adapters.outbound.competitions.nfl.model import PlayerInfo
 from thefrontoffice.adapters.outbound.competitions.nfl.news import QB_CHANGE
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
+
+SETTLED = 2
+"""Readings, on as many days, a starter needs before the depth chart's word on him counts: one is Sleeper's
+chart between two updates as often as a change, and a change read on one day would flag a whole club's receivers."""
 
 DEPTH_CHART = "Depth chart"
 """Where the headline says the change was read: a `QB_CHANGE` like a story's, from another source."""
@@ -59,16 +65,18 @@ def changes(log: StarterLog, players: Mapping[str, PlayerInfo], now: datetime) -
 
     found: dict[str, ClubStory] = {}
     for club, now_starts in current.items():
-        seen = [(day, starts[club]) for day, starts in kept if starts.get(club)]
-        if not seen:
+        seen = [*((day, starts[club]) for day, starts in kept if starts.get(club)), (today, now_starts)]
+        # Each starter's runs of consecutive readings; a run under `SETTLED` days is Sleeper mid-update.
+        runs: list[tuple[str, date, int]] = []
+        for day, pid in seen:
+            if runs and runs[-1][0] == pid:
+                runs[-1] = (pid, runs[-1][1], runs[-1][2] + 1)
+            else:
+                runs.append((pid, day, 1))
+        settled = [run for run in runs if run[2] >= SETTLED]
+        if len(settled) < 2 or runs[-1] != settled[-1] or settled[-2][0] == now_starts:
             continue
-        # The latest day he was not the starter: the change is the day after it read otherwise.
-        before = [(day, pid) for day, pid in seen if pid != now_starts]
-        if not before:
-            continue
-        last_day, was = before[-1]
-        since = next((day for day, pid in seen if day > last_day and pid == now_starts), today)
-        found[club] = _story(club, since, players.get(now_starts), players.get(was))
+        found[club] = _story(club, settled[-1][1], players.get(now_starts), players.get(settled[-2][0]))
     return found
 
 

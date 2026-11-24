@@ -129,6 +129,49 @@ def out_long(article: NewsArticle, text: str) -> bool:
     return says(text, OUT_LONG) or long
 
 
+NEAR = 4
+"""The most words between a player and what a story says of him, within one clause: 'turn to 40-year-old Josh
+Johnson' is three; a start in the next sentence, or another player's, is not his."""
+
+
+def near(text: str, keys: Iterable[str], words: Iterable[str], span: int = NEAR) -> bool:
+    """Whether one of the phrases stands within `span` words of one of the players, in the same clause."""
+    words = tuple(words)
+    for clause in text.split("|"):
+        tokens = clause.split()
+        spans = [_spans(tokens, word) for word in words]
+        said = [found for each in spans for found in each]
+        for key in keys:
+            for start, end in _spans(tokens, key):
+                if any(s - end <= span and start - e <= span for s, e in said):
+                    return True
+    return False
+
+
+def _spans(tokens: list[str], phrase: str) -> list[tuple[int, int]]:
+    """Where the phrase stands among the tokens, as (first, last) indices."""
+    words = phrase.split()
+    n = len(words)
+    return [(i, i + n - 1) for i in range(len(tokens) - n + 1) if tokens[i : i + n] == words] if n else []
+
+
+SCORE = re.compile(r"\b\d{1,3}-\d{1,3}\b")
+RECAP_VERBS = (
+    *("beat", "beats", "top", "tops", "rout", "routs", "edge", "edges", "defeat", "defeats", "down", "downs"),
+    *("outlast", "outlasts", "rally", "rallies", "hold off", "holds off", "win", "wins", "fall", "falls", "lose"),
+    *("loses", "stun", "stuns", "blank", "blanks", "survive", "survives", "snap", "snaps", "cruise", "cruises"),
+    *("roll", "rolls", "victory", "loss", "past", "over"),
+)
+"""How a game's result is put in a recap's headline: 'Seahawks beat Raiders 21-13'."""
+
+
+def recap(article: NewsArticle) -> bool:
+    """Whether the story is a game's recap: a score and a result in its headline. Who played in it is the box
+    score's to say; a recap reports last week's lineup, not a change to this week's."""
+    headline = article.headline
+    return bool(SCORE.search(headline)) and says(f" {normalize_name(headline)} ", RECAP_VERBS)
+
+
 def roundup(clubs: Iterable[str]) -> bool:
     """Whether the clubs a story's players come from make it the league's story rather than one club's."""
     return len(set(clubs)) > ROUNDUP

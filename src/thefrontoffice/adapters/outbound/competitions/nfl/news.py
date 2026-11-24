@@ -14,7 +14,11 @@ it names the change, and never while it is talk of one (a question, a rumor):
   release or trade moves ('cut QB Daniel Jones', 'Kirk Cousins traded to
   Minnesota', 'Vikings acquire Kirk Cousins') — a free agent in the release,
   since Sleeper may already have let him go; one named or elevated to starter
-  ('Colts name Anthony Richardson the starter'); its starter out long (`stories.out_long`: the season, a month, three weeks or more); or a backup (Sleeper's depth chart) named beside starting;
+  ('Colts name Anthony Richardson the starter'); its starter out long
+  (`stories.out_long`: the season, a month, three weeks or more); or, more weakly, its starter
+  replaced, or a backup (Sleeper's depth chart) said to start (`stories.near`) — weaker because an
+  injury in a game reads the same, so neither counts once that starter is listed first again and
+  fit, nor in a game's recap (`stories.recap`), which reports last week's lineup;
 - a trade: an offensive player anywhere in the league as the trade's object,
   who may have left by the time the story runs, and not only a starting quarterback;
 - a play caller: the offensive coordinator or play-calling named beside a
@@ -34,6 +38,7 @@ from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.news import ClubStory, PlayerNews
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club, on_a_club, players_by_club
 from thefrontoffice.adapters.outbound.competitions.nfl.model import FREE_AGENT, PlayerInfo
+from thefrontoffice.adapters.outbound.competitions.nfl.rules import listed
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 
 QB_CHANGE, TRADE, PLAY_CALLER = "QB change", "Trade", "Play caller"
@@ -42,7 +47,9 @@ QB_CHANGE, TRADE, PLAY_CALLER = "QB change", "Trade", "Play caller"
 OFFENSE = frozenset({"QB", "RB", "WR", "TE"})
 """Whose trade changes who gets the ball."""
 
-BENCHED = ("bench", "benched", "benches", "benching", "demoted", "demotes", "replaced", "replaces", "replacing")
+BENCHED = ("bench", "benched", "benches", "benching", "demoted", "demotes")
+REPLACED = ("replaced", "replaces", "replacing", "relieved by", "in relief")
+"""A quarterback replaced, as an injury in a game puts it as often as a benching: it holds only while he is out."""
 QUARTERBACK = ("", "qb ", "quarterback ")
 """What may stand between a verb and the quarterback it moves: 'cut QB Daniel Jones'."""
 STARTING = (
@@ -110,6 +117,8 @@ class _Offense:
     """Each name's clubs, under ESPN's spelling."""
     quarterbacks: dict[str, dict[str, bool]] = field(default_factory=lambda: defaultdict(dict))
     """Each club's quarterbacks, and whether he is its starter."""
+    fit: set[str] = field(default_factory=set)
+    """Quarterbacks carrying no injury designation."""
     released: set[str] = field(default_factory=set)
     """Quarterbacks on no club: one a club's feed names was most likely its own, let go."""
 
@@ -118,6 +127,8 @@ class _Offense:
         self.clubs[key].add(club)
         if meta.position == "QB":
             self.quarterbacks[club][key] = meta.depth_chart_order == 1
+            if not listed(meta.injury_status):
+                self.fit.add(key)
 
     def kind(self, article: NewsArticle, club: str) -> str | None:
         """Which kind of story the article is for this club, if any."""
@@ -147,15 +158,26 @@ class _Offense:
         # Sleeper already has on no club. One traded away whom Sleeper has already put on
         # his new club is no longer this club's to name: the depth chart says it instead.
         moved = theirs | self.released
-        return (
+        changed = (
             stories.moved(text, moved, stories.RELEASED, stories.RELEASED_BY, QUARTERBACK)
             or stories.moved(text, theirs, stories.TRADED, stories.TRADED_TO, QUARTERBACK)
             or bool(theirs and stories.says(text, BENCHED))
             or (stories.moved(text, theirs, NAMED, (), QUARTERBACK) and stories.says(text, AS_STARTER))
             or stories.moved(text, theirs, (), ("takes over as starter", "named the starter", "named starter"))
             or bool(starters and stories.out_long(article, text))
-            or (backup and stories.says(text, STARTING))
         )
+        if changed:
+            return True
+        # A recap reports who played last week; the box scores say that, and the slump reads them.
+        if stories.recap(article):
+            return False
+        # Weaker: a starter replaced in a game, or a backup said to start — his start, not another's. Neither
+        # holds once the starter it names is listed first again and fit: Geno Smith hurt and replaced on a
+        # Sunday, back under center the next.
+        replaced = bool(theirs and stories.says(text, REPLACED))
+        fills_in = backup and stories.near(text, theirs - starters, STARTING)
+        back = any(key in self.fit for key in starters)
+        return (replaced or fills_in) and not back
 
     def _starts(self, key: str) -> bool:
         return any(self.quarterbacks[club].get(key, False) for club in self.clubs[key])

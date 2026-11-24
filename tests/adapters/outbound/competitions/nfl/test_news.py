@@ -261,3 +261,76 @@ def test_a_depth_chart_change_is_kept_only_where_no_story_reports_one() -> None:
         "told"
     ]
     assert [s.article.article_id for s in attach({}, COLTS, NOW, {"IND": depth}).team("warren")] == ["depth"]
+
+
+def _qb(pid: str, name: str, team: str, depth: int, status: str = "") -> PlayerMeta:
+    return PlayerMeta(player_id=pid, name=name, position="QB", team=team, depth_chart_order=depth, injury_status=status)
+
+
+def _club_kinds(club: str, quarterbacks: list[PlayerMeta], headline: str, summary: str = "") -> list[str]:
+    """A receiver's club stories, by kind, from one article in his club's feed, beside these quarterbacks."""
+    players = {q.player_id: q for q in quarterbacks}
+    players["wr"] = PlayerMeta(player_id="wr", name="A Receiver", position="WR", team=club, depth_chart_order=1)
+    article = NewsArticle(article_id=headline, published=NOW - timedelta(days=1), headline=headline, summary=summary)
+    return [s.kind for s in attach({club: [article]}, players, NOW, {}).team("wr")]
+
+
+# Week 12, 2026: each of these was read as a quarterback change, and none was one.
+SEAHAWKS = [_qb("darnold", "Sam Darnold", "SEA", 1, "Out"), _qb("lock", "Drew Lock", "SEA", 2)]
+
+
+def test_a_game_recap_naming_the_backup_who_played_is_no_qb_change() -> None:
+    """The start in its summary is the other club's quarterback's."""
+    assert (
+        _club_kinds(
+            "SEA",
+            SEAHAWKS,
+            "Seahawks beat Raiders 21-13 as Drew Lock throws for 2 TDs and Seattle sacks Fernando Mendoza 6 times",
+            "The lead-up was almost all about Fernando Mendoza, at last receiving his first start as the Raiders' QB.",
+        )
+        == []
+    )
+
+
+def test_a_starter_replaced_in_a_game_is_no_change_once_he_is_listed_first_and_fit_again() -> None:
+    headline = "Jets QB Geno Smith suffers ankle injury, replaced by rookie Cade Klubnik"
+    jets = [_qb("smith", "Geno Smith", "NYJ", 1), _qb("klubnik", "Cade Klubnik", "NYJ", 3)]
+
+    assert _club_kinds("NYJ", jets, headline) == []
+    # While he is still out, the replacement is the change.
+    assert _club_kinds("NYJ", [replace(jets[0], injury_status="Out"), jets[1]], headline) == [QB_CHANGE]
+
+
+def test_a_starter_returning_to_his_own_job_is_no_qb_change() -> None:
+    browns = [_qb("watson", "Deshaun Watson", "CLE", 1), _qb("sanders", "Shedeur Sanders", "CLE", 3)]
+
+    assert (
+        _club_kinds("CLE", browns, "Source: Browns returning to Watson as QB1 despite Sanders' strong fill-in start")
+        == []
+    )
+    # A backup's start while the starter was out, read once the starter is back and fit.
+    assert _club_kinds("CLE", browns, "Browns to start Sanders at QB vs. Saints with Watson in protocol") == []
+
+
+def test_a_club_sticking_with_its_listed_starter_is_no_qb_change() -> None:
+    patriots = [_qb("devito", "Tommy DeVito", "NE", 1), _qb("maye", "Drake Maye", "NE", 2, "Out")]
+
+    assert (
+        _club_kinds(
+            "NE",
+            patriots,
+            "Vrabel: Patriots sticking with DeVito as QB1, not looking for outside help",
+            "The team isn't looking outside the organization for a starting quarterback as it prepares to be "
+            "without Drake Maye in the coming weeks due to a fractured right finger.",
+        )
+        == []
+    )
+
+
+def test_a_backup_named_beside_starting_counts_for_his_own_start() -> None:
+    """Three words between 'turn to' and Josh Johnson: still his start."""
+    cardinals = [_qb("beck", "Carson Beck", "ARI", 1, "Out"), _qb("johnson", "Josh Johnson", "ARI", 2)]
+
+    assert _club_kinds(
+        "ARI", cardinals, "Cardinals rule out rookie Carson Beck, turn to 40-year-old Josh Johnson vs. Chiefs"
+    ) == [QB_CHANGE]
