@@ -62,7 +62,8 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   matchup header shows the score once a game kicks off, and playoff odds as
   "99% win / 83% loss".
 - **Every week of the season**: page back to see what was played and forward to
-  see the projected lineups. FPL gameweeks and NBA weeks work the same way.
+  see the projected lineups. FPL gameweeks and NBA weeks work the same way; an NBA
+  week also steps day by day (each side's slots, lines and score, projections ahead, bench players to start).
   An NBA week played shows its result, its final score and both rosters as
   they ended it (Yahoo's `roster;week=N`, cached 7 days), each player with his
   line in the league's categories or his fantasy points.

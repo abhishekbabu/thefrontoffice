@@ -28,15 +28,16 @@ function chanceTone(win: number): string {
  * and — where the week is forecast — your chance of winning it.
  *
  * The leader is said in words as well as weight and color, since a category
- * week is won by the count of those words.
+ * week is won by the count of those words. `title` names what is totalled
+ * where a page shows more than one: the week, and a day of it.
  */
-export function Categories({ lines }: { lines: CategoryLine[] }) {
+export function Categories({ lines, title = "Categories" }: { lines: CategoryLine[]; title?: string }) {
   const forecast = lines.some((line) => line.win != null);
 
   return (
     <Card>
       <CardHeader>
-        <span>Categories</span>
+        <span>{title}</span>
         <span>{lines.length} scored</span>
       </CardHeader>
       <Table>

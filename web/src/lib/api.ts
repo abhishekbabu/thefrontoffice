@@ -113,6 +113,13 @@ export function leagueApi(key: string, league: string) {
       settle(
         client.GET("/api/competitions/{key}/leagues/{league_id}/weeks/{week}", { params: { path: { ...at, week } } }),
       ),
+    /** One day of a week, both sides as slotted on it; with no `day`, today where the week holds it, else its first. */
+    dayOf: (week: number, day: string | null) =>
+      settle(
+        client.GET("/api/competitions/{key}/leagues/{league_id}/weeks/{week}/day", {
+          params: { path: { ...at, week }, query: day ? { day } : {} },
+        }),
+      ),
     /** The real games of any week of the season, the week being played included. */
     gamesOf: (week: number) =>
       settle(

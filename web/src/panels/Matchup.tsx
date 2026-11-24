@@ -17,7 +17,7 @@ import { IconButton } from "@/components/ui/controls/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Busy, QueryState } from "@/components/ui/state";
-import { StatGrid, StatList, StatStrip } from "@/components/ui/stat";
+import { StatCells, StatGrid, StatList, StatStrip } from "@/components/ui/stat";
 import { LineupCard, SideCard, rowsOf } from "@/components/league/lineup";
 import { useDrawers } from "@/components/league/drawers";
 import { ErrorNote } from "@/components/ui/error-note";
@@ -29,6 +29,8 @@ import {
   WeekStepper,
   useWeekParam,
 } from "@/components/league/week-stepper";
+import { DayStepper, useDayParam } from "@/components/league/day-stepper";
+import { dayLabel, dayNumber } from "@/lib/days";
 import { useUntouchables } from "@/lib/untouchables";
 
 /**
@@ -69,6 +71,11 @@ export function useJudgeWhenDue(
  * in the address (`?week=7`) so it can be linked and Back returns from it. It
  * shows that week's lineups and score and no to-do list, which is only ever
  * about the week being played.
+ *
+ * Where lineups are set day by day (`browses_days`), the lineups are one day's
+ * — today's in the week being played, else the week's first — with a stepper of
+ * its own and the arrow keys moving through the week's days (`?day=`), and the
+ * day's score beside the week's.
  */
 export function MatchupPanel({
   competition,
@@ -108,6 +115,20 @@ export function MatchupPanel({
   });
 
   const shown = browsing === null ? week : other;
+
+  // The lineups, a day at a time where they are set by the day: asked for once the week shown is known.
+  const daily = competition.browses_days;
+  const { day: askedDay, step: stepDay } = useDayParam();
+
+  const day = useQuery<Summary, Error>({
+    queryKey: keys.dayOf(competition.key, league.league_id, onWeek?.week ?? null, askedDay),
+    queryFn: () => leagueApi.dayOf(onWeek!.week, askedDay),
+    enabled: daily && onWeek !== undefined,
+    placeholderData: keepPreviousData,
+  });
+
+  const lineups = daily ? day.data : shown.data;
+  const days = daily ? day.data?.days : undefined;
   const untouchable = useUntouchables(competition.key, league.league_id);
 
   // The last judgment, read without asking the model anything: judging is a
@@ -177,8 +198,10 @@ export function MatchupPanel({
             range={onWeek}
             onStep={step}
             word={competition.week_word}
+            keys={!days}
           />
         )}
+        {days && <DayStepper range={days} onStep={(to) => stepDay(to, days)} />}
       </LeagueHeader>
       {/* Only what no card below says: the score once there is one, the chances. */}
       <StatStrip stats={shown.data?.headline ?? []} />
@@ -248,42 +271,59 @@ export function MatchupPanel({
             )}
 
             {shown.data.categories.length > 0 && (
-              <Categories lines={shown.data.categories} />
+              <Categories lines={shown.data.categories} title={days ? "Week" : undefined} />
+            )}
+
+            {days && day.data && day.data.categories.length > 0 && (
+              <Categories lines={day.data.categories} title={dayLabel(days.day)} />
             )}
           </div>
 
           <div className="min-w-0 @min-[96rem]:col-start-2 @min-[96rem]:row-span-2 @min-[96rem]:row-start-1">
             <div className="@container flex flex-col gap-4">
-              {shown.data.opponent ? (
-                <div className="grid grid-cols-1 gap-4 @min-[60rem]:grid-cols-2">
-                  {/* Side by side once their column fits two (about 470px each,
-                      what an NBA row's per-game line needs), stacked before that:
-                      a 1920px screen has the to-do beside them, not room for both across. */}
-                  {/* Both sides draw the same columns and row heights, read from either, so slot N sits beside slot N. */}
-                  <SideCard
-                    side={shown.data.mine}
-                    label="You"
-                    onOpen={openPlayer}
-                    untouchable={untouchable.has}
-                    rows={rowsOf(shown.data.mine, shown.data.opponent)}
-                  />
-                  <SideCard
-                    side={shown.data.opponent}
-                    label="Opponent"
-                    onOpen={openPlayer}
-                    rows={rowsOf(shown.data.mine, shown.data.opponent)}
-                  />
-                </div>
-              ) : (
-                <LineupCard
-                  title="Your lineup"
-                  lineup={shown.data.mine?.lineup ?? []}
-                  bench={shown.data.mine?.bench ?? []}
-                  reserve={shown.data.mine?.reserve ?? []}
-                  openSpots={shown.data.mine?.open_spots ?? 0}
-                  onOpen={openPlayer}
-                  untouchable={untouchable.has}
-                />
+              {daily && <QueryState query={day} lines={4} />}
+              {lineups && (
+                <WeekPane
+                  week={days ? dayNumber(days.day) : 0}
+                  pending={daily && day.isPlaceholderData}
+                  className="flex flex-col gap-4"
+                >
+                  {/* The day's own score and starts, under the week's in the header. */}
+                  {days && lineups.headline.length > 0 && (
+                    <StatCells stats={lineups.headline} className="rounded-lg border border-border" />
+                  )}
+                  {lineups.opponent ? (
+                    <div className="grid grid-cols-1 gap-4 @min-[60rem]:grid-cols-2">
+                      {/* Side by side once their column fits two (about 470px each,
+                          what an NBA row's per-game line needs), stacked before that:
+                          a 1920px screen has the to-do beside them, not room for both across. */}
+                      {/* Both sides draw the same columns and row heights, read from either, so slot N sits beside slot N. */}
+                      <SideCard
+                        side={lineups.mine}
+                        label="You"
+                        onOpen={openPlayer}
+                        untouchable={untouchable.has}
+                        rows={rowsOf(lineups.mine, lineups.opponent)}
+                      />
+                      <SideCard
+                        side={lineups.opponent}
+                        label="Opponent"
+                        onOpen={openPlayer}
+                        rows={rowsOf(lineups.mine, lineups.opponent)}
+                      />
+                    </div>
+                  ) : (
+                    <LineupCard
+                      title="Your lineup"
+                      lineup={lineups.mine?.lineup ?? []}
+                      bench={lineups.mine?.bench ?? []}
+                      reserve={lineups.mine?.reserve ?? []}
+                      openSpots={lineups.mine?.open_spots ?? 0}
+                      onOpen={openPlayer}
+                      untouchable={untouchable.has}
+                    />
+                  )}
+                </WeekPane>
               )}
             </div>
           </div>
