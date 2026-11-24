@@ -66,7 +66,7 @@ from thefrontoffice.domain.models import (
     Summary,
     TeamRef,
 )
-from thefrontoffice.domain.ports import LeagueRef
+from thefrontoffice.domain.ports import LeagueRef, UntouchableSource
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ class FPLProvider:
     only one of each: the game is both.
     """
 
-    def __init__(self, entry_id: int, *, client: FPLSource):
+    def __init__(self, entry_id: int, *, client: FPLSource, untouchable: UntouchableSource):
         """Every collaborator from bootstrap, which is the one place a real client is built.
 
         The entry id is required: whether one is set, and what to set when it
@@ -90,6 +90,7 @@ class FPLProvider:
         """
         self.entry_id = entry_id
         self.client = client
+        self.untouchable = untouchable
 
     # ── leagues ─────────────────────────────────────────────────────
 
@@ -244,7 +245,7 @@ class FPLProvider:
 
     def summary(self, league_id: str) -> Summary:
         """The gameweek in focus: both squads, the fixtures, and what to do before the next deadline (`week.summary`)."""
-        plan, best = self._plan()
+        plan, best = self._plan(league_id)
         return fpl_week.summary(
             self.client,
             self.entry_id,
@@ -255,8 +256,8 @@ class FPLProvider:
             actions=actions.build(plan, best),
         )
 
-    def _plan(self) -> tuple[Plan, Lineup]:
-        """What the gameweek still open is decided on, and the best eleven for it.
+    def _plan(self, league_id: str) -> tuple[Plan, Lineup]:
+        """What the gameweek still open is decided on, and the best eleven for it, never selling an untouchable.
 
         The squad is the one last fielded; the worth, fixtures and allowance are
         for the gameweek whose deadline is next, which is the one advice can change.
@@ -275,6 +276,7 @@ class FPLProvider:
             market=_market(self.client.get_players().values(), value),
             chips=issued,
             played=played,
+            untouchable=self.untouchable.of(league_id),
         )
         return plan, best_lineup(mine.players, value)
 
@@ -408,7 +410,7 @@ class FPLProvider:
 
     def build_context(self, league_id: str) -> CompetitionContext:
         """Gather the gameweek and its to-do list, then render them as the text a model reads (`_plan`)."""
-        plan, best = self._plan()
+        plan, best = self._plan(league_id)
         mine, upcoming = plan.roster, plan.upcoming
         return prompt.build(
             league_id=league_id,
@@ -422,6 +424,7 @@ class FPLProvider:
             fixtures=fixtures_by_club(plan.value.weeks.get(upcoming.id, []), (p.team for p in mine.players)),
             selling=dict(plan.selling),
             tasks=actions.build(plan, best),
+            untouchable=plan.untouchable,
         )
 
     def _selling_prices(self, mine: Roster) -> dict[int, int]:

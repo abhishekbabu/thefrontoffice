@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from thefrontoffice.application.items import ItemDecisions
+from thefrontoffice.application.untouchables import UntouchableMarks
 from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import PROJECT_ROOT, AppSettings
 from thefrontoffice.config.settings import settings as process_settings
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
     from thefrontoffice.adapters.outbound.platforms.yahoo.paths import ScoreboardPace
     from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
     from thefrontoffice.adapters.outbound.storage.answers import DiskAnswerStore
+    from thefrontoffice.adapters.outbound.storage.untouchables import DiskUntouchableStore
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +231,18 @@ def _item_decisions(settings: AppSettings) -> ItemDecisions:
     return ItemDecisions(DiskItemStateStore(_disk_cache(settings.item_state_dir)))
 
 
+def _untouchable_store(settings: AppSettings) -> DiskUntouchableStore:
+    """The players each league's manager marked untouchable, kept beside the to-do decisions."""
+    from thefrontoffice.adapters.outbound.storage.untouchables import DiskUntouchableStore
+
+    return DiskUntouchableStore(_disk_cache(settings.item_state_dir))
+
+
+def _untouchable(entry: CompetitionEntry) -> UntouchableMarks:
+    """What `entry`'s provider reads before choosing any drop, trade or transfer out."""
+    return UntouchableMarks(_untouchable_store(entry.settings), entry.key)
+
+
 # ── competitions ────────────────────────────────────────────────────
 
 
@@ -261,11 +275,16 @@ def _build_nfl(entry: CompetitionEntry) -> SleeperNFLProvider:
         _required(settings.sleeper_username, entry),
         client=_sleeper_client(settings),
         espn=_espn_client(settings),
+        untouchable=_untouchable(entry),
     )
 
 
 def _build_fpl(entry: CompetitionEntry) -> FPLProvider:
-    return _fpl()(_required(entry.settings.fpl_entry_id, entry), client=_fpl_client(entry.settings))
+    return _fpl()(
+        _required(entry.settings.fpl_entry_id, entry),
+        client=_fpl_client(entry.settings),
+        untouchable=_untouchable(entry),
+    )
 
 
 def _nba() -> type[YahooNBAProvider]:
@@ -326,6 +345,7 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
         espn=_espn_client(settings),
         fallback_weekly_adds=settings.yahoo_max_weekly_adds,
         forecast=remembered,
+        untouchable=_untouchable(entry),
     )
 
 
@@ -424,6 +444,7 @@ def wiring(settings: AppSettings = process_settings, env: Path = PROJECT_ROOT / 
         model=lambda: default_model(settings),
         answers=_answer_store(settings),
         decisions=_item_decisions(settings),
+        untouchables=_untouchable_store(settings),
         logins=competitions.logins(),
         captures=competitions.captures(),
         env=env_file(settings, env),

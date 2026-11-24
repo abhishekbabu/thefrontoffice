@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 from support.nfl import SLEEPER_USER_ID, FakeSleeper, game_line, nfl_provider, proj
+from support.stores import FakeUntouchable
 
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, SleeperMatchup, SleeperRoster
 from thefrontoffice.domain.models import TradeMarket, TradeOption
@@ -55,8 +56,8 @@ def _add(client: FakeSleeper, pid: str, name: str, position: str, points: float)
     client.projections = {**client.projections, pid: proj(pid, name, position, points)}
 
 
-def _market(client: FakeSleeper) -> TradeMarket:
-    market = nfl_provider(client).trade_market("L1")
+def _market(client: FakeSleeper, untouchable: FakeUntouchable | None = None) -> TradeMarket:
+    market = nfl_provider(client, untouchable=untouchable).trade_market("L1")
     assert market is not None
     return market
 
@@ -99,6 +100,12 @@ def test_a_player_in_injured_reserve_is_not_offered() -> None:
     options = _market(_client(reserve=["qb2"])).options
 
     assert not any("Spare QB (QB)" in option.giving for option in options)
+
+
+def test_an_untouchable_player_is_never_given_away() -> None:
+    options = _market(_client(), FakeUntouchable("qb2")).options
+
+    assert not any("qb2" in option.giving_ids for option in options)
 
 
 def test_a_trade_that_does_nothing_for_their_lineup_is_still_found_and_says_so() -> None:

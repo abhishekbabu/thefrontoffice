@@ -16,6 +16,7 @@ import { useDrawers } from "@/components/league/drawers";
 import { keys } from "@/lib/queries";
 import { LeagueHeader } from "@/components/league/page-header";
 import { Label } from "@/components/ui/label";
+import { useUntouchables } from "@/lib/untouchables";
 
 /**
  * Any roster in the league: yours by default, anyone's from the chips.
@@ -50,6 +51,7 @@ export function RostersPanel({ competition, league }: { competition: Competition
   );
 
   const { roster, sort, onSort } = yours ? mine : theirs;
+  const untouchable = useUntouchables(competition.key, league.league_id);
 
   const pick = (team: TeamRef) =>
     setParams((p) => {
@@ -106,6 +108,7 @@ export function RostersPanel({ competition, league }: { competition: Competition
               onOpen={openPlayer}
               sort={sort}
               onSort={onSort}
+              untouchable={yours ? untouchable.has : undefined}
             />
           </Card>
         </div>

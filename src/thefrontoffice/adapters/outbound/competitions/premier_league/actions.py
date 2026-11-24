@@ -84,6 +84,8 @@ class Plan:
     market: Sequence[Player]
     chips: Sequence[Chip] = ()
     played: Sequence[ChipPlay] = ()
+    untouchable: frozenset[str] = frozenset()
+    """Your players the manager marked untouchable, by element id: never sold."""
 
 
 def build(plan: Plan, best: Lineup) -> list[Action]:
@@ -246,11 +248,18 @@ def transfers(plan: Plan, best: Lineup, fixed: set[str], when: str) -> list[Acti
     the best eleven: a bench player's gain is points he scores only if somebody
     else does not play, which no certain four points is worth. At most `HITS`
     of them, and `TRANSFERS` in all. Money and club places carry from one to the next.
+    Nobody untouchable is sold.
     """
     squad = plan.roster.players
     bank = plan.roster.squad.bank
     options = affordable_transfers(
-        squad, list(plan.market), bank, selling=dict(plan.selling), limit=len(plan.market), value=plan.value.horizon
+        squad,
+        list(plan.market),
+        bank,
+        selling=dict(plan.selling),
+        limit=len(plan.market),
+        value=plan.value.horizon,
+        keep=plan.untouchable,
     )
     starters = {p.id for p in plan.roster.starters}
     eleven = {p.id for p in best.starters}

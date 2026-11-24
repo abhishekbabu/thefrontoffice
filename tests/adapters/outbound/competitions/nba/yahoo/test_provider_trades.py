@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from support.logs import capture_logs
 from support.nba import FakeNBA, FakeYahoo, make_player, nba_provider
+from support.stores import FakeUntouchable
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.rules import POINTS
@@ -160,8 +161,12 @@ def _market_nba() -> FakeNBA:
     return FakeNBA(stats=form, slate=slate, games={"LAL": 3, "BOS": 3})
 
 
-def _trade_market(yahoo: FakeYahoo, league: YahooLeague | None = None) -> TradeMarket | None:
-    return nba_provider(yahoo, nba=_market_nba(), league=league or _market_league()).trade_market("")
+def _trade_market(
+    yahoo: FakeYahoo, league: YahooLeague | None = None, untouchable: FakeUntouchable | None = None
+) -> TradeMarket | None:
+    return nba_provider(
+        yahoo, nba=_market_nba(), league=league or _market_league(), untouchable=untouchable
+    ).trade_market("")
 
 
 def test_a_one_win_category_league_is_searched_in_categories_up_to_its_deadline() -> None:
@@ -185,6 +190,19 @@ def test_a_trade_both_sides_gain_on_is_found_from_the_leagues_own_rosters() -> N
 
     assert market is not None
     assert [(o.giving, o.receiving) for o in market.options][:1] == [(("Mine Three (PF)",), ("Their One (PF)",))]
+
+
+def test_an_untouchable_player_is_never_given_away() -> None:
+    mine = _trade_market(_market_yahoo(weights={POINTS_STAT: 1.0}), _market_league("headpoint"))
+    assert mine is not None
+    [given, *_] = mine.options[0].giving_ids
+
+    market = _trade_market(
+        _market_yahoo(weights={POINTS_STAT: 1.0}), _market_league("headpoint"), FakeUntouchable(given)
+    )
+
+    assert market is not None
+    assert not any(given in o.giving_ids for o in market.options)
 
 
 def test_past_the_trade_deadline_there_is_no_market() -> None:

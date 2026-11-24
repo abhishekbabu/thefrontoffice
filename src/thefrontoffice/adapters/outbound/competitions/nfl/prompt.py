@@ -7,6 +7,7 @@ The provider fetches and the prompt describes.
 
 from collections.abc import Mapping, Sequence
 
+from thefrontoffice.adapters.outbound.competitions import untouchables
 from thefrontoffice.adapters.outbound.competitions.matchups import RECENT_GAMES
 from thefrontoffice.adapters.outbound.competitions.news import PlayerNews, dated
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence, season_average
@@ -236,6 +237,7 @@ def build(
         f"The recommended lineup, chosen by worth (form beside projection), projects {best_points:.2f}"
         + (f", so {on_bench:.2f} projected points are sitting on the bench." if on_bench > 0 else "."),
         "Bench players score nothing. A start/sit change costs nothing; an add costs a roster spot.",
+        *untouchables.note(untouchable(state)),
     )
 
     prompt = NFL_SCOUT_PROMPT.format(
@@ -260,6 +262,7 @@ def build(
         headline=headline(state, kicked_off, over),
         tasks=tasks,
         listed=frozenset(meta.name for task in tasks if (meta := state.players.get(task.player_id))),
+        untouchable=untouchable(state),
         worth=_worth(state),
     )
 
@@ -306,7 +309,11 @@ def wire(state: Week, candidates: Mapping[str, Projection], fits: Mapping[str, s
     candidate_lines = {p.name: targets[pid] for pid, p in candidates.items()}
     roster = roster_lines(state)
     situation, _ = matchup(state)
-    constraints = lineup_slots(state, "Only the starting lineup scores; a bench spot is insurance or a future starter.")
+    constraints = lineup_slots(
+        state,
+        "Only the starting lineup scores; a bench spot is insurance or a future starter.",
+        *untouchables.note(untouchable(state)),
+    )
     text = NFL_WIRE_PROMPT.format(
         scoring_label=scoring_label(state.league.scoring_format),
         situation=situation,
@@ -339,6 +346,12 @@ def headline(state: Week, kicked_off: bool = False, over: bool = False) -> list[
     not a figure anyone needs.
     """
     return matchup(state, kicked_off, over)[1]
+
+
+def untouchable(state: Week) -> frozenset[str]:
+    """Your players the manager marked untouchable, by name as the prompt writes them."""
+    held = set(state.roster.player_ids)
+    return frozenset(meta.name for pid in state.untouchable if pid in held and (meta := state.players.get(pid)))
 
 
 def lineup_slots(state: Week, *notes: str) -> str:

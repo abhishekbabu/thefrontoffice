@@ -133,6 +133,9 @@ class Week:
     current: int = 0
     """The week being played, where this one is another opened beside it; nought where this is that week."""
 
+    untouchable: frozenset[str] = frozenset()
+    """Your players the manager marked untouchable, by id: never named as a drop nor given away in a trade."""
+
     ahead: Mapping[str, float] = field(default_factory=dict)
     """Each player's projected points a game over the weeks left after this one, the weeks he is projected in:
     what a drop is weighed by beside his season (`worth.rest_of_season`). Empty wherever they would not load."""

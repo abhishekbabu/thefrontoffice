@@ -27,6 +27,9 @@ async function page(comparing: Comparing) {
 
   client.setQueryData(keys.compare(NBA.key, LEAGUE.league_id, ["p.1", "p.2"]), REED_WHITE);
 
+  // Nobody here is yours, so no drawer offers to mark him untouchable.
+  client.setQueryData([...keys.roster(NBA.key, LEAGUE.league_id), null], []);
+
   for (const player of REED_WHITE.players) client.setQueryData(keys.player(NBA.key, LEAGUE.league_id, player.player_id), player);
 
   const { container } = await render(<Page comparing={comparing} />, client);

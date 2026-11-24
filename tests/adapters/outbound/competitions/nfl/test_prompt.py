@@ -22,6 +22,7 @@ from support.nfl import (
     slumping,
 )
 from support.prompts import named_fields, schema_fields
+from support.stores import FakeUntouchable
 
 from thefrontoffice.adapters.outbound.competitions.nfl import prompt
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import SEASON_WEEKS
@@ -74,6 +75,37 @@ def test_a_player_in_a_reserve_slot_is_marked_wherever_the_model_reads_your_rost
     assert prompt.RESERVE_MARK in reserved
     assert prompt.RESERVE_MARK in context.roster_lines["Good RB"]
     assert prompt.RESERVE_MARK not in context.roster_lines["Bad RB"]
+
+
+def test_the_model_is_told_who_is_untouchable_and_the_context_names_him() -> None:
+    client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS))
+    context = nfl_provider(client, untouchable=FakeUntouchable("rb2")).build_context("L1")
+
+    assert context.untouchable == frozenset({"Bad RB"})
+    assert "Bad RB" in context.constraints
+    assert context.constraints in context.prompt
+
+
+def test_with_nobody_untouchable_the_prompt_says_nothing_of_it() -> None:
+    context = _context()
+
+    assert context.untouchable == frozenset()
+    assert "Bad RB" not in context.constraints
+
+
+def test_an_untouchable_player_of_someone_elses_is_not_named() -> None:
+    """A mark left from a player since traded away is no longer yours to keep."""
+    client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS))
+    context = nfl_provider(client, untouchable=FakeUntouchable("wr9")).build_context("L1")
+
+    assert context.untouchable == frozenset()
+
+
+def test_judging_the_wire_tells_the_model_who_is_untouchable() -> None:
+    client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS))
+    context = nfl_provider(client, untouchable=FakeUntouchable("rb2")).build_wire_context("L1", ["wr9"])
+
+    assert "Bad RB" in context.constraints
 
 
 def test_the_context_names_each_player_the_to_do_list_already_moves() -> None:

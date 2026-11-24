@@ -15,7 +15,7 @@ slots, only a count of each position that must fall between a minimum and a
 maximum. That is why this does not reuse the football lineup solver.
 """
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass
 
 from thefrontoffice.adapters.outbound.platforms.fpl.types import (
@@ -486,6 +486,7 @@ def affordable_transfers(
     selling: dict[int, int],
     limit: int,
     value: Value,
+    keep: Collection[str] = (),
 ) -> list[Transfer]:
     """The best single-player upgrades this squad can pay for, best gain by `value` first.
 
@@ -494,7 +495,7 @@ def affordable_transfers(
 
     Only same-position swaps: FPL fixes how many of each position a squad holds,
     so a midfielder can only ever be replaced by a midfielder. And never a fourth
-    player from one club (`MAX_PER_CLUB`), which the game refuses.
+    player from one club (`MAX_PER_CLUB`), which the game refuses. Nobody in `keep`, by element id, is sold.
     """
     owned = {p.id for p in squad}
     clubs = club_counts(squad)
@@ -507,7 +508,7 @@ def affordable_transfers(
     # Ranking raw pairs instead fills the list with the same premium striker
     # opposite each of the squad's forwards — one suggestion wearing five hats.
     best_by_target: dict[int, Transfer] = {}
-    for out in squad:
+    for out in (p for p in squad if str(p.id) not in keep):
         for incoming in candidates.get(out.position, []):
             if not room_at(clubs, incoming, out):
                 continue

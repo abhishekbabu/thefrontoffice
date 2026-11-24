@@ -116,6 +116,8 @@ class League:
     seed: int = 0
     uncertainty: Uncertainty = FITTED
     """How far a week may stray from what its games add up to (`strength.FITTED`)."""
+    untouchable: frozenset[str] = frozenset()
+    """Your players the manager marked untouchable, by key: never given away."""
 
     @property
     def measure(self) -> TradeMeasure:
@@ -282,7 +284,8 @@ class _Search:
         my_regular = model.per_week(mine, base, self.regular)
         my_playoffs = model.per_week(mine, base, self.playoffs)
         theirs_now = model.per_week(partner, base, self.every)
-        my_ids, their_ids = self._tradeable(mine), self._tradeable(partner)
+        my_ids = [key for key in self._tradeable(mine) if key not in self.league.untouchable]
+        their_ids = self._tradeable(partner)
 
         def gain_for_you(rosters: Mapping[str, Lineup]) -> tuple[float, float]:
             regular = model.per_week(mine, rosters, self.regular) - my_regular

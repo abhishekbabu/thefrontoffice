@@ -304,6 +304,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/competitions/{key}/leagues/{league_id}/untouchables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Untouchables
+         * @description The players on your roster you marked untouchable: never a drop, a trade away or a sale.
+         */
+        get: operations["untouchables"];
+        put?: never;
+        /**
+         * Mark Untouchable
+         * @description Mark one player untouchable, or clear his mark; every untouchable in the league after it.
+         */
+        post: operations["mark_untouchable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/competitions/{key}/leagues/{league_id}/week": {
         parameters: {
             query?: never;
@@ -2497,6 +2521,27 @@ export interface components {
             text: string;
         };
         /**
+         * UntouchableMark
+         * @description Marking one player untouchable, or clearing the mark, as the page sends it.
+         */
+        UntouchableMark: {
+            /** Player Id */
+            player_id: string;
+            /** Untouchable */
+            untouchable: boolean;
+        };
+        /**
+         * Untouchables
+         * @description The players on your roster you will not let go, in one league, by id.
+         *
+         *     The manager's own judgement, which no figure here can overrule: none of
+         *     them is ever named as a drop, given away in a trade idea, or sold.
+         */
+        Untouchables: {
+            /** Player Ids */
+            player_ids: string[];
+        };
+        /**
          * WeekAhead
          * @description One coming week for your roster: what its best lineup projects, and what to do if that is short.
          *
@@ -3757,6 +3802,164 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlayerRef"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    untouchables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                league_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Untouchables"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    mark_untouchable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                league_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UntouchableMark"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Untouchables"];
                 };
             };
             /** @description Bad Request */

@@ -4,6 +4,7 @@ and a client serving one manager's season."""
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 
+from support.stores import FakeUntouchable
 from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
 from thefrontoffice.adapters.outbound.competitions.premier_league.rules import plays
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
@@ -450,7 +451,7 @@ def _with_fake[**P](fake: Callable[P, FakeFPL]) -> Callable[P, FPLProvider]:
     """A provider over a fake built from the same keywords the fake takes, each one checked against it."""
 
     def build(*args: P.args, **kwargs: P.kwargs) -> FPLProvider:
-        return FPLProvider(ENTRY_ID, client=fake(*args, **kwargs))
+        return FPLProvider(ENTRY_ID, client=fake(*args, **kwargs), untouchable=FakeUntouchable())
 
     return build
 

@@ -347,3 +347,20 @@ class PlayerRef(BaseModel):
     player_id: str
     name: str
     detail: str = Field(default="", description="Position, club and owner: 'WR · DAL · Rival'.")
+
+
+class Untouchables(BaseModel):
+    """The players on your roster you will not let go, in one league, by id.
+
+    The manager's own judgement, which no figure here can overrule: none of
+    them is ever named as a drop, given away in a trade idea, or sold.
+    """
+
+    player_ids: list[str] = Field(default_factory=list)
+
+
+class UntouchableMark(BaseModel):
+    """Marking one player untouchable, or clearing the mark, as the page sends it."""
+
+    player_id: str = Field(min_length=1)
+    untouchable: bool

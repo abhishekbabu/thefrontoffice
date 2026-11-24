@@ -800,6 +800,40 @@ def test_the_week_carries_the_last_verdict_on_each_item() -> None:
     assert (shown["verdict"]["decision"], shown["stale"]) == ("WAIT", True)
 
 
+# ── untouchables ────────────────────────────────────────────────────────
+
+UNTOUCHABLES = "/api/competitions/nfl-sleeper/leagues/L1/untouchables"
+
+
+def test_a_league_with_nobody_marked_has_no_untouchables(client: TestClient) -> None:
+    assert client.get(UNTOUCHABLES).json() == {"player_ids": []}
+
+
+def test_a_mark_answers_with_every_untouchable_and_is_read_back() -> None:
+    client = _client()
+
+    client.post(UNTOUCHABLES, json={"player_id": "4881", "untouchable": True})
+    marked = client.post(UNTOUCHABLES, json={"player_id": "9509", "untouchable": True}).json()
+
+    assert marked == {"player_ids": ["4881", "9509"]}
+    assert client.get(UNTOUCHABLES).json() == marked
+
+
+def test_clearing_a_mark_leaves_the_others_and_no_other_league_has_them() -> None:
+    client = _client()
+    client.post(UNTOUCHABLES, json={"player_id": "4881", "untouchable": True})
+    client.post(UNTOUCHABLES, json={"player_id": "9509", "untouchable": True})
+
+    cleared = client.post(UNTOUCHABLES, json={"player_id": "4881", "untouchable": False}).json()
+
+    assert cleared == {"player_ids": ["9509"]}
+    assert client.get("/api/competitions/nfl-sleeper/leagues/L2/untouchables").json() == {"player_ids": []}
+
+
+def test_a_mark_naming_nobody_is_refused(client: TestClient) -> None:
+    assert client.post(UNTOUCHABLES, json={"player_id": "", "untouchable": True}).status_code == 422
+
+
 def test_a_bare_competition_names_no_route() -> None:
     """A route is addressed by its entry's key: 'nfl' alone stops naming one once a second platform carries it."""
     response = _week_with_one_item().get("/api/competitions/nfl/leagues/L1/week")

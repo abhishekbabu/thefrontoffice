@@ -108,6 +108,14 @@ def test_a_free_agent_with_more_games_who_clears_the_margin_streams_in() -> None
     assert week.gain == 2  # four games for two
 
 
+def test_an_untouchable_player_is_never_the_drop_for_a_week_ahead() -> None:
+    roster, wire, readings, window = _streamable()
+
+    [week] = build([window], roster, wire, readings, {}, adds=3, untouchable={"Weak"}).weeks
+
+    assert "drop Weak" not in week.fix
+
+
 def test_nothing_streams_without_adds_or_without_more_games() -> None:
     roster, wire, readings, window = _streamable()
     level = _window(6, {"AAA": [1, 3, 5, 7], "BBB": [1, 3, 5, 7], "CCC": [2, 4, 6], "DDD": [1, 2], "EEE": [1, 3]})

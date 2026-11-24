@@ -28,7 +28,8 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   from his own games since a return from injury; ±10% for snaps
   steady at 50%+ or swinging by 20+ points, a climb to his most snaps not counting
   as a swing), never one the best lineup starts, one another item moves or drops,
-  or a starter while a bench player is left. A handcuff
+  one you lock as untouchable in his drawer (nor is he traded or sold, in any
+  competition), or a starter while a bench player is left. A handcuff
   (the back next on the depth chart behind a running back you start) goes only
   once nobody ordinary is left, and the drop says whose he is. So does a stash,
   dropped before a handcuff: the back next behind any club's first back, whoever

@@ -145,7 +145,7 @@ class AppSettings(BaseSettings):
     """Where every model answer is kept — a week's judgment, each free agent's
     call — so a reload shows it and an unchanged question costs no call."""
     item_state_dir: Annotated[str, ADVANCED, LOCAL] = ".item_state"
-    """Where the to-do items you dismissed or snoozed are remembered, per league."""
+    """Where the to-do items you dismissed or snoozed, and the players you marked untouchable, are kept, per league."""
 
     # ── Yahoo ───────────────────────────────────────────────────────────
     yahoo_source: Annotated[Literal["oauth", "browser", "session"], YAHOO] = "oauth"

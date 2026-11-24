@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Lock } from "lucide-react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { DataTable, type SortState } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
@@ -49,8 +50,11 @@ export function RosterTable({
   onSort,
   detail,
   hints,
+  untouchable,
 }: {
   players: PlayerCard[];
+  /** Whether the manager marked a player untouchable: his name carries a lock. */
+  untouchable?: (playerId: string) => boolean;
   /** What a column measures, by its heading, where the heading alone would mislead. */
   hints?: Record<string, string>;
   /** A line under a row, for what a caller has to say about that player. */
@@ -98,7 +102,18 @@ export function RosterTable({
           );
         }
 
-        if (role === "player") return <span className="font-medium">{value}</span>;
+        if (role === "player") {
+          if (!untouchable?.(row.player_id)) return <span className="font-medium">{value}</span>;
+
+          return (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="font-medium">{value}</span>
+              <Hint label="Untouchable" name="Untouchable">
+                <Lock aria-hidden className="size-3 text-muted-foreground" />
+              </Hint>
+            </span>
+          );
+        }
 
         if (role === "slot") return <Meta>{value}</Meta>;
 

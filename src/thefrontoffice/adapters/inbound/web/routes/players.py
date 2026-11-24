@@ -1,10 +1,10 @@
-"""Players: your roster, one player's drawer, a comparison, and a search by name."""
+"""Players: your roster, one player's drawer, a comparison, a search by name, and who is untouchable."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from thefrontoffice.adapters.inbound.web.routes.deps import LEAGUE, Capability, CurrentWiring, Provider
+from thefrontoffice.adapters.inbound.web.routes.deps import LEAGUE, Capability, CurrentWiring, Entry, Provider
 from thefrontoffice.application import comparing
 from thefrontoffice.domain.errors import InvalidRequestError
 from thefrontoffice.domain.models import (
@@ -14,6 +14,8 @@ from thefrontoffice.domain.models import (
     PlayerDetail,
     PlayerOrder,
     PlayerRef,
+    UntouchableMark,
+    Untouchables,
 )
 from thefrontoffice.domain.ports import PlayerSearchProvider, PlayerTabProvider
 
@@ -69,3 +71,16 @@ def search_players(
 ) -> list[PlayerRef]:
     """Players whose name holds `search`, rostered or not, for a comparison to add."""
     return provider.search_players(league_id, search)
+
+
+@router.get("/untouchables", response_model=Untouchables)
+def untouchables(key: str, league_id: str, wiring: CurrentWiring, entry: Entry) -> Untouchables:
+    """The players on your roster you marked untouchable: never a drop, a trade away or a sale."""
+    return wiring.untouchable(entry).listed(league_id)
+
+
+@router.post("/untouchables", response_model=Untouchables)
+def mark_untouchable(key: str, league_id: str, mark: UntouchableMark, wiring: CurrentWiring) -> Untouchables:
+    """Mark one player untouchable, or clear his mark; every untouchable in the league after it."""
+    # Found here rather than by `Entry`: a dependency runs before the body is read, and a malformed one is a 422.
+    return wiring.untouchable(wiring.registry.by_key(key)).mark(league_id, mark)

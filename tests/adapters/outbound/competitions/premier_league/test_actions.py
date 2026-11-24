@@ -64,6 +64,7 @@ def _items(
     upcoming: int = 5,
     chips: list[Chip] | None = None,
     played: list[ChipPlay] | None = None,
+    untouchable: frozenset[str] = frozenset(),
 ) -> list[Action]:
     """The to-do list for the fake squad with `changed` players swapped into the catalog."""
     catalog = {**SQUAD_PLAYERS, **(market if market is not None else MARKET), **(changed or {})}
@@ -79,6 +80,7 @@ def _items(
         market=sorted((p for p in catalog.values() if p.id not in owned and plays(p)), key=lambda p: -value(p)),
         chips=chips or [],
         played=played or [],
+        untouchable=untouchable,
     )
     return actions.build(plan, best_lineup(mine.players, value))
 
@@ -175,6 +177,10 @@ def test_an_upgrade_the_bank_can_pay_for_is_a_free_transfer() -> None:
     [transfer] = _of(_items(SETTLED), "transfer")
 
     assert (transfer.player_id, transfer.drop, transfer.urgency) == ("100", "7", "soon")
+
+
+def test_an_untouchable_player_is_never_sold() -> None:
+    assert all(t.drop != "7" for t in _of(_items(SETTLED, untouchable=frozenset({"7"})), "transfer"))
 
 
 def test_nothing_the_bank_cannot_pay_for_is_offered() -> None:

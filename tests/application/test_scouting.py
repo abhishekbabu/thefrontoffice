@@ -232,6 +232,46 @@ def test_a_competition_that_names_no_movable_players_keeps_every_move() -> None:
     assert _judged_then(SUGGESTED, {}) == ["Jahan Dotson"]
 
 
+def _moved(action: str, player: str, replaces: str = "") -> dict[str, str]:
+    return {
+        "action": action,
+        "player": player,
+        "position": "WR",
+        "team": "ATL",
+        "metric": "8.7 proj pts",
+        "rationale": "why",
+        "replaces": replaces,
+    }
+
+
+def test_a_move_letting_an_untouchable_player_go_is_not_suggested() -> None:
+    """Dropped, or dropped for an add: either way he leaves. Benched, he stays yours."""
+    written = MOCK_NBA_REPORT.model_dump(include={"situation", "focus", "strategy"})
+    answer = ScoutAnswer.model_validate(
+        {
+            **written,
+            "moves": [
+                _moved("DROP", "Tyson (WR, ARI)"),
+                _moved("ADD", "Jahan Dotson", "Jordyn Tyson"),
+                _moved("ADD", "Adonai Mitchell", "Germie Bernard"),
+                _moved("BENCH", "Jordyn Tyson", "Germie Bernard"),
+            ],
+        }
+    )
+    provider = ContextOnly(TASKS)
+    provider.context.untouchable = frozenset({"Jordyn Tyson", "Tyson"})
+    engine = ScoutEngine(provider, key="nfl-sleeper", ai=FakeAI(report=answer), answers=FakeAnswers())
+
+    assert [(m.action, m.player) for m in engine.report("L1").moves] == [
+        ("ADD", "Adonai Mitchell"),
+        ("BENCH", "Jordyn Tyson"),
+    ]
+
+
+def test_a_kept_move_letting_go_a_player_marked_untouchable_since_is_not_shown() -> None:
+    assert _judged_then(SUGGESTED, {}, untouchable=frozenset({"Germie Bernard"})) == []
+
+
 class Unreachable(ContextOnly):
     """A provider whose week will not load once the judgment is kept."""
 

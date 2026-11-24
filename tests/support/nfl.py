@@ -9,6 +9,7 @@ from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 from support.espn import FakeESPN
+from support.stores import FakeUntouchable
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import current_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
@@ -248,9 +249,13 @@ class FakeSleeper:
         return self.trending
 
 
-def nfl_provider(client: FakeSleeper, espn: FakeESPN | None = None) -> SleeperNFLProvider:
+def nfl_provider(
+    client: FakeSleeper, espn: FakeESPN | None = None, untouchable: FakeUntouchable | None = None
+) -> SleeperNFLProvider:
     """The NFL provider over these stand-ins, as bootstrap would wire it over the real clients."""
-    return SleeperNFLProvider(username="me", client=client, espn=espn or FakeESPN())
+    return SleeperNFLProvider(
+        username="me", client=client, espn=espn or FakeESPN(), untouchable=untouchable or FakeUntouchable()
+    )
 
 
 DEFAULT_PROJECTIONS = {

@@ -321,6 +321,15 @@ def test_only_what_the_bank_can_pay_for_is_offered() -> None:
     ] == [3]
 
 
+def test_a_player_kept_is_never_sold_and_the_target_goes_to_whoever_else_he_improves_on() -> None:
+    squad = [player(1, "MID", 3.0, cost=50), player(4, "MID", 4.0, cost=50)]
+    market = [player(2, "MID", 9.0, cost=50)]
+
+    [transfer] = affordable_transfers(squad, market, bank=0, selling={}, limit=10, value=effective_points, keep={"1"})
+
+    assert (transfer.out.id, transfer.incoming.id) == (4, 2)
+
+
 def test_a_rise_kept_back_by_the_sell_on_fee_can_put_a_target_out_of_reach() -> None:
     """Priced at £5.5m he would fund the £6.0m target; he sells for £5.2m, so he cannot."""
     squad = [player(1, "MID", 3.0, cost=55)]

@@ -84,6 +84,8 @@ from thefrontoffice.domain.models.players import (
     StatGroup,
     StatRow,
     StatTable,
+    UntouchableMark,
+    Untouchables,
 )
 from thefrontoffice.domain.models.season import (
     Fixture,
@@ -234,6 +236,8 @@ __all__ = [
     "TradeRank",
     "TradeVerdict",
     "Trades",
+    "UntouchableMark",
+    "Untouchables",
     "Urgency",
     "WeekAhead",
     "WeekRange",
