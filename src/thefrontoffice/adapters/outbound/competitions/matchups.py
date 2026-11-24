@@ -143,8 +143,8 @@ def allowed[G: (int, str)](lines: Iterable[Scored[G]], unit: str = "") -> dict[t
     `RECENT_GAMES`, ranked against every other's.
 
     Ranked for the offenses faced: each game counts what it gave up, less
-    what that offense scores at the position a game, plus what an offense
-    scores there on average. Additive rather than a ratio, so an offense that
+    what that offense scores at the position a game in its other games, plus
+    what an offense scores there on average. Additive rather than a ratio, so an offense that
     barely uses a position does not multiply one catch into a rout. The
     figures shown stay what it actually gave up.
     """
@@ -211,17 +211,25 @@ class _Ledger[G: (int, str)]:
             raw = adjusted = 0.0
             for game in played:
                 figure = figures.get(game, 0.0)
-                offense = self.faced.get((defense, game))
                 raw += figure
-                adjusted += figure if offense is None else figure - self._scores(position, offense) + average
+                adjusted += figure - self._elsewhere(defense, game, position, figure) + average
             found[defense] = (raw / len(played), adjusted / len(played))
         return found
 
-    def _scores(self, position: str, offense: str | None = None) -> float:
-        """What an offense scores at the position a game; every offense together without one."""
-        offenses = [offense] if offense else list(self.offense_games)
-        games = sum(len(self.offense_games[o]) for o in offenses)
-        return sum(self.produced[(o, position)] for o in offenses) / games if games else 0.0
+    def _scores(self, position: str) -> float:
+        """What an offense scores at the position a game, every offense together."""
+        games = sum(len(played) for played in self.offense_games.values())
+        return sum(self.produced[(o, position)] for o in self.offense_games) / games if games else 0.0
+
+    def _elsewhere(self, defense: str, game: G, position: str, figure: float) -> float:
+        """What the offense `defense` faced in `game` scores at the position a game in its other games: left out,
+        that game would rate the defense against itself. The league's average where the offense is unknown or this
+        is its only game, which adjusts nothing."""
+        offense = self.faced.get((defense, game))
+        others = len(self.offense_games[offense]) - 1 if offense else 0
+        if offense is None or others < 1:
+            return self._scores(position)
+        return (self.produced[(offense, position)] - figure) / others
 
 
 def _ranked(per_game: Mapping[str, tuple[float, float]]) -> dict[str, int]:

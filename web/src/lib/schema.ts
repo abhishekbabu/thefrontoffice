@@ -1541,7 +1541,7 @@ export interface components {
              * @description The columns a table renders as more than text, by what they hold — so no client matches names.
              */
             readonly roles: {
-                [key: string]: "player" | "status" | "slot";
+                [key: string]: "player" | "status" | "slot" | "opponent";
             };
         };
         /**

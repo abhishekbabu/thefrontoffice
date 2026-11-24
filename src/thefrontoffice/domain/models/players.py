@@ -100,10 +100,19 @@ STATUS_COLUMN = "Status"
 SLOT_COLUMN = "Slot"
 """The column holding where a rostered player sits in the lineup."""
 
-ColumnRole = Literal["player", "status", "slot"]
-"""What a column is, for the few a table renders as more than text."""
+OPPONENT_COLUMN = "Opponent"
+"""Who a player faces this week, in words; where it has a number behind it, how soft that matchup is."""
 
-_ROLES: dict[str, ColumnRole] = {PLAYER_COLUMN: "player", STATUS_COLUMN: "status", SLOT_COLUMN: "slot"}
+ColumnRole = Literal["player", "status", "slot", "opponent"]
+"""What a column is, for the few a table renders as more than text. A column with a role reads as words, even one
+with a number behind it to sort by."""
+
+_ROLES: dict[str, ColumnRole] = {
+    PLAYER_COLUMN: "player",
+    STATUS_COLUMN: "status",
+    SLOT_COLUMN: "slot",
+    OPPONENT_COLUMN: "opponent",
+}
 
 
 class PlayerCard(BaseModel):

@@ -69,8 +69,9 @@ export function RosterTable({
   if (players.length === 0) return <Empty title={empty.title} detail={empty.detail} />;
 
   // A column is a figure where the provider sent the number behind it: that
-  // is what sorts it as one, and what aligns it like one.
-  const numeric = new Set(players.flatMap((p) => Object.keys(p.values)));
+  // is what sorts it as one, and what aligns it like one — unless its role
+  // says it reads as words, as an Opponent sorted by how soft it is does.
+  const numeric = new Set(players.flatMap((p) => Object.keys(p.values).filter((column) => !p.roles[column])));
 
   return (
     <DataTable

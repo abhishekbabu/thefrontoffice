@@ -174,6 +174,31 @@ def test_a_defense_is_ranked_for_the_offenses_it_faced_while_its_figure_stays_wh
     assert (sf.adjusted or 0.0) < (dal.adjusted or 0.0)
 
 
+def test_an_offenses_average_leaves_out_the_game_being_adjusted() -> None:
+    """KC put 40 on SF and nothing on anyone else: SF gave up 40 beyond KC's 0 elsewhere, on a league average of 20.
+
+    Counting the SF game in KC's average would read KC as a 20-a-game offense and SF as giving up only 20 beyond it.
+    """
+    lines = [
+        Scored("SF", "TE", 1, 40.0, "KC"),
+        Scored("ARI", "TE", 2, 0.0, "KC"),
+        Scored("DAL", "TE", 1, 20.0, "NYG"),
+        Scored("PHI", "TE", 2, 20.0, "NYG"),
+    ]
+
+    found = allowed(lines)
+
+    assert found["SF", "TE"].adjusted == pytest.approx(40.0 - 0.0 + 20.0)
+    assert found["DAL", "TE"].adjusted == pytest.approx(20.0)
+
+
+def test_an_offenses_only_game_adjusts_nothing() -> None:
+    """KC has played only SF: nothing else says what KC scores, so SF's 40 stands."""
+    lines = [Scored("SF", "TE", 1, 40.0, "KC"), *(Scored("DAL", "TE", w, 10.0, "NYG") for w in (1, 2))]
+
+    assert allowed(lines)["SF", "TE"].adjusted == pytest.approx(40.0)
+
+
 def test_a_game_against_an_unknown_offense_counts_as_it_was() -> None:
     lines = [Scored("SF", "TE", 1, 10.0), Scored("DAL", "TE", 1, 4.0)]
 
