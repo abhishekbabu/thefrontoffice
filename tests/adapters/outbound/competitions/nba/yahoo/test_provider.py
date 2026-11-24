@@ -37,8 +37,9 @@ from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, PACIFIC
 from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASchedule
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
+from thefrontoffice.adapters.outbound.competitions.tasks import task_lines
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
-from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, ScoreboardGame
+from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, NewsArticle, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooCaptureMissingError
@@ -2005,3 +2006,39 @@ def test_a_pickup_whose_split_leans_on_a_teammate_due_back_is_a_streamer_never_a
 
     assert (item.player_id, item.pickup) == ("thybulle", "streamer")
     assert "Reaves" in item.reason
+
+
+COACH_FIRED = NewsArticle(
+    article_id="coach", published=datetime.now(UTC), headline="Lakers fire coach JJ Redick", summary="Interim named."
+)
+
+
+def test_the_scout_states_a_clubs_story_once_and_each_of_its_players_points_at_it() -> None:
+    yahoo = FakeYahoo(
+        roster=[make_player("Roster One", team="LAL", key="r1"), make_player("Roster Two", team="LAL", key="r2")],
+        stat_leaders={"BLK": [make_player("Free Agent One", team="BOS", key="fa-1")]},
+    )
+
+    context = nba_provider(yahoo, espn=FakeESPN(news={"LAL": [COACH_FIRED]})).build_context()
+
+    outside_tasks = context.prompt.replace(task_lines(context.tasks), "")
+    assert outside_tasks.count(COACH_FIRED.headline) == 1 and COACH_FIRED.headline in context.situation
+    assert all("team news" in context.roster_lines[name] for name in ("Roster One", "Roster Two"))
+    assert "team news" not in context.candidate_lines["Free Agent One"]
+
+
+def test_a_wire_call_on_one_player_carries_his_clubs_story() -> None:
+    candidate = make_player("Free Agent One", team="LAL", key="fa-1")
+    yahoo = FakeYahoo(roster=[make_player("Roster One", team="BOS")], available=[candidate])
+
+    context = nba_provider(yahoo, espn=FakeESPN(news={"LAL": [COACH_FIRED]})).build_wire_context("", ["fa-1"])
+
+    assert COACH_FIRED.headline in context.prompt and "team news" in context.targets["fa-1"]
+
+
+def test_club_news_that_will_not_load_leaves_the_scout_as_it_was() -> None:
+    yahoo = FakeYahoo(roster=[make_player("Roster One", team="LAL")])
+
+    context = nba_provider(yahoo, espn=FakeESPN(error=ESPNAPIError("down"))).build_context()
+
+    assert "team news" not in context.roster_lines["Roster One"]

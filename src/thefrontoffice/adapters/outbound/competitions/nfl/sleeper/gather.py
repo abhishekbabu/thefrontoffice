@@ -15,6 +15,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl import (
     injuries,
     news,
     prompt,
+    starters,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
@@ -27,6 +28,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     ruled_out,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import rostered
+from thefrontoffice.adapters.outbound.competitions.nfl.starters import StarterLog
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     weeks_played,
 )
@@ -148,16 +150,22 @@ def backfilled(
     return {pid: entries[a.athlete_id] for pid, a in athletes.items() if a.athlete_id in entries}
 
 
-def player_news(espn_client: ESPNSource, players: dict[str, PlayerMeta]) -> PlayerNews:
-    """Recent articles about every player, from each club's own feed."""
+def player_news(espn_client: ESPNSource, players: dict[str, PlayerMeta], log: StarterLog) -> PlayerNews:
+    """Recent articles about every player, from each club's own feed, and each club's change of starter.
+
+    Today's starters are kept in `log` either way: the depth chart says a change
+    the feed may not, and a day missed is a day later to notice one.
+    """
+    now = datetime.now(UTC)
+    depth = starters.changes(log, players, now)
     clubs = sorted({espn_club(m.team) for m in players.values() if m.team != FREE_AGENT})
     try:
         feeds = espn_client.get_team_news(espn.NFL, clubs)
     except ESPNAPIError as e:
         # Enrichment, like the evidence: the week stands without it.
         logger.warning(f"Continuing without player news: {e}")
-        return PlayerNews()
-    return news.attach(feeds, players, datetime.now(UTC))
+        feeds = {}
+    return news.attach(feeds, players, now, depth)
 
 
 def past_projections(

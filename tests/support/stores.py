@@ -1,9 +1,11 @@
-"""In-memory stand-ins for what the app keeps on disk: model answers, item decisions and untouchables.
+"""In-memory stand-ins for what the app keeps on disk: model answers, item decisions, untouchables and starters.
 
 Each keeps what it is handed as the disk stores do — as JSON, read back
 through the schema asked for — so a test cannot pass by reading back an
 object the real store would have had to parse.
 """
+
+from datetime import date
 
 from thefrontoffice.domain.models import ItemState, Remembered
 from thefrontoffice.domain.ports import TModel
@@ -61,3 +63,17 @@ class FakeUntouchable:
     def of(self, league_id: str) -> frozenset[str]:
         self.asked.append(league_id)
         return self.player_ids
+
+
+class FakeStarterLog:
+    """Stands in for the depth chart's daily record (`nfl/starters.StarterLog`): each day's starters, in memory."""
+
+    def __init__(self, days: dict[date, dict[str, str]] | None = None) -> None:
+        self.days: dict[date, dict[str, str]] = dict(days or {})
+
+    def day(self, day: date) -> dict[str, str] | None:
+        found = self.days.get(day)
+        return dict(found) if found is not None else None
+
+    def keep(self, day: date, starters: dict[str, str]) -> None:
+        self.days[day] = dict(starters)

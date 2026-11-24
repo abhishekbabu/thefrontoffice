@@ -54,3 +54,18 @@ def test_a_club_story_reaches_each_of_its_players_but_one_it_names_stays_his_own
     assert found.team("someone else") == []
     [stat] = [s.stat() for s in found.team("478.p.3704")]
     assert (stat.label, stat.value) == (f"Trade, {dated(trade)}", trade.headline)
+
+
+def test_a_prompt_points_each_player_at_his_clubs_stories_and_states_them_once() -> None:
+    from thefrontoffice.adapters.outbound.competitions.news import ClubStory, PlayerNews, team_block, team_reference
+
+    trade = _article("Lakers trade for a center")
+    found = PlayerNews(
+        by_club={"LAL": [ClubStory(kind="Trade", article=trade)]},
+        club_of={"478.p.3704": "LAL", "478.p.6014": "LAL", "478.p.1": "BOS"},
+    )
+
+    assert "LAL" in team_reference(found, "478.p.3704") and "Trade" in team_reference(found, "478.p.3704")
+    assert team_reference(found, "478.p.1") == ""
+    assert team_block(found, ["478.p.3704", "478.p.6014", "478.p.1"]).count(trade.headline) == 1
+    assert team_block(found, ["478.p.1"]) == ""

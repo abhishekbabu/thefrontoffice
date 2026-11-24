@@ -410,9 +410,29 @@ def test_each_player_line_carries_his_clubs_stories() -> None:
     )
     client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS))
 
-    prompt = nfl_provider(client, FakeESPN({"BUF": [story]})).build_context("L1").prompt
+    context = nfl_provider(client, FakeESPN({"BUF": [story]})).build_context("L1")
 
-    assert story.headline in prompt and story.summary in prompt
+    # Once for the club, however many of its players the prompt names, and in the follow-up briefing too.
+    # The to-do list's evidence is the items' own, as the page shows them.
+    outside_tasks = context.prompt.replace(context.extra.removeprefix("TO DO:\n"), "")
+    assert outside_tasks.count(story.headline) == 1 and story.summary in context.prompt
+    assert story.headline in context.situation
+    # Each of the club's players points at it.
+    buffalo = [line for line in context.roster_lines.values() if "(RB, BUF)" in line or "(QB, BUF)" in line]
+    assert len(buffalo) >= 2 and all("BUF" in line.split("team news", 1)[1] for line in buffalo)
+
+
+def test_a_prompt_of_one_player_still_carries_his_clubs_stories() -> None:
+    from datetime import datetime
+
+    from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
+
+    story = NewsArticle(article_id="1", published=datetime.now(UTC), headline="Jets fire offensive coordinator")
+    client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS))
+
+    context = nfl_provider(client, FakeESPN({"NYJ": [story]})).build_wire_context("L1", ["wr9"])
+
+    assert story.headline in context.prompt and "team news" in context.targets["wr9"]
 
 
 def test_the_prompts_name_only_fields_their_answers_have() -> None:

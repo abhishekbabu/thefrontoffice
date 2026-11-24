@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 from support.espn import FakeESPN
-from support.nba import FakeNBA, FakeSleeperProjections, FakeYahoo, make_player, nba_provider, yahoo_league
+from support.nba import FakeNBA, FakeSleeperProjections, FakeYahoo, make_player, nba_provider, toronto, yahoo_league
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import BoxScores, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
@@ -273,6 +273,29 @@ def test_his_news_is_his_clubs_feed_where_it_names_him() -> None:
     )
 
 
+def test_his_news_tab_leads_with_his_clubs_stories_that_do_not_name_him() -> None:
+    story = NewsArticle(article_id="1", published=datetime.now(UTC), headline="Lakers fire coach JJ Redick")
+
+    groups = _tab("News", espn=FakeESPN(news={"LAL": [story]})).groups
+
+    assert [(g.title, g.tab) for g in groups] == [("Team news", "News")]
+    [stat] = groups[0].stats
+    assert stat.label.startswith("Coach") and stat.value == story.headline
+
+
+def test_his_news_tab_names_a_club_regular_out_for_long_from_the_box_scores() -> None:
+    story = NewsArticle(article_id="1", published=datetime.now(UTC), headline="Scottie Barnes out for the season")
+    yahoo = FakeYahoo(roster=[make_player("A B", "PG", team="TOR", key="ab")])
+
+    groups = (
+        nba_provider(yahoo, nba=FakeNBA(scores=toronto()), espn=FakeESPN(news={"TOR": [story]}))
+        .player_tab("", "ab", "News")
+        .groups
+    )
+
+    assert [s.label.split(",")[0] for g in groups if g.title == "Team news" for s in g.stats] == ["Out long-term"]
+
+
 def test_a_tab_the_drawer_does_not_defer_is_not_found() -> None:
     with pytest.raises(NotFoundError):
         _tab("This week")
@@ -281,3 +304,14 @@ def test_a_tab_the_drawer_does_not_defer_is_not_found() -> None:
 def test_a_tab_for_a_player_the_league_does_not_know_is_not_found() -> None:
     with pytest.raises(PlayerNotFoundError):
         nba_provider(FakeYahoo()).player_tab("", "nobody", "News")
+
+
+def test_box_scores_that_will_not_load_leave_his_clubs_stories_that_name_nobody() -> None:
+    story = NewsArticle(article_id="1", published=datetime.now(UTC), headline="Lakers fire coach JJ Redick")
+
+    nba = _guard()
+    nba.scores_error = SleeperAPIError("down")
+
+    groups = _tab("News", nba=nba, espn=FakeESPN(news={"LAL": [story]})).groups
+
+    assert [g.title for g in groups] == ["Team news"]
