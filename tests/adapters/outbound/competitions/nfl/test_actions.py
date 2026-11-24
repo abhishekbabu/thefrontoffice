@@ -1405,3 +1405,15 @@ def test_a_pickup_never_names_the_drop_the_ir_move_already_spent() -> None:
 
     assert "wr2" in drops
     assert len(drops) == len(set(drops))
+
+
+def test_a_move_between_two_of_one_clubs_players_carries_its_club_story_once() -> None:
+    from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
+
+    client = _client([QB, _ruled_out(RB), WR, FLEX, BENCH_RB], ["qb", "rb", "wr", "te"], ["rb2"])
+    story = NewsArticle(article_id="1", published=datetime.now(UTC), headline="Jets fire offensive coordinator")
+
+    [action] = _actions(client, FakeESPN({RB.team: [story]}))
+
+    assert action.player_id == BENCH_RB.player_id
+    assert [line.label for line in action.evidence if story.headline in line.value] == [BENCH_RB.name]

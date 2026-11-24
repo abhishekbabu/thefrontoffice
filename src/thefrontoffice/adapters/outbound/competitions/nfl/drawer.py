@@ -232,6 +232,9 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
     )
     if hurt:
         groups.append(StatGroup(title="Injury", stats=hurt))
+    # His club's stories sit with his week: a new quarterback moves his projection before Sleeper's does.
+    if team := state.news.team(player_id, limit=NEWS_IN_DRAWER):
+        groups.append(StatGroup(title="Team news", stats=[story.stat() for story in team]))
     if projection and projection.stats:
         groups.append(StatGroup(title="Projected line", stats=_projection_lines(projection.stats, meta.position)))
     # Who he is matters least to a lineup call, so it goes last and on two lines.

@@ -359,6 +359,21 @@ def test_each_player_line_carries_his_latest_news() -> None:
     assert article.headline in prompt and article.summary in prompt
 
 
+def test_each_player_line_carries_his_clubs_stories() -> None:
+    from datetime import datetime
+
+    from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
+
+    story = NewsArticle(
+        article_id="1", published=datetime.now(UTC), headline="Bills fire offensive coordinator", summary="New caller."
+    )
+    client = FakeSleeper(projections=dict(DEFAULT_PROJECTIONS))
+
+    prompt = nfl_provider(client, FakeESPN({"BUF": [story]})).build_context("L1").prompt
+
+    assert story.headline in prompt and story.summary in prompt
+
+
 def test_the_prompts_name_only_fields_their_answers_have() -> None:
     """A guided field the schema lacks is an instruction the model cannot follow."""
     assert named_fields(prompt.NFL_SCOUT_PROMPT) <= schema_fields(ScoutAnswer)
