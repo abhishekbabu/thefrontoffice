@@ -86,6 +86,10 @@ class MatchupSide:
     projected: str = ""
     """Yahoo's projected final score, as it prints it; empty where it gives none, as in a category league."""
 
+    games: int = 0
+    """The games its players have played in the week so far, as the scoreboard counts them (`completed_games`);
+    nought where it prints none."""
+
 
 @dataclass(frozen=True)
 class YahooLeague:

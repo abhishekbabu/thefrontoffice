@@ -795,6 +795,17 @@ def test_the_standings_carry_each_teams_season_totals_by_stat_id(tmp_path: Path)
     assert theirs.season == {}
 
 
+def test_each_side_of_a_scoreboard_carries_the_games_its_players_have_played(tmp_path: Path) -> None:
+    client, _ = _client(tmp_path, answers={"scoreboard;week=2": scoreboard_xml(games=(21, 18))})
+    bare, _ = _client(tmp_path / "bare", answers={"scoreboard;week=2": scoreboard_xml()})
+
+    [pairing] = client.matchups([2])[2]
+    [unprinted] = bare.matchups([2])[2]
+
+    assert (pairing.mine.games, pairing.opponent.games) == (21, 18)
+    assert (unprinted.mine.games, unprinted.opponent.games) == (0, 0)
+
+
 SETTLED = (
     "<fantasy_content><league><scoreboard><matchups><matchup>"
     "<week_start>2026-03-08</week_start><week_end>2026-03-14</week_end><status>postevent</status>"

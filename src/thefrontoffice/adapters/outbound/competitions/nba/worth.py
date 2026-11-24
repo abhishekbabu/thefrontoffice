@@ -194,6 +194,11 @@ TARGETS = 3
 """The targeted categories a to-do item names: the three a move helps most."""
 
 
+MATERIAL = 0.25
+"""How far, in a category's spread, a pickup must move it over his drop for an item to name it: a quarter. Less is
+a few tenths of a rebound, which a week of games swallows."""
+
+
 def winnable(chance: float) -> float:
     """How much a category counts this week, from your chance of winning it: 1 at even, down to `TARGET_FLOOR`
     as it nears certain either way (4p(1 − p)). A category near 50/50 is the one a move can swing."""
@@ -247,6 +252,33 @@ class Targeting:
         ranked = sorted(better, key=lambda label: -better[label])[:TARGETS]
         return [self.scales[label].scored.name for label in ranked]
 
+    def raised(self, pickup: Line | None, drop: Line | None, counting: float = IN_PLAY) -> list[str]:
+        """The categories counting `counting` or more that a game of `pickup` really raises, as the league names
+        them: by `MATERIAL` of a spread over one of `drop` — over the pool's average without one — and from a figure
+        at least that average (`Scale.against_pool`). A centre's assists above a bigger centre's are still a
+        centre's assists: no help to a roster short of them. At most `TARGETS`, the biggest gain first."""
+        return self._moved(pickup, drop, counting, up=True)
+
+    def lowered(self, pickup: Line | None, drop: Line | None, counting: float = IN_PLAY) -> list[str]:
+        """The categories counting `counting` or more a game of `pickup` gives up by `MATERIAL` of a spread against
+        one of `drop`, as the league names them: at most `TARGETS`, the biggest loss first. None without a drop."""
+        return self._moved(pickup, drop, counting, up=False) if drop else []
+
+    def _moved(self, pickup: Line | None, drop: Line | None, counting: float, *, up: bool) -> list[str]:
+        if not pickup:
+            return []
+        moves: dict[str, float] = {}
+        for label, scale in self.scales.items():
+            mine = scale.against_pool(pickup)
+            theirs = scale.against_pool(drop) if drop else 0.0
+            if self.weights.get(label, 1.0) < counting or mine is None or theirs is None:
+                continue
+            change = mine - theirs if up else theirs - mine
+            if change >= MATERIAL and (not up or mine >= 0):
+                moves[label] = change
+        ranked = sorted(moves, key=lambda label: -moves[label])[:TARGETS]
+        return [self.scales[label].scored.name for label in ranked]
+
     def _parts(self, figures: Line) -> dict[str, float]:
         return {
             label: self.weights.get(label, 1.0) * worth
@@ -289,20 +321,33 @@ MIN_TEAMS = 4
 
 
 def league_standing(
-    found: Mapping[str, Scale], mine: Mapping[str, str], others: Sequence[Mapping[str, str]]
+    found: Mapping[str, Scale], mine: Mapping[str, float], others: Sequence[Mapping[str, float]]
 ) -> dict[str, float]:
-    """Where your season's totals stand in each category against the league's teams, by label: how far from
-    their average, in their spread, more being better — a total for a count, the rate for a percentage, as the
-    standings print them. A category fewer than `MIN_TEAMS` teams print, or with no spread among them, is left out.
+    """Where your season stands in each category against the league's teams, by label: how far from their
+    average, in their spread, more being better — a count a game (`team_rates`), a percentage's rate. A category
+    fewer than `MIN_TEAMS` teams carry, or with no spread among them, is left out.
     """
     standing: dict[str, float] = {}
     for label, scale in found.items():
         stat = scale.scored.stat_id
-        figures = [amount(team[stat]) for team in [mine, *others] if team.get(stat)]
+        figures = [team[stat] for team in [mine, *others] if stat in team]
         if stat not in mine or len(figures) < MIN_TEAMS or not (spread := statistics.pstdev(figures)):
             continue
-        standing[label] = scale.sign * (amount(mine[stat]) - statistics.fmean(figures)) / spread
+        standing[label] = scale.sign * (mine[stat] - statistics.fmean(figures)) / spread
     return standing
+
+
+def team_rates(season: Mapping[str, str], games: int) -> dict[str, float]:
+    """A team's season totals as the standings print them, by stat id, a count over `games` played and a
+    percentage as its rate: teams a few games apart then compare alike. Every count as printed without games."""
+    found: dict[str, float] = {}
+    for stat, figure in season.items():
+        category = BY_STAT.get(stat)
+        if category is None:
+            continue
+        value = amount(figure)
+        found[stat] = value if category.is_percentage or not games else value / games
+    return found
 
 
 WEAK_BELOW = -0.5
