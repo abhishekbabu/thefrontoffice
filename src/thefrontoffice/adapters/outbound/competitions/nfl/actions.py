@@ -243,9 +243,11 @@ def _lineup(
             )
             continue
 
-        pick = next(
+        # The best by this week's worth, matchup in, as Fits ranks the wire (`views.weekly`).
+        pick = max(
             (p for p in free_agents if p.position in eligible_positions(slot.slot) and p.player_id not in taken),
-            None,
+            key=lambda p: views.weekly(state, p),
+            default=None,
         )
         if pick is None:
             continue
@@ -383,7 +385,8 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
     starter's season as well as his week, so a star's one bad matchup is not
     a reason to drop him. At a streamed position the starter he replaces is
     the drop — a lineup starts one defense, and nobody keeps a spare — unless
-    he is untouchable, when the bench gives up the spot instead. The season check reads both players by the same `worth`.
+    he is untouchable, when the bench gives up the spot instead. The season check reads both players by the same
+    `views.weekly`: their `worth`, times this week's matchup, as Fits does.
     """
     taken: set[str] = set()
     items = []
@@ -399,7 +402,7 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
         starter = slot.player
         if starter is None or starter.team in started or starter.player_id in taken or gain < UPGRADE_BY:
             continue
-        if value(state, player) <= value(state, starter):
+        if views.weekly(state, player) <= views.weekly(state, starter):
             continue
         taken.add(starter.player_id)
         streamed = (
@@ -653,12 +656,13 @@ def _breakouts(state: Week, free_agents: Sequence[Projection], already: set[str]
 
 
 def _beats_a_starter(state: Week, player: Projection) -> bool:
-    """Whether he is worth more than the weakest starter he could replace, or there is an empty slot he fits."""
+    """Whether he is worth more this week (`views.weekly`, matchup in) than the weakest starter he could replace, or
+    there is an empty slot he fits."""
     upgrade = best_upgrade(state.lineup, player)
     if upgrade is None:
         return False
     starter = upgrade[1].player
-    return starter is None or value(state, player) > value(state, starter)
+    return starter is None or views.weekly(state, player) > views.weekly(state, starter)
 
 
 def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]:

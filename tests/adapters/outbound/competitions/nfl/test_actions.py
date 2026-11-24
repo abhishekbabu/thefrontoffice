@@ -1734,3 +1734,50 @@ def test_a_kicker_bye_next_week_names_the_best_kicker_on_the_wire_for_it() -> No
     [bye] = [a for a in _actions(client) if a.key.startswith("bye:10:K")]
 
     assert FREE_KICKER.name in bye.title and other.name not in bye.title
+
+
+# ── this week's matchup in a pickup ─────────────────────────────────────
+
+
+def _defenses() -> list[NFLGameLine]:
+    """What backs have scored against LV (30 a game, the softest) and NE (2, the toughest), weeks 1 and 2."""
+    return [
+        NFLGameLine(
+            player_id=pid,
+            week=week,
+            team="DEN",
+            opponent=opponent,
+            position="RB",
+            stats={"off_snp": 40.0, "tm_off_snp": 60.0, "pts_ppr": points},
+        )
+        for pid, opponent, points in (("x1", "LV", 30.0), ("x2", "NE", 2.0))
+        for week in (1, 2)
+    ]
+
+
+def test_a_hole_is_filled_by_the_free_agent_best_this_week_matchup_in() -> None:
+    """Two backs projected 12 with nothing played: the one facing the softest defense of the two goes in."""
+    hard = proj("fa2", "Hard Back", "RB", 12.0, team="NYJ", opp="NE")
+    soft = proj("fa1", "Soft Back", "RB", 12.0, team="KC", opp="LV")
+    client = _client([QB, _ruled_out(RB), WR, FLEX, hard, soft], ["qb", "rb", "wr", "te"], [], game_lines=_defenses())
+
+    [action] = [a for a in _actions(client) if a.key.startswith("hole:")]
+
+    assert action.player_id == soft.player_id
+
+
+def test_an_upgrade_facing_a_tough_defense_against_a_starter_facing_a_soft_one_is_no_claim() -> None:
+    """Projected 3 over the starter and ahead by worth, but 10% down against the toughest defense leaves him under
+    the starter this week."""
+    starter = proj("rb", "Ron Back", "RB", 10.0, team="KC", opp="LV")
+    free = proj("fa2", "Hard Back", "RB", 13.0, team="NYJ", opp="NE")
+    # A tight end at FLEX projected above both, so the back's slot is the one the free agent would take.
+    flex = replace(FLEX, points=14.0)
+    client = _client([QB, starter, WR, flex, free], ["qb", "rb", "wr", "te"], [], game_lines=_defenses())
+    client.game_lines = client.game_lines + [
+        replace(line, player_id=pid, team=team, opponent="HOU", stats={**line.stats, "pts_ppr": points})
+        for pid, team, points in (("rb", "KC", 12.0), ("fa2", "NYJ", 11.0))
+        for line in _defenses()[:2]
+    ]
+
+    assert not [a for a in _actions(client) if a.key.startswith("upgrade:")]
