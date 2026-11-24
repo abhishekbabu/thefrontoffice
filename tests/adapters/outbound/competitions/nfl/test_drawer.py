@@ -574,7 +574,13 @@ def test_the_drawer_shows_a_change_of_starter_the_depth_chart_made_without_any_s
         "qb9": PlayerMeta(player_id="qb9", name="Benched QB", position="QB", team="BUF", depth_chart_order=2),
     }
     today = datetime.now(UTC).date()
-    log = FakeStarterLog({today - timedelta(days=2): {"BUF": "qb9"}})
+    log = FakeStarterLog(
+        {
+            today - timedelta(days=3): {"BUF": "qb9"},
+            today - timedelta(days=2): {"BUF": "qb9"},
+            today - timedelta(days=1): {"BUF": "qb1"},
+        }
+    )
 
     detail = nfl_provider(client, starters=log).player("L1", "rb1")
 

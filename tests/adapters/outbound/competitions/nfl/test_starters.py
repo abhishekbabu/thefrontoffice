@@ -31,7 +31,7 @@ def test_each_clubs_listed_starter_under_espns_spelling() -> None:
     assert starters(COLTS) == {"IND": "richardson", "WSH": "daniels"}
 
 
-def test_a_starter_changed_since_an_earlier_day_is_a_qb_change_dated_the_first_day_it_read_so() -> None:
+def test_a_starter_settled_since_an_earlier_settled_one_is_a_qb_change_dated_the_first_day_it_read_so() -> None:
     log = FakeStarterLog({_day(5): {"IND": "jones"}, _day(4): {"IND": "jones"}, _day(3): {"IND": "richardson"}})
 
     found = changes(log, COLTS, NOW)
@@ -45,10 +45,23 @@ def test_a_starter_changed_since_an_earlier_day_is_a_qb_change_dated_the_first_d
     assert log.days[TODAY] == starters(COLTS)
 
 
-def test_a_change_first_seen_today_is_dated_today() -> None:
-    [story] = changes(FakeStarterLog({_day(1): {"IND": "jones"}}), COLTS, NOW).values()
+def test_a_change_read_on_one_day_is_not_yet_one_and_on_a_second_is_dated_the_first() -> None:
+    settled = {_day(3): {"IND": "jones"}, _day(2): {"IND": "jones"}}
 
-    assert story.article.published.date() == TODAY
+    assert changes(FakeStarterLog(settled), COLTS, NOW) == {}
+    [story] = changes(FakeStarterLog({**settled, _day(1): {"IND": "richardson"}}), COLTS, NOW).values()
+    assert story.article.published.date() == _day(1)
+
+
+def test_a_days_noise_in_the_depth_chart_is_no_change() -> None:
+    """Sleeper's chart between two updates: a starter missing or swapped for one reading, then back."""
+    log = FakeStarterLog(
+        {_day(4): {"IND": "richardson"}, _day(3): {"IND": "richardson"}, _day(2): {"IND": "jones"}, _day(1): {}}
+    )
+
+    assert changes(log, COLTS, NOW) == {}
+    # Nor is a starter read once before him a change from him.
+    assert changes(FakeStarterLog({_day(2): {"IND": "jones"}, _day(1): {"IND": "richardson"}}), COLTS, NOW) == {}
 
 
 def test_an_unchanged_starter_a_day_with_none_listed_and_a_change_past_the_window_are_no_change() -> None:

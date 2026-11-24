@@ -10,7 +10,9 @@ from thefrontoffice.adapters.outbound.competitions.stories import (
     TRADED,
     TRADED_TO,
     moved,
+    near,
     out_long,
+    recap,
     roundup,
     talk,
     text_of,
@@ -81,3 +83,25 @@ def test_a_story_of_more_clubs_than_a_trade_names_is_a_roundup() -> None:
 def test_an_absence_is_long_from_the_season_a_month_or_three_weeks_at_the_most(headline: str, long: bool) -> None:
     story = _story(headline)
     assert out_long(story, text_of(story)) is long
+
+
+def test_a_phrase_is_near_a_player_within_a_few_words_of_one_clause() -> None:
+    text = text_of(_story("Cardinals turn to 40-year-old Josh Johnson. Daniel Jones will watch the start"))
+
+    assert near(text, ["josh johnson"], ["turn to"])
+    assert not near(text, ["daniel jones"], ["turn to"])
+    assert not near(text, ["josh johnson"], ["start"])
+
+
+@pytest.mark.parametrize(
+    ("headline", "is_recap"),
+    [
+        ("Seahawks beat Raiders 21-13 as Drew Lock throws for 2 TDs", True),
+        ("Bulls roll to a 137-107 victory over the Nets", True),
+        ("Colts rout Texans 31-3", True),
+        ("Anthony Richardson upbeat despite Colts' 3-7 start", False),
+        ("Colts beat Texans behind Anthony Richardson", False),
+    ],
+)
+def test_a_recap_has_a_score_and_a_result_in_its_headline(headline: str, is_recap: bool) -> None:
+    assert recap(_story(headline)) is is_recap
