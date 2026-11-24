@@ -98,24 +98,35 @@ class Feeds:
         return {key: projected.line for key, projected in found.items() if projected is not None}
 
     def minutes_on(self, players: Sequence[Player], day: date) -> dict[str, float]:
-        """The minutes each of `players` played on `day`, by Yahoo's key, from Sleeper's box scores: what tells a
-        game he sat out from one he played and filled no column in. Nought for one Sleeper has no line of him
-        from. Only once Sleeper's box scores hold that day, and only for a player whose name places him in its
-        catalog: anybody else is left out, and none at all where the box scores would not load.
+        """The minutes each of `players` played on `day`, by Yahoo's key (`minutes_by_day`); nobody where Sleeper's
+        box scores do not hold the day."""
+        return self.minutes_by_day(players).get(day, {})
+
+    def minutes_by_day(self, players: Sequence[Player]) -> dict[date, dict[str, float]]:
+        """The minutes each of `players` played on every day Sleeper's box scores hold, by day, then Yahoo's key:
+        what tells a game he sat out from one he played and filled no column in.
+
+        A day is held once any game of it is in the box scores, which are read by
+        whole Sleeper weeks; on such a day, a player with no line played nought.
+        Only a player whose name places him in Sleeper's catalog is answered for,
+        and nobody at all where the box scores would not load.
         """
         try:
             scores = self.form.box_scores()
         except FrontOfficeError as e:
-            logger.warning(f"Reading {day.isoformat()} without who played, Sleeper's box scores would not load: {e}")
+            logger.warning(f"Reading days without who played, Sleeper's box scores would not load: {e}")
             return {}
-        on = day.isoformat()
-        if not any(log.date == on for logs in scores.logs.values() for log in logs):
-            return {}
-        found: dict[str, float] = {}
+        held = {day for logs in scores.logs.values() for log in logs if (day := parse_day(log.date)) is not None}
+        found: dict[date, dict[str, float]] = {day: {} for day in held}
         for player in players:
             sleeper_id = scores.index.lookup(player.name)
-            if sleeper_id is not None:
-                found[player.player_key] = sum(log.minutes for log in scores.logs.get(sleeper_id, ()) if log.date == on)
+            if sleeper_id is None:
+                continue
+            for day in held:
+                found[day][player.player_key] = 0.0
+            for log in scores.logs.get(sleeper_id, ()):
+                if (day := parse_day(log.date)) in found:
+                    found[day][player.player_key] += log.minutes
         return found
 
     def tipoff(self, day: date) -> dict[str, datetime]:

@@ -8,7 +8,7 @@ set so far, who has a game and what is projected of him, and what to fix: a
 starter with no game, and a bench player with one who would add a start.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Protocol
@@ -72,6 +72,14 @@ class DayLog(Protocol):
         """Keep these as the day's, replacing what was kept for it."""
         ...
 
+    def pregame(self, day: date) -> dict[str, str]:
+        """Each player's Yahoo status as last seen that day before his game tipped off."""
+        ...
+
+    def keep_pregame(self, day: date, statuses: dict[str, str]) -> None:
+        """Keep these as the day's, replacing what was kept for it."""
+        ...
+
     def minutes(self, day: date) -> dict[str, float]:
         """The minutes each player played that day, as the box scores gave them once it stood."""
         ...
@@ -81,13 +89,40 @@ class DayLog(Protocol):
         ...
 
 
-def record_statuses(log: DayLog, day: date, players: Sequence[Player]) -> None:
-    """Keep each of `players`' status as seen on `day`, the day being played, an empty one included: the last
-    read of a day stands for it, since a status moves through it — game-time decision, then out."""
-    kept = log.statuses(day)
+def record_statuses(
+    log: DayLog, day: date, players: Sequence[Player], games: Sequence[ScheduledGame] | None = None
+) -> None:
+    """Keep each of `players`' status as seen on `day`, the day being played, an empty one included.
+
+    A status moves through a day — game-time decision, then out — and the one
+    his game was played under is the last seen before it tipped off. Where
+    `games` are the day's, with each one's status, a player whose game has yet
+    to tip off has his kept as that (`pregame`); every status seen is kept as
+    the day's last, which stands where none was seen before tip-off.
+    """
     seen = {p.player_key: p.status for p in players}
+    _merge(log.statuses(day), seen, lambda kept: log.keep_statuses(day, kept))
+    if games is None:
+        return
+    waiting = {
+        key
+        for p in players
+        if (key := p.player_key)
+        and (game := next((g for g in games if g.opponent_of(p.team.upper()) is not None), None)) is not None
+        and game.status not in nba_week.STATUS
+    }
+    _merge(log.pregame(day), {key: seen[key] for key in waiting}, lambda kept: log.keep_pregame(day, kept))
+
+
+def _merge(kept: dict[str, str], seen: Mapping[str, str], keep: Callable[[dict[str, str]], None]) -> None:
+    """Write `seen` over `kept`, only where it changes anything: most reads see what the last one did."""
     if any(kept.get(key) != status for key, status in seen.items()):
-        log.keep_statuses(day, kept | seen)
+        keep(kept | dict(seen))
+
+
+def recorded(log: DayLog, day: date) -> dict[str, str]:
+    """Each player's status on `day` as kept: the last seen before his game tipped off, else the day's last."""
+    return log.statuses(day) | log.pregame(day)
 
 
 def record_minutes(log: DayLog, day: date, minutes: Mapping[str, float]) -> dict[str, float]:
@@ -128,7 +163,7 @@ class Day:
     """Each player's week as a week's row reads it, by Yahoo's key: games left and his averages (`views.cell`)."""
 
     statuses: Mapping[str, str] = field(default_factory=dict)
-    """On a day played, each player's Yahoo status as recorded that day (`DayLog`); nobody before recording began."""
+    """On a day played, each player's Yahoo status as recorded that day (`recorded`); nobody before recording began."""
 
     def game(self, club: str) -> ScheduledGame | None:
         """His club's game that day, or None on a day it rests."""

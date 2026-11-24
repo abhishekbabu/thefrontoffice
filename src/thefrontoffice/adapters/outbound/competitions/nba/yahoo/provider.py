@@ -81,6 +81,11 @@ from thefrontoffice.domain.ports import LeagueRef, UntouchableSource
 logger = logging.getLogger(__name__)
 
 
+def _stood(day: date) -> bool:
+    """Whether `day`'s games have all stood, on the league's clock (`paths.DAY_STANDS`): nothing in it moves again."""
+    return datetime.now(PACIFIC) >= datetime.combine(day + timedelta(days=1), DAY_STANDS, tzinfo=PACIFIC)
+
+
 class YahooNBAProvider:
     """CompetitionProvider for Yahoo head-to-head basketball, by categories or by points."""
 
@@ -330,10 +335,12 @@ class YahooNBAProvider:
             slots=nba_lineup.slots(rules.slots),
             minutes=self._minutes(everyone, on, stage),
             week=self._week_cells(yahoo, weights, everyone, found, (mine, theirs)),
-            statuses=self.days.statuses(on) if stage == "played" else {},
+            statuses=nba_day.recorded(self.days, on) if stage == "played" else {},
         )
         if stage == "playing":
-            nba_day.record_statuses(self.days, on, everyone)
+            nba_day.record_statuses(self.days, on, everyone, shown.games)
+        if stage != "to come":
+            self._backfill(everyone)
         span = DayRange(
             day=on, first=found.start, last=found.end, today=today if found.start <= today <= found.end else None
         )
@@ -348,10 +355,24 @@ class YahooNBAProvider:
         if stage == "to come":
             return {}
         read = self.feeds.minutes_on(players, day)
-        stands = datetime.combine(day + timedelta(days=1), DAY_STANDS, tzinfo=PACIFIC)
-        if stage == "played" and datetime.now(PACIFIC) >= stands:
+        if stage == "played" and _stood(day):
             return nba_day.record_minutes(self.days, day, read)
         return read
+
+    def _backfill(self, players: Sequence[Player]) -> None:
+        """Keep the minutes `players` played on every day Sleeper's box scores still hold that has stood, for
+        anybody not kept yet (`day.record_minutes`): asked only where the box scores are read already, so the
+        record runs back as far as their window whichever page was opened."""
+        for day, minutes in self.feeds.minutes_by_day(players).items():
+            if _stood(day):
+                nba_day.record_minutes(self.days, day, minutes)
+
+    def _seen(self, players: Sequence[Player], today: nba_week.Today | None = None) -> None:
+        """Keep `players`' statuses as seen today (`day.record_statuses`), the last before each one's game tipped
+        off where `today` says which have; from any read already holding the rosters, so a day only the to-do
+        list or a roster was opened on is kept too."""
+        day = today.day if today is not None else datetime.now(PACIFIC).date()
+        nba_day.record_statuses(self.days, day, players, today.games if today is not None else None)
 
     def _week_cells(
         self,
@@ -440,6 +461,11 @@ class YahooNBAProvider:
             today = replace(
                 today, played=reads.played_today(yahoo, [team.team_key, found.opponent.team_key], today.day)
             )
+        if not played and roster is not None and theirs is not None:
+            self._seen([*roster, *theirs], today)
+            if readings is not None:
+                # The week's readings have read Sleeper's box scores: their days cost nothing more to keep.
+                self._backfill([*roster, *theirs])
         return nba_week.board(found, weeks, records, roster, theirs, scored, readings, unscheduled, today)
 
     def schedule(self, league_id: str) -> LeagueSchedule:
@@ -660,7 +686,9 @@ class YahooNBAProvider:
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
         team = yahoo.get_user_team().team_key
-        return self._cards(yahoo, league, yahoo.roster(team), reads.roster_averages(yahoo, team))
+        players = yahoo.roster(team)
+        self._seen(players)
+        return self._cards(yahoo, league, players, reads.roster_averages(yahoo, team))
 
     def teams(self, league_id: str) -> list[TeamRef]:
         """Everyone in the league, yours first."""
@@ -684,7 +712,9 @@ class YahooNBAProvider:
         yahoo = self._yahoo_for(league)
         if not any(t.team_key == team_id for t in yahoo.teams()):
             raise TeamNotFoundError(team_id)
-        return self._cards(yahoo, league, yahoo.roster(team_id), reads.roster_averages(yahoo, team_id))
+        players = yahoo.roster(team_id)
+        self._seen(players)
+        return self._cards(yahoo, league, players, reads.roster_averages(yahoo, team_id))
 
     def free_agents(self, league_id: str, query: PlayerQuery) -> PlayerPage:
         """The best players nobody in the league holds, the most worth picking up this week first (`views.by_worth`).

@@ -11,9 +11,12 @@ def test_a_days_statuses_and_minutes_survive_the_round_trip_and_a_day_not_kept_i
     monday = date(2026, 11, 23)
     DiskDayLog(DiskCache(tmp_path)).keep_statuses(monday, {"466.p.1": "GTD"})
     DiskDayLog(DiskCache(tmp_path)).keep_minutes(monday, {"466.p.1": 0.0, "466.p.2": 31.5})
+    DiskDayLog(DiskCache(tmp_path)).keep_pregame(monday, {"466.p.1": "Q"})
 
     # A fresh log on the same directory: what a restarted server reads.
     log = DiskDayLog(DiskCache(tmp_path))
     assert log.statuses(monday) == {"466.p.1": "GTD"}
     assert log.minutes(monday) == {"466.p.1": 0.0, "466.p.2": 31.5}
-    assert (log.statuses(date(2026, 11, 24)), log.minutes(date(2026, 11, 24))) == ({}, {})
+    assert log.pregame(monday) == {"466.p.1": "Q"}
+    other = date(2026, 11, 24)
+    assert (log.statuses(other), log.minutes(other), log.pregame(other)) == ({}, {}, {})

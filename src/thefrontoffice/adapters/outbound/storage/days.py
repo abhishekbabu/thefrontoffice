@@ -1,4 +1,4 @@
-"""Each basketball day's record on disk (`nba/day.DayLog`): every rostered player's Yahoo status that day, and
+"""Each basketball day's record on disk (`nba/day.DayLog`): every rostered player's Yahoo status that day (the last seen, and the last before his game tipped off), and
 the minutes the box scores gave him once the day stood.
 
 Beside the to-do decisions, the depth chart's starters and the pre-game projections, since like them it is the
@@ -14,6 +14,7 @@ KEEP_FOR = timedelta(days=200)
 """A season and its playoffs: a day is opened only within the season it is in."""
 
 STATUS = "nba-status:"
+PREGAME = "nba-pregame:"
 MINUTES = "nba-minutes:"
 
 
@@ -27,6 +28,13 @@ class DiskDayLog:
 
     def keep_statuses(self, day: date, statuses: dict[str, str]) -> None:
         self._cache.set(f"{STATUS}{day.isoformat()}", statuses)
+
+    def pregame(self, day: date) -> dict[str, str]:
+        stored = self._cache.get(f"{PREGAME}{day.isoformat()}", KEEP_FOR)
+        return {str(key): str(status) for key, status in stored.items()} if isinstance(stored, dict) else {}
+
+    def keep_pregame(self, day: date, statuses: dict[str, str]) -> None:
+        self._cache.set(f"{PREGAME}{day.isoformat()}", statuses)
 
     def minutes(self, day: date) -> dict[str, float]:
         stored = self._cache.get(f"{MINUTES}{day.isoformat()}", KEEP_FOR)
