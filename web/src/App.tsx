@@ -75,7 +75,7 @@ const WIDTH: Record<View, "reading" | "full" | "wide"> = {
 export default function App() {
   const { mode, setMode } = useTheme();
   const navigate = useNavigate();
-  const path = useLocation().pathname;
+  const { pathname: path, search } = useLocation();
   const route = parse(path);
   // The address the phone menu was opened at, rather than a flag: following a
   // link in it changes the address, which closes it with no effect to run.
@@ -140,8 +140,9 @@ export default function App() {
 
     const settled = href(active.key, league.league_id, view);
 
-    if (settled !== path) void navigate(settled, { replace: true });
-  }, [route.page, path, competitions.data, active, league, view, navigate]);
+    // The query rides along: `?week=5` names what the page shows, not where it is.
+    if (settled !== path) void navigate({ pathname: settled, search }, { replace: true });
+  }, [route.page, path, search, competitions.data, active, league, view, navigate]);
 
   /**
    * The column beside the rail: one `if` per state, rather than a ternary

@@ -97,6 +97,27 @@ class Feeds:
         found = {p.player_key: projections.find(p.name, p.team, self.form.get_player_stats(p.name)) for p in players}
         return {key: projected.line for key, projected in found.items() if projected is not None}
 
+    def minutes_on(self, players: Sequence[Player], day: date) -> dict[str, float]:
+        """The minutes each of `players` played on `day`, by Yahoo's key, from Sleeper's box scores: what tells a
+        game he sat out from one he played and filled no column in. Nought for one Sleeper has no line of him
+        from. Only once Sleeper's box scores hold that day, and only for a player whose name places him in its
+        catalog: anybody else is left out, and none at all where the box scores would not load.
+        """
+        try:
+            scores = self.form.box_scores()
+        except FrontOfficeError as e:
+            logger.warning(f"Reading {day.isoformat()} without who played, Sleeper's box scores would not load: {e}")
+            return {}
+        on = day.isoformat()
+        if not any(log.date == on for logs in scores.logs.values() for log in logs):
+            return {}
+        found: dict[str, float] = {}
+        for player in players:
+            sleeper_id = scores.index.lookup(player.name)
+            if sleeper_id is not None:
+                found[player.player_key] = sum(log.minutes for log in scores.logs.get(sleeper_id, ()) if log.date == on)
+        return found
+
     def tipoff(self, day: date) -> dict[str, datetime]:
         """When each club's game on `day` starts, while it has not, by ESPN's abbreviation.
 

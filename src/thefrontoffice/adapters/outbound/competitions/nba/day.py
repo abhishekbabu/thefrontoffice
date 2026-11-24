@@ -75,6 +75,13 @@ class Day:
     slots: tuple[str, ...] = ()
     """The lineup's scoring slots, one per place (`lineup.slots`): what a bench player could fill."""
 
+    minutes: Mapping[str, float] = field(default_factory=dict)
+    """The minutes each player played that day, by Yahoo's key, where the box scores place him: what tells a
+    game sat out from one that filled no column. Nobody where they do not hold the day."""
+
+    week: Mapping[str, str] = field(default_factory=dict)
+    """Each player's week as a week's row reads it, by Yahoo's key: games left and his averages (`views.cell`)."""
+
     def game(self, club: str) -> ScheduledGame | None:
         """His club's game that day, or None on a day it rests."""
         return next((g for g in self.games or () if g.opponent_of(club.upper()) is not None), None)
@@ -98,17 +105,29 @@ def fixture(game: ScheduledGame | None, club: str, stage: nba_week.Stage) -> str
 
 
 DNP = "DNP"
-"""What a row says of a game he sat out: Yahoo prints a line of noughts for it."""
+"""What a row says of a game he sat out, where the box scores say he played no minutes in it."""
 
 
-def played(player: Player) -> bool:
-    """Whether he did anything that day: Yahoo prints a dash in every category before his game, and a nought
-    in every one, '0/0' shots, for a game he sat out — and a real one that leaves no figure at all is not seen."""
+def played(player: Player, day: Day | None = None) -> bool:
+    """Whether he played that day: a figure Yahoo prints, or minutes the box scores give him (`Day.minutes`).
+
+    Yahoo prints a dash in every category before his game, and a nought in
+    every one, '0/0' shots, both for a game he sat out and for one he played
+    and filled no column in: only his minutes tell those two apart.
+    """
     for figure in player.stats.values():
         made, slash, taken = figure.partition("/")
         if slash and amount(taken) > 0 or not slash and amount(made) != 0:
             return True
-    return False
+    return day is not None and day.minutes.get(player.player_key, 0.0) > 0
+
+
+def sat_out(player: Player, day: Day) -> bool:
+    """Whether he is known to have sat out his game that day: no figure, and no minutes in the box scores.
+
+    Unknown — not sat out — where the box scores do not place him or hold the day.
+    """
+    return not played(player, day) and day.minutes.get(player.player_key) == 0.0
 
 
 def starting(player: Player) -> bool:
@@ -155,7 +174,9 @@ def spot(
     in his place (`fixable`), is a starter with no game.
     """
     game = day.game(player.team)
-    about = " · ".join(part for part in (player.position, player.team, player.status) if part)
+    # Yahoo's status is his status now, not that day's: a day played shows none rather than another day's.
+    status = player.status if day.stage != "played" else ""
+    about = " · ".join(part for part in (player.position, player.team, status, day.week.get(player.player_key)) if part)
     guess = projection(day.projected.get(player.player_key), weights) if day.stage != "played" else ""
     row = Spot(
         player_id=player.player_key,
@@ -167,7 +188,7 @@ def spot(
         idle=day.known() and game is None,
         kickoff=day.tipoff.get(espn_club(player.team)) if game is not None and day.stage != "played" else None,
     )
-    if played(player):
+    if played(player, day):
         if weights is not None:
             live = day.stage == "playing" and game is not None and game.status == "in_game"
             return row.model_copy(
@@ -179,9 +200,10 @@ def spot(
                 }
             )
         return row.model_copy(update={"line": nba_week.line(player, scored)})
-    if game is not None and (day.stage == "played" or game.status == "complete"):
+    over = game is not None and (day.stage == "played" or game.status == "complete")
+    if over and sat_out(player, day):
         return row.model_copy(update={"value": DNP})
-    if day.stage == "played":
+    if over or day.stage == "played":
         return row
     if ruled_out(player.status) and starting(player):
         return row.model_copy(update={"value": player.status, "tone": "warning"})
@@ -266,7 +288,7 @@ def board(
     by_points = scored is None
     categories = scored or []
     # A day played counts who did play; one still open, who has a game and is not ruled out of it.
-    counted = played if day.stage == "played" else (lambda p: plays(p, day))
+    counted = (lambda p: played(p, day)) if day.stage == "played" else (lambda p: plays(p, day))
     starts = [sum(1 for p in side if starting(p) and counted(p)) for side in sides] if day.known() else []
     fix, gain = to_start(mine, day)
     summed = [totals([p for p in side if starting(p)], categories) for side in sides]
@@ -328,7 +350,7 @@ def _projected(roster: Sequence[Player], day: Day, weights: Mapping[str, float] 
     guesses = [
         fantasy_points(line, weights)
         for p in roster
-        if starting(p) and not played(p) and plays(p, day) and (line := day.projected.get(p.player_key))
+        if starting(p) and not played(p, day) and plays(p, day) and (line := day.projected.get(p.player_key))
     ]
     left = [guess for guess in guesses if guess is not None]
     if not left:

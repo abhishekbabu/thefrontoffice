@@ -316,13 +316,17 @@ class YahooNBAProvider:
         rules = yahoo.settings()
         weights = reads.weights(league, yahoo)
         open_day = stage != "played"
+        everyone = [*sides[0], *sides[1]]
         shown = nba_day.Day(
             day=on,
             stage=stage,
             games=self._games_on(on),
             tipoff=self.feeds.tipoff(on) if open_day else {},
-            projected=self.feeds.projected_on([*sides[0], *sides[1]], on) if open_day else {},
+            projected=self.feeds.projected_on(everyone, on) if open_day else {},
             slots=nba_lineup.slots(rules.slots),
+            # Who played is asked of the box scores only once a game can be over.
+            minutes=self.feeds.minutes_on(everyone, on) if stage != "to come" else {},
+            week=self._week_cells(yahoo, weights, everyone, found, (mine, theirs)),
         )
         span = DayRange(
             day=on, first=found.start, last=found.end, today=today if found.start <= today <= found.end else None
@@ -330,6 +334,28 @@ class YahooNBAProvider:
         records = reads.records_after(yahoo, league, week) if week < current else reads.records(yahoo)
         scored = None if league.by_points else rules.categories
         return nba_day.board(found, weeks, span, records, sides, scored, weights, shown)
+
+    def _week_cells(
+        self,
+        yahoo: YahooSource,
+        weights: Mapping[str, float] | None,
+        players: Sequence[Player],
+        found: Pairing,
+        teams: tuple[str, str],
+    ) -> dict[str, str]:
+        """Each player's week as a week's row reads it, by Yahoo's key: games left and Yahoo's averages
+        (`views.cell`), so a day's row keeps the week it sits in.
+
+        Enrichment: none where the week cannot be weighed, and the rows then read the day alone.
+        """
+        try:
+            readings = weighing.read_week(
+                self.feeds, yahoo, weights, players, found.start, found.end, averages=reads.averages(yahoo, *teams)
+            )
+        except FrontOfficeError as e:
+            logger.warning(f"Showing a day without each player's week, it would not weigh: {e}")
+            return {}
+        return {key: cell for key, reading in readings.items() if (cell := views.cell(reading, weights is not None))}
 
     def _games_on(self, day: date) -> list[ScheduledGame] | None:
         """The real games on `day`; None where the schedule would not load, rather than a day nobody plays."""

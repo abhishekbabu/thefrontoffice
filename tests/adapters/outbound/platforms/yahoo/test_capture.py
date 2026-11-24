@@ -436,3 +436,30 @@ def test_read_with_the_session_cookie_the_status_says_how_that_is_going(tmp_path
     status = YahooCapture(cache, games=(GAME,), active=False, session=state).status()
 
     assert status.session is not None and status.session.expired
+
+
+def test_a_day_no_sync_carried_is_asked_for_by_the_next_and_read_once_it_has(tmp_path: Path) -> None:
+    """A day of a week long gone: the page says to sync, the next sync fetches it, the page after reads it."""
+    capture = _capture(tmp_path)
+    _sweep(capture)
+    gone = paths.day_roster("t1", date(2025, 12, 1))
+    client = YahooClient(LEAGUE, responses=capture)
+
+    with pytest.raises(YahooCaptureMissingError, match="Run the sync bookmark"):
+        client.day_rosters(["t1"], date(2025, 12, 1))
+
+    assert gone.path in {step.path for step in capture.plan([KEY]).steps}
+    _hand_over(capture, _answer(gone.path, {gone.path: roster_xml(rostered_xml("Then Center", "C"))}))
+
+    assert [p.name for p in client.day_rosters(["t1"], date(2025, 12, 1))["t1"]] == ["Then Center"]
+    assert gone.path not in {step.path for step in capture.plan([KEY]).steps}
+
+
+def test_what_a_page_asks_of_another_league_is_not_planned_into_this_ones_sync(tmp_path: Path) -> None:
+    capture = _capture(tmp_path)
+    _sweep(capture)
+
+    with pytest.raises(YahooCaptureMissingError):
+        capture.raw(paths.day_roster("999.l.9.t.1", date(2025, 12, 1)))
+
+    assert not [step for step in capture.plan([KEY]).steps if "999.l.9" in step.path]

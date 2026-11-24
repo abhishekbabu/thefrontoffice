@@ -136,21 +136,23 @@ def leagues(game_code: str, season: int) -> YahooRead:
 
 
 _WEEK = re.compile(r"^scoreboard;week=(\d+)$")
+_DAY = re.compile(r"/roster;date=(\d{4}-\d{2}-\d{2})/")
 
 
-def moves(path: str, league_key: str, current_week: int | None) -> bool:
+def moves(path: str, league_key: str, current_week: int | None, now: datetime | None = None) -> bool:
     """Whether the read kept at `path` is one a move in `league_key`, or a new week, can change.
 
     What a refresh drops: the league list, which carries the week being
     played; every read below the league and its teams — rosters, the wire,
     the table, the moves — but for its settings, fixed before the season, a
-    roster as a week already played ended, and a scoreboard settled before
-    last week. Another league's reads, and the session's own record, stay.
+    roster as a week already played ended, a roster as a day that has stood
+    (`DAY_STANDS`, on the league's clock `now`) was slotted, and a scoreboard
+    settled before last week. Another league's reads, and the session's own record, stay.
     """
     if path.startswith(LEAGUES_PREFIX):
         return True
     if path.startswith(f"team/{league_key}.t."):
-        return ";week=" not in path
+        return ";week=" not in path and not _stood(path, now)
     below = f"league/{league_key}/"
     if not path.startswith(below):
         return False
@@ -159,6 +161,15 @@ def moves(path: str, league_key: str, current_week: int | None) -> bool:
         return False
     week = _WEEK.match(query)
     return week is None or current_week is None or int(week.group(1)) >= current_week - 1
+
+
+def _stood(path: str, now: datetime | None) -> bool:
+    """Whether `path` is a team's roster on a day that has stood by `now`: nothing moves it again."""
+    found = _DAY.search(path)
+    if found is None or now is None:
+        return False
+    stands = datetime.combine(date.fromisoformat(found.group(1)) + timedelta(days=1), DAY_STANDS, tzinfo=now.tzinfo)
+    return now >= stands
 
 
 def settings(league_key: str) -> YahooRead:
