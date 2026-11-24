@@ -26,6 +26,21 @@ describe("RosterTable", () => {
     expect(heading.querySelector("button")!.getAttribute("aria-label")).toContain(hints.Without);
   });
 
+  it("aligns a column with a role as words, though a number sorts it", async () => {
+    const row: PlayerCard = {
+      ...card("Barner", "—"),
+      columns: { Player: "Barner", Opponent: "vs SF, easiest", Proj: "7.39" },
+      values: { Opponent: 1.1, Proj: 7.39 },
+      roles: { Player: "player", Opponent: "opponent" },
+    };
+
+    const { container } = await render(<RosterTable players={[row]} empty={{ title: "Nobody" }} sort={null} onSort={() => {}} />);
+
+    const aligned = [...container.querySelectorAll("td.text-right")].map((td) => td.textContent);
+
+    expect(aligned).toEqual(["7.39"]);
+  });
+
   it("colors a toned cell by its tone, its text unchanged", async () => {
     const soft: PlayerCard = { ...card("Barner", "—"), tones: { Without: "good" } };
 

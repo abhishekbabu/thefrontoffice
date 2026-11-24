@@ -19,7 +19,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     SleeperRoster,
     WeeklyProjection,
 )
-from thefrontoffice.domain.models import PlayerCard, PlayerQuery
+from thefrontoffice.domain.models import OPPONENT_COLUMN, PlayerCard, PlayerQuery
 
 
 @pytest.mark.parametrize(
@@ -128,6 +128,18 @@ def test_the_opponent_column_says_how_soft_the_defense_is_and_is_toned_by_it() -
     assert "easiest" in free.columns["Opponent"]
     assert free.tones["Opponent"] == "good"
     assert "to WRs" in free.notes["Opponent"]
+
+
+def test_the_opponent_column_sorts_softest_matchup_first_and_a_player_without_one_last() -> None:
+    """Free vs NE, the softest; another vs LV, the toughest; a third on bye, with no matchup at all."""
+    tough = proj("wr8", "Lou Tough", "WR", 10.0, team="NYJ", opp="LV")
+    idle = proj("wr7", "Bo Bye", "WR", 0.0, team="SEA", opp="")
+    client = _wire(FREE_WR, tough, idle, game_lines=_against_wrs())
+
+    cards = _cards(client, sort=OPPONENT_COLUMN, descending=True)
+
+    assert [c.player_id for c in cards if c.player_id in {"wr9", "wr8", "wr7"}] == ["wr9", "wr8", "wr7"]
+    assert cards[0].roles[OPPONENT_COLUMN] == "opponent"
 
 
 def test_a_kicker_follows_every_skill_player_while_yours_plays() -> None:

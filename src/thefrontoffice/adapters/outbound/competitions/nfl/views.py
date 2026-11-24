@@ -43,6 +43,7 @@ from thefrontoffice.adapters.outbound.competitions.places import ordinal
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.domain.models import (
     FIT_COLUMN,
+    OPPONENT_COLUMN,
     PLAYER_COLUMN,
     POSITION_COLUMN,
     SLOT_COLUMN,
@@ -185,7 +186,7 @@ def cards(
                 # Sorts by the size of the jump.
                 TREND_COLUMN: trend.short() if trend else "—",
                 WITHOUT_COLUMN: split.cell() if split else "—",
-                "Opponent": versus,
+                OPPONENT_COLUMN: versus,
                 STATUS_COLUMN: injury,
                 "Depth": depth_cell,
             }
@@ -195,7 +196,7 @@ def cards(
                 SLOT_COLUMN: _slot(player_id, starters, reserve),
                 "Proj": proj,
                 **ros,
-                "Opponent": versus,
+                OPPONENT_COLUMN: versus,
                 "Depth": depth_cell,
                 # Years in the league are in the player's drawer: a column of them decides nothing.
                 STATUS_COLUMN: injury,
@@ -211,9 +212,9 @@ def cards(
                     **({WITHOUT_COLUMN: split.note()} if split else {}),
                     # His projection is the figure the slump says is wrong.
                     **({"Proj": f"{sunk.label}: {sunk.short()}"} if sunk else {}),
-                    **({"Opponent": matchup.allowed_to()} if matchup else {}),
+                    **({OPPONENT_COLUMN: matchup.allowed_to()} if matchup else {}),
                 },
-                tones={"Opponent": matchup.tone} if matchup and matchup.tone != "neutral" else {},
+                tones={OPPONENT_COLUMN: matchup.tone} if matchup and matchup.tone != "neutral" else {},
                 columns=columns,
                 values={
                     **({FIT_COLUMN: fitted.gain} if fitted else {}),
@@ -223,6 +224,8 @@ def cards(
                     **({ROS_COLUMN: rest} if rest is not None else {}),
                     "Proj": projection.points if projection else 0.0,
                     "Depth": float(depth) if depth else 0.0,
+                    # Softest first when sorted high to low; a bye or no record yet has none, so sorts last.
+                    **({OPPONENT_COLUMN: matchup_factor(matchup)} if matchup else {}),
                 },
             )
         )
