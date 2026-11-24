@@ -5,7 +5,7 @@ read through the provider the way a page opens him.
 """
 
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -20,6 +20,7 @@ from support.nfl import (
     proj,
     slumping,
 )
+from support.stores import FakeStarterLog
 
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import status_word
 from thefrontoffice.adapters.outbound.competitions.nfl.slump import SLUMP_LABEL
@@ -562,3 +563,22 @@ def test_a_player_in_form_has_no_slump_in_his_week() -> None:
     client = slumping(proj("fa", "Aj Streamer", "TE", 7.0, team="SEA", opp="ARI"))
 
     assert SLUMP_LABEL not in {stat.label for stat in _group(_drawer("fa", client), "Week 9")}
+
+
+def test_the_drawer_shows_a_change_of_starter_the_depth_chart_made_without_any_story() -> None:
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+    catalog = client.get_nfl_players()
+    client.players_catalog = {
+        **catalog,
+        "qb1": replace(catalog["qb1"], depth_chart_order=1),
+        "qb9": PlayerMeta(player_id="qb9", name="Benched QB", position="QB", team="BUF", depth_chart_order=2),
+    }
+    today = datetime.now(UTC).date()
+    log = FakeStarterLog({today - timedelta(days=2): {"BUF": "qb9"}})
+
+    detail = nfl_provider(client, starters=log).player("L1", "rb1")
+
+    [group] = [g for g in detail.groups if g.title == "Team news"]
+    [stat] = group.stats
+    assert stat.label.startswith("QB change") and "Star QB" in stat.value and "Benched QB" in stat.value
+    assert log.days[today]["BUF"] == "qb1"

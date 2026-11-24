@@ -5,11 +5,11 @@ here turns state already gathered into prose, and none of it decides anything.
 The provider fetches and the prompt describes.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 from thefrontoffice.adapters.outbound.competitions import untouchables
 from thefrontoffice.adapters.outbound.competitions.matchups import RECENT_GAMES
-from thefrontoffice.adapters.outbound.competitions.news import PlayerNews, dated
+from thefrontoffice.adapters.outbound.competitions.news import PlayerNews, dated, team_block, team_reference
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence, season_average
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection, Trending
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import STREAMED, listed, scoring_label
@@ -51,8 +51,9 @@ NFL_READING_PLAYER_LINES = f"""READING THE PLAYER LINES:
   slot on form (three parts recent points to one part projection, then usage and matchup; a kicker or
   defense half and half).
 - A "news" line under a player is a recent headline about him, dated, from his own club's feed.
-- A "team news" line under a player is a recent story about his club that need not name him — a
-  quarterback change, a trade, a new play caller — and can change his role before his projection does.
+- A "team news" line under a player points to his club's stories under TEAM NEWS: a quarterback
+  change, a trade, a new play caller. They need not name him, and can change his role before his
+  projection does.
 - A player marked [reserve slot] is in an injured-reserve or taxi slot: he cannot start this week
   without a move first, and costs no roster spot while he is there."""
 
@@ -233,7 +234,8 @@ def build(
     available = _available_players(state)
     available_lines = {p.name: player_line(p, evidence, news) for p in available}
 
-    situation, _ = matchup(state)
+    named = [*(s.player.player_id for s in state.lineup if s.player), *(p.player_id for p in state.sitting)]
+    situation = with_team_news(matchup(state)[0], state, [*named, *(p.player_id for p in available)])
     current_points, best_points, on_bench = state.current_points, state.best_points, state.on_bench
     constraints = lineup_slots(
         state,
@@ -288,7 +290,8 @@ def _worth(state: Week) -> dict[str, float]:
 def trade(state: Week, giving: Sequence[Projection], receiving: Sequence[Projection]) -> CompetitionContext:
     """The trade prompt: both sides priced against this roster, on the week every other view reads."""
     roster = roster_lines(state)
-    situation, _ = matchup(state)
+    named = [p.player_id for p in (*giving, *receiving, *state.projected)]
+    situation = with_team_news(matchup(state)[0], state, named)
     kept = frozenset(p.name for p in giving if p.player_id in state.untouchable)
     constraints = lineup_slots(
         state,
@@ -317,7 +320,7 @@ def wire(state: Week, candidates: Mapping[str, Projection], fits: Mapping[str, s
     targets = {pid: _wire_line(p, state, fits.get(pid, "")) for pid, p in candidates.items()}
     candidate_lines = {p.name: targets[pid] for pid, p in candidates.items()}
     roster = roster_lines(state)
-    situation, _ = matchup(state)
+    situation = with_team_news(matchup(state)[0], state, [*candidates, *(p.player_id for p in state.projected)])
     constraints = lineup_slots(
         state,
         "Only the starting lineup scores; a bench spot is insurance or a future starter.",
@@ -400,16 +403,20 @@ def player_line(p: Projection, evidence: Evidence, news: PlayerNews, bullet: str
 
 
 def news_lines(news: PlayerNews, player_id: str) -> str:
-    """A player's latest headlines, dated, with ESPN's one-line summary; then his club's stories, labelled by kind."""
+    """A player's latest headlines, dated, with ESPN's one-line summary; then a pointer to his club's stories."""
     return "".join(
         f"  news, {dated(a)}: {a.headline}" + (f" — {a.summary}" if a.summary else "") + "\n"
         for a in news.latest(player_id, NEWS_PER_PLAYER)
-    ) + "".join(
-        f"  team news ({s.kind}), {dated(s.article)}: {s.article.headline}"
-        + (f" — {s.article.summary}" if s.article.summary else "")
-        + "\n"
-        for s in news.team(player_id, NEWS_PER_PLAYER)
-    )
+    ) + team_reference(news, player_id)
+
+
+def with_team_news(situation: str, state: Week, player_ids: Iterable[str]) -> str:
+    """The situation, then each club's stories once, for the clubs of the players the prompt names.
+
+    In the situation because every prompt and every follow-up briefing carries it.
+    """
+    block = team_block(state.news, player_ids)
+    return f"{situation}\n{block}" if block else situation
 
 
 def _available_players(state: Week) -> Sequence[Projection]:

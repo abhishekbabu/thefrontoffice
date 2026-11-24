@@ -262,3 +262,20 @@ def test_trades_are_still_priced_when_the_wire_will_not_load() -> None:
 
     assert market is not None
     assert len(logs.at(logging.WARNING)) == 1
+
+
+def test_a_trade_is_priced_with_the_clubs_stories_of_both_sides() -> None:
+    from datetime import UTC, datetime
+
+    from support.espn import FakeESPN
+
+    from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
+
+    story = NewsArticle(article_id="1", published=datetime.now(UTC), headline="Lakers fire coach JJ Redick")
+    yahoo = _yahoo_with("Giving Guy")
+
+    context = nba_provider(yahoo, espn=FakeESPN(news={"LAL": [story]})).build_trade_context(
+        "", TradeProposal(giving=["Giving Guy"], receiving=[])
+    )
+
+    assert context.prompt.count(story.headline) == 1 and story.headline in context.situation

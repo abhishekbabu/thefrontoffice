@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from thefrontoffice.adapters.outbound.platforms.yahoo.paths import ScoreboardPace
     from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
     from thefrontoffice.adapters.outbound.storage.answers import DiskAnswerStore
+    from thefrontoffice.adapters.outbound.storage.starters import DiskStarterLog
     from thefrontoffice.adapters.outbound.storage.untouchables import DiskUntouchableStore
 
 logger = logging.getLogger(__name__)
@@ -238,6 +239,13 @@ def _untouchable_store(settings: AppSettings) -> DiskUntouchableStore:
     return DiskUntouchableStore(_disk_cache(settings.item_state_dir))
 
 
+def _starter_log(settings: AppSettings) -> DiskStarterLog:
+    # The app's own record, like the to-do decisions, rather than a platform's response.
+    from thefrontoffice.adapters.outbound.storage.starters import DiskStarterLog
+
+    return DiskStarterLog(_disk_cache(settings.item_state_dir))
+
+
 def _untouchable(entry: CompetitionEntry) -> UntouchableMarks:
     """What `entry`'s provider reads before choosing any drop, trade or transfer out."""
     return UntouchableMarks(_untouchable_store(entry.settings), entry.key, entry.squad)
@@ -276,6 +284,7 @@ def _build_nfl(entry: CompetitionEntry) -> SleeperNFLProvider:
         client=_sleeper_client(settings),
         espn=_espn_client(settings),
         untouchable=_untouchable(entry),
+        starters=_starter_log(settings),
     )
 
 

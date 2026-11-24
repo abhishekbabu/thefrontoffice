@@ -8,7 +8,9 @@ and which of its stories are every one of the club's players' news.
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
-from thefrontoffice.adapters.outbound.competitions.news import NEWS_WINDOW
+import pytest
+
+from thefrontoffice.adapters.outbound.competitions.news import NEWS_WINDOW, ClubStory
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nfl.news import PLAY_CALLER, QB_CHANGE, TRADE, attach
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
@@ -29,7 +31,7 @@ def _article(headline: str, summary: str = "") -> NewsArticle:
 
 
 def _ids(news: dict[str, list[NewsArticle]], players: dict[str, PlayerMeta] = PLAYERS) -> dict[str, list[str]]:
-    joined = attach(news, players, NOW)
+    joined = attach(news, players, NOW, {})
     return {pid: [a.article_id for a in articles] for pid, articles in joined.by_player.items()}
 
 
@@ -79,7 +81,7 @@ def _team(headline: str, summary: str = "", days_ago: float = 1) -> dict[str, li
     article = NewsArticle(
         article_id=headline, published=NOW - timedelta(days=days_ago), headline=headline, summary=summary
     )
-    joined = attach({"IND": [article]}, COLTS, NOW)
+    joined = attach({"IND": [article]}, COLTS, NOW, {})
     return {pid: [(s.kind, s.article.headline) for s in stories] for pid in COLTS if (stories := joined.team(pid))}
 
 
@@ -111,7 +113,7 @@ def test_without_a_listed_starter_nobody_is_a_backup() -> None:
     unlisted = {pid: replace(meta, depth_chart_order=0) for pid, meta in COLTS.items()}
     article = NewsArticle(article_id="1", published=NOW - timedelta(days=1), headline="Anthony Richardson to start")
 
-    assert attach({"IND": [article]}, unlisted, NOW).by_club == {}
+    assert attach({"IND": [article]}, unlisted, NOW, {}).by_club == {}
 
 
 def test_a_trade_naming_an_offensive_player_anywhere_in_the_league_is_a_trade() -> None:
@@ -165,7 +167,7 @@ AFTER_THE_CUT = {
 
 def _kinds(articles: list[NewsArticle], players: dict[str, PlayerMeta]) -> list[tuple[str, str]]:
     """Tyler Warren's club stories as (kind, article id)."""
-    return [(s.kind, s.article.article_id) for s in attach({"IND": articles}, players, NOW).team("warren")]
+    return [(s.kind, s.article.article_id) for s in attach({"IND": articles}, players, NOW, {}).team("warren")]
 
 
 def test_the_colts_cutting_their_starter_reaches_tyler_warren_once_sleeper_has_moved_both_quarterbacks() -> None:
@@ -195,3 +197,67 @@ def test_a_clubs_start_to_the_season_is_not_a_backup_starting() -> None:
 def test_a_trade_that_only_mentions_the_quarterback_does_not_move_him() -> None:
     """Three defenders traded for, and the starter's reaction: no quarterback changed hands."""
     assert _team("Daniel Jones sees a shot as the Colts add three defenders in trades") == {}
+
+
+@pytest.mark.parametrize(
+    "headline",
+    [
+        "Colts part ways with Daniel Jones",
+        "Colts move on from QB Daniel Jones",
+        "Colts bench Daniel Jones for Anthony Richardson",
+        "Anthony Richardson to start Sunday for Colts",
+        "Colts turning to Anthony Richardson",
+        "Colts elevate Anthony Richardson to starter",
+        "Colts name Anthony Richardson the starter",
+        "Daniel Jones out for the season with torn Achilles",
+        "Daniel Jones released by Colts",
+        "Daniel Jones traded to Minnesota",
+        "Colts acquire QB Anthony Richardson",
+        "Deal sends Daniel Jones to Minnesota",
+    ],
+)
+def test_each_way_a_story_says_the_quarterback_changed(headline: str) -> None:
+    assert _team(headline)["warren"] == [(QB_CHANGE, headline)]
+
+
+@pytest.mark.parametrize(
+    "headline",
+    [
+        # Each new phrase, said of something other than the club's quarterback.
+        "Colts part ways with defensive coordinator",
+        "Daniel Jones says Colts will move on from loss",
+        "Colts elevate Anthony Richardson from practice squad",
+        "Colts name Daniel Jones a team captain",
+        "Anthony Richardson out for the season with knee injury",
+        "Daniel Jones traded barbs with Texans",
+        "Colts acquire linebacker, Daniel Jones approves",
+        "Deal sends a Colts linebacker to Minnesota, Daniel Jones reacts",
+        "Daniel Jones is turning to film to fix his mechanics",
+    ],
+)
+def test_the_same_words_about_anyone_else_are_no_qb_change(headline: str) -> None:
+    assert QB_CHANGE not in {kind for stories in _team(headline).values() for kind, _ in stories}
+
+
+def test_a_trade_counts_where_its_player_is_the_object_however_it_is_put() -> None:
+    for headline in (
+        "Josh Downs traded to Pittsburgh",
+        "Steelers acquire Josh Downs",
+        "Deal sends Josh Downs to Pittsburgh",
+    ):
+        assert _team(headline)["warren"] == [(TRADE, headline)]
+    # Mentioned beside a trade of others is not traded.
+    assert _team("Colts add three linebackers in trades, Josh Downs says") == {}
+
+
+def test_a_depth_chart_change_is_kept_only_where_no_story_reports_one() -> None:
+    depth = ClubStory(
+        kind=QB_CHANGE,
+        article=NewsArticle(article_id="depth", published=NOW - timedelta(days=1), headline="Depth chart"),
+    )
+    told = NewsArticle(article_id="told", published=NOW - timedelta(days=2), headline="Colts bench Daniel Jones")
+
+    assert [s.article.article_id for s in attach({"IND": [told]}, COLTS, NOW, {"IND": depth}).team("warren")] == [
+        "told"
+    ]
+    assert [s.article.article_id for s in attach({}, COLTS, NOW, {"IND": depth}).team("warren")] == ["depth"]

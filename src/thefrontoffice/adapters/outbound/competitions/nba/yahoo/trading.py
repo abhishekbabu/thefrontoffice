@@ -12,6 +12,7 @@ from thefrontoffice.adapters.outbound.competitions import untouchables
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
 from thefrontoffice.adapters.outbound.competitions.nba import market as nba_market
+from thefrontoffice.adapters.outbound.competitions.nba import news as nba_news
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba import strength as nba_strength
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
@@ -51,9 +52,13 @@ def context(
     # one judged without it is an answer to a different question.
     rostered = yahoo.roster(my_team.team_key)
     returns = reads.returns([*rostered, *giving, *receiving], feeds.reports())
-    roster = builder.build_player_lines(
-        rostered, week.start if week else None, week.end if week else None, returns=returns
+    found = feeds.team_news([*rostered, *giving, *receiving])
+    roster = nba_news.lines_with_team_news(
+        builder.build_player_lines(rostered, week.start if week else None, week.end if week else None, returns=returns),
+        rostered,
+        found,
     )
+    team_news = nba_news.block(found, [*giving, *receiving, *rostered])
 
     kept = frozenset(p.name for p in giving if p.player_key in untouchable)
     text = prompt.trade(
@@ -63,9 +68,10 @@ def context(
         week=week,
         roster="".join(roster.values()),
         weights=weights,
+        team_news=team_news,
     )
     return CompetitionContext(
-        prompt=text, situation=prompt.matchup(week, weights), roster_lines=roster, untouchable=kept
+        prompt=text, situation=prompt.matchup(week, weights) + team_news, roster_lines=roster, untouchable=kept
     )
 
 

@@ -344,16 +344,18 @@ def scout(
     adds_left: int,
     weights: Mapping[str, float] | None = None,
     tasks: Sequence[Action] = (),
+    team_news: str = "",
 ) -> str:
     """The scout's prompt, worded for how the league is won: `weights` for a points league, None for categories.
 
     `tasks` is the week's to-do list as the page shows it, numbered here so a verdict can name its item.
+    `team_news` is each club's stories once (`news.team_block`), after the matchup.
     """
     league = scoring(weights)
     return NBA_SCOUT_PROMPT.format(
         league_rules=league.rules,
         roster_str=roster,
-        matchup_context=matchup(week, weights),
+        matchup_context=matchup(week, weights) + team_news,
         free_agent_basis=league.free_agent_basis,
         fas_str=free_agents,
         schedule_context=schedule_context,
@@ -380,14 +382,23 @@ def week_line(reading: Reading) -> str:
 
 
 def trade(
-    *, giving: str, receiving: str, week: WeekMatchup | None, roster: str, weights: Mapping[str, float] | None = None
+    *,
+    giving: str,
+    receiving: str,
+    week: WeekMatchup | None,
+    roster: str,
+    weights: Mapping[str, float] | None = None,
+    team_news: str = "",
 ) -> str:
-    """The trade prompt, in the league's currency: `weights` for a points league, None for categories."""
+    """The trade prompt, in the league's currency: `weights` for a points league, None for categories.
+
+    `team_news` is each club's stories once (`news.team_block`), after the matchup.
+    """
     league = scoring(weights)
     return NBA_TRADE_PROMPT.format(
         giving_str=giving,
         receiving_str=receiving,
-        matchup_context=matchup(week, weights),
+        matchup_context=matchup(week, weights) + team_news,
         roster_str=roster,
         impact=league.impact,
         currency=league.currency,
@@ -403,19 +414,21 @@ def wire(
     names: Mapping[str, str],
     fits: Mapping[str, str],
     constraints: str,
+    team_news: str = "",
 ) -> CompetitionContext:
     """The prompt asking for one call per candidate, each by the id the call has to name.
 
     `candidates` is each one's player line by Yahoo's key, `names` his name, and
     `fits` the drop he streams over, where he does (`actions.fit`). A candidate's
-    target is his line alone, so a call on him is kept against it whatever else is asked.
+    target is his line alone, so a call on him is kept against it whatever else is asked. `team_news` is each
+    club's stories once (`news.team_block`), in the situation.
     """
     league = scoring(weights)
     targets = {
         pid: f"- [id {pid}] {line.removeprefix('- ')}" + (f"  fits: {fit}\n" if (fit := fits.get(pid)) else "")
         for pid, line in candidates.items()
     }
-    situation = matchup(week, weights)
+    situation = matchup(week, weights) + team_news
     text = NBA_WIRE_PROMPT.format(
         league_rules=league.rules,
         value_unit=league.value_unit,

@@ -5,11 +5,13 @@ seasons and box scores, and ESPN's injury report and scoreboard.
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from thefrontoffice.adapters.outbound.competitions.careers import recent_seasons
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
+from thefrontoffice.adapters.outbound.competitions.nba import news as nba_news
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
+from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
@@ -20,6 +22,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
     Condition,
     Leaning,
+    Regular,
     Teammate,
     Teammates,
     conditions,
@@ -27,6 +30,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Valuer
+from thefrontoffice.adapters.outbound.competitions.news import PlayerNews
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, InjuryReport
@@ -182,3 +186,25 @@ class Feeds:
         except FrontOfficeError as e:
             logger.warning(f"Weighing teammates without last season's minutes: {e}")
             return {}
+
+    def team_news(self, players: Sequence[Player]) -> PlayerNews:
+        """Each of `players`' news and his club's stories (`nba/news.py`), from the feeds of their clubs.
+
+        Empty where ESPN's feeds will not load: news is enrichment, and the prompt stands without it.
+        """
+        clubs = sorted({espn_club(p.team) for p in players if p.team})
+        try:
+            feeds = self.espn.get_team_news(NBA, clubs)
+        except ESPNAPIError as e:
+            logger.warning(f"Continuing without club news: {e}")
+            return PlayerNews()
+        return nba_news.attach(feeds, players, self.regulars(), datetime.now(UTC))
+
+    def regulars(self) -> list[Regular]:
+        """Every club's regulars from the box scores; none where they will not load, which leaves a club's
+        stories to the ones that name nobody — a coach."""
+        try:
+            return Teammates(self.form.box_scores(), None, self.last_season()).regulars()
+        except FrontOfficeError as e:
+            logger.warning(f"Reading club news without each club's regulars: {e}")
+            return []

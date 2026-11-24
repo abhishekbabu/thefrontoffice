@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 from thefrontoffice.adapters.outbound.competitions import untouchables
 from thefrontoffice.adapters.outbound.competitions.nba import actions, prompt
+from thefrontoffice.adapters.outbound.competitions.nba import news as nba_news
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
 from thefrontoffice.adapters.outbound.competitions.nba.context import (
@@ -91,6 +92,7 @@ def context(
         for key, r in decided.readings.items()
         if key in named and key not in held and all(p.player_key != key for p in free_agents)
     ]
+    found = feeds.team_news([*rostered, *free_agents])
     builder = PlayerContextBuilder(feeds.form, feeds.games, weights)
     roster_lines = builder.build_player_lines(
         rostered,
@@ -114,6 +116,9 @@ def context(
         readings=decided.readings,
     )
 
+    roster_lines = nba_news.lines_with_team_news(roster_lines, rostered, found)
+    fa_lines = nba_news.lines_with_team_news(fa_lines, free_agents, found)
+    team_news = nba_news.block(found, [*rostered, *free_agents])
     unscheduled = feeds.games.unscheduled(start, end) if start and end else []
     schedule_context = prompt.schedule(
         week, remaining_games, projected=projections is not None, unscheduled=unscheduled
@@ -131,8 +136,9 @@ def context(
             adds_left=max(0, limit - used_adds),
             weights=weights,
             tasks=tasks,
+            team_news=team_news,
         ),
-        situation=prompt.matchup(week, weights),
+        situation=prompt.matchup(week, weights) + team_news,
         constraints=trans_context,
         extra=schedule_context,
         roster_lines=roster_lines,
@@ -201,9 +207,10 @@ def wire_context(
         )
     builder = PlayerContextBuilder(feeds.form, feeds.games, weights)
     projections = index_for(feeds.sleeper, start, end)
+    found = feeds.team_news([*rostered, *candidates])
 
     def lines(players: Sequence[Player]) -> dict[str, str]:
-        return builder.build_player_lines(
+        drawn = builder.build_player_lines(
             players,
             start,
             end,
@@ -213,6 +220,7 @@ def wire_context(
             splits=splits,
             readings=readings,
         )
+        return nba_news.lines_with_team_news(drawn, players, found)
 
     candidate_lines = lines(candidates)
     fits = {
@@ -236,4 +244,5 @@ def wire_context(
                 ),
             ]
         ),
+        team_news=nba_news.block(found, [*rostered, *candidates]),
     )

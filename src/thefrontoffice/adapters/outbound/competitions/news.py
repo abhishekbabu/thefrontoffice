@@ -105,3 +105,38 @@ def attach(news: dict[str, list[NewsArticle]], clubs: Clubs, now: datetime) -> P
     for articles in by_player.values():
         articles.sort(key=lambda a: a.published, reverse=True)
     return PlayerNews(by_player=dict(by_player))
+
+
+TEAM_NEWS_PER_CLUB = 3
+"""A club's stories a prompt carries: a week's changes, rarely more."""
+
+TEAM_NEWS_HEADING = "TEAM NEWS"
+
+
+def team_reference(news: PlayerNews, player_id: str) -> str:
+    """A player line's pointer to his club's stories, which the prompt states once under `TEAM_NEWS_HEADING`.
+
+    It names each by kind and day, so a line kept beside an answer still changes when a new story arrives.
+    """
+    stories = news.team(player_id, TEAM_NEWS_PER_CLUB)
+    if not stories:
+        return ""
+    told = "; ".join(f"{s.kind}, {dated(s.article)}" for s in stories)
+    return f"  team news ({news.club_of[player_id]}): {told}\n"
+
+
+def team_block(news: PlayerNews, player_ids: Iterable[str]) -> str:
+    """Each club's stories once, for the clubs of the players a prompt names; empty where none has any."""
+    clubs = dict.fromkeys(club for pid in player_ids if (club := news.club_of.get(pid)) and news.by_club.get(club))
+    lines = [
+        f"- {club}, {s.kind}, {dated(s.article)}: {s.article.headline}"
+        + (f" — {s.article.summary}" if s.article.summary else "")
+        for club in clubs
+        for s in news.by_club[club][:TEAM_NEWS_PER_CLUB]
+    ]
+    if not lines:
+        return ""
+    return (
+        f"{TEAM_NEWS_HEADING} (recent stories about a club that need not name its players; "
+        'a player\'s "team news" line points here):\n' + "\n".join(lines) + "\n"
+    )

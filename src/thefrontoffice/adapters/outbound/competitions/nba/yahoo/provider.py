@@ -15,12 +15,12 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from thefrontoffice.adapters.outbound.competitions import news, paging, places
-from thefrontoffice.adapters.outbound.competitions.injuries import by_club
+from thefrontoffice.adapters.outbound.competitions import paging, places
 from thefrontoffice.adapters.outbound.competitions.nba import drawer, history, views
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
 from thefrontoffice.adapters.outbound.competitions.nba import lineup as nba_lineup
+from thefrontoffice.adapters.outbound.competitions.nba import news as nba_news
 from thefrontoffice.adapters.outbound.competitions.nba import outlook as nba_outlook
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
@@ -707,5 +707,8 @@ class YahooNBAProvider:
             return drawer.deferred_tab(player, moves=history.moves(yahoo.transactions(), player_id, mine))
         club = espn_club(player.team)
         feeds = self.espn.get_team_news(NBA, [club])
-        found = news.attach(feeds, by_club([(club, player.name, player_id)]), datetime.now(UTC))
-        return drawer.deferred_tab(player, groups=drawer.news(found.stats(player_id, limit=drawer.NEWS_IN_DRAWER)))
+        found = nba_news.attach(feeds, [player], self.feeds.regulars(), datetime.now(UTC))
+        team = [story.stat() for story in found.team(player_id, limit=drawer.NEWS_IN_DRAWER)]
+        return drawer.deferred_tab(
+            player, groups=drawer.news(found.stats(player_id, limit=drawer.NEWS_IN_DRAWER), team)
+        )

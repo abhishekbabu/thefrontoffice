@@ -444,6 +444,8 @@ def deferred_tab(
     )
 
 
-def news(headlines: list[Stat]) -> list[StatGroup]:
-    """His news tab: the newest headlines, each linked to its article; nothing where there are none."""
-    return [StatGroup(title="News", tab=NEWS_TAB, stats=headlines)] if headlines else []
+def news(headlines: list[Stat], team: Sequence[Stat] = ()) -> list[StatGroup]:
+    """His news tab: his club's stories that need not name him, then the newest headlines about him, each linked
+    to its article; nothing where there are none."""
+    groups = [StatGroup(title="Team news", tab=NEWS_TAB, stats=list(team))] if team else []
+    return groups + ([StatGroup(title="News", tab=NEWS_TAB, stats=headlines)] if headlines else [])

@@ -202,7 +202,7 @@ with minutes, the counts, FG/FT made over tried and each game's value. **Seasons
 Sleeper's season totals for this season and the two before it a game at a time
 (three requests shared by every player, cached 12 hours), every league move he was
 part of (one Yahoo request for the season's transactions, cached an hour, also in
-the browser sync), and ESPN's news for his club naming him. To-do items compare `Cat value/g` or `Pts value/g` (explained on hover), Yahoo's FPTS in a
+the browser sync), and ESPN's news for his club: naming him, or a trade, coaching change or regular out long. To-do items compare `Cat value/g` or `Pts value/g` (explained on hover), Yahoo's FPTS in a
 points league, and in a category league the two categories dragging a player's
 value most (`Weak in: FG% .380 · 2.9 TO`), which a drop's reason names too.
 That costs one request per roster page (the roster's averages) plus, in a category

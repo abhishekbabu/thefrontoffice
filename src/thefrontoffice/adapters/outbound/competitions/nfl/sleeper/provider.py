@@ -59,6 +59,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     season_end,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import gather, rostered
+from thefrontoffice.adapters.outbound.competitions.nfl.starters import StarterLog
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,
     Scoreboard,
@@ -139,7 +140,15 @@ ADDS_COLUMN = "Adds"
 class SleeperNFLProvider:
     """CompetitionProvider for Sleeper points-league football."""
 
-    def __init__(self, username: str, *, client: SleeperNFLSource, espn: ESPNSource, untouchable: UntouchableSource):
+    def __init__(
+        self,
+        username: str,
+        *,
+        client: SleeperNFLSource,
+        espn: ESPNSource,
+        untouchable: UntouchableSource,
+        starters: StarterLog,
+    ):
         """Every collaborator from bootstrap, which is the one place a real client is built.
 
         The username is required: whether one is set, and what to set when it
@@ -149,6 +158,7 @@ class SleeperNFLProvider:
         self.client = client
         self.espn = espn
         self.untouchable = untouchable
+        self.starters = starters
         self.scoreboard = Scoreboard(client, espn)
         self.forecasts = Forecasts(client)
         self._user_id: str | None = None
@@ -462,7 +472,7 @@ class SleeperNFLProvider:
             evidence=evidence.Evidence()
             if browsing
             else gather.season_evidence(self.client, season, week, league, phase.is_regular_season, players),
-            news=PlayerNews() if browsing else gather.player_news(self.espn, catalog),
+            news=PlayerNews() if browsing else gather.player_news(self.espn, catalog, self.starters),
             injuries=reports,
             current=current if browsing else 0,
             is_regular_season=phase.is_regular_season,

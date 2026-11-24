@@ -9,7 +9,7 @@ from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 from support.espn import FakeESPN
-from support.stores import FakeUntouchable
+from support.stores import FakeStarterLog, FakeUntouchable
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import current_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
@@ -250,11 +250,18 @@ class FakeSleeper:
 
 
 def nfl_provider(
-    client: FakeSleeper, espn: FakeESPN | None = None, untouchable: FakeUntouchable | None = None
+    client: FakeSleeper,
+    espn: FakeESPN | None = None,
+    untouchable: FakeUntouchable | None = None,
+    starters: FakeStarterLog | None = None,
 ) -> SleeperNFLProvider:
     """The NFL provider over these stand-ins, as bootstrap would wire it over the real clients."""
     return SleeperNFLProvider(
-        username="me", client=client, espn=espn or FakeESPN(), untouchable=untouchable or FakeUntouchable()
+        username="me",
+        client=client,
+        espn=espn or FakeESPN(),
+        untouchable=untouchable or FakeUntouchable(),
+        starters=starters if starters is not None else FakeStarterLog(),
     )
 
 
