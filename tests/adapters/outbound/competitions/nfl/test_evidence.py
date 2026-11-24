@@ -110,6 +110,20 @@ def test_a_player_is_matched_against_this_weeks_opponent() -> None:
     assert (matchup.opponent, matchup.position, matchup.rank, matchup.allowed) == ("MIA", "RB", 1, 30.0)
 
 
+def test_a_defense_that_turned_soft_lately_reads_so_in_the_scoring_the_league_counts() -> None:
+    """SF held TEs to 2 for two weeks, then gave up 18; DAL gave up 10 all season. Seven weeks, so five is recent."""
+    lines = [
+        *(game_line(f"sf{w}", w, position="TE", opponent="SF", pts_ppr=2 if w <= 2 else 18) for w in range(1, 8)),
+        *(game_line(f"dal{w}", w, position="TE", opponent="DAL", pts_ppr=10) for w in range(1, 8)),
+    ]
+
+    matchup = gather(lines, SCORING).matchup(proj("x", "Tight End", "TE", 6.0, opp="SF"))
+
+    assert matchup is not None
+    assert matchup.recent is not None
+    assert (matchup.recent.rank, matchup.recent.allowed) == (1, 18.0)
+
+
 def test_a_player_with_no_game_has_no_matchup() -> None:
     assert gather(_defenses(), SCORING).matchup(proj("x", "Idle", "RB", 0.0, opp="")) is None
 

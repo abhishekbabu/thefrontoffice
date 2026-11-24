@@ -7,6 +7,7 @@ The provider fetches and the prompt describes.
 
 from collections.abc import Mapping, Sequence
 
+from thefrontoffice.adapters.outbound.competitions.matchups import RECENT_GAMES
 from thefrontoffice.adapters.outbound.competitions.news import PlayerNews, dated
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence, season_average
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection, Trending
@@ -23,10 +24,12 @@ TRENDING_HOURS = 24
 # How every NFL prompt's player lines read. Shared, because the lines are
 # built by one function for every prompt, and two explanations of one format
 # would drift apart.
-NFL_READING_PLAYER_LINES = """READING THE PLAYER LINES:
+NFL_READING_PLAYER_LINES = f"""READING THE PLAYER LINES:
 - Under a player, where games have been played, is what the projection rests on. The matchup:
   how many points a game this week's opponent has given up to the position, ranked 1 (the most,
-  the softest) to 32. The role, over his last games: share of the offense's snaps, carries,
+  the softest) to 32, then its rank over its last {RECENT_GAMES} games. A defense changes mid-season (injuries,
+  scheme), so weigh the recent rank at least as much as the season's; where they differ by much,
+  say which you trust and why. The role, over his last games: share of the offense's snaps, carries,
   targets and share of the team's targets, and points.
 - Weigh role and matchup over the projection itself. A projection is a single number that hides
   why; a rising target share or a soft defense is the why.

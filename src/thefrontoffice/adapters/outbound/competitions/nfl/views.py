@@ -9,7 +9,7 @@ import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from thefrontoffice.adapters.outbound.competitions.matchups import Matchup
+from thefrontoffice.adapters.outbound.competitions.matchups import RECENT_GAMES, Matchup
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, injuries
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, eligible_positions
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
@@ -370,14 +370,22 @@ def _figures(state: Week, player: Projection, trend: bool) -> dict[str, Stat]:
 
 
 def ease(matchup: Matchup) -> str:
-    """'6th-easiest' where a defense gives up more than most to the position, '3rd-toughest' where less."""
-    if matchup.rank == 1:
+    """'6th-easiest' where a defense gives up more than most to the position, '3rd-toughest' where less, then its
+    recent rank where it has one: '13th-toughest · 4th-easiest L5'."""
+    season = _ease(matchup.rank, matchup.defenses)
+    if matchup.recent is None:
+        return season
+    return f"{season} · {_ease(matchup.recent.rank, matchup.defenses)} L{RECENT_GAMES}"
+
+
+def _ease(rank: int, defenses: int) -> str:
+    if rank == 1:
         return "easiest"
-    if matchup.rank == matchup.defenses:
+    if rank == defenses:
         return "toughest"
-    if matchup.rank <= matchup.defenses // 2:
-        return f"{ordinal(matchup.rank)}-easiest"
-    return f"{ordinal(matchup.defenses - matchup.rank + 1)}-toughest"
+    if rank <= defenses // 2:
+        return f"{ordinal(rank)}-easiest"
+    return f"{ordinal(defenses - rank + 1)}-toughest"
 
 
 def standing(state: Week, player_id: str) -> Held:

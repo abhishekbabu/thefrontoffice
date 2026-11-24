@@ -44,3 +44,15 @@ def test_a_points_league_reads_what_a_club_allows_in_its_fantasy_points() -> Non
     found = allowed(SCORES, {"12": 1.0, "16": 2.0})
 
     assert (found["BOS", "PG"].allowed, found["BOS", "PG"].unit) == (pytest.approx(68.0), "fpts")
+
+
+def test_a_clubs_recent_record_reads_its_last_games_by_date() -> None:
+    """Seven BOS games: 10 to PGs in the first two, 30 since. Dated across a month boundary, read oldest first."""
+    days = ["2026-10-28", "2026-10-30", "2026-11-01", "2026-11-03", "2026-11-05", "2026-11-07", "2026-11-09"]
+    logs = [_log("pg1", day, "BOS", pts=10 if i < 2 else 30) for i, day in enumerate(days)]
+    scores = BoxScores(logs={"pg1": logs}, players={"pg1": PlayerMeta(player_id="pg1", name="One", position="PG")})
+
+    recent = allowed(scores)["BOS", "PG"].recent
+
+    assert recent is not None
+    assert recent.allowed == pytest.approx(30.0)
