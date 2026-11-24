@@ -1459,3 +1459,73 @@ def test_a_slumping_starter_with_nobody_at_his_position_to_call_on_stays() -> No
     receiver = replace(STREAMER, position="WR")
 
     assert not [a for a in _actions(slumping(receiver)) if a.key.startswith("slump:")]
+
+
+# ── who a slump pickup drops ────────────────────────────────────────────
+
+ROOKIE = proj("wr5", "Rookie Receiver", "WR", 12.0, team="NO", opp="ATL")
+VETERAN = proj("rb5", "Veteran Back", "RB", 7.0, team="WAS", opp="DAL")
+DEAD_WEIGHT = proj("te5", "Backup End", "TE", 3.2, team="BUF", opp="PIT")
+
+
+def _slump_bench(
+    *bench: tuple[WeeklyProjection, list[float], float], locked: WeeklyProjection | None = None
+) -> FakeSleeper:
+    """`slumping`'s league with a full bench: each player with his games from week 1 and his projection a week
+    ahead; `locked` held on IR under a designation the slot no longer takes."""
+    client = slumping(STREAMER)
+    roster = client.rosters[0]
+    ids = [p.player_id for p, _, _ in bench]
+    held = [locked.player_id] if locked else []
+    client.rosters = [replace(roster, player_ids=[*roster.player_ids, *ids, *held], reserve_ids=held, ir_ids=held)]
+    client.league = replace(
+        client.league, roster_positions=["TE", *["BN"] * len(bench), *(["IR"] if locked else [])], ir_slots=len(held)
+    )
+    everyone = [p for p, _, _ in bench] + ([locked] if locked else [])
+    client.projections = {**client.projections, **{p.player_id: p for p in everyone}}
+    client.weekly_projections = {
+        week: {**client.projections, **{p.player_id: replace(p, points=ahead) for p, _, ahead in bench}}
+        for week in range(10, 19)
+    }
+    catalog = client.players_catalog or {}
+    for p in everyone:
+        catalog[p.player_id] = PlayerMeta(player_id=p.player_id, name=p.name, position=p.position, team=p.team)
+    if locked:
+        catalog[locked.player_id] = replace(catalog[locked.player_id], injury_status="Questionable")
+    client.players_catalog = catalog
+    client.game_lines = client.game_lines + [
+        NFLGameLine(
+            player_id=p.player_id,
+            week=week,
+            team=p.team,
+            opponent="HOU",
+            position=p.position,
+            stats={"off_snp": 80.0, "tm_off_snp": 100.0, "pts_ppr": scored},
+        )
+        for p, games, _ in bench
+        for week, scored in enumerate(games, start=1)
+    ]
+    return client
+
+
+def test_a_slump_pickup_drops_the_least_valuable_player_for_the_season_not_the_one_in_a_cold_month() -> None:
+    """The rookie: 7 a game this season, 4 of late, projected 12 now and ahead. The veteran: 10 a game, projected
+    6 ahead. By form beside this week's projection the rookie went (8 to 8.5); for the season he stays (9.5 to 8)."""
+    client = _slump_bench((ROOKIE, [10.0] * 4 + [4.0] * 4, 12.0), (VETERAN, [10.0] * 8, 6.0))
+
+    [action] = [a for a in _actions(client) if a.key.startswith("slump:")]
+
+    assert action.drop == VETERAN.player_id
+
+
+def test_an_ir_activation_and_a_slump_pickup_name_different_drops_the_activation_first() -> None:
+    locked = proj("rb6", "Healing Back", "RB", 8.0, team="SF", opp="CLE")
+    client = _slump_bench(
+        (ROOKIE, [10.0] * 4 + [4.0] * 4, 12.0), (VETERAN, [10.0] * 8, 6.0), (DEAD_WEIGHT, [4.8] * 8, 3.0), locked=locked
+    )
+    actions = _actions(client)
+    [activate] = [a for a in actions if a.key.startswith("ir:")]
+    [pickup] = [a for a in actions if a.key.startswith("slump:")]
+
+    assert (activate.drop, pickup.drop) == (DEAD_WEIGHT.player_id, VETERAN.player_id)
+    assert actions.index(activate) < actions.index(pickup)

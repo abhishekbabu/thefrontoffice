@@ -49,7 +49,14 @@ from thefrontoffice.adapters.outbound.competitions.nfl.slump import CALL_BY, Slu
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import Split
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import split as split_on
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week, day
-from thefrontoffice.adapters.outbound.competitions.nfl.worth import blend, filling_in, form, plays, value, worth
+from thefrontoffice.adapters.outbound.competitions.nfl.worth import (
+    blend,
+    filling_in,
+    form,
+    rest_of_season,
+    value,
+    worth,
+)
 from thefrontoffice.adapters.outbound.competitions.teammates import surname
 from thefrontoffice.domain.models import Action, MoveSide, Stat, Urgency, urgency_rank
 
@@ -104,7 +111,7 @@ def build(
     week_games = games.get(state.week, [])
     kickoff = by_club(week_games)
 
-    items = _ir_locked(state, started)
+    items = _ir_locked(state)
     items += _lineup(state, started, kickoff, free_agents)
     items += _upgrades(state, free_agents, started, {i.action.player_id for i in items})
     items += _slumps(state, free_agents, started, kickoff, _moved(items))
@@ -146,42 +153,33 @@ def _with_players(state: Week, items: list[Item]) -> list[Item]:
     return out
 
 
-def _ir_locked(state: Week, started: set[str]) -> list[Item]:
+def _ir_locked(state: Week) -> list[Item]:
     """Each player held on IR whose designation the league's IR slot no longer takes.
 
     Sleeper locks the whole roster while one sits there: no lineup change, no
     pickup, until he is activated or released. Questionable is the usual way
     in — a player returns to practice and his IR designation becomes a game
     one. Activating him needs a roster spot, so the item names who to drop
-    when none is open, chosen as any pickup's drop is.
+    when none is open — chosen with every pickup's (`_with_drops`), first, so
+    no two items name one drop and none drops a player another moves.
     """
     allows = state.league.ir_allows
-    room = open_spots(state.league, state.roster)
     items = []
     for player_id in state.roster.ir_ids:
         meta = state.players.get(player_id)
         if meta is None or meta.injury_status.upper() in allows:
             continue
         status = meta.injury_status.lower() or "cleared to play"
-        reason = f"{meta.name} is {status}. Roster locked until he leaves IR."
-        drop = None
-        if room > 0:
-            # The open spot is drawn on the bench; the reason does not say it again.
-            room -= 1
-        else:
-            drop = drop_candidate(state, (p for p in state.bench if p.team not in started), set())
-            reason += f" {drop_reason(state, drop)}" if drop else " No bench player can be dropped yet."
         items.append(
             Item(
                 "ir",
                 Action(
                     kind="lineup",
                     urgency="now",
-                    title=f"Move {meta.name} off IR" + (f", drop {drop.name}" if drop else ""),
-                    reason=reason,
+                    title=f"Move {meta.name} off IR",
+                    reason=f"{meta.name} is {status}. Roster locked until he leaves IR.",
                     when="first",
                     player_id=player_id,
-                    drop=drop.player_id if drop else "",
                     key=f"ir:{player_id}:{meta.injury_status.upper()}",
                 ),
             )
@@ -558,9 +556,10 @@ def _beats_a_starter(state: Week, player: Projection) -> bool:
 def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]:
     """Every pickup with who to drop for it, or the open spot it can go into.
 
-    The drop is the bench player worth least, by `worth` — his recent form
-    beside his projection, and never this week's projection alone, which reads
-    a starter on bye as nothing. Never someone another item moves, nobody
+    The drop is the bench player worth least over the rest of the season
+    (`drop_candidate`). An IR activation is given its drop first, since nothing
+    else can be added until he leaves IR. Never someone another item moves or
+    another item already drops, nobody
     whose game has kicked off (the platform will not release him), nobody the
     best lineup starts, and nobody whose role is growing: that is the player
     this list would tell you to pick up.
@@ -572,16 +571,37 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
     not a to-do item. Where his projection does not yet beat the drop's, the
     reason says the projection lags; where it already does, that would be false.
     """
-    # A player coming off IR takes a spot first: until he does, nothing else can be added.
     room = open_spots(state.league, state.roster)
-    room -= sum(1 for item in items if item.move == "ir" and not item.action.drop)
     named = {pid for item in items for pid in (item.action.player_id, item.action.replaces) if pid}
-    chosen = {item.action.drop for item in items if item.move == "ir" and item.action.drop}
+    chosen: set[str] = set()
+    bench = [p for p in state.bench if p.team not in started]
+
+    # A player coming off IR takes a spot first: until he does, nothing else can be added.
+    activated: dict[int, Item] = {}
+    for index, item in enumerate(items):
+        if item.move != "ir":
+            continue
+        if room > 0:
+            # The open spot is drawn on the bench; the reason does not say it again.
+            room -= 1
+            continue
+        drop = drop_candidate(state, bench, named | chosen)
+        if drop is None:
+            activated[index] = _reworded(item, reason=f"{item.action.reason} No bench player can be dropped yet.")
+            continue
+        chosen.add(drop.player_id)
+        activated[index] = _reworded(
+            item,
+            drop=drop.player_id,
+            title=f"{item.action.title}, drop {drop.name}",
+            reason=f"{item.action.reason} {drop_reason(state, drop)}",
+        )
+
     out = []
-    for item in items:
+    for index, item in enumerate(items):
         action = item.action
-        if not item.is_pickup:
-            out.append(item)
+        if index in activated or not item.is_pickup:
+            out.append(activated.get(index, item))
             continue
         if action.drop:
             # The pickup names its own: the starter it replaces, at a position nobody holds two of.
@@ -593,7 +613,7 @@ def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]
             room -= 1
             out.append(item)
             continue
-        drop = drop_candidate(state, (p for p in state.bench if p.team not in started), named | chosen)
+        drop = drop_candidate(state, bench, named | chosen)
         if item.move == "rise" and not _worth_a_spot(state, action.player_id, drop):
             continue
         if drop is None:
@@ -627,15 +647,19 @@ def _worth_a_spot(state: Week, player_id: str, drop: Projection | None) -> bool:
 
 
 def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> Projection | None:
-    """The player it costs least to lose, by his `worth`: never one kept, one the best lineup starts, nor one whose role is growing.
+    """The player it costs least to lose, by `worth.rest_of_season`: never one kept, one the best lineup starts, nor
+    one whose role is growing; a starter in your lineup as set only once no bench player is left.
 
+    A drop is for the rest of the season, so neither this week's projection
+    (a bye, one soft matchup) nor his last few games (one cold stretch) decide
+    it: his season a game beside what he is projected a game in the weeks left.
     A player whose role is growing is the one a to-do list would tell you to
     pick up, so he is never the one to let go. Nor is one the best lineup
     would start this week. A stash, then a handcuff, comes after every
     ordinary player (see `insured`): his worth is the week the back ahead of
     him misses, which no figure here shows. A player with nothing to go on —
-    no recent games, and no game this week — is the last resort: an unknown
-    is not a weak player.
+    no games played, and no projection ahead or this week — is the last
+    resort: an unknown is not a weak player.
     """
     starting = {slot.player.player_id for slot in state.best if slot.player}
     candidates = [
@@ -645,41 +669,46 @@ def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> 
     ]
     held = insured(state) if candidates else {}
 
-    def weakest(player: Projection) -> tuple[int, float, float]:
-        value = worth(state, player)
+    def weakest(player: Projection) -> tuple[bool, int, float, float]:
+        value = rest_of_season(state, player)
+        if value is None:
+            value = worth(state, player)
         rank = UNKNOWN if value is None else held.get(player.player_id, (0, ""))[0]
-        return rank, value or 0.0, player.points
+        return player.player_id in state.starter_ids, rank, value or 0.0, player.points
 
     return min(candidates, key=weakest, default=None)
 
 
-def drop_note(state: Week, player: Projection) -> str:
-    """'Williams: weakest on bench.' — why he is the drop, where a comparison beside it carries his figures.
+def _kept_for(state: Week, player: Projection) -> str:
+    """'8.67/g season, 12.10/g ahead': the figures `worth.rest_of_season` read him by, those he has."""
+    figures = []
+    if (played := average(state.evidence, player.player_id)) is not None:
+        figures.append(f"{played:.2f}/g season")
+    if (ahead := state.ahead.get(player.player_id)) is not None:
+        figures.append(f"{ahead:.2f}/g ahead")
+    return ", ".join(figures)
 
-    Only what no figure there says: whose handcuff or stash he is, or that his
+
+def drop_note(state: Week, player: Projection) -> str:
+    """'Williams: weakest on bench (9.38/g season, 8.20/g ahead).' — why he is the drop, beside a comparison of
+    his week: his rest of season, which no row there says, and whose handcuff or stash he is, or that his
     recent points were fill-in work, with what he scores beside the teammate back.
     """
     why = insurance_note(state, player) or "weakest on bench"
     split = filling_in(state, player)
     if split is not None and (beside := form(state, player)) is not None:
         why += f", {beside:.2f}/game with {surname(split.teammate.name)}"
-    return f"{player.name}: {why}."
+    kept = _kept_for(state, player)
+    return f"{player.name}: {why}" + (f" ({kept})." if kept else ".")
 
 
 def drop_reason(state: Week, player: Projection) -> str:
-    """'Drop X (4.90/game, 6.60 proj), weakest on bench': the figures his worth was read from.
+    """'Drop X (10.10/g season, 7.00/g ahead), weakest on bench': the figures his rest of season was read from.
 
     A handcuff or a stash says so instead, since he is only the pick once nobody else is left.
     """
-    figures = []
-    split = filling_in(state, player)
-    if (recent := form(state, player)) is not None:
-        figures.append(f"{recent:.2f}/game" + (f" with {surname(split.teammate.name)}" if split else ""))
-    if plays(state, player):
-        figures.append(f"{player.points:.2f} proj")
-    elif (played := average(state.evidence, player.player_id)) is not None:
-        figures.append(f"{played:.2f} season")
-    shown = f" ({', '.join(figures)})" if figures else ""
+    kept = _kept_for(state, player)
+    shown = f" ({kept})" if kept else ""
     why = insurance_note(state, player) or "weakest on bench"
     return f"Drop {player.name}{shown}, {why}."
 

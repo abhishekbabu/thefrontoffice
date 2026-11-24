@@ -20,12 +20,12 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   while a regular teammate sat is fill-in work, not a growing role, unless that
   teammate is ruled out of the coming week; a growing role must also be worth
   more than the starter he'd replace and the player he'd cost. Each item names the fix
-  and who to drop: the weakest bench player by recent form and projection
-  together (form read beside a teammate who is back where his recent games were
-  fill-in for him; ±10% for snaps steady at 50%+ or swinging by 20+ points, a
-  climb to his most snaps not counting as a swing),
-  never one the best lineup starts or one just on bye. Pickup and drop are valued
-  the same way. A handcuff
+  and who to drop: the weakest bench player for the rest of the season, his points
+  a game beside his projection a game over the weeks left (season read beside a
+  teammate who is back where his recent games were fill-in for him; ±10% for snaps
+  steady at 50%+ or swinging by 20+ points, a climb to his most snaps not counting
+  as a swing), never one the best lineup starts, one another item moves or drops,
+  or a starter while a bench player is left. A handcuff
   (the back next on the depth chart behind a running back you start) goes only
   once nobody ordinary is left, and the drop says whose he is. So does a stash,
   dropped before a handcuff: the back next behind any club's first back, whoever

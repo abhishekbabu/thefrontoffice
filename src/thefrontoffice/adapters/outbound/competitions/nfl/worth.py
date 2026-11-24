@@ -103,3 +103,18 @@ def lineup_value(state: Week, player: Projection) -> float:
     A bye or a ruling leaves his value at his season, which no slot scores this week.
     """
     return value(state, player) if plays(state, player) else 0.0
+
+
+def rest_of_season(state: Week, player: Projection) -> float | None:
+    """What he is worth over the weeks left, the figure a drop is weighed by: his points a game this season beside
+    his projection a game over the weeks ahead (`Week.ahead`), evenly, times his `usage`; either alone where the
+    other is unknown.
+
+    Neither this week's projection, which reads a bye or one soft matchup as the player, nor his last few games,
+    which read one cold stretch as the player: a drop is for the rest of the season. Where his recent games were
+    fill-in work for a teammate who is back, his season is his points a game beside that teammate (`filling_in`).
+    """
+    split = filling_in(state, player)
+    played = average(state.evidence, player.player_id) if split is None else split.alongside
+    blended = shared.blend(played, state.ahead.get(player.player_id))
+    return None if blended is None else blended * usage(state, player.player_id)
