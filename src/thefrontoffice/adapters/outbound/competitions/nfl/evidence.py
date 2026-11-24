@@ -471,7 +471,7 @@ def misses(lines: Sequence[GameLine]) -> tuple[int, int]:
 def _allowed(lines: Sequence[GameLine], scoring: str) -> dict[tuple[str, str], Matchup]:
     """Points each defense has given up per game to each position, ranked (`matchups.allowed`)."""
     return matchups.allowed(
-        Scored(line.opponent, line.position, line.week, line.stats.get(scoring, 0.0)) for line in lines
+        Scored(line.opponent, line.position, line.week, line.stats.get(scoring, 0.0), line.team) for line in lines
     )
 
 

@@ -95,7 +95,8 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
 - **Free agents**: best fit first, so a 1QB league's list does not open on
   quarterbacks. Fits is his value less that of the weakest starter in your best
   lineup he could replace, who on hover, both valued as the to-do list values a
-  pickup and its drop (recent form and projection, fill-in work, snaps), or on
+  pickup and its drop (recent form and projection, fill-in work, snaps) and then
+  by this week's matchup (±10%), or on
   form against a slumping starter; a starter on bye or ruled out counts as an empty slot. Kickers, defenses and
   players out past this week (IR, PUP, suspended) follow everyone else unless
   your K or DEF slot is empty this week, still best fit first under their

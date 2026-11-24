@@ -34,4 +34,4 @@ def _scored(scores: BoxScores, weights: Mapping[str, float] | None) -> Iterator[
             if not log.opponent:
                 continue
             figure = (fantasy_points(line(log.stats), weights) or 0.0) if weights else log.get(POINTS.made)
-            yield Scored(log.opponent, meta.position, log.date, figure)
+            yield Scored(log.opponent, meta.position, log.date, figure, log.team)

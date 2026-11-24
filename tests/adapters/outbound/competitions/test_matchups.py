@@ -4,7 +4,15 @@ from dataclasses import replace
 
 import pytest
 
-from thefrontoffice.adapters.outbound.competitions.matchups import RECENT_GAMES, Matchup, Recent, Scored, allowed
+from thefrontoffice.adapters.outbound.competitions.matchups import (
+    MATCHUP_SWING,
+    RECENT_GAMES,
+    Matchup,
+    Recent,
+    Scored,
+    allowed,
+    matchup_factor,
+)
 
 
 @pytest.mark.parametrize(
@@ -98,14 +106,78 @@ def test_no_recent_record_until_a_defense_has_played_more_games_than_the_window(
     assert allowed(lines)["SF", "TE"].recent is None
 
 
-def test_a_recent_record_is_weighed_evenly_with_the_season_in_the_tone() -> None:
-    """13th on the season but 4th lately stands at 8.5 of 32: no longer the middle, not yet the softest quarter."""
+def test_a_recent_record_close_to_the_season_is_weighed_evenly_with_it() -> None:
+    """13th on the season and 6th lately, within a quarter of the league: 9.5 of 32, still the middle."""
     middling = Matchup(opponent="SF", position="TE", allowed=10.0, rank=13, defenses=32)
-    turned = replace(middling, recent=Recent(allowed=15.8, rank=4))
-    softest = replace(middling, recent=Recent(allowed=18.0, rank=2))
+    lately = replace(middling, recent=Recent(allowed=14.0, rank=6))
 
-    assert (middling.standing, turned.standing, softest.standing) == (13, 8.5, 7.5)
-    assert (middling.tone, turned.tone, softest.tone) == ("neutral", "neutral", "good")
+    assert (middling.standing, lately.standing, lately.turned) == (13, 9.5, False)
+    assert lately.tone == "neutral"
+
+
+@pytest.mark.parametrize(("season", "recent", "tone"), [(15, 4, "good"), (12, 30, "warning")])
+def test_a_defense_whose_recent_rank_is_more_than_a_quarter_of_the_league_away_is_read_by_it(
+    season: int, recent: int, tone: str
+) -> None:
+    """15th on the season but 4th lately, eleven places apart: a changed defense, the softest quarter."""
+    matchup = Matchup(opponent="SF", position="TE", allowed=10.0, rank=season, defenses=32, recent=Recent(0.0, recent))
+
+    assert (matchup.turned, matchup.standing, matchup.tone) == (True, recent, tone)
+
+
+@pytest.mark.parametrize(("rank", "factor"), [(1, 1 + MATCHUP_SWING), (32, 1 - MATCHUP_SWING)])
+def test_a_matchup_moves_a_players_weight_a_tenth_at_most_either_way(rank: int, factor: float) -> None:
+    assert matchup_factor(
+        Matchup(opponent="NYG", position="TE", allowed=10.0, rank=rank, defenses=32)
+    ) == pytest.approx(factor)
+
+
+def test_the_middle_ranks_move_a_players_weight_equally_either_way() -> None:
+    def factor(rank: int) -> float:
+        return matchup_factor(Matchup(opponent="NYG", position="TE", allowed=10.0, rank=rank, defenses=32))
+
+    assert factor(16) - 1 == pytest.approx(1 - factor(17))
+
+
+def test_a_matchups_weight_follows_its_standing() -> None:
+    """12th and 20th lately stand at 16, as 16th alone does."""
+    both = Matchup(opponent="NYG", position="TE", allowed=10.0, rank=12, defenses=32, recent=Recent(0.0, rank=20))
+
+    assert matchup_factor(both) == pytest.approx(matchup_factor(replace(both, rank=16, recent=None)))
+
+
+def test_no_matchup_moves_nothing() -> None:
+    assert matchup_factor(None) == 1.0
+    assert matchup_factor(Matchup(opponent="NYG", position="TE", allowed=1.0, rank=1, defenses=1)) == 1.0
+
+
+# ── the offenses faced ────────────────────────────────────────────────
+
+
+def test_a_defense_is_ranked_for_the_offenses_it_faced_while_its_figure_stays_what_it_gave_up() -> None:
+    """SF and DAL each gave up 10 a game, SF to KC (20 a game elsewhere), DAL to NYG (5 a game elsewhere).
+
+    KC scores 20 a game against everyone else, NYG 5: holding KC to 10 is the hard defense, giving NYG 10 the soft one.
+    """
+    lines = [
+        Scored("SF", "TE", 1, 10.0, "KC"),
+        Scored("DAL", "TE", 1, 10.0, "NYG"),
+        *(Scored(f"D{week}", "TE", week, 20.0, "KC") for week in range(2, 5)),
+        *(Scored(f"E{week}", "TE", week, 5.0, "NYG") for week in range(2, 5)),
+    ]
+
+    found = allowed(lines)
+
+    sf, dal = found["SF", "TE"], found["DAL", "TE"]
+    assert (sf.allowed, dal.allowed) == (10.0, 10.0)
+    assert dal.rank < sf.rank
+    assert (sf.adjusted or 0.0) < (dal.adjusted or 0.0)
+
+
+def test_a_game_against_an_unknown_offense_counts_as_it_was() -> None:
+    lines = [Scored("SF", "TE", 1, 10.0), Scored("DAL", "TE", 1, 4.0)]
+
+    assert allowed(lines)["SF", "TE"].adjusted == 10.0
 
 
 def test_a_matchups_line_carries_its_recent_rank() -> None:

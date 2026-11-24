@@ -29,7 +29,8 @@ TRENDING_HOURS = 24
 NFL_READING_PLAYER_LINES = f"""READING THE PLAYER LINES:
 - Under a player, where games have been played, is what the projection rests on. The matchup:
   how many points a game this week's opponent has given up to the position, ranked 1 (the most,
-  the softest) to 32, then its rank over its last {RECENT_GAMES} games. A defense changes mid-season (injuries,
+  the softest) to 32, then its rank over its last {RECENT_GAMES} games. Ranks allow for the offenses it
+  faced; the points shown are what it gave up. A defense changes mid-season (injuries,
   scheme), so weigh the recent rank at least as much as the season's; where they differ by much,
   say which you trust and why. The role, over his last games: share of the offense's snaps, carries,
   targets and share of the team's targets, and points.

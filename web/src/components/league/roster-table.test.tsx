@@ -9,6 +9,7 @@ const card = (id: string, without: string, notes: Record<string, string> = {}): 
   values: {},
   ruled_out: false,
   notes,
+  tones: {},
   roles: { Player: "player" },
 });
 
@@ -23,6 +24,16 @@ describe("RosterTable", () => {
     const heading = [...container.querySelectorAll("th")].find((th) => th.textContent?.includes("Without"))!;
 
     expect(heading.querySelector("button")!.getAttribute("aria-label")).toContain(hints.Without);
+  });
+
+  it("colors a toned cell by its tone, its text unchanged", async () => {
+    const soft: PlayerCard = { ...card("Barner", "—"), tones: { Without: "good" } };
+
+    const { container } = await render(
+      <RosterTable players={[soft, card("Kelce", "—")]} empty={{ title: "Nobody" }} sort={null} onSort={() => {}} />,
+    );
+
+    expect([...container.querySelectorAll(".text-ok")].map((el) => el.textContent)).toEqual(["—"]);
   });
 
   it("gives an abbreviated cell its full reading, reachable by keyboard, and leaves the rest plain", async () => {

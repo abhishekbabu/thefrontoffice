@@ -42,6 +42,7 @@ const ALLEN_CARD: PlayerCard = {
   values: {},
   ruled_out: false,
   notes: {},
+  tones: {},
   roles: { Player: "player" },
 };
 

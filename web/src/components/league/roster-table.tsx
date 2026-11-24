@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Empty } from "@/components/ui/state";
 import { Hint } from "@/components/ui/overlays/tooltip";
 import { Meta } from "@/components/ui/label";
+import { toneText } from "@/lib/tone";
 import type { PlayerCard, PlayerOrder } from "@/lib/types";
 
 /** A header's sort as the server takes it: no column is the competition's own order. */
@@ -117,15 +118,19 @@ export function RosterTable({
 
         if (role === "slot") return <Meta>{value}</Meta>;
 
+        // A toned cell, an Opponent against a soft defense, says so in its text too.
+        const tone = row.tones[column];
+        const shown = tone ? <span className={toneText(tone)}>{value}</span> : value;
+
         if (note) {
           return (
             <Hint label={note} name={`${value}: ${note}`} dotted>
-              {value}
+              {shown}
             </Hint>
           );
         }
 
-        return undefined;
+        return tone ? shown : undefined;
       }}
     />
   );
