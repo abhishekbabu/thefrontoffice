@@ -32,7 +32,7 @@ from thefrontoffice.application.formats import CallAnswer, WireAnswer
 from thefrontoffice.application.scouting import scout_scope
 from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import AppSettings, env_var
-from thefrontoffice.domain.errors import PortInUseError
+from thefrontoffice.domain.errors import PlatformError, PortInUseError
 from thefrontoffice.domain.models import (
     Action,
     CompetitionContext,
@@ -805,12 +805,26 @@ def test_the_week_carries_the_last_verdict_on_each_item() -> None:
 UNTOUCHABLES = "/api/competitions/nfl-sleeper/leagues/L1/untouchables"
 
 
+class _Held(FakeProvider):
+    """A competition whose roster is these players, or whose roster will not load."""
+
+    def __init__(self, *player_ids: str, error: Exception | None = None) -> None:
+        super().__init__()
+        self.held = player_ids
+        self.roster_error = error
+
+    def roster(self, league_id: str) -> list[PlayerCard]:
+        if self.roster_error:
+            raise self.roster_error
+        return [PlayerCard(player_id=pid, columns={"Player": pid}) for pid in self.held]
+
+
 def test_a_league_with_nobody_marked_has_no_untouchables(client: TestClient) -> None:
     assert client.get(UNTOUCHABLES).json() == {"player_ids": []}
 
 
 def test_a_mark_answers_with_every_untouchable_and_is_read_back() -> None:
-    client = _client()
+    client = _client(_Held("4881", "9509"))
 
     client.post(UNTOUCHABLES, json={"player_id": "4881", "untouchable": True})
     marked = client.post(UNTOUCHABLES, json={"player_id": "9509", "untouchable": True}).json()
@@ -828,6 +842,23 @@ def test_clearing_a_mark_leaves_the_others_and_no_other_league_has_them() -> Non
 
     assert cleared == {"player_ids": ["9509"]}
     assert client.get("/api/competitions/nfl-sleeper/leagues/L2/untouchables").json() == {"player_ids": []}
+
+
+def test_a_mark_on_a_player_no_longer_yours_is_dropped_when_the_marks_are_read() -> None:
+    client = _client(_Held("4881"))
+    client.post(UNTOUCHABLES, json={"player_id": "4881", "untouchable": True})
+    client.post(UNTOUCHABLES, json={"player_id": "9509", "untouchable": True})
+
+    assert client.get(UNTOUCHABLES).json() == {"player_ids": ["4881"]}
+    assert client.post(UNTOUCHABLES, json={"player_id": "1", "untouchable": False}).json() == {"player_ids": ["4881"]}
+
+
+def test_a_roster_that_will_not_load_or_reads_empty_drops_no_mark() -> None:
+    for provider in (_Held(error=PlatformError("down")), _Held()):
+        client = _client(provider)
+        client.post(UNTOUCHABLES, json={"player_id": "4881", "untouchable": True})
+
+        assert client.get(UNTOUCHABLES).json() == {"player_ids": ["4881"]}
 
 
 def test_a_mark_naming_nobody_is_refused(client: TestClient) -> None:

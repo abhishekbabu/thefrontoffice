@@ -16,3 +16,17 @@ def note(names: Collection[str]) -> list[str]:
         f"Untouchable — the manager's to keep, whatever the figures; never suggest dropping, trading or selling: "
         f"{', '.join(sorted(names))}."
     ]
+
+
+def given(names: Collection[str]) -> list[str]:
+    """The line saying a proposed trade gives away untouchables; none where it gives none.
+
+    The manager proposed it, so it is not refused: the model is told to say so
+    plainly and weigh whether what comes back is worth breaking the mark.
+    """
+    if not names:
+        return []
+    return [
+        f"This trade gives away players the manager marked untouchable: {', '.join(sorted(names))}. "
+        "Say so plainly in the verdict, and weigh whether the return is worth breaking that."
+    ]

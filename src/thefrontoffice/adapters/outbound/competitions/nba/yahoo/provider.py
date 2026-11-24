@@ -535,7 +535,9 @@ class YahooNBAProvider:
     def build_trade_context(self, league_id: str, proposal: TradeProposal) -> CompetitionContext:
         """Price both sides of a trade against the current roster, in the league's own scoring."""
         league = self._league(league_id)
-        return trading.context(self.feeds, self._yahoo_for(league), league, proposal)
+        return trading.context(
+            self.feeds, self._yahoo_for(league), league, proposal, self.untouchable.of(league.league_key)
+        )
 
     def trade_market(self, league_id: str) -> TradeMarket | None:
         """The rest of the season, and every trade near even in worth that improves your weeks (`market.build`).

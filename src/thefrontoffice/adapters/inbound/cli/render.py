@@ -50,6 +50,7 @@ def render_trade_verdict(verdict: TradeVerdict) -> str:
     return "\n".join(
         [
             f"{_INDENT}VERDICT: {verdict.verdict}",
+            *([f"{_INDENT}GIVES AWAY UNTOUCHABLE: {', '.join(verdict.untouchable)}"] if verdict.untouchable else []),
             _wrap(verdict.verdict_detail),
             "",
             f"{_INDENT}Gained: {gained}",

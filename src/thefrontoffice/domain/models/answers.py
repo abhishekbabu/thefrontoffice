@@ -114,6 +114,9 @@ class TradeVerdict(BaseModel):
     schedule: str
     risk: str
     strategy: str
+    untouchable: list[str] = Field(default_factory=list)
+    """Players the trade gives away that the manager marked untouchable, by name: the engine's, read off the
+    league, never the model's. Not a refusal: the manager proposed it, and the evaluation says so."""
 
 
 @dataclass

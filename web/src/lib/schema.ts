@@ -314,6 +314,8 @@ export interface paths {
         /**
          * Untouchables
          * @description The players on your roster you marked untouchable: never a drop, a trade away or a sale.
+         *
+         *     A mark on a player no longer yours is dropped here, against the roster as it reads now.
          */
         get: operations["untouchables"];
         put?: never;

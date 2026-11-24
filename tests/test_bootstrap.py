@@ -380,3 +380,17 @@ def test_an_nba_scoreboard_is_live_only_in_game_hours_on_a_day_with_games() -> N
     assert live(3, games_on=True)  # 19:00 Pacific
     assert not live(3, games_on=False)
     assert not live(12, games_on=True)  # 04:00 Pacific
+
+
+def test_an_fpl_mark_holds_in_every_mini_league_of_the_squad(tmp_path: Path) -> None:
+    """Every mini-league is a table over the one squad; the other competitions keep marks per league."""
+    from thefrontoffice.domain.models import UntouchableMark
+
+    wiring = bootstrap.wiring(isolated_settings(tmp_path, fpl_entry_id=42, sleeper_username="me"))
+    fpl, nfl = wiring.registry.by_key("premier-league-fpl"), wiring.registry.by_key("nfl-sleeper")
+
+    wiring.untouchable(fpl).mark("L1", UntouchableMark(player_id="7", untouchable=True))
+    wiring.untouchable(nfl).mark("L1", UntouchableMark(player_id="7", untouchable=True))
+
+    assert wiring.untouchable(fpl).of("L2") == {"7"}
+    assert wiring.untouchable(nfl).of("L2") == frozenset()

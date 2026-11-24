@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { clock, startsAt } from "@/lib/times";
 import { Label, Meta } from "@/components/ui/label";
 import { ListHeading } from "@/components/ui/list";
+import { UntouchableLock } from "@/components/league/untouchable";
 
 /**
  * The team as it currently stands, and what the numbers say to change.
@@ -23,6 +24,7 @@ export function LineupCard({
   reserve = [],
   openSpots = 0,
   onOpen,
+  untouchable,
 }: {
   title: string;
   lineup: Spot[];
@@ -30,6 +32,8 @@ export function LineupCard({
   reserve?: Spot[];
   openSpots?: number;
   onOpen?: (id: string) => void;
+  /** Whether you marked a player untouchable: his name carries the lock. */
+  untouchable?: (id: string) => boolean;
 }) {
   if (!lineup.length && !bench.length) return null;
 
@@ -44,15 +48,15 @@ export function LineupCard({
       </CardHeader>
 
       <div className="grid grid-cols-1 md:grid-cols-2">
-        <SpotList spots={lineup} rows={rows} onOpen={onOpen} />
+        <SpotList spots={lineup} rows={rows} onOpen={onOpen} untouchable={untouchable} />
         <div className="border-t border-border md:border-l md:border-t-0">
           {/* The open spots are rows of their own below, so the heading does not count them again. */}
           <ListHeading>Bench</ListHeading>
-          <SpotList spots={bench} open={openSpots} rows={rows} empty="Nobody on the bench." onOpen={onOpen} />
+          <SpotList spots={bench} open={openSpots} rows={rows} empty="Nobody on the bench." onOpen={onOpen} untouchable={untouchable} />
           {reserve.length > 0 && (
             <>
               <ListHeading>Reserve</ListHeading>
-              <SpotList spots={reserve} rows={rows} onOpen={onOpen} />
+              <SpotList spots={reserve} rows={rows} onOpen={onOpen} untouchable={untouchable} />
             </>
           )}
         </div>
@@ -123,9 +127,11 @@ function SpotList({
   pad = 0,
   empty,
   onOpen,
+  untouchable,
 }: {
   spots: Spot[];
   rows: Rows;
+  untouchable?: (id: string) => boolean;
   /** Roster spots nobody holds, drawn as rows of their own after the players. */
   open?: number;
   /** Blank rows after everything else, so this list ends where the other side's does. */
@@ -162,6 +168,7 @@ function SpotList({
                     >
                       {spot.player}
                     </span>
+                    {spot.player_id && untouchable?.(spot.player_id) && <UntouchableLock />}
                     {spot.mark && (
                       <Badge variant="info" appearance="label" className="shrink-0">
                         {spot.mark}
@@ -378,10 +385,13 @@ export function SideCard({
   label,
   onOpen,
   rows,
+  untouchable,
 }: {
   side: Side | null;
   label: string;
   onOpen?: (id: string) => void;
+  /** Whether you marked a player untouchable: his name carries the lock. Given for your side alone. */
+  untouchable?: (id: string) => boolean;
   /** What every row makes room for, from both sides (`rowsOf`); read from this side alone where the caller does not say. */
   rows?: Rows;
 }) {
@@ -404,7 +414,7 @@ export function SideCard({
         <span className="normal-case tracking-normal">{[side.record, side.detail, side.points].filter(Boolean).join(" · ")}</span>
       </CardHeader>
       <ScoreHeads spots={side.lineup} rows={layout} className="border-t-0" />
-      <SpotList spots={side.lineup} rows={layout} pad={layout.lineup - side.lineup.length} onOpen={onOpen} />
+      <SpotList spots={side.lineup} rows={layout} pad={layout.lineup - side.lineup.length} onOpen={onOpen} untouchable={untouchable} />
       {/* Headed wherever either side has one, so the two cards' lists start level. */}
       {layout.bench > 0 && (
         <>
@@ -417,6 +427,7 @@ export function SideCard({
             pad={layout.bench - side.bench.length - open}
             rows={layout}
             onOpen={onOpen}
+            untouchable={untouchable}
           />
         </>
       )}
@@ -426,7 +437,7 @@ export function SideCard({
           <ScoreHeads spots={side.reserve} rows={layout}>
             Reserve
           </ScoreHeads>
-          <SpotList spots={side.reserve} rows={layout} pad={layout.reserve - side.reserve.length} onOpen={onOpen} />
+          <SpotList spots={side.reserve} rows={layout} pad={layout.reserve - side.reserve.length} onOpen={onOpen} untouchable={untouchable} />
         </>
       )}
     </Card>

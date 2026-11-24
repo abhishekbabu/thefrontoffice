@@ -63,4 +63,5 @@ class TradeEngine:
             initial_history=[{"role": "user", "parts": [brief]}, {"role": "model", "parts": [analysis]}],
             enable_search=True,
         )
-        return TradeVerdict.model_validate(answer.model_dump()), chat
+        verdict = TradeVerdict.model_validate(answer.model_dump())
+        return verdict.model_copy(update={"untouchable": sorted(context.untouchable)}), chat

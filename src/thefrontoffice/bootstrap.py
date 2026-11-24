@@ -240,7 +240,7 @@ def _untouchable_store(settings: AppSettings) -> DiskUntouchableStore:
 
 def _untouchable(entry: CompetitionEntry) -> UntouchableMarks:
     """What `entry`'s provider reads before choosing any drop, trade or transfer out."""
-    return UntouchableMarks(_untouchable_store(entry.settings), entry.key)
+    return UntouchableMarks(_untouchable_store(entry.settings), entry.key, entry.squad)
 
 
 # ── competitions ────────────────────────────────────────────────────
@@ -389,6 +389,8 @@ def registry(settings: AppSettings = process_settings) -> Registry:
                 settings=settings,
                 needs=("fpl_entry_id",),
                 week_word="gameweek",
+                # Every mini-league is a table over the one squad: a mark holds in each.
+                squad=lambda _: str(settings.fpl_entry_id),
             ),
         )
     )
