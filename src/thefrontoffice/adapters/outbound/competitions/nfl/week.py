@@ -140,6 +140,10 @@ class Week:
     """Each player's projected points a game over the weeks left after this one, the weeks he is projected in:
     what a drop is weighed by beside his season (`worth.rest_of_season`). Empty wherever they would not load."""
 
+    past: Mapping[int, Mapping[str, float]] = field(default_factory=dict)
+    """What Sleeper projected each player for each week already played, by week: what a slump measures his games
+    against (`slump.slump`). Empty wherever they would not load."""
+
     @property
     def is_past(self) -> bool:
         """A week already played, opened to look back on: its lineups are the ones that played it."""

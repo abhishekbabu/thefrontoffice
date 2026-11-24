@@ -481,7 +481,10 @@ class SleeperNFLProvider:
             untouchable=self.untouchable.of(league_id),
         )
         # What a drop is weighed by: only the week being played's to-do list drops anybody.
-        return week_state if browsing else replace(week_state, ahead=outlook.rates(self.client, week_state))
+        if browsing:
+            return week_state
+        past = gather.past_projections(self.client, season, week, league, phase.is_regular_season)
+        return replace(week_state, ahead=outlook.rates(self.client, week_state), past=past)
 
     def _played_out(self, phase: Phase, week: int) -> bool:
         """Whether the week Sleeper calls current has nothing left to play.

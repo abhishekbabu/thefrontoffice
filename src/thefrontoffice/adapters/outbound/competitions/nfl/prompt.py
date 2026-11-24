@@ -13,7 +13,7 @@ from thefrontoffice.adapters.outbound.competitions.news import PlayerNews, dated
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import Evidence, season_average
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection, Trending
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import STREAMED, listed, scoring_label
-from thefrontoffice.adapters.outbound.competitions.nfl.slump import SLUMP_LABEL, slumps
+from thefrontoffice.adapters.outbound.competitions.nfl.slump import slumps
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.adapters.outbound.competitions.tasks import task_lines
 from thefrontoffice.domain.models import Action, CompetitionContext, Stat, task_id
@@ -42,10 +42,14 @@ NFL_READING_PLAYER_LINES = f"""READING THE PLAYER LINES:
   either way. Weigh a drop by his points a game this season, and suggest an ADD only when the player
   starts this week or is worth more a game than the one he replaces. Kickers and defenses are the
   exception: they are streamed for the week's matchup.
-- A "slump" line under a starter: his points a game over his last games played sit well under this
-  week's projection in all but one of them, with what changed — efficiency, usage, his quarterback.
-  Weigh it against the projection rather than trusting either alone. A "Form call" item weighs his slot
-  on form (three parts recent points to one part projection, then usage and matchup).
+- A "slump" line under a starter: his points a game over his last games played sit well under what he
+  was projected for those games ("proj those weeks") or, where those are missing, this week's
+  projection ("proj this week"), in all but one of them, with what changed — efficiency, usage, his
+  quarterback. A "qb change" line: his club's quarterback changed within the last few weeks, by its
+  games or its news, before his own production showed it; his points since are his form now.
+  Weigh either against the projection rather than trusting either alone. A "Form call" item weighs his
+  slot on form (three parts recent points to one part projection, then usage and matchup; a kicker or
+  defense half and half).
 - A "news" line under a player is a recent headline about him, dated, from his own club's feed.
 - A "team news" line under a player is a recent story about his club that need not name him — a
   quarterback change, a trade, a new play caller — and can change his role before his projection does.
@@ -214,7 +218,7 @@ def build(
         f"- {slot.slot}: {slot.player.name} ({slot.player.position}, {slot.player.team}) "
         f"{slot.player.points:.2f} pts vs {slot.player.opponent or 'TBD'}\n"
         + (f"  {behind}\n" if (behind := evidence.describe(slot.player)) else "")
-        + (f"  {SLUMP_LABEL.lower()}: {sunk.short()}\n" if (sunk := slumping.get(slot.player.player_id)) else "")
+        + (f"  {sunk.label.lower()}: {sunk.short()}\n" if (sunk := slumping.get(slot.player.player_id)) else "")
         + news_lines(news, slot.player.player_id)
         if slot.player
         else f"- {slot.slot}: (empty)\n"

@@ -1636,3 +1636,76 @@ def test_a_bye_next_week_no_listed_pickup_covers_is_still_flagged() -> None:
     client.season_schedule = [ScheduledGame(week=10, date="2026-11-15", home="NYJ", away="LV")]
 
     assert any(a.key.startswith("bye:10:TE") for a in _actions(client))
+
+
+# ── several starters in trouble, and streamers ──────────────────────────
+
+
+def test_two_slumping_starters_are_never_handed_the_same_streamer() -> None:
+    """Both tight ends slump; the wire holds a 9-a-game streamer and an 8-a-game one: one each, best gain first."""
+    second = proj("te3", "Tom End", "TE", 10.0, team="IND", opp="NYG")
+    other = proj("fb", "Bo Streamer", "TE", 7.0, team="SEA", opp="ARI")
+    client = slumping(STREAMER)
+    client.league = replace(client.league, roster_positions=["TE", "TE", "BN", "BN"])
+    client.rosters = [replace(client.rosters[0], player_ids=["te", "te3"], starter_ids=["te", "te3"])]
+    client.projections = {**client.projections, "te3": second, "fb": other}
+    catalog = client.players_catalog or {}
+    for p in (second, other):
+        catalog[p.player_id] = PlayerMeta(player_id=p.player_id, name=p.name, position="TE", team=p.team)
+    client.game_lines = (
+        client.game_lines
+        + [replace(line, player_id="te3") for line in client.game_lines if line.player_id == "te"]
+        + [
+            replace(line, player_id="fb", stats={**line.stats, "pts_ppr": 8.0})
+            for line in client.game_lines
+            if line.player_id == "fa"
+        ]
+    )
+
+    calls = [a for a in _actions(client) if a.key.startswith("slump:")]
+
+    assert len(calls) == 2
+    assert {a.player_id for a in calls} == {"fa", "fb"}
+    assert {a.replaces for a in calls} == {"te", "te3"}
+
+
+KICKER = proj("k1", "Kip Kicker", "K", 8.0, team="KC", opp="LV")
+FREE_KICKER = proj("k9", "Kai Free", "K", 8.0, team="NYJ", opp="NE")
+
+
+def _kickers(mine: float, theirs: float) -> FakeSleeper:
+    """Week 6 of a league starting one kicker, yours and the wire's both projected 8, at these points a game."""
+    client = FakeSleeper(
+        projections={"k1": KICKER, "k9": FREE_KICKER},
+        league=replace(LEAGUE, roster_positions=["K"]),
+        rosters=[SleeperRoster(roster_id=1, owner_id=SLEEPER_USER_ID, player_ids=["k1"], starter_ids=["k1"])],
+        game_lines=[
+            NFLGameLine(
+                player_id=p.player_id,
+                week=week,
+                team=p.team,
+                opponent="HOU",
+                position="K",
+                stats={"gp": 1.0, "pts_ppr": points},
+            )
+            for p, points in ((KICKER, mine), (FREE_KICKER, theirs))
+            for week in range(1, 6)
+        ],
+    )
+    client.players_catalog = {
+        p.player_id: PlayerMeta(player_id=p.player_id, name=p.name, position="K", team=p.team)
+        for p in (KICKER, FREE_KICKER)
+    }
+    client.week = 6
+    return client
+
+
+def test_a_kicker_on_the_wire_well_ahead_on_form_is_streamed_for_yours() -> None:
+    """Both projected 8; 4 a game against 13: (4 + 8) / 2 against (13 + 8) / 2, 4.5 apart."""
+    [action] = [a for a in _actions(_kickers(4.0, 13.0)) if a.key.startswith("stream:")]
+
+    assert (action.kind, action.player_id, action.replaces, action.drop) == ("waiver", "k9", "k1", "k1")
+
+
+def test_kickers_within_a_coin_flip_on_form_are_left_alone() -> None:
+    assert not [a for a in _actions(_kickers(8.0, 10.0)) if a.key.startswith("stream:")]

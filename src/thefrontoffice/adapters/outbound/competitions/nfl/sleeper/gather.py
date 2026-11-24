@@ -158,3 +158,18 @@ def player_news(espn_client: ESPNSource, players: dict[str, PlayerMeta]) -> Play
         logger.warning(f"Continuing without player news: {e}")
         return PlayerNews()
     return news.attach(feeds, players, datetime.now(UTC))
+
+
+def past_projections(
+    client: SleeperNFLSource, season: str, week: int, league: SleeperLeague, is_regular_season: bool
+) -> dict[int, dict[str, float]]:
+    """What Sleeper projected each player for each week finished so far, in the league's scoring; none where any
+    week would not load, since a slump read against some weeks' projections and not others reads a hole as a gap."""
+    played = weeks_played(week, is_regular_season)
+    if not played:
+        return {}
+    batch = client.get_projections_bulk(season, played, league.scoring_format, FANTASY_POSITIONS, league.scoring_rules)
+    if batch.failures:
+        logger.warning(f"Reading slumps against this week's projections: weeks {sorted(batch.failures)} would not load")
+        return {}
+    return {w: {pid: p.points for pid, p in each.items()} for w, each in batch.values.items()}

@@ -3,16 +3,26 @@
 The games are written by hand, eight a player, so every figure below can be checked with a pencil.
 """
 
+from dataclasses import replace
+from datetime import UTC, datetime
+
 import pytest
 from support.nfl import SLEEPER_USER_ID, game_line, proj, week_of
 
+from thefrontoffice.adapters.outbound.competitions.news import ClubStory, PlayerNews
+from thefrontoffice.adapters.outbound.competitions.nfl.news import QB_CHANGE
 from thefrontoffice.adapters.outbound.competitions.nfl.slump import (
     CALL_FORM,
+    QB_CHANGE_LABEL,
+    THIS_WEEK,
+    THOSE_WEEKS,
     called,
+    recent,
     slump,
     slumps,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
+from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
@@ -122,14 +132,14 @@ def test_missed_games_are_left_out_of_his_window() -> None:
     assert (found.games, found.recent) == (4, pytest.approx(4.75))
 
 
-def test_a_quarterback_or_a_player_with_no_game_this_week_is_never_read() -> None:
+def test_a_kicker_or_a_player_with_no_game_this_week_is_never_read() -> None:
     lines = _games("te", [*SOLID, 1.0, 1.0, 1.0, 1.0]) + _club()
     # Somebody else has a game, so fixtures are out and his club has none.
     others = proj("wr9", "Wes Other", "WR", 5.0, team="KC", opp="LV")
     state = _week(lines, proj("te", "Tyler End", "TE", 10.0, team="IND", opp=""), others)
 
     assert slump(state, state.projections["te"]) is None
-    assert slump(state, proj("qb1", "Daniel Jones", "QB", 20.0, team="IND", opp="NYG")) is None
+    assert slump(state, proj("k1", "Kip Kicker", "K", 9.0, team="IND", opp="NYG")) is None
 
 
 def test_a_slump_says_whether_his_efficiency_collapsed_and_his_usage_held() -> None:
@@ -163,22 +173,22 @@ def test_a_change_of_quarterback_is_named() -> None:
 
     found = slump(state, TE)
 
-    assert found is not None
-    assert found.passer == ("Jones", "Leonard")
+    assert found is not None and found.qb is not None
+    assert (found.qb.was, found.qb.now, found.qb.since) == ("Jones", "Leonard", 6)
     assert "Leonard" in found.short()
 
 
 def test_the_same_quarterback_throughout_is_no_change() -> None:
     found = slump(_week(_games("te", [*SOLID, 3.0, 3.0, 3.0, 3.0]) + _club()), TE)
 
-    assert found is not None and found.passer is None
+    assert found is not None and found.qb is None
 
 
 def test_too_few_games_before_it_compares_nothing() -> None:
     found = slump(_week(_games("te", [12.0, 3.0, 3.0, 3.0, 3.0]) + _club(weeks=5)), TE)
 
     assert found is not None
-    assert (found.efficiency, found.snaps, found.targets, found.passer, found.usage_holds) == (
+    assert (found.efficiency, found.snaps, found.targets, found.qb, found.usage_holds) == (
         None,
         None,
         None,
@@ -209,3 +219,95 @@ def test_a_form_call_needs_games_and_a_game_this_week() -> None:
     others = proj("wr9", "Wes Other", "WR", 5.0, team="KC", opp="LV")
     idle = proj("te", "Tyler End", "TE", 10.0, team="IND", opp="")
     assert called(_week(_games("te", SOLID) + _club(weeks=4), idle, others), idle) is None
+
+
+# ── against what he was projected ───────────────────────────────────────
+
+
+def _past(state: Week, points: float, weeks: range = range(1, 9), pid: str = "te") -> Week:
+    """`state` with Sleeper's projection for each played week stored: `points` for him in each."""
+    return replace(state, past={week: {pid: points} for week in weeks})
+
+
+def test_his_games_are_measured_against_what_he_was_projected_for_them() -> None:
+    """3 a game against 11 projected for those weeks: the basis says so, and the gap is read from them."""
+    found = slump(_past(_week(_games("te", [*SOLID, 3.0, 3.0, 3.0, 3.0]) + _club()), 11.0), TE)
+
+    assert found is not None
+    assert (found.basis, found.projected) == (THOSE_WEEKS, pytest.approx(11.0))
+
+
+def test_games_that_met_what_they_were_projected_are_no_slump_whatever_this_week_says() -> None:
+    """4 a game on projections of 5 is a player doing what he was expected to; this week's 10 is a new number."""
+    state = _past(_week(_games("te", [*SOLID, 4.0, 4.0, 4.0, 4.0]) + _club()), 5.0)
+
+    assert slump(state, TE) is None
+
+
+def test_without_a_stored_projection_for_every_game_it_falls_back_to_this_weeks() -> None:
+    state = _past(_week(_games("te", [*SOLID, 3.0, 3.0, 3.0, 3.0]) + _club()), 11.0, weeks=range(1, 8))
+    found = slump(state, TE)
+
+    assert found is not None
+    assert (found.basis, found.projected) == (THIS_WEEK, TE.points)
+
+
+# ── a quarterback ───────────────────────────────────────────────────────
+
+
+def test_a_quarterback_is_read_by_his_yards_an_attempt_and_his_rushing() -> None:
+    """8 yards an attempt and 40 rushing yards a game, then 5 and 10: 11 a game against 20 projected."""
+    qb = proj("qb1", "Daniel Jones", "QB", 20.0, team="IND", opp="NYG")
+    lines = [
+        game_line(
+            "qb1",
+            week,
+            position="QB",
+            team="IND",
+            off_snp=60.0,
+            tm_off_snp=60.0,
+            pass_att=30.0,
+            pass_yd=240.0 if week <= 4 else 150.0,
+            rush_yd=40.0 if week <= 4 else 10.0,
+            pts_ppr=20.0 if week <= 4 else 11.0,
+        )
+        for week in range(1, 9)
+    ]
+    found = slump(_week(lines, qb, starters=("qb1",)), qb)
+
+    assert found is not None and found.efficiency is not None and found.rushing is not None
+    assert (found.efficiency.measure, found.efficiency.now, found.efficiency.before) == ("yds/att", 5.0, 8.0)
+    assert (found.rushing.now, found.rushing.before) == (10.0, 40.0)
+
+
+# ── his quarterback changing under him ──────────────────────────────────
+
+
+def test_a_quarterback_change_flags_him_before_his_production_drops() -> None:
+    """Steady at 10 a game, but Leonard has started since week 7: his form now is his two games since."""
+    state = _week(_games("te", [10.0] * 6 + [12.0, 14.0]) + _club(switch=7))
+
+    found = slump(state, TE)
+
+    assert found is not None and found.qb is not None
+    assert not found.short_of
+    assert found.label == QB_CHANGE_LABEL
+    assert (found.since, found.since_form) == (7, 13.0)
+    assert recent(state, "te", found.since) == 13.0
+
+
+def test_a_change_long_settled_is_no_longer_news() -> None:
+    """Leonard has started since week 2: six games, more than the window a change is read in."""
+    assert slump(_week(_games("te", [10.0] * 8) + _club(switch=2)), TE) is None
+
+
+def test_a_club_story_of_a_quarterback_change_flags_him_before_any_game_under_the_new_one() -> None:
+    article = NewsArticle(article_id="1", published=datetime(2026, 11, 20, tzinfo=UTC), headline="Colts bench Jones")
+    news = PlayerNews(by_club={"IND": [ClubStory(kind=QB_CHANGE, article=article)]}, club_of={"te": "IND"})
+    state = replace(_week(_games("te", [10.0] * 8) + _club()), news=news)
+
+    found = slump(state, TE)
+
+    assert found is not None and found.qb is not None
+    assert (found.qb.was, found.qb.since) == ("", None)
+    assert article.headline in found.short()
