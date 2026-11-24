@@ -13,9 +13,10 @@ scout's prompts), `trading.py` (trades) and `drawn.py` (a player's week in the d
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from thefrontoffice.adapters.outbound.competitions import paging, places
+from thefrontoffice.adapters.outbound.competitions.nba import day as nba_day
 from thefrontoffice.adapters.outbound.competitions.nba import drawer, history, views
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
@@ -37,6 +38,7 @@ from thefrontoffice.adapters.outbound.competitions.seeds import seed
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
 from thefrontoffice.adapters.outbound.platforms.espn.types import NBA
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
+from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.paths import RECENT_AVERAGE
@@ -55,6 +57,7 @@ from thefrontoffice.domain.errors import (
 )
 from thefrontoffice.domain.models import (
     CompetitionContext,
+    DayRange,
     Forecast,
     LeagueSchedule,
     MatchupInput,
@@ -286,6 +289,62 @@ class YahooNBAProvider:
             note=nba_week.not_final(self.games.unscheduled(found.start, found.end)),
         )
 
+    def day_of(self, league_id: str, week: int, day: date | None = None) -> Summary:
+        """One day of a week, both sides as Yahoo has them slotted on it, each player with his line from it.
+
+        Today where the week holds it and no `day` is asked for, else the week's
+        first. A day still open carries Sleeper's projection for each player with a
+        game, and your bench players who would add a start (`day.to_start`).
+
+        Raises:
+            NotFoundError: the season has no such week, or the week no such day.
+        """
+        league = self._league(league_id)
+        current = self._within(league, week)
+        yahoo = self._yahoo_for(league)
+        team = yahoo.get_user_team()
+        weeks = self._weeks(league, week)
+        found = yahoo.pairing(team.team_key, week)
+        if found is None:
+            return Summary(window=f"Week {week}", weeks=weeks)
+        today = self.feeds.day()
+        on = nba_day.pick(day, found.start, found.end, today)
+        stage: nba_week.Stage = "played" if on < today else "playing" if on == today else "to come"
+        mine, theirs = team.team_key, found.opponent.team_key
+        rosters = yahoo.day_rosters([mine, theirs], on)
+        sides = (rosters.get(mine, []), rosters.get(theirs, []))
+        rules = yahoo.settings()
+        weights = reads.weights(league, yahoo)
+        open_day = stage != "played"
+        shown = nba_day.Day(
+            day=on,
+            stage=stage,
+            games=self._games_on(on),
+            tipoff=self.feeds.tipoff(on) if open_day else {},
+            projected=self.feeds.projected_on([*sides[0], *sides[1]], on) if open_day else {},
+            slots=nba_lineup.slots(rules.slots),
+        )
+        span = DayRange(
+            day=on, first=found.start, last=found.end, today=today if found.start <= today <= found.end else None
+        )
+        records = reads.records_after(yahoo, league, week) if week < current else reads.records(yahoo)
+        scored = None if league.by_points else rules.categories
+        return nba_day.board(found, weeks, span, records, sides, scored, weights, shown)
+
+    def _games_on(self, day: date) -> list[ScheduledGame] | None:
+        """The real games on `day`; None where the schedule would not load, rather than a day nobody plays."""
+        try:
+            return self.games.games_between(day, day)
+        except FrontOfficeError as e:
+            logger.warning(f"Showing {day.isoformat()} without its games, the schedule would not load: {e}")
+            return None
+
+    @staticmethod
+    def _weeks(league: YahooLeague, week: int) -> WeekRange:
+        """Where `week` sits in the season, for paging to another."""
+        current = league.current_week or week
+        return WeekRange(week=week, current=current, first=league.first_week, last=league.last_week(current))
+
     def _within(self, league: YahooLeague, week: int) -> int:
         """The week being played, once `week` is known to be one of the season's.
 
@@ -317,7 +376,7 @@ class YahooNBAProvider:
         set day by day, so today's did not play it.
         """
         current = league.current_week or week
-        weeks = WeekRange(week=week, current=current, first=league.first_week, last=league.last_week(current))
+        weeks = self._weeks(league, week)
         found = yahoo.pairing(team.team_key, week)
         if found is None:
             return Summary(window=f"Week {week}", weeks=weeks)

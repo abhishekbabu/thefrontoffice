@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, get_args
 
 from pydantic import BaseModel, Field, computed_field, model_validator
@@ -405,6 +405,17 @@ class WeekRange(BaseModel):
     """The league's final week, its playoffs included."""
 
 
+class DayRange(BaseModel):
+    """Which day of a week a page shows, where a lineup is set day by day, and the week's days to page through."""
+
+    day: date
+    first: date
+    last: date
+    today: date | None = Field(
+        default=None, description="Today on the league's clock, where it falls inside the week; None elsewhere."
+    )
+
+
 class CategoryLine(BaseModel):
     """One scoring category of a category league's week: each side's figure, and who leads it."""
 
@@ -475,5 +486,13 @@ class Summary(BaseModel):
         description=(
             "Where this week sits in the season, for paging to another. "
             "None in a competition that shows only the week being played."
+        ),
+    )
+
+    days: DayRange | None = Field(
+        default=None,
+        description=(
+            "Which day of the week this shows, where it shows one day of a lineup set day by day: its rows are "
+            "that day's slots and lines, and its categories that day's totals. None for a whole week."
         ),
     )

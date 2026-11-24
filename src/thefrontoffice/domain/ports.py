@@ -8,6 +8,7 @@ adapter.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol, TypedDict, TypeVar, runtime_checkable
 
 from pydantic import BaseModel
@@ -432,6 +433,24 @@ class WeekBrowsingProvider(Protocol):
 
         Raises:
             NotFoundError: the season has no such week.
+        """
+        ...
+
+
+@runtime_checkable
+class DayBrowsingProvider(Protocol):
+    """A competition whose lineups are set day by day, so a week can be opened one day at a time.
+
+    Separate from WeekBrowsingProvider: a weekly lineup has no day to open.
+    """
+
+    def day_of(self, league_id: str, week: int, day: date | None = None) -> Summary:
+        """One day of a week, both sides as slotted on it: each player's line from it, or what is projected of
+        him where it is still to come, and the day's totals. With no `day`, today where the week holds it,
+        else its first.
+
+        Raises:
+            NotFoundError: the season has no such week, or the week no such day.
         """
         ...
 

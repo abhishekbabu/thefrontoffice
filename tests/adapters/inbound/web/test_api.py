@@ -12,7 +12,7 @@ import socket
 import threading
 import time
 from collections.abc import Iterator, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -136,10 +136,14 @@ def test_competitions_include_the_unconfigured_ones() -> None:
 
 def test_a_competition_says_what_it_can_do() -> None:
     body = TestClient(web.create_app(fake_wiring(registry=REGISTRY.entries))).get("/api/competitions").json()
-    flags = {c["key"]: (c["judges_wire"], c["plans_weeks"], c["finds_trades"], c["browses_weeks"]) for c in body}
+    flags = {
+        c["key"]: (c["judges_wire"], c["plans_weeks"], c["finds_trades"], c["browses_weeks"], c["browses_days"])
+        for c in body
+    }
 
-    assert flags["nfl-sleeper"] == (True, True, True, True)
-    assert flags["premier-league-fpl"] == (False, True, False, True)
+    assert flags["nfl-sleeper"] == (True, True, True, True, False)
+    assert flags["premier-league-fpl"] == (False, True, False, True, False)
+    assert flags["nba-yahoo"][3:] == (True, True)
     assert all(c["refreshes"] for c in body)
 
 
@@ -1031,6 +1035,23 @@ def test_another_week_comes_back_with_where_it_sits_in_the_season() -> None:
     )
 
 
+class _DayProvider(_SummaryProvider):
+    def day_of(self, league_id: str, week: int, day: date | None = None) -> Summary:
+        from thefrontoffice.domain.models import DayRange
+
+        on = day or date(2026, 11, 25)
+        return Summary(window=f"Week {week}", days=DayRange(day=on, first=date(2026, 11, 23), last=date(2026, 11, 29)))
+
+
+@pytest.mark.parametrize(("query", "shown"), [("", "2026-11-25"), ("?day=2026-11-27", "2026-11-27")])
+def test_a_day_of_a_week_comes_back_as_asked_or_as_the_competition_picks(query: str, shown: str) -> None:
+    from thefrontoffice.domain.models import Summary
+
+    body = _client(_DayProvider(Summary())).get(f"/api/competitions/nfl-sleeper/leagues/L1/weeks/4/day{query}").json()
+
+    assert (body["window"], body["days"]["day"]) == ("Week 4", shown)
+
+
 def test_a_weeks_real_games_come_back_by_number() -> None:
     from thefrontoffice.domain.models import Summary
 
@@ -1173,6 +1194,7 @@ def test_a_deferred_tab_is_its_own_read_where_the_competition_defers_any() -> No
         "teams/T2/outlook",
         "weeks/4",
         "weeks/4/games",
+        "weeks/4/day",
         "trades",
         "players?search=lamb",
         "players/7/tabs/Seasons",

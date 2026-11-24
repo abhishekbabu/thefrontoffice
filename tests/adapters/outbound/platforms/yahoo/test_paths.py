@@ -93,6 +93,36 @@ def test_a_day_is_read_with_each_players_line_from_it_and_held_as_briefly_as_the
     assert read.ttl == paths.SCOREBOARD_TTL
 
 
+NOON = datetime(2026, 11, 24, 12, tzinfo=ZoneInfo("America/Los_Angeles"))
+"""Midday on the league's own clock, on a Tuesday."""
+
+
+def test_a_day_to_come_holds_only_while_a_lineup_goes_unchanged_and_the_day_being_played_as_the_score() -> None:
+    ahead = paths.day_roster("t", date(2026, 11, 27), NOON)
+    today = paths.day_roster("t", date(2026, 11, 24), NOON)
+
+    assert paths.SCOREBOARD_TTL < ahead.ttl < paths.ROSTER_TTL
+    assert today.ttl == paths.SCOREBOARD_TTL
+    assert not ahead.settled and not today.settled
+
+
+def test_a_day_past_holds_any_copy_read_once_it_stood_and_none_read_before() -> None:
+    """Monday stood at 6am Tuesday: a copy from 7am is held at noon, one from 5am — mid-night — never is."""
+    read = paths.day_roster("t", date(2026, 11, 23), NOON)
+
+    stood = datetime.combine(date(2026, 11, 24), paths.DAY_STANDS, tzinfo=NOON.tzinfo)
+    assert read.settled
+    assert NOON - (stood + timedelta(hours=1)) <= read.ttl < NOON - (stood - timedelta(hours=1))
+    assert read.servable == read.ttl
+
+
+def test_a_day_just_past_is_held_as_briefly_as_the_score_until_it_stands() -> None:
+    """At 1am Tuesday the last of Monday's games may still be on."""
+    read = paths.day_roster("t", date(2026, 11, 23), NOON.replace(hour=1))
+
+    assert (read.ttl, read.settled) == (paths.SCOREBOARD_TTL, True)
+
+
 def test_averages_by_key_are_a_read_per_25_players_each_naming_its_keys() -> None:
     keys = [f"466.p.{i}" for i in range(30)]
 

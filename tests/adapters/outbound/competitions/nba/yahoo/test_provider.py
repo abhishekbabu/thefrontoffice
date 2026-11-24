@@ -30,6 +30,7 @@ from support.nba import yahoo_team as _yahoo_team
 from support.reports import MOCK_NBA_REPORT
 from support.stores import FakeAnswers, FakeUntouchable
 
+from thefrontoffice.adapters.outbound.competitions.nba import day as nba_day
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba.actions import PROVISIONAL
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, Role, nine_cat
@@ -2042,3 +2043,129 @@ def test_club_news_that_will_not_load_leaves_the_scout_as_it_was() -> None:
     context = nba_provider(yahoo, espn=FakeESPN(error=ESPNAPIError("down"))).build_context()
 
     assert "team news" not in context.roster_lines["Roster One"]
+
+
+# ── a day of the week ───────────────────────────────────────────────────
+
+WEEK_DAYS = [
+    ScheduledGame(week=0, date="2026-02-10", home="LAL", away="BOS", status="complete"),
+    ScheduledGame(week=0, date="2026-02-11", home="LAL", away="BOS", status="in_game"),
+    ScheduledGame(week=0, date="2026-02-13", home="LAL", away="DEN", status="pre_game"),
+]
+"""The Lakers on Tuesday (over), Wednesday (on) and Friday (to come), inside the 9-15 February week."""
+
+
+def _day_yahoo() -> FakeYahoo:
+    yahoo = FakeYahoo()
+    yahoo.slots = {"PG": 1, "C": 1, "BN": 2}
+    yahoo.today_lines = {
+        "t.1": [
+            make_player("Laker", position="PG", selected_position="PG", stats={"12": "-"}),
+            make_player("Idle Big", position="C", team="NYK", selected_position="C", stats={"12": "-"}),
+            make_player("Laker Big", position="C", selected_position="BN", stats={"12": "-"}),
+        ],
+        "t.2": [make_player("Celtic", team="BOS", selected_position="PG", stats={"12": "-"})],
+    }
+    return yahoo
+
+
+def test_a_day_of_the_week_being_played_opens_on_today() -> None:
+    yahoo = _day_yahoo()
+    provider = nba_provider(yahoo, nba=FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 11)))
+
+    summary = provider.day_of("", 5)
+
+    assert summary.days is not None
+    assert (summary.days.day, summary.days.first, summary.days.last) == (
+        date(2026, 2, 11),
+        date(2026, 2, 9),
+        date(2026, 2, 15),
+    )
+    assert summary.days.today == date(2026, 2, 11)
+    assert yahoo.days_read == [date(2026, 2, 11)]
+
+
+def test_a_day_of_a_week_not_holding_today_opens_on_its_first() -> None:
+    yahoo = _day_yahoo()
+    provider = nba_provider(yahoo, nba=FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 20)))
+
+    summary = provider.day_of("", 4)
+
+    assert summary.days is not None and (summary.days.day, summary.days.today) == (date(2026, 2, 9), None)
+
+
+def test_a_day_played_reads_each_side_as_slotted_on_it_with_no_projection() -> None:
+    yahoo = _day_yahoo()
+    tuesday = date(2026, 2, 10)
+    yahoo.day_lines[tuesday] = {
+        "t.1": [make_player("Laker", position="PG", selected_position="PG", stats={"12": "31", "15": "4"})],
+        "t.2": [make_player("Celtic", team="BOS", selected_position="PG", stats={"12": "18", "15": "9"})],
+    }
+    sleeper = FakeSleeperProjections([_game("Laker", "2026-02-10")])
+    provider = nba_provider(yahoo, nba=FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 11)), sleeper=sleeper)
+
+    summary = provider.day_of("", 5, tuesday)
+
+    assert summary.mine is not None
+    [laker] = summary.mine.lineup
+    assert {stat.label: stat.value for stat in laker.line}["PTS"] == "31"
+    assert laker.value == ""  # what he did, not what he was projected
+    assert {line.name: line.lead for line in summary.categories}["PTS"] == "mine"
+
+
+def test_a_day_to_come_projects_each_game_and_marks_who_to_start() -> None:
+    yahoo = _day_yahoo()
+    sleeper = FakeSleeperProjections([_game("Laker", "2026-02-13"), _game("Laker Big", "2026-02-13")])
+    provider = nba_provider(yahoo, nba=FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 11)), sleeper=sleeper)
+
+    summary = provider.day_of("", 5, date(2026, 2, 13))
+
+    assert summary.mine is not None
+    rows = {spot.player: spot for spot in (*summary.mine.lineup, *summary.mine.bench)}
+    assert rows["Laker"].value  # projected
+    assert rows["Laker Big"].mark == nba_day.START
+    assert rows["Idle Big"].tone == "warning"
+
+
+def test_a_points_league_day_to_come_projects_fantasy_points() -> None:
+    yahoo = _day_yahoo()
+    yahoo.weights = WEIGHTS
+    sleeper = FakeSleeperProjections([_game("Laker", "2026-02-13")])
+    provider = nba_provider(
+        yahoo, nba=FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 11)), sleeper=sleeper, league=POINTS_LEAGUE
+    )
+
+    summary = provider.day_of("", 5, date(2026, 2, 13))
+
+    assert summary.mine is not None
+    laker = summary.mine.lineup[0]
+    assert (laker.scoring, laker.projection) == ("projected", laker.value)
+    assert float(laker.projection) > 0
+
+
+def test_a_day_outside_its_week_is_not_found() -> None:
+    provider = nba_provider(_day_yahoo(), nba=FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 11)))
+
+    with pytest.raises(NotFoundError):
+        provider.day_of("", 5, date(2026, 2, 16))
+
+
+def test_a_day_of_a_week_without_an_opponent_shows_no_sides() -> None:
+    yahoo = _day_yahoo()
+    yahoo.matchup_dates = None
+
+    summary = nba_provider(yahoo, nba=FakeNBA(today=date(2026, 2, 11))).day_of("", 5)
+
+    assert (summary.mine, summary.days) == (None, None)
+    assert yahoo.days_read == []
+
+
+def test_a_day_whose_schedule_would_not_load_is_shown_without_its_games() -> None:
+    yahoo = _day_yahoo()
+    nba = FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 11))
+    nba.between_error = SleeperAPIError("down")
+
+    summary = nba_provider(yahoo, nba=nba).day_of("", 5, date(2026, 2, 13))
+
+    assert summary.mine is not None
+    assert not any(spot.today for spot in summary.mine.lineup)

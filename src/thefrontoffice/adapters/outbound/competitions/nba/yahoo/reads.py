@@ -266,6 +266,6 @@ YAHOO_GAME = YahooGame(
     available=WIRE_DEPTH,
     leaders=LEADERS,
     per_stat=LEADERS_PER_STAT,
-    today=lambda: datetime.now(PACIFIC).date(),
+    clock=lambda: datetime.now(PACIFIC),
 )
 """What this provider reads of Yahoo's NBA game, so a browser sync captures exactly that."""

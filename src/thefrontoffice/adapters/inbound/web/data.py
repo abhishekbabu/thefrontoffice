@@ -43,6 +43,9 @@ class Competition(BaseModel):
     browses_weeks: bool
     """Whether weeks other than the one being played can be opened."""
 
+    browses_days: bool
+    """Whether a week can be opened a day at a time, its lineups being set day by day."""
+
     finds_trades: bool
     """Whether the trades worth offering can be found."""
 

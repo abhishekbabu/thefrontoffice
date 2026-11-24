@@ -231,7 +231,7 @@ def played_today(row: Spot, done: Player, status: str, by_points: bool, scored: 
     if by_points:
         return row.model_copy(
             update={
-                "scored": _fantasy(done.points),
+                "scored": fantasy(done.points),
                 "scoring": "live" if status == "in_game" else "final",
                 "projection": row.value,
             }
@@ -266,7 +266,7 @@ def _spot(
     """
     about = f"{player.position} · {player.team}"
     if player.stats or player.points:
-        points = _fantasy(player.points)
+        points = fantasy(player.points)
         figures = line(player, scored)
         return Spot(
             player_id=player.player_key,
@@ -289,7 +289,7 @@ def _spot(
     )
 
 
-def _fantasy(printed: str) -> str:
+def fantasy(printed: str) -> str:
     """Fantasy points as Yahoo prints them, without trailing zeros: '140.80' reads '140.8'."""
     try:
         return f"{float(printed):g}"

@@ -68,6 +68,7 @@ def test_each_flag_says_whether_the_competition_implements_the_port_behind_it() 
         "judges_wire": True,
         "plans_weeks": False,
         "browses_weeks": False,
+        "browses_days": False,
         "finds_trades": False,
         "searches_players": False,
         "refreshes": False,
