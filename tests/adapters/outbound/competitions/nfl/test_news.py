@@ -140,3 +140,58 @@ def test_a_question_is_talk_of_a_change_not_one() -> None:
 
 def test_the_trade_deadline_alone_is_not_a_trade() -> None:
     assert _team("Josh Downs focused on the Colts with the trade deadline behind him") == {}
+
+
+# Week 12, 2026: the Colts cut Daniel Jones on Fri 20 Nov and started Anthony Richardson. By the time
+# the app read it, Sleeper had Jones a free agent and Richardson atop the depth chart.
+CUT = NewsArticle(
+    article_id="cut",
+    published=NOW - timedelta(days=2),
+    headline="Colts cut QB Daniel Jones, turn to Anthony Richardson Sr. for next start",
+    summary="The Colts have cut quarterback Daniel Jones and are turning to Anthony Richardson Sr. to start.",
+)
+STICKING = NewsArticle(
+    article_id="sticking",
+    published=NOW - timedelta(days=6),
+    headline="Colts sticking with Daniel Jones at QB despite dreadful start",
+    athletes=["Daniel Jones"],
+)
+AFTER_THE_CUT = {
+    **COLTS,
+    "jones": replace(COLTS["jones"], team="FA", depth_chart_order=0),
+    "richardson": replace(COLTS["richardson"], depth_chart_order=1),
+}
+
+
+def _kinds(articles: list[NewsArticle], players: dict[str, PlayerMeta]) -> list[tuple[str, str]]:
+    """Tyler Warren's club stories as (kind, article id)."""
+    return [(s.kind, s.article.article_id) for s in attach({"IND": articles}, players, NOW).team("warren")]
+
+
+def test_the_colts_cutting_their_starter_reaches_tyler_warren_once_sleeper_has_moved_both_quarterbacks() -> None:
+    assert _kinds([CUT, STICKING], AFTER_THE_CUT) == [(QB_CHANGE, "cut")]
+
+
+def test_the_colts_cutting_their_starter_reaches_tyler_warren_before_sleeper_has_moved_either() -> None:
+    assert _kinds([CUT], COLTS) == [(QB_CHANGE, "cut")]
+
+
+def test_a_released_quarterback_named_alone_is_his_old_clubs_qb_change() -> None:
+    released = replace(CUT, headline="Colts release Daniel Jones", summary="")
+
+    assert _kinds([released], AFTER_THE_CUT) == [(QB_CHANGE, "cut")]
+
+
+def test_trading_away_only_a_quarterback_is_a_qb_change() -> None:
+    traded = replace(CUT, headline="Colts trade Daniel Jones for a pick", summary="")
+
+    assert _kinds([traded], COLTS) == [(QB_CHANGE, "cut")]
+
+
+def test_a_clubs_start_to_the_season_is_not_a_backup_starting() -> None:
+    assert _team("Anthony Richardson upbeat about Colts despite 3-7 start") == {}
+
+
+def test_a_trade_that_only_mentions_the_quarterback_does_not_move_him() -> None:
+    """Three defenders traded for, and the starter's reaction: no quarterback changed hands."""
+    assert _team("Daniel Jones sees a shot as the Colts add three defenders in trades") == {}
