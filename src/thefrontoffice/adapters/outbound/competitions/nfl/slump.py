@@ -17,7 +17,7 @@ is noise either way; three out of four is a trend.
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from thefrontoffice.adapters.outbound.competitions.matchups import Matchup
+from thefrontoffice.adapters.outbound.competitions.matchups import matchup_factor
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
     MIN_GAMES_FOR_AVERAGE,
     TARGET_POSITIONS,
@@ -213,20 +213,8 @@ CALL_FORM = 0.75
 """Form's share of a form call, against the projection's: `worth` weighs them evenly, which is what kept a
 slumping starter ahead of every streamer. A quarter stays with the projection, which still reads the week."""
 
-MATCHUP_SWING = 0.1
-"""The most a matchup moves a form call, either way: the softest defense at his position a tenth up, the toughest a tenth down."""
-
 CALL_BY = 2.0
 """Points a form call must favour the player coming in by: under it the two are a coin flip, and a hunch is no move."""
-
-
-def matchup_factor(matchup: Matchup | None) -> float:
-    """1 ± `MATCHUP_SWING`, straight across its `standing` (season and recent ranks, evenly): 1 is the softest
-    defense, the last the toughest."""
-    if matchup is None or matchup.defenses < 2:
-        return 1.0
-    middle = (matchup.defenses + 1) / 2
-    return 1 + MATCHUP_SWING * (middle - matchup.standing) / (middle - 1)
 
 
 def called(state: Week, player: Projection) -> float | None:

@@ -6,12 +6,9 @@ The games are written by hand, eight a player, so every figure below can be chec
 import pytest
 from support.nfl import SLEEPER_USER_ID, game_line, proj, week_of
 
-from thefrontoffice.adapters.outbound.competitions.matchups import Matchup, Recent
 from thefrontoffice.adapters.outbound.competitions.nfl.slump import (
     CALL_FORM,
-    MATCHUP_SWING,
     called,
-    matchup_factor,
     slump,
     slumps,
 )
@@ -198,34 +195,6 @@ def test_only_your_starters_are_listed() -> None:
 
 
 # ── the form call ───────────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize(("rank", "factor"), [(1, 1 + MATCHUP_SWING), (32, 1 - MATCHUP_SWING)])
-def test_a_matchup_moves_a_form_call_a_tenth_at_most_either_way(rank: int, factor: float) -> None:
-    assert matchup_factor(
-        Matchup(opponent="NYG", position="TE", allowed=10.0, rank=rank, defenses=32)
-    ) == pytest.approx(factor)
-
-
-def test_the_middle_ranks_move_a_form_call_equally_either_way() -> None:
-    def factor(rank: int) -> float:
-        return matchup_factor(Matchup(opponent="NYG", position="TE", allowed=10.0, rank=rank, defenses=32))
-
-    assert factor(16) - 1 == pytest.approx(1 - factor(17))
-
-
-def test_a_defenses_recent_games_count_half_its_matchup() -> None:
-    """Softest on the season, toughest over its last games: the middle, so nothing either way."""
-    turned = Matchup(
-        opponent="NYG", position="TE", allowed=10.0, rank=1, defenses=32, recent=Recent(allowed=2.0, rank=32)
-    )
-
-    assert matchup_factor(turned) == pytest.approx(1.0)
-
-
-def test_no_matchup_moves_nothing() -> None:
-    assert matchup_factor(None) == 1.0
-    assert matchup_factor(Matchup(opponent="NYG", position="TE", allowed=1.0, rank=1, defenses=1)) == 1.0
 
 
 def test_a_form_call_weighs_three_parts_recent_points_to_one_part_projection() -> None:

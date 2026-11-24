@@ -9,7 +9,7 @@ from dataclasses import replace
 import pytest
 from support.nfl import SLEEPER_USER_ID, SLUMPING_TE, FakeSleeper, game_line, nfl_provider, proj, slumping
 
-from thefrontoffice.adapters.outbound.competitions.matchups import RECENT_GAMES, Matchup, Recent
+from thefrontoffice.adapters.outbound.competitions.matchups import MATCHUP_SWING, RECENT_GAMES, Matchup, Recent
 from thefrontoffice.adapters.outbound.competitions.nfl.slump import SLUMP_LABEL
 from thefrontoffice.adapters.outbound.competitions.nfl.views import ON_FORM, ease
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -105,6 +105,29 @@ def test_a_fit_weighs_recent_form_beside_the_projection_for_both_players() -> No
 
     assert card.values["Fits"] == 7.0
     assert "Wade Starter" in card.notes["Fits"]
+
+
+def _against_wrs() -> list[NFLGameLine]:
+    """Four defenses against one offense's receivers: NE gives up the most, LV the fewest."""
+    allowed = {"NE": 30.0, "CHI": 20.0, "DEN": 10.0, "LV": 5.0}
+    return [game_line(f"x{d}", 1, opponent=d, pts_ppr=pts) for d, pts in allowed.items()]
+
+
+def test_a_fit_weighs_each_players_matchup() -> None:
+    """Free, 10 projected against the softest defense, is worth 11; your starter, 12 against the toughest, 10.8."""
+    [card] = [c for c in _cards(_wire(FREE_WR, game_lines=_against_wrs())) if c.player_id == "wr9"]
+
+    assert card.values["Fits"] == pytest.approx(10.0 * (1 + MATCHUP_SWING) - 12.0 * (1 - MATCHUP_SWING))
+
+
+def test_the_opponent_column_says_how_soft_the_defense_is_and_is_toned_by_it() -> None:
+    cards = {c.player_id: c for c in _cards(_wire(FREE_WR, game_lines=_against_wrs()))}
+
+    free = cards["wr9"]
+    assert free.columns["Opponent"].startswith("vs NE")
+    assert "easiest" in free.columns["Opponent"]
+    assert free.tones["Opponent"] == "good"
+    assert "to WRs" in free.notes["Opponent"]
 
 
 def test_a_kicker_follows_every_skill_player_while_yours_plays() -> None:

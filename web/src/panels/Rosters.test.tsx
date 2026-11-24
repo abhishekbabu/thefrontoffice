@@ -21,6 +21,7 @@ const card = (id: string, name: string): PlayerCard => ({
   values: {},
   ruled_out: false,
   notes: {},
+  tones: {},
   roles: { Player: "player" },
 });
 

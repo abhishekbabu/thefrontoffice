@@ -9,7 +9,7 @@ import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from thefrontoffice.adapters.outbound.competitions.matchups import RECENT_GAMES, Matchup
+from thefrontoffice.adapters.outbound.competitions.matchups import RECENT_GAMES, Matchup, matchup_factor
 from thefrontoffice.adapters.outbound.competitions.nfl import evidence, injuries
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import LineupSlot, eligible_positions
 from thefrontoffice.adapters.outbound.competitions.nfl.model import (
@@ -168,7 +168,9 @@ def cards(
         ros = {ROS_COLUMN: f"{rest:.1f}"} if rest is not None else {}
         # Through the zero-point fallback, which carries his ruling
         # where Sleeper has published no projection for him.
-        versus = facing(projection or zero_projection(player_id, meta), state.scheduled, "—")
+        facing_now = projection or zero_projection(player_id, meta)
+        matchup = state.evidence.matchup(facing_now)
+        versus = opposing(facing(facing_now, state.scheduled, "—"), matchup)
         depth_cell = str(depth) if depth else "—"
         columns = (
             # Read left to right as a pickup is weighed: who he is, what he is
@@ -209,7 +211,9 @@ def cards(
                     **({WITHOUT_COLUMN: split.note()} if split else {}),
                     # His projection is the figure the slump says is wrong.
                     **({"Proj": f"{SLUMP_LABEL}: {sunk.short()}"} if sunk else {}),
+                    **({"Opponent": matchup.allowed_to()} if matchup else {}),
                 },
+                tones={"Opponent": matchup.tone} if matchup and matchup.tone != "neutral" else {},
                 columns=columns,
                 values={
                     **({FIT_COLUMN: fitted.gain} if fitted else {}),
@@ -230,7 +234,7 @@ class Fit:
     """How a free agent compares with the weakest starter he could replace: the gap, and against whom."""
 
     gain: float
-    """His `worth.value` less that starter's; his whole value where the slot is empty, or its starter cannot play this week."""
+    """His `weekly` value less that starter's; his whole value where the slot is empty, or its starter cannot play this week."""
     against: str
     """Who he is measured against, 'over Josh Allen' or 'vs Josh Allen', or the slot he would fill, 'at FLEX, empty', 'for Josh Allen, out'."""
 
@@ -243,15 +247,21 @@ class Fit:
         return f"{self.cell()} {self.against}"
 
 
+def weekly(state: Week, player: Projection) -> float:
+    """His `worth.value` this week: times his `matchup_factor`, so a soft defense lifts a pickup and a tough one sinks
+    a starter, a tenth at most either way."""
+    return value(state, player) * matchup_factor(state.evidence.matchup(player))
+
+
 def _standing(state: Week, slot: LineupSlot) -> float | None:
-    """What a starting slot holds this week, by `worth.value`; None where nobody in it can play: a hole."""
+    """What a starting slot holds this week, by `weekly`; None where nobody in it can play: a hole."""
     if slot.player is None or not plays(state, slot.player):
         return None
-    return value(state, slot.player)
+    return weekly(state, slot.player)
 
 
 def fit(state: Week, projection: Projection) -> Fit | None:
-    """How he compares with your weakest starter he could replace, either way, both read by `worth.value`.
+    """How he compares with your weakest starter he could replace, either way, both read by `weekly`.
 
     The figure the to-do list weighs a pickup by, not this week's projection:
     a projection alone ranks the wire's kickers and defenses within a point
@@ -271,7 +281,7 @@ def fit(state: Week, projection: Projection) -> Fit | None:
         return None
     standings = [(_standing(state, slot), slot) for slot in eligible]
     held, slot = min(standings, key=lambda pair: float("-inf") if pair[0] is None else pair[0])
-    gain = round(value(state, projection) - (held or 0.0), 2)
+    gain = round(weekly(state, projection) - (held or 0.0), 2)
     starter = slot.player
     if starter is None:
         return Fit(gain, f"at {slot.slot}, empty")
@@ -376,7 +386,7 @@ def _figures(state: Week, player: Projection, trend: bool) -> dict[str, Stat]:
         Stat(label="Proj", value=f"{player.points:.2f}" if plays else DASH),
         Stat(
             label="Opp",
-            value=facing(player, state.scheduled, DASH) + (f", {ease(matchup)}" if matchup else ""),
+            value=opposing(facing(player, state.scheduled, DASH), matchup),
             tone=matchup.tone if matchup else "neutral",
         ),
         Stat(label=TREND_COLUMN, value=grew.short() if grew else DASH, tone="good" if grew else "neutral"),
@@ -387,6 +397,11 @@ def _figures(state: Week, player: Projection, trend: bool) -> dict[str, Stat]:
         ),
     ]
     return {row.label: row for row in rows}
+
+
+def opposing(versus: str, matchup: Matchup | None) -> str:
+    """Who he plays and how easy that defense is: 'vs SF, 15th-easiest · 4th-easiest L5'."""
+    return f"{versus}, {ease(matchup)}" if matchup else versus
 
 
 def ease(matchup: Matchup) -> str:

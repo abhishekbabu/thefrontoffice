@@ -142,6 +142,14 @@ class PlayerCard(BaseModel):
         ),
     )
 
+    tones: dict[str, Tone] = Field(
+        default_factory=dict,
+        description=(
+            "A cell's tone, by column, where it has one other than neutral — an Opponent cell good against a "
+            "soft defense. The cell's text says the same, for anyone who cannot see the color."
+        ),
+    )
+
     @computed_field(
         description="The columns a table renders as more than text, by what they hold — so no client matches names."
     )
