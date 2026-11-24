@@ -13,7 +13,7 @@ scout's prompts), `trading.py` (trades) and `drawn.py` (a player's week in the d
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from thefrontoffice.adapters.outbound.competitions import paging, places
 from thefrontoffice.adapters.outbound.competitions.nba import day as nba_day
@@ -28,6 +28,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
+    PACIFIC,
     position_filters,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.week import ScheduleSource
@@ -41,7 +42,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperPro
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.auth import YahooLeagueSource
 from thefrontoffice.adapters.outbound.platforms.yahoo.client import YahooSource
-from thefrontoffice.adapters.outbound.platforms.yahoo.paths import RECENT_AVERAGE
+from thefrontoffice.adapters.outbound.platforms.yahoo.paths import DAY_STANDS, RECENT_AVERAGE
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Average,
     Pairing,
@@ -100,6 +101,7 @@ class YahooNBAProvider:
         fallback_weekly_adds: int,
         forecast: Callable[[MatchupInput], Forecast],
         untouchable: UntouchableSource,
+        days: nba_day.DayLog,
     ):
         """Every collaborator from bootstrap, which is the one place a real client is built.
 
@@ -110,7 +112,8 @@ class YahooNBAProvider:
         real games inside a matchup week. `forecast` plays a matchup out — the
         same simulation the week's chance comes from — so a category league's
         pickups weigh the categories still in play. `untouchable` is who the manager
-        will not let go, which no drop or trade idea names.
+        will not let go, which no drop or trade idea names. `days` is the app's own
+        record of each day: statuses and minutes that neither platform keeps for long.
         """
         self._auth = auth
         self._yahoo_for = yahoo_for
@@ -121,6 +124,7 @@ class YahooNBAProvider:
         self.fallback_weekly_adds = fallback_weekly_adds
         self.forecast = forecast
         self.untouchable = untouchable
+        self.days = days
         self.feeds = Feeds(form=form, games=games, sleeper=sleeper, espn=espn)
         self._found: list[YahooLeague] | None = None
 
@@ -324,16 +328,30 @@ class YahooNBAProvider:
             tipoff=self.feeds.tipoff(on) if open_day else {},
             projected=self.feeds.projected_on(everyone, on) if open_day else {},
             slots=nba_lineup.slots(rules.slots),
-            # Who played is asked of the box scores only once a game can be over.
-            minutes=self.feeds.minutes_on(everyone, on) if stage != "to come" else {},
+            minutes=self._minutes(everyone, on, stage),
             week=self._week_cells(yahoo, weights, everyone, found, (mine, theirs)),
+            statuses=self.days.statuses(on) if stage == "played" else {},
         )
+        if stage == "playing":
+            nba_day.record_statuses(self.days, on, everyone)
         span = DayRange(
             day=on, first=found.start, last=found.end, today=today if found.start <= today <= found.end else None
         )
         records = reads.records_after(yahoo, league, week) if week < current else reads.records(yahoo)
         scored = None if league.by_points else rules.categories
         return nba_day.board(found, weeks, span, records, sides, scored, weights, shown)
+
+    def _minutes(self, players: Sequence[Player], day: date, stage: nba_week.Stage) -> dict[str, float]:
+        """Who played how long on `day`, by Yahoo's key: the box scores' while they hold it, and what was kept of
+        them once it stood, so a day past Sleeper's window still tells a game sat out from a blank line.
+        Asked only once a game can be over."""
+        if stage == "to come":
+            return {}
+        read = self.feeds.minutes_on(players, day)
+        stands = datetime.combine(day + timedelta(days=1), DAY_STANDS, tzinfo=PACIFIC)
+        if stage == "played" and datetime.now(PACIFIC) >= stands:
+            return nba_day.record_minutes(self.days, day, read)
+        return read
 
     def _week_cells(
         self,

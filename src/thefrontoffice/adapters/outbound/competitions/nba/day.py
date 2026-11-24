@@ -11,6 +11,7 @@ starter with no game, and a bench player with one who would add a start.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from typing import Protocol
 
 from thefrontoffice.adapters.outbound.competitions.dates import weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nba import views
@@ -55,6 +56,50 @@ def pick(asked: date | None, start: date, end: date, today: date) -> date:
     return asked
 
 
+class DayLog(Protocol):
+    """Each day's record the platforms do not keep, by Yahoo's key: kept on disk by `storage/days.py`.
+
+    Yahoo's dated roster carries a player's status now, not that day's; Sleeper's
+    box scores hold only a recent window. Both are recorded as they are seen,
+    so a day long past still reads them.
+    """
+
+    def statuses(self, day: date) -> dict[str, str]:
+        """Each player's Yahoo status as last seen that day; nobody for a day nothing was kept for."""
+        ...
+
+    def keep_statuses(self, day: date, statuses: dict[str, str]) -> None:
+        """Keep these as the day's, replacing what was kept for it."""
+        ...
+
+    def minutes(self, day: date) -> dict[str, float]:
+        """The minutes each player played that day, as the box scores gave them once it stood."""
+        ...
+
+    def keep_minutes(self, day: date, minutes: dict[str, float]) -> None:
+        """Keep these as the day's, replacing what was kept for it."""
+        ...
+
+
+def record_statuses(log: DayLog, day: date, players: Sequence[Player]) -> None:
+    """Keep each of `players`' status as seen on `day`, the day being played, an empty one included: the last
+    read of a day stands for it, since a status moves through it — game-time decision, then out."""
+    kept = log.statuses(day)
+    seen = {p.player_key: p.status for p in players}
+    if any(kept.get(key) != status for key, status in seen.items()):
+        log.keep_statuses(day, kept | seen)
+
+
+def record_minutes(log: DayLog, day: date, minutes: Mapping[str, float]) -> dict[str, float]:
+    """Keep the minutes the box scores give on `day`, a day that has stood, for anybody not kept yet — the first
+    reading of a settled day is final — and answer every player's minutes that day, kept or read."""
+    kept = log.minutes(day)
+    fresh = {key: played for key, played in minutes.items() if key not in kept}
+    if fresh:
+        log.keep_minutes(day, kept | fresh)
+    return dict(minutes) | kept
+
+
 @dataclass(frozen=True)
 class Day:
     """One day of a week, and what is known of its games."""
@@ -81,6 +126,9 @@ class Day:
 
     week: Mapping[str, str] = field(default_factory=dict)
     """Each player's week as a week's row reads it, by Yahoo's key: games left and his averages (`views.cell`)."""
+
+    statuses: Mapping[str, str] = field(default_factory=dict)
+    """On a day played, each player's Yahoo status as recorded that day (`DayLog`); nobody before recording began."""
 
     def game(self, club: str) -> ScheduledGame | None:
         """His club's game that day, or None on a day it rests."""
@@ -174,8 +222,8 @@ def spot(
     in his place (`fixable`), is a starter with no game.
     """
     game = day.game(player.team)
-    # Yahoo's status is his status now, not that day's: a day played shows none rather than another day's.
-    status = player.status if day.stage != "played" else ""
+    # Yahoo's status is his status now, not that day's: a day played shows the one recorded that day, or none.
+    status = player.status if day.stage != "played" else day.statuses.get(player.player_key, "")
     about = " · ".join(part for part in (player.position, player.team, status, day.week.get(player.player_key)) if part)
     guess = projection(day.projected.get(player.player_key), weights) if day.stage != "played" else ""
     row = Spot(

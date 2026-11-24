@@ -5,6 +5,7 @@ from datetime import date
 
 import pytest
 from support.nba import make_player
+from support.stores import FakeDayLog
 
 from thefrontoffice.adapters.outbound.competitions.nba import day as nba_day
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, TURNOVERS, Line
@@ -365,3 +366,30 @@ def test_a_bench_player_ruled_out_is_left_to_his_detail_rather_than_flagged() ->
 
     assert (row.value, row.tone) == ("", "neutral")
     assert "O" in row.detail
+
+
+def test_a_day_played_shows_the_status_recorded_that_day() -> None:
+    games = [game("LAL", "BOS", "complete")]
+    mine = [make_player("Was Doubtful", team="LAL", selected_position="PG", status="O", stats=line(20))]
+    day = nba_day.Day(day=WEDNESDAY, stage="played", games=games, statuses={"was-doubtful": "GTD"})
+
+    assert rows(board(mine, [], day))["Was Doubtful"].detail.split(" · ")[2] == "GTD"
+
+
+def test_statuses_seen_on_the_day_being_played_are_kept_the_last_seen_standing() -> None:
+    log = FakeDayLog({WEDNESDAY: {"a": "GTD", "b": ""}})
+
+    nba_day.record_statuses(log, WEDNESDAY, [make_player("A", status="O"), make_player("C")])
+
+    assert log.statuses(WEDNESDAY) == {"a": "O", "b": "", "c": ""}
+
+
+def test_minutes_of_a_day_that_stood_are_kept_once_and_the_kept_ones_answer_after() -> None:
+    log = FakeDayLog(minutes={WEDNESDAY: {"a": 0.0}})
+
+    answered = nba_day.record_minutes(log, WEDNESDAY, {"a": 12.0, "b": 30.0})
+
+    assert answered == {"a": 0.0, "b": 30.0}
+    assert log.minutes(WEDNESDAY) == {"a": 0.0, "b": 30.0}
+    # Sleeper's window has moved on: the day reads what was kept.
+    assert nba_day.record_minutes(log, WEDNESDAY, {}) == {"a": 0.0, "b": 30.0}

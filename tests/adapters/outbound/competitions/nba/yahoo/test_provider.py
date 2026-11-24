@@ -28,7 +28,7 @@ from support.nba import (
 )
 from support.nba import yahoo_team as _yahoo_team
 from support.reports import MOCK_NBA_REPORT
-from support.stores import FakeAnswers, FakeUntouchable
+from support.stores import FakeAnswers, FakeDayLog, FakeUntouchable
 
 from thefrontoffice.adapters.outbound.competitions.nba import day as nba_day
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
@@ -257,6 +257,7 @@ def _two_league_provider(auth: FakeYahooAuth | None = None) -> YahooNBAProvider:
         fallback_weekly_adds=3,
         forecast=FakeForecast(),
         untouchable=FakeUntouchable(),
+        days=FakeDayLog(),
     )
 
 
@@ -300,6 +301,7 @@ def test_a_refresh_drops_the_league_it_names_and_no_other() -> None:
         forecast=FakeForecast(),
         fallback_weekly_adds=3,
         untouchable=FakeUntouchable(),
+        days=FakeDayLog(),
     )
 
     dropped = provider.refresh("2")
@@ -2171,7 +2173,7 @@ def test_a_day_whose_schedule_would_not_load_is_shown_without_its_games() -> Non
     assert not any(spot.today for spot in summary.mine.lineup)
 
 
-def _sat_out_day(scores: Any) -> dict[str, Spot]:
+def _sat_out_day(scores: Any, days: FakeDayLog | None = None) -> dict[str, Spot]:
     """Tuesday's rows, both Lakers with a line of noughts, Sleeper's box scores as `scores` hold the day."""
     yahoo = _day_yahoo()
     noughts = {"12": "0", "15": "0", "9004003": "0/0"}
@@ -2182,7 +2184,7 @@ def _sat_out_day(scores: Any) -> dict[str, Spot]:
         ]
     }
     nba = FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 11), scores=scores)
-    summary = nba_provider(yahoo, nba=nba).day_of("", 5, date(2026, 2, 10))
+    summary = nba_provider(yahoo, nba=nba, days=days).day_of("", 5, date(2026, 2, 10))
     assert summary.mine is not None
     return {spot.player: spot for spot in summary.mine.lineup}
 
@@ -2228,3 +2230,32 @@ def test_a_days_rows_keep_each_players_games_left_this_week() -> None:
     rows = {spot.player: spot for spot in summary.mine.lineup}
     assert "2G" in rows["Laker"].detail
     assert "3G" in rows["Idle Big"].detail
+
+
+def test_today_records_each_sides_status_and_a_day_played_reads_it_back() -> None:
+    yahoo, log = _day_yahoo(), FakeDayLog()
+    yahoo.today_lines["t.1"][0] = make_player("Laker", position="PG", selected_position="PG", status="GTD")
+    nba_provider(yahoo, nba=FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 10)), days=log).day_of("", 5)
+
+    assert log.statuses(date(2026, 2, 10))["laker"] == "GTD"
+    assert "celtic" in log.statuses(date(2026, 2, 10))
+
+    yahoo.today_lines["t.1"][0] = make_player("Laker", position="PG", selected_position="PG", status="O")
+    summary = nba_provider(yahoo, nba=FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 11)), days=log).day_of(
+        "", 5, date(2026, 2, 10)
+    )
+
+    assert summary.mine is not None and "GTD" in summary.mine.lineup[0].detail.split(" · ")
+
+
+def test_a_day_that_stood_keeps_who_sat_out_after_sleepers_window_moves_on() -> None:
+    log = FakeDayLog()
+    scores = box_scores({"g": [_log("g", 0.0, "2026-02-08")], "c": [_log("c", 3.0)]}, {"g": "Laker", "c": "Laker Big"})
+    _sat_out_day(scores, log)
+
+    assert log.minutes(date(2026, 2, 10)) == {"laker": 0.0, "laker-big": 3.0}
+
+    rows = _sat_out_day(box_scores({}, {}), log)
+
+    assert rows["Laker"].value == nba_day.DNP
+    assert rows["Laker Big"].line

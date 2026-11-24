@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from thefrontoffice.adapters.outbound.platforms.yahoo.paths import ScoreboardPace
     from thefrontoffice.adapters.outbound.platforms.yahoo.session import SessionState
     from thefrontoffice.adapters.outbound.storage.answers import DiskAnswerStore
+    from thefrontoffice.adapters.outbound.storage.days import DiskDayLog
     from thefrontoffice.adapters.outbound.storage.projections import DiskProjectionLog
     from thefrontoffice.adapters.outbound.storage.starters import DiskStarterLog
     from thefrontoffice.adapters.outbound.storage.untouchables import DiskUntouchableStore
@@ -254,6 +255,13 @@ def _projection_log(settings: AppSettings) -> DiskProjectionLog:
     return DiskProjectionLog(_disk_cache(settings.item_state_dir))
 
 
+def _day_log(settings: AppSettings) -> DiskDayLog:
+    # The app's own record of each basketball day, beside the starters and the projections.
+    from thefrontoffice.adapters.outbound.storage.days import DiskDayLog
+
+    return DiskDayLog(_disk_cache(settings.item_state_dir))
+
+
 def _untouchable(entry: CompetitionEntry) -> UntouchableMarks:
     """What `entry`'s provider reads before choosing any drop, trade or transfer out."""
     return UntouchableMarks(_untouchable_store(entry.settings), entry.key, entry.squad)
@@ -364,6 +372,7 @@ def _build_nba(entry: CompetitionEntry) -> YahooNBAProvider:
         fallback_weekly_adds=settings.yahoo_max_weekly_adds,
         forecast=remembered,
         untouchable=_untouchable(entry),
+        days=_day_log(settings),
     )
 
 
