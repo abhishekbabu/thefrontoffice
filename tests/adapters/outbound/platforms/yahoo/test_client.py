@@ -774,6 +774,27 @@ def test_the_table_is_read_from_the_standings_which_the_team_list_lacks(tmp_path
     assert ctx.requests == [("standings", "466.l.123")]
 
 
+def test_the_standings_carry_each_teams_season_totals_by_stat_id(tmp_path: Path) -> None:
+    season = (
+        "<team_stats><coverage_type>season</coverage_type><stats>"
+        "<stat><stat_id>5</stat_id><value>.489</value></stat><stat><stat_id>12</stat_id><value>3495</value></stat>"
+        "</stats></team_stats>"
+    )
+    client, _ = _client(
+        tmp_path,
+        answers={
+            "standings": league_standings_xml(
+                team_xml("t.1", "Mine", mine=True, extra=season), team_xml("t.2", "Theirs")
+            )
+        },
+    )
+
+    mine, theirs = client.standings()
+
+    assert {stat: float(value) for stat, value in mine.season.items()} == {"5": 0.489, "12": 3495.0}
+    assert theirs.season == {}
+
+
 SETTLED = (
     "<fantasy_content><league><scoreboard><matchups><matchup>"
     "<week_start>2026-03-08</week_start><week_end>2026-03-14</week_end><status>postevent</status>"

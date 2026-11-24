@@ -54,12 +54,16 @@ low on a season mostly spent on the bench — so the last week's ranking is read
 beside it. Three hundred deep by season is past every regular rotation player."""
 
 
-STREAM_DEPTH = {Timeframe.SEASON: 50, Timeframe.LAST_WEEK: 25}
-"""How deep the week's to-do list reads the wire for streams: three pages, the top of each ranking.
+STREAM_DEPTH = {Timeframe.SEASON: 75, Timeframe.LAST_WEEK: 50}
+"""How deep the week's to-do list reads the wire for its adds: five pages, the top of each ranking by Yahoo's
+actual rank (`paths.available`).
 
-A stream worth an add sits near the top of one ranking or the other, and the
-summary is the page opened most, so it leaves the deep list to the Free agents
-page. Its first pages are the same reads, so whichever page asks first serves both."""
+Three pages (50 and 25) left out rotation players a week's keeper is found
+among — 59 players where five pages read 89, Keegan Murray and Jerami Grant
+among the thirty. Deeper than that stretches the pool a category league is
+scaled across toward players nobody would add. Every page is one the Free
+agents page reads first (`WIRE_DEPTH`), past the first held for `DEEP_TTL`, so
+whichever page asks first serves both and the browser sync carries them."""
 
 
 LEADERS = {c.label: c.yahoo_stat for c in SCOUTED}

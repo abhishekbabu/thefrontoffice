@@ -895,6 +895,46 @@ def test_a_player_out_all_week_goes_to_an_open_il_slot_and_the_add_needs_no_drop
     assert [p.side for p in add.players] == ["in"]
 
 
+def test_a_move_to_il_plans_his_return_dropping_the_weakest_the_roster_will_hold() -> None:
+    """Back 10 Dec: Weaker is the one to let go then — or the stream he made room for, where weaker still."""
+    roster, readings = _team()
+    out = _player("Out", "BN", status="O")
+    roster.append(out)
+    readings |= {"Out": replace(_read(out, 25.0, 0), back=date(2026, 12, 10))}
+    keeper, stream = _player("Keeper", position="SF"), _player("Stream", position="SF")
+
+    move, _ = build(roster, [keeper], readings | _readings((keeper, 21.0, 4)), 2, True, plan=Plan(reserve=("IL",)))
+    streamed, _ = build(roster, [stream], readings | _readings((stream, 15.0, 4)), 2, True, plan=Plan(reserve=("IL",)))
+
+    assert "Weaker" in move.reason and "Weak " not in move.reason
+    assert "Stream" in streamed.reason and "Weaker" not in streamed.reason
+    assert move.drop == ""  # nobody goes now: the drop is for the day he is back
+
+
+def test_a_move_to_il_never_plans_an_untouchable_drop_at_his_return() -> None:
+    out = _player("Out", "BN", status="O")
+    star = _player("Star", "PF")
+    readings = _readings((star, 50.0, 2)) | {"Out": _read(out, 25.0, 0)}
+
+    [move] = build([star, out], [], readings, 2, True, plan=Plan(reserve=("IL",), untouchable=frozenset({"Star"})))
+
+    assert move.player_id == "Out"
+    assert "Star" not in move.reason
+
+
+def test_a_keeper_only_just_clear_of_the_margin_says_it_is_close() -> None:
+    """A fifth over Weaker's 18 is 21.6: 22 clears it by 2%, a coin flip; 30 does not need saying."""
+    roster, readings = _team()
+    close, clear = _player("Close", position="SF"), _player("Clear", position="SF")
+
+    [near] = streams(roster, [close], readings | _readings((close, 22.0, 1)), 2, True, set())
+    [far] = streams(roster, [clear], readings | _readings((clear, 30.0, 1)), 2, True, set())
+
+    assert (near.pickup, near.drop) == ("keeper", "Weaker")
+    assert "21.60" in near.reason
+    assert "21.60" not in far.reason
+
+
 def test_a_player_back_before_the_week_ends_stays_off_il() -> None:
     """In IL he would sit out the games he is back for, and activating him needs a drop of its own."""
     roster, readings = _team()

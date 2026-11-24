@@ -211,6 +211,10 @@ class YahooTeam:
     faab_balance: str = ""
     """Waiver budget left, as Yahoo prints it; empty in a league without FAAB."""
 
+    season: dict[str, str] = field(default_factory=dict)
+    """The season's totals by stat id, as Yahoo prints them ('.489', '3495'): carried by the standings alone,
+    empty elsewhere."""
+
 
 @dataclass(frozen=True)
 class MovedPlayer:
