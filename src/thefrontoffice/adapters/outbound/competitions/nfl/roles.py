@@ -22,6 +22,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
+from thefrontoffice.adapters.outbound.competitions.places import ordinal
 from thefrontoffice.adapters.outbound.competitions.teammates import surname
 
 Direction = Literal["rising", "holding", "falling"]
@@ -40,6 +41,9 @@ MEASURES: dict[str, tuple[str, ...]] = {
 
 RETURN_GAP = 3
 """Weeks between two of his games for one club that make the later a return: two games missed beside a bye."""
+
+LEAD_RECEIVERS = 2
+"""The receivers and tight ends a club's target share counts as leading its passing game: its first two options."""
 
 LEAD_POSITIONS = frozenset({"RB", "WR", "TE"})
 """Where heading the club's depth chart is a role worth keeping: a quarterback's, kicker's or defense's is the slot itself."""
@@ -133,23 +137,50 @@ def heading(state: Week, player_id: str) -> Heading | None:
     return Heading(direction, shifts, returned, teammate)
 
 
-def leads(state: Week, player: Projection) -> bool:
-    """Whether he heads his club's depth chart at a back or receiver spot."""
+def leads(state: Week, player: Projection) -> str:
+    """How he leads his club's work, where he does: 'depth-1 RB' for a back, '2nd in DAL target share' for a
+    receiver or tight end in its top `LEAD_RECEIVERS` over his last games; empty otherwise.
+
+    A receiver by his share rather than the depth chart: Sleeper lists a depth-1 at every receiver spot, three a
+    club, which says who lines up first and not who the ball goes to.
+    """
     meta = state.players.get(player.player_id)
-    return meta is not None and meta.position in LEAD_POSITIONS and meta.depth_chart_order == 1
+    if meta is None or meta.position not in LEAD_POSITIONS:
+        return ""
+    if meta.position not in RECEIVERS:
+        return f"depth-1 {meta.position}" if meta.depth_chart_order == 1 else ""
+    rank = _target_rank(state, player.player_id)
+    return f"{ordinal(rank)} in {meta.team} target share" if rank is not None and rank <= LEAD_RECEIVERS else ""
+
+
+def _target_rank(state: Week, player_id: str) -> int | None:
+    """Where his share of his club's targets over his last `ROLE_GAMES` games ranks among its players in those
+    weeks, 1 the most; None where he has drawn none."""
+    played = state.evidence.appearances.get(player_id, ())
+    if not played:
+        return None
+    club = played[-1].team
+    weeks = {game.week for game in played[-ROLE_GAMES:] if game.team == club}
+    shares = {
+        other: total
+        for other, games in state.evidence.appearances.items()
+        if (total := sum(game.target_share or 0.0 for game in games if game.team == club and game.week in weeks))
+    }
+    mine = shares.get(player_id)
+    if mine is None:
+        return None
+    return 1 + sum(1 for other, total in shares.items() if other != player_id and total > mine)
 
 
 def protected(state: Week, player: Projection) -> str:
-    """Why he is the last to drop — 'role rising', 'depth-1 RB' — or empty where nothing protects him."""
+    """Why he is the last to drop — 'role rising', 'depth-1 RB', '1st in DAL target share' — or empty."""
     found = heading(state, player.player_id)
     meta = state.players.get(player.player_id)
     # A role that rose filling in for a teammate who is back is not his.
     filling_in = meta is not None and state.teammates.filling_in(meta) is not None
     if found is not None and found.direction == "rising" and not filling_in:
         return "role rising"
-    if leads(state, player):
-        return f"depth-1 {player.position}"
-    return ""
+    return leads(state, player)
 
 
 def falling(state: Week, player_id: str) -> Heading | None:

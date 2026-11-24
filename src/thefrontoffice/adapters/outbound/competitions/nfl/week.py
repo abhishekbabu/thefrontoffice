@@ -140,6 +140,9 @@ class Week:
     """Each player's projected points a game over the weeks left after this one, the weeks he is projected in:
     what a drop is weighed by beside his season (`worth.rest_of_season`). Empty wherever they would not load."""
 
+    upcoming: Mapping[str, Projection] = field(default_factory=dict)
+    """Next week's projections, where they loaded: whom a bye next week is covered by (`actions._next_week_byes`)."""
+
     past: Mapping[int, Mapping[str, float]] = field(default_factory=dict)
     """What Sleeper projected each player for each week already played, by week: what a slump measures his games
     against (`slump.slump`). Empty wherever they would not load."""

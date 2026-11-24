@@ -21,15 +21,18 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   teammate is ruled out of the coming week; a growing role must also be worth
   more than the starter he'd replace and the player he'd cost. Each item names the fix
   and who to drop: a bench player whose snap, target or carry share fell in each of
-  his last 3 games first, one whose share rose in each or who is his club's depth-1
-  back or receiver last, and between them the weakest for the rest of the season,
-  his points a game beside his projection a game over the weeks left (season read
+  his last 3 games first, one whose share rose in each, his club's depth-1 back or
+  one of its top two in target share last, and between them the weakest for the
+  rest of the season, his points a game beside his projection a game over the weeks
+  left (that projection ±25% by his record against Sleeper's past ones, ±10% by his
+  role's direction; season read
   beside a teammate who is back where his recent games were fill-in for him, or
   from his own games since a return from injury; ±10% for snaps
   steady at 50%+ or swinging by 20+ points, a climb to his most snaps not counting
   as a swing), never one the best lineup starts, one another item moves or drops,
   one you lock as untouchable in his drawer (nor is he traded or sold, in any
-  competition), or a starter while a bench player is left. A handcuff
+  competition), or a starter you set unless he trails the bench's pick by 3+ points
+  a game on a role no better. A handcuff
   (the back next on the depth chart behind a running back you start) goes only
   once nobody ordinary is left, and the drop says whose he is. So does a stash,
   dropped before a handcuff: the back next behind any club's first back, whoever

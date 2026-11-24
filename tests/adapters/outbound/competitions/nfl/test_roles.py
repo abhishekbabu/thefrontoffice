@@ -127,7 +127,15 @@ def test_a_back_or_receiver_heading_his_clubs_depth_chart_is_protected() -> None
     assert not leads(state, proj("k", "k", "K", 7.0, team="DAL"))
 
 
-def test_a_holding_role_off_the_top_of_the_depth_chart_is_not_protected() -> None:
-    state = _week(_receiver("wr", STEADY) + _club(range(1, 9)), depth={"wr": 3})
+def test_a_holding_role_third_in_his_clubs_target_share_is_not_protected() -> None:
+    """Listed depth-1, as Sleeper lists three receivers a club; but two teammates draw more of the targets."""
+    second = _receiver("wr2", dict.fromkeys(range(1, 9), (85.0, 8.0)))
+    state = _week(_receiver("wr", STEADY) + second + _club(range(1, 9)), depth={"wr": 1})
 
     assert protected(state, proj("wr", "wr", "WR", 8.0, team="DAL")) == ""
+
+
+def test_a_receiver_among_his_clubs_top_two_in_target_share_leads_whatever_the_depth_chart_says() -> None:
+    state = _week(_receiver("wr", STEADY) + _club(range(1, 9)), depth={"wr": 3})
+
+    assert protected(state, proj("wr", "wr", "WR", 8.0, team="DAL")) == "2nd in DAL target share"

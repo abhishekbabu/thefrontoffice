@@ -1542,6 +1542,16 @@ def _slump_bench(
         for p, games, _ in bench
         for week, stats in weeks(games).items()
     ]
+    # Sleeper projected each of them for what he went on to score: his record against it says nothing either way.
+    for week in range(1, 9):
+        client.weekly_projections[week] = {
+            **client.projections,
+            **{
+                p.player_id: replace(p, points=stats.get("pts_ppr", 0.0))
+                for p, games, _ in bench
+                if (stats := weeks(games).get(week))
+            },
+        }
     return client
 
 
@@ -1709,3 +1719,18 @@ def test_a_kicker_on_the_wire_well_ahead_on_form_is_streamed_for_yours() -> None
 
 def test_kickers_within_a_coin_flip_on_form_are_left_alone() -> None:
     assert not [a for a in _actions(_kickers(8.0, 10.0)) if a.key.startswith("stream:")]
+
+
+def test_a_kicker_bye_next_week_names_the_best_kicker_on_the_wire_for_it() -> None:
+    """Your kicker's club is off in week 10; two free kickers play, projected 7 and 9 for it."""
+    client = _kickers(8.0, 8.0)
+    client.week = 9
+    client.season_schedule = [ScheduledGame(week=10, date="2026-11-15", home="NYJ", away="NE")]
+    other = proj("k8", "Ken Other", "K", 7.0, team="NE", opp="NYJ")
+    client.weekly_projections[10] = {"k1": KICKER, "k9": replace(FREE_KICKER, points=9.0), "k8": other}
+    client.projections = {**client.projections, "k8": other}
+    (client.players_catalog or {})["k8"] = PlayerMeta(player_id="k8", name=other.name, position="K", team="NE")
+
+    [bye] = [a for a in _actions(client) if a.key.startswith("bye:10:K")]
+
+    assert FREE_KICKER.name in bye.title and other.name not in bye.title

@@ -143,12 +143,11 @@ def weeks_left(client: NFLSource, state: Week) -> dict[int, Mapping[str, Project
     return dict(batch.values)
 
 
-def rates(client: NFLSource, state: Week) -> dict[str, float]:
-    """Each player's projected points a game over the weeks left after this one, counting only the weeks he is
-    projected in: a bye or a week out says nothing about what he scores when he plays. Empty where none is left
-    or any would not load (`weeks_left`)."""
+def rates(ahead: Mapping[int, Mapping[str, Projection]]) -> dict[str, float]:
+    """Each player's projected points a game over the weeks `ahead` (`weeks_left`), counting only the weeks he is
+    projected in: a bye or a week out says nothing about what he scores when he plays."""
     projected: dict[str, list[float]] = {}
-    for projections in (weeks_left(client, state) or {}).values():
+    for projections in ahead.values():
         for pid, p in projections.items():
             if p.points > 0:
                 projected.setdefault(pid, []).append(p.points)

@@ -54,6 +54,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.worth import (
     blend,
     filling_in,
     form,
+    projected_ahead,
     rest_of_season,
     value,
     worth,
@@ -753,20 +754,29 @@ def _worth_a_spot(state: Week, player_id: str, drop: Projection | None) -> bool:
     return value(state, pickup) > value(state, drop)
 
 
+STARTER_DROP_BY = 3.0
+"""Points a game of rest-of-season worth by which a starter in your lineup as set must trail the bench player who
+would otherwise go — his role no better — before he is the drop instead: under it, the lineup you set wins."""
+
+
 def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> Projection | None:
-    """The player it costs least to lose: never one kept, one the best lineup starts, nor one whose role grew last
-    week; a starter in your lineup as set only once no bench player is left.
+    """The player it costs least to lose: never one kept or marked untouchable, one the best lineup starts, nor
+    one whose role grew last week.
 
     Ranked first by where his role is heading (`roles`), then by what he is
     worth for the rest of the season (`worth.rest_of_season`). A player whose
     role is falling goes before everyone else, and one whose role is rising or
-    who heads his club's depth chart after everyone else: a season average and
-    a projection both lag a role, and the drop is the least reversible move.
+    who leads his club's work after everyone else: a season average and a
+    projection both lag a role, and the drop is the least reversible move.
     A stash, then a handcuff, comes after every ordinary player of his rank
     (see `insured`): his worth is the week the back ahead of him misses, which
     no figure here shows. A player with nothing to go on — no games played,
     and no projection ahead or this week — is the last resort: an unknown is
     not a weak player.
+
+    A starter in your lineup as set goes before the bench's choice only where
+    his role ranks no better and he trails it by `STARTER_DROP_BY`; and where
+    nobody else is left.
     """
     keep = keep | state.untouchable  # The manager's own call, which no figure overrules.
     starting = {slot.player.player_id for slot in state.best if slot.player}
@@ -777,15 +787,32 @@ def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> 
     ]
     held = insured(state) if candidates else {}
 
-    def weakest(player: Projection) -> tuple[bool, int, int, float, float]:
-        value = rest_of_season(state, player)
-        if value is None:
-            value = worth(state, player)
+    def weakest(player: Projection) -> tuple[int, int, float, float]:
+        value = _keep_value(state, player)
         rank = UNKNOWN if value is None else held.get(player.player_id, (0, ""))[0]
-        role = 0 if falling(state, player.player_id) else 2 if protected(state, player) else 1
-        return player.player_id in state.starter_ids, role, rank, value or 0.0, player.points
+        return _role_rank(state, player), rank, value or 0.0, player.points
 
-    return min(candidates, key=weakest, default=None)
+    bench = min((p for p in candidates if p.player_id not in state.starter_ids), key=weakest, default=None)
+    starters = sorted((p for p in candidates if p.player_id in state.starter_ids), key=weakest)
+    if bench is None:
+        return starters[0] if starters else None
+    benched = weakest(bench)
+    clearly = [
+        p
+        for p in starters
+        if (mine := weakest(p))[0] <= benched[0] and mine[1] == 0 and mine[2] <= benched[2] - STARTER_DROP_BY
+    ]
+    return clearly[0] if clearly else bench
+
+
+def _keep_value(state: Week, player: Projection) -> float | None:
+    found = rest_of_season(state, player)
+    return worth(state, player) if found is None else found
+
+
+def _role_rank(state: Week, player: Projection) -> int:
+    """0 for a falling role, 2 for one protected (`roles.protected`), 1 otherwise."""
+    return 0 if falling(state, player.player_id) else 2 if protected(state, player) else 1
 
 
 def _kept_for(state: Week, player: Projection) -> str:
@@ -793,7 +820,7 @@ def _kept_for(state: Week, player: Projection) -> str:
     figures = []
     if (played := average(state.evidence, player.player_id)) is not None:
         figures.append(f"{played:.2f}/g season")
-    if (ahead := state.ahead.get(player.player_id)) is not None:
+    if (ahead := projected_ahead(state, player)) is not None:
         figures.append(f"{ahead:.2f}/g ahead")
     return ", ".join(figures)
 
@@ -1127,14 +1154,17 @@ def _next_week_byes(
             continue
         names = join([p.name for p in out])
         behind = f"only {join([p.name for p in cover])} behind" if cover else f"no bench {position}"
+        best = _best_streamer(state, position, playing) if position in STREAMED else None
+        named = f": {best.name}" if best else ""
         items.append(
             Item(
                 "bye",
                 Action(
                     kind="waiver",
                     urgency="later",
-                    title=f"Find a {position} for week {week}",
-                    reason=f"{names} on bye; {behind}.",
+                    title=f"Find a {position} for week {week}{named}",
+                    reason=f"{names} on bye; {behind}."
+                    + (f" Best available: {_upcoming(state, best)}." if best else ""),
                     when=f"week {week}",
                     player_id=out[0].player_id,
                     key=f"bye:{week}:{position}",
@@ -1142,6 +1172,33 @@ def _next_week_byes(
             )
         )
     return items
+
+
+def _best_streamer(state: Week, position: str, playing: Mapping[str, Game]) -> Projection | None:
+    """The free agent projected most next week at a streamed position, with a game and no ruling against him;
+    None where next week's projections did not load. A kicker's or a defense's week is its matchup, which his
+    projection prices, so it alone names him."""
+    return max(
+        (
+            p
+            for pid, p in state.upcoming.items()
+            if pid not in state.owned
+            and p.position == position
+            and p.team in playing
+            and p.opponent
+            and not ruled_out(p.injury_status)
+            and p.points > 0
+        ),
+        key=lambda p: p.points,
+        default=None,
+    )
+
+
+def _upcoming(state: Week, player: Projection) -> str:
+    """'Kai Free (K, NYJ), 9.10 proj vs NE, 3rd-easiest': who, his projection, and the matchup it rests on."""
+    matchup = state.evidence.matchup(player)
+    ease = f", {views.ease(matchup)}" if matchup else ""
+    return f"{player.name} ({player.position}, {player.team}), {player.points:.2f} proj vs {player.opponent}{ease}"
 
 
 def _trade_deadline(state: Week) -> list[Item]:
