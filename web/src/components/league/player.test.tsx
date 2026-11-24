@@ -1,5 +1,8 @@
+import { act } from "react";
 import { describe, expect, it } from "vitest";
-import type { PlayerDetail } from "@/lib/types";
+import { http, HttpResponse } from "msw";
+import type { PlayerCard, PlayerDetail } from "@/lib/types";
+import { server } from "@/test/server";
 import { keys } from "@/lib/queries";
 import { useDrawers } from "@/components/league/drawers";
 import { drawerClient, render, settle } from "@/test/render";
@@ -32,9 +35,23 @@ function Roster() {
   );
 }
 
-/** Open his drawer on `detail`, with each of `tabs` answering its own read. */
-async function opened(detail: PlayerDetail, tabs: Record<string, PlayerDetail> = {}) {
+/** Him as a row of your roster. */
+const ALLEN_CARD: PlayerCard = {
+  player_id: ALLEN.player_id,
+  columns: { Player: ALLEN.name },
+  values: {},
+  ruled_out: false,
+  notes: {},
+  roles: { Player: "player" },
+};
+
+/** Open his drawer on `detail`, with each of `tabs` answering its own read, and `roster` as yours. */
+async function opened(detail: PlayerDetail, tabs: Record<string, PlayerDetail> = {}, roster: PlayerCard[] = []) {
   const client = drawerClient();
+
+  client.setQueryData([...keys.roster(NFL.key, LEAGUE.league_id), null], roster);
+
+  client.setQueryData(keys.untouchables(NFL.key, LEAGUE.league_id), { player_ids: [] });
 
   client.setQueryData(keys.player(NFL.key, LEAGUE.league_id, ALLEN.player_id), detail);
 
@@ -176,5 +193,35 @@ describe("the player drawer", () => {
     const move = document.querySelector("[aria-label='Trade by Rival ↔ Me']");
 
     expect(move?.textContent).toContain("To Rival");
+  });
+
+  it("offers no untouchable mark on a player who is not yours", async () => {
+    const dialog = await opened(ALLEN);
+
+    expect(dialog.querySelector('button[aria-label="Mark untouchable"]')).toBeNull();
+  });
+
+  it("marks one of yours untouchable on the server, and the lock and its name say so", async () => {
+    const sent: unknown[] = [];
+
+    server.use(
+      http.post("*/untouchables", async ({ request }) => {
+        sent.push(await request.json());
+
+        return HttpResponse.json({ player_ids: [ALLEN.player_id] });
+      }),
+    );
+
+    const dialog = await opened(ALLEN, {}, [ALLEN_CARD]);
+
+    await act(async () => dialog.querySelector<HTMLButtonElement>('button[aria-label="Mark untouchable"]')!.click());
+
+    await settle();
+
+    expect(sent).toEqual([{ player_id: ALLEN.player_id, untouchable: true }]);
+
+    const marked = dialog.querySelector<HTMLButtonElement>('button[aria-label="Untouchable: clear"]');
+
+    expect(marked?.getAttribute("aria-pressed")).toBe("true");
   });
 });

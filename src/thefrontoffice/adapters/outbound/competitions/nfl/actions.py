@@ -380,8 +380,8 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
     and nobody is credited with a hole a bench player fills. And against the
     starter's season as well as his week, so a star's one bad matchup is not
     a reason to drop him. At a streamed position the starter he replaces is
-    the drop — a lineup starts one defense, and nobody keeps a spare.
-    The season check reads both players by the same `worth`.
+    the drop — a lineup starts one defense, and nobody keeps a spare — unless
+    he is untouchable, when the bench gives up the spot instead. The season check reads both players by the same `worth`.
     """
     taken: set[str] = set()
     items = []
@@ -400,7 +400,11 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
         if value(state, player) <= value(state, starter):
             continue
         taken.add(starter.player_id)
-        streamed = player.position in STREAMED and starter.position == player.position
+        streamed = (
+            player.position in STREAMED
+            and starter.position == player.position
+            and starter.player_id not in state.untouchable
+        )
         items.append(
             Item(
                 "upgrade",
@@ -662,6 +666,7 @@ def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> 
     and no projection ahead or this week — is the last resort: an unknown is
     not a weak player.
     """
+    keep = keep | state.untouchable  # The manager's own call, which no figure overrules.
     starting = {slot.player.player_id for slot in state.best if slot.player}
     candidates = [
         p

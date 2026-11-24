@@ -170,3 +170,6 @@ class CompetitionContext:
     whose game has not kicked off. A kept judgment's moves are read back through it, so a
     pickup for a game already played, or of a player someone else has since added, is not
     shown. None where the competition does not say, and every kept move stands."""
+    untouchable: frozenset[str] = frozenset()
+    """Your players the manager marked untouchable, by name as the prompt writes them. A model's move that
+    drops, trades or sells one is not shown, whatever it argues."""

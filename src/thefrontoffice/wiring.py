@@ -14,6 +14,7 @@ from thefrontoffice.application.items import ItemDecisions
 from thefrontoffice.application.scouting import ScoutEngine
 from thefrontoffice.application.season import MarketEngine, SeasonEngine
 from thefrontoffice.application.trading import TradeEngine
+from thefrontoffice.application.untouchables import UntouchableMarks
 from thefrontoffice.application.week import WeekEngine
 from thefrontoffice.application.wire import WireEngine
 from thefrontoffice.config.env_file import EnvFile
@@ -31,6 +32,7 @@ from thefrontoffice.domain.ports import (
     SubjectProvider,
     TradeMarketProvider,
     TradeProvider,
+    UntouchableStore,
     WireProvider,
 )
 
@@ -246,6 +248,9 @@ class Wiring:
     model: Callable[[], AnalysisModel]
     answers: AnswerStore
     decisions: ItemDecisions
+    untouchables: UntouchableStore
+    """The players each league's manager marked untouchable, which every provider is built reading."""
+
     logins: Mapping[str, Callable[[], AccountLogin]]
     """Each platform that logs in through a browser, by the platform's name in its entries."""
 
@@ -263,6 +268,10 @@ class Wiring:
         button that explains why it cannot work is worse than no button.
         """
         return self.model().is_available
+
+    def untouchable(self, entry: CompetitionEntry) -> UntouchableMarks:
+        """One competition's untouchables, per league, as the page marks them."""
+        return UntouchableMarks(self.untouchables, entry.key)
 
     def scout(self, entry: CompetitionEntry, provider: ContextProvider) -> ScoutEngine:
         """A scouting engine wired to the model and the judgments kept on disk."""

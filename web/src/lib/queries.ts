@@ -28,6 +28,8 @@ export const keys = {
     [...inLeague(competition, league), "games", week] as const,
   judgment: (competition: string, league: string) => [...inLeague(competition, league), "judgment"] as const,
   roster: (competition: string, league: string) => [...inLeague(competition, league), "roster"] as const,
+  untouchables: (competition: string, league: string) =>
+    [...inLeague(competition, league), "untouchables"] as const,
   season: (competition: string, league: string) => [...inLeague(competition, league), "season"] as const,
   teams: (competition: string, league: string) => [...inLeague(competition, league), "teams"] as const,
   teamRoster: (competition: string, league: string, team: string | undefined) =>

@@ -22,6 +22,7 @@ from support.fpl import (
     player,
     provider,
 )
+from support.stores import FakeUntouchable
 
 from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
 from thefrontoffice.adapters.outbound.platforms.fpl.errors import FPLAPIError
@@ -56,13 +57,13 @@ def test_only_invitational_leagues_are_listed() -> None:
 def test_a_refresh_drops_the_league_it_names() -> None:
     fake = FakeFPL()
 
-    assert FPLProvider(ENTRY_ID, client=fake).refresh(LEAGUE_ID) == 5
+    assert FPLProvider(ENTRY_ID, client=fake, untouchable=FakeUntouchable()).refresh(LEAGUE_ID) == 5
     assert fake.forgotten == [int(LEAGUE_ID)]
 
 
 def test_a_league_that_is_no_number_is_none_of_yours_to_refresh() -> None:
     with pytest.raises(LeagueNotFoundError):
-        FPLProvider(ENTRY_ID, client=FakeFPL()).refresh("work")
+        FPLProvider(ENTRY_ID, client=FakeFPL(), untouchable=FakeUntouchable()).refresh("work")
 
 
 def test_a_manager_in_no_private_league_still_has_something_to_scout() -> None:
@@ -77,7 +78,7 @@ def test_a_manager_in_no_private_league_still_has_something_to_scout() -> None:
 def test_the_squad_read_is_the_last_completed_gameweek() -> None:
     """Picks are published only once a deadline passes."""
     client = FakeFPL()
-    FPLProvider(ENTRY_ID, client=client).roster(LEAGUE_ID)
+    FPLProvider(ENTRY_ID, client=client, untouchable=FakeUntouchable()).roster(LEAGUE_ID)
     assert client.squad_requests == [4]
 
 
@@ -139,6 +140,20 @@ def test_a_transfer_is_priced_at_the_outgoing_players_selling_price() -> None:
 
     assert "sells for £4.5m" in line
     assert "costs £1.0m" in line
+
+
+def test_an_untouchable_player_is_never_sold_and_the_model_is_told_who_is() -> None:
+    untouchable = FakeUntouchable("7")
+    fpl = FPLProvider(ENTRY_ID, client=FakeFPL(), untouchable=untouchable)
+
+    context = fpl.build_context(LEAGUE_ID)
+    actions = fpl.summary(LEAGUE_ID).actions or []
+
+    assert not any(line.startswith("- P100 ") and "for P7 " in line for line in context.prompt.splitlines())
+    assert context.untouchable == frozenset({"P7"})
+    assert "P7" in context.constraints
+    assert all(a.drop != "7" for a in actions)
+    assert set(untouchable.asked) == {LEAGUE_ID}
 
 
 def test_without_the_transfer_history_a_sale_is_priced_at_the_current_price() -> None:
@@ -300,7 +315,9 @@ def test_an_optimal_eleven_leaves_nothing_on_the_bench_to_report() -> None:
     picks += [Pick(element=p.id, position=i, multiplier=0) for i, p in enumerate(best.bench, start=12)]
     squad = Squad(gameweek=4, picks=picks, bank=30, value=1004)
 
-    context = FPLProvider(ENTRY_ID, client=FakeFPL(squad=squad, fixtures=WITH_CITY)).build_context(LEAGUE_ID)
+    context = FPLProvider(
+        ENTRY_ID, client=FakeFPL(squad=squad, fixtures=WITH_CITY), untouchable=FakeUntouchable()
+    ).build_context(LEAGUE_ID)
     lineup = next(stat for stat in context.headline if stat.label == "Lineup")
     assert lineup.tone == "neutral"
 
@@ -355,7 +372,10 @@ def test_a_finished_gameweek_has_its_result_and_the_next_is_now() -> None:
     fake = FakeFPL(
         finished=4, h2h_season={4: H2HMatch(opponent_entry=99, opponent_name="R", my_points=40, opponent_points=61)}
     )
-    season = {row.label: row for row in FPLProvider(ENTRY_ID, client=fake).schedule(H2H_LEAGUE).season}
+    season = {
+        row.label: row
+        for row in FPLProvider(ENTRY_ID, client=fake, untouchable=FakeUntouchable()).schedule(H2H_LEAGUE).season
+    }
 
     assert (season["Gameweek 4"].result, season["Gameweek 4"].outcome) == ("40-61", "lost")
     assert [label for label, row in season.items() if row.is_current] == ["Gameweek 5"]
@@ -520,7 +540,7 @@ def test_a_gameweeks_matches_carry_their_score_once_kicked_off() -> None:
     )
     games = {
         (m.home, m.away): (m.home_score, m.away_score)
-        for m in FPLProvider(ENTRY_ID, client=fake).games_of("900", 3).games
+        for m in FPLProvider(ENTRY_ID, client=fake, untouchable=FakeUntouchable()).games_of("900", 3).games
     }
 
     assert games == {("ARS", "LIV"): (2, 1), ("TOT", "CHE"): (None, None)}
@@ -532,11 +552,13 @@ def test_a_gameweeks_blanks_are_the_clubs_with_no_match_in_it() -> None:
         fixtures=[Fixture(event=3, home="ARS", away="LIV", home_difficulty=2, away_difficulty=4)],
     )
 
-    assert FPLProvider(ENTRY_ID, client=fake).games_of("900", 3).byes == ["CHE", "TOT"]
+    assert FPLProvider(ENTRY_ID, client=fake, untouchable=FakeUntouchable()).games_of("900", 3).byes == ["CHE", "TOT"]
 
 
 def test_a_gameweek_with_no_matches_listed_has_no_blanks_either() -> None:
-    assert FPLProvider(ENTRY_ID, client=FakeFPL(fixtures=[])).games_of("900", 3).byes == []
+    assert (
+        FPLProvider(ENTRY_ID, client=FakeFPL(fixtures=[]), untouchable=FakeUntouchable()).games_of("900", 3).byes == []
+    )
 
 
 # ── who is in each match ────────────────────────────────────────────────
@@ -659,7 +681,7 @@ def test_the_weeks_ahead_read_five_gameweeks_from_the_next_deadline() -> None:
 
 def test_another_managers_weeks_ahead_are_his_own_squad() -> None:
     fake = FakeFPL()
-    FPLProvider(ENTRY_ID, client=fake).weeks_ahead(LEAGUE_ID, "99")
+    FPLProvider(ENTRY_ID, client=fake, untouchable=FakeUntouchable()).weeks_ahead(LEAGUE_ID, "99")
     assert fake.squad_requests  # read a squad, not refused
 
 
@@ -677,7 +699,7 @@ def test_nothing_is_ahead_once_every_gameweek_is_finished() -> None:
 
 def test_a_head_to_head_tie_is_simulated_from_both_squads() -> None:
     fake = FakeFPL(games={8: [game(3, 10), game(4, 2)]})
-    found = FPLProvider(ENTRY_ID, client=fake).matchup_input(H2H_LEAGUE_ID)
+    found = FPLProvider(ENTRY_ID, client=fake, untouchable=FakeUntouchable()).matchup_input(H2H_LEAGUE_ID)
 
     assert found is not None
     assert [o.player_id for o in found.mine].count("8") == 2  # the captain, twice
@@ -759,7 +781,7 @@ def test_a_tie_still_to_come_is_simulated_around_each_players_worth() -> None:
 
     def captain(log: list[int]) -> tuple[float, ...]:
         fake = FakeFPL(finished=4, live={}, games={8: [game(3 + i, p) for i, p in enumerate(log)]})
-        found = FPLProvider(ENTRY_ID, client=fake).matchup_input(H2H_LEAGUE_ID)
+        found = FPLProvider(ENTRY_ID, client=fake, untouchable=FakeUntouchable()).matchup_input(H2H_LEAGUE_ID)
         assert found is not None
         return next(o for o in found.mine if o.player_id == "8").samples
 

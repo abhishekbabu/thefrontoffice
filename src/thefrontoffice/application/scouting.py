@@ -128,10 +128,13 @@ class ScoutEngine:
         return ScoutReport(
             situation=answer.situation,
             focus=answer.focus,
-            moves=_worth_making(
-                _unlisted([Move.model_validate(move.model_dump()) for move in answer.moves], context.listed),
-                context.worth,
-                self.key,
+            moves=_kept(
+                _worth_making(
+                    _unlisted([Move.model_validate(move.model_dump()) for move in answer.moves], context.listed),
+                    context.worth,
+                    self.key,
+                ),
+                context.untouchable,
             ),
             strategy=answer.strategy,
             tasks=judged,
@@ -184,7 +187,10 @@ def _due(kept: Remembered[ScoutReport], context: CompetitionContext, now: dateti
 
 def standing_moves(moves: list[Move], context: CompetitionContext, key: str) -> list[Move]:
     """A kept judgment's moves that still stand against the week as it is now, as the week's page shows them."""
-    return _worth_making(_unlisted(_still_open(moves, context.movable), context.listed), context.worth, key)
+    return _kept(
+        _worth_making(_unlisted(_still_open(moves, context.movable), context.listed), context.worth, key),
+        context.untouchable,
+    )
 
 
 def _worth_making(moves: list[Move], worth: dict[str, float], key: str) -> list[Move]:
@@ -208,6 +214,24 @@ def _worth_making(moves: list[Move], worth: dict[str, float], key: str) -> list[
             continue
         kept.append(move)
     return kept
+
+
+LETS_GO = frozenset({"ADD", "TRANSFER"})
+"""The actions whose `replaces` leaves the roster; a DROP's own player does."""
+
+
+def _kept(moves: list[Move], untouchable: frozenset[str]) -> list[Move]:
+    """The moves that let no untouchable player go: the manager's call, which the model is told and may ignore."""
+    names = {_name(name) for name in untouchable}
+    if not names:
+        return moves
+
+    def lets_go(move: Move) -> bool:
+        if move.action == "DROP":
+            return _name(move.player) in names
+        return move.action in LETS_GO and bool(move.replaces) and _name(move.replaces) in names
+
+    return [m for m in moves if not lets_go(m)]
 
 
 def _unlisted(moves: list[Move], listed: frozenset[str]) -> list[Move]:

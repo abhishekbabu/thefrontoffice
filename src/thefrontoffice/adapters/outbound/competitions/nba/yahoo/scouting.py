@@ -8,6 +8,7 @@ model judges is the line every page shows.
 import logging
 from collections.abc import Sequence
 
+from thefrontoffice.adapters.outbound.competitions import untouchables
 from thefrontoffice.adapters.outbound.competitions.nba import actions, prompt
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
@@ -29,8 +30,12 @@ from thefrontoffice.domain.models import CompetitionContext
 logger = logging.getLogger(__name__)
 
 
-def context(feeds: Feeds, yahoo: YahooSource, league: YahooLeague, limit: int) -> CompetitionContext:
+def context(
+    feeds: Feeds, yahoo: YahooSource, league: YahooLeague, limit: int, untouchable: frozenset[str] = frozenset()
+) -> CompetitionContext:
     """Gather league state and render the scouting prompt, against the league's weekly add `limit`.
+
+    Nobody `untouchable`, by Yahoo key, is a drop, and the model is told so.
 
     Returns the prompt plus the pieces that make it up, so a follow-up
     briefing can be assembled without re-deriving or re-sending everything.
@@ -72,6 +77,7 @@ def context(feeds: Feeds, yahoo: YahooSource, league: YahooLeague, limit: int) -
             max(0, limit - used_adds),
             free_agents,
             reads.averages(yahoo, my_team.team_key, week.opponent.team_key),
+            untouchable=untouchable,
         )
         if week
         else weighing.Decided({}, nba_week.off_il(rostered))
@@ -112,7 +118,8 @@ def context(feeds: Feeds, yahoo: YahooSource, league: YahooLeague, limit: int) -
     schedule_context = prompt.schedule(
         week, remaining_games, projected=projections is not None, unscheduled=unscheduled
     )
-    trans_context = prompt.transactions(used_adds, limit)
+    kept = frozenset(p.name for p in rostered if p.player_key in untouchable)
+    trans_context = "\n".join([prompt.transactions(used_adds, limit), *(f"- {n}" for n in untouchables.note(kept))])
     by_key = {p.player_key: p for p in (*rostered, *free_agents)}
     return CompetitionContext(
         prompt=prompt.scout(
@@ -141,11 +148,17 @@ def context(feeds: Feeds, yahoo: YahooSource, league: YahooLeague, limit: int) -
         listed=frozenset(by_key[pid].name for pid in named if pid in by_key),
         # A kept judgment's add of somebody another manager has since claimed is no move at all.
         movable=frozenset(p.name for p in (*rostered, *free_agents)),
+        untouchable=kept,
     )
 
 
 def wire_context(
-    feeds: Feeds, yahoo: YahooSource, league: YahooLeague, limit: int, player_ids: list[str]
+    feeds: Feeds,
+    yahoo: YahooSource,
+    league: YahooLeague,
+    limit: int,
+    player_ids: list[str],
+    untouchable: frozenset[str] = frozenset(),
 ) -> CompetitionContext:
     """The prompt asking for one call per listed free agent, against the league's weekly add `limit`.
 
@@ -203,7 +216,7 @@ def wire_context(
 
     candidate_lines = lines(candidates)
     fits = {
-        p.player_key: actions.fit(r, rostered, readings, weights is not None)
+        p.player_key: actions.fit(r, rostered, readings, weights is not None, untouchable)
         for p in candidates
         if (r := readings.get(p.player_key))
     }
@@ -214,5 +227,13 @@ def wire_context(
         candidates={p.player_key: candidate_lines[p.name] for p in candidates},
         names={p.player_key: p.name for p in candidates},
         fits=fits,
-        constraints=prompt.transactions(team.adds_used, limit),
+        constraints="\n".join(
+            [
+                prompt.transactions(team.adds_used, limit),
+                *(
+                    f"- {n}"
+                    for n in untouchables.note(frozenset(p.name for p in rostered if p.player_key in untouchable))
+                ),
+            ]
+        ),
     )

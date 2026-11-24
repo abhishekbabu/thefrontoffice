@@ -129,6 +129,13 @@ def test_a_trade_that_only_moves_points_from_them_to_you_is_not_offered() -> Non
     assert _trade(market, "M3", "B2") is None
 
 
+def test_an_untouchable_player_is_never_given_away() -> None:
+    market = _market(replace(_league(), untouchable=frozenset({"m3"})))
+
+    assert market.options
+    assert not any("m3" in o.giving_ids for o in market.options)
+
+
 def test_a_player_on_an_injured_slot_neither_moves_nor_is_moved_for() -> None:
     rosters = {
         "a": [_player("m1"), _player("m2"), _player("m3", slot="IL", status="O")],

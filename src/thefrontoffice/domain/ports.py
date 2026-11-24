@@ -92,6 +92,25 @@ class ItemStateStore(Protocol):
     def save(self, scope: str, states: dict[str, ItemState]) -> None: ...
 
 
+class UntouchableStore(Protocol):
+    """Where the players the manager marked untouchable are kept, per league."""
+
+    def player_ids(self, scope: str) -> list[str]:
+        """Every player marked untouchable under `scope`, in the order marked; none where nobody is."""
+        ...
+
+    def save(self, scope: str, player_ids: list[str]) -> None: ...
+
+
+class UntouchableSource(Protocol):
+    """The players one competition's manager marked untouchable, by league: what every drop, trade and
+    transfer chooser leaves alone, and what the model is told not to suggest letting go."""
+
+    def of(self, league_id: str) -> frozenset[str]:
+        """The ids marked untouchable in `league_id`; none where nobody is."""
+        ...
+
+
 @dataclass(frozen=True)
 class ChatReply:
     """One answer in a conversation: never empty — a model that said nothing

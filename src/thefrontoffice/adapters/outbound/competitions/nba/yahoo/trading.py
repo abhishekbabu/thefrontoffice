@@ -54,7 +54,9 @@ def context(feeds: Feeds, yahoo: YahooSource, league: YahooLeague, proposal: Tra
     return CompetitionContext(prompt=text, situation=prompt.matchup(week, weights), roster_lines=roster)
 
 
-def market(feeds: Feeds, yahoo: YahooSource, league: YahooLeague) -> TradeMarket | None:
+def market(
+    feeds: Feeds, yahoo: YahooSource, league: YahooLeague, untouchable: frozenset[str] = frozenset()
+) -> TradeMarket | None:
     """The rest of the season, and every trade near even in worth that improves your weeks (`market.build`).
 
     None between seasons, once the regular season is over, and past the
@@ -133,5 +135,6 @@ def market(feeds: Feeds, yahoo: YahooSource, league: YahooLeague) -> TradeMarket
             weekly=rules.weekly_lineups,
             deadline=rules.trade_end,
             seed=seed(league.league_key, current),
+            untouchable=untouchable,
         )
     )

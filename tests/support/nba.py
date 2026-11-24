@@ -6,6 +6,7 @@ from datetime import date, datetime
 from typing import Any
 
 from support.espn import FakeESPN
+from support.stores import FakeUntouchable
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
 from thefrontoffice.adapters.outbound.competitions.nba.form import BoxScores, FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, TURNOVERS
@@ -569,6 +570,7 @@ def nba_provider(
     league: YahooLeague | None = None,
     espn: FakeESPN | None = None,
     forecast: FakeForecast | None = None,
+    untouchable: FakeUntouchable | None = None,
 ) -> YahooNBAProvider:
     """The NBA provider over these stand-ins, as bootstrap would wire it over the real clients.
 
@@ -584,6 +586,7 @@ def nba_provider(
         espn=espn or FakeESPN(),
         fallback_weekly_adds=3,
         forecast=forecast or FakeForecast(),
+        untouchable=untouchable or FakeUntouchable(),
     )
 
 

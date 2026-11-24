@@ -109,7 +109,7 @@ from thefrontoffice.domain.models import (
     WeekRange,
     urgency_rank,
 )
-from thefrontoffice.domain.ports import LeagueRef
+from thefrontoffice.domain.ports import LeagueRef, UntouchableSource
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ ADDS_COLUMN = "Adds"
 class SleeperNFLProvider:
     """CompetitionProvider for Sleeper points-league football."""
 
-    def __init__(self, username: str, *, client: SleeperNFLSource, espn: ESPNSource):
+    def __init__(self, username: str, *, client: SleeperNFLSource, espn: ESPNSource, untouchable: UntouchableSource):
         """Every collaborator from bootstrap, which is the one place a real client is built.
 
         The username is required: whether one is set, and what to set when it
@@ -148,6 +148,7 @@ class SleeperNFLProvider:
         self.username = username
         self.client = client
         self.espn = espn
+        self.untouchable = untouchable
         self.scoreboard = Scoreboard(client, espn)
         self.forecasts = Forecasts(client)
         self._user_id: str | None = None
@@ -477,6 +478,7 @@ class SleeperNFLProvider:
             projected=projected,
             lineup=current_lineup(league.starting_slots, roster.starter_ids, projected),
             rank=lineup_value,
+            untouchable=self.untouchable.of(league_id),
         )
         # What a drop is weighed by: only the week being played's to-do list drops anybody.
         return week_state if browsing else replace(week_state, ahead=outlook.rates(self.client, week_state))

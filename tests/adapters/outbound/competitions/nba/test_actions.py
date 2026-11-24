@@ -205,6 +205,28 @@ def test_a_free_agent_with_more_this_week_streams_in_for_the_weakest_drop() -> N
     assert "waivers" not in item.reason
 
 
+def test_an_untouchable_player_is_never_the_drop_for_a_stream() -> None:
+    """The weakest is the manager's to keep: the next weakest makes way."""
+    roster, readings = _team()
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 20.0, 4))
+    plan = Plan(untouchable=frozenset({"Weaker"}))
+
+    [item] = streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set(), plan=plan)
+
+    assert item.drop == "Weak"
+
+
+def test_a_free_agent_fits_over_nobody_untouchable() -> None:
+    roster, readings = _team()
+    pickup = _player("Pickup")
+    readings |= _readings((pickup, 20.0, 4))
+
+    said = fit(readings["Pickup"], roster, readings, by_points=True, untouchable={"Weaker"})
+
+    assert "Weaker" not in said
+
+
 def test_a_player_on_waivers_streams_in_as_a_claim_on_the_games_after_he_clears_them() -> None:
     """His reading already counts only those games; the item says so, and when he clears."""
     roster, readings = _team()

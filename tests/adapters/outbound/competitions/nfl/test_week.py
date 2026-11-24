@@ -18,6 +18,7 @@ from support.nfl import (
     nfl_provider,
     proj,
 )
+from support.stores import FakeUntouchable
 from support.summary import mine
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
@@ -327,7 +328,7 @@ UNDERWAY = [ScoreboardGame("BUF", "MIA", "in", period=3, clock=450.0, label="7:3
 def _underway(**espn: Any) -> SleeperNFLProvider:
     client = _live_client({"qb1": 6.5, "rb2": 1.0})
     client.season_schedule = STALE
-    return SleeperNFLProvider(username="me", client=client, espn=FakeESPN(**espn))
+    return SleeperNFLProvider(username="me", client=client, espn=FakeESPN(**espn), untouchable=FakeUntouchable())
 
 
 def test_a_game_the_scoreboard_has_under_way_shows_his_points_and_its_clock() -> None:
@@ -382,7 +383,9 @@ def test_the_forecast_leaves_as_much_of_a_game_as_its_clock_does() -> None:
         SleeperMatchup(roster_id=2, matchup_id=4, players_points={}, starters=[]),
     ]
     client.rosters = [*client.rosters, SleeperRoster(roster_id=2, owner_id="user-2", player_ids=[], starter_ids=[])]
-    matchup = SleeperNFLProvider(username="me", client=client, espn=FakeESPN(scoreboard=UNDERWAY)).matchup_input("L1")
+    matchup = SleeperNFLProvider(
+        username="me", client=client, espn=FakeESPN(scoreboard=UNDERWAY), untouchable=FakeUntouchable()
+    ).matchup_input("L1")
 
     assert matchup is not None
     qb = next(o for o in matchup.mine if o.player_id == "qb1")

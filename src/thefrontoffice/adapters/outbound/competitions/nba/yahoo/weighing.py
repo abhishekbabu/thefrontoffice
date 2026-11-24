@@ -60,6 +60,7 @@ def decide(
     chances: Mapping[str, float] | None = None,
     their_adds: int = 0,
     claimed: Collection[str] = (),
+    untouchable: Collection[str] = (),
 ) -> Decided:
     """Every shown player's week, and the to-do list weighed on it.
 
@@ -77,7 +78,8 @@ def decide(
 
     The wire is enrichment here: one that will not load (a sync that has not
     carried it) leaves the week's rows and starts standing, with nothing to stream.
-    Nobody you already have a claim waiting on (`claimed`, by Yahoo key) is suggested again.
+    Nobody you already have a claim waiting on (`claimed`, by Yahoo key) is suggested again,
+    and nobody `untouchable` is offered as a drop.
     """
     try:
         free_agents = reads.wire(yahoo, reads.STREAM_DEPTH)
@@ -89,6 +91,7 @@ def decide(
     readings = read_week(feeds, yahoo, weights, [*roster, *theirs, *free_agents], start, end, also or [], averages)
     today = feeds.today(start, end)
     plan = plan_for(feeds, yahoo, (roster, theirs), free_agents, readings, weights, start, end, chances, their_adds)
+    plan = replace(plan, untouchable=frozenset(untouchable))
     open_wire = [p for p in free_agents if p.player_key not in claimed]
     items = actions.build(roster, open_wire, readings, adds_left, weights is not None, today, plan)
     return Decided(readings, items, plan.volume, plan.streams)

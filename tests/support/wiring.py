@@ -11,7 +11,7 @@ from pathlib import Path
 
 from support.ai import FakeAI
 from support.settings import NOWHERE, isolated_settings
-from support.stores import FakeAnswers, FakeItemStates
+from support.stores import FakeAnswers, FakeItemStates, FakeUntouchableStore
 from thefrontoffice.application.items import ItemDecisions
 from thefrontoffice.config.env_file import EnvFile
 from thefrontoffice.config.settings import AppSettings
@@ -176,6 +176,7 @@ def wiring(
     ai: AnalysisModel | None = None,
     answers: AnswerStore | None = None,
     states: FakeItemStates | None = None,
+    untouchables: FakeUntouchableStore | None = None,
     login: FakeLogin | None = None,
     capture: FakeCapture | None = None,
     registry: Sequence[CompetitionEntry] = (),
@@ -190,6 +191,7 @@ def wiring(
         model=lambda: model,
         answers=answers or FakeAnswers(),
         decisions=ItemDecisions(states or FakeItemStates()),
+        untouchables=untouchables or FakeUntouchableStore(),
         logins={"yahoo": lambda: account},
         captures={"yahoo": lambda: sync},
         env=env or EnvFile(ABSENT, settings=AppSettings(_env_file=None)),

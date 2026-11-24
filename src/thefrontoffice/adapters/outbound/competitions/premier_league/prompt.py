@@ -5,6 +5,7 @@ here turns state already gathered into prose, and none of it decides anything.
 The provider fetches and the prompt describes.
 """
 
+from thefrontoffice.adapters.outbound.competitions import untouchables
 from thefrontoffice.adapters.outbound.competitions.dates import at_time
 from thefrontoffice.adapters.outbound.competitions.premier_league.league import league_of, standing
 from thefrontoffice.adapters.outbound.competitions.premier_league.rules import (
@@ -116,12 +117,13 @@ def build(
     fixtures: dict[str, list[Opponent]],
     selling: dict[int, int],
     tasks: list[Action],
+    untouchable: frozenset[str] = frozenset(),
 ) -> CompetitionContext:
     """The scouting prompt, and the parts it was assembled from.
 
     `market` is everybody buyable, best worth first; `best` the eleven `value`
     picks; `tasks` the to-do list as the page shows it, numbered here so a
-    verdict can name its item.
+    verdict can name its item. Nobody `untouchable`, by element id, is offered for sale.
     """
     squad, players, current_starters = roster.squad, roster.players, roster.starters
     current_points = points_with_captain(current_starters, roster.captain, value)
@@ -131,11 +133,14 @@ def build(
     market_lines = dict(list(market_lines.items())[:MARKET_LIMIT])
 
     transfers = affordable_transfers(
-        players, market, squad.bank, selling=selling, limit=TRANSFER_LIMIT, value=value.horizon
+        players, market, squad.bank, selling=selling, limit=TRANSFER_LIMIT, value=value.horizon, keep=untouchable
     )
+    kept = frozenset(p.name for p in players if str(p.id) in untouchable)
 
     situation = _situation(entry, league_id, squad, upcoming.name, upcoming.average_score)
-    constraints = _constraints(squad, allowance, best, current_points)
+    constraints = "\n".join(
+        [_constraints(squad, allowance, best, current_points), *(f"- {n}" for n in untouchables.note(kept))]
+    )
     names = {str(p.id): p.name for p in (*players, *market)}
     listed = task_lines(tasks)
 
@@ -165,6 +170,7 @@ def build(
         listed=frozenset(
             names[pid] for task in tasks for pid in (task.player_id, task.replaces, task.drop) if pid in names
         ),
+        untouchable=kept,
     )
 
 

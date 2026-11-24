@@ -141,7 +141,8 @@ def _with(
         held = frozenset(ids)
         return sum(mean(held, week) for week in over) / len(over) if over else 0.0
 
-    my_ids, their_ids = _tradeable(mine, state), _tradeable(theirs, state)
+    my_ids = [pid for pid in _tradeable(mine, state) if pid not in state.untouchable]
+    their_ids = _tradeable(theirs, state)
     # Each lineup from who can start in it: a reserve or taxi player stays where he is.
     my_held, their_held = active(mine), active(theirs)
     my_now, their_now = per_week(my_held, weeks.every), per_week(their_held, weeks.every)

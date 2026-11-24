@@ -48,6 +48,8 @@ function rosters(key: string, mine: PlayerCard, outlook?: Outlook) {
 
   client.setQueryData([...keys.roster(key, league.league_id), null], [mine]);
 
+  client.setQueryData(keys.untouchables(key, league.league_id), { player_ids: ["u"] });
+
   if (outlook) client.setQueryData(keys.outlook(key, league.league_id, ""), outlook);
 
   return client;
@@ -156,6 +158,16 @@ describe("Rosters", () => {
     expect(text).toContain("blank GW12");
     expect(text).toContain("1 blank: Haaland");
     expect(text).toContain("14 others");
+  });
+
+  it("carries a lock on each of yours marked untouchable", async () => {
+    const client = rosters(competition.key, card("u", "Tyson"));
+
+    const { container } = await render(<RostersPanel competition={competition} league={league} />, client);
+
+    await settle();
+
+    expect(container.querySelectorAll('[aria-label="Untouchable"]')).toHaveLength(1);
   });
 });
 

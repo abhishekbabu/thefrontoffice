@@ -15,6 +15,7 @@ from support.fpl import (
     FakeFPL,
     provider,
 )
+from support.stores import FakeUntouchable
 from support.summary import mine
 
 from thefrontoffice.adapters.outbound.competitions.premier_league.fpl import FPLProvider
@@ -395,7 +396,7 @@ def test_the_gameweek_being_played_says_where_it_sits_in_the_season() -> None:
 
 def test_a_gameweek_played_reads_the_squad_picked_for_it_and_what_fpl_credited() -> None:
     fake = FakeFPL(history=[GameweekResult(event=2, points=63, transfers_made=0, transfers_cost=0)])
-    summary = FPLProvider(ENTRY_ID, client=fake).week_of("900", 2)
+    summary = FPLProvider(ENTRY_ID, client=fake, untouchable=FakeUntouchable()).week_of("900", 2)
 
     assert fake.squad_requests == [2]
     assert _stats(summary) == {"Points": "63", "Average": "50"}
@@ -415,7 +416,7 @@ def test_a_head_to_head_gameweek_played_reads_as_its_final_score() -> None:
 
 def test_the_next_gameweek_is_the_squad_held_now_at_fpls_projection_for_it() -> None:
     fake = FakeFPL()
-    summary = FPLProvider(ENTRY_ID, client=fake).week_of("900", 5)
+    summary = FPLProvider(ENTRY_ID, client=fake, untouchable=FakeUntouchable()).week_of("900", 5)
 
     assert fake.squad_requests == [4]  # its picks are not published until the deadline passes
     assert list(_stats(summary)) == ["Deadline"]
@@ -458,7 +459,7 @@ def test_the_next_gameweek_shows_the_squad_as_last_picked_at_its_projection() ->
     # ep_this is still GW4's; ep_next is the one for GW5.
     catalog = {pid: replace(p, expected_this=0.0) for pid, p in {**SQUAD_PLAYERS, **MARKET}.items()}
     fake = FakeFPL(finished=4, live=FINISHED_LIVE, players=catalog)
-    summary = FPLProvider(ENTRY_ID, client=fake).summary(H2H_LEAGUE)
+    summary = FPLProvider(ENTRY_ID, client=fake, untouchable=FakeUntouchable()).summary(H2H_LEAGUE)
     rows = {spot.player_id: float(spot.projection) for spot in mine(summary).lineup}
     total = float(mine(summary).points.removesuffix(" proj"))
 

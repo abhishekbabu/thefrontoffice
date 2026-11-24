@@ -28,7 +28,7 @@ from support.nba import (
 )
 from support.nba import yahoo_team as _yahoo_team
 from support.reports import MOCK_NBA_REPORT
-from support.stores import FakeAnswers
+from support.stores import FakeAnswers, FakeUntouchable
 
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba.actions import PROVISIONAL
@@ -167,6 +167,16 @@ def test_free_agents_appearing_in_several_categories_are_listed_once_and_first()
     assert prompt.index("Multi Cat") < prompt.index("Single Cat")
 
 
+def test_the_scout_is_told_who_is_untouchable_and_the_context_names_him() -> None:
+    yahoo = FakeYahoo(roster=[make_player("Roster One", key="one"), make_player("Roster Two", key="two")])
+
+    ctx = nba_provider(yahoo, untouchable=FakeUntouchable("one")).build_context()
+
+    assert ctx.untouchable == frozenset({"Roster One"})
+    assert "Roster One" in ctx.constraints
+    assert "Roster Two" not in ctx.constraints
+
+
 def test_an_untouched_add_budget_is_all_left() -> None:
     ctx = nba_provider(FakeYahoo(adds_used=0)).build_context()
     assert ctx.headline == [Stat(label="Adds left", value="3 of 3", tone="good")]
@@ -244,6 +254,7 @@ def _two_league_provider(auth: FakeYahooAuth | None = None) -> YahooNBAProvider:
         espn=FakeESPN(),
         fallback_weekly_adds=3,
         forecast=FakeForecast(),
+        untouchable=FakeUntouchable(),
     )
 
 
@@ -286,6 +297,7 @@ def test_a_refresh_drops_the_league_it_names_and_no_other() -> None:
         espn=FakeESPN(),
         forecast=FakeForecast(),
         fallback_weekly_adds=3,
+        untouchable=FakeUntouchable(),
     )
 
     dropped = provider.refresh("2")
@@ -1276,10 +1288,15 @@ def _averaged(yahoo: FakeYahoo) -> FakeYahoo:
     return yahoo
 
 
-def _decisions(league: YahooLeague = POINTS_LEAGUE, **extra: Any) -> YahooNBAProvider:
+def _decisions(
+    league: YahooLeague = POINTS_LEAGUE, untouchable: FakeUntouchable | None = None, **extra: Any
+) -> YahooNBAProvider:
     yahoo = _averaged(FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS, **extra))
     return nba_provider(
-        yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY), league=league
+        yahoo,
+        nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES, slate=WEEK_SLATE, today=WEEK_DAY),
+        league=league,
+        untouchable=untouchable,
     )
 
 
@@ -1299,6 +1316,15 @@ def test_a_bench_player_playing_today_starts_over_a_starter_who_rests_and_a_free
     start, stream = actions
     assert [(p.name, p.held) for p in start.players] == [("Benched", "bench"), ("Starter", "starter")]
     assert stream.drop == "spare"
+
+
+def test_an_untouchable_player_is_never_the_drop_for_a_stream() -> None:
+    untouchable = FakeUntouchable("spare")
+
+    actions = _decisions(untouchable=untouchable).summary("").actions or []
+
+    assert all(a.drop != "spare" for a in actions)
+    assert untouchable.asked == [POINTS_LEAGUE.league_key]
 
 
 def _claimable(cleared: date | None, priority: int = 0) -> list[Action]:
@@ -1708,6 +1734,21 @@ def test_a_free_agents_line_carries_his_id_his_week_and_the_drop_he_streams_over
     assert line in context.prompt
     assert "Starter" in context.prompt  # the roster that could make way
     assert context.candidate_lines["Streamer"] == line
+
+
+def test_a_free_agent_streams_over_nobody_untouchable_and_the_model_is_told_who_is() -> None:
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER, ROOKIE], weights=WEIGHTS)
+    provider = nba_provider(
+        yahoo,
+        nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES),
+        league=POINTS_LEAGUE,
+        untouchable=FakeUntouchable("spare"),
+    )
+
+    context = provider.build_wire_context("466.l.1", ["streamer"])
+
+    assert "Spare" not in context.targets["streamer"]
+    assert "Spare" in context.constraints
 
 
 def test_a_free_agents_line_is_the_same_whoever_is_asked_about_beside_him() -> None:

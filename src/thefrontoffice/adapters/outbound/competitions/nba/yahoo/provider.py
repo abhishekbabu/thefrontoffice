@@ -72,7 +72,7 @@ from thefrontoffice.domain.models import (
     TradeProposal,
     WeekRange,
 )
-from thefrontoffice.domain.ports import LeagueRef
+from thefrontoffice.domain.ports import LeagueRef, UntouchableSource
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +96,7 @@ class YahooNBAProvider:
         espn: ESPNSource,
         fallback_weekly_adds: int,
         forecast: Callable[[MatchupInput], Forecast],
+        untouchable: UntouchableSource,
     ):
         """Every collaborator from bootstrap, which is the one place a real client is built.
 
@@ -105,7 +106,8 @@ class YahooNBAProvider:
         `games` are both read from Sleeper: each player's recent run, and the
         real games inside a matchup week. `forecast` plays a matchup out — the
         same simulation the week's chance comes from — so a category league's
-        pickups weigh the categories still in play.
+        pickups weigh the categories still in play. `untouchable` is who the manager
+        will not let go, which no drop or trade idea names.
         """
         self._auth = auth
         self._yahoo_for = yahoo_for
@@ -115,6 +117,7 @@ class YahooNBAProvider:
         self.espn = espn
         self.fallback_weekly_adds = fallback_weekly_adds
         self.forecast = forecast
+        self.untouchable = untouchable
         self.feeds = Feeds(form=form, games=games, sleeper=sleeper, espn=espn)
         self._found: list[YahooLeague] | None = None
 
@@ -220,6 +223,7 @@ class YahooNBAProvider:
                     chances=chances,
                     their_adds=self._adds_left(yahoo, found.opponent.team_key, limit),
                     claimed=claimed,
+                    untouchable=self.untouchable.of(league.league_key),
                 )
             )
             return decided[0].readings
@@ -368,7 +372,9 @@ class YahooNBAProvider:
         """Gather league state and render the scouting prompt."""
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
-        return scouting.context(self.feeds, yahoo, league, self._add_limit(yahoo))
+        return scouting.context(
+            self.feeds, yahoo, league, self._add_limit(yahoo), self.untouchable.of(league.league_key)
+        )
 
     # ── the wire ────────────────────────────────────────────────────
 
@@ -380,7 +386,9 @@ class YahooNBAProvider:
         """
         league = self._league(league_id)
         yahoo = self._yahoo_for(league)
-        return scouting.wire_context(self.feeds, yahoo, league, self._add_limit(yahoo), player_ids)
+        return scouting.wire_context(
+            self.feeds, yahoo, league, self._add_limit(yahoo), player_ids, self.untouchable.of(league.league_key)
+        )
 
     # ── the weeks ahead ─────────────────────────────────────────────
 
@@ -427,7 +435,9 @@ class YahooNBAProvider:
         readings = weighing.read_week(self.feeds, yahoo, weights, [*roster, *wire], windows[0].start, windows[-1].end)
         returns = reads.returns([*roster, *wire], self.feeds.reports())
         lineup = nba_lineup.slots(yahoo.settings().slots)
-        return nba_outlook.build(windows, roster, wire, readings, returns, self._add_limit(yahoo), lineup)
+        # Only your own roster carries the marks; another's has none to honour.
+        untouchable = frozenset() if team_id else self.untouchable.of(league.league_key)
+        return nba_outlook.build(windows, roster, wire, readings, returns, self._add_limit(yahoo), lineup, untouchable)
 
     # ── the week, simulated ─────────────────────────────────────────
 
@@ -536,7 +546,7 @@ class YahooNBAProvider:
             PlatformError: the schedule would not load.
         """
         league = self._league(league_id)
-        return trading.market(self.feeds, self._yahoo_for(league), league)
+        return trading.market(self.feeds, self._yahoo_for(league), league, self.untouchable.of(league.league_key))
 
     # ── players and teams ───────────────────────────────────────────
 

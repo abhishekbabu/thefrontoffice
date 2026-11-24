@@ -21,7 +21,7 @@ leaves the usual week to the weeks that are final.
 """
 
 import statistics
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 
@@ -68,6 +68,7 @@ def build(
     returns: Mapping[str, date],
     adds: int,
     lineup: Sequence[str] = (),
+    untouchable: Collection[str] = (),
 ) -> Outlook:
     """Each week of `windows`, soonest first, with a stream for any week worth one.
 
@@ -77,7 +78,7 @@ def build(
     streamed. `lineup` is the league's scoring slots, one per place
     (`lineup.slots`); without them a night seats as many as the roster
     starts today. A pickup or drop is named in one week only — once he is
-    added, he is yours for the weeks after.
+    added, he is yours for the weeks after. Nobody `untouchable` is a drop.
     """
     if not windows:
         return Outlook(measure="games")
@@ -108,7 +109,7 @@ def build(
             provisional=provisional,
         )
         if adds > 0 and not provisional and (row.short or row.light or row.heavy or row.missing):
-            row = _streamed(row, roster, wire, readings, days[w.week], used, w.start, lineup)
+            row = _streamed(row, roster, wire, readings, days[w.week], used, w.start, lineup, untouchable)
         weeks.append(row)
     return Outlook(usual=usual, measure="games", weeks=weeks)
 
@@ -174,6 +175,7 @@ def _streamed(
     used: set[str],
     start: date,
     lineup: Sequence[str] = (),
+    untouchable: Collection[str] = (),
 ) -> WeekAhead:
     """The week with the free agent worth most in it who streams over a drop, where one does.
 
@@ -192,7 +194,7 @@ def _streamed(
         key: replace(r, games=len(days.get(key, []))) for key, r in readings.items() if key in days and key not in used
     }
     owned = {p.player_key for p in roster}
-    drops = droppable([p for p in roster if p.player_key not in used], week, set())
+    drops = droppable([p for p in roster if p.player_key not in used], week, set(untouchable))
     # Each on the wire as it lists him, which is what says whether he sits on waivers.
     pickups = sorted(
         (

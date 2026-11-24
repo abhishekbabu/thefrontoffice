@@ -12,7 +12,7 @@
  * here instead of handing a component the wrong shape.
  */
 import createClient from "openapi-fetch";
-import type { paths } from "@/lib/schema";
+import type { components, paths } from "@/lib/schema";
 import type { ErrorBody, ErrorCode, FreeAgentQuery, ItemDecision, PlayerOrder, Remedy, Subject } from "@/lib/types";
 
 /**
@@ -137,6 +137,14 @@ export function leagueApi(key: string, league: string) {
         client.GET("/api/competitions/{key}/leagues/{league_id}/teams/{team_id}/roster", {
           params: { path: { ...at, team_id: team }, query: present(order) },
         }),
+      ),
+    /** The players on your roster you marked untouchable. */
+    untouchables: () =>
+      settle(client.GET("/api/competitions/{key}/leagues/{league_id}/untouchables", { params: { path: at } })),
+    /** Mark one player untouchable or clear his mark; answered with every untouchable after it. */
+    markUntouchable: (mark: components["schemas"]["UntouchableMark"]) =>
+      settle(
+        client.POST("/api/competitions/{key}/leagues/{league_id}/untouchables", { params: { path: at }, body: mark }),
       ),
     decide: (decision: ItemDecision) =>
       settle(

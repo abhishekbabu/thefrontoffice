@@ -16,7 +16,7 @@ player on waivers is a claim, weighed on the games from the day he clears them
 (`rules.playable_from`) and named as one.
 """
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date
 
@@ -233,6 +233,8 @@ class Plan:
     (`worth.Targeting`): what a pickup or drop is worth this week. None weighs every category alike."""
     priority: int = 0
     """Your place in the league's waiver order, which decides a claim others make too; 0 where unknown."""
+    untouchable: frozenset[str] = frozenset()
+    """Your players the manager marked untouchable, by Yahoo key: never offered as a drop."""
 
     @property
     def behind(self) -> bool:
@@ -423,7 +425,7 @@ def streams(
         for p in free_agents
         if p.player_key not in owned and (r := readings.get(p.player_key)) and r.per_game is not None
     ]
-    drops = droppable(roster, readings, named)
+    drops = droppable(roster, readings, named | plan.untouchable)
     room = min(STREAMS, adds_left)
     keepers = sorted((s for r in wire if (s := weigh.keeper(r, drops))), key=lambda s: (-_game(s.pickup), -s.gain))
     chosen: list[Swap] = []
@@ -590,14 +592,20 @@ def acquire(player: Player, games: int | None = None, *about: str, as_of: date |
     return f"{named} ({', '.join(parts)})" if parts else named
 
 
-def fit(pickup: Reading, roster: Sequence[Player], readings: Mapping[str, Reading], by_points: bool) -> str:
+def fit(
+    pickup: Reading,
+    roster: Sequence[Player],
+    readings: Mapping[str, Reading],
+    by_points: bool,
+    untouchable: Collection[str] = (),
+) -> str:
     """'streams over Kel'el Ware: +12.3 value this week (4G vs 2G)'; empty where he clears no drop.
 
-    The weakest player a game the to-do list would let go (`droppable`) he
-    streams over (`streams_over`): what a stream of him would cost, read the
+    The weakest player a game the to-do list would let go (`droppable`), never an
+    `untouchable` one, he streams over (`streams_over`): what a stream of him would cost, read the
     way the list reads its own pickups.
     """
-    drops = sorted(droppable(roster, readings, set()), key=lambda d: (_game(d), _worth(d)))
+    drops = sorted(droppable(roster, readings, set(untouchable)), key=lambda d: (_game(d), _worth(d)))
     drop = next((d for d in drops if streams_over(pickup, d)), None)
     if drop is None:
         return ""

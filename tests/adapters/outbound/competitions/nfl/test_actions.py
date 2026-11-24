@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 import pytest
 from support.espn import FakeESPN
 from support.nfl import SLEEPER_USER_ID, SLUMPING_TE, FakeSleeper, nfl_provider, proj, slumping
+from support.stores import FakeUntouchable
 
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
@@ -75,8 +76,10 @@ def _client(
     return client
 
 
-def _actions(client: FakeSleeper, espn: FakeESPN | None = None) -> list[Action]:
-    actions = nfl_provider(client, espn).summary("L1").actions
+def _actions(
+    client: FakeSleeper, espn: FakeESPN | None = None, untouchable: FakeUntouchable | None = None
+) -> list[Action]:
+    actions = nfl_provider(client, espn, untouchable).summary("L1").actions
     assert actions is not None
     return actions
 
@@ -659,6 +662,19 @@ def test_a_free_defense_over_yours_names_yours_as_the_drop() -> None:
     assert (action.player_id, action.replaces, action.drop) == ("LV", "MIA", "MIA")
 
 
+def test_an_untouchable_defense_is_not_the_drop_for_a_better_one() -> None:
+    """The manager keeps his defense: the pickup costs a bench spot instead."""
+    league = replace(LEAGUE, roster_positions=["QB", "RB", "WR", "FLEX", "DEF", "BN", "BN"])
+    mine = proj("MIA", "Miami Dolphins", "DEF", 5.0, team="MIA", opp="BUF")
+    theirs = proj("LV", "Las Vegas Raiders", "DEF", 10.0, team="LV", opp="KC")
+    client = _client([QB, RB, WR, FLEX, mine, BENCH_RB, theirs], ["qb", "rb", "wr", "te", "MIA"], ["rb2"], league)
+
+    [action] = _upgrades(_actions(client, untouchable=FakeUntouchable("MIA")))
+
+    assert action.player_id == "LV"
+    assert action.drop != "MIA"
+
+
 def test_a_starter_whose_game_has_kicked_off_is_not_replaced() -> None:
     """Thursday's starter is locked in: no claim can take his place this week."""
     better = proj("fa1", "Free Back", "RB", 20.0, team="KC", opp="LV")
@@ -808,6 +824,16 @@ def test_a_pickup_on_a_full_roster_names_who_to_drop() -> None:
 
     assert action.drop == "wr2"
     assert WEAK.name in action.title
+
+
+def test_an_untouchable_player_is_never_the_drop_however_little_he_is_worth() -> None:
+    """The weakest on the bench is the manager's to keep: the next weakest goes instead."""
+    untouchable = FakeUntouchable(WEAK.player_id)
+
+    [action] = [a for a in _actions(_full_roster(), untouchable=untouchable) if a.kind == "waiver"]
+
+    assert action.drop not in {"", WEAK.player_id}
+    assert untouchable.asked == ["L1"]
 
 
 def test_the_drop_is_judged_on_his_season_not_a_week_he_is_on_bye() -> None:

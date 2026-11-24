@@ -26,6 +26,7 @@ import { Table, Td, Th } from "@/components/ui/table";
 import { Tabs } from "@/components/ui/controls/tabs";
 import { MoveDrawer, MoveRow, backTo } from "@/components/league/move";
 import { ListCard } from "@/components/ui/list";
+import { UntouchableToggle } from "@/components/league/untouchable";
 
 /** What labels his ranking at his position, wherever it is shown. */
 const RANK = "Pos rank";
@@ -391,6 +392,7 @@ export function PlayerPanel({
               onClick={() => (compared.has(shown) ? compared.remove(shown) : compared.add(shown))}
             />
           )}
+          {player.data && <UntouchableToggle competition={competition} league={league} playerId={shown} />}
           {player.data?.url && (
             <ExternalLink href={player.data.url} label={`Open ${player.data.name} on the platform`} />
           )}
