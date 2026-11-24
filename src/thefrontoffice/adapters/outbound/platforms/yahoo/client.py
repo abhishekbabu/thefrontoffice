@@ -11,7 +11,7 @@ Yahoo itself (`LiveResponses`), or what a browser captured of it (`capture.py`).
 
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Protocol
 
 from yahoofantasy.api.parse import as_list, parse_response
@@ -316,8 +316,12 @@ class YahooClient:
         self._pace = pace
 
     def forget(self) -> int:
-        key, week = self.league.league_key, self.league.current_week
-        return self._responses.forget(lambda path: paths.moves(path, key, week))
+        key, week, now = self.league.league_key, self.league.current_week, self._now()
+        return self._responses.forget(lambda path: paths.moves(path, key, week, now))
+
+    def _now(self) -> datetime | None:
+        """The time on the league's own clock, where the reader was given one."""
+        return self._pace.clock().astimezone(self._pace.zone) if self._pace is not None else None
 
     def _scoreboard(self, week: int) -> YahooRead:
         live = self._pace.live() if self._pace is not None else True
@@ -497,8 +501,7 @@ class YahooClient:
         slotted as his manager has set him so far. Held by where `day` sits against today on the league's
         clock (`paths.day_roster`). Fetched together.
         """
-        now = self._pace.clock().astimezone(self._pace.zone) if self._pace is not None else None
-        raws = self._responses.many({key: paths.day_roster(key, day, now) for key in team_keys})
+        raws = self._responses.many({key: paths.day_roster(key, day, self._now()) for key in team_keys})
         return {
             key: readable("roster", lambda raw=raw: player_list(parse(raw)["fantasy_content"]["team"]["roster"]))
             for key, raw in raws.items()

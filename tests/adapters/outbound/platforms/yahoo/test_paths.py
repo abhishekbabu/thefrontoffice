@@ -256,5 +256,15 @@ def test_a_refresh_drops_what_a_move_or_a_new_week_changes(path: str, dropped: b
     assert paths.moves(path, "466.l.1", current_week=5) is dropped
 
 
+@pytest.mark.parametrize(
+    ("day", "dropped"), [(date(2026, 11, 22), False), (date(2026, 11, 23), True), (date(2026, 11, 26), True)]
+)
+def test_a_refresh_keeps_a_day_that_has_stood_and_drops_any_still_moving(day: date, dropped: bool) -> None:
+    """At 1am Tuesday, Sunday has stood; Monday's last games may still be on, and Thursday's lineup can change."""
+    now = datetime(2026, 11, 24, 1, tzinfo=ZoneInfo("America/Los_Angeles"))
+
+    assert paths.moves(paths.day_roster("466.l.1.t.2", day).path, "466.l.1", 5, now) is dropped
+
+
 def test_a_league_whose_week_is_unknown_drops_every_scoreboard() -> None:
     assert paths.moves("league/466.l.1/scoreboard;week=1", "466.l.1", current_week=None)

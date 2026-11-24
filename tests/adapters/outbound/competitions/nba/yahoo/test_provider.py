@@ -2169,3 +2169,62 @@ def test_a_day_whose_schedule_would_not_load_is_shown_without_its_games() -> Non
 
     assert summary.mine is not None
     assert not any(spot.today for spot in summary.mine.lineup)
+
+
+def _sat_out_day(scores: Any) -> dict[str, Spot]:
+    """Tuesday's rows, both Lakers with a line of noughts, Sleeper's box scores as `scores` hold the day."""
+    yahoo = _day_yahoo()
+    noughts = {"12": "0", "15": "0", "9004003": "0/0"}
+    yahoo.day_lines[date(2026, 2, 10)] = {
+        "t.1": [
+            make_player("Laker", position="PG", selected_position="PG", stats=noughts),
+            make_player("Laker Big", position="C", selected_position="C", stats=noughts),
+        ]
+    }
+    nba = FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 11), scores=scores)
+    summary = nba_provider(yahoo, nba=nba).day_of("", 5, date(2026, 2, 10))
+    assert summary.mine is not None
+    return {spot.player: spot for spot in summary.mine.lineup}
+
+
+def _log(pid: str, minutes: float, day: str = "2026-02-10") -> NBAGameLog:
+    return NBAGameLog(player_id=pid, date=day, opponent="BOS", stats={}, team="LAL", minutes=minutes)
+
+
+def test_a_line_of_noughts_is_told_apart_by_the_minutes_sleeper_gives_him() -> None:
+    """The big played three minutes and filled no column; the guard has no line in Sleeper's box score that day."""
+    scores = box_scores({"g": [_log("g", 0.0, "2026-02-08")], "c": [_log("c", 3.0)]}, {"g": "Laker", "c": "Laker Big"})
+
+    rows = _sat_out_day(scores)
+
+    assert rows["Laker"].value == nba_day.DNP
+    assert rows["Laker Big"].value != nba_day.DNP and rows["Laker Big"].line
+
+
+def test_noughts_are_called_nothing_while_sleepers_box_scores_do_not_hold_the_day() -> None:
+    scores = box_scores({"g": [_log("g", 30.0, "2026-02-08")]}, {"g": "Laker"})
+
+    assert {row.value for row in _sat_out_day(scores).values()} == {""}
+
+
+def test_noughts_are_called_nothing_where_sleepers_box_scores_will_not_load() -> None:
+    yahoo = _day_yahoo()
+    nba = FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 11))
+    nba.scores_error = SleeperAPIError("down")
+    yahoo.day_lines[date(2026, 2, 10)] = {"t.1": [make_player("Laker", selected_position="PG", stats={"12": "0"})]}
+
+    summary = nba_provider(yahoo, nba=nba).day_of("", 5, date(2026, 2, 10))
+
+    assert summary.mine is not None and summary.mine.lineup[0].value == ""
+
+
+def test_a_days_rows_keep_each_players_games_left_this_week() -> None:
+    yahoo = _day_yahoo()
+    nba = FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 11), games={"LAL": 2, "NYK": 3})
+
+    summary = nba_provider(yahoo, nba=nba).day_of("", 5, date(2026, 2, 13))
+
+    assert summary.mine is not None
+    rows = {spot.player: spot for spot in summary.mine.lineup}
+    assert "2G" in rows["Laker"].detail
+    assert "3G" in rows["Idle Big"].detail

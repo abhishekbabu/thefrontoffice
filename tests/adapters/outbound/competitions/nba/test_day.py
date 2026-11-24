@@ -55,6 +55,8 @@ def a_day(
     stage: Stage,
     games: Sequence[ScheduledGame] | None = (),
     projected: Mapping[str, Line] | None = None,
+    minutes: Mapping[str, float] | None = None,
+    week: Mapping[str, str] | None = None,
 ) -> nba_day.Day:
     return nba_day.Day(
         day=WEDNESDAY,
@@ -62,6 +64,8 @@ def a_day(
         games=games,
         projected=projected or {},
         slots=SLOTS,
+        minutes=minutes or {},
+        week=week or {},
     )
 
 
@@ -144,15 +148,52 @@ def test_a_day_played_totals_only_the_starters_and_says_what_the_bench_left_out(
     assert summary.days is not None and summary.days.day == WEDNESDAY
 
 
-def test_a_game_sat_out_reads_as_one_and_counts_no_start() -> None:
+def test_a_game_the_box_scores_give_no_minutes_reads_as_sat_out_and_counts_no_start() -> None:
     games = [game("LAL", "BOS", "complete")]
     mine = [make_player("Rested", team="LAL", selected_position="PG", stats=SAT_OUT)]
 
-    summary = board(mine, [], a_day("played", games))
+    summary = board(mine, [], a_day("played", games, minutes={"rested": 0.0}))
 
     assert rows(summary)["Rested"].value == nba_day.DNP
     assert rows(summary)["Rested"].line == []
     assert stats(summary)["Starts"] == "0 – 0"
+
+
+def test_a_game_played_that_filled_no_column_is_a_line_of_noughts_and_a_start() -> None:
+    games = [game("LAL", "BOS", "complete")]
+    mine = [make_player("Cameo", team="LAL", selected_position="PG", stats=SAT_OUT)]
+
+    summary = board(mine, [], a_day("played", games, minutes={"cameo": 3.0}))
+
+    row = rows(summary)["Cameo"]
+    assert row.value != nba_day.DNP
+    assert {stat.label: stat.value for stat in row.line}["PTS"] == "0"
+    assert stats(summary)["Starts"] == "1 – 0"
+
+
+def test_noughts_the_box_scores_cannot_place_are_called_neither_played_nor_sat_out() -> None:
+    games = [game("LAL", "BOS", "complete")]
+    mine = [make_player("Unknown", team="LAL", selected_position="PG", stats=SAT_OUT)]
+
+    row = rows(board(mine, [], a_day("played", games)))["Unknown"]
+
+    assert (row.value, row.line) == ("", [])
+
+
+def test_a_day_played_shows_no_status_since_yahoo_gives_only_todays() -> None:
+    games = [game("LAL", "BOS", "complete")]
+    mine = [make_player("Hurt Now", team="LAL", selected_position="PG", status="O", stats=line(20))]
+
+    assert "O" not in rows(board(mine, [], a_day("played", games)))["Hurt Now"].detail.split(" · ")
+
+
+def test_each_row_keeps_his_week_beside_his_day() -> None:
+    games = [game("LAL", "BOS")]
+    mine = [make_player("Guard", team="LAL", selected_position="PG", stats=TO_COME)]
+
+    row = rows(board(mine, [], a_day("to come", games, week={"guard": "3G · 22.1p 8.3r 4.0a"})))["Guard"]
+
+    assert "3G · 22.1p 8.3r 4.0a" in row.detail
 
 
 def test_a_day_played_flags_nothing_to_fix_and_projects_nobody() -> None:

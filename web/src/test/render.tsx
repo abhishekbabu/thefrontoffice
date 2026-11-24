@@ -71,7 +71,8 @@ export type Rendered = {
   unmount: () => Promise<void>;
 };
 
-export async function render(ui: ReactNode, client: QueryClient = offlineClient()): Promise<Rendered> {
+/** `ui` mounted under the app's providers, its router opened `at` an address. */
+export async function render(ui: ReactNode, client: QueryClient = offlineClient(), at = "/"): Promise<Rendered> {
   const container = document.createElement("div");
 
   document.body.append(container);
@@ -80,7 +81,7 @@ export async function render(ui: ReactNode, client: QueryClient = offlineClient(
 
   const wrap = (node: ReactNode) => (
     <QueryClientProvider client={client}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[at]}>
         <MotionProvider features={features}>
           <TooltipProvider>{node}</TooltipProvider>
         </MotionProvider>

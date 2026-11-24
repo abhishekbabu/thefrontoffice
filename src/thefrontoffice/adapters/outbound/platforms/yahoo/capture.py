@@ -50,6 +50,13 @@ from thefrontoffice.domain.models import (
 
 logger = logging.getLogger(__name__)
 
+ASKED = "capture/asked"
+"""The entry holding what the app was asked for and no sync carried — a day of a week long gone — so the next
+sync fetches it. No Yahoo path has this shape."""
+
+ASKED_LIMIT = 200
+"""The most such paths kept, newest last: a page opened once a month ago need not ride every sync."""
+
 CAPTURE_TTL = timedelta(days=30)
 """How long a captured response stands in for Yahoo. Long, because nothing
 refreshes it but another sync; Settings says how old it is."""
@@ -126,6 +133,7 @@ class YahooCapture:
             return stored
         if read.lookup:
             return self._lookup(read)
+        self._ask(read.path)
         raise self._missing(read.path)
 
     def many(self, reads: Mapping[str, YahooRead]) -> dict[str, str]:
@@ -161,8 +169,17 @@ class YahooCapture:
         if self._cache.lookup(SYNCED, timedelta.max) is None:
             return YahooCaptureMissingError()
         return YahooCaptureMissingError(
-            f"The last Yahoo sync has no current copy of {path}. Run the sync bookmark again."
+            f"Not synced yet: {path}. Run the sync bookmark again and it will fetch this, then reload."
         )
+
+    def _asked(self) -> list[str]:
+        hit = self._cache.lookup(ASKED, timedelta.max)
+        return list(hit.value) if hit is not None and isinstance(hit.value, list) else []
+
+    def _ask(self, path: str) -> None:
+        """Keep `path` for the next sync to fetch: what a page opened and no sync had carried."""
+        asked = [kept for kept in self._asked() if kept != path and self._stored(YahooRead(kept, CAPTURE_TTL)) is None]
+        self._cache.set(ASKED, [*asked, path][-ASKED_LIMIT:])
 
     def _lookup(self, read: YahooRead) -> str:
         """A players response for a lookup no plan could make, built from every player the league's captures name.
@@ -248,7 +265,18 @@ class YahooCapture:
                 reads.extend(paths.pending(key, team.team_key))
         reads.extend(read for read in self._played(league) if self._stored(read) is None)
         reads.extend(self._days(game, league))
+        reads.extend(self._wanted(league))
         return reads
+
+    def _wanted(self, league: YahooLeague) -> list[YahooRead]:
+        """What a page asked for of this league that no sync has carried yet (`_ask`): fetched by the next."""
+        key = league.league_key
+        mine = (f"league/{key}/", *(f"team/{team.team_key}/" for team in self._teams(key)))
+        return [
+            read
+            for path in self._asked()
+            if path.startswith(mine) and self._stored(read := YahooRead(path, CAPTURE_TTL)) is None
+        ]
 
     def _days(self, game: YahooGame, league: YahooLeague) -> list[YahooRead]:
         """Both rosters of your matchup as slotted on each day of the week being played and the one before it,
