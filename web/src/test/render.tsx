@@ -15,7 +15,7 @@ import { MotionGlobalConfig } from "motion/react";
 import features from "@/lib/motion/features";
 import { MotionProvider } from "@/lib/motion/provider";
 import { TooltipProvider } from "@/components/ui/overlays/tooltip";
-import type { Capabilities } from "@/lib/types";
+import type { Capabilities, PlayerCard } from "@/lib/types";
 import { keys } from "@/lib/queries";
 
 // Tells React this is a test environment, so `act` flushes as it would in one.
@@ -43,11 +43,16 @@ export function offlineClient(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, enabled: true } } });
 }
 
-/** An offline client holding what a player drawer reads besides the player: the capabilities, with no model. */
-export function drawerClient(): QueryClient {
+/**
+ * An offline client holding what a player drawer in `league` reads besides the player: the capabilities, with no
+ * model, and your roster — `roster`, nobody by default — which says whether he can be marked untouchable.
+ */
+export function drawerClient(competition: string, league: string, roster: PlayerCard[] = []): QueryClient {
   const client = offlineClient();
 
   client.setQueryData<Capabilities>(keys.capabilities, { ai: false, limits: { judged: 10 } });
+
+  client.setQueryData([...keys.roster(competition, league), null], roster);
 
   return client;
 }

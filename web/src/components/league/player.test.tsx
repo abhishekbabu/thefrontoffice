@@ -48,9 +48,7 @@ const ALLEN_CARD: PlayerCard = {
 
 /** Open his drawer on `detail`, with each of `tabs` answering its own read, and `roster` as yours. */
 async function opened(detail: PlayerDetail, tabs: Record<string, PlayerDetail> = {}, roster: PlayerCard[] = []) {
-  const client = drawerClient();
-
-  client.setQueryData([...keys.roster(NFL.key, LEAGUE.league_id), null], roster);
+  const client = drawerClient(NFL.key, LEAGUE.league_id, roster);
 
   client.setQueryData(keys.untouchables(NFL.key, LEAGUE.league_id), { player_ids: [] });
 
