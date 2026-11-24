@@ -31,7 +31,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     long_term,
     ruled_out,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.slump import SLUMP_LABEL, called, slump
+from thefrontoffice.adapters.outbound.competitions.nfl.slump import called, slump
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,
     Week,
@@ -210,7 +210,7 @@ def cards(
                     **({FIT_COLUMN: fitted.against} if fitted else {}),
                     **({WITHOUT_COLUMN: split.note()} if split else {}),
                     # His projection is the figure the slump says is wrong.
-                    **({"Proj": f"{SLUMP_LABEL}: {sunk.short()}"} if sunk else {}),
+                    **({"Proj": f"{sunk.label}: {sunk.short()}"} if sunk else {}),
                     **({"Opponent": matchup.allowed_to()} if matchup else {}),
                 },
                 tones={"Opponent": matchup.tone} if matchup and matchup.tone != "neutral" else {},

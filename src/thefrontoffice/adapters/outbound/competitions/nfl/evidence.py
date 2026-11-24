@@ -73,6 +73,9 @@ class Appearance:
     carry_share: float | None = None
     """His share of his club's carries that game; None where it ran none."""
     receiving_yards: float = 0.0
+    pass_attempts: float = 0.0
+    passing_yards: float = 0.0
+    rushing_yards: float = 0.0
 
     @property
     def opportunities(self) -> float:
@@ -191,7 +194,7 @@ class Evidence:
     """Each player's games played this season, oldest first, week by week: what a split by who else played reads."""
 
     passers: dict[tuple[str, int], str] = field(default_factory=dict)
-    """Who threw most of each club's passes in each week it played, by (club, week): its starting quarterback."""
+    """Each club's quarterback by the end of each week's game, by (club, week): who starts the next (`_passers`)."""
 
     def matchup(self, player: Projection) -> Matchup | None:
         return self.allowed.get((player.opponent, player.position)) if player.opponent else None
@@ -256,6 +259,9 @@ def _appearances(lines: Sequence[GameLine], scoring: str) -> tuple[dict[str, tup
             carries=carries,
             carry_share=carries / ran if ran else None,
             receiving_yards=game.stats.get("rec_yd", 0.0),
+            pass_attempts=game.stats.get("pass_att", 0.0),
+            passing_yards=game.stats.get("pass_yd", 0.0),
+            rushing_yards=game.stats.get("rush_yd", 0.0),
         )
 
     appearances = {
@@ -266,15 +272,35 @@ def _appearances(lines: Sequence[GameLine], scoring: str) -> tuple[dict[str, tup
     return appearances, positions
 
 
+RELIEF = 0.25
+"""The share of a club's pass attempts a second quarterback must throw in a game for him to have taken over in
+it: a benching or an injury, not a trick play or a kneel-down series."""
+
+
 def _passers(lines: Sequence[GameLine]) -> dict[tuple[str, int], str]:
-    """Each club's quarterback with the most pass attempts in each week: who started under centre."""
-    most: dict[tuple[str, int], tuple[float, str]] = {}
+    """Each club's quarterback by the end of each week's game: who will be under centre in the next.
+
+    The one with the most pass attempts — unless a second quarterback threw
+    `RELIEF` of them and the club's quarterback the week before is the other
+    one: then the second came in for him, benched or hurt, and finished the
+    game. Read from the week totals alone, which is all a game line carries.
+    """
+    attempts: dict[tuple[str, int], dict[str, float]] = defaultdict(dict)
     for line in lines:
-        attempts = line.stats.get("pass_att", 0.0)
-        key = (line.team, line.week)
-        if line.position == "QB" and attempts and attempts > most.get(key, (0.0, ""))[0]:
-            most[key] = (attempts, line.player_id)
-    return {key: pid for key, (_, pid) in most.items()}
+        if line.position == "QB" and (count := line.stats.get("pass_att", 0.0)):
+            attempts[(line.team, line.week)][line.player_id] = count
+    found: dict[tuple[str, int], str] = {}
+    last: dict[str, str] = {}
+    for team, week in sorted(attempts, key=lambda key: key[1]):
+        thrown = attempts[(team, week)]
+        total = sum(thrown.values())
+        finisher = max(thrown, key=lambda pid: thrown[pid])
+        before = last.get(team)
+        relievers = [pid for pid, count in thrown.items() if pid != before and count >= RELIEF * total]
+        if before in thrown and relievers:
+            finisher = max(relievers, key=lambda pid: thrown[pid])
+        found[(team, week)] = last[team] = finisher
+    return found
 
 
 def _roles(lines: Sequence[GameLine], scoring: str) -> dict[str, Role]:

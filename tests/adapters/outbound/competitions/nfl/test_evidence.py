@@ -353,3 +353,25 @@ def test_a_clubs_starting_quarterback_is_whoever_threw_most_that_week() -> None:
     ]
 
     assert gather(lines, "pts_ppr").passers == {("KC", 1): "qb1", ("KC", 2): "qb2"}
+
+
+def test_a_quarterback_benched_mid_game_hands_the_next_week_to_the_one_who_finished() -> None:
+    """Week 2: the starter throws 24 before he is pulled, his backup 10 of the 34 — over a quarter: the backup finished."""
+    lines = [
+        game_line("qb1", 1, position="QB", off_snp=60.0, pass_att=30.0),
+        game_line("qb1", 2, position="QB", off_snp=45.0, pass_att=24.0),
+        game_line("qb2", 2, position="QB", off_snp=15.0, pass_att=10.0),
+    ]
+
+    assert gather(lines, "pts_ppr").passers == {("KC", 1): "qb1", ("KC", 2): "qb2"}
+
+
+def test_a_backup_on_a_handful_of_snaps_finishes_nothing() -> None:
+    """Four attempts of 34 is a series, not a takeover."""
+    lines = [
+        game_line("qb1", 1, position="QB", off_snp=60.0, pass_att=30.0),
+        game_line("qb1", 2, position="QB", off_snp=55.0, pass_att=30.0),
+        game_line("qb2", 2, position="QB", off_snp=5.0, pass_att=4.0),
+    ]
+
+    assert gather(lines, "pts_ppr").passers[("KC", 2)] == "qb1"

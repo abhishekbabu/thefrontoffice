@@ -21,7 +21,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     by_club,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, status_word
-from thefrontoffice.adapters.outbound.competitions.nfl.slump import SLUMP_LABEL, slump
+from thefrontoffice.adapters.outbound.competitions.nfl.slump import slump
 from thefrontoffice.adapters.outbound.competitions.nfl.views import facing, share, team_name
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.domain.errors import PlatformError, PlayerNotFoundError
@@ -223,7 +223,7 @@ def detail(client: NFLSource, state: Week, player_id: str, schedule: Mapping[int
             stats=[
                 _opponent(projection, state),
                 *(_role(projection, state) if projection else []),
-                *([Stat(label=SLUMP_LABEL, value=sunk.short(), tone="warning")] if sunk else []),
+                *([Stat(label=sunk.label, value=sunk.short(), tone="warning")] if sunk else []),
                 *(s.stat() for s in state.teammates.splits(meta)),
             ],
         )
