@@ -8,6 +8,7 @@ every week left (`market.build`).
 import logging
 from datetime import datetime
 
+from thefrontoffice.adapters.outbound.competitions import untouchables
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
 from thefrontoffice.adapters.outbound.competitions.nba import market as nba_market
@@ -27,8 +28,18 @@ from thefrontoffice.domain.models import CompetitionContext, TeamRecord, TradeMa
 logger = logging.getLogger(__name__)
 
 
-def context(feeds: Feeds, yahoo: YahooSource, league: YahooLeague, proposal: TradeProposal) -> CompetitionContext:
-    """Price both sides of a trade against the current roster, in the league's own scoring."""
+def context(
+    feeds: Feeds,
+    yahoo: YahooSource,
+    league: YahooLeague,
+    proposal: TradeProposal,
+    untouchable: frozenset[str] = frozenset(),
+) -> CompetitionContext:
+    """Price both sides of a trade against the current roster, in the league's own scoring.
+
+    A player given away that the manager marked `untouchable`, by Yahoo key, is named to the model and on the
+    context, never refused: the manager proposed it.
+    """
     weights = reads.weights(league, yahoo)
     builder = PlayerContextBuilder(feeds.form, feeds.games, weights)
     giving, receiving = resolve_sides(proposal, lambda name: reads.find_player(yahoo, name))
@@ -44,14 +55,18 @@ def context(feeds: Feeds, yahoo: YahooSource, league: YahooLeague, proposal: Tra
         rostered, week.start if week else None, week.end if week else None, returns=returns
     )
 
+    kept = frozenset(p.name for p in giving if p.player_key in untouchable)
     text = prompt.trade(
-        giving=builder.build_context_for_players(giving, returns=returns),
+        giving=builder.build_context_for_players(giving, returns=returns)
+        + "".join(f"- NOTE: {line}\n" for line in untouchables.given(kept)),
         receiving=builder.build_context_for_players(receiving, returns=returns),
         week=week,
         roster="".join(roster.values()),
         weights=weights,
     )
-    return CompetitionContext(prompt=text, situation=prompt.matchup(week, weights), roster_lines=roster)
+    return CompetitionContext(
+        prompt=text, situation=prompt.matchup(week, weights), roster_lines=roster, untouchable=kept
+    )
 
 
 def market(

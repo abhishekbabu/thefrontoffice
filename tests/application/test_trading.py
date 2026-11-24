@@ -82,3 +82,19 @@ def test_a_model_failure_reaches_the_caller_as_the_domain_error_it_was() -> None
     """A chat's failures are already the model's domain errors; a spent quota stays one."""
     with pytest.raises(AIQuotaError):
         _engine(ai=FakeAI(chat=FakeChat(error=AIQuotaError("Gemini")))).evaluate("L1", "x")
+
+
+def test_a_verdict_names_the_untouchables_the_trade_gives_away_as_the_provider_found_them() -> None:
+    class GivesOne(FakeTradeProvider):
+        def build_trade_context(self, league_id: str, proposal: TradeProposal) -> CompetitionContext:
+            return CompetitionContext(prompt="p", untouchable=frozenset({"Jordyn Tyson"}))
+
+    verdict, _ = _engine(GivesOne()).evaluate("L1", "x")
+
+    assert verdict.untouchable == ["Jordyn Tyson"]
+
+
+def test_a_trade_giving_none_away_names_none() -> None:
+    verdict, _ = _engine().evaluate("L1", "x")
+
+    assert verdict.untouchable == []

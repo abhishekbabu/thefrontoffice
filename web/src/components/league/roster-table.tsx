@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Lock } from "lucide-react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { DataTable, type SortState } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +6,7 @@ import { Empty } from "@/components/ui/state";
 import { Hint } from "@/components/ui/overlays/tooltip";
 import { Meta } from "@/components/ui/label";
 import type { PlayerCard, PlayerOrder } from "@/lib/types";
+import { UntouchableLock } from "@/components/league/untouchable";
 
 /** A header's sort as the server takes it: no column is the competition's own order. */
 export function toOrder(sort: SortState | null): PlayerOrder {
@@ -108,9 +108,7 @@ export function RosterTable({
           return (
             <span className="inline-flex items-center gap-1.5">
               <span className="font-medium">{value}</span>
-              <Hint label="Untouchable" name="Untouchable">
-                <Lock aria-hidden className="size-3 text-muted-foreground" />
-              </Hint>
+              <UntouchableLock />
             </span>
           );
         }

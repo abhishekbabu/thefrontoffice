@@ -94,6 +94,10 @@ class CompetitionEntry:
     capture: Callable[[], BrowserCapture] | None = None
     """Its platform's browser sync, where it can be read that way: offered under the platform's name."""
 
+    squad: Callable[[str], str] | None = None
+    """The squad a league is played with, where one squad plays every league (FPL): what its untouchables are kept
+    under, so one mark holds in each. None keeps them per league."""
+
     check_ready: Callable[[], None] = lambda: None
     """Raise if the competition is configured but cannot be used yet.
 
@@ -271,7 +275,7 @@ class Wiring:
 
     def untouchable(self, entry: CompetitionEntry) -> UntouchableMarks:
         """One competition's untouchables, per league, as the page marks them."""
-        return UntouchableMarks(self.untouchables, entry.key)
+        return UntouchableMarks(self.untouchables, entry.key, entry.squad)
 
     def scout(self, entry: CompetitionEntry, provider: ContextProvider) -> ScoutEngine:
         """A scouting engine wired to the model and the judgments kept on disk."""

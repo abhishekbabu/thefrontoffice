@@ -64,6 +64,13 @@ def test_trade_verdict_surfaces_every_field() -> None:
         assert cat in out
 
 
+def test_a_trade_giving_an_untouchable_away_says_so_and_one_giving_none_does_not() -> None:
+    flagged = render_trade_verdict(MOCK_NBA_VERDICT.model_copy(update={"untouchable": ["Coby White"]}))
+
+    assert "Coby White" in flagged
+    assert "Coby White" not in render_trade_verdict(MOCK_NBA_VERDICT)
+
+
 def test_empty_category_lists_render_as_a_dash() -> None:
     from thefrontoffice.domain.models import TradeVerdict
 

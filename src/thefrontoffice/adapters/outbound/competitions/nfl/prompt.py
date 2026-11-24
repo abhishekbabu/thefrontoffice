@@ -284,9 +284,11 @@ def trade(state: Week, giving: Sequence[Projection], receiving: Sequence[Project
     """The trade prompt: both sides priced against this roster, on the week every other view reads."""
     roster = roster_lines(state)
     situation, _ = matchup(state)
+    kept = frozenset(p.name for p in giving if p.player_id in state.untouchable)
     constraints = lineup_slots(
         state,
         "Only points from the starting lineup score. Bench depth has value only as insurance or as a future starter.",
+        *untouchables.given(kept),
     )
     text = NFL_TRADE_PROMPT.format(
         giving_str="".join(player_line(p, state.evidence, state.news) for p in giving),
@@ -296,7 +298,9 @@ def trade(state: Week, giving: Sequence[Projection], receiving: Sequence[Project
         roster_str="".join(roster.values()),
         scoring_label=scoring_label(state.league.scoring_format),
     )
-    return CompetitionContext(prompt=text, situation=situation, constraints=constraints, roster_lines=roster)
+    return CompetitionContext(
+        prompt=text, situation=situation, constraints=constraints, roster_lines=roster, untouchable=kept
+    )
 
 
 def wire(state: Week, candidates: Mapping[str, Projection], fits: Mapping[str, str]) -> CompetitionContext:

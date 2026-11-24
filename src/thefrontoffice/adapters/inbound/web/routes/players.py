@@ -74,9 +74,12 @@ def search_players(
 
 
 @router.get("/untouchables", response_model=Untouchables)
-def untouchables(key: str, league_id: str, wiring: CurrentWiring, entry: Entry) -> Untouchables:
-    """The players on your roster you marked untouchable: never a drop, a trade away or a sale."""
-    return wiring.untouchable(entry).listed(league_id)
+def untouchables(key: str, league_id: str, wiring: CurrentWiring, entry: Entry, provider: Provider) -> Untouchables:
+    """The players on your roster you marked untouchable: never a drop, a trade away or a sale.
+
+    A mark on a player no longer yours is dropped here, against the roster as it reads now.
+    """
+    return wiring.untouchable(entry).listed(league_id, lambda: (p.player_id for p in provider.roster(league_id)))
 
 
 @router.post("/untouchables", response_model=Untouchables)

@@ -85,6 +85,23 @@ def test_both_sides_and_the_roster_reach_the_prompt() -> None:
     assert "Existing Starter" in prompt  # the roster-awareness rule needs this
 
 
+def test_giving_an_untouchable_away_is_named_to_the_model_and_on_the_context() -> None:
+    yahoo = FakeYahoo(
+        search_results={
+            "LeBron James": [make_player("LeBron James", key="lebron")],
+            "Jayson Tatum": [make_player("Jayson Tatum", key="tatum")],
+        }
+    )
+    proposal = TradeProposal(giving=["LeBron James"], receiving=["Jayson Tatum"])
+
+    context = nba_provider(yahoo, untouchable=FakeUntouchable("lebron")).build_trade_context("", proposal)
+    plain = nba_provider(yahoo).build_trade_context("", proposal)
+
+    assert context.untouchable == frozenset({"LeBron James"})
+    assert plain.untouchable == frozenset()
+    assert len(context.prompt) > len(plain.prompt)
+
+
 def test_the_matchup_is_carried_as_the_situation() -> None:
     situation = _context(_yahoo_with("LeBron James", "Jayson Tatum")).situation
     assert "Their Team" in situation

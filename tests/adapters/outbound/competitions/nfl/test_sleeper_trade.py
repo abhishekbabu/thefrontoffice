@@ -6,6 +6,7 @@ from typing import Any
 
 from support.espn import FakeESPN
 from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
+from support.stores import FakeUntouchable
 
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -36,6 +37,22 @@ def test_both_sides_are_resolved_and_priced() -> None:
     assert "Bad RB" in context.prompt
     assert "Trade Target" in context.prompt
     assert "15.5" in context.prompt  # his projection, which is what he is priced at
+
+
+def test_giving_an_untouchable_away_is_named_to_the_model_and_on_the_context() -> None:
+    proposal = TradeProposal(giving=["Bad RB"], receiving=["Trade Target"])
+    context = nfl_provider(_client(), untouchable=FakeUntouchable("rb2")).build_trade_context("L1", proposal)
+
+    assert context.untouchable == frozenset({"Bad RB"})
+    assert "Bad RB" in context.constraints
+
+
+def test_a_trade_giving_no_untouchable_names_none() -> None:
+    proposal = TradeProposal(giving=["Bad RB"], receiving=["Trade Target"])
+    context = nfl_provider(_client(), untouchable=FakeUntouchable("qb1")).build_trade_context("L1", proposal)
+
+    assert context.untouchable == frozenset()
+    assert "Bad RB" not in context.constraints
 
 
 def test_a_player_with_no_projection_is_still_tradeable() -> None:

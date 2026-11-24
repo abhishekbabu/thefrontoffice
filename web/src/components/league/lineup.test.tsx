@@ -34,6 +34,19 @@ describe("LineupCard", () => {
     expect(container.textContent).toContain("IsakVC");
     expect(container.textContent).not.toContain("RiceC");
   });
+
+  it("carries a lock beside each of yours marked untouchable, on the bench too", async () => {
+    const { container } = await render(
+      <LineupCard
+        title="You"
+        lineup={[spot("Haaland"), spot("Isak")]}
+        bench={[spot("Rice")]}
+        untouchable={(id) => id === "Isak" || id === "Rice"}
+      />,
+    );
+
+    expect(container.querySelectorAll('[aria-label="Untouchable"]')).toHaveLength(2);
+  });
 });
 
 describe("a day's lineup", () => {
@@ -95,6 +108,23 @@ describe("SideCard", () => {
     expect(text.indexOf("Bench")).toBeLessThan(text.indexOf("Backup"));
     expect(text.indexOf("Backup")).toBeLessThan(text.indexOf("Reserve"));
     expect(text.indexOf("Reserve")).toBeLessThan(text.indexOf("Hurt"));
+  });
+
+  it("carries a lock beside each of yours marked untouchable, in the lineup, bench and reserve", async () => {
+    const side = {
+      name: "Mine",
+      record: "",
+      detail: "",
+      points: "",
+      lineup: [spot("Starter")],
+      bench: [spot("Backup")],
+      reserve: [spot("Hurt")],
+      open_spots: 0,
+    };
+
+    const { container } = await render(<SideCard side={side} label="You" untouchable={(id) => id !== "Starter"} />);
+
+    expect(container.querySelectorAll('[aria-label="Untouchable"]')).toHaveLength(2);
   });
 });
 

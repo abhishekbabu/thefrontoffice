@@ -29,6 +29,7 @@ import {
   WeekStepper,
   useWeekParam,
 } from "@/components/league/week-stepper";
+import { useUntouchables } from "@/lib/untouchables";
 
 /**
  * Judge again on arrival where the server says the week has moved on from the
@@ -107,6 +108,7 @@ export function MatchupPanel({
   });
 
   const shown = browsing === null ? week : other;
+  const untouchable = useUntouchables(competition.key, league.league_id);
 
   // The last judgment, read without asking the model anything: judging is a
   // click, and a reload should not throw the answer away.
@@ -262,6 +264,7 @@ export function MatchupPanel({
                     side={shown.data.mine}
                     label="You"
                     onOpen={openPlayer}
+                    untouchable={untouchable.has}
                     rows={rowsOf(shown.data.mine, shown.data.opponent)}
                   />
                   <SideCard
@@ -279,6 +282,7 @@ export function MatchupPanel({
                   reserve={shown.data.mine?.reserve ?? []}
                   openSpots={shown.data.mine?.open_spots ?? 0}
                   onOpen={openPlayer}
+                  untouchable={untouchable.has}
                 />
               )}
             </div>

@@ -1,5 +1,6 @@
 import { Lock, LockOpen } from "lucide-react";
 import { IconButton } from "@/components/ui/controls/icon-button";
+import { Hint } from "@/components/ui/overlays/tooltip";
 import { useOwnRoster, useUntouchables } from "@/lib/untouchables";
 
 /**
@@ -31,5 +32,14 @@ export function UntouchableToggle({
       disabled={untouchable.pending}
       onClick={() => untouchable.toggle(playerId)}
     />
+  );
+}
+
+/** The lock beside the name of a player you marked untouchable, wherever your players are listed. */
+export function UntouchableLock() {
+  return (
+    <Hint label="Untouchable" name="Untouchable" className="inline-flex shrink-0">
+      <Lock aria-hidden className="size-3 text-muted-foreground" />
+    </Hint>
   );
 }
