@@ -1,14 +1,15 @@
 """Tests for the week weighed: `nba/yahoo/weighing.py`."""
 
 from dataclasses import replace
+from datetime import date
 
 from support.nba import DEFAULT_TEAMS, FakeYahoo, make_player
 
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, POINTS
 from thefrontoffice.adapters.outbound.competitions.nba.worth import scales
-from thefrontoffice.adapters.outbound.competitions.nba.yahoo.weighing import open_reserve, season_standing
+from thefrontoffice.adapters.outbound.competitions.nba.yahoo.weighing import games_played, open_reserve, season_standing
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError
-from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory
+from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, Pairing, StatCategory
 
 CATS = (StatCategory(POINTS.yahoo_stat, "PTS"), StatCategory(BLOCKS.yahoo_stat, "BLK"))
 FOUND = scales(CATS, [{POINTS.label: 10.0, BLOCKS.label: 0.0}, {POINTS.label: 30.0, BLOCKS.label: 2.0}])
@@ -32,17 +33,43 @@ def _teams(n: int) -> list:
 def test_the_rosters_needs_rank_its_season_against_the_leagues_other_teams() -> None:
     yahoo = _league(("3600", "100"), ("3400", "150"), ("3300", "140"), ("3200", "130"))
 
-    standing = season_standing(yahoo, FOUND)
+    standing = season_standing(yahoo, FOUND, week=6)
 
     assert standing["PTS"] > 0 > standing["BLK"]
+
+
+def _played(*games: int) -> dict[int, list[Pairing]]:
+    """Two weeks in which each team played these games, its own matchup each, by the order `_teams` names them."""
+    sides = [
+        MatchupSide(team_key=f"t.{i}", name=f"Team {i}", points="", stats={}, games=n) for i, n in enumerate(games)
+    ]
+    pairings = [
+        Pairing(start=date(2026, 11, 2), end=date(2026, 11, 8), mine=a, opponent=b)
+        for a, b in zip(sides[::2], sides[1::2], strict=True)
+    ]
+    return {1: pairings, 2: pairings}
+
+
+def test_the_seasons_totals_are_read_a_game_played_at_a_time() -> None:
+    """The most points, from the most games: per game, the fewest."""
+    yahoo = _league(("3600", "100"), ("3400", "150"), ("3300", "140"), ("3200", "130"))
+    yahoo.league_matchups = _played(110, 90, 90, 90)
+
+    assert season_standing(yahoo, FOUND, week=2)["PTS"] < 0
+    yahoo.matchups_error = YahooAPIError("down")
+    assert season_standing(yahoo, FOUND, week=2)["PTS"] > 0  # as printed, without the games
+    assert games_played(yahoo, 0) == {}
 
 
 def test_without_the_standings_the_needs_have_no_league_to_rank_against() -> None:
     yahoo = _league(("3600", "100"), ("3400", "150"), ("3300", "140"), ("3200", "130"))
     yahoo.standings_error = YahooAPIError("down")
 
-    assert season_standing(yahoo, FOUND) == {}
-    assert season_standing(_league(("3600", "100")), {}) == {}
+    assert season_standing(yahoo, FOUND, week=6) == {}
+    assert season_standing(_league(("3600", "100")), {}, week=6) == {}
+    nobody = _league(("3600", "100"), ("3400", "150"))
+    nobody.league_teams = [replace(t, is_mine=False) for t in nobody.league_teams]
+    assert season_standing(nobody, FOUND, week=6) == {}
 
 
 def test_the_injured_slots_open_are_those_the_settings_give_that_nobody_holds() -> None:

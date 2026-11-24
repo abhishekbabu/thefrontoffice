@@ -835,6 +835,7 @@ def _side(data: Any) -> MatchupSide:
         points=_text(data, "team_points", "total"),
         projected=_text(data, "team_projected_points", "total"),
         stats={_text(s, "stat_id"): _text(s, "value") for s in _items(_node(data, "team_stats", "stats"), "stat")},
+        games=_number(data, "team_remaining_games", "total", "completed_games"),
     )
 
 

@@ -376,6 +376,8 @@ class Swap:
     streamer (`Plan.targeting`), the roster's weakest for a keeper (`Plan.needs`)."""
     season: float = 0.0
     """What he adds a game over the drop for the rest of the season, as the roster's needs weigh it (`Weigh.season`)."""
+    costs: tuple[str, ...] = ()
+    """For a keeper, the categories the roster is short of that he gives up against the drop (`Weigh.spent`)."""
 
 
 def settled(reading: Reading) -> bool:
@@ -487,8 +489,17 @@ class Weigh:
         add_on = quiet[0] if quiet else None
         gain, nights = self.gained(pickup, drop)
         cost = self.cost(drop, add_on)
-        targets = self.needed(pickup, drop)
-        return Swap(pickup, drop, "keeper", gain - cost, nights, add_on, targets, season)
+        return Swap(
+            pickup,
+            drop,
+            "keeper",
+            gain - cost,
+            nights,
+            add_on,
+            self.needed(pickup, drop),
+            season,
+            self.spent(pickup, drop),
+        )
 
     def best_keeper(self, pickup: Reading, drops: Sequence[Reading | None]) -> Swap | None:
         """Him as a keeper into an open spot, else over the weakest drop a game he beats (`keeper`)."""
@@ -501,8 +512,18 @@ class Weigh:
         return _targets_of(self.plan.targeting, pickup, drop)
 
     def needed(self, pickup: Reading, drop: Reading | None) -> tuple[str, ...]:
-        """The categories the roster is shortest of that a game of `pickup` adds most to over one of `drop`."""
-        return _targets_of(self.plan.needs, pickup, drop, counting=1.0)
+        """The categories the roster is shortest of that a game of `pickup` really raises over one of `drop`
+        (`Targeting.raised`): by a material margin, from at least an average figure."""
+        needs = self.plan.needs
+        drop_line = drop.line if drop is not None else None
+        return tuple(needs.raised(pickup.line, drop_line, counting=1.0)) if needs is not None else ()
+
+    def spent(self, pickup: Reading, drop: Reading | None) -> tuple[str, ...]:
+        """The categories the roster is shortest of that a game of `pickup` gives up against one of `drop`."""
+        needs = self.plan.needs
+        if needs is None or drop is None:
+            return ()
+        return tuple(needs.lowered(pickup.line, drop.line, counting=1.0))
 
     def bridge(self, keeper: Swap, day: date, wire: Sequence[Reading]) -> Swap | None:
         """For a keeper added on `day`, when nobody plays (`Swap.add_on`), the stream to hold his drop's spot until it:
@@ -800,7 +821,7 @@ def _chained(bridge: Swap, keeper: Swap, by_points: bool, plan: Plan) -> Action:
         urgency="now",
         title=f"Stream {stream.name} now{dropped}; {day} drop {stream.name} for {kept.name}",
         reason=lead
-        + _item(replace(keeper, targets=()), by_points, plan).reason.removeprefix("Keeper: ")
+        + _item(replace(keeper, targets=(), costs=()), by_points, plan).reason.removeprefix("Keeper: ")
         + _pending(bridge.pickup),
         when=_today(plan),
         player_id=stream.player_key,
@@ -926,8 +947,10 @@ def _targets(swap: Swap) -> str:
 
 
 def _needs(swap: Swap) -> str:
-    """' Adds to your weakest: FT%, BLK.': the categories the roster is shortest of that he helps most."""
-    return f" Adds to your weakest: {', '.join(swap.targets)}." if swap.targets else ""
+    """' Adds to your weakest: FT%, BLK. Costs your weakest: REB.': the categories the roster is shortest of that he
+    really raises, then those he gives up; nothing for neither."""
+    adds = f" Adds to your weakest: {', '.join(swap.targets)}." if swap.targets else ""
+    return adds + (f" Costs your weakest: {', '.join(swap.costs)}." if swap.costs else "")
 
 
 def _leans(found: Leaning | None) -> str:

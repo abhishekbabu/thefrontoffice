@@ -34,7 +34,14 @@ from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
     Split,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.week import Today
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Targeting, category_value, scales
+from thefrontoffice.adapters.outbound.competitions.nba.worth import (
+    UNNEEDED,
+    Reading,
+    Scale,
+    Targeting,
+    category_value,
+    scales,
+)
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
 
@@ -991,3 +998,73 @@ def test_a_game_time_call_counts_his_first_night_at_his_chance_of_playing_it() -
 
     assert nights == 4
     assert doubted == sure - 10.0 * (1 - chance("GTD"))
+
+
+# ── what a keeper does for the categories the roster is short of ───
+
+GM3_SCALES = {
+    label: Scale(scored=StatCategory(stat, name, fewer_wins=sign < 0), sign=sign, spread=spread, mean=mean)
+    for label, stat, name, sign, spread, mean in (
+        ("FG%", "5", "FG%", 1.0, 0.5274, 0.475),
+        ("FT%", "8", "FT%", 1.0, 0.2949, 0.7918),
+        ("3PTM", "10", "3PTM", 1.0, 0.8383, 1.4314),
+        ("PTS", "12", "PTS", 1.0, 5.2546, 11.0586),
+        ("REB", "15", "REB", 1.0, 2.0513, 4.161),
+        ("AST", "16", "AST", 1.0, 1.4094, 2.3932),
+        ("STL", "17", "ST", 1.0, 0.3591, 0.8675),
+        ("BLK", "18", "BLK", 1.0, 0.476, 0.5369),
+        ("TO", "19", "TO", -1.0, 0.7068, 1.2759),
+    )
+}
+"""GM 3's categories on Tue 24 Nov, each scaled across that week's pool as the league read it."""
+
+TURNER_LINE = {
+    "PTS": 8.49,
+    "REB": 5.95,
+    "AST": 2.38,
+    "STL": 0.58,
+    "BLK": 2.11,
+    "3PTM": 1.51,
+    "FG%": 0.40,
+    "FGA": 7.62,
+    "FT%": 0.81,
+    "FTA": 1.14,
+    "TO": 1.78,
+}
+GOBERT_LINE = {
+    "PTS": 7.98,
+    "REB": 10.57,
+    "AST": 1.75,
+    "STL": 0.76,
+    "BLK": 1.17,
+    "3PTM": 0.0,
+    "FG%": 0.51,
+    "FGA": 5.65,
+    "FT%": 0.47,
+    "FTA": 4.6,
+    "TO": 1.28,
+}
+"""Their lines a game as GM 3 read them: Turner is added for Gobert's free throws, and his own blocks and threes."""
+
+
+def test_a_centres_assists_over_a_bigger_centres_are_not_named_as_help_with_assists() -> None:
+    """GM 3: Turner over Gobert, short of AST, REB and ST. Turner has more assists than Gobert but no more than the
+    pool's average, and gives up four rebounds a game: the item names the rebounds, never the assists."""
+    roster, readings = _team()
+    gobert = _player("Rudy Gobert", "BN", position="C", team="MIN")
+    turner = _player("Myles Turner", position="C", team="MIL")
+    readings |= {
+        "Rudy Gobert": Reading(player=gobert, line=GOBERT_LINE, per_game=5.5, games=3),
+        "Myles Turner": Reading(player=turner, line=TURNER_LINE, per_game=10.5, games=3),
+    }
+    weights = {label: 1.0 if label in {"AST", "REB", "STL"} else UNNEEDED for label in GM3_SCALES}
+    plan = Plan(needs=Targeting(scales=GM3_SCALES, weights=weights))
+
+    swap = Weigh([*roster, gobert], readings, plan).keeper(readings["Myles Turner"], readings["Rudy Gobert"])
+    [item] = streams([*roster, gobert], [turner], readings, 1, False, set(), plan=plan)
+
+    assert swap is not None
+    assert swap.targets == ()
+    assert swap.costs[0] == "REB"
+    assert (item.player_id, item.drop, item.pickup) == ("Myles Turner", "Rudy Gobert", "keeper")
+    assert "REB" in item.reason

@@ -95,7 +95,19 @@ def decide(
     averages = {**(shown or {}), **reads.carried(free_agents)}
     readings = read_week(feeds, yahoo, weights, [*roster, *theirs, *free_agents], start, end, also or [], averages)
     today = feeds.today(start, end)
-    plan = plan_for(feeds, yahoo, (roster, theirs), free_agents, readings, weights, start, end, chances, their_adds)
+    plan = plan_for(
+        feeds,
+        yahoo,
+        (roster, theirs),
+        free_agents,
+        readings,
+        weights,
+        start,
+        end,
+        chances,
+        their_adds,
+        current_week=league.current_week or 0,
+    )
     plan = replace(plan, untouchable=frozenset(untouchable), win=win)
     open_wire = [p for p in free_agents if p.player_key not in claimed]
     items = actions.build(roster, open_wire, readings, adds_left, weights is not None, today, plan)
@@ -167,6 +179,7 @@ def plan_for(
     end: date,
     chances: Mapping[str, float] | None = None,
     their_adds: int = 0,
+    current_week: int = 0,
 ) -> actions.Plan:
     """What weighs a pickup beyond the readings (`actions.Plan`): the nights left and the lineup's slots,
     teammates due back — whose splits are valued on the readings' own scale — and the games each side can start.
@@ -177,7 +190,8 @@ def plan_for(
     category by how winnable it is this week, on the readings' own scales.
     The race in games counts what your opponent's `their_adds` could still
     stream in from the same wire (`lineup.streamed`). A keeper is weighed on
-    what your roster is short of (`worth.needs`), and the settings' roster
+    what your roster is short of (`worth.needs`) — against the league's teams
+    through `current_week` (`season_standing`) — and the settings' roster
     and injured slots say which are open now.
     """
     roster, theirs = sides
@@ -187,7 +201,7 @@ def plan_for(
     returning = feeds.leaning(free_agents, pool, weights, value)
     targeting = nba_worth.Targeting.of(found, chances) if found and chances else None
     active = [p for p in roster if p.slot not in INJURED_SLOTS]
-    standing = season_standing(yahoo, found) or nba_worth.pool_standing(
+    standing = season_standing(yahoo, found, current_week) or nba_worth.pool_standing(
         found, [r.line for p in active if (r := readings.get(p.player_key))]
     )
     needs = nba_worth.needs(found, standing) if found else None
@@ -217,9 +231,14 @@ def plan_for(
     return replace(plain, week=week, volume=volume, streams=streams)
 
 
-def season_standing(yahoo: YahooSource, found: Mapping[str, nba_worth.Scale]) -> dict[str, float]:
+def season_standing(yahoo: YahooSource, found: Mapping[str, nba_worth.Scale], week: int) -> dict[str, float]:
     """Where your season stands in each category against the league's other teams (`worth.league_standing`), from
-    the standings' season totals.
+    the standings' season totals a game played (`worth.team_rates`).
+
+    The standings count every game to date, this week's too, so the games are
+    each team's `completed_games` summed over the scoreboards of weeks 1 to
+    `week`. Where those will not load, every team is read on its totals as
+    printed: a few games apart, a team's counts differ by a few percent.
 
     Enrichment: empty where the standings will not load or carry no totals, and the roster is then read against
     the week's pool instead.
@@ -234,7 +253,30 @@ def season_standing(yahoo: YahooSource, found: Mapping[str, nba_worth.Scale]) ->
     mine = next((t for t in teams if t.is_mine), None)
     if mine is None:
         return {}
-    return nba_worth.league_standing(found, mine.season, [t.season for t in teams if t is not mine])
+    played = games_played(yahoo, week)
+    rates = {t.team_key: nba_worth.team_rates(t.season, played.get(t.team_key, 0)) for t in teams}
+    return nba_worth.league_standing(found, rates[mine.team_key], [rates[t.team_key] for t in teams if t is not mine])
+
+
+def games_played(yahoo: YahooSource, week: int) -> dict[str, int]:
+    """Each team's games played this season to date, by key: its `completed_games` over weeks 1 to `week`.
+
+    Enrichment: empty where any scoreboard will not load, or before the season's first week: no team is then
+    read a game at a time.
+    """
+    if week < 1:
+        return {}
+    try:
+        weeks = yahoo.matchups(list(range(1, week + 1)))
+    except FrontOfficeError as e:
+        logger.warning(f"Reading the standings on season totals, without games played: {e}")
+        return {}
+    played: dict[str, int] = {}
+    for pairings in weeks.values():
+        for pairing in pairings:
+            for side in (pairing.mine, pairing.opponent):
+                played[side.team_key] = played.get(side.team_key, 0) + side.games
+    return played
 
 
 def open_reserve(slots: Mapping[str, int], roster: Sequence[Player]) -> tuple[str, ...]:

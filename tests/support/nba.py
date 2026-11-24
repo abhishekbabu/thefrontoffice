@@ -173,6 +173,9 @@ class FakeYahoo:
         self.season_weeks: dict[int, Pairing | None] | None = None
         """Your side of each week's scoreboard; every week against Their Team when None."""
         self.standings_error: Exception | None = None
+        self.league_matchups: dict[int, list[Pairing]] | None = None
+        """Every matchup of each week, by week; your one matchup a week (`season`) when None."""
+        self.matchups_error: Exception | None = None
         self.teams_error: Exception | None = None
         self.wire_error: Exception | None = None
         self.weekly_lineups = False
@@ -259,7 +262,12 @@ class FakeYahoo:
         return {week: self.pairing(team_key, week) for week in weeks}
 
     def matchups(self, weeks: list[int]) -> dict[int, list[Pairing]]:
-        """Your side of each week's scoreboard as `season` reads it: the one matchup this league plays."""
+        """Every matchup of each week where `league_matchups` gives them; else your side of each week's scoreboard
+        as `season` reads it, the one matchup this league plays."""
+        if self.matchups_error is not None:
+            raise self.matchups_error
+        if self.league_matchups is not None:
+            return {week: self.league_matchups.get(week, []) for week in weeks}
         return {week: [found] if (found := self.season("t.1", [week])[week]) else [] for week in weeks}
 
     def rosters(self, team_keys: list[str]) -> dict[str, list[YahooPlayer]]:

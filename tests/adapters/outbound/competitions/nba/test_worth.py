@@ -14,7 +14,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.form import (
     nine_cat,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
-from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, FIELD_GOALS, POINTS, TURNOVERS
+from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, FIELD_GOALS, POINTS, TURNOVERS
 from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     MINUTES,
     ROLE,
@@ -34,6 +34,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     read,
     rising,
     scales,
+    team_rates,
     usage,
     weakest,
     winnable,
@@ -288,6 +289,42 @@ def test_a_category_all_but_decided_counts_a_tenth_at_most() -> None:
 
 # ── what the roster is short of, for the rest of the season ─────────
 
+SCORED_ALL = _scored(
+    *(StatCategory(c.yahoo_stat, c.label) for c in CATEGORIES if c.yahoo_stat not in {TURNOVERS.yahoo_stat}),
+    StatCategory(TURNOVERS.yahoo_stat, "TO", fewer_wins=True),
+)
+
+
+def _nine(pts: float, reb: float, ast: float, stl: float, blk: float, threes: float, fg: float, fga: float) -> dict:
+    return {
+        "PTS": pts,
+        "REB": reb,
+        "AST": ast,
+        "STL": stl,
+        "BLK": blk,
+        "3PTM": threes,
+        FG: fg,
+        FGA: fga,
+        "FT%": 0.78,
+        "FTA": 2.5,
+        "TO": 1.6,
+    }
+
+
+TURNER = _nine(8.49, 5.95, 2.38, 0.58, 2.11, 1.51, 0.40, 7.62)
+GOBERT = _nine(7.98, 10.57, 1.75, 0.76, 1.17, 0.0, 0.51, 5.65)
+NINE_POOL = [
+    TURNER,
+    GOBERT,
+    _nine(15.36, 1.77, 1.98, 1.19, 0.16, 3.48, 0.45, 10.34),
+    _nine(16.88, 5.35, 2.19, 0.69, 0.83, 2.48, 0.46, 12.15),
+    _nine(22.4, 3.8, 5.0, 1.1, 0.3, 2.6, 0.47, 17.0),
+    _nine(14.8, 3.8, 4.4, 1.2, 0.4, 1.9, 0.45, 12.0),
+    _nine(13.4, 2.3, 3.8, 0.9, 0.2, 2.2, 0.42, 11.0),
+]
+"""GM 3's lines on Tue 24 Nov (FT% and turnovers evened out), Turner and Gobert first, then three guards and two
+forwards: the pool's assists average about 3."""
+
 
 def test_the_categories_a_roster_is_furthest_below_the_pool_in_count_in_full_and_the_rest_less() -> None:
     """A roster of the pool's weakest line: short of FG%, blocks and points, and as good as any at turnovers."""
@@ -298,6 +335,19 @@ def test_the_categories_a_roster_is_furthest_below_the_pool_in_count_in_full_and
     assert set(short.targets(POOL[0], POOL[2], counting=1.0)) == {"FG%", "BLK", "PTS"}
 
 
+def test_a_category_is_named_raised_only_from_an_average_figure_and_by_a_real_margin() -> None:
+    """Myles Turner over Rudy Gobert, as GM 3 read them: Turner's 2.4 assists beat Gobert's 1.8 but are no more
+    than the pool's, so a roster short of assists gains nothing it can feel; it does lose Gobert's rebounds."""
+    found = scales(SCORED_ALL, NINE_POOL)
+    short = Targeting(scales=found, weights={label: 1.0 if label in {"AST", "REB", "STL"} else 0.7 for label in found})
+
+    assert short.raised(TURNER, GOBERT, counting=1.0) == []
+    assert short.lowered(TURNER, GOBERT, counting=1.0)[0] == "REB"
+    assert "AST" in short.targets(TURNER, GOBERT, counting=1.0)  # beats him there, which is all `targets` asks
+    assert short.raised(GOBERT, None, counting=1.0) == ["REB"]  # over the pool's average, with nobody let go
+    assert short.lowered(GOBERT, None, counting=1.0) == []
+
+
 def test_a_roster_short_of_nothing_weighs_every_category_alike() -> None:
     found = scales(SCORED, POOL)
 
@@ -305,14 +355,11 @@ def test_a_roster_short_of_nothing_weighs_every_category_alike() -> None:
     assert set(needs(found, pool_standing(found, [])).weights.values()) == {UNNEEDED}
 
 
-def _team(fg: str, blocks: str, points: str, turnovers: str) -> dict[str, str]:
-    """A team's season totals as the standings print them, by stat id."""
-    return {
-        FIELD_GOALS.yahoo_stat: fg,
-        BLOCKS.yahoo_stat: blocks,
-        POINTS.yahoo_stat: points,
-        TURNOVERS.yahoo_stat: turnovers,
-    }
+def _team(fg: str, blocks: str, points: str, turnovers: str, games: int = 0) -> dict[str, float]:
+    """A team's season as the standings print it, by stat id, read a game at a time over `games` (as printed
+    without)."""
+    printed = {FIELD_GOALS.yahoo_stat: fg, BLOCKS.yahoo_stat: blocks, POINTS.yahoo_stat: points}
+    return team_rates({**printed, TURNOVERS.yahoo_stat: turnovers}, games)
 
 
 LEAGUE = [_team(".480", "150", "3400", "420"), _team(".470", "140", "3300", "430"), _team(".460", "130", "3200", "440")]
@@ -329,6 +376,25 @@ def test_a_roster_last_in_the_league_at_a_category_is_short_of_it_whatever_the_p
     assert standing["FG%"] < 0 and standing["BLK"] < 0
     assert standing["PTS"] > 0 and standing["TO"] > 0  # fewer turnovers stand better
     assert {label for label, weight in short.weights.items() if weight == 1.0} == {"FG%", "BLK"}
+
+
+def test_a_team_is_ranked_a_game_at_a_time_so_more_games_played_buy_no_standing() -> None:
+    """3,600 points over 220 games is 16.4 a game; the others' 3,400 over 200 is 17: last, not first."""
+    found = scales(SCORED, POOL)
+    league = [_team(".470", "140", "3400", "430", games=200) for _ in range(3)]
+    league[0] = _team(".480", "150", "3420", "420", games=200)
+
+    totals = league_standing(found, _team(".440", "100", "3600", "380"), [_team(".470", "140", "3400", "430")] * 3)
+    rates = league_standing(found, _team(".440", "100", "3600", "380", games=220), league)
+
+    assert totals["PTS"] > 0 > rates["PTS"]
+
+
+def test_a_teams_rates_divide_its_counts_by_games_and_keep_its_percentages() -> None:
+    printed = {FIELD_GOALS.yahoo_stat: ".480", POINTS.yahoo_stat: "3400", "9004003": "1250/2554"}
+
+    assert team_rates(printed, 200) == {FIELD_GOALS.yahoo_stat: 0.48, POINTS.yahoo_stat: 17.0}
+    assert team_rates(printed, 0)[POINTS.yahoo_stat] == 3400.0
 
 
 def test_a_table_too_small_or_without_totals_ranks_nothing() -> None:

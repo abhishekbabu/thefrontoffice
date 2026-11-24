@@ -177,18 +177,29 @@ def rostered_xml(
     )
 
 
-def _side_xml(key: str, name: str, points: str, blocks: str, projected: str = "") -> str:
+def _side_xml(key: str, name: str, points: str, blocks: str, projected: str = "", games: int | None = None) -> str:
     forecast = f"<team_projected_points><total>{projected}</total></team_projected_points>" if projected else ""
+    played = (
+        f"<team_remaining_games><total><completed_games>{games}</completed_games></total></team_remaining_games>"
+        if games is not None
+        else ""
+    )
     return (
         f"<team><team_key>{key}</team_key><name>{name}</name><team_points><total>{points}</total></team_points>"
-        f"{forecast}<team_stats><stats><stat><stat_id>18</stat_id><value>{blocks}</value></stat></stats></team_stats></team>"
+        f"{forecast}<team_stats><stats><stat><stat_id>18</stat_id><value>{blocks}</value></stat></stats></team_stats>"
+        f"{played}</team>"
     )
 
 
-def scoreboard_xml(start: str = "2026-02-09", end: str = "2026-02-15", projected: tuple[str, str] = ("", "")) -> str:
+def scoreboard_xml(
+    start: str = "2026-02-09",
+    end: str = "2026-02-15",
+    projected: tuple[str, str] = ("", ""),
+    games: tuple[int, int] | None = None,
+) -> str:
     mine, theirs = (
-        _side_xml("t1", "Mine", "50", "12", projected[0]),
-        _side_xml("t2", "Theirs", "60", "17", projected[1]),
+        _side_xml("t1", "Mine", "50", "12", projected[0], games[0] if games else None),
+        _side_xml("t2", "Theirs", "60", "17", projected[1], games[1] if games else None),
     )
     matchup = (
         f"<matchup><week_start>{start}</week_start><week_end>{end}</week_end><teams>{mine}{theirs}</teams></matchup>"
