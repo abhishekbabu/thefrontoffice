@@ -393,3 +393,26 @@ def test_minutes_of_a_day_that_stood_are_kept_once_and_the_kept_ones_answer_afte
     assert log.minutes(WEDNESDAY) == {"a": 0.0, "b": 30.0}
     # Sleeper's window has moved on: the day reads what was kept.
     assert nba_day.record_minutes(log, WEDNESDAY, {}) == {"a": 0.0, "b": 30.0}
+
+
+def test_a_status_seen_before_tip_off_is_the_one_kept_for_the_day() -> None:
+    """GTD before his game, out once it is on: the day is read as the game-time decision it was played under."""
+    log = FakeDayLog()
+    early = [game("LAL", "BOS")]
+    later = [game("LAL", "BOS", "in_game")]
+
+    nba_day.record_statuses(log, WEDNESDAY, [make_player("A", team="LAL", status="GTD")], early)
+    nba_day.record_statuses(log, WEDNESDAY, [make_player("A", team="LAL", status="O")], later)
+
+    assert nba_day.recorded(log, WEDNESDAY) == {"a": "GTD"}
+
+
+def test_with_no_status_seen_before_tip_off_the_days_last_stands() -> None:
+    log = FakeDayLog()
+
+    nba_day.record_statuses(
+        log, WEDNESDAY, [make_player("A", team="LAL", status="O")], [game("LAL", "BOS", "complete")]
+    )
+    nba_day.record_statuses(log, WEDNESDAY, [make_player("B", team="NYK", status="INJ")])
+
+    assert nba_day.recorded(log, WEDNESDAY) == {"a": "O", "b": "INJ"}

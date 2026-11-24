@@ -101,12 +101,19 @@ class FakeDayLog:
     ) -> None:
         self.kept_statuses: dict[date, dict[str, str]] = dict(statuses or {})
         self.kept_minutes: dict[date, dict[str, float]] = dict(minutes or {})
+        self.kept_pregame: dict[date, dict[str, str]] = {}
 
     def statuses(self, day: date) -> dict[str, str]:
         return dict(self.kept_statuses.get(day, {}))
 
     def keep_statuses(self, day: date, statuses: dict[str, str]) -> None:
         self.kept_statuses[day] = dict(statuses)
+
+    def pregame(self, day: date) -> dict[str, str]:
+        return dict(self.kept_pregame.get(day, {}))
+
+    def keep_pregame(self, day: date, statuses: dict[str, str]) -> None:
+        self.kept_pregame[day] = dict(statuses)
 
     def minutes(self, day: date) -> dict[str, float]:
         return dict(self.kept_minutes.get(day, {}))

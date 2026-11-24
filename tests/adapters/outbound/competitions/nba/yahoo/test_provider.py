@@ -2264,3 +2264,30 @@ def test_a_day_that_stood_keeps_who_sat_out_after_sleepers_window_moves_on() -> 
 
     assert rows["Laker"].value == nba_day.DNP
     assert rows["Laker Big"].line
+
+
+def test_the_week_records_both_sides_statuses_and_every_settled_day_sleeper_holds() -> None:
+    """Only the to-do list is opened: today's statuses and the box scores' past days are kept all the same."""
+    yahoo, log = FakeYahoo(), FakeDayLog()
+    yahoo.roster_players = [make_player("Laker", team="LAL", selected_position="PG", status="GTD")]
+    yahoo.others["t.2"] = [make_player("Celtic", team="BOS", selected_position="PG")]
+    scores = box_scores(
+        {"g": [_log("g", 31.0, "2026-02-08")], "c": [_log("c", 22.0, "2026-02-09")]}, {"g": "Laker", "c": "Celtic"}
+    )
+    nba = FakeNBA(slate=WEEK_DAYS, today=date(2026, 2, 13), scores=scores, games={"LAL": 3, "BOS": 3})
+
+    nba_provider(yahoo, nba=nba, days=log).summary("")
+
+    assert log.statuses(date(2026, 2, 13)) == {"laker": "GTD", "celtic": ""}
+    assert log.pregame(date(2026, 2, 13)) == {"laker": "GTD"}  # his game is still to tip off; the Celtics rest
+    assert log.minutes(date(2026, 2, 8)) == {"laker": 31.0, "celtic": 0.0}
+    assert log.minutes(date(2026, 2, 9)) == {"laker": 0.0, "celtic": 22.0}
+
+
+def test_a_roster_read_records_its_players_statuses() -> None:
+    yahoo, log = FakeYahoo(), FakeDayLog()
+    yahoo.roster_players = [make_player("Laker", status="O", selected_position="PG")]
+
+    nba_provider(yahoo, days=log).roster("")
+
+    assert any(kept == {"laker": "O"} for kept in log.kept_statuses.values())
