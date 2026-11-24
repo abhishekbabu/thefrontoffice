@@ -3,6 +3,7 @@ across, and the to-do list read off them.
 """
 
 import logging
+from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
@@ -13,6 +14,7 @@ from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.projections import index_for
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
+    INJURED_SLOTS,
     PACIFIC,
     Line,
 )
@@ -61,6 +63,7 @@ def decide(
     their_adds: int = 0,
     claimed: Collection[str] = (),
     untouchable: Collection[str] = (),
+    win: float | None = None,
 ) -> Decided:
     """Every shown player's week, and the to-do list weighed on it.
 
@@ -74,7 +77,9 @@ def decide(
     `chances` is the forecast's chance of winning each category, by the
     league's name for it: a category league's pickups and drops are then
     weighed on the categories still in play (`worth.Targeting`). `their_adds`
-    is your opponent's adds left this week, which it could stream with.
+    is your opponent's adds left this week, which it could stream with. `win`
+    is the forecast's chance of winning the week: one all but decided spends
+    its adds on the season (`actions.Plan.decided`).
 
     The wire is enrichment here: one that will not load (a sync that has not
     carried it) leaves the week's rows and starts standing, with nothing to stream.
@@ -91,7 +96,7 @@ def decide(
     readings = read_week(feeds, yahoo, weights, [*roster, *theirs, *free_agents], start, end, also or [], averages)
     today = feeds.today(start, end)
     plan = plan_for(feeds, yahoo, (roster, theirs), free_agents, readings, weights, start, end, chances, their_adds)
-    plan = replace(plan, untouchable=frozenset(untouchable))
+    plan = replace(plan, untouchable=frozenset(untouchable), win=win)
     open_wire = [p for p in free_agents if p.player_key not in claimed]
     items = actions.build(roster, open_wire, readings, adds_left, weights is not None, today, plan)
     return Decided(readings, items, plan.volume, plan.streams)
@@ -171,7 +176,9 @@ def plan_for(
     game their clubs have left. A category league with `chances` weighs each
     category by how winnable it is this week, on the readings' own scales.
     The race in games counts what your opponent's `their_adds` could still
-    stream in from the same wire (`lineup.streamed`).
+    stream in from the same wire (`lineup.streamed`). A keeper is weighed on
+    what your roster is short of (`worth.needs`), and the settings' roster
+    and injured slots say which are open now.
     """
     roster, theirs = sides
     pool = [*roster, *theirs, *free_agents]
@@ -179,8 +186,17 @@ def plan_for(
     value, found = reads.valuer(yahoo, weights, lines)
     returning = feeds.leaning(free_agents, pool, weights, value)
     targeting = nba_worth.Targeting.of(found, chances) if found and chances else None
+    active = [p for p in roster if p.slot not in INJURED_SLOTS]
+    needs = nba_worth.needs(found, [r.line for p in active if (r := readings.get(p.player_key))]) if found else None
     rules = yahoo.settings()
-    plain = actions.Plan(returning=returning, targeting=targeting, priority=yahoo.get_user_team().waiver_priority)
+    plain = actions.Plan(
+        returning=returning,
+        targeting=targeting,
+        needs=needs,
+        priority=yahoo.get_user_team().waiver_priority,
+        open_spots=max(0, rules.roster_size - len(active)) if rules.roster_size else 0,
+        reserve=open_reserve(rules.slots, roster),
+    )
     slots = nba_lineup.slots(rules.slots)
     if not slots or rules.weekly_lineups:
         return plain
@@ -196,6 +212,12 @@ def plan_for(
     wire = [p for p in free_agents if p.player_key not in owned]
     streams = nba_lineup.streamed(theirs, wire, week, backs, their_adds)
     return replace(plain, week=week, volume=volume, streams=streams)
+
+
+def open_reserve(slots: Mapping[str, int], roster: Sequence[Player]) -> tuple[str, ...]:
+    """The injured slots the settings give a team that nobody on `roster` holds, once per place: ('IL',)."""
+    held = Counter(p.slot for p in roster)
+    return tuple(slot for slot in sorted(INJURED_SLOTS) for _ in range(max(0, slots.get(slot, 0) - held[slot])))
 
 
 def valued(

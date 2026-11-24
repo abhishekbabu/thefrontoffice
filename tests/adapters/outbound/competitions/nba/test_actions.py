@@ -7,7 +7,6 @@ from support.nba import make_player
 
 from thefrontoffice.adapters.outbound.competitions.dates import weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.nba.actions import (
-    KEEPERS,
     PROVISIONAL,
     STREAM_GAMES,
     STREAMS,
@@ -18,12 +17,13 @@ from thefrontoffice.adapters.outbound.competitions.nba.actions import (
     droppable,
     fit,
     held,
+    reserving,
     starts,
     streams,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.form import Role
 from thefrontoffice.adapters.outbound.competitions.nba.lineup import Week
-from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, POINTS
+from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, POINTS, chance
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
     RETURN_CUT,
     Absent,
@@ -451,16 +451,18 @@ def test_a_role_just_grown_streams_until_it_holds() -> None:
     assert item.pickup == "streamer"
 
 
-def test_up_to_the_keepers_limit_are_named_as_alternatives_for_one_drop() -> None:
+def test_a_keeper_beyond_the_adds_left_is_named_as_the_alternative_on_a_drop_of_its_own() -> None:
     roster, readings = _team()
-    wire = [_player(f"Keeper {i}", position="SF") for i in range(KEEPERS + 1)]
+    wire = [_player(f"Keeper {i}", position="SF") for i in range(3)]
     readings |= _readings(*((p, 30.0 - i, 3) for i, p in enumerate(wire)))
 
-    items = streams(roster, wire, readings, adds_left=2, by_points=True, named=set())
-    keepers = [item for item in items if item.pickup == "keeper"]
+    planned, alternative = streams(roster, wire, readings, adds_left=1, by_points=True, named=set())
 
-    assert [item.player_id for item in keepers] == [p.player_key for p in wire[:KEEPERS]]
-    assert {item.drop for item in keepers} == {"Weaker"}
+    assert [(item.player_id, item.drop, item.pickup) for item in (planned, alternative)] == [
+        ("Keeper 0", "Weaker", "keeper"),
+        ("Keeper 1", "Weak", "keeper"),
+    ]
+    assert "Keeper 0" in alternative.reason
 
 
 def test_with_one_add_left_the_week_comes_before_a_keeper_who_adds_less_to_it() -> None:
@@ -570,7 +572,7 @@ def test_a_keeper_out_a_few_days_is_added_on_the_day_nobody_plays() -> None:
     assert item.when == weekday_day_month(THANKSGIVING)
     readings["Robinson"] = replace(readings["Robinson"], back=WED)  # every day before then has games
     [sooner] = streams(roster, [robinson], readings, 2, True, set(), plan=Plan(week=DETROIT))
-    assert (sooner.pickup, sooner.when) == ("keeper", "")
+    assert (sooner.pickup, sooner.when) == ("keeper", weekday_day_month(MON))  # added today
 
 
 def test_a_keeper_out_beyond_the_week_or_with_no_week_to_place_his_return_is_not_offered() -> None:
@@ -748,3 +750,204 @@ def test_a_keeper_is_judged_on_his_value_a_game_whatever_this_weeks_opponent() -
     [item] = streams(roster, [blocker], readings, 2, False, set(), plan=_targeting(PTS=0.5, BLK=0.99))
 
     assert (item.player_id, item.pickup) == ("Blocker", "keeper")
+
+
+# ── the week's adds as one plan: GM 3, week 6 ──────────────────────
+
+THU = THANKSGIVING
+GM3_SLOTS = ("PG", "SG", "G", "SF", "PF", "F", "C", "FC", "Util", "Util")
+GM3_WEEK = Week(
+    games=[
+        ScheduledGame(week=0, date=day.isoformat(), home=home, away=away)
+        for day, home, away in (
+            (WED, "OKC", "MIN"),
+            (WED, "DET", "CHI"),
+            (WED, "MIL", "MEM"),
+            (FRI, "OKC", "LAL"),
+            (FRI, "DET", "MIN"),
+            (FRI, "MIL", "MEM"),
+            (SAT, "DET", "CHI"),
+            (SUN, "MIL", "MIN"),
+            (SUN, "NYK", "MEM"),
+            (FRI, "NYK", "GSW"),
+            (SAT, "PHX", "UTA"),
+            (SUN, "PHX", "UTA"),
+        )
+    ],
+    slots=GM3_SLOTS,
+    today=TUE,
+    end=SUN,
+)
+"""Tue 24 Nov to Sun 29 Nov, as the week stood: nobody plays on Thanksgiving."""
+
+
+def _gm3() -> tuple[list[YahooPlayer], dict[str, Reading], list[YahooPlayer]]:
+    """GM 3's roster and the top of the wire, each at his value a game as the league read it on Tue 24 Nov."""
+    rows = [
+        ("Shai Gilgeous-Alexander", "Util", "PG", "OKC", "", 16.1, 2),
+        ("Austin Reaves", "SF", "PG,SG,SF", "LAL", "O", 15.3, 1),
+        ("Cedric Coward", "F", "SG,SF", "MEM", "", 13.8, 3),
+        ("Kyrie Irving", "PG", "PG,SG", "OKC", "", 13.2, 2),
+        ("De'Andre Hunter", "Util", "SF,PF", "OKC", "", 12.2, 2),
+        ("OG Anunoby", "BN", "SF,PF", "NYK", "O", 12.1, 2),
+        ("Daniss Jenkins", "SG", "PG,SG", "DET", "", 11.5, 3),
+        ("Ajay Mitchell", "G", "PG,SG", "OKC", "", 11.4, 2),
+        ("Yaxel Lendeborg", "BN", "SF,PF", "GSW", "", 10.9, 1),
+        ("Matas Buzelis", "PF", "SF,PF", "CHI", "", 9.2, 2),
+        ("Aday Mara", "C", "C", "OKC", "Q", 9.0, 2),
+        ("Coby White", "BN", "PG,SG", "CHI", "", 7.3, 2),
+        ("Rudy Gobert", "FC", "C", "MIN", "", 5.5, 3),
+        ("Jaren Jackson Jr.", "IL", "PF,C", "OKC", "O", 7.0, 0),
+        ("Chet Holmgren", "IL", "PF,C", "OKC", "O", 15.1, 0),
+    ]
+    roster = [_player(name, slot, position, status, team) for name, slot, position, team, status, _, _ in rows]
+    readings = _readings(*((p, row[5], row[6]) for p, row in zip(roster, rows, strict=True)))
+    for grown in ("Daniss Jenkins", "Aday Mara", "Coby White"):  # minutes up in each of his last two
+        readings[grown] = replace(readings[grown], rising=True)
+    for back in ("Austin Reaves", "OG Anunoby"):
+        readings[back] = replace(readings[back], back=FRI)
+    spencer = replace(_player("Cam Spencer", position="PG,SG", team="PHX"), waiver_date=WED)
+    robinson = _player("Duncan Robinson", position="SG,SF", team="DET", status="O")
+    turner = _player("Myles Turner", position="C", team="MIL")
+    readings |= {
+        "Cam Spencer": replace(_read(spencer, 12.0, 3), role=Role(games=5, minutes=27.9, window=22.8)),
+        "Duncan Robinson": replace(_read(robinson, 11.1, 2), back=FRI),
+        "Myles Turner": _read(turner, 10.0, 3),
+    }
+    return roster, readings, [spencer, robinson, turner]
+
+
+def _adds(items: list) -> list[tuple[str, str, str | None]]:
+    return [(item.player_id, item.drop, item.pickup) for item in items if item.kind == "waiver"]
+
+
+def test_a_week_all_but_lost_spends_its_adds_on_keepers_each_with_a_drop_of_its_own() -> None:
+    """GM 3 at 1-8 and a 2% chance: no stream, two keepers, and Gobert let go once — Turner over him, Robinson,
+    the better a game, over Buzelis, rather than Robinson alone over Gobert."""
+    roster, readings, wire = _gm3()
+
+    items = build(roster, wire, readings, adds_left=2, by_points=False, plan=Plan(week=GM3_WEEK, win=0.02))
+
+    assert _adds(items) == [
+        ("Myles Turner", "Rudy Gobert", "keeper"),
+        ("Duncan Robinson", "Matas Buzelis", "keeper"),
+    ]
+    assert [item.when for item in items] == [weekday_day_month(TUE), weekday_day_month(THU)]
+    assert {item.urgency for item in items} == {"soon"}
+    assert all("2%" in item.reason for item in items)  # the pivot is stated, with the chance behind it
+
+
+def test_a_week_in_play_streams_and_still_never_names_one_drop_twice_or_more_adds_than_left() -> None:
+    roster, readings, wire = _gm3()
+
+    items = build(roster, wire, readings, adds_left=2, by_points=False, plan=Plan(week=GM3_WEEK, win=0.4))
+    adds = _adds(items)
+
+    assert ("Cam Spencer", "streamer") in [(pickup, term) for pickup, _, term in adds]
+    assert len({drop for _, drop, _ in adds}) == len(adds) <= 2
+    assert len({pickup for pickup, _, _ in adds}) == len(adds)
+
+
+def test_a_week_all_but_won_also_spends_its_adds_on_the_season() -> None:
+    roster, readings, wire = _gm3()
+
+    items = build(roster, wire, readings, adds_left=2, by_points=False, plan=Plan(week=GM3_WEEK, win=0.97))
+
+    assert {term for _, _, term in _adds(items)} == {"keeper"}
+
+
+def test_a_decided_week_names_a_keeper_past_its_adds_as_the_alternative_on_a_drop_of_its_own() -> None:
+    roster, readings, wire = _gm3()
+    reed = _player("Paul Reed", position="PF,C", team="DET")
+    readings |= _readings((reed, 11.7, 3))
+
+    planned, alternative = build(roster, [*wire, reed], readings, 1, False, plan=Plan(week=GM3_WEEK, win=0.02))
+
+    assert (planned.player_id, planned.drop) == ("Paul Reed", "Rudy Gobert")
+    assert (alternative.player_id, alternative.drop) == ("Duncan Robinson", "Matas Buzelis")
+    assert "Paul Reed" in alternative.reason
+
+
+def test_a_decided_week_with_no_keeper_clear_of_the_margin_adds_nobody() -> None:
+    """A stream is the week's, and the week is settled."""
+    roster, readings, wire = _gm3()
+    readings = {key: r for key, r in readings.items() if key not in {"Duncan Robinson", "Myles Turner"}}
+
+    assert streams(roster, wire, readings, 2, False, set(), plan=Plan(week=GM3_WEEK, win=0.02)) == []
+
+
+# ── injured players, open spots, and who a drop lets go ────────────
+
+
+def test_a_player_out_all_week_goes_to_an_open_il_slot_and_the_add_needs_no_drop() -> None:
+    roster, readings = _team()
+    out = _player("Out", "BN", status="O")
+    roster.append(out)
+    readings |= {"Out": replace(_read(out, 25.0, 0), back=date(2026, 12, 10))}
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 21.0, 4))
+
+    move, add = build(roster, [pickup], readings, 2, True, plan=Plan(reserve=("IL",)))
+
+    assert (move.kind, move.player_id, move.urgency) == ("lineup", "Out", "now")
+    assert "IL" in move.title
+    assert (add.player_id, add.drop) == ("Pickup", "")
+    assert [p.side for p in add.players] == ["in"]
+
+
+def test_a_player_back_before_the_week_ends_stays_off_il() -> None:
+    """In IL he would sit out the games he is back for, and activating him needs a drop of its own."""
+    roster, readings = _team()
+    out = _player("Out", "BN", status="O")
+    readings |= {"Out": replace(_read(out, 25.0, 2), back=WED)}
+
+    assert reserving([*roster, out], readings, ("IL",)) == []
+    assert reserving([*roster, out], readings | {"Out": replace(readings["Out"], games=0)}, ()) == []
+
+
+def test_a_stream_into_an_open_spot_lets_nobody_go() -> None:
+    roster, readings = _team()
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 10.0, 4))
+
+    [item] = streams(roster, [pickup], readings, 2, True, set(), plan=Plan(open_spots=1))
+
+    assert (item.player_id, item.drop, item.pickup) == ("Pickup", "", "streamer")
+    assert streams(roster, [pickup], readings | _readings((pickup, 10.0, 1)), 2, True, set(), Plan(open_spots=1)) == []
+
+
+def test_a_falling_role_is_the_first_let_go() -> None:
+    """Minutes down by six over his last five: his value a game still reads the role he had."""
+    roster, readings = _team()
+    readings["Weak"] = replace(readings["Weak"], role=Role(games=5, minutes=22.0, window=28.0))
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 21.0, 4))
+
+    assert [r.player.name for r in droppable(roster, readings, set())] == ["Weak", "Weaker"]
+    [item] = streams(roster, [pickup], readings, 2, True, set())
+    assert item.drop == "Weak"
+    assert "22" in item.reason and "28" in item.reason
+
+
+def test_a_role_grown_over_his_last_five_is_never_the_drop_however_cold_his_nights() -> None:
+    """Coby White: minutes up, value a game still catching up with them."""
+    roster, readings = _team()
+    readings["Weaker"] = replace(readings["Weaker"], role=Role(games=5, minutes=27.0, window=21.0))
+
+    assert [r.player.name for r in droppable(roster, readings, set())] == ["Weak"]
+
+
+def test_a_game_time_call_counts_his_first_night_at_his_chance_of_playing_it() -> None:
+    roster, readings = _team()
+    fit, doubtful = (
+        _player("Fit", position="SF", team="DET"),
+        _player("Doubtful", position="SF", team="DET", status="GTD"),
+    )
+    readings |= _readings((fit, 10.0, 4), (doubtful, 10.0, 4))
+    weigh = Weigh(roster, readings, Plan(week=DETROIT))
+
+    sure, nights = weigh.gained(readings["Fit"], readings["Weak"])
+    doubted, _ = weigh.gained(readings["Doubtful"], readings["Weak"])
+
+    assert nights == 4
+    assert doubted == sure - 10.0 * (1 - chance("GTD"))

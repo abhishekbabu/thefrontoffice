@@ -180,8 +180,11 @@ def category_value(scored: Sequence[LeagueCategory], pool: Iterable[Line]) -> Va
     return value
 
 
-TARGET_FLOOR = 0.25
-"""The least a category counts this week, however sure it is: a forecast is not a result, and a lead can go."""
+TARGET_FLOOR = 0.1
+"""The least a category counts this week, however sure it is: a forecast is not a result, and a lead can go.
+
+A tenth, so a category all but won or lost barely moves a pickup: an add spent on it buys nothing this week.
+`winnable` reaches it only below a 3% chance either way."""
 
 IN_PLAY = 0.5
 """How winnable a category must be (`winnable`) to be one a move targets: a chance between about 15% and 85%."""
@@ -229,16 +232,16 @@ class Targeting:
         parts = self._parts(figures)
         return sum(parts.values()) if parts else None
 
-    def targets(self, pickup: Line | None, drop: Line | None) -> list[str]:
-        """The categories in play (`IN_PLAY`) a game of `pickup` adds most to over one of `drop`, as the league
-        names them: at most `TARGETS`, the biggest gain first."""
+    def targets(self, pickup: Line | None, drop: Line | None, counting: float = IN_PLAY) -> list[str]:
+        """The categories counting `counting` or more (in play, `IN_PLAY`, by default) a game of `pickup` adds most
+        to over one of `drop`, as the league names them: at most `TARGETS`, the biggest gain first."""
         if not pickup:
             return []
         gains, losses = self._parts(pickup), self._parts(drop or {})
         better = {
             label: gain - losses.get(label, 0.0)
             for label, gain in gains.items()
-            if self.weights.get(label, 1.0) >= IN_PLAY and gain > losses.get(label, 0.0)
+            if self.weights.get(label, 1.0) >= counting and gain > losses.get(label, 0.0)
         }
         ranked = sorted(better, key=lambda label: -better[label])[:TARGETS]
         return [self.scales[label].scored.name for label in ranked]
@@ -249,6 +252,29 @@ class Targeting:
             for label, scale in self.scales.items()
             if (worth := scale.worth(figures)) is not None
         }
+
+
+UNNEEDED = 0.7
+"""What a category your roster is not short of counts for the rest of the season (`needs`): most of a game, so the
+roster's needs tip a choice between keepers without making a specialist of every one."""
+
+
+def needs(found: Mapping[str, Scale], roster: Iterable[Line | None]) -> Targeting:
+    """The categories weighed by what your roster lacks for the rest of the season, opponent-neutral.
+
+    Your players' average against the pool (`Scale.against_pool`), category by
+    category: the `TARGETS` furthest below it count in full, every other one
+    `UNNEEDED`. What a keeper adds there is what the season needs from him,
+    whatever this week's opponent.
+    """
+    lines = [figures for figures in roster if figures]
+    standing = {
+        label: statistics.fmean(figures)
+        for label, scale in found.items()
+        if (figures := [z for f in lines if (z := scale.against_pool(f)) is not None])
+    }
+    short = sorted((label for label, z in standing.items() if z < 0), key=lambda label: standing[label])[:TARGETS]
+    return Targeting(scales=found, weights={label: 1.0 if label in short else UNNEEDED for label in found})
 
 
 WEAK_BELOW = -0.5
@@ -277,6 +303,12 @@ def weakest(figures: Line | None, found: Mapping[str, Scale]) -> list[LeagueCate
 def moved(role: Role | None) -> bool:
     """Whether his minutes over his last few have moved from the window's by `ROLE.moved`, either way."""
     return role is not None and abs(role.minutes - role.window) >= ROLE.moved
+
+
+def falling(role: Role | None) -> bool:
+    """Whether his minutes over his last few have fallen below the window's by `ROLE.moved`: a role shrinking, the
+    first a drop lets go."""
+    return role is not None and role.window - role.minutes >= ROLE.moved
 
 
 def rising(stats: PlayerStats | None) -> bool:

@@ -116,6 +116,11 @@ def stranded(slot: str, status: str) -> bool:
     return status.upper() in NOT_TAKEN.get(slot.upper(), frozenset())
 
 
+RESERVABLE = frozenset({"O", "INJ"})
+"""Yahoo's statuses every injured slot takes: out and injured. A player listed so in an active slot is one to move
+there while one is open; a suspension or a day-to-day call is not."""
+
+
 SLOT_TAKES: dict[str, frozenset[str]] = {
     "G": frozenset({"PG", "SG"}),
     "F": frozenset({"SF", "PF"}),

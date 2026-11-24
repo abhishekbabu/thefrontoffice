@@ -209,9 +209,7 @@ class YahooNBAProvider:
             adds_left = max(0, limit - my_team.adds_used)
             claimed = history.claimed(reads.pending(yahoo, my_team.team_key))
             shown = reads.averages(yahoo, found.mine.team_key, found.opponent.team_key)
-            chances = (
-                None if league.by_points or not week else self._chances(league, yahoo, week, found, (roster, theirs))
-            )
+            forecast = self._forecast(league, yahoo, week, found, (roster, theirs)) if week else None
             decided.append(
                 weighing.decide(
                     self.feeds,
@@ -223,7 +221,8 @@ class YahooNBAProvider:
                     found.end,
                     adds_left,
                     shown=shown,
-                    chances=chances,
+                    chances=(forecast.categories or None) if forecast and not league.by_points else None,
+                    win=forecast.win if forecast else None,
                     their_adds=self._adds_left(yahoo, found.opponent.team_key, limit),
                     claimed=claimed,
                     untouchable=self.untouchable.of(league.league_key),
@@ -585,24 +584,24 @@ class YahooNBAProvider:
         # Games the NBA has yet to schedule are games nobody is drawn for: the chance is read off a short week.
         return replace(matchup, provisional=bool(self.games.unscheduled(found.start, found.end)))
 
-    def _chances(
+    def _forecast(
         self,
         league: YahooLeague,
         yahoo: YahooSource,
         week: int,
         found: Pairing,
         sides: tuple[Sequence[Player], Sequence[Player]],
-    ) -> dict[str, float] | None:
-        """Your chance of winning each category this week, by the league's name for it: the forecast's own, on the
-        same matchup it is read from, so the page and the to-do list share one simulation.
+    ) -> Forecast | None:
+        """This week played out: your chance of winning it, and each category by the league's name for it — on the
+        same matchup the page reads, so the page and the to-do list share one simulation.
 
         Enrichment: None where the week cannot be simulated, and the to-do list
-        then weighs every category alike.
+        then weighs every category alike and chases the week.
         """
         try:
-            return dict(self.forecast(self._matchup(league, yahoo, week, found, sides)).categories) or None
+            return self.forecast(self._matchup(league, yahoo, week, found, sides))
         except FrontOfficeError as e:
-            logger.warning(f"Weighing pickups on every category alike, without a forecast: {e}")
+            logger.warning(f"Weighing pickups without a forecast: {e}")
             return None
 
     def played_weeks(self, league_id: str) -> list[int]:
