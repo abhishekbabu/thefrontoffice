@@ -9,7 +9,7 @@ from dataclasses import replace
 import pytest
 from support.nfl import SLEEPER_USER_ID, FakeSleeper, game_line, nfl_provider, proj
 
-from thefrontoffice.adapters.outbound.competitions.matchups import Matchup
+from thefrontoffice.adapters.outbound.competitions.matchups import RECENT_GAMES, Matchup, Recent
 from thefrontoffice.adapters.outbound.competitions.nfl.views import ease
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
@@ -35,6 +35,12 @@ from thefrontoffice.domain.models import PlayerCard, PlayerQuery
 def test_a_matchup_reads_as_how_easy_or_tough_it_is_from_the_nearer_end(rank: int, said: str) -> None:
     """Rank 1 gives up the most: the easiest. Counted from whichever end is nearer, so no '27th-easiest'."""
     assert ease(Matchup(opponent="DAL", position="WR", allowed=20.0, rank=rank, defenses=32)) == said
+
+
+def test_a_matchup_says_how_easy_it_has_been_lately_beside_its_season() -> None:
+    matchup = Matchup(opponent="SF", position="TE", allowed=9.0, rank=20, defenses=32, recent=Recent(15.8, rank=4))
+
+    assert ease(matchup).split(" · ") == ["13th-toughest", f"4th-easiest L{RECENT_GAMES}"]
 
 
 # ── the wire: how a free agent fits ─────────────────────────────────────
