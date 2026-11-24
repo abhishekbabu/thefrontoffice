@@ -331,3 +331,25 @@ def test_his_teams_bye_is_no_game_to_miss() -> None:
     lines = _games("wr", [1, 2, 4])
 
     assert misses(lines) == (0, 2)
+
+
+def test_each_game_carries_his_targets_their_share_his_carries_and_his_yards() -> None:
+    lines = [
+        game_line("te", 1, position="TE", off_snp=50.0, tm_off_snp=60.0, rec_tgt=6.0, rec_yd=40.0, rush_att=1.0),
+        game_line("wr", 1, off_snp=55.0, tm_off_snp=60.0, rec_tgt=24.0),
+    ]
+    [game] = gather(lines, "pts_ppr").appearances["te"]
+
+    assert (game.targets, game.target_share, game.carries, game.receiving_yards) == (6.0, 0.2, 1.0, 40.0)
+    assert game.opportunities == 7.0
+
+
+def test_a_clubs_starting_quarterback_is_whoever_threw_most_that_week() -> None:
+    lines = [
+        game_line("qb1", 1, position="QB", off_snp=60.0, pass_att=30.0),
+        game_line("qb2", 1, position="QB", off_snp=10.0, pass_att=4.0),
+        game_line("qb2", 2, position="QB", off_snp=60.0, pass_att=28.0),
+        game_line("wr", 2, off_snp=60.0, rec_tgt=8.0),
+    ]
+
+    assert gather(lines, "pts_ppr").passers == {("KC", 1): "qb1", ("KC", 2): "qb2"}

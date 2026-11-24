@@ -66,6 +66,16 @@ class Appearance:
     team: str
     points: float
     snap_share: float | None
+    targets: float = 0.0
+    target_share: float | None = None
+    """His share of his club's targets that game; None where it threw none."""
+    carries: float = 0.0
+    receiving_yards: float = 0.0
+
+    @property
+    def opportunities(self) -> float:
+        """Targets and carries: the touches a back's or receiver's points are made from."""
+        return self.targets + self.carries
 
     @property
     def game(self) -> int:
@@ -178,6 +188,9 @@ class Evidence:
     appearances: dict[str, tuple[Appearance, ...]] = field(default_factory=dict)
     """Each player's games played this season, oldest first, week by week: what a split by who else played reads."""
 
+    passers: dict[tuple[str, int], str] = field(default_factory=dict)
+    """Who threw most of each club's passes in each week it played, by (club, week): its starting quarterback."""
+
     def matchup(self, player: Projection) -> Matchup | None:
         return self.allowed.get((player.opponent, player.position)) if player.opponent else None
 
@@ -216,24 +229,48 @@ def gather(lines: Sequence[GameLine], scoring: str, out: Collection[str] = froze
         positions=positions,
         trends=_trends(lines, out),
         appearances=appearances,
+        passers=_passers(lines),
     )
 
 
 def _appearances(lines: Sequence[GameLine], scoring: str) -> tuple[dict[str, tuple[Appearance, ...]], dict[str, str]]:
     """Each player's games he took the field in, by the same rule his role is read by, oldest first."""
+    team_targets = _team_targets(lines)
     played: dict[str, list[GameLine]] = defaultdict(list)
     for line in lines:
         if took_the_field(line):
             played[line.player_id].append(line)
-    appearances = {
-        pid: tuple(
-            Appearance(week=game.week, team=game.team, points=game.stats.get(scoring, 0.0), snap_share=snap_share(game))
-            for game in sorted(each, key=lambda game: game.week)
+
+    def appearance(game: GameLine) -> Appearance:
+        targets, thrown = game.stats.get("rec_tgt", 0.0), team_targets[(game.team, game.week)]
+        return Appearance(
+            week=game.week,
+            team=game.team,
+            points=game.stats.get(scoring, 0.0),
+            snap_share=snap_share(game),
+            targets=targets,
+            target_share=targets / thrown if thrown else None,
+            carries=game.stats.get("rush_att", 0.0),
+            receiving_yards=game.stats.get("rec_yd", 0.0),
         )
+
+    appearances = {
+        pid: tuple(appearance(game) for game in sorted(each, key=lambda game: game.week))
         for pid, each in played.items()
     }
     positions = {pid: max(each, key=lambda game: game.week).position for pid, each in played.items()}
     return appearances, positions
+
+
+def _passers(lines: Sequence[GameLine]) -> dict[tuple[str, int], str]:
+    """Each club's quarterback with the most pass attempts in each week: who started under centre."""
+    most: dict[tuple[str, int], tuple[float, str]] = {}
+    for line in lines:
+        attempts = line.stats.get("pass_att", 0.0)
+        key = (line.team, line.week)
+        if line.position == "QB" and attempts and attempts > most.get(key, (0.0, ""))[0]:
+            most[key] = (attempts, line.player_id)
+    return {key: pid for key, (_, pid) in most.items()}
 
 
 def _roles(lines: Sequence[GameLine], scoring: str) -> dict[str, Role]:

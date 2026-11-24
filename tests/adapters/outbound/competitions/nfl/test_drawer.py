@@ -13,12 +13,16 @@ from support.espn import FakeESPN
 from support.nfl import (
     DEFAULT_PROJECTIONS,
     SEASON_SCHEDULE,
+    SLUMPING_TE,
     FakeSleeper,
     game_line,
     nfl_provider,
+    proj,
+    slumping,
 )
 
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import status_word
+from thefrontoffice.adapters.outbound.competitions.nfl.slump import SLUMP_LABEL
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
@@ -544,3 +548,17 @@ def test_the_drawer_shows_his_clubs_stories_with_his_week_apart_from_his_own_new
     assert group.tab == ""
     assert [(s.value, s.url) for s in group.stats] == [(story.headline, story.url)]
     assert not [g for g in detail.groups if g.tab == "News"]
+
+
+def test_a_slumping_starters_week_says_so_beside_his_role() -> None:
+    client = slumping(proj("fa", "Aj Streamer", "TE", 7.0, team="SEA", opp="ARI"))
+    stats = {stat.label: stat for stat in _group(_drawer(SLUMPING_TE.player_id, client), "Week 9")}
+
+    assert stats[SLUMP_LABEL].tone == "warning"
+    assert "3.00" in stats[SLUMP_LABEL].value and "10.00" in stats[SLUMP_LABEL].value
+
+
+def test_a_player_in_form_has_no_slump_in_his_week() -> None:
+    client = slumping(proj("fa", "Aj Streamer", "TE", 7.0, team="SEA", opp="ARI"))
+
+    assert SLUMP_LABEL not in {stat.label for stat in _group(_drawer("fa", client), "Week 9")}
