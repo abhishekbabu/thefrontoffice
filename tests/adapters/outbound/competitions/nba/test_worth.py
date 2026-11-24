@@ -9,6 +9,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.form import (
     ROLE_GAMES,
     PlayerStats,
     RecentForm,
+    Role,
     SleeperNBAForm,
     nine_cat,
 )
@@ -18,11 +19,14 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     MINUTES,
     ROLE,
     TARGET_FLOOR,
+    UNNEEDED,
     Reading,
     Targeting,
     category_value,
+    falling,
     game_value,
     moved,
+    needs,
     per_game,
     points_value,
     read,
@@ -275,7 +279,36 @@ def test_the_targets_are_the_close_categories_a_pickup_adds_most_to_over_the_dro
     assert targeting.value(None) is None
 
 
+def test_a_category_all_but_decided_counts_a_tenth_at_most() -> None:
+    """2% to win rebounds: an add spent on them buys next to nothing this week."""
+    assert winnable(0.02) <= 0.1
+
+
+# ── what the roster is short of, for the rest of the season ─────────
+
+
+def test_the_categories_a_roster_is_furthest_below_the_pool_in_count_in_full_and_the_rest_less() -> None:
+    """A roster of the pool's weakest line: short of FG%, blocks and points, and as good as any at turnovers."""
+    short = needs(scales(SCORED, POOL), [POOL[2], None])
+
+    assert short.weights == {"FG%": 1.0, "BLK": 1.0, "PTS": 1.0, "TO": UNNEEDED}
+    assert set(short.targets(POOL[0], POOL[2], counting=1.0)) == {"FG%", "BLK", "PTS"}
+
+
+def test_a_roster_short_of_nothing_weighs_every_category_alike() -> None:
+    found = scales(SCORED, POOL)
+
+    assert set(needs(found, [POOL[0]]).weights.values()) == {UNNEEDED}
+    assert set(needs(found, []).weights.values()) == {UNNEEDED}
+
+
 # ── a role that has moved ───────────────────────────────────────────────
+
+
+def test_a_role_falls_by_the_minutes_a_role_moves_by() -> None:
+    assert falling(Role(games=5, minutes=22.0, window=22.0 + ROLE.moved))
+    assert not falling(Role(games=5, minutes=22.0, window=24.0))
+    assert not falling(None)
 
 
 def _career(*runs: tuple[int, float, float]) -> PlayerStats:

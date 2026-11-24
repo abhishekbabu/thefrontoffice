@@ -1429,15 +1429,16 @@ def test_a_week_that_cannot_be_simulated_weighs_its_pickups_on_every_category_al
     assert [a.key for a in without or []] == [a.key for a in with_chances or []]
 
 
-def test_a_points_league_plays_no_forecast_for_its_pickups() -> None:
-    forecast = FakeForecast()
+def test_a_points_league_plays_the_week_out_for_its_pickups_but_weighs_no_category() -> None:
+    """The week all but lost puts its add on the season; a points league has no categories to weigh."""
+    forecast = FakeForecast(categories={"PTS": 0.99}, win=0.02)
     yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+    nba = FakeNBA(stats={**WEEK_FORM, "Streamer": _line(24)}, games=WEEK_GAMES)
 
-    nba_provider(
-        yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES), league=POINTS_LEAGUE, forecast=forecast
-    ).summary("")
+    summary = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE, forecast=forecast).summary("")
 
-    assert forecast.played == []
+    assert len(forecast.played) == 1
+    assert [a.pickup for a in summary.actions or [] if a.kind == "waiver"] == ["keeper"]
 
 
 def test_a_hurt_player_counts_only_the_games_from_his_return() -> None:
@@ -1904,16 +1905,20 @@ def _games_left(headline: list[Stat]) -> list[str]:
 
 
 def test_the_week_heads_with_the_games_each_side_can_start_and_labels_each_pickup() -> None:
-    """Only Benched plays among yours, nobody among theirs; Streamer is three times Spare's points a game."""
+    """Only Benched plays among yours, nobody among theirs; Streamer is three times Spare's points a game. Two of
+    five roster spots are open, so he goes into one; with the bench's two gone, Spare makes way."""
     yahoo, nba = _slotted()
     yahoo.league_teams = [replace(t, adds_used=3) if not t.is_mine else t for t in DEFAULT_TEAMS]
 
     summary = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE).summary("")
+    yahoo.slots = {**SLOTTED, "BN": 0}
+    full = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE).summary("")
 
     assert _games_left(summary.headline) == ["1 vs 0"]
     assert [(a.player_id, a.drop, a.pickup) for a in summary.actions or [] if a.kind == "waiver"] == [
-        ("streamer", "spare", "keeper")
+        ("streamer", "", "keeper")
     ]
+    assert [(a.player_id, a.drop) for a in full.actions or [] if a.kind == "waiver"] == [("streamer", "spare")]
 
 
 def test_the_forecast_counts_the_starts_the_to_do_list_does() -> None:

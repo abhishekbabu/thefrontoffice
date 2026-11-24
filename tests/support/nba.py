@@ -550,12 +550,15 @@ class FakeNBA:
 
 
 class FakeForecast:
-    """Stands in for the simulation the provider plays a week out with: these chances of winning each category,
-    every matchup it was handed kept, or `error` raised."""
+    """Stands in for the simulation the provider plays a week out with: these chances of winning each category and
+    the week, every matchup it was handed kept, or `error` raised."""
 
-    def __init__(self, categories: Mapping[str, float] | None = None, error: FrontOfficeError | None = None) -> None:
+    def __init__(
+        self, categories: Mapping[str, float] | None = None, error: FrontOfficeError | None = None, win: float = 0.5
+    ) -> None:
         self.categories = dict(categories or {})
         self.error = error
+        self.win = win
         self.played: list[MatchupInput] = []
 
     def __call__(self, matchup: MatchupInput) -> Forecast:
@@ -563,7 +566,7 @@ class FakeForecast:
         if self.error is not None:
             raise self.error
         return Forecast(
-            win=0.5, margin=MarginRange(low=0.0, median=0.0, high=0.0), simulations=1, categories=self.categories
+            win=self.win, margin=MarginRange(low=0.0, median=0.0, high=0.0), simulations=1, categories=self.categories
         )
 
 
