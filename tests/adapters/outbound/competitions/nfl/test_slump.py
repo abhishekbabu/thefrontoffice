@@ -13,6 +13,10 @@ from thefrontoffice.adapters.outbound.competitions.news import ClubStory, Player
 from thefrontoffice.adapters.outbound.competitions.nfl.news import QB_CHANGE
 from thefrontoffice.adapters.outbound.competitions.nfl.slump import (
     CALL_FORM,
+    DEPTH,
+    GAMES,
+    NEWS,
+    PRE_GAME,
     QB_CHANGE_LABEL,
     THIS_WEEK,
     THOSE_WEEKS,
@@ -21,6 +25,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.slump import (
     slump,
     slumps,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.starters import DEPTH_CHART
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -311,3 +316,45 @@ def test_a_club_story_of_a_quarterback_change_flags_him_before_any_game_under_th
     assert found is not None and found.qb is not None
     assert (found.qb.was, found.qb.since) == ("", None)
     assert article.headline in found.short()
+
+
+def test_a_projection_kept_before_the_game_is_preferred_to_sleepers_revised_one() -> None:
+    """Sleeper serves 5 for those weeks now; 11 was read before each game: the games are measured against 11."""
+    state = _past(_week(_games("te", [*SOLID, 3.0, 3.0, 3.0, 3.0]) + _club()), 5.0)
+    state = replace(state, pregame={week: {"te": 11.0} for week in range(5, 9)})
+
+    found = slump(state, TE)
+
+    assert found is not None
+    assert (found.basis, found.projected) == (PRE_GAME, pytest.approx(11.0))
+
+
+def test_a_window_only_partly_kept_before_its_games_says_how_much_was() -> None:
+    state = _past(_week(_games("te", [*SOLID, 3.0, 3.0, 3.0, 3.0]) + _club()), 11.0)
+    found = slump(replace(state, pregame={7: {"te": 12.0}, 8: {"te": 12.0}}), TE)
+
+    assert found is not None
+    assert found.basis.startswith(THOSE_WEEKS) and "2" in found.basis
+    assert found.projected == pytest.approx((11.0 + 11.0 + 12.0 + 12.0) / 4)
+
+
+def test_the_depth_charts_own_record_is_a_third_source_of_a_quarterback_change() -> None:
+    article = NewsArticle(
+        article_id="depth-IND-2026-11-21",
+        published=datetime(2026, 11, 21, tzinfo=UTC),
+        headline=f"{DEPTH_CHART}: Anthony Richardson starts, not Daniel Jones",
+    )
+    news = PlayerNews(by_club={"IND": [ClubStory(kind=QB_CHANGE, article=article)]}, club_of={"te": "IND"})
+    found = slump(replace(_week(_games("te", [10.0] * 8) + _club()), news=news), TE)
+
+    assert found is not None and found.qb is not None
+    assert found.qb.sources == (DEPTH,)
+
+
+def test_a_change_its_games_and_the_news_both_report_names_both() -> None:
+    article = NewsArticle(article_id="1", published=datetime(2026, 11, 20, tzinfo=UTC), headline="Colts start Leonard")
+    news = PlayerNews(by_club={"IND": [ClubStory(kind=QB_CHANGE, article=article)]}, club_of={"te": "IND"})
+    found = slump(replace(_week(_games("te", [10.0] * 8) + _club(switch=7)), news=news), TE)
+
+    assert found is not None and found.qb is not None
+    assert found.qb.sources == (GAMES, NEWS)

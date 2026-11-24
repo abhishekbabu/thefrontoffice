@@ -21,6 +21,7 @@ from support.nfl import (
     nfl_provider,
     proj,
 )
+from support.stores import FakeProjectionLog
 from support.summary import mine
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
@@ -1177,3 +1178,25 @@ def test_espn_failing_past_the_report_leaves_the_report_standing() -> None:
     page = nfl_provider(client, espn).free_agents("L1", PlayerQuery(view="IR"))
 
     assert [c.columns["Back"] for c in page.players if c.player_id == "ir1"] == ["—"]
+
+
+def test_the_week_being_played_keeps_each_projection_read_before_its_game() -> None:
+    """Week 3 has kicked off nowhere: everyone projected is kept, as read."""
+    log = FakeProjectionLog()
+    client = FakeSleeper(projections=DEFAULT_PROJECTIONS)
+
+    nfl_provider(client, pregame=log).summary("L1")
+
+    assert log.week("2026", 3) == {pid: p.points for pid, p in DEFAULT_PROJECTIONS.items()}
+
+
+def test_a_club_whose_game_has_kicked_off_keeps_nothing_new() -> None:
+    log = FakeProjectionLog()
+    client = FakeSleeper(
+        projections=DEFAULT_PROJECTIONS,
+        season_schedule=[ScheduledGame(week=3, date="2026-09-24", home="BUF", away="MIA", status="in_game")],
+    )
+
+    nfl_provider(client, pregame=log).summary("L1")
+
+    assert set(log.week("2026", 3) or {}) == {"wr9"}

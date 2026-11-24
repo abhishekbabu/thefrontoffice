@@ -1711,14 +1711,14 @@ def _kickers(mine: float, theirs: float) -> FakeSleeper:
 
 
 def test_a_kicker_on_the_wire_well_ahead_on_form_is_streamed_for_yours() -> None:
-    """Both projected 8; 4 a game against 13: (4 + 8) / 2 against (13 + 8) / 2, 4.5 apart."""
-    [action] = [a for a in _actions(_kickers(4.0, 13.0)) if a.key.startswith("stream:")]
+    """Both projected 8; 4 a game against 13: (4 + 8) / 2 against (13 + 8) / 2, 4.5 apart this week."""
+    [action] = [a for a in _actions(_kickers(4.0, 13.0)) if a.key.startswith("upgrade:")]
 
     assert (action.kind, action.player_id, action.replaces, action.drop) == ("waiver", "k9", "k1", "k1")
 
 
 def test_kickers_within_a_coin_flip_on_form_are_left_alone() -> None:
-    assert not [a for a in _actions(_kickers(8.0, 10.0)) if a.key.startswith("stream:")]
+    assert not [a for a in _actions(_kickers(8.0, 10.0)) if a.key.startswith("upgrade:")]
 
 
 def test_a_kicker_bye_next_week_names_the_best_kicker_on_the_wire_for_it() -> None:
@@ -1781,3 +1781,54 @@ def test_an_upgrade_facing_a_tough_defense_against_a_starter_facing_a_soft_one_i
     ]
 
     assert not [a for a in _actions(client) if a.key.startswith("upgrade:")]
+
+
+# ── this week's starts read the matchup, and next week's byes name a cover ──
+
+
+def test_a_free_agent_the_matchup_alone_lifts_three_points_past_a_starter_is_an_upgrade() -> None:
+    """Both backs projected 15 with nothing played: 16.5 against the softest defense, 13.5 against the toughest."""
+    starter = proj("rb", "Ron Back", "RB", 15.0, team="NYJ", opp="NE")
+    free = proj("fa1", "Soft Back", "RB", 15.0, team="KC", opp="LV")
+    flex = replace(FLEX, points=20.0)
+    client = _client([QB, starter, WR, flex, free], ["qb", "rb", "wr", "te"], [], game_lines=_defenses())
+
+    [action] = [a for a in _actions(client) if a.key.startswith("upgrade:")]
+
+    assert (action.player_id, action.replaces) == ("fa1", "rb")
+
+
+def test_a_bench_player_facing_the_softest_defense_starts_over_an_equal_starter_facing_the_toughest() -> None:
+    starter = proj("rb", "Ron Back", "RB", 10.0, team="NYJ", opp="NE")
+    benched = proj("rb2", "Soft Back", "RB", 10.0, team="KC", opp="LV")
+    flex = replace(FLEX, points=20.0)
+    client = _client([QB, starter, WR, flex, benched], ["qb", "rb", "wr", "te"], ["rb2"], game_lines=_defenses())
+
+    [swap] = [a for a in _actions(client) if a.key.startswith("swap:")]
+
+    assert (swap.player_id, swap.replaces) == ("rb2", "rb")
+
+
+def test_a_bye_next_week_at_any_position_names_the_free_agent_best_for_it_form_in() -> None:
+    """Your back's club is off in week 4. Two free backs play: one projected 12 who has scored 2 a game, one 9 who
+    has scored 14: by worth, form beside projection, the second."""
+    cold = proj("fa1", "Cold Back", "RB", 12.0, team="KC", opp="LV")
+    hot = proj("fa2", "Hot Back", "RB", 9.0, team="KC", opp="LV")
+    on_bye = replace(RB, team="BUF", opponent="MIA")
+    # A tight end at FLEX worth more than either, so neither is this week's pickup.
+    client = _client(
+        [QB, on_bye, WR, replace(FLEX, points=20.0), cold, hot],
+        ["qb", "rb", "wr", "te"],
+        [],
+        game_lines=_scored(cold, 2.0, 2.0)
+        + [replace(line, player_id="fa2", stats={**line.stats, "pts_ppr": 14.0}) for line in _scored(cold, 2.0, 2.0)],
+    )
+    client.weekly_projections[4] = {
+        **client.projections,
+        "fa1": replace(cold, opponent="NYJ"),
+        "fa2": replace(hot, opponent="NYJ"),
+    }
+
+    [bye] = [a for a in _actions(client) if a.key.startswith("bye:4:RB")]
+
+    assert hot.name in bye.title and cold.name not in bye.title

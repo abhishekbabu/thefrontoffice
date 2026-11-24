@@ -38,7 +38,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     projections_for,
     zero_projection,
 )
-from thefrontoffice.adapters.outbound.competitions.nfl.worth import plays, value
+from thefrontoffice.adapters.outbound.competitions.nfl.worth import plays, weekly
 from thefrontoffice.adapters.outbound.competitions.places import ordinal
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.domain.models import (
@@ -248,12 +248,6 @@ class Fit:
     def text(self) -> str:
         """The gap and against whom, as the model reads it: '-8.44 vs Josh Allen'."""
         return f"{self.cell()} {self.against}"
-
-
-def weekly(state: Week, player: Projection) -> float:
-    """His `worth.value` this week: times his `matchup_factor`, so a soft defense lifts a pickup and a tough one sinks
-    a starter, a tenth at most either way."""
-    return value(state, player) * matchup_factor(state.evidence.matchup(player))
 
 
 def _standing(state: Week, slot: LineupSlot) -> float | None:

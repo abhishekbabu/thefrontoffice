@@ -48,8 +48,7 @@ NFL_READING_PLAYER_LINES = f"""READING THE PLAYER LINES:
   quarterback. A "qb change" line: his club's quarterback changed within the last few weeks, by its
   games or its news, before his own production showed it; his points since are his form now.
   Weigh either against the projection rather than trusting either alone. A "Form call" item weighs his
-  slot on form (three parts recent points to one part projection, then usage and matchup; a kicker or
-  defense half and half).
+  slot on form (three parts recent points to one part projection, then usage and matchup).
 - A "news" line under a player is a recent headline about him, dated, from his own club's feed.
 - A "team news" line under a player points to his club's stories under TEAM NEWS: a quarterback
   change, a trade, a new play caller. They need not name him, and can change his role before his

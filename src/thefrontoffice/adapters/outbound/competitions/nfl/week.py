@@ -143,6 +143,10 @@ class Week:
     upcoming: Mapping[str, Projection] = field(default_factory=dict)
     """Next week's projections, where they loaded: whom a bye next week is covered by (`actions._next_week_byes`)."""
 
+    pregame: Mapping[int, Mapping[str, float]] = field(default_factory=dict)
+    """Each player's projection for each week already played as first read before his game (`nfl/pregame.py`),
+    for the weeks it was kept: what a slump prefers to Sleeper's served figure (`past`)."""
+
     past: Mapping[int, Mapping[str, float]] = field(default_factory=dict)
     """What Sleeper projected each player for each week already played, by week: what a slump measures his games
     against (`slump.slump`). Empty wherever they would not load."""

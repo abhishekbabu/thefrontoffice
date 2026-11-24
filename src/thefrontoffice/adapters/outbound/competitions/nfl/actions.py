@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from thefrontoffice.adapters.outbound.competitions.matchups import matchup_factor
 from thefrontoffice.adapters.outbound.competitions.news import dated
 from thefrontoffice.adapters.outbound.competitions.nfl import views
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
@@ -32,6 +33,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.handcuffs import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.lineup import (
     LineupChange,
+    LineupSlot,
     best_upgrade,
     eligible_positions,
     fits,
@@ -57,6 +59,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.worth import (
     projected_ahead,
     rest_of_season,
     value,
+    weekly,
     worth,
 )
 from thefrontoffice.adapters.outbound.competitions.teammates import surname
@@ -66,16 +69,16 @@ STACKED = 3
 """Starters riding on one real game at which a bad afternoon there is most of a bad week."""
 
 Move = Literal[
-    "ir", "hole", "swap", "upgrade", "slump", "stream", "rise", "stack", "teammate", "bye", "deadline", "short", "stash"
+    "ir", "hole", "swap", "upgrade", "slump", "rise", "stack", "teammate", "bye", "deadline", "short", "stash"
 ]
 """What an item on the list is about: a player IR no longer takes, a starter who cannot play or an empty slot, a swap the bench
 allows, a free agent who outscores a starter, a better form call over a slumping starter, a role that grew, a stacked game, a teammate ahead of
 one of yours who may sit, next week's byes, the trade deadline, a week ahead left short, a hurt free agent to hold on IR."""
 
-STARTS_NOW: frozenset[Move] = frozenset({"hole", "upgrade", "slump", "stream"})
+STARTS_NOW: frozenset[Move] = frozenset({"hole", "upgrade", "slump"})
 """Pickups that go straight into this week's lineup."""
 
-ADDS: frozenset[Move] = frozenset({"hole", "upgrade", "slump", "stream", "rise"})
+ADDS: frozenset[Move] = frozenset({"hole", "upgrade", "slump", "rise"})
 """Pickups that add a player to the roster, and so need room on it."""
 
 
@@ -117,7 +120,6 @@ def build(
     items += _lineup(state, started, kickoff, free_agents)
     items += _upgrades(state, free_agents, started, {i.action.player_id for i in items})
     items += _slumps(state, free_agents, started, kickoff, _moved(items))
-    items += _streams(state, free_agents, started, kickoff, _moved(items))
     items += _breakouts(state, free_agents, {i.action.player_id for i in items})
     items += _same_game(state, week_games, started, {(i.action.player_id, i.action.replaces) for i in items})
     items += _teammates(state, kickoff, started)
@@ -246,7 +248,7 @@ def _lineup(
         # The best by this week's worth, matchup in, as Fits ranks the wire (`views.weekly`).
         pick = max(
             (p for p in free_agents if p.position in eligible_positions(slot.slot) and p.player_id not in taken),
-            key=lambda p: views.weekly(state, p),
+            key=lambda p: weekly(state, p),
             default=None,
         )
         if pick is None:
@@ -371,7 +373,8 @@ def _swap(
 
 
 UPGRADE_BY = 3.0
-"""Points a free agent must project over the starter he would replace: less is a coin flip, not a claim."""
+"""Points of this week's worth (`weekly`: form beside projection, snaps, matchup) a free agent must hold over the
+starter he would replace: less is a coin flip, not a claim."""
 
 UPGRADES = 2
 """Upgrades on the list at once. The free-agent page ranks the rest; the list is for the clear ones."""
@@ -381,30 +384,40 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
     """Free agents who simply outscore one of your starters this week: a defense or a kicker to stream, most often.
 
     Measured against the best lineup, so the bench has already made its moves
-    and nobody is credited with a hole a bench player fills. And against the
-    starter's season as well as his week, so a star's one bad matchup is not
-    a reason to drop him. At a streamed position the starter he replaces is
-    the drop — a lineup starts one defense, and nobody keeps a spare — unless
-    he is untouchable, when the bench gives up the spot instead. The season check reads both players by the same
-    `views.weekly`: their `worth`, times this week's matchup, as Fits does.
+    and nobody is credited with a hole a bench player fills: against the
+    starter there he would replace who is worth least this week. Both are read
+    by `weekly` — their `worth`, times this week's matchup, as Fits reads them —
+    so a pickup the matchup alone lifts past a starter is one, and a star's one
+    bad matchup alone never sinks him: his form stays in his worth. The
+    biggest gains first. At a streamed position the starter he replaces is the
+    drop — a lineup starts one defense, and nobody keeps a spare — unless he is
+    untouchable, when the bench gives up the spot instead.
     """
-    taken: set[str] = set()
-    items = []
+    found: list[tuple[float, Projection, LineupSlot]] = []
     for player in free_agents:
-        if len(items) == UPGRADES:
-            break
         if player.player_id in already or player.team in started:
             continue
-        upgrade = best_upgrade(state.best, player)
-        if upgrade is None:
+        eligible = [
+            slot
+            for slot in state.best
+            if slot.player is not None
+            and player.position in eligible_positions(slot.slot)
+            and slot.player.team not in started
+            and state.ranked(slot.player) > 0
+        ]
+        if not eligible:
             continue
-        gain, slot = upgrade
+        slot = min(eligible, key=lambda slot: weekly(state, slot.player) if slot.player else 0.0)
         starter = slot.player
-        if starter is None or starter.team in started or starter.player_id in taken or gain < UPGRADE_BY:
+        if starter is not None and (gain := weekly(state, player) - weekly(state, starter)) >= UPGRADE_BY:
+            found.append((gain, player, slot))
+    taken: set[str] = set()
+    items = []
+    for gain, player, slot in sorted(found, key=lambda row: -row[0]):
+        starter = slot.player
+        if starter is None or starter.player_id in taken or player.player_id in taken or len(items) == UPGRADES:
             continue
-        if views.weekly(state, player) <= views.weekly(state, starter):
-            continue
-        taken.add(starter.player_id)
+        taken.update({starter.player_id, player.player_id})
         streamed = (
             player.position in STREAMED
             and starter.position == player.position
@@ -419,7 +432,8 @@ def _upgrades(state: Week, free_agents: Sequence[Projection], started: set[str],
                     title=f"Pick up {player.name}, drop {starter.name}"
                     if streamed
                     else f"Pick up {player.name} to start over {starter.name}",
-                    reason=f"+{gain:.2f} proj over {starter.name} at {slot.slot}.{_caveat(player)}",
+                    reason=f"Worth {gain:+.2f} over {starter.name} at {slot.slot} this week, matchup in."
+                    f"{_caveat(player)}",
                     player_id=player.player_id,
                     replaces=starter.player_id,
                     drop=starter.player_id if streamed else "",
@@ -478,7 +492,7 @@ def _slumps(
     for call in _matched(calls):
         already.update({call.pick.player_id, call.starter.player_id})
         reason = _form_call(state, call)
-        items.append(_called_item("slump", state, call.slot, call.starter, call.pick, call.gain, reason, kickoff))
+        items.append(_called_item(state, call, reason, kickoff))
     return items
 
 
@@ -510,89 +524,25 @@ def _matched(calls: Sequence[Call]) -> list[Call]:
     return chosen
 
 
-def _called_item(
-    move: Move,
-    state: Week,
-    slot: str,
-    starter: Projection,
-    pick: Projection,
-    gain: float,
-    reason: str,
-    kickoff: Mapping[str, Game],
-    drop: bool = False,
-) -> Item:
+def _called_item(state: Week, call: Call, reason: str, kickoff: Mapping[str, Game]) -> Item:
     """A form call as a to-do: a start where he is on the bench, a pickup that starts where he is not."""
-    evidence = _evidence(state, [pick, starter])
-    key = f"{move}:{starter.player_id}"
-    if pick.player_id in state.roster.player_ids:
-        change = LineupChange(slot=slot, start=pick, bench=starter, gain=round(gain, 2))
-        return Item(move, _swap(change, "soon", reason, kickoff, evidence, key=key))
+    evidence = _evidence(state, [call.pick, call.starter])
+    key = f"slump:{call.starter.player_id}"
+    if call.pick.player_id in state.roster.player_ids:
+        change = LineupChange(slot=call.slot, start=call.pick, bench=call.starter, gain=round(call.gain, 2))
+        return Item("slump", _swap(change, "soon", reason, kickoff, evidence, key=key))
     return Item(
-        move,
+        "slump",
         Action(
             kind="waiver",
             urgency="soon",
-            title=f"Pick up {pick.name}, {'drop' if drop else 'bench'} {starter.name}",
+            title=f"Pick up {call.pick.name}, bench {call.starter.name}",
             reason=reason,
-            player_id=pick.player_id,
-            replaces=starter.player_id,
-            drop=starter.player_id if drop else "",
+            player_id=call.pick.player_id,
+            replaces=call.starter.player_id,
             evidence=evidence,
             key=key,
         ),
-    )
-
-
-def _streams(
-    state: Week, free_agents: Sequence[Projection], started: set[str], kickoff: Mapping[str, Game], already: set[str]
-) -> list[Item]:
-    """A kicker or a defense on the wire better than yours this week by form and matchup (`slump.called`).
-
-    A streamed position has no slump to read — its week is the matchup — so
-    each starting kicker and defense is weighed against the wire at his
-    position on half form, half a projection that already reads the matchup,
-    nudged by the matchup again. The best must beat him by `CALL_BY`; the one
-    he replaces is the drop, since nobody keeps a spare.
-    """
-    items = []
-    for place in state.lineup:
-        starter = place.player
-        if starter is None or starter.position not in STREAMED or starter.player_id in already:
-            continue
-        theirs = called(state, starter)
-        if theirs is None or starter.team in started:
-            continue
-        scored = [
-            (mine, p)
-            for p in free_agents
-            if p.position == starter.position
-            and p.player_id not in already
-            and p.team not in started
-            and (mine := called(state, p)) is not None
-        ]
-        if not scored:
-            continue
-        mine, pick = max(scored, key=lambda pair: pair[0])
-        if mine - theirs < CALL_BY:
-            continue
-        already.update({pick.player_id, starter.player_id})
-        reason = (
-            f"Form call: {_streamed(state, starter)} vs {_streamed(state, pick)}; {mine:.2f} vs {theirs:.2f} on form."
-        )
-        items.append(
-            _called_item("stream", state, place.slot, starter, pick, mine - theirs, reason, kickoff, drop=True)
-        )
-    return items
-
-
-def _streamed(state: Week, player: Projection) -> str:
-    """'Lions 6.60/g, vs GB 3rd-toughest': a streamer's form and this week's matchup."""
-    pace = recent(state, player.player_id)
-    matchup = state.evidence.matchup(player)
-    return (
-        surname(player.name)
-        + (f" {pace:.2f}/g" if pace is not None else "")
-        + (f", {views.facing(player, state.scheduled, '')} {views.ease(matchup)}" if matchup else "")
     )
 
 
@@ -662,7 +612,7 @@ def _beats_a_starter(state: Week, player: Projection) -> bool:
     if upgrade is None:
         return False
     starter = upgrade[1].player
-    return starter is None or views.weekly(state, player) > views.weekly(state, starter)
+    return starter is None or weekly(state, player) > weekly(state, starter)
 
 
 def _with_drops(state: Week, items: list[Item], started: set[str]) -> list[Item]:
@@ -975,7 +925,7 @@ def _teammates(state: Week, kickoff: Mapping[str, Game], started: set[str]) -> l
         if rival is None and not mine_starts:
             continue
         estimate, found = worth_without(state, mine, [other for other, _ in regulars])
-        theirs = None if rival is None else value(state, rival)
+        theirs = None if rival is None else weekly(state, rival)
         # He must beat a starter to take his place, and only lose to a bench player to give his up.
         if theirs is not None and (estimate < theirs if mine_starts else estimate <= theirs):
             continue
@@ -1027,7 +977,8 @@ def worth_without(state: Week, player: Projection, teammates: Sequence[PlayerInf
 
     His `worth` with his points a game in games without a teammate as his form,
     where he has played at least `MIN_GAMES_FOR_AVERAGE` of them (the one with
-    most, where several qualify); otherwise his `value` up `TEAMMATE_BUMP`.
+    most, where several qualify); otherwise his `value` up `TEAMMATE_BUMP`. Either way times this week's
+    `matchup_factor`, as `weekly` reads the starter he is weighed against.
     """
     meta = state.players.get(player.player_id)
     splits = [
@@ -1037,16 +988,18 @@ def worth_without(state: Week, player: Projection, teammates: Sequence[PlayerInf
         and (found := split_on(state.evidence, meta, mate)) is not None
         and found.games >= MIN_GAMES_FOR_AVERAGE
     ]
+    # This week's start, so read with this week's matchup, as the starter he is weighed against is (`weekly`).
+    factor = matchup_factor(state.evidence.matchup(player))
     if splits:
         most = max(splits, key=lambda found: found.games)
         blended = blend(state, player, most.without)
         if blended is not None:
-            return blended, most
-    return value(state, player) * (1 + TEAMMATE_BUMP), None
+            return blended * factor, most
+    return weekly(state, player) * (1 + TEAMMATE_BUMP), None
 
 
 def _would_bench(state: Week, mine: Projection, started: set[str]) -> Projection | None:
-    """The starter a bench player would replace: the weakest by `value` in a slot he can play.
+    """The starter a bench player would replace: the weakest by `weekly` in a slot he can play.
 
     None where any such slot is empty (the lineup's own item fills it) or its
     starter's game has kicked off, so there is no start to make.
@@ -1055,11 +1008,11 @@ def _would_bench(state: Week, mine: Projection, started: set[str]) -> Projection
     movable = [p for p in eligible if p is not None and p.team not in started]
     if not movable or len(movable) < len(eligible):
         return None
-    return min(movable, key=lambda p: value(state, p))
+    return min(movable, key=lambda p: weekly(state, p))
 
 
 def _challenger(state: Week, mine: Projection, started: set[str]) -> Projection | None:
-    """The best bench player by `value` who could take a starter's slot this week; None where nobody could."""
+    """The best bench player by `weekly` who could take a starter's slot this week; None where nobody could."""
     slot = next(slot.slot for slot in state.lineup if slot.player and slot.player.player_id == mine.player_id)
     return max(
         (
@@ -1067,7 +1020,7 @@ def _challenger(state: Week, mine: Projection, started: set[str]) -> Projection 
             for p in state.bench
             if p.team not in started and p.position in eligible_positions(slot) and not _cannot_play(p, state.scheduled)
         ),
-        key=lambda p: value(state, p),
+        key=lambda p: weekly(state, p),
         default=None,
     )
 
@@ -1158,7 +1111,7 @@ def _next_week_byes(
             continue
         names = join([p.name for p in out])
         behind = f"only {join([p.name for p in cover])} behind" if cover else f"no bench {position}"
-        best = _best_streamer(state, position, playing) if position in STREAMED else None
+        best = _best_cover(state, position, playing, {p.player_id for p in added})
         named = f": {best.name}" if best else ""
         items.append(
             Item(
@@ -1178,28 +1131,29 @@ def _next_week_byes(
     return items
 
 
-def _best_streamer(state: Week, position: str, playing: Mapping[str, Game]) -> Projection | None:
-    """The free agent projected most next week at a streamed position, with a game and no ruling against him;
-    None where next week's projections did not load. A kicker's or a defense's week is its matchup, which his
-    projection prices, so it alone names him."""
+def _best_cover(state: Week, position: str, playing: Mapping[str, Game], adding: set[str]) -> Projection | None:
+    """The free agent worth most next week at a position a bye leaves short, read as this week's pickups are
+    (`weekly`: form beside next week's projection, snaps, next week's matchup), with a game and no ruling against
+    him, and none the list already picks up; None where next week's projections did not load."""
     return max(
         (
             p
             for pid, p in state.upcoming.items()
             if pid not in state.owned
+            and pid not in adding
             and p.position == position
             and p.team in playing
             and p.opponent
             and not ruled_out(p.injury_status)
             and p.points > 0
         ),
-        key=lambda p: p.points,
+        key=lambda p: weekly(state, p),
         default=None,
     )
 
 
 def _upcoming(state: Week, player: Projection) -> str:
-    """'Kai Free (K, NYJ), 9.10 proj vs NE, 3rd-easiest': who, his projection, and the matchup it rests on."""
+    """'Kai Free (K, NYJ), 9.10 proj vs NE, 3rd-easiest': who, next week's projection, and its matchup."""
     matchup = state.evidence.matchup(player)
     ease = f", {views.ease(matchup)}" if matchup else ""
     return f"{player.name} ({player.position}, {player.team}), {player.points:.2f} proj vs {player.opponent}{ease}"

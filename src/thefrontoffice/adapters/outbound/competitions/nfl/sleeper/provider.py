@@ -34,6 +34,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl import (
     league,
     market,
     outlook,
+    pregame,
     prompt,
     stash,
     tuning,
@@ -52,6 +53,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     fielded,
     open_spots,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.pregame import ProjectionLog
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     FANTASY_POSITIONS,
     SEASON_WEEKS,
@@ -68,6 +70,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     projections_for,
     team_name,
     week_dates,
+    weeks_played,
     zero_projection,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.worth import lineup_value
@@ -148,6 +151,7 @@ class SleeperNFLProvider:
         espn: ESPNSource,
         untouchable: UntouchableSource,
         starters: StarterLog,
+        pregame: ProjectionLog,
     ):
         """Every collaborator from bootstrap, which is the one place a real client is built.
 
@@ -159,6 +163,7 @@ class SleeperNFLProvider:
         self.espn = espn
         self.untouchable = untouchable
         self.starters = starters
+        self.pregame = pregame
         self.scoreboard = Scoreboard(client, espn)
         self.forecasts = Forecasts(client)
         self._user_id: str | None = None
@@ -494,8 +499,16 @@ class SleeperNFLProvider:
         if browsing:
             return week_state
         past = gather.past_projections(self.client, season, week, league, phase.is_regular_season)
+        # This week's, as first read before each game: what a slump reads his game against once it is played.
+        pregame.record(self.pregame, season, week, projections, self.scoreboard.started(week_state))
         ahead = outlook.weeks_left(self.client, week_state) or {}
-        return replace(week_state, ahead=outlook.rates(ahead), upcoming=ahead.get(week + 1, {}), past=past)
+        return replace(
+            week_state,
+            ahead=outlook.rates(ahead),
+            upcoming=ahead.get(week + 1, {}),
+            past=past,
+            pregame=pregame.kept(self.pregame, season, weeks_played(week, phase.is_regular_season)),
+        )
 
     def _played_out(self, phase: Phase, week: int) -> bool:
         """Whether the week Sleeper calls current has nothing left to play.
