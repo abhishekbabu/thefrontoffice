@@ -271,14 +271,15 @@ def test_a_sure_category_still_counts_for_something() -> None:
     assert sure.value(POOL[0]) == pytest.approx(TARGET_FLOOR * (category_value(SCORED, POOL)(POOL[0]) or 0))
 
 
-def test_the_targets_are_the_close_categories_a_pickup_adds_most_to_over_the_drop() -> None:
-    """Points are all but won and FG% all but lost, so neither is a target; blocks and turnovers are close."""
+def test_the_targets_are_the_close_categories_a_pickup_lifts_over_the_drop_and_those_he_costs() -> None:
+    """Points are all but won and FG% all but lost, so neither is named; blocks and turnovers are close."""
     targeting = Targeting.of(scales(SCORED, POOL), {"FG%": 0.05, "BLK": 0.5, "PTS": 0.98, "TO": 0.45})
     pickup = {FG: 0.50, FGA: 12.0, BLOCKS.label: 2.0, POINTS.label: 25.0, TURNOVERS.label: 0.5}
     drop = {FG: 0.40, FGA: 12.0, BLOCKS.label: 0.0, POINTS.label: 10.0, TURNOVERS.label: 2.5}
 
-    assert targeting.targets(pickup, drop) == ["BLK", "TO"]
-    assert targeting.targets(None, drop) == []
+    assert targeting.raised(pickup, drop) == ["BLK", "TO"]
+    assert targeting.lowered(drop, pickup) == ["BLK", "TO"]
+    assert targeting.raised(None, drop) == []
     assert targeting.value(None) is None
 
 
@@ -332,7 +333,7 @@ def test_the_categories_a_roster_is_furthest_below_the_pool_in_count_in_full_and
     short = needs(found, pool_standing(found, [POOL[2], None]))
 
     assert short.weights == {"FG%": 1.0, "BLK": 1.0, "PTS": 1.0, "TO": UNNEEDED}
-    assert set(short.targets(POOL[0], POOL[2], counting=1.0)) == {"FG%", "BLK", "PTS"}
+    assert set(short.raised(POOL[0], POOL[2], counting=1.0)) == {"FG%", "BLK", "PTS"}
 
 
 def test_a_category_is_named_raised_only_from_an_average_figure_and_by_a_real_margin() -> None:
@@ -343,7 +344,6 @@ def test_a_category_is_named_raised_only_from_an_average_figure_and_by_a_real_ma
 
     assert short.raised(TURNER, GOBERT, counting=1.0) == []
     assert short.lowered(TURNER, GOBERT, counting=1.0)[0] == "REB"
-    assert "AST" in short.targets(TURNER, GOBERT, counting=1.0)  # beats him there, which is all `targets` asks
     assert short.raised(GOBERT, None, counting=1.0) == ["REB"]  # over the pool's average, with nobody let go
     assert short.lowered(GOBERT, None, counting=1.0) == []
 

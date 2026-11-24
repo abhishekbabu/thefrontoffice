@@ -39,7 +39,6 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import RETURN_SOON, Leaning
 from thefrontoffice.adapters.outbound.competitions.nba.week import BENCH, Today, if_streamed, off_il
 from thefrontoffice.adapters.outbound.competitions.nba.worth import (
-    IN_PLAY,
     ROLE,
     Reading,
     Targeting,
@@ -377,7 +376,8 @@ class Swap:
     season: float = 0.0
     """What he adds a game over the drop for the rest of the season, as the roster's needs weigh it (`Weigh.season`)."""
     costs: tuple[str, ...] = ()
-    """For a keeper, the categories the roster is short of that he gives up against the drop (`Weigh.spent`)."""
+    """The categories he gives up against the drop: this week's close ones for a streamer, the roster's weakest for
+    a keeper (`Weigh.spent`)."""
 
 
 def settled(reading: Reading) -> bool:
@@ -465,7 +465,7 @@ class Weigh:
             gain, nights = self.gained(pickup, drop)
             cost = self.cost(drop)
             if worth_an_add(pickup, drop, gain, cost, self.game):
-                return Swap(pickup, drop, "streamer", gain - cost, nights, targets=self.targets(pickup, drop))
+                return self._streamed(pickup, drop, gain - cost, nights)
         return None
 
     def keeper(self, pickup: Reading, drop: Reading | None, floor: float = 0.0) -> Swap | None:
@@ -506,10 +506,23 @@ class Weigh:
         floor = min((_game(d) for d in drops if d is not None), default=0.0)
         return next((s for d in _weakest_first(drops, _game) if (s := self.keeper(pickup, d, floor))), None)
 
-    def targets(self, pickup: Reading, drop: Reading | None) -> tuple[str, ...]:
-        """The close categories this week a game of `pickup` adds most to over one of `drop`; none without a
-        forecast."""
-        return _targets_of(self.plan.targeting, pickup, drop)
+    def _streamed(self, pickup: Reading, drop: Reading | None, gain: float, nights: int | None) -> Swap:
+        """A stream of `pickup` over `drop`, with the close categories this week he really lifts and those he gives
+        up (`Targeting.raised`, `Targeting.lowered`): by a material margin, a lift from at least an average figure.
+        None without a forecast."""
+        targeting = self.plan.targeting
+        if targeting is None:
+            return Swap(pickup, drop, "streamer", gain, nights)
+        drop_line = drop.line if drop is not None else None
+        return Swap(
+            pickup,
+            drop,
+            "streamer",
+            gain,
+            nights,
+            targets=tuple(targeting.raised(pickup.line, drop_line)),
+            costs=tuple(targeting.lowered(pickup.line, drop_line)),
+        )
 
     def needed(self, pickup: Reading, drop: Reading | None) -> tuple[str, ...]:
         """The categories the roster is shortest of that a game of `pickup` really raises over one of `drop`
@@ -540,7 +553,7 @@ class Weigh:
                 continue
             gain, nights = self.gained(pickup, drop, before=day)
             if worth_an_add(pickup, drop, gain, cost, self.game):
-                found.append(Swap(pickup, drop, "streamer", gain - cost, nights, targets=self.targets(pickup, drop)))
+                found.append(self._streamed(pickup, drop, gain - cost, nights))
         return max(found, key=lambda s: s.gain, default=None)
 
 
@@ -548,14 +561,6 @@ def _weighed(targeting: Targeting | None, reading: Reading) -> float:
     """A game of him as `targeting` weighs its categories, nudged by his minutes; his value a game without one."""
     value = targeting.value(reading.line) if targeting is not None else None
     return _game(reading) if value is None else value * reading.usage
-
-
-def _targets_of(
-    targeting: Targeting | None, pickup: Reading, drop: Reading | None, counting: float = IN_PLAY
-) -> tuple[str, ...]:
-    if targeting is None:
-        return ()
-    return tuple(targeting.targets(pickup.line, drop.line if drop is not None else None, counting))
 
 
 def _doubted(played: float, nights: Sequence[date], reading: Reading) -> float:
@@ -942,8 +947,10 @@ def _out(swap: Swap) -> str:
 
 
 def _targets(swap: Swap) -> str:
-    """' This week targets BLK, FT%, TO.': the close categories he helps most; nothing without them."""
-    return f" This week targets {', '.join(swap.targets)}." if swap.targets else ""
+    """' This week targets BLK, FT%. This week costs REB.': the close categories he really lifts, then those he
+    gives up; nothing for neither."""
+    lifts = f" This week targets {', '.join(swap.targets)}." if swap.targets else ""
+    return lifts + (f" This week costs {', '.join(swap.costs)}." if swap.costs else "")
 
 
 def _needs(swap: Swap) -> str:

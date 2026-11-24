@@ -238,20 +238,6 @@ class Targeting:
         parts = self._parts(figures)
         return sum(parts.values()) if parts else None
 
-    def targets(self, pickup: Line | None, drop: Line | None, counting: float = IN_PLAY) -> list[str]:
-        """The categories counting `counting` or more (in play, `IN_PLAY`, by default) a game of `pickup` adds most
-        to over one of `drop`, as the league names them: at most `TARGETS`, the biggest gain first."""
-        if not pickup:
-            return []
-        gains, losses = self._parts(pickup), self._parts(drop or {})
-        better = {
-            label: gain - losses.get(label, 0.0)
-            for label, gain in gains.items()
-            if self.weights.get(label, 1.0) >= counting and gain > losses.get(label, 0.0)
-        }
-        ranked = sorted(better, key=lambda label: -better[label])[:TARGETS]
-        return [self.scales[label].scored.name for label in ranked]
-
     def raised(self, pickup: Line | None, drop: Line | None, counting: float = IN_PLAY) -> list[str]:
         """The categories counting `counting` or more that a game of `pickup` really raises, as the league names
         them: by `MATERIAL` of a spread over one of `drop` — over the pool's average without one — and from a figure
