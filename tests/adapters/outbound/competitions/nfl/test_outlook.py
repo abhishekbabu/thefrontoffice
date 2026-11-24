@@ -5,6 +5,10 @@ from dataclasses import replace
 import pytest
 from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
 
+from thefrontoffice.adapters.outbound.competitions.nfl import outlook
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import current_lineup
+from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
+from thefrontoffice.adapters.outbound.competitions.nfl.worth import lineup_value
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, ScheduledGame, SleeperRoster
 from thefrontoffice.domain.errors import TeamNotFoundError
 from thefrontoffice.domain.models import Outlook, PlayerQuery, WeekAhead
@@ -251,3 +255,67 @@ def test_a_week_that_will_not_load_leaves_the_rest_of_the_season_out_rather_than
     client.unloaded_weeks = {5}
 
     assert _rest(client, start=6) == {}
+
+
+def test_a_short_weeks_drop_is_never_one_the_rest_of_the_list_already_names() -> None:
+    """Healing WR's IR move drops Bad RB, the weakest; the short week's pickup drops the next, Spare WR (idle this
+    week, so no other item starts him)."""
+    spare = proj("wr3", "Spare WR", "WR", 6.0, team="KC", opp="")
+    healing = proj("wr7", "Healing WR", "WR", 7.0, team="KC", opp="LV")
+    client = _client(roster_positions=["QB", "RB", "WR", "BN", "BN", "IR"])
+    roster = client.rosters[0]
+    client.rosters = [
+        replace(roster, player_ids=[*roster.player_ids, "wr3", "wr7"], reserve_ids=["wr7"], ir_ids=["wr7"])
+    ]
+    client.projections = {**client.projections, "wr3": spare, "wr7": healing}
+    catalog = client.players_catalog or {}
+    catalog["wr3"] = PlayerMeta(player_id="wr3", name=spare.name, position="WR", team="KC")
+    catalog["wr7"] = PlayerMeta(
+        player_id="wr7", name=healing.name, position="WR", team="KC", injury_status="Questionable"
+    )
+
+    actions = _todo(client)
+    [activate] = [a for a in actions if a.key.startswith("ir:")]
+    [short] = [a for a in actions if a.key.startswith("short:")]
+
+    assert activate.drop == "rb2"
+    assert "Spare WR" in short.reason and "Bad RB" not in short.reason
+
+
+def test_a_players_rate_ahead_counts_only_the_weeks_he_is_projected_in() -> None:
+    """Spare RB byes in week 5: 12 a game in the weeks he plays, not 9 over four."""
+    client = _client()
+    client.weekly_projections[BYE_WEEK] = {"qb9": WIRE["qb9"]}
+    state = _state(client)
+
+    assert outlook.rates(client, state)["rb9"] == WIRE["rb9"].points
+    assert "rb9" not in outlook.rates(client, replace(state, week=18))
+
+
+def _state(client: FakeSleeper) -> Week:
+    projected = list(MINE.values())
+    return Week(
+        league=client.league,
+        roster=client.rosters[0],
+        week=3,
+        season="2026",
+        projections={**MINE, **WIRE},
+        players=client.get_nfl_players(),
+        projected=projected,
+        lineup=current_lineup(client.league.starting_slots, client.rosters[0].starter_ids, projected),
+        rank=lineup_value,
+    )
+
+
+def test_a_starter_in_your_lineup_as_set_is_dropped_only_once_no_bench_player_is_left() -> None:
+    """You start Bad RB, though the best lineup would not: Spare WR on the bench goes before him."""
+    client = _client(roster_positions=["QB", "RB", "WR", "BN", "BN"])
+    roster = client.rosters[0]
+    client.rosters = [replace(roster, player_ids=[*roster.player_ids, "wr3"], starter_ids=["qb1", "rb2", "wr8"])]
+    client.projections = {**client.projections, "wr3": proj("wr3", "Spare WR", "WR", 6.0, team="KC", opp="")}
+    catalog = client.players_catalog or {}
+    catalog["wr3"] = PlayerMeta(player_id="wr3", name="Spare WR", position="WR", team="KC")
+
+    fix = _weeks(client)[BYE_WEEK].fix
+
+    assert "drop Spare WR" in fix

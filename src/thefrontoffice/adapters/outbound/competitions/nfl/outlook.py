@@ -10,7 +10,7 @@ and names the free agent who closes most of the gap.
 
 import logging
 import statistics
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 
 from thefrontoffice.adapters.outbound.competitions.nfl.actions import Item, drop_candidate, join
 from thefrontoffice.adapters.outbound.competitions.nfl.handcuffs import insurance_note
@@ -41,12 +41,17 @@ FIXES_TRIED = 40
 
 
 def build(
-    client: NFLSource, state: Week, schedule: Mapping[int, Sequence[Game]], signable: Callable[[str], bool]
+    client: NFLSource,
+    state: Week,
+    schedule: Mapping[int, Sequence[Game]],
+    signable: Callable[[str], bool],
+    keep: Collection[str] = (),
 ) -> Outlook:
     """Each of the next weeks, soonest first, with a fix for any that is short.
 
     `signable` says whether a player could be added at all — on an NFL roster,
     at a position the league scores — which is the provider's rule, not this one's.
+    `keep` is who a fix must not drop: whoever the rest of the to-do list already moves or drops.
     """
     weeks = list(range(state.week + 1, min(state.week + WEEKS_AHEAD, SEASON_WEEKS) + 1))
     if not weeks:
@@ -103,7 +108,12 @@ def build(
                 and signable(pid)
             ]
             row = _fixed(
-                row, state, held, available, lambda ids, week: lineup_points(lineup(ids, week)), needed_soon | set(away)
+                row,
+                state,
+                held,
+                available,
+                lambda ids, week: lineup_points(lineup(ids, week)),
+                needed_soon | set(away) | set(keep),
             )
         ahead.append(row)
     return Outlook(usual=usual, weeks=ahead)
@@ -126,6 +136,18 @@ def weeks_left(client: NFLSource, state: Week) -> dict[int, Mapping[str, Project
         logger.warning(f"Leaving out the rest of the season: weeks {sorted(batch.failures)} would not load")
         return None
     return dict(batch.values)
+
+
+def rates(client: NFLSource, state: Week) -> dict[str, float]:
+    """Each player's projected points a game over the weeks left after this one, counting only the weeks he is
+    projected in: a bye or a week out says nothing about what he scores when he plays. Empty where none is left
+    or any would not load (`weeks_left`)."""
+    projected: dict[str, list[float]] = {}
+    for projections in (weeks_left(client, state) or {}).values():
+        for pid, p in projections.items():
+            if p.points > 0:
+                projected.setdefault(pid, []).append(p.points)
+    return {pid: sum(points) / len(points) for pid, points in projected.items()}
 
 
 def rest_of_season(client: NFLSource, state: Week) -> dict[str, float] | None:

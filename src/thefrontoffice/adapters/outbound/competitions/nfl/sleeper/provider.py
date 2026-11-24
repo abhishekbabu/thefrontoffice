@@ -457,7 +457,7 @@ class SleeperNFLProvider:
         browsing = week != current
         projected = projections_for(fielded(roster), projections, players)
 
-        return Week(
+        week_state = Week(
             evidence=evidence.Evidence()
             if browsing
             else gather.season_evidence(self.client, season, week, league, phase.is_regular_season, players),
@@ -478,6 +478,8 @@ class SleeperNFLProvider:
             lineup=current_lineup(league.starting_slots, roster.starter_ids, projected),
             rank=lineup_value,
         )
+        # What a drop is weighed by: only the week being played's to-do list drops anybody.
+        return week_state if browsing else replace(week_state, ahead=outlook.rates(self.client, week_state))
 
     def _played_out(self, phase: Phase, week: int) -> bool:
         """Whether the week Sleeper calls current has nothing left to play.
@@ -556,8 +558,12 @@ class SleeperNFLProvider:
 
     def _with_short_week(self, state: Week, listed: list[actions.Item]) -> list[actions.Item]:
         """The list with next week flagged where byes and injuries leave it short, in place of its bye items."""
+        # Never a drop the rest of the list already names, nor a player it moves.
+        claimed = {pid for item in listed for pid in (item.action.player_id, item.action.replaces, item.action.drop)}
         try:
-            ahead = outlook.build(self.client, state, self.scoreboard.schedule(state.season), self._signable(state))
+            ahead = outlook.build(
+                self.client, state, self.scoreboard.schedule(state.season), self._signable(state), claimed - {""}
+            )
         except SleeperAPIError as e:
             logger.warning(f"Continuing without the weeks ahead: {e}")
             return listed
