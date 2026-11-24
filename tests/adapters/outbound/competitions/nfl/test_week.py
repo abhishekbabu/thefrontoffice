@@ -18,7 +18,7 @@ from support.nfl import (
     nfl_provider,
     proj,
 )
-from support.stores import FakeStarterLog, FakeUntouchable
+from support.stores import FakeProjectionLog, FakeStarterLog, FakeUntouchable
 from support.summary import mine
 
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
@@ -329,7 +329,12 @@ def _underway(**espn: Any) -> SleeperNFLProvider:
     client = _live_client({"qb1": 6.5, "rb2": 1.0})
     client.season_schedule = STALE
     return SleeperNFLProvider(
-        username="me", client=client, espn=FakeESPN(**espn), untouchable=FakeUntouchable(), starters=FakeStarterLog()
+        username="me",
+        client=client,
+        espn=FakeESPN(**espn),
+        untouchable=FakeUntouchable(),
+        starters=FakeStarterLog(),
+        pregame=FakeProjectionLog(),
     )
 
 
@@ -391,6 +396,7 @@ def test_the_forecast_leaves_as_much_of_a_game_as_its_clock_does() -> None:
         espn=FakeESPN(scoreboard=UNDERWAY),
         untouchable=FakeUntouchable(),
         starters=FakeStarterLog(),
+        pregame=FakeProjectionLog(),
     ).matchup_input("L1")
 
     assert matchup is not None

@@ -26,7 +26,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection
 from thefrontoffice.adapters.outbound.competitions.nfl.news import QB_CHANGE
-from thefrontoffice.adapters.outbound.competitions.nfl.rules import STREAMED
+from thefrontoffice.adapters.outbound.competitions.nfl.starters import DEPTH_CHART
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.adapters.outbound.competitions.nfl.worth import plays, usage
 
@@ -68,8 +68,9 @@ class Change:
         return self.now / self.before if self.before else 1.0
 
 
-THIS_WEEK, THOSE_WEEKS = "this week", "those weeks"
-"""What a slump's games are measured against: this week's projection, or Sleeper's projections for the games."""
+THIS_WEEK, THOSE_WEEKS, PRE_GAME = "this week", "those weeks", "pre-game those weeks"
+"""What a slump's games are measured against: this week's projection; Sleeper's projections for the games, as it
+serves them now; or the same as first read before each game (`nfl/pregame.py`), where every one was kept."""
 
 
 @dataclass(frozen=True)
@@ -82,13 +83,18 @@ class QBChange:
     since: int | None = None
     """The first week the new quarterback started, where he has; form since then is his form now."""
     story: str = ""
-    """The club story saying so, 'Sun 23 Nov: <headline>', where there is one."""
+    """The club story saying so, 'Sun 23 Nov: <headline>', where there is one: a news story before the depth
+    chart's own."""
+    sources: tuple[str, ...] = ()
+    """What says so, of `GAMES`, `NEWS` and `DEPTH`: the more of them, the surer."""
 
     def short(self) -> str:
-        """'QB Jones→Leonard since week 11', or the story where no game has been played under the new one."""
+        """'QB Jones→Leonard since week 11 (games, depth chart)', or the story where no game has been played under
+        the new one."""
+        said = f" ({', '.join(self.sources)})" if self.sources else ""
         if self.was and self.now:
-            return f"QB {self.was}→{self.now}" + (f" since week {self.since}" if self.since is not None else "")
-        return self.story
+            return f"QB {self.was}→{self.now}" + (f" since week {self.since}" if self.since is not None else "") + said
+        return self.story + said
 
 
 @dataclass(frozen=True)
@@ -217,12 +223,19 @@ def slump(state: Week, player: Projection) -> Slump | None:
 
 
 def _lines(state: Week, player: Projection, window: Sequence[Appearance]) -> tuple[list[float], str]:
-    """What each of his games was projected, and on what basis: Sleeper's projection for that week where it has
-    one for every game of the window, this week's for all of them otherwise."""
-    projected = [state.past.get(game.week, {}).get(player.player_id, 0.0) for game in window]
-    if all(projected):
-        return projected, THOSE_WEEKS
-    return [player.points] * len(window), THIS_WEEK
+    """What each of his games was projected, and on what basis: as first read before the game where it was kept
+    (`Week.pregame`), else as Sleeper serves it now (`Week.past`), where every game of the window has one; this
+    week's for all of them otherwise. The basis is `PRE_GAME` only where every game's figure was kept before it,
+    and says how many were where only some were: 'those weeks, 2 pre-game'."""
+    pid = player.player_id
+    kept = [state.pregame.get(game.week, {}).get(pid, 0.0) for game in window]
+    projected = [k or state.past.get(game.week, {}).get(pid, 0.0) for k, game in zip(kept, window, strict=True)]
+    if not all(projected):
+        return [player.points] * len(window), THIS_WEEK
+    count = sum(1 for k in kept if k)
+    if count == len(window):
+        return projected, PRE_GAME
+    return projected, THOSE_WEEKS + (f", {count} pre-game" if count else "")
 
 
 def slumps(state: Week) -> dict[str, Slump]:
@@ -267,15 +280,25 @@ def _mean_change(
 
 
 def _qb_change(state: Week, player: Projection, played: Sequence[Appearance]) -> QBChange | None:
-    """His club's quarterback changing under him: by the club's own games, within his last `SLUMP_GAMES`, or by a
-    club story the news calls a quarterback change. None where neither says so."""
+    """His club's quarterback changing under him, by any of three sources: the club's own games, within his last
+    `SLUMP_GAMES` (who finished them, `evidence._passers`); a club story the news calls a quarterback change; and the
+    depth chart's own record of a new starter (`nfl/starters.py`), which reaches him as a club story too. None where
+    none says so."""
     stories = [story for story in state.news.team(player.player_id) if story.kind == QB_CHANGE]
-    story = f"{dated(stories[0].article)}: {stories[0].article.headline}" if stories else ""
+    depth = [story for story in stories if story.article.headline.startswith(DEPTH_CHART)]
+    news = [story for story in stories if story not in depth]
+    shown = (news or depth)[:1]
+    story = f"{dated(shown[0].article)}: {shown[0].article.headline}" if shown else ""
     found = _passer_change(state, played)
+    sources = tuple(source for source, said in ((GAMES, found), (NEWS, news), (DEPTH, depth)) if said)
     if found is not None:
         was, now, since = found
-        return QBChange(was=was, now=now, since=since, story=story)
-    return QBChange(story=story) if story else None
+        return QBChange(was=was, now=now, since=since, story=story, sources=sources)
+    return QBChange(story=story, sources=sources) if story else None
+
+
+GAMES, NEWS, DEPTH = "games", "news", "depth chart"
+"""The sources a quarterback change is read from (`QBChange.sources`)."""
 
 
 def _passer_change(state: Week, played: Sequence[Appearance]) -> tuple[str, str, int] | None:
@@ -316,10 +339,6 @@ CALL_FORM = 0.75
 """Form's share of a form call, against the projection's: `worth` weighs them evenly, which is what kept a
 slumping starter ahead of every streamer. A quarter stays with the projection, which still reads the week."""
 
-STREAM_FORM = 0.5
-"""Form's share of a kicker's or a defense's form call: half, since his projection is built on the matchup that
-decides a streamer's week, and a month of field goals or sacks is a small sample of it."""
-
 CALL_BY = 2.0
 """Points a form call must favour the player coming in by: under it the two are a coin flip, and a hunch is no move."""
 
@@ -327,13 +346,11 @@ CALL_BY = 2.0
 def called(state: Week, player: Projection, since: int | None = None) -> float | None:
     """What a form call weighs him by: `CALL_FORM` of his points a game over his last `SLUMP_GAMES` played — or his
     games from week `since`, where his quarterback changed then — and the rest his projection, times his `usage`
-    and his `matchup_factor`. A kicker or a defense weighs form `STREAM_FORM` instead: his projection already reads
-    the matchup that decides a streamer's week. None with too few games to read form from, or no game this week."""
+    and his `matchup_factor`. None with too few games to read form from, or no game this week."""
     form = recent(state, player.player_id, since)
     if form is None or not plays(state, player):
         return None
-    weight = STREAM_FORM if player.position in STREAMED else CALL_FORM
-    blended = weight * form + (1 - weight) * player.points
+    blended = CALL_FORM * form + (1 - CALL_FORM) * player.points
     return blended * usage(state, player.player_id) * matchup_factor(state.evidence.matchup(player))
 
 

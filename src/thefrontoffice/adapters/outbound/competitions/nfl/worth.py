@@ -7,6 +7,7 @@ to pick up, who to stash, and how a free agent fits your lineup on the wire
 """
 
 from thefrontoffice.adapters.outbound.competitions import worth as shared
+from thefrontoffice.adapters.outbound.competitions.matchups import matchup_factor
 from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
     MIN_GAMES_FOR_AVERAGE,
     REGULAR,
@@ -98,12 +99,19 @@ def value(state: Week, player: Projection) -> float:
     return season_average(state.evidence, player) if found is None else found
 
 
+def weekly(state: Week, player: Projection) -> float:
+    """His `value` this week: times his `matchup_factor`, so a soft defense lifts him and a tough one sinks him, a
+    tenth at most either way. What every decision about this week's start reads him by — the best lineup, a swap,
+    a teammate check, a pickup, the wire's Fits — so all of them read the matchup alike."""
+    return value(state, player) * matchup_factor(state.evidence.matchup(player))
+
+
 def lineup_value(state: Week, player: Projection) -> float:
-    """What this week's best lineup weighs him by: his `value` in a week he `plays`, nought in one he does not.
+    """What this week's best lineup weighs him by: his `weekly` in a week he `plays`, nought in one he does not.
 
     A bye or a ruling leaves his value at his season, which no slot scores this week.
     """
-    return value(state, player) if plays(state, player) else 0.0
+    return weekly(state, player) if plays(state, player) else 0.0
 
 
 def rest_of_season(state: Week, player: Projection) -> float | None:

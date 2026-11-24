@@ -1,4 +1,4 @@
-"""In-memory stand-ins for what the app keeps on disk: model answers, item decisions, untouchables and starters.
+"""In-memory stand-ins for what the app keeps on disk: model answers, item decisions, untouchables, starters and pre-game projections.
 
 Each keeps what it is handed as the disk stores do — as JSON, read back
 through the schema asked for — so a test cannot pass by reading back an
@@ -77,3 +77,17 @@ class FakeStarterLog:
 
     def keep(self, day: date, starters: dict[str, str]) -> None:
         self.days[day] = dict(starters)
+
+
+class FakeProjectionLog:
+    """Stands in for the pre-game projections' record (`nfl/pregame.ProjectionLog`): each week's, in memory."""
+
+    def __init__(self, weeks: dict[tuple[str, int], dict[str, float]] | None = None) -> None:
+        self.weeks: dict[tuple[str, int], dict[str, float]] = dict(weeks or {})
+
+    def week(self, season: str, week: int) -> dict[str, float] | None:
+        found = self.weeks.get((season, week))
+        return dict(found) if found is not None else None
+
+    def keep(self, season: str, week: int, projections: dict[str, float]) -> None:
+        self.weeks[(season, week)] = dict(projections)
