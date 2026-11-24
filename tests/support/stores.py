@@ -91,3 +91,25 @@ class FakeProjectionLog:
 
     def keep(self, season: str, week: int, projections: dict[str, float]) -> None:
         self.weeks[(season, week)] = dict(projections)
+
+
+class FakeDayLog:
+    """Stands in for each basketball day's record (`nba/day.DayLog`): statuses and minutes by day, in memory."""
+
+    def __init__(
+        self, statuses: dict[date, dict[str, str]] | None = None, minutes: dict[date, dict[str, float]] | None = None
+    ) -> None:
+        self.kept_statuses: dict[date, dict[str, str]] = dict(statuses or {})
+        self.kept_minutes: dict[date, dict[str, float]] = dict(minutes or {})
+
+    def statuses(self, day: date) -> dict[str, str]:
+        return dict(self.kept_statuses.get(day, {}))
+
+    def keep_statuses(self, day: date, statuses: dict[str, str]) -> None:
+        self.kept_statuses[day] = dict(statuses)
+
+    def minutes(self, day: date) -> dict[str, float]:
+        return dict(self.kept_minutes.get(day, {}))
+
+    def keep_minutes(self, day: date, minutes: dict[str, float]) -> None:
+        self.kept_minutes[day] = dict(minutes)
