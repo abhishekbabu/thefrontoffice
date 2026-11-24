@@ -182,6 +182,8 @@ class FakeYahoo:
         self.played_weeks: list[int] = []
         self.today_lines: dict[str, list[YahooPlayer]] = {}
         """Each team's roster on a day, by team key, each player with his line from that day's game."""
+        self.day_lines: dict[date, dict[str, list[YahooPlayer]]] = {}
+        """Each team's roster on one day, by day then team key; `today_lines` stands for any day it does not name."""
         self.today_error: Exception | None = None
         self.days_read: list[date] = []
         self.winners: dict[int, str] = {}
@@ -233,11 +235,12 @@ class FakeYahoo:
         }
 
     def day_rosters(self, team_keys: list[str], day: date) -> dict[str, list[YahooPlayer]]:
-        """Each team on `day`, from `today_lines`; nobody for a team it does not name."""
+        """Each team on `day`, from `day_lines` or else `today_lines`; nobody for a team it does not name."""
         self.days_read.append(day)
         if self.today_error:
             raise self.today_error
-        return {key: self.today_lines.get(key, []) for key in team_keys}
+        lines = self.day_lines.get(day, self.today_lines)
+        return {key: lines.get(key, []) for key in team_keys}
 
     def teams(self) -> list[YahooTeam]:
         # As Yahoo's teams list: no standings with any team, which only `standings` carries.
@@ -485,8 +488,12 @@ class FakeNBA:
         """What reading the box scores raises, where they will not load."""
         self.left_error: Exception | None = None
         """What reading the games left raises, where the schedule will not load."""
+        self.between_error: Exception | None = None
+        """What reading a window's games raises, where the schedule will not load."""
 
     def games_between(self, start_date: date, end_date: date) -> list[ScheduledGame]:
+        if self.between_error:
+            raise self.between_error
         return [g for g in self.slate if start_date.isoformat() <= g.date <= end_date.isoformat()]
 
     def games_left(self, start_date: date, end_date: date, now: datetime | None = None) -> list[ScheduledGame]:

@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from thefrontoffice.domain.ports import (
+    DayBrowsingProvider,
     ForecastProvider,
     LeagueRefreshProvider,
     OutlookProvider,
@@ -38,6 +39,7 @@ CAPABILITIES: Mapping[type[object], Capability] = {
     WireProvider: Capability("judging free agents", flag="judges_wire"),
     OutlookProvider: Capability("planning the weeks ahead", flag="plans_weeks"),
     WeekBrowsingProvider: Capability("browsing other weeks", flag="browses_weeks"),
+    DayBrowsingProvider: Capability("browsing a week day by day", flag="browses_days"),
     TradeMarketProvider: Capability("finding trades", flag="finds_trades"),
     PlayerSearchProvider: Capability("finding players by name", flag="searches_players"),
     PlayerTabProvider: Capability("a player's deferred tabs"),

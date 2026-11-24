@@ -1,5 +1,6 @@
-"""The week: the one being played, any other, its real games, and decisions on its to-do items."""
+"""The week: the one being played, any other, a day of either, its real games, and decisions on its to-do items."""
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter
@@ -7,7 +8,7 @@ from fastapi import APIRouter
 from thefrontoffice.adapters.inbound import presenting
 from thefrontoffice.adapters.inbound.web.routes.deps import LEAGUE, Capability, CurrentWiring, Entry, Provider
 from thefrontoffice.domain.models import ItemDecision, ItemMark, Slate, Summary
-from thefrontoffice.domain.ports import WeekBrowsingProvider
+from thefrontoffice.domain.ports import DayBrowsingProvider, WeekBrowsingProvider
 
 router = APIRouter(prefix=LEAGUE)
 
@@ -49,6 +50,18 @@ def games_of(
 ) -> Slate:
     """The real games of any week of the season, the week being played included, and its byes."""
     return provider.games_of(league_id, week)
+
+
+@router.get("/weeks/{week}/day", response_model=Summary)
+def day_of(
+    key: str,
+    league_id: str,
+    week: int,
+    provider: Annotated[DayBrowsingProvider, Capability(DayBrowsingProvider)],
+    day: date | None = None,
+) -> Summary:
+    """One day of a week, where lineups are set day by day: today's where the week holds it, else its first."""
+    return provider.day_of(league_id, week, day)
 
 
 @router.post("/items", response_model=ItemMark)

@@ -9,6 +9,7 @@ import re
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from support.yahoo import (
@@ -201,23 +202,42 @@ def test_a_week_played_is_planned_as_both_rosters_of_your_matchup_once_its_score
     assert played == [paths.played_roster("t1", 1).path, paths.played_roster("t2", 1).path]
 
 
-@pytest.mark.parametrize(("today", "planned"), [(date(2026, 1, 10), True), (date(2026, 3, 1), False)])
-def test_today_is_planned_as_both_rosters_of_your_matchup_while_the_week_being_played_holds_it(
-    tmp_path: Path, today: date, planned: bool
+NOON = datetime(2026, 1, 14, 12, tzinfo=ZoneInfo("America/Los_Angeles"))
+"""Midday on the league's clock, inside week 2."""
+
+WEEKS_BY_DAY = {
+    **YAHOO,
+    paths.scoreboard(KEY, 1).path: scoreboard_xml(start="2026-01-05", end="2026-01-11"),
+    paths.scoreboard(KEY, 2).path: scoreboard_xml(start="2026-01-12", end="2026-01-18"),
+}
+
+
+def test_every_day_of_the_week_being_played_and_the_one_before_is_planned_as_both_rosters_of_your_matchup(
+    tmp_path: Path,
 ) -> None:
-    """Week 2 runs 2 Jan to 15 Feb: the matchup shows each player's line tonight from these two reads."""
-    capture = YahooCapture(DiskCache(tmp_path / "cache"), games=(replace(GAME, today=lambda: today),), active=True)
-    _hand_over(capture, _answer(LIST, YAHOO))
-    _hand_over(capture, *(_answer(step.path, YAHOO) for step in capture.plan([KEY]).steps))
+    capture = YahooCapture(DiskCache(tmp_path / "cache"), games=(replace(GAME, clock=lambda: NOON),), active=True)
+    _hand_over(capture, _answer(LIST, WEEKS_BY_DAY))
+    _hand_over(capture, *(_answer(step.path, WEEKS_BY_DAY) for step in capture.plan([KEY]).steps))
 
-    steps = {step.path for step in capture.plan([KEY]).steps}
+    steps = {step.path for step in capture.plan([KEY]).steps if ";date=" in step.path}
 
-    assert ({paths.day_roster(team, today).path for team in ("t1", "t2")} <= steps) is planned
+    days = [date(2026, 1, 5) + timedelta(days=n) for n in range(14)]
+    assert steps == {paths.day_roster(team, day).path for team in ("t1", "t2") for day in days}
+
+
+def test_a_game_whose_matchup_reads_no_days_plans_none(tmp_path: Path) -> None:
+    capture = _capture(tmp_path)
+    _hand_over(capture, _answer(LIST, WEEKS_BY_DAY))
+    _hand_over(capture, *(_answer(step.path, WEEKS_BY_DAY) for step in capture.plan([KEY]).steps))
+
+    assert not [step for step in capture.plan([KEY]).steps if ";date=" in step.path]
 
 
 def test_todays_lines_are_read_from_what_the_sync_carried(tmp_path: Path) -> None:
     today = date(2026, 1, 10)
-    capture = YahooCapture(DiskCache(tmp_path / "cache"), games=(replace(GAME, today=lambda: today),), active=True)
+    capture = YahooCapture(
+        DiskCache(tmp_path / "cache"), games=(replace(GAME, clock=lambda: NOON.replace(day=10)),), active=True
+    )
     tonight = {
         paths.day_roster("t1", today).path: roster_xml(rostered_xml("My Center", "C", stats={"12": "31"})),
         paths.day_roster("t2", today).path: roster_xml(rostered_xml("Their Guard", "PG", stats={"12": "9"})),

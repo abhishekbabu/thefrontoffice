@@ -900,6 +900,21 @@ def test_the_week_being_played_holds_longer_while_no_game_can_be_on(tmp_path: Pa
     assert ctx.requests == []
 
 
+def test_a_day_settled_is_read_from_the_copy_kept_since_it_stood_on_the_leagues_clock(tmp_path: Path) -> None:
+    """A copy of a day a week gone, kept since the day after it: never asked for again."""
+    now = datetime.now(UTC)
+    gone = (now - timedelta(days=7)).date()
+    _stored(tmp_path, paths.day_roster("t1", gone).path, roster_xml(rostered_xml("A B", "PG")), timedelta(days=5))
+    ctx = FakeContext(roster_xml(rostered_xml("C D", "PG")))
+    pace = ScoreboardPace(UTC, time(0), time(23, 59), clock=lambda: now)
+    live = LiveResponses(ctx, cache=DiskCache(tmp_path / "cache"), retry=NO_WAIT)
+
+    rosters = YahooClient(LEAGUE, responses=live, pace=pace).day_rosters(["t1"], gone)
+
+    assert [p.name for p in rosters["t1"]] == ["A B"]
+    assert ctx.requests == []
+
+
 class RecordingRefresh:
     """Stands in for the background refresher: keeps what it was asked to refresh, runs nothing until told."""
 

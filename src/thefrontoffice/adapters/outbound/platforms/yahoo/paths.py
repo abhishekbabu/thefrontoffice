@@ -54,6 +54,11 @@ PENDING_TTL = timedelta(minutes=5)
 """Your claims and offers still waiting: they move only when somebody acts, and a refresh drops them at once."""
 PLAYED_TTL = timedelta(days=7)
 """A week once played stands, bar the stat corrections Yahoo makes in the days after it."""
+DAY_AHEAD_TTL = timedelta(minutes=10)
+"""A day to come: only who is slotted where, which the manager can change at any moment."""
+DAY_STANDS = time(6)
+"""When a day's lines stand, the morning after it on the league's own clock: every game final, the night's
+corrections in. A copy read before then is never served for it once it has passed."""
 
 API = "https://fantasysports.yahooapis.com/fantasy/v2/"
 """Yahoo's Fantasy API, which the SDK asks with an OAuth token."""
@@ -91,14 +96,19 @@ class YahooRead:
     search: str = ""
     """The name a search asks for; empty for any other read."""
 
+    settled: bool = False
+    """Whether `ttl` reaches back only to when the answer stood (`DAY_STANDS`): no older copy is served, even
+    while a fresh one is fetched, since it was read while the answer was still moving."""
+
     @property
     def servable(self) -> timedelta:
         """How old a copy may be and still be served while a fresh one is fetched behind it: twice its TTL.
 
         Bounded by the TTL itself, so a page is never more than one refresh
         behind: a two-minute score is at most four minutes old, a roster two hours.
+        A `settled` read serves nothing past its TTL.
         """
-        return self.ttl * 2
+        return self.ttl if self.settled else self.ttl * 2
 
     @property
     def path(self) -> str:
@@ -195,14 +205,23 @@ def played_roster(team_key: str, week: int) -> YahooRead:
     return YahooRead(f"team/{team_key}/roster;week={week}/players/stats;type=week;week={week}", PLAYED_TTL)
 
 
-def day_roster(team_key: str, day: date) -> YahooRead:
+def day_roster(team_key: str, day: date, now: datetime | None = None) -> YahooRead:
     """A team's roster as slotted on `day`, each player with his line from that day's game.
 
-    Asked for the day being played, whose lines move with every basket while
-    games are on: held as briefly as the scoreboard that totals them.
+    How long it holds follows where `day` sits against `now`, on the league's
+    own clock: the day being played moves with every basket, so it is held as
+    briefly as the scoreboard that totals it; a day to come only as long as a
+    lineup goes unchanged; a day past, for good once it stands (`DAY_STANDS`).
+    Without `now`, any day is read as the one being played.
     """
     on = day.isoformat()
-    return YahooRead(f"team/{team_key}/roster;date={on}/players/stats;type=date;date={on}", SCOREBOARD_TTL)
+    query = f"team/{team_key}/roster;date={on}/players/stats;type=date;date={on}"
+    if now is None or day == now.date():
+        return YahooRead(query, SCOREBOARD_TTL)
+    if day > now.date():
+        return YahooRead(query, DAY_AHEAD_TTL)
+    stands = datetime.combine(day + timedelta(days=1), DAY_STANDS, tzinfo=now.tzinfo)
+    return YahooRead(query, max(now - stands, SCOREBOARD_TTL), settled=True)
 
 
 def roster_averages(team_key: str, average: Average) -> YahooRead:

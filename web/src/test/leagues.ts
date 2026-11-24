@@ -12,6 +12,7 @@ export function competitionOf(extra: Partial<Competition> & Pick<Competition, "k
     judges_wire: false,
     plans_weeks: false,
     browses_weeks: false,
+    browses_days: false,
     finds_trades: false,
     searches_players: false,
     refreshes: false,

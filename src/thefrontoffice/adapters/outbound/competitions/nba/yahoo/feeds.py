@@ -14,8 +14,10 @@ from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player
+from thefrontoffice.adapters.outbound.competitions.nba.projections import index_for
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     PACIFIC,
+    Line,
     playable_from,
     ruled_out,
 )
@@ -79,6 +81,21 @@ class Feeds:
         if on is None or not start <= on[0] <= end:
             return None
         return nba_week.Today(on[0], on[1], self.tipoff(on[0]))
+
+    def day(self) -> date:
+        """Today on the league's clock: the schedule's own, or Pacific's where it would not load."""
+        on = self.games.games_today()
+        return on[0] if on is not None else datetime.now(PACIFIC).date()
+
+    def projected_on(self, players: Sequence[Player], day: date) -> dict[str, Line]:
+        """What Sleeper projects of each of `players`' game on `day`, by Yahoo's key; nobody it projects nothing
+        for, or whom the name does not match on his club (`ProjectionIndex.find`). None at all where Sleeper
+        publishes no projection for the day."""
+        projections = index_for(self.sleeper, day, day)
+        if projections is None:
+            return {}
+        found = {p.player_key: projections.find(p.name, p.team, self.form.get_player_stats(p.name)) for p in players}
+        return {key: projected.line for key, projected in found.items() if projected is not None}
 
     def tipoff(self, day: date) -> dict[str, datetime]:
         """When each club's game on `day` starts, while it has not, by ESPN's abbreviation.

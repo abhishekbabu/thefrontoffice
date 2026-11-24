@@ -493,9 +493,12 @@ class YahooClient:
     def day_rosters(self, team_keys: list[str], day: date) -> dict[str, list[YahooPlayer]]:
         """Each team's roster as slotted on `day`, each player with his line from that day's game, by team key.
 
-        A player whose game has not tipped off carries a dash in every category. Fetched together.
+        A player whose game has not tipped off carries a dash in every category; on a day to come, each is
+        slotted as his manager has set him so far. Held by where `day` sits against today on the league's
+        clock (`paths.day_roster`). Fetched together.
         """
-        raws = self._responses.many({key: paths.day_roster(key, day) for key in team_keys})
+        now = self._pace.clock().astimezone(self._pace.zone) if self._pace is not None else None
+        raws = self._responses.many({key: paths.day_roster(key, day, now) for key in team_keys})
         return {
             key: readable("roster", lambda raw=raw: player_list(parse(raw)["fantasy_content"]["team"]["roster"]))
             for key, raw in raws.items()

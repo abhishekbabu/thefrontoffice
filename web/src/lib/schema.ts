@@ -399,6 +399,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/competitions/{key}/leagues/{league_id}/weeks/{week}/day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Day Of
+         * @description One day of a week, where lineups are set day by day: today's where the week holds it, else its first.
+         */
+        get: operations["day_of"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/competitions/{key}/leagues/{league_id}/items": {
         parameters: {
             query?: never;
@@ -1052,6 +1072,8 @@ export interface components {
             plans_weeks: boolean;
             /** Browses Weeks */
             browses_weeks: boolean;
+            /** Browses Days */
+            browses_days: boolean;
             /** Finds Trades */
             finds_trades: boolean;
             /** Searches Players */
@@ -1065,6 +1087,32 @@ export interface components {
             /** Requires */
             requires: string;
             blocked: components["schemas"]["ErrorBody"] | null;
+        };
+        /**
+         * DayRange
+         * @description Which day of a week a page shows, where a lineup is set day by day, and the week's days to page through.
+         */
+        DayRange: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /**
+             * Last
+             * Format: date
+             */
+            last: string;
+            /**
+             * Today
+             * @description Today on the league's clock, where it falls inside the week; None elsewhere.
+             */
+            today: string | null;
         };
         /**
          * ErrorBody
@@ -2350,6 +2398,8 @@ export interface components {
             categories: components["schemas"]["CategoryLine"][];
             /** @description Where this week sits in the season, for paging to another. None in a competition that shows only the week being played. */
             weeks: components["schemas"]["WeekRange"] | null;
+            /** @description Which day of the week this shows, where it shows one day of a lineup set day by day: its rows are that day's slots and lines, and its categories that day's totals. None for a whole week. */
+            days: components["schemas"]["DayRange"] | null;
         };
         /**
          * TaskVerdict
@@ -4202,6 +4252,86 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Slate"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    day_of: {
+        parameters: {
+            query?: {
+                day?: string | null;
+            };
+            header?: never;
+            path: {
+                key: string;
+                league_id: string;
+                week: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Summary"];
                 };
             };
             /** @description Bad Request */
