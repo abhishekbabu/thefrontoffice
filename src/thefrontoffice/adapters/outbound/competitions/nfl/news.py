@@ -10,8 +10,11 @@ running routes, though the story never names him. Read conservatively, from
 the article's own words and the players it names — a story counts only where
 it names the change, and never while it is talk of one (a question, a rumor):
 
-- a quarterback change: a club's quarterback named beside a benching, or one
-  who is not its starter (Sleeper's depth chart) named beside starting;
+- a quarterback change: a club's quarterback named beside a benching, or as
+  the one a release or trade moves ('cut QB Daniel Jones'); one who is not its starter
+  (Sleeper's depth chart) named beside starting; or a free agent quarterback
+  named beside his release — Sleeper may already have moved both, the new
+  starter to the top of the depth chart and the old one off the club;
 - a trade: trade wording and an offensive player anywhere in the league, who
   has left by the time the story runs, and not only a starting quarterback;
 - a play caller: the offensive coordinator or play-calling named beside a
@@ -29,7 +32,7 @@ from thefrontoffice.adapters.outbound.competitions import news
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.news import ClubStory, PlayerNews
 from thefrontoffice.adapters.outbound.competitions.nfl.clubs import espn_club, on_a_club, players_by_club
-from thefrontoffice.adapters.outbound.competitions.nfl.model import PlayerInfo
+from thefrontoffice.adapters.outbound.competitions.nfl.model import FREE_AGENT, PlayerInfo
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 
 QB_CHANGE, TRADE, PLAY_CALLER = "QB change", "Trade", "Play caller"
@@ -39,7 +42,16 @@ OFFENSE = frozenset({"QB", "RB", "WR", "TE"})
 """Whose trade changes who gets the ball."""
 
 BENCHED = ("bench", "benched", "benches", "benching", "demoted", "demotes", "replaced", "replaces", "replacing")
-STARTING = ("start", "starts", "starter", "starting", "under center", "take over", "takes over", "taking over")
+RELEASED = ("cut", "cuts", "release", "released", "releases", "releasing", "waive", "waived", "waives")
+"""A release of a club's quarterback, as a story puts it: as much a change as a benching."""
+QUARTERBACK = ("", "qb ", "quarterback ")
+"""What may stand between a verb and the quarterback it moves: 'cut QB Daniel Jones'."""
+STARTING = (
+    *("to start", "will start", "next start", "first start", "nfl start", "fill in start", "start against", "start vs"),
+    *("starts", "starter", "starting", "under center", "take over", "takes over", "taking over"),
+    *("turn to", "turns to", "turning to"),
+)
+"""Starting at quarterback; never a bare 'start', which is as often a club's 3-7 start to the season."""
 TRADED = ("trade", "traded", "trades", "acquire", "acquires", "acquired", "dealt")
 CALLER = ("offensive coordinator", "play caller", "playcaller", "play calling", "playcalling", "call plays")
 CHANGED = (
@@ -83,6 +95,8 @@ def club_stories(
     for meta in players.values():
         if on_a_club(meta) and meta.position in OFFENSE:
             league.add(meta)
+        elif meta.team == FREE_AGENT and meta.position == "QB":
+            league.released.add(normalize_name(meta.name))
 
     stories: dict[str, list[ClubStory]] = {}
     for club, articles in feeds.items():
@@ -102,6 +116,8 @@ class _Offense:
     """Each name's clubs, under ESPN's spelling."""
     quarterbacks: dict[str, dict[str, bool]] = field(default_factory=lambda: defaultdict(dict))
     """Each club's quarterbacks, and whether he is its starter."""
+    released: set[str] = field(default_factory=set)
+    """Quarterbacks on no club: one a club's feed names was most likely its own, let go."""
 
     def add(self, meta: PlayerInfo) -> None:
         club, key = espn_club(meta.team), normalize_name(meta.name)
@@ -120,9 +136,13 @@ class _Offense:
             return None
         quarterbacks = self.quarterbacks.get(club, {})
         theirs = named & quarterbacks.keys()
+        gone = news.mentioned(article, self.released)
         # Only against a listed starter is anyone else a backup: before a depth chart, every quarterback is unlisted.
         backup = any(quarterbacks.values()) and any(not quarterbacks[key] for key in theirs)
-        if theirs and (_says(text, BENCHED) or (backup and _says(text, STARTING))):
+        # A release or a trade moves the quarterback only where he is its object; the trade
+        # that sends three defenders to Jacksonville mentions Trevor Lawrence too.
+        let_go = _moves(text, theirs | gone, (*RELEASED, *TRADED))
+        if (theirs and _says(text, BENCHED)) or let_go or (backup and _says(text, STARTING)):
             return QB_CHANGE
         # A starting quarterback is named in every story about his club, a trade of others included.
         if _says(text, TRADED) and any(not self._starts(key) for key in named):
@@ -133,6 +153,11 @@ class _Offense:
 
     def _starts(self, key: str) -> bool:
         return any(self.quarterbacks[club].get(key, False) for club in self.clubs[key])
+
+
+def _moves(text: str, keys: Iterable[str], verbs: Iterable[str]) -> bool:
+    """Whether one of the verbs takes one of these players as its object: 'cut qb daniel jones'."""
+    return any(f" {verb} {title}{key} " in text for key in keys for verb in verbs for title in QUARTERBACK)
 
 
 def _says(text: str, words: Iterable[str]) -> bool:
