@@ -17,7 +17,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
     season_average,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection
-from thefrontoffice.adapters.outbound.competitions.nfl.roles import window
+from thefrontoffice.adapters.outbound.competitions.nfl.roles import heading, window
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import Split
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
@@ -122,5 +122,43 @@ def rest_of_season(state: Week, player: Projection) -> float | None:
     if returned is not None and split is None:
         # Back from an absence: his games since are his role, and his season and projection have not caught up.
         played = sum(game.points for game in since) / len(since)
-    blended = shared.blend(played, state.ahead.get(player.player_id))
+    blended = shared.blend(played, projected_ahead(state, player))
     return None if blended is None else blended * usage(state, player.player_id)
+
+
+CALIBRATION_MOST = 0.25
+"""The furthest his own record against Sleeper's projections moves what it projects him ahead, either way."""
+
+CALIBRATION_SETTLES = 4
+"""Games against stored projections it takes before his record counts for half its gap (`worth.settled`): two
+games beating a projection are as often a soft fortnight as a projection that reads him low."""
+
+ROLE_TILT = 0.1
+"""How far a role heading up or down (`roles.heading`) moves what he is projected ahead: a tenth, the way usage
+moves a worth — a projection lags a role, and the drop order already ranks by it first."""
+
+
+def projected_ahead(state: Week, player: Projection) -> float | None:
+    """Sleeper's projection a game over the weeks left (`Week.ahead`), read against how his games have gone against
+    its projections so far (`calibration`) and where his role is heading (`ROLE_TILT`); None where it has none."""
+    ahead = state.ahead.get(player.player_id)
+    if ahead is None:
+        return None
+    found = heading(state, player.player_id)
+    tilt = {"rising": 1 + ROLE_TILT, "falling": 1 - ROLE_TILT}.get(found.direction if found else "", 1.0)
+    return ahead * calibration(state, player.player_id) * tilt
+
+
+def calibration(state: Week, player_id: str) -> float:
+    """How far his games have run over or under what Sleeper projected for them (`Week.past`), as a factor of 1 ±
+    `CALIBRATION_MOST`, pulled toward 1 while he has few games against it (`CALIBRATION_SETTLES`)."""
+    pairs = [
+        (game.points, projected)
+        for game in state.evidence.appearances.get(player_id, ())
+        if (projected := state.past.get(game.week, {}).get(player_id, 0.0)) > 0
+    ]
+    projected = sum(p for _, p in pairs)
+    if not projected:
+        return 1.0
+    pull = shared.settled(len(pairs), CALIBRATION_SETTLES) * (sum(scored for scored, _ in pairs) / projected - 1)
+    return 1 + max(-CALIBRATION_MOST, min(CALIBRATION_MOST, pull))

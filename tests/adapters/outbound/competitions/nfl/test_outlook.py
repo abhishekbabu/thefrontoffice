@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj, week_of
+from support.stores import FakeUntouchable
 
 from thefrontoffice.adapters.outbound.competitions.nfl import outlook
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
@@ -286,8 +287,8 @@ def test_a_players_rate_ahead_counts_only_the_weeks_he_is_projected_in() -> None
     client.weekly_projections[BYE_WEEK] = {"qb9": WIRE["qb9"]}
     state = _state(client)
 
-    assert outlook.rates(client, state)["rb9"] == WIRE["rb9"].points
-    assert "rb9" not in outlook.rates(client, replace(state, week=18))
+    assert outlook.rates(outlook.weeks_left(client, state) or {})["rb9"] == WIRE["rb9"].points
+    assert "rb9" not in outlook.rates(outlook.weeks_left(client, replace(state, week=18)) or {})
 
 
 def _state(client: FakeSleeper) -> Week:
@@ -301,15 +302,31 @@ def _state(client: FakeSleeper) -> Week:
     )
 
 
-def test_a_starter_in_your_lineup_as_set_is_dropped_only_once_no_bench_player_is_left() -> None:
-    """You start Bad RB, though the best lineup would not: Spare WR on the bench goes before him."""
+def _starting_bad_rb(spare: float) -> FakeSleeper:
+    """You start Bad RB (4 projected, every week), though the best lineup would not; Spare WR, idle this week,
+    projected `spare` the weeks after, sits on the bench."""
     client = _client(roster_positions=["QB", "RB", "WR", "BN", "BN"])
     roster = client.rosters[0]
     client.rosters = [replace(roster, player_ids=[*roster.player_ids, "wr3"], starter_ids=["qb1", "rb2", "wr8"])]
-    client.projections = {**client.projections, "wr3": proj("wr3", "Spare WR", "WR", 6.0, team="KC", opp="")}
+    spare_wr = proj("wr3", "Spare WR", "WR", spare, team="KC", opp="")
+    client.projections = {**client.projections, "wr3": spare_wr}
     catalog = client.players_catalog or {}
     catalog["wr3"] = PlayerMeta(player_id="wr3", name="Spare WR", position="WR", team="KC")
+    return client
 
-    fix = _weeks(client)[BYE_WEEK].fix
 
-    assert "drop Spare WR" in fix
+def test_a_starter_in_your_lineup_as_set_within_the_margin_of_the_bench_is_kept() -> None:
+    """Bad RB's 4 a game ahead trails Spare WR's 6 by 2, under `STARTER_DROP_BY`: the lineup you set wins."""
+    assert "drop Spare WR" in _weeks(_starting_bad_rb(6.0))[BYE_WEEK].fix
+
+
+def test_a_starter_in_your_lineup_as_set_clearly_below_the_bench_is_the_drop() -> None:
+    """4 a game ahead against 10: six short, his role no better."""
+    assert "drop Bad RB" in _weeks(_starting_bad_rb(10.0))[BYE_WEEK].fix
+
+
+def test_an_untouchable_starter_is_never_the_drop_however_far_below_the_bench() -> None:
+    client = _starting_bad_rb(10.0)
+    outlook = nfl_provider(client, untouchable=FakeUntouchable("rb2")).weeks_ahead("L1")
+
+    assert "drop Spare WR" in next(w for w in outlook.weeks if w.week == BYE_WEEK).fix

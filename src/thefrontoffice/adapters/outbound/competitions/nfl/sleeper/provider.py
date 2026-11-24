@@ -494,7 +494,8 @@ class SleeperNFLProvider:
         if browsing:
             return week_state
         past = gather.past_projections(self.client, season, week, league, phase.is_regular_season)
-        return replace(week_state, ahead=outlook.rates(self.client, week_state), past=past)
+        ahead = outlook.weeks_left(self.client, week_state) or {}
+        return replace(week_state, ahead=outlook.rates(ahead), upcoming=ahead.get(week + 1, {}), past=past)
 
     def _played_out(self, phase: Phase, week: int) -> bool:
         """Whether the week Sleeper calls current has nothing left to play.
