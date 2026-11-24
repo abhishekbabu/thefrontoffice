@@ -44,6 +44,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.model import (
     by_club,
     open_spots,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.roles import falling, protected
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import RULED_OUT, STREAMED, THIS_WEEK, listed, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.slump import CALL_BY, Slump, called, recent, slumps
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import Split
@@ -118,7 +119,7 @@ def build(
     items += _breakouts(state, free_agents, {i.action.player_id for i in items})
     items += _same_game(state, week_games, started, {(i.action.player_id, i.action.replaces) for i in items})
     items += _teammates(state, kickoff, started)
-    items += _next_week_byes(state, games.get(state.week + 1, []))
+    items += _next_week_byes(state, games.get(state.week + 1, []), [i for i in items if i.is_pickup], free_agents)
     items += _trade_deadline(state)
     items = _with_players(state, _with_drops(state, items, started))
     return sorted(items, key=lambda i: urgency_rank(i.action.urgency))
@@ -647,19 +648,19 @@ def _worth_a_spot(state: Week, player_id: str, drop: Projection | None) -> bool:
 
 
 def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> Projection | None:
-    """The player it costs least to lose, by `worth.rest_of_season`: never one kept, one the best lineup starts, nor
-    one whose role is growing; a starter in your lineup as set only once no bench player is left.
+    """The player it costs least to lose: never one kept, one the best lineup starts, nor one whose role grew last
+    week; a starter in your lineup as set only once no bench player is left.
 
-    A drop is for the rest of the season, so neither this week's projection
-    (a bye, one soft matchup) nor his last few games (one cold stretch) decide
-    it: his season a game beside what he is projected a game in the weeks left.
-    A player whose role is growing is the one a to-do list would tell you to
-    pick up, so he is never the one to let go. Nor is one the best lineup
-    would start this week. A stash, then a handcuff, comes after every
-    ordinary player (see `insured`): his worth is the week the back ahead of
-    him misses, which no figure here shows. A player with nothing to go on —
-    no games played, and no projection ahead or this week — is the last
-    resort: an unknown is not a weak player.
+    Ranked first by where his role is heading (`roles`), then by what he is
+    worth for the rest of the season (`worth.rest_of_season`). A player whose
+    role is falling goes before everyone else, and one whose role is rising or
+    who heads his club's depth chart after everyone else: a season average and
+    a projection both lag a role, and the drop is the least reversible move.
+    A stash, then a handcuff, comes after every ordinary player of his rank
+    (see `insured`): his worth is the week the back ahead of him misses, which
+    no figure here shows. A player with nothing to go on — no games played,
+    and no projection ahead or this week — is the last resort: an unknown is
+    not a weak player.
     """
     starting = {slot.player.player_id for slot in state.best if slot.player}
     candidates = [
@@ -669,12 +670,13 @@ def drop_candidate(state: Week, among: Iterable[Projection], keep: set[str]) -> 
     ]
     held = insured(state) if candidates else {}
 
-    def weakest(player: Projection) -> tuple[bool, int, float, float]:
+    def weakest(player: Projection) -> tuple[bool, int, int, float, float]:
         value = rest_of_season(state, player)
         if value is None:
             value = worth(state, player)
         rank = UNKNOWN if value is None else held.get(player.player_id, (0, ""))[0]
-        return player.player_id in state.starter_ids, rank, value or 0.0, player.points
+        role = 0 if falling(state, player.player_id) else 2 if protected(state, player) else 1
+        return player.player_id in state.starter_ids, role, rank, value or 0.0, player.points
 
     return min(candidates, key=weakest, default=None)
 
@@ -689,12 +691,21 @@ def _kept_for(state: Week, player: Projection) -> str:
     return ", ".join(figures)
 
 
+def _why_drop(state: Week, player: Projection) -> str:
+    """Why he is the one: whose handcuff or stash he is, that his role is falling and how, or that he is the weakest."""
+    if note := insurance_note(state, player):
+        return note
+    found = falling(state, player.player_id)
+    return f"role falling: {found.describe()}" if found else "weakest on bench"
+
+
 def drop_note(state: Week, player: Projection) -> str:
-    """'Williams: weakest on bench (9.38/g season, 8.20/g ahead).' — why he is the drop, beside a comparison of
-    his week: his rest of season, which no row there says, and whose handcuff or stash he is, or that his
-    recent points were fill-in work, with what he scores beside the teammate back.
+    """'Flournoy: role falling: target share 9%, was 15%, falling; Pickens back since week 10 (9.55/g season,
+    8.91/g ahead).' — why he is the drop, beside a comparison of his week: his role and his rest of season, which
+    no row there says, and whose handcuff or stash he is, or that his recent points were fill-in work, with what
+    he scores beside the teammate back.
     """
-    why = insurance_note(state, player) or "weakest on bench"
+    why = _why_drop(state, player)
     split = filling_in(state, player)
     if split is not None and (beside := form(state, player)) is not None:
         why += f", {beside:.2f}/game with {surname(split.teammate.name)}"
@@ -705,12 +716,11 @@ def drop_note(state: Week, player: Projection) -> str:
 def drop_reason(state: Week, player: Projection) -> str:
     """'Drop X (10.10/g season, 7.00/g ahead), weakest on bench': the figures his rest of season was read from.
 
-    A handcuff or a stash says so instead, since he is only the pick once nobody else is left.
+    A handcuff or a stash says so instead, since he is only the pick once nobody else is left; a falling role says how.
     """
     kept = _kept_for(state, player)
     shown = f" ({kept})" if kept else ""
-    why = insurance_note(state, player) or "weakest on bench"
-    return f"Drop {player.name}{shown}, {why}."
+    return f"Drop {player.name}{shown}, {_why_drop(state, player)}."
 
 
 def _same_game(
@@ -976,17 +986,22 @@ def headlines(state: Week, players: Sequence[Projection | PlayerInfo]) -> list[S
     return stats
 
 
-def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Item]:
+def _next_week_byes(
+    state: Week, next_games: Sequence[Game], pickups: Sequence[Item], free_agents: Sequence[Projection]
+) -> list[Item]:
     """Positions next week's byes would leave short, while there is time to fix it.
 
     Asked of the starters only: a bench player on bye costs nothing. A
     position is short when fewer bench players can cover it than starters
     are missing from it — and a player in injured reserve or taxi covers
-    nothing, since he cannot be started.
+    nothing, since he cannot be started. A player the list already picks up
+    (`pickups`) covers it as a bench player would.
     """
     if not next_games:
         return []
     playing = by_club(next_games)
+    wire = {p.player_id: p for p in free_agents}
+    added = [wire[item.action.player_id] for item in pickups if item.action.player_id in wire]
     week = state.week + 1
 
     missing: dict[str, list[Projection]] = defaultdict(list)
@@ -997,7 +1012,9 @@ def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Item]:
     items = []
     for position, out in missing.items():
         cover = [
-            p for p in state.bench if p.position == position and p.team in playing and not ruled_out(p.injury_status)
+            p
+            for p in (*state.bench, *added)
+            if p.position == position and p.team in playing and not ruled_out(p.injury_status)
         ]
         if len(cover) >= len(out):
             continue

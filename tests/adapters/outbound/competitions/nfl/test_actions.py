@@ -1468,11 +1468,17 @@ VETERAN = proj("rb5", "Veteran Back", "RB", 7.0, team="WAS", opp="DAL")
 DEAD_WEIGHT = proj("te5", "Backup End", "TE", 3.2, team="BUF", opp="PIT")
 
 
+Games = list[float] | dict[int, dict[str, float]]
+"""A bench player's games from week 1: his points each week on 80% of the snaps, or each week's stat line."""
+
+
 def _slump_bench(
-    *bench: tuple[WeeklyProjection, list[float], float], locked: WeeklyProjection | None = None
+    *bench: tuple[WeeklyProjection, Games, float],
+    locked: WeeklyProjection | None = None,
+    depth: dict[str, int] | None = None,
 ) -> FakeSleeper:
-    """`slumping`'s league with a full bench: each player with his games from week 1 and his projection a week
-    ahead; `locked` held on IR under a designation the slot no longer takes."""
+    """`slumping`'s league with a full bench: each player with his games and his projection a week ahead;
+    `locked` held on IR under a designation the slot no longer takes; `depth` each one's depth-chart order."""
     client = slumping(STREAMER)
     roster = client.rosters[0]
     ids = [p.player_id for p, _, _ in bench]
@@ -1489,21 +1495,26 @@ def _slump_bench(
     }
     catalog = client.players_catalog or {}
     for p in everyone:
-        catalog[p.player_id] = PlayerMeta(player_id=p.player_id, name=p.name, position=p.position, team=p.team)
+        catalog[p.player_id] = PlayerMeta(
+            player_id=p.player_id,
+            name=p.name,
+            position=p.position,
+            team=p.team,
+            depth_chart_order=(depth or {}).get(p.player_id, 0),
+        )
     if locked:
         catalog[locked.player_id] = replace(catalog[locked.player_id], injury_status="Questionable")
     client.players_catalog = catalog
+
+    def weeks(games: Games) -> dict[int, dict[str, float]]:
+        if isinstance(games, dict):
+            return games
+        return {week: {"off_snp": 80.0, "tm_off_snp": 100.0, "pts_ppr": scored} for week, scored in enumerate(games, 1)}
+
     client.game_lines = client.game_lines + [
-        NFLGameLine(
-            player_id=p.player_id,
-            week=week,
-            team=p.team,
-            opponent="HOU",
-            position=p.position,
-            stats={"off_snp": 80.0, "tm_off_snp": 100.0, "pts_ppr": scored},
-        )
+        NFLGameLine(player_id=p.player_id, week=week, team=p.team, opponent="HOU", position=p.position, stats=stats)
         for p, games, _ in bench
-        for week, scored in enumerate(games, start=1)
+        for week, stats in weeks(games).items()
     ]
     return client
 
@@ -1529,3 +1540,73 @@ def test_an_ir_activation_and_a_slump_pickup_name_different_drops_the_activation
 
     assert (activate.drop, pickup.drop) == (DEAD_WEIGHT.player_id, VETERAN.player_id)
     assert actions.index(activate) < actions.index(pickup)
+
+
+# The week-12 case: a receiver losing targets with a regular teammate back, a receiver whose snaps jumped, and
+# his club's lead back just home from IR on a low projection ahead. Eight weeks played; the club's other
+# receivers take 30 targets and its other backs 15 carries a week.
+FADING = proj("wr6", "Fading Receiver", "WR", 9.4, team="DAL", opp="LV")
+RISING = proj("wr7", "Rising Receiver", "WR", 8.2, team="WAS", opp="SEA")
+RETURNING = proj("rb7", "Returning Back", "RB", 7.0, team="WAS", opp="SEA")
+
+
+def _line(snaps: float, points: float, targets: float = 0.0, carries: float = 0.0) -> dict[str, float]:
+    return {"off_snp": snaps, "tm_off_snp": 100.0, "pts_ppr": points, "rec_tgt": targets, "rush_att": carries}
+
+
+def _role_case() -> FakeSleeper:
+    fading = {week: _line(75.0, 11.0, targets=4.5) for week in range(1, 6)} | {
+        6: _line(80.0, 11.0, targets=2.0),
+        7: _line(70.0, 11.0, targets=3.0),
+        8: _line(75.0, 11.0, targets=1.0),
+    }
+    rising = {week: _line(45.0, 6.0, targets=4.0) for week in range(1, 6)} | {
+        week: _line(84.0, 15.0, targets=6.0) for week in (6, 7, 8)
+    }
+    returning = {week: _line(45.0, 8.0, carries=12.0) for week in (1, 2, 3)} | {8: _line(41.0, 16.0, carries=13.0)}
+    client = _slump_bench(
+        (FADING, fading, 8.9), (RISING, rising, 7.7), (RETURNING, returning, 6.9), depth={"rb7": 1, "wr6": 3, "wr7": 2}
+    )
+    client.game_lines = client.game_lines + [
+        NFLGameLine(player_id=f"{team}-rest", week=week, team=team, opponent="HOU", position="WR", stats=stats)
+        for team in ("DAL", "WAS")
+        for week in range(1, 9)
+        for stats in [{"off_snp": 20.0, "tm_off_snp": 100.0, "rec_tgt": 30.0, "rush_att": 15.0}]
+    ]
+    return client
+
+
+def test_a_drop_is_the_player_whose_role_is_falling_not_a_rising_one_or_a_lead_back_just_home() -> None:
+    """By season and projection ahead alone the back just off IR goes (8.1 to the fading receiver's 10.9); his role
+    is the club's lead back's, and the rising receiver's is growing. The receiver losing targets is the drop."""
+    [action] = [a for a in _actions(_role_case()) if a.key.startswith("slump:")]
+
+    assert action.drop == FADING.player_id
+
+
+def test_with_no_falling_role_on_the_bench_a_holding_one_goes_before_the_clubs_lead_back() -> None:
+    """The veteran holds a steady role at 12 a game; the lead back is worth less on paper, and is kept."""
+    returning = {week: _line(45.0, 8.0, carries=12.0) for week in (1, 2, 3)} | {8: _line(41.0, 16.0, carries=13.0)}
+    client = _slump_bench((VETERAN, [12.0] * 8, 10.0), (RETURNING, returning, 6.9), depth={"rb7": 1})
+
+    [action] = [a for a in _actions(client) if a.key.startswith("slump:")]
+
+    assert action.drop == VETERAN.player_id
+
+
+def test_a_bye_next_week_that_a_listed_pickup_covers_needs_nothing() -> None:
+    """The slumping tight end's club is off in week 10; the streamer the list picks up plays then."""
+    client = slumping(STREAMER)
+    client.season_schedule = [ScheduledGame(week=10, date="2026-11-15", home="SEA", away="LV")]
+
+    keys = [a.key for a in _actions(client)]
+
+    assert any(key.startswith("slump:") for key in keys)
+    assert not any(key.startswith("bye:") for key in keys)
+
+
+def test_a_bye_next_week_no_listed_pickup_covers_is_still_flagged() -> None:
+    client = slumping(STREAMER)
+    client.season_schedule = [ScheduledGame(week=10, date="2026-11-15", home="NYJ", away="LV")]
+
+    assert any(a.key.startswith("bye:10:TE") for a in _actions(client))

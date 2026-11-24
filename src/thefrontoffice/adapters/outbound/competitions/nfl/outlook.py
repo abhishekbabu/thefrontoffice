@@ -46,18 +46,22 @@ def build(
     schedule: Mapping[int, Sequence[Game]],
     signable: Callable[[str], bool],
     keep: Collection[str] = (),
+    adds: Collection[str] = (),
+    drops: Collection[str] = (),
 ) -> Outlook:
     """Each of the next weeks, soonest first, with a fix for any that is short.
 
     `signable` says whether a player could be added at all — on an NFL roster,
     at a position the league scores — which is the provider's rule, not this one's.
     `keep` is who a fix must not drop: whoever the rest of the to-do list already moves or drops.
+    `adds` and `drops` are the to-do list's own pickups and drops: the weeks ahead are read on the roster
+    they leave, so a slot a listed pickup already fills is not short, and its fix goes to the one that is.
     """
     weeks = list(range(state.week + 1, min(state.week + WEEKS_AHEAD, SEASON_WEEKS) + 1))
     if not weeks:
         return Outlook()
     playing = {week: set(by_club(games)) for week, games in schedule.items()}
-    held = active(state.roster)
+    held = [pid for pid in active(state.roster) if pid not in drops] + [pid for pid in adds if pid not in drops]
     projections = {
         week: client.get_projections(
             state.season, week, state.league.scoring_format, FANTASY_POSITIONS, state.league.scoring_rules
@@ -102,6 +106,7 @@ def build(
                 p
                 for pid, p in projections[week].items()
                 if pid not in state.owned
+                and pid not in adds
                 and p.position in needed
                 and p.opponent
                 and not long_term(p.injury_status)

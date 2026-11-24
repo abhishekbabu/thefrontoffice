@@ -4,11 +4,9 @@ The games are written by hand, eight a player, so every figure below can be chec
 """
 
 import pytest
-from support.nfl import SLEEPER_USER_ID, game_line, proj
+from support.nfl import SLEEPER_USER_ID, game_line, proj, week_of
 
 from thefrontoffice.adapters.outbound.competitions.matchups import Matchup, Recent
-from thefrontoffice.adapters.outbound.competitions.nfl import evidence
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import current_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.slump import (
     CALL_FORM,
     MATCHUP_SWING,
@@ -18,7 +16,6 @@ from thefrontoffice.adapters.outbound.competitions.nfl.slump import (
     slumps,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
-from thefrontoffice.adapters.outbound.competitions.nfl.worth import lineup_value
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
@@ -74,19 +71,7 @@ def _week(lines: list[NFLGameLine], *players: WeeklyProjection, starters: tuple[
         player_ids=[p.player_id for p in projected],
         starter_ids=list(starters),
     )
-    return Week(
-        league=LEAGUE,
-        roster=roster,
-        week=9,
-        season="2026",
-        projections={p.player_id: p for p in projected},
-        players=meta,
-        projected=projected,
-        lineup=current_lineup(LEAGUE.starting_slots, list(starters), projected),
-        rank=lineup_value,
-        rosters=[roster],
-        evidence=evidence.gather(lines, "pts_ppr"),
-    )
+    return week_of(LEAGUE, roster, projected, meta, lines=lines)
 
 
 SOLID = [10.0, 11.0, 9.0, 10.0]
