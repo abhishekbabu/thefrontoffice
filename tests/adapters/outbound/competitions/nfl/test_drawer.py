@@ -532,3 +532,15 @@ def test_a_player_carries_this_seasons_position_rank_and_none_before_he_plays() 
     assert (
         nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS, season_stats=HISTORY)).player("L1", "qb1").rank == ""
     )
+
+
+def test_the_drawer_shows_his_clubs_stories_with_his_week_apart_from_his_own_news() -> None:
+    from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
+
+    story = NewsArticle(article_id="1", published=datetime.now(UTC), headline="Bills fire offensive coordinator")
+    detail = nfl_provider(FakeSleeper(projections=DEFAULT_PROJECTIONS), FakeESPN({"BUF": [story]})).player("L1", "rb1")
+
+    [group] = [g for g in detail.groups if g.title == "Team news"]
+    assert group.tab == ""
+    assert [(s.value, s.url) for s in group.stats] == [(story.headline, story.url)]
+    assert not [g for g in detail.groups if g.tab == "News"]

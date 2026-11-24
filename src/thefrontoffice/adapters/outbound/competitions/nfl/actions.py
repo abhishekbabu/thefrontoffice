@@ -852,12 +852,20 @@ def _teammate_wording(
 
 
 def headlines(state: Week, players: Sequence[Projection | PlayerInfo]) -> list[Stat]:
-    """Each player's latest headlines."""
-    return [
-        Stat(label=player.name, value=f"News, {dated(a)}: {a.headline}", url=a.url)
-        for player in players
-        for a in state.news.latest(player.player_id)
-    ]
+    """Each player's latest headline, and his club's latest story: once, where two of them share a club."""
+    stats: list[Stat] = []
+    told: set[str] = set()
+    for player in players:
+        stats += [
+            Stat(label=player.name, value=f"News, {dated(a)}: {a.headline}", url=a.url)
+            for a in state.news.latest(player.player_id)
+        ]
+        for story in state.news.team(player.player_id, limit=1):
+            if story.article.article_id not in told:
+                told.add(story.article.article_id)
+                said = f"{story.kind}, {dated(story.article)}: {story.article.headline}"
+                stats.append(Stat(label=player.name, value=said, url=story.article.url))
+    return stats
 
 
 def _next_week_byes(state: Week, next_games: Sequence[Game]) -> list[Item]:

@@ -37,3 +37,20 @@ def test_each_headline_reads_as_its_day_linked_to_its_article() -> None:
     [stat] = attach({"LAL": [article]}, CLUBS, NOW).stats("478.p.3704")
 
     assert (stat.label, stat.value) == (dated(article), "LeBron James questionable")
+
+
+def test_a_club_story_reaches_each_of_its_players_but_one_it_names_stays_his_own_news() -> None:
+    from thefrontoffice.adapters.outbound.competitions.news import ClubStory, PlayerNews
+
+    trade, other = _article("Lakers trade for a center"), _article("LeBron James traded", days_ago=2)
+    found = PlayerNews(
+        by_player={"478.p.3704": [other]},
+        by_club={"LAL": [ClubStory(kind="Trade", article=trade), ClubStory(kind="Trade", article=other)]},
+        club_of={"478.p.3704": "LAL", "478.p.6014": "LAL"},
+    )
+
+    assert [s.article for s in found.team("478.p.6014")] == [trade, other]
+    assert [s.article for s in found.team("478.p.3704")] == [trade]
+    assert found.team("someone else") == []
+    [stat] = [s.stat() for s in found.team("478.p.3704")]
+    assert (stat.label, stat.value) == (f"Trade, {dated(trade)}", trade.headline)

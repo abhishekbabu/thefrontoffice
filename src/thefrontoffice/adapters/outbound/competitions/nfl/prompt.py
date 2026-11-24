@@ -37,6 +37,8 @@ NFL_READING_PLAYER_LINES = """READING THE PLAYER LINES:
   starts this week or is worth more a game than the one he replaces. Kickers and defenses are the
   exception: they are streamed for the week's matchup.
 - A "news" line under a player is a recent headline about him, dated, from his own club's feed.
+- A "team news" line under a player is a recent story about his club that need not name him — a
+  quarterback change, a trade, a new play caller — and can change his role before his projection does.
 - A player marked [reserve slot] is in an injured-reserve or taxi slot: he cannot start this week
   without a move first, and costs no roster spot while he is there."""
 
@@ -365,10 +367,15 @@ def player_line(p: Projection, evidence: Evidence, news: PlayerNews, bullet: str
 
 
 def news_lines(news: PlayerNews, player_id: str) -> str:
-    """A player's latest headlines, dated, with ESPN's one-line summary."""
+    """A player's latest headlines, dated, with ESPN's one-line summary; then his club's stories, labelled by kind."""
     return "".join(
         f"  news, {dated(a)}: {a.headline}" + (f" — {a.summary}" if a.summary else "") + "\n"
         for a in news.latest(player_id, NEWS_PER_PLAYER)
+    ) + "".join(
+        f"  team news ({s.kind}), {dated(s.article)}: {s.article.headline}"
+        + (f" — {s.article.summary}" if s.article.summary else "")
+        + "\n"
+        for s in news.team(player_id, NEWS_PER_PLAYER)
     )
 
 
