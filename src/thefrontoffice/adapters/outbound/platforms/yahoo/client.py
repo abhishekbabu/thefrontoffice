@@ -719,6 +719,11 @@ def _team(data: Any) -> YahooTeam:
         standing=_standing(standings) if isinstance(standings, dict) else None,
         waiver_priority=_number(data, "waiver_priority"),
         faab_balance=_text(data, "faab_balance"),
+        season=(
+            {_text(s, "stat_id"): _text(s, "value") for s in _items(_node(data, "team_stats", "stats"), "stat")}
+            if _text(data, "team_stats", "coverage_type") == "season"
+            else {}
+        ),
     )
 
 

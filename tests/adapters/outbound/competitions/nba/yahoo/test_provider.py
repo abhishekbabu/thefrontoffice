@@ -38,12 +38,14 @@ from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, PACIFIC
 from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASchedule
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
+from thefrontoffice.adapters.outbound.competitions.nba.yahoo.reads import WIRE_DEPTH
 from thefrontoffice.adapters.outbound.competitions.tasks import task_lines
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, NewsArticle, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooCaptureMissingError
+from thefrontoffice.adapters.outbound.platforms.yahoo.paths import PAGE
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     Average,
     MatchupSide,
@@ -1377,12 +1379,15 @@ def test_a_claim_whose_games_after_clearing_add_less_than_the_streaming_floor_is
 
 
 def test_the_week_reads_streams_from_the_top_of_the_wire_leaving_the_deep_list_to_the_free_agents_page() -> None:
-    """The summary is the page opened most: three pages of Yahoo's wire, not sixteen."""
+    """The summary is the page opened most: five pages of Yahoo's wire, not sixteen, each one the Free agents page
+    reads too, so either serves the other."""
     yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
 
     nba_provider(yahoo, nba=FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES), league=POINTS_LEAGUE).summary("")
 
-    assert yahoo.wire_depths == {Timeframe.SEASON: 50, Timeframe.LAST_WEEK: 25}
+    assert yahoo.wire_depths is not None
+    assert all(depth <= WIRE_DEPTH[sort] for sort, depth in yahoo.wire_depths.items())
+    assert sum(-(-depth // PAGE) for depth in yahoo.wire_depths.values()) == 5
 
 
 def test_with_no_adds_left_nothing_streams() -> None:

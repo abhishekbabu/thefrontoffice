@@ -26,6 +26,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.projections import Projec
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     CATEGORIES,
     Line,
+    amount,
     chance,
     fantasy_points,
     line,
@@ -259,22 +260,49 @@ UNNEEDED = 0.7
 roster's needs tip a choice between keepers without making a specialist of every one."""
 
 
-def needs(found: Mapping[str, Scale], roster: Iterable[Line | None]) -> Targeting:
+def needs(found: Mapping[str, Scale], standing: Mapping[str, float]) -> Targeting:
     """The categories weighed by what your roster lacks for the rest of the season, opponent-neutral.
 
-    Your players' average against the pool (`Scale.against_pool`), category by
-    category: the `TARGETS` furthest below it count in full, every other one
+    `standing` is how far your roster sits from its reference in each category,
+    by label, in spreads, more being better (`league_standing`, or `pool_standing`
+    without one): the `TARGETS` furthest below it count in full, every other one
     `UNNEEDED`. What a keeper adds there is what the season needs from him,
     whatever this week's opponent.
     """
+    short = sorted((label for label, z in standing.items() if z < 0), key=lambda label: standing[label])[:TARGETS]
+    return Targeting(scales=found, weights={label: 1.0 if label in short else UNNEEDED for label in found})
+
+
+def pool_standing(found: Mapping[str, Scale], roster: Iterable[Line | None]) -> dict[str, float]:
+    """Your players' average against the pool the week is scaled over (`Scale.against_pool`), by label: the
+    stand-in for the league's standings where they will not load."""
     lines = [figures for figures in roster if figures]
-    standing = {
+    return {
         label: statistics.fmean(figures)
         for label, scale in found.items()
         if (figures := [z for f in lines if (z := scale.against_pool(f)) is not None])
     }
-    short = sorted((label for label, z in standing.items() if z < 0), key=lambda label: standing[label])[:TARGETS]
-    return Targeting(scales=found, weights={label: 1.0 if label in short else UNNEEDED for label in found})
+
+
+MIN_TEAMS = 4
+"""The fewest teams with season totals a category is ranked across: fewer is no table to stand in."""
+
+
+def league_standing(
+    found: Mapping[str, Scale], mine: Mapping[str, str], others: Sequence[Mapping[str, str]]
+) -> dict[str, float]:
+    """Where your season's totals stand in each category against the league's teams, by label: how far from
+    their average, in their spread, more being better — a total for a count, the rate for a percentage, as the
+    standings print them. A category fewer than `MIN_TEAMS` teams print, or with no spread among them, is left out.
+    """
+    standing: dict[str, float] = {}
+    for label, scale in found.items():
+        stat = scale.scored.stat_id
+        figures = [amount(team[stat]) for team in [mine, *others] if team.get(stat)]
+        if stat not in mine or len(figures) < MIN_TEAMS or not (spread := statistics.pstdev(figures)):
+            continue
+        standing[label] = scale.sign * (amount(mine[stat]) - statistics.fmean(figures)) / spread
+    return standing
 
 
 WEAK_BELOW = -0.5

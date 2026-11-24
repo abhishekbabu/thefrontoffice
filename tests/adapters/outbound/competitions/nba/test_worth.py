@@ -25,10 +25,12 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     category_value,
     falling,
     game_value,
+    league_standing,
     moved,
     needs,
     per_game,
     points_value,
+    pool_standing,
     read,
     rising,
     scales,
@@ -289,7 +291,8 @@ def test_a_category_all_but_decided_counts_a_tenth_at_most() -> None:
 
 def test_the_categories_a_roster_is_furthest_below_the_pool_in_count_in_full_and_the_rest_less() -> None:
     """A roster of the pool's weakest line: short of FG%, blocks and points, and as good as any at turnovers."""
-    short = needs(scales(SCORED, POOL), [POOL[2], None])
+    found = scales(SCORED, POOL)
+    short = needs(found, pool_standing(found, [POOL[2], None]))
 
     assert short.weights == {"FG%": 1.0, "BLK": 1.0, "PTS": 1.0, "TO": UNNEEDED}
     assert set(short.targets(POOL[0], POOL[2], counting=1.0)) == {"FG%", "BLK", "PTS"}
@@ -298,8 +301,43 @@ def test_the_categories_a_roster_is_furthest_below_the_pool_in_count_in_full_and
 def test_a_roster_short_of_nothing_weighs_every_category_alike() -> None:
     found = scales(SCORED, POOL)
 
-    assert set(needs(found, [POOL[0]]).weights.values()) == {UNNEEDED}
-    assert set(needs(found, []).weights.values()) == {UNNEEDED}
+    assert set(needs(found, pool_standing(found, [POOL[0]])).weights.values()) == {UNNEEDED}
+    assert set(needs(found, pool_standing(found, [])).weights.values()) == {UNNEEDED}
+
+
+def _team(fg: str, blocks: str, points: str, turnovers: str) -> dict[str, str]:
+    """A team's season totals as the standings print them, by stat id."""
+    return {
+        FIELD_GOALS.yahoo_stat: fg,
+        BLOCKS.yahoo_stat: blocks,
+        POINTS.yahoo_stat: points,
+        TURNOVERS.yahoo_stat: turnovers,
+    }
+
+
+LEAGUE = [_team(".480", "150", "3400", "420"), _team(".470", "140", "3300", "430"), _team(".460", "130", "3200", "440")]
+
+
+def test_a_roster_last_in_the_league_at_a_category_is_short_of_it_whatever_the_pool_says() -> None:
+    """Last at FG% and blocks, first at points, and the fewest turnovers: short of FG% and blocks alone."""
+    found = scales(SCORED, POOL)
+    mine = _team(".440", "100", "3600", "380")
+
+    standing = league_standing(found, mine, LEAGUE)
+    short = needs(found, standing)
+
+    assert standing["FG%"] < 0 and standing["BLK"] < 0
+    assert standing["PTS"] > 0 and standing["TO"] > 0  # fewer turnovers stand better
+    assert {label for label, weight in short.weights.items() if weight == 1.0} == {"FG%", "BLK"}
+
+
+def test_a_table_too_small_or_without_totals_ranks_nothing() -> None:
+    found = scales(SCORED, POOL)
+    mine = _team(".440", "100", "3600", "380")
+
+    assert league_standing(found, mine, LEAGUE[:2]) == {}
+    assert league_standing(found, {}, LEAGUE) == {}
+    assert league_standing(found, mine, [mine, mine, mine]) == {}  # no spread among them
 
 
 # ── a role that has moved ───────────────────────────────────────────────

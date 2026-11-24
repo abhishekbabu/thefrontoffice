@@ -185,7 +185,7 @@ from the usual reading (form beside projection) toward those five games' by
 (`competitions/worth.settled`). With his minutes where they were, a big night
 counts only its share of the average. The to-do list, streams, the weeks ahead,
 the drawer and the free-agent order all read this one figure, though a category league's
-to-do streams weigh each category by how close the forecast has it (4p(1−p), floor 0.1), keepers by what the roster is shortest of. Free agents also show
+to-do streams weigh each category by how close the forecast has it (4p(1−p), floor 0.1), keepers by the categories the roster ranks lowest in among the league's teams (the standings' season totals; the week's pool without them). Free agents also show
 `Min`, his minutes a game over his last five, with an arrow and the window's figure
 where they moved (`37.7 ↑ (33.5)`), and `Rost`, the share of Yahoo leagues rostering
 him and its change this week (`34% ↑12`), which is shown and not weighed. Lineup rows show
@@ -273,9 +273,9 @@ today's starts: a bench player whose game today is still to come, over a starter
 whose slot he fits who has no game today or is ruled out of it, or who plays and
 is a fifth worse a game. Nobody resting today is started, nobody whose game has
 tipped off is moved, and without today's schedule there are no starts. Then up to
-two streamers (from the wire's top 50 by season and top 25 by last week, three
+two streamers (from the wire's top 75 by season and top 50 by last week, five
 requests) within the adds left, each a fifth more worth this week on the nights he fills an open slot, by at least 1.5 of its drop's games, and at least as
-good a game as it, and a keeper taking one add, a fifth better a game; a week under 10% or over 90% to win spends every add on keepers. No two adds share a drop, an open roster spot or IL slot (for a player out all week) is used first, a keeper past the adds left is named as an alternative, and a drop is a falling role first — never from IL, the better half of the roster or minutes that are growing.
+good a game as it, and a keeper taking one add, a fifth better a game; a week under 10% or over 90% to win spends every add on keepers. No two adds share a drop, an open roster spot or IL slot (for a player out all week, naming who to drop when he is back) is used first, a keeper past the adds left is named as an alternative, one within 5% of the bar is called close, and a drop is a falling role first — never from IL, the better half of the roster or minutes that are growing.
 While the NBA has yet to schedule days of a week (3+ days in a row with under 3
 games, 1–20 Dec: the Cup knockouts, before eliminated clubs get games), the header
 says "Schedule: not final", games left read "3+G", Fixtures carries a note naming

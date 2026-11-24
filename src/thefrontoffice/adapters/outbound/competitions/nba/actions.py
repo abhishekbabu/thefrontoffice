@@ -103,8 +103,9 @@ def build(
     moved = {player.player_key for player, _ in moves}
     after = [p for p in roster if p.player_key not in moved]
     plan = replace(plan, open_spots=plan.open_spots + len(moves))
-    items += streams(after, free_agents, readings, adds_left, by_points, named, plan)
-    return items
+    added = adds(after, free_agents, readings, adds_left, by_points, named, plan)
+    returns = _returns([player for player, _ in moves], after, readings, named | plan.untouchable, added)
+    return [_with_return(item, returns) for item in items] + added.items
 
 
 def reserving(
@@ -129,6 +130,39 @@ def reserving(
     return [(player, open_slots.pop(0)) for player, _ in out[: len(open_slots)]]
 
 
+def _returns(
+    moved: Sequence[Player], roster: Sequence[Player], readings: Mapping[str, Reading], keep: set[str], added: Added
+) -> dict[str, Reading | None]:
+    """For each player moved to an injured slot, by Yahoo key, who to drop to activate him when he is back: the
+    weakest the roster will hold once the week's adds are made (`droppable`, and the adds themselves), a falling
+    role first, never one another item lets go, nor one already named for another return. None where nobody is."""
+    pool = [
+        *droppable(roster, readings, keep | added.dropped),
+        *(r for r in added.joined if r.player.player_key not in keep),
+    ]
+    found: dict[str, Reading | None] = {}
+    for player in moved:
+        drop = next(
+            (d for d in _weakest_first(pool, _game) if d is not None and d not in found.values()),
+            None,
+        )
+        found[player.player_key] = drop
+    return found
+
+
+def _with_return(item: Action, returns: Mapping[str, Reading | None]) -> Action:
+    """An injured-slot move with his return planned: ' Back ~10 Dec: activate him then, dropping Gobert.'"""
+    if not item.key.startswith(RESERVE) or item.player_id not in returns:
+        return item
+    drop = returns[item.player_id]
+    plan = f" Activate him when back, dropping {drop.player.name}." if drop else " Activating him needs a drop."
+    return item.model_copy(update={"reason": item.reason + plan})
+
+
+RESERVE = "reserve:"
+"""What an injured-slot move's key leads with."""
+
+
 def _to_reserve(player: Player, slot: str, reading: Reading | None) -> Action:
     """'Move OG Anunoby to IL': he is out for the week, and the slot frees his roster spot for an add with no drop."""
     back = f", back {approximately(reading.back)}" if reading is not None and reading.back else ""
@@ -139,7 +173,7 @@ def _to_reserve(player: Player, slot: str, reading: Reading | None) -> Action:
         reason=f"{player.name} is out for the week{back}. {slot} open: frees his roster spot, so an add needs no drop.",
         when="first",
         player_id=player.player_key,
-        key=f"reserve:{player.player_key}:{player.status.upper()}",
+        key=f"{RESERVE}{player.player_key}:{player.status.upper()}",
     )
 
 
@@ -527,6 +561,27 @@ def _left(drops: Sequence[Reading | None], chosen: Sequence[Swap]) -> list[Readi
     return left
 
 
+@dataclass(frozen=True)
+class Added:
+    """The week's adds as planned: the items, and who the planned ones bring in and let go — alternatives aside."""
+
+    items: list[Action] = field(default_factory=list)
+    joined: list[Reading] = field(default_factory=list)
+    """Who the roster holds once the adds are made: each keeper, and each stream not let go again."""
+    dropped: frozenset[str] = frozenset()
+    """Who the planned adds let go, by Yahoo key."""
+
+
+def _added(planned: Sequence[Swap], items: list[Action], held: Sequence[Swap] | None = None) -> Added:
+    """`items`, with who `planned` lets go and who `held` (all of `planned` unless given) brings in for good."""
+    kept = planned if held is None else held
+    return Added(
+        items,
+        [s.pickup for s in kept],
+        frozenset(s.drop.player.player_key for s in planned if s.drop is not None),
+    )
+
+
 def streams(
     roster: Sequence[Player],
     free_agents: Sequence[Player],
@@ -536,6 +591,19 @@ def streams(
     named: set[str],
     plan: Plan | None = None,
 ) -> list[Action]:
+    """The week's adds as to-do items (`adds`)."""
+    return adds(roster, free_agents, readings, adds_left, by_points, named, plan).items
+
+
+def adds(
+    roster: Sequence[Player],
+    free_agents: Sequence[Player],
+    readings: Mapping[str, Reading],
+    adds_left: int,
+    by_points: bool,
+    named: set[str],
+    plan: Plan | None = None,
+) -> Added:
     """The week's adds, planned within the adds left, each with its own drop and labelled a streamer or a keeper.
 
     A streamer is this week's games: over the weakest drop a game he is worth
@@ -552,7 +620,7 @@ def streams(
     alternative to the planned one it would replace.
     """
     if adds_left <= 0:
-        return []
+        return Added()
     plan = plan or Plan()
     weigh = Weigh(roster, readings, plan)
     owned = {p.player_key for p in roster}
@@ -570,7 +638,7 @@ def streams(
 
 def _chase(
     weigh: Weigh, wire: Sequence[Reading], drops: Sequence[Reading | None], adds_left: int, by_points: bool
-) -> list[Action]:
+) -> Added:
     """A week in play: streams take the adds, never more than `STREAMS` nor
     than the adds left. A keeper takes one of them, where another is left for a
     stream or he adds more this week than the best stream, the best a game
@@ -614,17 +682,20 @@ def _chase(
         bridge, beside = planned
         chosen = [*beside, bridge, kept]
         alternative = best_keeper()
-        return [
+        items = [
             *(_item(s, by_points, plan) for s in beside),
             _chained(bridge, kept, by_points, plan),
             *([_item(alternative, by_points, plan, instead=kept)] if alternative else []),
         ]
+        # The bridge is let go for the keeper: only the keeper and the streams beside stay.
+        return _added([*beside, bridge], items, [*beside, kept])
     alternative = best_keeper() if kept is not None else None
-    return [
+    items = [
         *(_item(s, by_points, plan) for s in streamed),
         *([_item(kept, by_points, plan)] if kept else []),
         *([_item(alternative, by_points, plan, instead=kept)] if alternative and kept else []),
     ]
+    return _added([*streamed, *([kept] if kept else [])], items)
 
 
 SEASON_ADDS = 3
@@ -636,7 +707,7 @@ SEASON_POOL = 2
 
 def _season(
     weigh: Weigh, wire: Sequence[Reading], drops: Sequence[Reading | None], adds_left: int, by_points: bool
-) -> list[Action]:
+) -> Added:
     """A week all but decided: every add goes to a keeper, up to `SEASON_ADDS` and the adds left.
 
     The keepers and drops are paired as a whole (`_assign`), so the best
@@ -654,17 +725,18 @@ def _season(
     pairs = [(at, swap) for r in pickups for at, d in entries if (swap := weigh.keeper(r, d, floor)) is not None]
     chosen = _assign(pairs, budget)
     if not chosen:
-        return []
+        return Added()
     places = {at for at, _ in chosen}
     picked = {s.pickup.player.player_key for _, s in chosen}
     spare = [s for at, s in pairs if at not in places and s.pickup.player.player_key not in picked]
     planned = sorted((s for _, s in chosen), key=lambda s: (s.add_on or date.min, -s.season))
     least = min(planned, key=lambda s: s.season)
     alternative = max(spare, key=lambda s: s.season, default=None)
-    return [
+    items = [
         *(_item(s, by_points, weigh.plan) for s in planned),
         *([_item(alternative, by_points, weigh.plan, instead=least)] if alternative else []),
     ]
+    return _added(planned, items)
 
 
 def _assign(pairs: Sequence[tuple[int, Swap]], budget: int) -> list[tuple[int, Swap]]:
@@ -760,6 +832,7 @@ def _item(swap: Swap, by_points: bool, plan: Plan, instead: Swap | None = None) 
         why = (
             f"Keeper: {_game(pickup):.1f} {unit} a game{against}, for the rest of the season. "
             + _let_go(swap, "weakest a game you can drop")
+            + _close(swap)
             + _needs(swap)
             + _out(swap)
         )
@@ -789,6 +862,23 @@ def _item(swap: Swap, by_points: bool, plan: Plan, instead: Swap | None = None) 
         ),
         key=f"stream:{pickup.player.player_key}:{drop.player.player_key if drop is not None else OPEN}",
     )
+
+
+CLOSE = 0.05
+"""How near the `MARGIN` bar a keeper's value a game may clear it and still be called close: within a twentieth of
+it. 11.1 over a drop's 9.2 clears 11.04 by half a percent: a projection cannot tell those two apart."""
+
+
+def _close(swap: Swap) -> str:
+    """' Close: 11.80 a game clears the 11.76 a keeper needs by 0%.' for a keeper only just over the bar, to the
+    hundredth so the two never print alike; nothing otherwise."""
+    if swap.drop is None:
+        return ""
+    bar = _game(swap.drop) * (1 + MARGIN)
+    mine = _game(swap.pickup)
+    if not bar or mine >= bar * (1 + CLOSE):
+        return ""
+    return f" Close: {mine:.2f} a game clears the {bar:.2f} a keeper needs by {mine / bar - 1:.1%}."
 
 
 def _today(plan: Plan) -> str:

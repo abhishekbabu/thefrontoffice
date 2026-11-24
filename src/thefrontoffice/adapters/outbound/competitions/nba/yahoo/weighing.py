@@ -187,7 +187,10 @@ def plan_for(
     returning = feeds.leaning(free_agents, pool, weights, value)
     targeting = nba_worth.Targeting.of(found, chances) if found and chances else None
     active = [p for p in roster if p.slot not in INJURED_SLOTS]
-    needs = nba_worth.needs(found, [r.line for p in active if (r := readings.get(p.player_key))]) if found else None
+    standing = season_standing(yahoo, found) or nba_worth.pool_standing(
+        found, [r.line for p in active if (r := readings.get(p.player_key))]
+    )
+    needs = nba_worth.needs(found, standing) if found else None
     rules = yahoo.settings()
     plain = actions.Plan(
         returning=returning,
@@ -212,6 +215,26 @@ def plan_for(
     wire = [p for p in free_agents if p.player_key not in owned]
     streams = nba_lineup.streamed(theirs, wire, week, backs, their_adds)
     return replace(plain, week=week, volume=volume, streams=streams)
+
+
+def season_standing(yahoo: YahooSource, found: Mapping[str, nba_worth.Scale]) -> dict[str, float]:
+    """Where your season stands in each category against the league's other teams (`worth.league_standing`), from
+    the standings' season totals.
+
+    Enrichment: empty where the standings will not load or carry no totals, and the roster is then read against
+    the week's pool instead.
+    """
+    if not found:
+        return {}
+    try:
+        teams = yahoo.standings()
+    except FrontOfficeError as e:
+        logger.warning(f"Reading the roster's needs against the pool, without the standings: {e}")
+        return {}
+    mine = next((t for t in teams if t.is_mine), None)
+    if mine is None:
+        return {}
+    return nba_worth.league_standing(found, mine.season, [t.season for t in teams if t is not mine])
 
 
 def open_reserve(slots: Mapping[str, int], roster: Sequence[Player]) -> tuple[str, ...]:
