@@ -17,22 +17,25 @@ import { Badge } from "@/components/ui/badge";
  *
  * `word` is what the competition calls a round — FPL's are gameweeks — and is
  * said in every label here, so the stepper agrees with the page under it.
+ * `keys` off where a finer stepper beside it — a week's days — has the arrows.
  */
 export function WeekStepper({
   range,
   onStep,
   word = "week",
+  keys = true,
 }: {
   range: WeekRange;
   onStep: (week: number) => void;
   word?: string;
+  keys?: boolean;
 }) {
   const { week, current, first, last } = range;
   const Word = word.charAt(0).toUpperCase() + word.slice(1);
 
   useArrowKeys(
-    () => week > first && onStep(week - 1),
-    () => week < last && onStep(week + 1),
+    () => keys && week > first && onStep(week - 1),
+    () => keys && week < last && onStep(week + 1),
   );
 
   return (
@@ -125,7 +128,7 @@ function typing(target: EventTarget | null): boolean {
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
-function useArrowKeys(onLeft: () => void, onRight: () => void) {
+export function useArrowKeys(onLeft: () => void, onRight: () => void) {
   // Read through a ref so the listener is attached once, not on every week.
   const handlers = useRef({ onLeft, onRight });
 

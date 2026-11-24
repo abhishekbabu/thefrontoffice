@@ -150,7 +150,7 @@ def spot(
 
     In a points league his fantasy points, beside his projection while there
     is one; in a category league his line in each category as columns. A game
-    over without a line is one he sat out. While the day is open, a status
+    over without a line is one he sat out. While the day is open, a starter's status
     ruling him out is flagged, and so, where the bench has somebody to start
     in his place (`fixable`), is a starter with no game.
     """
@@ -183,7 +183,7 @@ def spot(
         return row.model_copy(update={"value": DNP})
     if day.stage == "played":
         return row
-    if ruled_out(player.status):
+    if ruled_out(player.status) and starting(player):
         return row.model_copy(update={"value": player.status, "tone": "warning"})
     if fixable and starting(player) and game is None and day.known():
         return row.model_copy(update={"value": NO_GAME, "tone": "warning"})

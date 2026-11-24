@@ -314,3 +314,13 @@ def test_a_day_whose_schedule_would_not_load_says_nothing_of_who_plays() -> None
     row = rows(summary)["Guard"]
     assert (row.today, row.idle) == ("", False)
     assert "Starts" not in stats(summary)
+
+
+def test_a_bench_player_ruled_out_is_left_to_his_detail_rather_than_flagged() -> None:
+    games = [game("LAL", "BOS")]
+    mine = [make_player("Hurt Sub", team="LAL", selected_position="BN", status="O", stats=TO_COME)]
+
+    row = rows(board(mine, [], a_day("to come", games)))["Hurt Sub"]
+
+    assert (row.value, row.tone) == ("", "neutral")
+    assert "O" in row.detail

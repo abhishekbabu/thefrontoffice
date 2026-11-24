@@ -24,6 +24,8 @@ export const keys = {
   week: (competition: string, league: string) => [...inLeague(competition, league), "week"] as const,
   weekOf: (competition: string, league: string, week: number | null) =>
     [...inLeague(competition, league), "week-of", week] as const,
+  dayOf: (competition: string, league: string, week: number | null, day: string | null) =>
+    [...inLeague(competition, league), "day-of", week, day] as const,
   games: (competition: string, league: string, week: number | null) =>
     [...inLeague(competition, league), "games", week] as const,
   judgment: (competition: string, league: string) => [...inLeague(competition, league), "judgment"] as const,
