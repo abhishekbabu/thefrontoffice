@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 from support.espn import FakeESPN
-from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
+from support.nfl import SLEEPER_USER_ID, SLUMPING_TE, FakeSleeper, nfl_provider, proj, slumping
 
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
@@ -1417,3 +1417,45 @@ def test_a_move_between_two_of_one_clubs_players_carries_its_club_story_once() -
 
     assert action.player_id == BENCH_RB.player_id
     assert [line.label for line in action.evidence if story.headline in line.value] == [BENCH_RB.name]
+
+
+# ── a slumping starter ──────────────────────────────────────────────────
+
+STREAMER = proj("fa", "Aj Streamer", "TE", 7.0, team="SEA", opp="ARI")
+
+
+def test_a_streamer_in_form_is_picked_up_over_a_slumping_starter_projected_above_him() -> None:
+    """3 a game for a month against 10 projected; the streamer 9 a game on 7 projected. Projection alone never asks."""
+    [action] = [a for a in _actions(slumping(STREAMER)) if a.key.startswith("slump:")]
+
+    assert (action.kind, action.player_id, action.replaces, action.drop) == ("waiver", "fa", SLUMPING_TE.player_id, "")
+    assert action.key == f"slump:{SLUMPING_TE.player_id}"
+    assert [(p.side, p.player_id) for p in action.players] == [("in", "fa"), ("out", "te")]
+
+
+def test_a_bench_player_in_form_is_started_over_a_slumping_starter() -> None:
+    """7 a game on 7 projected: within a point of the starter's worth, so no swap, but 2.5 clear on form."""
+    benched = replace(STREAMER, player_id="te2", name="Ted Bench")
+    [action] = [a for a in _actions(slumping(benched, owned=True, other_points=7.0)) if a.key.startswith("slump:")]
+
+    assert (action.kind, action.player_id, action.replaces) == ("lineup", "te2", SLUMPING_TE.player_id)
+
+
+def test_nobody_clear_of_a_slumping_starter_on_form_is_no_move() -> None:
+    """4 a game on 5 projected is under 2 points better on form: a coin flip, not a call."""
+    weak = replace(STREAMER, points=5.0)
+
+    assert not [a for a in _actions(slumping(weak, other_points=4.0)) if a.key.startswith("slump:")]
+
+
+def test_a_starter_in_form_is_never_called_off_his_slot() -> None:
+    client = slumping(STREAMER)
+    client.game_lines = [line for line in client.game_lines if line.player_id != "te" or line.week <= 4]
+
+    assert not [a for a in _actions(client) if a.key.startswith("slump:")]
+
+
+def test_a_slumping_starter_with_nobody_at_his_position_to_call_on_stays() -> None:
+    receiver = replace(STREAMER, position="WR")
+
+    assert not [a for a in _actions(slumping(receiver)) if a.key.startswith("slump:")]

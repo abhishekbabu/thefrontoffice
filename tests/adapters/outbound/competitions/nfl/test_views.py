@@ -7,10 +7,11 @@ drawer that opens on him is `test_drawer.py`.
 from dataclasses import replace
 
 import pytest
-from support.nfl import SLEEPER_USER_ID, FakeSleeper, game_line, nfl_provider, proj
+from support.nfl import SLEEPER_USER_ID, SLUMPING_TE, FakeSleeper, game_line, nfl_provider, proj, slumping
 
 from thefrontoffice.adapters.outbound.competitions.matchups import RECENT_GAMES, Matchup, Recent
-from thefrontoffice.adapters.outbound.competitions.nfl.views import ease
+from thefrontoffice.adapters.outbound.competitions.nfl.slump import SLUMP_LABEL
+from thefrontoffice.adapters.outbound.competitions.nfl.views import ON_FORM, ease
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,
@@ -158,3 +159,23 @@ def test_a_free_agent_out_past_this_week_follows_everyone_who_can_play() -> None
 
     assert fits["wr8"] > fits["wr9"]
     assert order.index("wr9") < order.index("wr8")
+
+
+# ── a slumping starter ──────────────────────────────────────────────────
+
+STREAMER = proj("fa", "Aj Streamer", "TE", 7.0, team="SEA", opp="ARI")
+
+
+def test_a_free_agent_against_a_slumping_starter_fits_on_form() -> None:
+    """Both read three parts form to one part projection, a tenth up for steady snaps: 9.35 against 5.23."""
+    [row] = nfl_provider(slumping(STREAMER)).free_agents("L1", PlayerQuery(position="TE")).players
+
+    assert row.values["Fits"] == pytest.approx((0.75 * 9 + 0.25 * 7) * 1.1 - (0.75 * 3 + 0.25 * 10) * 1.1, abs=0.01)
+    assert ON_FORM in row.notes["Fits"]
+
+
+def test_a_slumping_starter_is_noted_on_his_projection_in_the_roster() -> None:
+    rows = {row.player_id: row for row in nfl_provider(slumping(STREAMER, owned=True)).roster("L1")}
+
+    assert rows[SLUMPING_TE.player_id].notes["Proj"].startswith(SLUMP_LABEL)
+    assert "Proj" not in rows["fa"].notes

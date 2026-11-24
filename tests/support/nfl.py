@@ -298,3 +298,61 @@ def game_line(
 ) -> NFLGameLine:
     """One player's line from one game, with whatever stats the test turns on."""
     return NFLGameLine(player_id=pid, week=week, team=team, opponent=opponent, position=position, stats=stats)
+
+
+SLUMPING_TE = WeeklyProjection(player_id="te", name="Tyler End", position="TE", team="IND", opponent="NYG", points=10.0)
+"""A starting tight end projected 10 who has scored 3 a game for a month: a slump (`nfl/slump.py`)."""
+
+
+def slumping(other: WeeklyProjection, owned: bool = False, other_points: float = 9.0) -> FakeSleeper:
+    """Week 9 of a league that starts one tight end, `SLUMPING_TE`, beside `other` — on his bench where `owned`,
+    else on the wire — who has scored `other_points` every game.
+
+    The starter scored 10 a game for four weeks on 8 yards a target, then 3 on 3, on the same 80% of snaps.
+    """
+
+    def games(pid: str, team: str, points: list[float], yards: list[float]) -> list[NFLGameLine]:
+        return [
+            game_line(
+                pid,
+                week,
+                position="TE",
+                team=team,
+                opponent="HOU",
+                pts_ppr=scored,
+                off_snp=80.0,
+                tm_off_snp=100.0,
+                rec_tgt=6.0,
+                rec_yd=gained,
+            )
+            for week, (scored, gained) in enumerate(zip(points, yards, strict=True), start=1)
+        ]
+
+    lines = games("te", "IND", [10.0] * 4 + [3.0] * 4, [48.0] * 4 + [18.0] * 4)
+    lines += games(other.player_id, other.team, [other_points] * 8, [54.0] * 8)
+    players = [SLUMPING_TE, other]
+    client = FakeSleeper(
+        projections={p.player_id: p for p in players},
+        league=SleeperLeague(
+            league_id="L1",
+            name="Small",
+            season="2026",
+            total_rosters=2,
+            scoring_format="pts_ppr",
+            roster_positions=["TE", "BN", "BN"],
+        ),
+        rosters=[
+            SleeperRoster(
+                roster_id=1,
+                owner_id=SLEEPER_USER_ID,
+                player_ids=["te", other.player_id] if owned else ["te"],
+                starter_ids=["te"],
+            )
+        ],
+        game_lines=lines,
+    )
+    client.players_catalog = {
+        p.player_id: PlayerMeta(player_id=p.player_id, name=p.name, position=p.position, team=p.team) for p in players
+    }
+    client.week = 9
+    return client

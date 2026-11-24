@@ -31,6 +31,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.rules import (
     long_term,
     ruled_out,
 )
+from thefrontoffice.adapters.outbound.competitions.nfl.slump import SLUMP_LABEL, called, slump
 from thefrontoffice.adapters.outbound.competitions.nfl.week import (
     Live,
     Week,
@@ -155,6 +156,7 @@ def cards(
         injury = meta.injury_status
         depth = meta.depth_chart_order
         fitted = fit(state, projection) if wire and projection else None
+        sunk = slump(state, projection) if not wire and player_id in starters and projection else None
         trend = state.evidence.trends.get(player_id) if wire else None
         role = state.evidence.roles.get(player_id) if wire else None
         snaps, targets = (role.snap_share, role.target_share) if role else (None, None)
@@ -205,6 +207,8 @@ def cards(
                 notes={
                     **({FIT_COLUMN: fitted.against} if fitted else {}),
                     **({WITHOUT_COLUMN: split.note()} if split else {}),
+                    # His projection is the figure the slump says is wrong.
+                    **({"Proj": f"{SLUMP_LABEL}: {sunk.short()}"} if sunk else {}),
                 },
                 columns=columns,
                 values={
@@ -259,6 +263,7 @@ def fit(state: Week, projection: Projection) -> Fit | None:
     A shortfall is shown as plainly as a gain: in a deep league nobody on
     the wire outvalues a starter, and which of them comes closest is
     then the whole question — a column of blanks would answer none of it.
+    Against a slumping starter both are read by the form call instead (`slump.called`).
     None only where he could fill no slot at all.
     """
     eligible = [slot for slot in state.best if projection.position in eligible_positions(slot.slot)]
@@ -273,7 +278,22 @@ def fit(state: Week, projection: Projection) -> Fit | None:
     if held is None:
         why = RULED_OUT_SHORT.get(starter.injury_status.upper(), "on bye")
         return Fit(gain, f"for {starter.name}, {why}")
+    if (formed := _on_form(state, projection, starter)) is not None:
+        return Fit(formed, f"{'over' if formed > 0 else 'vs'} {starter.name}, {ON_FORM}")
     return Fit(gain, f"{'over' if gain > 0 else 'vs'} {starter.name}")
+
+
+ON_FORM = "on form"
+"""How a fit says it was read by the form call against a slumping starter, not by `worth.value`."""
+
+
+def _on_form(state: Week, projection: Projection, starter: Projection) -> float | None:
+    """The gap by `slump.called` where the starter he is measured against is slumping; None otherwise,
+    or where either has too few games for a form call."""
+    if slump(state, starter) is None:
+        return None
+    mine, theirs = called(state, projection), called(state, starter)
+    return None if mine is None or theirs is None else round(mine - theirs, 2)
 
 
 def short_at(state: Week) -> set[str]:

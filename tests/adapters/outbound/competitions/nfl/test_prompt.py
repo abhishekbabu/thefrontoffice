@@ -11,7 +11,16 @@ from typing import Any
 
 import pytest
 from support.espn import FakeESPN
-from support.nfl import DEFAULT_PROJECTIONS, SLEEPER_USER_ID, FakeSleeper, game_line, nfl_provider, proj
+from support.nfl import (
+    DEFAULT_PROJECTIONS,
+    SLEEPER_USER_ID,
+    SLUMPING_TE,
+    FakeSleeper,
+    game_line,
+    nfl_provider,
+    proj,
+    slumping,
+)
 from support.prompts import named_fields, schema_fields
 
 from thefrontoffice.adapters.outbound.competitions.nfl import prompt
@@ -379,3 +388,13 @@ def test_the_prompts_name_only_fields_their_answers_have() -> None:
     assert named_fields(prompt.NFL_SCOUT_PROMPT) <= schema_fields(ScoutAnswer)
     assert named_fields(prompt.NFL_TRADE_PROMPT) <= schema_fields(TradeAnswer)
     assert named_fields(prompt.NFL_WIRE_PROMPT) <= schema_fields(WireAnswer)
+
+
+def test_a_slumping_starter_carries_his_slump_under_his_lineup_line() -> None:
+    """His month — 3 a game on 3 yards a target, against 10 projected and 8 before — is evidence the model weighs."""
+    text = (
+        nfl_provider(slumping(proj("fa", "Aj Streamer", "TE", 7.0, team="SEA", opp="ARI"))).build_context("L1").prompt
+    )
+    lineup = text[text.index(f"TE: {SLUMPING_TE.name}") :].split("\n- ")[0]
+
+    assert "3.00/g" in lineup and "3.0 yds/tgt" in lineup and "8.0" in lineup
