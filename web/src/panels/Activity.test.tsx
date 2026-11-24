@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { League, LeagueSchedule, PlayerDetail } from "@/lib/types";
 import { keys } from "@/lib/queries";
 import { ActivityPanel } from "@/panels/Activity";
-import { offlineClient, render, settle } from "@/test/render";
+import { drawerClient, render, settle } from "@/test/render";
 import { playerDetail } from "@/test/players";
 import { competitionOf } from "@/test/leagues";
 
@@ -38,7 +38,7 @@ const STAR_QB: PlayerDetail = playerDetail({ player_id: "qb1", name: "Star QB", 
 
 describe("League activity", () => {
   it("opens a trade in full, by who got whom", async () => {
-    const client = offlineClient();
+    const client = drawerClient(competition.key, league.league_id);
 
     client.setQueryData(keys.season(competition.key, league.league_id), schedule);
 
