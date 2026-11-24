@@ -560,9 +560,19 @@ class SleeperNFLProvider:
         """The list with next week flagged where byes and injuries leave it short, in place of its bye items."""
         # Never a drop the rest of the list already names, nor a player it moves.
         claimed = {pid for item in listed for pid in (item.action.player_id, item.action.replaces, item.action.drop)}
+        # Read on the roster the list's own moves leave: a slot its pickup fills is not short, and a player it
+        # brings off IR takes a spot.
+        adds = [item.action.player_id for item in listed if item.is_pickup or item.move == "ir"]
+        drops = [item.action.drop for item in listed if item.action.drop]
         try:
             ahead = outlook.build(
-                self.client, state, self.scoreboard.schedule(state.season), self._signable(state), claimed - {""}
+                self.client,
+                state,
+                self.scoreboard.schedule(state.season),
+                self._signable(state),
+                claimed - {""},
+                adds=adds,
+                drops=drops,
             )
         except SleeperAPIError as e:
             logger.warning(f"Continuing without the weeks ahead: {e}")

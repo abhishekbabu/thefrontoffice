@@ -3,12 +3,10 @@
 from dataclasses import replace
 
 import pytest
-from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj
+from support.nfl import SLEEPER_USER_ID, FakeSleeper, nfl_provider, proj, week_of
 
 from thefrontoffice.adapters.outbound.competitions.nfl import outlook
-from thefrontoffice.adapters.outbound.competitions.nfl.lineup import current_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
-from thefrontoffice.adapters.outbound.competitions.nfl.worth import lineup_value
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, ScheduledGame, SleeperRoster
 from thefrontoffice.domain.errors import TeamNotFoundError
 from thefrontoffice.domain.models import Outlook, PlayerQuery, WeekAhead
@@ -293,17 +291,13 @@ def test_a_players_rate_ahead_counts_only_the_weeks_he_is_projected_in() -> None
 
 
 def _state(client: FakeSleeper) -> Week:
-    projected = list(MINE.values())
-    return Week(
-        league=client.league,
-        roster=client.rosters[0],
+    return week_of(
+        client.league,
+        client.rosters[0],
+        list(MINE.values()),
+        client.get_nfl_players(),
         week=3,
-        season="2026",
         projections={**MINE, **WIRE},
-        players=client.get_nfl_players(),
-        projected=projected,
-        lineup=current_lineup(client.league.starting_slots, client.rosters[0].starter_ids, projected),
-        rank=lineup_value,
     )
 
 

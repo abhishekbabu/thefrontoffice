@@ -17,6 +17,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.evidence import (
     season_average,
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.model import Projection
+from thefrontoffice.adapters.outbound.competitions.nfl.roles import window
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import ruled_out
 from thefrontoffice.adapters.outbound.competitions.nfl.teammates import Split
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
@@ -112,9 +113,14 @@ def rest_of_season(state: Week, player: Projection) -> float | None:
 
     Neither this week's projection, which reads a bye or one soft matchup as the player, nor his last few games,
     which read one cold stretch as the player: a drop is for the rest of the season. Where his recent games were
-    fill-in work for a teammate who is back, his season is his points a game beside that teammate (`filling_in`).
+    fill-in work for a teammate who is back, his season is his points a game beside that teammate (`filling_in`);
+    where they follow his own return from an absence (`roles.window`), his points a game since.
     """
     split = filling_in(state, player)
     played = average(state.evidence, player.player_id) if split is None else split.alongside
+    since, _, returned = window(state, player.player_id)
+    if returned is not None and split is None:
+        # Back from an absence: his games since are his role, and his season and projection have not caught up.
+        played = sum(game.points for game in since) / len(since)
     blended = shared.blend(played, state.ahead.get(player.player_id))
     return None if blended is None else blended * usage(state, player.player_id)

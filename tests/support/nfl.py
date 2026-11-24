@@ -5,11 +5,15 @@ it a schedule, both rosters and a matchup. Everything a test does not set is
 the same every time, so a test states only what its rule turns on.
 """
 
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 from support.espn import FakeESPN
+from thefrontoffice.adapters.outbound.competitions.nfl import evidence
+from thefrontoffice.adapters.outbound.competitions.nfl.lineup import current_lineup
 from thefrontoffice.adapters.outbound.competitions.nfl.sleeper import SleeperNFLProvider
+from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
+from thefrontoffice.adapters.outbound.competitions.nfl.worth import lineup_value
 from thefrontoffice.adapters.outbound.platforms.http import Batch
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -356,3 +360,32 @@ def slumping(other: WeeklyProjection, owned: bool = False, other_points: float =
     }
     client.week = 9
     return client
+
+
+def week_of(
+    league: SleeperLeague,
+    roster: SleeperRoster,
+    projected: Sequence[WeeklyProjection],
+    players: Mapping[str, PlayerMeta],
+    *,
+    week: int = 9,
+    lines: Sequence[NFLGameLine] = (),
+    projections: Mapping[str, WeeklyProjection] | None = None,
+) -> Week:
+    """A week built by hand, without a provider: `roster` fielding `projected`, its evidence gathered from `lines`.
+
+    For a module that reads a `Week` and nothing else; anything that asks the platform goes through `nfl_provider`.
+    """
+    return Week(
+        league=league,
+        roster=roster,
+        week=week,
+        season="2026",
+        projections=projections if projections is not None else {p.player_id: p for p in projected},
+        players=players,
+        projected=list(projected),
+        lineup=current_lineup(league.starting_slots, roster.starter_ids, list(projected)),
+        rank=lineup_value,
+        rosters=[roster],
+        evidence=evidence.gather(lines, "pts_ppr"),
+    )

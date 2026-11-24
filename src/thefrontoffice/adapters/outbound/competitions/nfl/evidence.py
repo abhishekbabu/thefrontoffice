@@ -50,11 +50,11 @@ def snap_share(line: GameLine) -> float | None:
     return line.stats.get("off_snp", 0.0) / team if team else None
 
 
-def _team_targets(lines: Sequence[GameLine]) -> dict[tuple[str, int], float]:
-    """Every club's targets in each week, which a player's share is of."""
+def _team_targets(lines: Sequence[GameLine], key: str = "rec_tgt") -> dict[tuple[str, int], float]:
+    """Every club's targets in each week, which a player's share is of — or, by `key`, its carries."""
     totals: dict[tuple[str, int], float] = defaultdict(float)
     for line in lines:
-        totals[(line.team, line.week)] += line.stats.get("rec_tgt", 0.0)
+        totals[(line.team, line.week)] += line.stats.get(key, 0.0)
     return totals
 
 
@@ -70,6 +70,8 @@ class Appearance:
     target_share: float | None = None
     """His share of his club's targets that game; None where it threw none."""
     carries: float = 0.0
+    carry_share: float | None = None
+    """His share of his club's carries that game; None where it ran none."""
     receiving_yards: float = 0.0
 
     @property
@@ -235,7 +237,7 @@ def gather(lines: Sequence[GameLine], scoring: str, out: Collection[str] = froze
 
 def _appearances(lines: Sequence[GameLine], scoring: str) -> tuple[dict[str, tuple[Appearance, ...]], dict[str, str]]:
     """Each player's games he took the field in, by the same rule his role is read by, oldest first."""
-    team_targets = _team_targets(lines)
+    team_targets, team_carries = _team_targets(lines), _team_targets(lines, "rush_att")
     played: dict[str, list[GameLine]] = defaultdict(list)
     for line in lines:
         if took_the_field(line):
@@ -243,6 +245,7 @@ def _appearances(lines: Sequence[GameLine], scoring: str) -> tuple[dict[str, tup
 
     def appearance(game: GameLine) -> Appearance:
         targets, thrown = game.stats.get("rec_tgt", 0.0), team_targets[(game.team, game.week)]
+        carries, ran = game.stats.get("rush_att", 0.0), team_carries[(game.team, game.week)]
         return Appearance(
             week=game.week,
             team=game.team,
@@ -250,7 +253,8 @@ def _appearances(lines: Sequence[GameLine], scoring: str) -> tuple[dict[str, tup
             snap_share=snap_share(game),
             targets=targets,
             target_share=targets / thrown if thrown else None,
-            carries=game.stats.get("rush_att", 0.0),
+            carries=carries,
+            carry_share=carries / ran if ran else None,
             receiving_yards=game.stats.get("rec_yd", 0.0),
         )
 
