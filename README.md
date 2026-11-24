@@ -185,7 +185,7 @@ from the usual reading (form beside projection) toward those five games' by
 (`competitions/worth.settled`). With his minutes where they were, a big night
 counts only its share of the average. The to-do list, streams, the weeks ahead,
 the drawer and the free-agent order all read this one figure, though a category league's
-to-do streams weigh each category by how close the forecast has it (4p(1−p), floor 0.1), keepers by the categories the roster ranks lowest in among the league's teams (the standings' season totals a game played; the week's pool without them), naming only those a keeper lifts from an average figure and those he costs. Free agents also show
+to-do streams weigh each category by how close the forecast has it (4p(1−p), floor 0.1), keepers by the categories the roster ranks lowest in among the league's teams (the standings' season totals a game played; the week's pool without them), naming only those a keeper lifts from an average figure and those he costs (a stream's close categories alike). Free agents also show
 `Min`, his minutes a game over his last five, with an arrow and the window's figure
 where they moved (`37.7 ↑ (33.5)`), and `Rost`, the share of Yahoo leagues rostering
 him and its change this week (`34% ↑12`), which is shown and not weighed. Lineup rows show

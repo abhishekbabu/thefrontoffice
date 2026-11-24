@@ -1068,3 +1068,24 @@ def test_a_centres_assists_over_a_bigger_centres_are_not_named_as_help_with_assi
     assert swap.costs[0] == "REB"
     assert (item.player_id, item.drop, item.pickup) == ("Myles Turner", "Rudy Gobert", "keeper")
     assert "REB" in item.reason
+
+
+def test_a_streams_close_categories_follow_the_keepers_rule_with_what_he_costs_named_too() -> None:
+    """Assists, blocks and steals close this week: Turner's blocks are named, his assists — more than Gobert's,
+    no more than average — are not, and the steals he gives up are."""
+    roster, readings = _team()
+    gobert = _player("Rudy Gobert", "BN", position="C", team="MIN")
+    turner = _player("Myles Turner", position="C", team="MIL")
+    readings |= {
+        "Rudy Gobert": Reading(player=gobert, line=GOBERT_LINE, per_game=5.5, games=2),
+        "Myles Turner": Reading(player=turner, line=TURNER_LINE, per_game=5.8, games=4),
+    }
+    close = {"AST", "BLK", "STL"}
+    targeting = Targeting(scales=GM3_SCALES, weights={label: 1.0 if label in close else 0.1 for label in GM3_SCALES})
+
+    swap = Weigh([*roster, gobert], readings, Plan(targeting=targeting)).streamer(
+        readings["Myles Turner"], [readings["Rudy Gobert"]]
+    )
+
+    assert swap is not None
+    assert (swap.term, swap.targets, swap.costs) == ("streamer", ("BLK",), ("ST",))
