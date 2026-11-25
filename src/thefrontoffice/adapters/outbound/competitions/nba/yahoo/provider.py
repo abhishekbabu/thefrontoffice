@@ -677,7 +677,9 @@ class YahooNBAProvider:
             PlatformError: the schedule would not load.
         """
         league = self._league(league_id)
-        return trading.market(self.feeds, self._yahoo_for(league), league, self.untouchable.of(league.league_key))
+        return trading.market(
+            self.feeds, self._yahoo_for(league), league, self.untouchable.of(league.league_key), days=self.days
+        )
 
     # ── players and teams ───────────────────────────────────────────
 

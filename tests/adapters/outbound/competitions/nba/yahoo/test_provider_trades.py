@@ -11,7 +11,9 @@ from support.stores import FakeUntouchable
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import PlayerStats, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.rules import POINTS
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import ONE_WIN, reads, trading
+from thefrontoffice.adapters.outbound.competitions.nba.yahoo.trading import DOUBT_DELAY, doubted
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooUnavailableError
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooLeague
@@ -279,3 +281,22 @@ def test_a_trade_is_priced_with_the_clubs_stories_of_both_sides() -> None:
     )
 
     assert context.prompt.count(story.headline) == 1 and story.headline in context.situation
+
+
+def test_a_return_in_doubt_is_priced_a_week_later_and_a_firm_one_as_reported() -> None:
+    today = date(2026, 11, 24)
+    firm, doubted_back, doubted_none = (make_player(n, key=n) for n in ("firm", "back", "none"))
+    readings = {
+        "firm": Reading(player=firm, line={}, per_game=1.0, games=1),
+        "back": Reading(player=doubted_back, line={}, per_game=1.0, games=0, missed=5),
+        "none": Reading(player=doubted_none, line={}, per_game=1.0, games=0, missed=4),
+    }
+    returns = {"firm": date(2026, 11, 27), "back": date(2026, 11, 27)}
+
+    found = doubted(returns, readings, today)
+
+    assert found == {
+        "firm": date(2026, 11, 27),
+        "back": date(2026, 11, 27) + DOUBT_DELAY,
+        "none": today + DOUBT_DELAY,
+    }

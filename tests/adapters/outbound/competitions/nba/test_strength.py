@@ -6,6 +6,7 @@ from datetime import date
 import pytest
 from support.nba import make_player
 
+from thefrontoffice.adapters.outbound.competitions.nba.form import Availability
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     BLOCKS,
     CATEGORIES,
@@ -349,3 +350,19 @@ def test_the_swing_is_read_at_levels_that_hold_a_standard_normal() -> None:
         assert sum(w * x for x, w in nodes) == pytest.approx(0.0, abs=1e-12)
         assert sum(w * x**2 for x, w in nodes) == pytest.approx(1.0)
         assert sum(w * x**4 for x, w in nodes) == pytest.approx(3.0)
+
+
+def test_a_trade_prices_a_streak_on_the_season_and_a_fragile_player_at_the_games_he_plays() -> None:
+    """30 a game this week on a hot run, 21 for the season; then two games in three of a player who keeps going
+    missing: his counts at two thirds a game, his rate his rate."""
+    hot = replace(_reading({POINTS.label: 30.0}, per_game=30.0), season_value=21.0)
+    assert profile(hot, [], {POINTS.yahoo_stat: 1.0}).value == pytest.approx(21.0)
+
+    day = date(2026, 11, 2)
+    away = Availability(played=12, scheduled=18, spells=((day, day), (day, day)))
+    often = replace(_reading({BLOCKS.label: 3.0, FIELD_GOALS.label: 0.5}), availability=away)
+    found = profile(often, [], None)
+
+    assert found.value == pytest.approx(10.0 * 12 / 18)
+    assert found.mean[BLOCKS.label] == pytest.approx(2.0)
+    assert found.attempts[FIELD_GOALS.label] == pytest.approx(ATTEMPTS[FIELD_GOALS.label])

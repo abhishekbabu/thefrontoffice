@@ -151,10 +151,24 @@ def bent(
     }
 
 
-def said(found: Mapping[str, Form], player_ids: Iterable[str], names: Mapping[str, str]) -> tuple[Stat, ...]:
-    """The lines worth showing for these players: those whose form moves their price enough to matter."""
-    return tuple(
-        found[pid].stat(names.get(pid, pid))
-        for pid in player_ids
-        if pid in found and abs(found[pid].factor - 1) >= SAID_FROM
-    )
+def said(
+    found: Mapping[str, Form],
+    player_ids: Iterable[str],
+    names: Mapping[str, str],
+    labels: Mapping[str, str] | None = None,
+) -> tuple[Stat, ...]:
+    """The lines worth showing for these players: those whose form moves their price enough to matter, and those
+    the week plan labels (`labels`, by id: 'Slump: 4.95/g L4 vs 11.90 proj those weeks'), labelled alike."""
+    lines = []
+    for pid in player_ids:
+        name = names.get(pid, pid)
+        moved = pid in found and abs(found[pid].factor - 1) >= SAID_FROM
+        label = (labels or {}).get(pid)
+        if moved and label:
+            priced = found[pid].stat(name)
+            lines.append(Stat(label=name, value=f"{priced.value} · {label}"))
+        elif moved:
+            lines.append(found[pid].stat(name))
+        elif label:
+            lines.append(Stat(label=name, value=label))
+    return tuple(lines)

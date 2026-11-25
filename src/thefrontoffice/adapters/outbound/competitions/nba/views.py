@@ -12,7 +12,7 @@ the forecast, the teammate splits — and none of it is shown as an average.
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 
-from thefrontoffice.adapters.outbound.competitions.dates import day_month
+from thefrontoffice.adapters.outbound.competitions.dates import day_month, span
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba.form import FORM_WEEKS, PlayerStats
 from thefrontoffice.adapters.outbound.competitions.nba.model import NO_LINE, LeagueCategory, Player, PrintedLine
@@ -26,7 +26,14 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     ruled_out,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Teammate
-from thefrontoffice.adapters.outbound.competitions.nba.worth import COLD_SHOOTING, Reading, game_value, moved
+from thefrontoffice.adapters.outbound.competitions.nba.worth import (
+    COLD_SHOOTING,
+    Reading,
+    falling,
+    game_value,
+    kept_value,
+    moved,
+)
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.domain.models import (
     PLAYER_COLUMN,
@@ -460,3 +467,31 @@ def compared(moved: Sequence[tuple[MoveSide, Held, Reading]], by_points: bool) -
         )
         for side, held, reading in moved
     ]
+
+
+def priced(reading: Reading, by_points: bool) -> Stat | None:
+    """A trade's pricing line for him, where something beyond his blend prices him: 'priced 9.8 a game for the
+    season, 7.1 this week · Slump: … · Injury history: …'; None where nothing does. Labelled as every other view
+    labels it (`form_note`, the to-do's history and role), so a trade and the week plan read one player alike."""
+    parts = [note] if (note := form_note(reading)) else []
+    found = reading.availability
+    if reading.fragile and found is not None:
+        spells = ", ".join(span(first, last) for first, last in found.spells)
+        hurt = f" ({reading.injury})" if reading.injury else ""
+        parts.append(
+            f"Injury history{hurt}: out {spells}; {found.played} of {found.scheduled} played, counted at {found.share:.0%}"
+        )
+    role = reading.role
+    if falling(role) and role is not None:
+        taker = f", {reading.taking} taking them" if reading.taking else ""
+        parts.append(f"Role falling: {role.minutes:.0f} min a game, was {role.window:.0f}{taker}")
+    if reading.missed:
+        parts.append(f"Return unclear: out {reading.missed} straight")
+    week, season = game_value(reading), kept_value(reading)
+    if not parts or season is None:
+        return None
+    unit = "fpts" if by_points else "value"
+    now = f", {week:.1f} this week" if week is not None and abs(week - season) >= 0.05 else ""
+    return Stat(
+        label=reading.player.name, value=f"priced {season:.1f} {unit} a game for the season{now} · " + " · ".join(parts)
+    )

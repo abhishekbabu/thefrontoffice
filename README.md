@@ -76,9 +76,10 @@ on your machine against NFL on [Sleeper](https://sleeper.com), the
   An NFL player is priced at his projection pulled halfway toward his recent
   scoring (at most 30% either way); after a role change, the games since count
   by their number, games / (games + 4), so two big games move his price a third
-  as far as a settled role. A pickup most trades share is said once. NBA
-  (Yahoo) offers one or two of yours for one of theirs, priced at a game's value in the league's scoring over the
-  best free agent's, times his club's games left; only trades both sides gain on
+  as far as a settled role; a slumping starter's price says so. A pickup most trades share is said once. NBA
+  (Yahoo) offers one or two of yours for one of theirs, priced at a game's value for the season (the week plan's
+  season reading: streaks ⅓, the share of games played after 2+ absences, a doubted return a week later) in the
+  league's scoring over the best free agent's, times his club's games left, a player received in trade talk said; only trades both sides gain on
   (10+ fantasy points or 0.1+ categories a week for them). A week is measured from
   each roster's daily lineups (the best who play each night, capped at the
   starting slots): fantasy points in a points league, or categories you expect to
