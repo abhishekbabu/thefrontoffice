@@ -35,6 +35,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.week import Today
 from thefrontoffice.adapters.outbound.competitions.nba.worth import (
+    HOT_MINUTES,
     UNNEEDED,
     Reading,
     Scale,
@@ -440,8 +441,8 @@ COLD = Streak(hot=False, games=5, recent=8.0, usual=20.0, line={}, ahead={})
 HOT = Streak(hot=True, games=5, recent=32.0, usual=20.0, line={}, ahead={})
 
 
-def test_a_player_on_a_hot_run_is_never_the_drop_and_one_in_a_slump_goes_first() -> None:
-    """Weaker is hot, so Weak makes way; once Weak is in a slump he goes first even over a weaker week."""
+def test_a_player_on_a_hot_run_is_never_the_drop_and_one_in_a_slump_goes_first_only_with_news() -> None:
+    """Weaker is hot, so Weak makes way. A slump alone leaves the order to worth; with trade talk he goes first."""
     roster, readings = _team()
     readings["Weaker"] = replace(readings["Weaker"], streak=HOT)
 
@@ -449,12 +450,47 @@ def test_a_player_on_a_hot_run_is_never_the_drop_and_one_in_a_slump_goes_first()
 
     readings["Weaker"] = replace(readings["Weaker"], streak=None)
     readings["Weak"] = replace(readings["Weak"], streak=COLD)
+    assert [r.player.name for r in droppable(roster, readings, set())] == ["Weaker", "Weak"]
 
+    readings["Weak"] = replace(readings["Weak"], talk="Fri 21 Nov: Weak on the trade block")
     assert [r.player.name for r in droppable(roster, readings, set())] == ["Weak", "Weaker"]
     pickup = _player("Pickup", position="SF")
     readings |= _readings((pickup, 21.0, 4))
     [item] = streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set())
     assert item.drop == "Weak" and SLUMP_LABEL in item.reason
+
+
+def test_who_is_kept_is_read_on_the_season_not_the_week() -> None:
+    """Second's week reads low on a slump, but a third of it reaches his season: he stays in the better half."""
+    roster, readings = _team()
+    readings["Second"] = replace(readings["Second"], per_game=10.0, season_value=35.0, streak=COLD)
+
+    assert "Second" not in {r.player.name for r in droppable(roster, readings, set())}
+
+
+def test_a_keeper_is_weighed_on_his_season_value() -> None:
+    """30 a game this week on a hot run, but 21 for the season: not a fifth better than the 18 he would replace."""
+    roster, readings = _team()
+    hot = _player("Hot", position="SF")
+    readings |= {"Hot": replace(_read(hot, 30.0, 1), streak=HOT, season_value=21.0)}
+
+    assert streams(roster, [hot], readings, 2, True, set()) == []
+    readings["Hot"] = replace(readings["Hot"], season_value=None)
+    assert [i.pickup for i in streams(roster, [hot], readings, 2, True, set())] == ["keeper"]
+
+
+def test_a_free_agent_on_a_bench_players_minutes_or_an_unbacked_run_is_never_a_keeper() -> None:
+    roster, readings = _team()
+    bench, unbacked = _player("Bench", position="SF"), _player("Unbacked", position="SF")
+    readings |= {
+        "Bench": replace(_read(bench, 30.0, 1), minutes=HOT_MINUTES - 3),
+        "Unbacked": replace(_read(unbacked, 30.0, 1), unproven=True),
+    }
+
+    for pickup in (bench, unbacked):
+        assert "keeper" not in [i.pickup for i in streams(roster, [pickup], readings, 2, True, set())]
+    readings["Bench"] = replace(readings["Bench"], minutes=HOT_MINUTES)
+    assert [i.pickup for i in streams(roster, [bench], readings, 2, True, set())] == ["keeper"]
 
 
 def test_a_free_agent_in_a_slump_is_never_a_keeper() -> None:
@@ -483,9 +519,9 @@ def test_a_keeper_in_trade_talk_ranks_behind_a_clean_one_and_says_so() -> None:
     talked, clean = _player("Talked", position="SF"), _player("Clean", position="SF")
     readings |= _readings((talked, 32.0, 1), (clean, 30.0, 3))
     story = "Fri 21 Nov: Talked emerges as a trade candidate"
-    plan = Plan(talk={"Talked": story})
+    readings["Talked"] = replace(readings["Talked"], talk=story)
 
-    planned, alternative = streams(roster, [talked, clean], readings, 1, True, set(), plan=plan)
+    planned, alternative = streams(roster, [talked, clean], readings, 1, True, set())
 
     assert [(item.player_id, item.pickup) for item in (planned, alternative)] == [
         ("Clean", "keeper"),
@@ -498,7 +534,8 @@ def test_a_decided_week_weighs_a_keeper_in_trade_talk_after_every_clean_one() ->
     roster, readings = _team()
     talked, clean = _player("Talked", position="SF"), _player("Clean", position="SF")
     readings |= _readings((talked, 32.0, 3), (clean, 30.0, 3))
-    plan = Plan(win=0.02, talk={"Talked": "Fri 21 Nov: Talked emerges as a trade candidate"})
+    readings["Talked"] = replace(readings["Talked"], talk="Fri 21 Nov: Talked emerges as a trade candidate")
+    plan = Plan(win=0.02)
 
     items = streams(roster, [talked, clean], readings, 1, True, set(), plan=plan)
 

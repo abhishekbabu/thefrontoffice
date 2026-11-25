@@ -16,6 +16,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.form import (
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, FIELD_GOALS, POINTS, TURNOVERS
 from thefrontoffice.adapters.outbound.competitions.nba.worth import (
+    HOT_MINUTES,
     MINUTES,
     ROLE,
     TARGET_FLOOR,
@@ -25,6 +26,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     category_value,
     falling,
     game_value,
+    kept_value,
     league_standing,
     moved,
     needs,
@@ -529,24 +531,29 @@ def _scoring(*points: float) -> PlayerStats:
 
 
 def test_most_of_his_last_games_well_under_the_projection_are_a_slump() -> None:
-    """Under three-fifths of 20 is 12: 11.8 a game, four of the five under it, the 25 a night that does not undo it."""
-    found = streak(_scoring(10, 8, 25, 9, 7), TWENTY, POINTS_ONLY)
+    """Under three-fifths of 20 is 12: his worst night out, 9.5 a game, and all four left under it."""
+    found = streak(_scoring(10, 8, 11, 9, 7), TWENTY, POINTS_ONLY)
 
     assert found is not None
     assert (found.hot, found.games, found.label) == (False, 5, SLUMP_LABEL)
-    assert (found.recent, found.usual) == (pytest.approx(11.8), pytest.approx(20.0))
+    assert (found.recent, found.usual) == (pytest.approx(9.0), pytest.approx(20.0))
 
 
-def test_a_low_average_from_two_bad_nights_is_no_slump() -> None:
-    """Two games of nothing drag the average to 11.2, but three of the five were fine: most must fall short."""
+def test_a_low_average_from_bad_nights_beside_good_ones_is_no_slump() -> None:
     assert streak(_scoring(0, 0, 13, 13, 30), TWENTY, POINTS_ONLY) is None
+    assert streak(_scoring(10, 8, 25, 9, 7), TWENTY, POINTS_ONLY) is None  # 13 a game without the 7
 
 
 def test_most_of_his_last_games_well_over_the_projection_are_hot() -> None:
-    found = streak(_scoring(30, 31, 30, 10, 40), TWENTY, POINTS_ONLY)
+    found = streak(_scoring(30, 31, 30, 29, 40), TWENTY, POINTS_ONLY)
 
     assert found is not None
     assert (found.hot, found.label) == (True, HOT_LABEL)
+
+
+def test_one_big_night_is_no_hot_run() -> None:
+    """Turner's shape: a 27-point night carrying an average the other four do not reach."""
+    assert streak(_scoring(44, 29, 20, 20, 32), TWENTY, POINTS_ONLY) is None
 
 
 def test_games_around_the_projection_are_no_streak() -> None:
@@ -559,19 +566,38 @@ def test_without_a_projection_or_five_games_there_is_nothing_to_run_past() -> No
     assert streak(_scoring(5, 5, 5, 5, 5), ProjectedTotals(games=2, totals={}), POINTS_ONLY) is None
 
 
-def test_a_streak_weighs_him_on_his_last_games_called_against_the_projection() -> None:
-    """Three-quarters his last five's 11.8, a quarter the projection's 20, in place of the even blend."""
-    reading = read(make_player("A"), _scoring(10, 8, 25, 9, 7), TWENTY, POINTS_ONLY, 3)
+def test_a_slump_weighs_his_week_three_to_one_on_it_and_his_season_a_third_of_the_way() -> None:
+    reading = read(make_player("A"), _scoring(10, 8, 11, 9, 7), TWENTY, POINTS_ONLY, 3)
 
     assert reading.cold and not reading.hot
-    assert reading.per_game == pytest.approx(CALL_FORM * 11.8 + (1 - CALL_FORM) * 20.0)
+    assert reading.per_game == pytest.approx(CALL_FORM * 9.0 + (1 - CALL_FORM) * 20.0)
+    usual = (9.0 + 20.0) / 2
+    assert reading.season_value == pytest.approx(usual + (9.0 - usual) / 3)
+    assert kept_value(reading) == pytest.approx(usual + (9.0 - usual) / 3)
 
 
-def test_a_hot_run_lifts_him_the_same_way() -> None:
-    reading = read(make_player("A"), _scoring(30, 31, 30, 10, 40), TWENTY, POINTS_ONLY, 3)
+def _hot(minutes: float) -> PlayerStats:
+    stats = _scoring(30, 31, 30, 29, 40)
+    stats["minutes"] = (minutes,) * 5
+    return stats
 
-    assert reading.hot and not reading.cold
-    assert reading.per_game == pytest.approx(CALL_FORM * 28.2 + (1 - CALL_FORM) * 20.0)
+
+def test_a_hot_run_on_a_starters_minutes_lifts_him_the_same_way() -> None:
+    reading = read(make_player("A"), _hot(HOT_MINUTES), TWENTY, POINTS_ONLY, 3)
+
+    assert reading.hot and not reading.unproven
+    assert reading.per_game == pytest.approx(CALL_FORM * 32.0 + (1 - CALL_FORM) * 20.0)
+
+
+def test_a_hot_run_on_few_minutes_or_with_an_injury_open_is_no_streak_and_unproven() -> None:
+    """A bench player's big nights, or a questionable one's: read on the usual blend, and never kept."""
+    for reading in (
+        read(make_player("A"), _hot(HOT_MINUTES - 5), TWENTY, POINTS_ONLY, 3),
+        read(make_player("A"), _hot(HOT_MINUTES), TWENTY, POINTS_ONLY, 3, healthy=False),
+    ):
+        assert reading.streak is None and reading.unproven
+        assert reading.per_game == pytest.approx((32.0 + 20.0) / 2)
+        assert kept_value(reading) == reading.per_game
 
 
 def test_a_slump_names_the_categories_it_shows_in_the_way_it_ran() -> None:

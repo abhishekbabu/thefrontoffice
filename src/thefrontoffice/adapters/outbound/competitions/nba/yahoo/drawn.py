@@ -70,7 +70,8 @@ def week_of(
     value, reading = None, None
     if scaled is not None:
         value, by_category = scaled
-        read = nba_worth.read(player, stats, projected, value, games, provisional, back)
+        healthy = not player.status and reads.injuries([player], reports).of(player.player_key) is None
+        read = nba_worth.read(player, stats, projected, value, games, provisional, back, healthy)
         reading = replace(read, streak=nba_worth.swings(read.streak, by_category), missed=doubted)
     matchup = None
     if fixtures and profile:
