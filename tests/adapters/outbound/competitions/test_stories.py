@@ -14,6 +14,7 @@ from thefrontoffice.adapters.outbound.competitions.stories import (
     out_long,
     recap,
     roundup,
+    sentences,
     talk,
     text_of,
     trade_talk,
@@ -126,3 +127,24 @@ def test_trade_talk_names_the_player_beside_it_and_never_a_trade_made(
     headline: str, summary: str, talked: bool
 ) -> None:
     assert trade_talk(_story(headline, summary), [TURNER]) is talked
+
+
+def test_a_storys_text_is_read_a_sentence_at_a_time_with_the_player_named_in_it() -> None:
+    """The text talks of trading him in one sentence; in another, a trade talked of is somebody else's."""
+    named = NewsArticle(
+        article_id="1",
+        published=datetime(2026, 11, 20, tzinfo=UTC),
+        headline="Bucks notebook",
+        body="The Bucks won again. Myles Turner looms as a trade candidate for contenders.",
+    )
+    apart = NewsArticle(
+        article_id="2",
+        published=datetime(2026, 11, 20, tzinfo=UTC),
+        headline="Bucks notebook",
+        body="Myles Turner scored 27. Rivals could trade for Kevin Durant before the deadline.",
+    )
+
+    assert trade_talk(named, [TURNER])
+    assert not trade_talk(apart, [TURNER])
+    assert sentences("One. Two, J.R. Smith said! ") == ["One.", "Two, J.R. Smith said!"]
+    assert sentences("") == []

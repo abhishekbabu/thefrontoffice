@@ -41,7 +41,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProv
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo.reads import MISSED, WIRE_DEPTH
 from thefrontoffice.adapters.outbound.competitions.tasks import task_lines
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
-from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, NewsArticle, ScoreboardGame
+from thefrontoffice.adapters.outbound.platforms.espn.types import Athlete, InjuryReport, NewsArticle, ScoreboardGame
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError, YahooCaptureMissingError
@@ -1489,6 +1489,29 @@ def test_a_hurt_player_out_several_straight_with_no_firm_return_counts_no_games(
 
     assert row(MISSED).startswith("0G")
     assert row(MISSED - 1).startswith("2G")  # the 21st and 22nd, from the return the report gives
+
+
+def test_a_keeper_whose_own_storys_text_puts_him_in_trade_talk_says_so() -> None:
+    """His club's feed is silent; the story on his ESPN page says it in its third sentence."""
+    story = NewsArticle(
+        article_id="41",
+        published=datetime.now(UTC) - timedelta(days=1),
+        headline="Knicks notebook",
+        api_url="https://content.example/v1/sports/news/41",
+    )
+    espn = FakeESPN()
+    espn.rosters = [Athlete(athlete_id="9", name="Streamer", club="NY")]
+    espn.athlete_news = {"9": [story]}
+    espn.stories = {"41": "The Knicks won. Brunson scored 30. Streamer is a trade candidate, sources say."}
+    forecast = FakeForecast(categories={"PTS": 0.99}, win=0.02)
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+    nba = FakeNBA(stats={**WEEK_FORM, "Streamer": _line(24)}, games=WEEK_GAMES)
+
+    summary = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE, forecast=forecast, espn=espn).summary("")
+
+    [item] = [a for a in summary.actions or [] if a.kind == "waiver"]
+    assert item.pickup == "keeper" and "Knicks notebook" in item.reason
+    assert espn.athletes_asked == ["9"]
 
 
 def test_a_keeper_his_own_news_puts_in_trade_talk_says_so() -> None:

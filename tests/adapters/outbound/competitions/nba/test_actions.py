@@ -21,7 +21,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.actions import (
     starts,
     streams,
 )
-from thefrontoffice.adapters.outbound.competitions.nba.form import Role
+from thefrontoffice.adapters.outbound.competitions.nba.form import Availability, Role
 from thefrontoffice.adapters.outbound.competitions.nba.lineup import Week
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, POINTS, chance
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
@@ -1197,3 +1197,71 @@ def test_a_streams_close_categories_follow_the_keepers_rule_with_what_he_costs_n
 
     assert swap is not None
     assert (swap.term, swap.targets, swap.costs) == ("streamer", ("BLK",), ("ST",))
+
+
+# ── a keeper's history, role, shooting and runner-up ────────────────
+
+
+def test_a_free_agent_whose_role_is_falling_is_never_a_keeper() -> None:
+    roster, readings = _team()
+    fading = _player("Fading", position="SF")
+    readings |= {"Fading": replace(_read(fading, 30.0, 1), role=Role(games=5, minutes=20.0, window=26.0))}
+
+    assert "keeper" not in [i.pickup for i in streams(roster, [fading], readings, 2, True, set())]
+
+
+def _hurt_often(per_game: float) -> Reading:
+    day = date(2026, 11, 2)
+    away = Availability(played=12, scheduled=18, spells=((day, day), (date(2026, 11, 20), date(2026, 11, 23))))
+    return replace(_read(_player("Often", position="SF"), per_game, 1), availability=away, injury="Hip")
+
+
+def test_a_keeper_who_keeps_going_missing_is_weighed_on_the_games_he_has_played_and_says_so() -> None:
+    """30 a game is a keeper over 18; at the two-thirds of games he has played, 20 is not."""
+    roster, readings = _team()
+    often = _hurt_often(30.0)
+
+    assert streams(roster, [often.player], readings | {"Often": often}, 2, True, set()) == []
+
+    often = _hurt_often(40.0)
+    [item] = streams(roster, [often.player], readings | {"Often": often}, 2, True, set())
+    assert item.pickup == "keeper"
+    assert "Hip" in item.reason and "12 of 18" in item.reason and f"{40.0 * 12 / 18:.1f}" in item.reason
+
+
+def test_a_keeper_whose_shooting_drags_him_says_so_with_his_figure() -> None:
+    roster, readings = _team()
+    brick = replace(
+        _read(_player("Brick", position="C"), 30.0, 1),
+        weak=(StatCategory("5", "FG%"), StatCategory("18", "BLK")),
+        average=YahooLine(stats={"5": "0.373", "18": "0.4"}),
+    )
+
+    [item] = streams(roster, [brick.player], readings | {"Brick": brick}, 2, False, set())
+
+    assert ".373" in item.reason and "0.4" not in item.reason
+
+
+def test_two_keepers_close_for_the_same_drop_are_named_on_one_item_with_what_each_leads_in() -> None:
+    """Only Weaker can be let go for either; Blocker's 30.0 a game and Scorer's 29.0 are within a twentieth."""
+    roster, readings = _team()
+    readings = {key: replace(r, line={POINTS.label: 5.0, BLOCKS.label: 0.0}) for key, r in readings.items()}
+    readings["Weak"] = replace(readings["Weak"], per_game=26.0)
+    found = scales(CATS, [{POINTS.label: 10.0, BLOCKS.label: 0.0}, {POINTS.label: 30.0, BLOCKS.label: 2.0}])
+    blocker = replace(_read(_player("Blocker", position="C"), 30.0, 1), line={POINTS.label: 12.0, BLOCKS.label: 2.0})
+    scorer = replace(_read(_player("Scorer", position="C"), 29.0, 1), line={POINTS.label: 25.0, BLOCKS.label: 0.2})
+    plan = Plan(win=0.02, needs=Targeting(scales=found, weights={}))
+
+    [item] = streams(
+        roster,
+        [blocker.player, scorer.player],
+        readings | {"Blocker": blocker, "Scorer": scorer},
+        1,
+        True,
+        set(),
+        plan=plan,
+    )
+
+    assert (item.player_id, item.drop) == ("Blocker", "Weaker")
+    assert [p.player_id for p in item.players if p.side == "in"] == ["Blocker", "Scorer"]
+    assert "Scorer" in item.reason and "BLK" in item.reason and "PTS" in item.reason

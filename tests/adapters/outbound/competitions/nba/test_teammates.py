@@ -26,6 +26,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
     espn_status,
     reported,
     shares_position,
+    taking,
 )
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason
@@ -404,3 +405,21 @@ def test_only_a_teammate_ruled_out_and_dated_back_within_the_keeper_horizon_prop
     known: dict[str, Condition],
 ) -> None:
     assert _propped(known=known) == []
+
+
+def test_the_teammate_taking_his_minutes_is_the_one_at_his_position_whose_rose_as_his_fell() -> None:
+    """Ten games: Turner from 30 down to 20 over his last five, Ware up from 15 to 28; a guard's rise is not his."""
+    days = range(1, 11)
+    scores = box_scores(
+        {
+            "t": [game_log("t", d, 20.0 if d > 5 else 30.0, "MIL") for d in reversed(days)],
+            "w": [game_log("w", d, 28.0 if d > 5 else 15.0, "MIL") for d in reversed(days)],
+            "g": [game_log("g", d, 36.0 if d > 5 else 20.0, "MIL") for d in reversed(days)],
+        },
+        {"t": "Myles Turner", "w": "Kel'el Ware", "g": "A Guard"},
+        positions={"t": "C", "w": "C", "g": "PG"},
+    )
+
+    assert taking(scores, make_player("Myles Turner", "C", team="MIL")) == "Kel'el Ware"
+    assert taking(scores, make_player("Kel'el Ware", "C", team="MIL")) == ""
+    assert taking(scores, make_player("Nobody", "C", team="MIL")) == ""

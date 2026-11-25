@@ -18,6 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.form import (
     ROLE_GAMES,
     BoxScores,
     SleeperNBAForm,
+    availability,
     missed,
     nine_cat,
 )
@@ -277,3 +278,27 @@ def test_the_games_he_missed_are_his_clubs_since_his_last() -> None:
 def test_a_player_who_cannot_be_placed_or_has_no_games_missed_none() -> None:
     assert missed(_scores(p2=_played("p2", "DEN", "2026-01-12")), "Nikola Jokic") == 0
     assert missed(_scores(), "Somebody Else") == 0
+
+
+def _minutes(player: str, team: str, games: dict[str, float]) -> list[NBAGameLog]:
+    return [
+        replace(_game(day), player_id=player, team=team, minutes=m) for day, m in sorted(games.items(), reverse=True)
+    ]
+
+
+def test_an_absence_is_two_games_in_a_row_or_one_straight_after_a_game_he_left() -> None:
+    """Caruso's shape: a 9-minute night then a game missed; later three in a row; a lone rest night is neither."""
+    days = [f"2026-11-{d:02d}" for d in range(1, 11)]
+    mate = _minutes("p2", "OKC", dict.fromkeys(days, 30.0))
+    played = {days[0]: 20.0, days[1]: 9.0, days[3]: 20.0, days[5]: 20.0, days[9]: 20.0}  # misses 3, 5, 7-9
+    scores = _scores(p1=_minutes("p1", "OKC", played), p2=mate)
+
+    found = availability(scores, "Nikola Jokic")
+
+    assert found is not None
+    assert (found.played, found.scheduled, found.share) == (5, 10, 0.5)
+    assert [(a.day, b.day) for a, b in found.spells] == [(3, 3), (7, 9)]
+
+
+def test_availability_needs_a_player_it_can_place_with_games() -> None:
+    assert availability(_scores(), "Nikola Jokic") is None

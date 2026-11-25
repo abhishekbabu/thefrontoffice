@@ -190,8 +190,28 @@ TRADE_TALK = (
 
 def trade_talk(article: NewsArticle, keys: Iterable[str]) -> bool:
     """Whether the story puts one of the players in trade talk: named within `NEAR` words of it (`TRADE_TALK`), or of a
-    trade where the story is talk of one (`talk`) — never a trade made, which is the club's story."""
+    trade where the story is talk of one (`talk`) — never a trade made, which is the club's story. Its headline and
+    summary are read as one, and each sentence of its text, where it was read, on its own: the player has to be
+    named in the sentence that talks of trading him."""
     keys = tuple(keys)
+    if _talked(article, keys):
+        return True
+    return any(
+        _talked(NewsArticle(article_id="", published=article.published, headline=s), keys)
+        for s in sentences(article.body)
+    )
+
+
+SENTENCE = re.compile(r"(?<=[a-z0-9\"')]{2}[.!?])\s+(?=[A-Z\"'])")
+"""Where a story's sentence ends: a full stop after a word, not after an initial."""
+
+
+def sentences(text: str) -> list[str]:
+    """A story's text, a sentence at a time."""
+    return [s.strip() for s in SENTENCE.split(text) if s.strip()] if text else []
+
+
+def _talked(article: NewsArticle, keys: tuple[str, ...]) -> bool:
     text = text_of(article)
     if moved(text, keys, TRADED, TRADED_TO) and not talk(article, text):
         return False

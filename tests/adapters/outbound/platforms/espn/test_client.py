@@ -10,7 +10,7 @@ from support.http import NO_WAIT, FakeSession
 from thefrontoffice.adapters.outbound.cache import DiskCache
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNClient
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
-from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, NFL, Athlete
+from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, NFL, Athlete, NewsArticle
 
 TEAMS = {
     "sports": [
@@ -308,3 +308,35 @@ def test_an_athletes_own_history_gives_his_newest_entry_with_its_return(tmp_path
     assert report.comment.startswith("The Dolphins placed Achane")
     assert report.url == "https://www.espn.com/nfl/player/news/_/id/4429160"
     assert any("/leagues/nfl/seasons/2026/athletes/4429160/injuries" in url for url in session.requests)
+
+
+def test_a_basketball_roster_lists_its_players_bare(tmp_path: Path) -> None:
+    """Basketball lists its athletes without football's units."""
+    bare = {"athletes": [{"id": "7", "fullName": "Myles Turner"}, {"id": "8"}, "junk"]}
+    client, _ = _client({"/teams/2/roster": bare, "/teams": TEAMS}, tmp_path)
+
+    assert [(a.athlete_id, a.name) for a in client.get_rosters(NBA)] == [("7", "Myles Turner")]
+
+
+def test_an_athletes_own_news_leaves_out_clips_and_reads_each_storys_text(tmp_path: Path) -> None:
+    story = _row("Bucks open to trading Myles Turner", "2026-11-21T12:00:00Z", type="Story")
+    story["links"]["api"] = {"self": {"href": "https://content.example/v1/sports/news/41"}}
+    page = {"news": [story, _row("Turner block", "2026-11-22T12:00:00Z", type="Media"), "junk"]}
+    text = {"headlines": [{"story": "<p>The Bucks have shopped <a href='x'>Myles Turner</a> &amp; others.</p>"}]}
+    client, _ = _client({"/athletes/7/overview": page, "/news/41": text}, tmp_path)
+
+    found = client.get_athlete_news(NBA, ["7", ""])
+    [article] = found["7"]
+    [read] = client.get_stories(found["7"])
+
+    assert article.headline == "Bucks open to trading Myles Turner" and not article.body
+    assert read.body == "The Bucks have shopped Myles Turner & others."
+
+
+def test_a_story_without_text_or_an_address_stays_as_it_was(tmp_path: Path) -> None:
+    client, _ = _client({"/news/41": {"headlines": [{}]}}, tmp_path)
+    bare = NewsArticle(article_id="41", published=datetime(2026, 11, 21, tzinfo=UTC), headline="h", api_url="x/news/41")
+    unaddressed = NewsArticle(article_id="42", published=datetime(2026, 11, 21, tzinfo=UTC), headline="h")
+
+    assert client.get_stories([bare, unaddressed]) == [bare, unaddressed]
+    assert client.get_stories([]) == []

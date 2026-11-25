@@ -134,3 +134,22 @@ def test_a_player_his_own_news_puts_in_trade_talk_is_named_with_the_story() -> N
 
     assert set(told) == {"reaves"}
     assert "trade candidate" in told["reaves"]
+
+
+def test_his_own_storys_text_may_name_him_by_surname_once_it_names_him_in_full() -> None:
+    own = NewsArticle(
+        article_id="own",
+        published=NOW - timedelta(days=1),
+        headline="Lakers mailbag",
+        body="Austin Reaves was brilliant on Sunday. League sources say Reaves is a trade candidate.",
+    )
+    elsewhere = NewsArticle(
+        article_id="else",
+        published=NOW - timedelta(days=1),
+        headline="Lakers mailbag",
+        body="Sources say Reaves is a trade candidate.",
+    )
+    found = attach({}, [REAVES], REGULARS, NOW)
+
+    assert set(talked(found, [REAVES], {"reaves": [own]})) == {"reaves"}
+    assert talked(found, [REAVES], {"reaves": [elsewhere]}) == {}

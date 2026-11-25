@@ -1,6 +1,7 @@
 """A stand-in for ESPN's public site API, which the NFL and the NBA both read."""
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date
 
 from thefrontoffice.adapters.outbound.platforms.espn.types import Athlete, InjuryReport, NewsArticle, ScoreboardGame
@@ -34,7 +35,21 @@ class FakeESPN:
         self.backfill_error: Exception | None = None
         self.roster_reads = 0
         self.asked_after: list[str] = []
+        self.athlete_news: dict[str, list[NewsArticle]] = {}
+        """Each athlete's own stories, keyed by his ESPN id: his ESPN page's news."""
+        self.stories: dict[str, str] = {}
+        """Each story's text, keyed by its id: what the content API serves."""
+        self.athletes_asked: list[str] = []
         """The ESPN ids whose own entries were asked for."""
+
+    def get_athlete_news(self, league: str, athlete_ids: Sequence[str]) -> dict[str, list[NewsArticle]]:
+        self.athletes_asked = list(athlete_ids)
+        if self.error:
+            raise self.error
+        return {a: self.athlete_news[a] for a in athlete_ids if a in self.athlete_news}
+
+    def get_stories(self, articles: Sequence[NewsArticle]) -> list[NewsArticle]:
+        return [replace(a, body=self.stories[a.article_id]) if a.article_id in self.stories else a for a in articles]
 
     def get_team_news(self, league: str, clubs: list[str]) -> dict[str, list[NewsArticle]]:
         self.asked = clubs
