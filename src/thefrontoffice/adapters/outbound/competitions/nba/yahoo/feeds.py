@@ -7,8 +7,11 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
+from thefrontoffice.adapters.outbound.competitions import news
 from thefrontoffice.adapters.outbound.competitions.careers import recent_seasons
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
+from thefrontoffice.adapters.outbound.competitions.injuries import by_club
+from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nba import news as nba_news
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
@@ -35,7 +38,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import Valuer
 from thefrontoffice.adapters.outbound.competitions.news import PlayerNews
 from thefrontoffice.adapters.outbound.platforms.espn.client import ESPNSource
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
-from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, InjuryReport
+from thefrontoffice.adapters.outbound.platforms.espn.types import NBA, InjuryReport, NewsArticle
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperProjectionSource
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, ScheduledGame
 from thefrontoffice.domain.errors import (
@@ -257,6 +260,28 @@ class Feeds:
             logger.warning(f"Continuing without club news: {e}")
             return PlayerNews()
         return nba_news.attach(feeds, players, self.regulars(), datetime.now(UTC))
+
+    def player_news(self, players: Sequence[Player]) -> dict[str, list[NewsArticle]]:
+        """Each of `players`' own stories from the last `news.NEWS_WINDOW`, their text read, by Yahoo's key: his
+        ESPN page's news, found by his name on his club's ESPN roster (`injuries.by_club`, refusing a name two
+        share). Nobody it cannot place; none at all where ESPN will not load — news is enrichment."""
+        if not players:
+            return {}
+        now = datetime.now(UTC)
+        try:
+            clubs = by_club((espn_club(p.team), p.name, p.player_key) for p in players if p.team)
+            ids = {
+                key: athlete.athlete_id
+                for athlete in self.espn.get_rosters(NBA)
+                if (key := clubs.get(athlete.club, {}).get(normalize_name(athlete.name)))
+            }
+            pages = self.espn.get_athlete_news(NBA, sorted(set(ids.values())))
+            recent = {key: [a for a in pages.get(espn_id, []) if news.recent(a, now)] for key, espn_id in ids.items()}
+            read = {a.article_id: a for a in self.espn.get_stories([a for found in recent.values() for a in found])}
+        except ESPNAPIError as e:
+            logger.warning(f"Reading trade talk from club feeds alone, players' own news would not load: {e}")
+            return {}
+        return {key: [read.get(a.article_id, a) for a in found] for key, found in recent.items() if found}
 
     def regulars(self) -> list[Regular]:
         """Every club's regulars from the box scores; none where they will not load, which leaves a club's

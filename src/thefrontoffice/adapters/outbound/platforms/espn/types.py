@@ -23,6 +23,10 @@ class NewsArticle:
     athletes: list[str] = field(default_factory=list)
     """Names as ESPN tags them. An article can name a player in its text
     without tagging him; matching on the text is the caller's decision."""
+    body: str = ""
+    """The story's text, tags stripped, where it was read (`ESPNSource.get_stories`); a feed carries none."""
+    api_url: str = ""
+    """Where ESPN serves the story itself, its text among it; empty for a row without one."""
 
 
 @dataclass(frozen=True)

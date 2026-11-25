@@ -102,13 +102,25 @@ def block(found: PlayerNews, players: Iterable[Player]) -> str:
     return f"\n{told}" if told else ""
 
 
-def talked(found: PlayerNews, players: Iterable[Player]) -> dict[str, str]:
-    """Each of `players` his own news puts in trade talk (`stories.trade_talk`), by Yahoo's key: the newest such
-    story, 'Fri 21 Nov: Bucks open to trading Myles Turner'."""
+def talked(
+    found: PlayerNews, players: Iterable[Player], own: Mapping[str, Sequence[NewsArticle]] | None = None
+) -> dict[str, str]:
+    """Each of `players` his news puts in trade talk (`stories.trade_talk`), by Yahoo's key: the newest such story,
+    'Fri 21 Nov: Bucks open to trading Myles Turner'. Read from his club's feed, and from `own` — his ESPN page's
+    stories, their text read — where given. In a story's text he may be named by surname once it names him in
+    full: 'Turner' four paragraphs after 'Myles Turner'."""
     told: dict[str, str] = {}
     for player in players:
-        key = normalize_name(player.name)
-        story = next((a for a in found.by_player.get(player.player_key, []) if stories.trade_talk(a, [key])), None)
+        full = normalize_name(player.name)
+        read = [*found.by_player.get(player.player_key, []), *(own or {}).get(player.player_key, [])]
+        story = next((a for a in sorted(read, key=lambda a: a.published, reverse=True) if _talks(a, full)), None)
         if story is not None:
             told[player.player_key] = f"{news.dated(story)}: {story.headline}"
     return told
+
+
+def _talks(article: NewsArticle, full: str) -> bool:
+    """Whether the story talks of trading him, named in full, or by surname in a story that names him in full."""
+    named = f" {full} " in f" {normalize_name(f'{article.headline} {article.summary} {article.body}')} "
+    keys = [full, *([full.split()[-1]] if named and " " in full else [])]
+    return stories.trade_talk(article, keys)

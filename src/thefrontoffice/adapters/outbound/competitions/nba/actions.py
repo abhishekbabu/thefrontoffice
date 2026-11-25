@@ -32,7 +32,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date
 
-from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.dates import day_month, span, weekday_day_month
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba import lineup, views
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player
@@ -52,6 +52,8 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     ROLE,
     Reading,
     Targeting,
+    counted,
+    edges,
     falling,
     game_value,
     kept_value,
@@ -396,6 +398,9 @@ class Swap:
     season: float = 0.0
     """What he adds a game over the drop for the rest of the season, as the roster's needs weigh it (`Weigh.season`)."""
     costs: tuple[str, ...] = ()
+    rival: Reading | None = None
+    """For a keeper, the runner-up for the same drop within `CLOSE` of him for the season (`Weigh.rival`), named on
+    the same item as the other way to make it; None otherwise."""
     """The categories he gives up against the drop: this week's close ones for a streamer, the roster's weakest for
     a keeper (`Weigh.spent`)."""
 
@@ -496,14 +501,15 @@ class Weigh:
         played beside, or one his split says he does clearly more without —
         nor one whose minutes have just grown (`settled`), nor one out beyond `RETURN_SOON` or with no firm
         return (`Reading.missed`), nor one in a slump (`Reading.cold`), nor one on a hot run his minutes or
-        health do not back (`Reading.unproven`), nor one under `worth.HOT_MINUTES` a game, nor one the roster's
-        needs (`Plan.needs`)
-        read as no better than the drop. One out now is added on the week's first day without
+        health do not back (`Reading.unproven`), nor one under `worth.HOT_MINUTES` a game, nor one whose role is
+        falling (`worth.falling`, a teammate taking it where `Reading.taking` names one) — as it makes a player the
+        first let go — nor one the roster's needs (`Plan.needs`) read as no better than the drop. One who keeps going
+        missing (`Reading.fragile`) is weighed on the games he has played (`worth.kept_value`). One out now is added on the week's first day without
         games before his return, where it has one, so the drop plays until then.
         """
         if pickup.player.player_key in self.plan.returning or not settled(pickup) or not self.back_soon(pickup):
             return None
-        if pickup.cold or pickup.missed or pickup.unproven or not _plays(pickup):
+        if pickup.cold or pickup.missed or pickup.unproven or not _plays(pickup) or falling(pickup.role):
             return None
         season = self.season(pickup) - self.season(drop)
         if not beats(_kept(pickup), floor if drop is None else _kept(drop)) or season <= 0:
@@ -530,6 +536,22 @@ class Weigh:
         """Him as a keeper into an open spot, else over the weakest drop a game he beats (`keeper`)."""
         floor = min((_kept(d) for d in drops if d is not None), default=0.0)
         return next((s for d in _weakest_first(drops, _kept) if (s := self.keeper(pickup, d, floor))), None)
+
+    def rival(self, kept: Swap, wire: Sequence[Reading], taken: Collection[str]) -> Swap:
+        """`kept` with the runner-up for his drop: the best other keeper over it (`keeper`) whose value a game for
+        the season is within `CLOSE` of his — a projection cannot tell the two apart, so the item names both."""
+        bar = _kept(kept.pickup) * (1 - CLOSE)
+        floor = _kept(kept.drop) if kept.drop is not None else 0.0
+        found = [
+            r
+            for r in wire
+            if r.player.player_key not in taken
+            and r.player.player_key != kept.pickup.player.player_key
+            and _kept(r) >= bar
+            and self.keeper(r, kept.drop, floor) is not None
+        ]
+        best = max(found, key=lambda r: self.season(r), default=None)
+        return replace(kept, rival=best) if best is not None else kept
 
     def _streamed(self, pickup: Reading, drop: Reading | None, gain: float, nights: int | None) -> Swap:
         """A stream of `pickup` over `drop`, with the close categories this week he really lifts and those he gives
@@ -589,7 +611,7 @@ def _weighed(targeting: Targeting | None, reading: Reading, season: bool = False
     value = targeting.value(figures) if targeting is not None else None
     if value is None:
         return _kept(reading) if season else _game(reading)
-    return value * reading.usage
+    return value * reading.usage * (counted(reading) if season else 1.0)
 
 
 def _doubted(played: float, nights: Sequence[date], reading: Reading) -> float:
@@ -749,6 +771,8 @@ def _chase(
         # The bridge is let go for the keeper: only the keeper and the streams beside stay.
         return _added([*beside, bridge], items, [*beside, kept])
     alternative = best_keeper() if kept is not None else None
+    if kept is not None and alternative is None:
+        kept = weigh.rival(kept, wire, taken())
     items = [
         *(_item(s, by_points, plan) for s in streamed),
         *([_item(kept, by_points, plan)] if kept else []),
@@ -793,6 +817,9 @@ def _season(
     planned = sorted((s for _, s in chosen), key=lambda s: (s.add_on or date.min, -s.season))
     least = min(planned, key=lambda s: s.season)
     alternative = max(spare, key=lambda s: s.season, default=None)
+    named = picked | ({alternative.pickup.player.player_key} if alternative else set())
+    planned = [weigh.rival(s, wire, named) for s in planned]
+    least = next(s for s in planned if s.pickup is least.pickup)
     items = [
         *(_item(s, by_points, weigh.plan) for s in planned),
         *([_item(alternative, by_points, weigh.plan, instead=least)] if alternative else []),
@@ -897,6 +924,9 @@ def _item(swap: Swap, by_points: bool, plan: Plan, instead: Swap | None = None) 
             + _needs(swap)
             + _out(swap)
             + _talk(pickup)
+            + _shooting(pickup)
+            + _history(pickup)
+            + _rival(swap, plan)
         )
     else:
         games = f", {swap.nights} games in open slots" if swap.nights is not None else ""
@@ -925,7 +955,11 @@ def _item(swap: Swap, by_points: bool, plan: Plan, instead: Swap | None = None) 
         drop=drop.player.player_key if drop is not None else "",
         pickup=swap.term,
         players=views.compared(
-            [("in", held(pickup.player), pickup), *([("out", held(drop.player), drop)] if drop is not None else [])],
+            [
+                ("in", held(pickup.player), pickup),
+                *([("out", held(drop.player), drop)] if drop is not None else []),
+                *([("in", held(swap.rival.player), swap.rival)] if swap.rival is not None else []),
+            ],
             by_points,
         ),
         key=f"stream:{pickup.player.player_key}:{drop.player.player_key if drop is not None else OPEN}",
@@ -956,6 +990,48 @@ def _form(reading: Reading | None) -> str:
     if found is None or reading is None:
         return ""
     return f" {found.label}, {reading.player.name}: {found.short()}."
+
+
+def _shooting(reading: Reading) -> str:
+    """' Shooting drags him: FG% .373.' where a percentage is among what drags his value (`Reading.weak`);
+    nothing otherwise."""
+    drags = views.weak(reading, rates=True)
+    return f" Shooting drags him: {drags}." if drags else ""
+
+
+def _history(reading: Reading) -> str:
+    """' Injury history (Hip): out 28 Oct–2 Nov, 20–23 Nov; 12 of 18 games played, the season counted at 67%.' for
+    a keeper who keeps going missing (`Reading.fragile`); nothing otherwise."""
+    found = reading.availability
+    if found is None or not reading.fragile:
+        return ""
+    spells = ", ".join(span(first, last) for first, last in found.spells)
+    hurt = f" ({reading.injury})" if reading.injury else ""
+    return (
+        f" Injury history{hurt}: out {spells}; {found.played} of {found.scheduled} games played,"
+        f" the season counted at {found.share:.0%}."
+    )
+
+
+def _rival(swap: Swap, plan: Plan) -> str:
+    """' Or Brook Lopez, 10.4 a game: Turner leads in BLK, REB; Lopez in 3PTM, FT%.' for a keeper with a runner-up
+    for the same drop (`Swap.rival`), the categories each leads in for the season by `worth.MATERIAL`; nothing
+    otherwise."""
+    rival = swap.rival
+    if rival is None:
+        return ""
+    mine, theirs = swap.pickup, rival
+    scaled = plan.needs.scales if plan.needs is not None else {}
+    ahead, behind = edges(scaled, mine.held, theirs.held), edges(scaled, theirs.held, mine.held)
+    lead = f" Or {theirs.player.name}, {_kept(theirs):.1f} a game"
+    if not ahead and not behind:
+        return lead + "."
+    said = [
+        f"{who.player.name.split()[-1]} leads in {', '.join(cats)}"
+        for who, cats in ((mine, ahead), (theirs, behind))
+        if cats
+    ]
+    return f"{lead}: {'; '.join(said)}."
 
 
 def _talk(reading: Reading) -> str:

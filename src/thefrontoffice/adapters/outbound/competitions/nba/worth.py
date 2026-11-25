@@ -21,7 +21,13 @@ from typing import NamedTuple
 
 from thefrontoffice.adapters.outbound.competitions import worth as shared
 from thefrontoffice.adapters.outbound.competitions.availability import expected_games
-from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES, ROLE_GAMES, PlayerStats, Role
+from thefrontoffice.adapters.outbound.competitions.nba.form import (
+    MIN_FORM_GAMES,
+    ROLE_GAMES,
+    Availability,
+    PlayerStats,
+    Role,
+)
 from thefrontoffice.adapters.outbound.competitions.nba.model import LeagueCategory, Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
@@ -275,6 +281,21 @@ class Targeting:
         }
 
 
+def edges(scaled: Mapping[str, Scale], mine: Line | None, theirs: Line | None) -> list[str]:
+    """The categories a game of `mine` leads one of `theirs` in by `MATERIAL` of a spread or more, as the league
+    names them, the biggest first: at most `TARGETS`. None without both lines or a scale."""
+    if not mine or not theirs:
+        return []
+    leads = {
+        label: a - b
+        for label, scale in scaled.items()
+        if (a := scale.against_pool(mine)) is not None
+        and (b := scale.against_pool(theirs)) is not None
+        and a - b >= MATERIAL
+    }
+    return [scaled[label].scored.name for label in sorted(leads, key=lambda label: -leads[label])[:TARGETS]]
+
+
 UNNEEDED = 0.7
 """What a category your roster is not short of counts for the rest of the season (`needs`): most of a game, so the
 roster's needs tip a choice between keepers without making a specialist of every one."""
@@ -439,6 +460,12 @@ def backed(stats: PlayerStats | None, healthy: bool) -> bool:
     injury report — a questionable or game-time call is open."""
     played = (stats or PlayerStats()).get("minutes", ())[:STREAK_GAMES]
     return healthy and bool(played) and statistics.fmean(played) >= HOT_MINUTES
+
+
+FRAGILE_SPELLS = 2
+"""Absences in the window (`form.availability`) from which a player's season is counted at the games he has played.
+One is an injury; two in six weeks is a body that keeps going: of the 119 players a Yahoo league's week read on
+24 Nov 2026, 7 had two or more — Alex Caruso's 28 Oct–2 Nov and 20–23 Nov among them, 12 of 18 played."""
 
 
 SEASON_SETTLING = 10
@@ -631,6 +658,21 @@ class Reading:
     talk: str = ""
     """The story his own news puts him in trade talk with, 'Fri 21 Nov: …' (`news.talked`); empty otherwise."""
 
+    availability: Availability | None = None
+    """His games against his club's over the window, and his absences (`form.availability`); None unread."""
+
+    injury: str = ""
+    """What ESPN's report says is hurt, where it has him: 'Hip'; empty otherwise."""
+
+    taking: str = ""
+    """The teammate whose minutes rose as his fell (`teammates.taking`), by name; empty otherwise."""
+
+    @property
+    def fragile(self) -> bool:
+        """Whether he has gone missing `FRAGILE_SPELLS` times or more in the window: his season's games are then
+        counted at the share he has played (`kept_value`)."""
+        return self.availability is not None and len(self.availability.spells) >= FRAGILE_SPELLS
+
     @property
     def held(self) -> Line | None:
         """His line a game for the rest of the season."""
@@ -668,10 +710,18 @@ def game_value(reading: Reading) -> float | None:
 
 
 def kept_value(reading: Reading) -> float | None:
-    """What a game of him is worth for the rest of the season, nudged by his minutes: whether he is one to keep at
-    all, whatever his week (`season_line`)."""
+    """What a game of him is worth for the rest of the season, nudged by his minutes — and, for a player who keeps
+    going missing (`Reading.fragile`), counted at the share of his club's games he has played: whether he is one to
+    keep at all, whatever his week (`season_line`)."""
     per = reading.season_value if reading.season_value is not None else reading.per_game
-    return None if per is None else per * reading.usage
+    return None if per is None else per * reading.usage * counted(reading)
+
+
+def counted(reading: Reading) -> float:
+    """The share of his season's games a keeper's value counts: those he has played, where he keeps going missing
+    (`Reading.fragile`); all of them otherwise."""
+    found = reading.availability
+    return found.share if found is not None and reading.fragile else 1.0
 
 
 def read(

@@ -1,12 +1,14 @@
 """Tests for a basketball player's worth this week: `nba/worth.py`."""
 
 from dataclasses import replace
+from datetime import date
 
 import pytest
 from support.nba import FakeSleeperNBA, make_player
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import (
     ROLE_GAMES,
+    Availability,
     PlayerStats,
     RecentForm,
     Role,
@@ -16,6 +18,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.form import (
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, FIELD_GOALS, POINTS, TURNOVERS
 from thefrontoffice.adapters.outbound.competitions.nba.worth import (
+    FRAGILE_SPELLS,
     HOT_MINUTES,
     MINUTES,
     ROLE,
@@ -24,6 +27,8 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     Reading,
     Targeting,
     category_value,
+    counted,
+    edges,
     falling,
     game_value,
     kept_value,
@@ -619,3 +624,26 @@ def test_a_points_league_names_no_category() -> None:
 
     assert swings(sunk, {}) == sunk
     assert swings(None, scales(SCORED, POOL)) is None
+
+
+def _away(played: int, scheduled: int, spells: int) -> Availability:
+    day = date(2026, 11, 2)
+    return Availability(played=played, scheduled=scheduled, spells=((day, day),) * spells)
+
+
+def test_a_player_who_keeps_going_missing_counts_the_games_he_has_played_for_the_season() -> None:
+    reading = Reading(player=make_player("A"), line={}, per_game=10.0, games=3)
+
+    assert kept_value(replace(reading, availability=_away(12, 18, FRAGILE_SPELLS))) == pytest.approx(10.0 * 12 / 18)
+    assert kept_value(replace(reading, availability=_away(12, 18, FRAGILE_SPELLS - 1))) == pytest.approx(10.0)
+    assert counted(reading) == 1.0
+
+
+def test_the_edges_are_the_categories_one_line_leads_another_in_by_a_real_margin() -> None:
+    found = scales(SCORED, POOL)
+    blocker = {FG: 0.46, FGA: 12.0, BLOCKS.label: 1.0, POINTS.label: 12.0, TURNOVERS.label: 1.5}
+    scorer = {FG: 0.46, FGA: 12.0, BLOCKS.label: 0.0, POINTS.label: 20.0, TURNOVERS.label: 1.5}
+
+    assert edges(found, blocker, scorer) == ["BLK"]
+    assert edges(found, scorer, blocker) == ["PTS"]
+    assert edges(found, scorer, None) == []

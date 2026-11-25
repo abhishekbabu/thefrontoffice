@@ -364,17 +364,19 @@ WEAK = "Weak in"
 BY_STAT = {c.yahoo_stat: c for c in CATEGORIES}
 
 
-def weak(reading: Reading) -> str:
+def weak(reading: Reading, rates: bool = False) -> str:
     """The categories that drag his value, with his figures in them: 'FG% .380 · 2.9 TO'; empty where none.
 
     Each figure is Yahoo's average over his last month where it carries one —
     the number his row and his drawer show — and his figure the value is read
-    off where it does not.
+    off where it does not. `rates` names only the percentages: his shooting.
     """
     line = reading.average or NO_LINE
     figures = reading.line or {}
     parts = []
     for category in reading.weak:
+        if rates and not rate(category):
+            continue
         shown = printed(line.stats.get(category.stat_id, ""), rate=rate(category))
         if shown == NO_FIGURE:
             weighed = figures.get(BY_STAT[category.stat_id].label)

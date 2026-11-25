@@ -12,6 +12,7 @@ from thefrontoffice.adapters.outbound.competitions.nba import actions
 from thefrontoffice.adapters.outbound.competitions.nba import lineup as nba_lineup
 from thefrontoffice.adapters.outbound.competitions.nba import news as nba_news
 from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
+from thefrontoffice.adapters.outbound.competitions.nba.form import availability
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.projections import index_for
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
@@ -19,6 +20,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     PACIFIC,
     Line,
 )
+from thefrontoffice.adapters.outbound.competitions.nba.teammates import taking
 from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import reads
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo.feeds import Feeds
@@ -112,10 +114,16 @@ def decide(
     )
     open_wire = [p for p in free_agents if p.player_key not in claimed]
     talked = [*roster, *open_wire]
-    talk = nba_news.talked(feeds.team_news(talked), talked)
-    readings = {key: replace(r, talk=talk[key]) if key in talk else r for key, r in readings.items()}
+    found = feeds.team_news(talked)
+    readings = _talked(readings, nba_news.talked(found, talked))
     plan = replace(plan, untouchable=frozenset(untouchable), win=win)
     items = actions.build(roster, open_wire, readings, adds_left, weights is not None, today, plan)
+    # A keeper's own news, read in full, for the few the list names: a story his club's feed cut short can still
+    # put him in trade talk, and the list is weighed again where one does.
+    named = [p for p in open_wire if p.player_key in _keepers(items) and not readings[p.player_key].talk]
+    if told := nba_news.talked(found, named, feeds.player_news(named)):
+        readings = _talked(readings, told)
+        items = actions.build(roster, open_wire, readings, adds_left, weights is not None, today, plan)
     return Decided(readings, items, plan.volume, plan.streams)
 
 
@@ -145,7 +153,8 @@ def read_week(
     clubs = feeds.games.get_remaining_games_bulk([p.team for p in unique], start, end)
     reports = feeds.reports()
     hurt = reads.injuries(unique, reports)
-    doubted = reads.doubts(unique, reports, feeds.scores())
+    scores = feeds.scores()
+    doubted = reads.doubts(unique, reports, scores)
     returns = {key: back for key, back in reads.returns(unique, reports).items() if key not in doubted}
     provisional = bool(feeds.games.unscheduled(start, end))
     stats = {p.player_key: feeds.form.get_player_stats(p.name) for p in unique}
@@ -177,9 +186,22 @@ def read_week(
             average=shown.get(r.player.player_key),
             streak=nba_worth.swings(r.streak, found),
             missed=doubted.get(r.player.player_key, 0),
+            availability=availability(scores, r.player.name),
+            injury=report.injury if (report := hurt.of(r.player.player_key)) else "",
+            taking=taking(scores, r.player),
         )
         for r in readings
     }
+
+
+def _talked(readings: Mapping[str, Reading], talk: Mapping[str, str]) -> dict[str, Reading]:
+    """`readings` with each one's trade talk (`news.talked`) where it has some."""
+    return {key: replace(r, talk=talk[key]) if key in talk else r for key, r in readings.items()}
+
+
+def _keepers(items: Sequence[Action]) -> set[str]:
+    """The keepers a to-do list names, by Yahoo key, each item's runner-up among them."""
+    return {p.player_id for item in items if item.pickup == "keeper" for p in item.players or [] if p.side == "in"}
 
 
 def counted(games: int | None, doubted: bool) -> int | None:

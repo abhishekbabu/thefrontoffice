@@ -10,10 +10,13 @@ or four cannot be cut at.
 """
 
 import logging
+import statistics
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Literal, NamedTuple, Protocol, TypedDict
 
+from thefrontoffice.adapters.outbound.competitions.dates import parse_day
 from thefrontoffice.adapters.outbound.competitions.names import NameIndex
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BOX_SCORE, Line, line
 from thefrontoffice.adapters.outbound.platforms.sleeper.client import SleeperNBASource
@@ -119,6 +122,62 @@ def missed(scores: BoxScores, name: str) -> int:
         return 0
     club, last = games[0].team, games[0].date
     return len({g.date for logs in scores.logs.values() for g in logs if g.team == club and g.date > last})
+
+
+EXIT_SHARE = 0.5
+"""The share of his usual minutes under which a game is one he left: under half his median, the night before the
+first game he missed. Standing alone, a short night is as often a blowout or a benching, so it counts only so."""
+
+ABSENCE_GAMES = 2
+"""Games in a row he must miss for an absence to count on its own: one is as often a rest night as a knock."""
+
+
+@dataclass(frozen=True)
+class Availability:
+    """How much of his club's window he has been there for, and how often he went missing."""
+
+    played: int
+    scheduled: int
+    """His club's games since his first for it in the window."""
+    spells: tuple[tuple[date, date], ...]
+    """Each absence, as its first and last missed day: `ABSENCE_GAMES` in a row, or one straight after a game he
+    left (`EXIT_SHARE`)."""
+
+    @property
+    def share(self) -> float:
+        return self.played / self.scheduled if self.scheduled else 1.0
+
+
+def availability(scores: BoxScores, name: str) -> Availability | None:
+    """His games against his club's over the window, and each absence in it; None where he cannot be placed or has
+    played none of it."""
+    player_id = scores.index.lookup(name)
+    games = scores.logs.get(player_id, ()) if player_id else ()
+    if not games:
+        return None
+    club = games[0].team
+    mine = {g.date: g for g in games if g.team == club}
+    first = min(mine)
+    dates = sorted({g.date for logs in scores.logs.values() for g in logs if g.team == club and g.date >= first})
+    usual = statistics.median(g.minutes for g in mine.values())
+    spells: list[tuple[date, date]] = []
+    run: list[str] = []
+    left = False
+    for day in [*dates, ""]:
+        game = mine.get(day) if day else None
+        if day and game is None:
+            run.append(day)
+            continue
+        if (
+            run
+            and (len(run) >= ABSENCE_GAMES or left)
+            and (first_day := parse_day(run[0]))
+            and (last := parse_day(run[-1]))
+        ):
+            spells.append((first_day, last))
+        run = []
+        left = game is not None and game.minutes < EXIT_SHARE * usual
+    return Availability(played=len(mine), scheduled=len(dates), spells=tuple(spells))
 
 
 class FormSource(Protocol):

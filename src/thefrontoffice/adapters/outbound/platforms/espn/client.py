@@ -20,14 +20,20 @@ API keeps each player's own injury entry for the season, with the same
 estimated return, but it is one request per player and asks for his ESPN id;
 each club's roster is where that id is found by name.
 
+A player's ESPN page carries his own news, which a club's fifty cut short, and
+each story's text is ESPN's content API's: both are read for a few players a
+plan names, never a whole league.
+
 The scoreboard is read for the one thing the fantasy platforms leave out: how
 far through a game is. Sleeper says a game is under way, and nothing about
 whether that is the first minute or the last.
 """
 
+import html
 import logging
 import re
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date, timedelta
 from typing import Any, Protocol
 
@@ -49,6 +55,12 @@ TEAMS_TTL = timedelta(days=1)
 ROSTERS_TTL = timedelta(days=1)
 """A roster changes with a signing, and a day-old one still names everyone hurt for longer than that."""
 NEWS_TTL = timedelta(minutes=30)
+STORY_TTL = timedelta(days=1)
+WEB_URL = "https://site.web.api.espn.com/apis/common/v3/sports"
+"""ESPN's player pages: each athlete's own news, which the site API's club feeds cut short."""
+CLIPS = frozenset({"Media", "Video"})
+"""News rows that are a video clip, not a story."""
+TAGS = re.compile(r"<[^>]+>")
 INJURIES_TTL = timedelta(minutes=30)
 SCOREBOARD_TTL = timedelta(minutes=1)
 """A clock that is a minute stale is a minute of a sixty-minute game."""
@@ -84,6 +96,14 @@ class ESPNSource(Protocol):
 
     def get_athlete_injuries(self, league: str, season: str, athletes: Sequence[Athlete]) -> dict[str, InjuryReport]:
         """Each athlete's latest injury this season, keyed by his ESPN id; nobody ESPN has none for."""
+        ...
+
+    def get_athlete_news(self, league: str, athlete_ids: Sequence[str]) -> dict[str, list[NewsArticle]]:
+        """Each athlete's own recent stories, newest first, keyed by his ESPN id; clips and highlights left out."""
+        ...
+
+    def get_stories(self, articles: Sequence[NewsArticle]) -> list[NewsArticle]:
+        """`articles` with each one's text read, where ESPN serves it; the rest as they were."""
         ...
 
 
@@ -186,6 +206,29 @@ class ESPNClient:
                 found[athlete.athlete_id] = max(entries, key=lambda e: e.updated)
         return found
 
+    def get_athlete_news(self, league: str, athlete_ids: Sequence[str]) -> dict[str, list[NewsArticle]]:
+        """Each athlete's own recent stories, newest first, keyed by his ESPN id: the news on his ESPN page, which a
+        club's feed of fifty cuts short. Video clips are left out — a highlight is no news. One request a player, in
+        parallel and cached as a feed is; one that fails is left out.
+        """
+        prefix = league.replace("/", "_")
+        keys = {f"athlete_news_{prefix}_{athlete}": athlete for athlete in athlete_ids if athlete}
+        urls = {key: f"{WEB_URL}/{league}/athletes/{athlete}/overview" for key, athlete in keys.items()}
+        raw = self._api.cached_many(urls, NEWS_TTL, keep=_news_rows).values
+        found = {}
+        for key, athlete in keys.items():
+            rows = raw.get(key) or []
+            articles = [a for a in (_article(row) for row in rows if row.get("type") not in CLIPS) if a]
+            found[athlete] = sorted(articles, key=lambda a: a.published, reverse=True)
+        return found
+
+    def get_stories(self, articles: Sequence[NewsArticle]) -> list[NewsArticle]:
+        """`articles` with each one's text read from ESPN's content API, tags stripped; one it serves no text for,
+        or that will not load, as it was. Cached for a day: a story is published once."""
+        urls = {f"story_{a.article_id}": a.api_url for a in articles if a.api_url and a.article_id}
+        raw = self._api.cached_many(urls, STORY_TTL, keep=_story_text).values if urls else {}
+        return [replace(a, body=text) if (text := raw.get(f"story_{a.article_id}")) else a for a in articles]
+
     def get_scoreboard(self, league: str, season: str, week: int) -> list[ScoreboardGame]:
         """Every regular-season game of `week`, as it stands right now."""
         return self._scoreboard(f"{league}_{season}_{week}", league, f"seasontype=2&week={week}&dates={season}")
@@ -261,13 +304,18 @@ def _injury(row: Any) -> InjuryReport | None:
 
 
 def _roster(payload: Any) -> list[dict[str, str]]:
-    """A club's roster cut to each player's id and name: the rest is a third of a megabyte nobody reads."""
-    groups = payload.get("athletes") if isinstance(payload, dict) else None
+    """A club's roster cut to each player's id and name: the rest is a third of a megabyte nobody reads. Football
+    groups its athletes by unit, each under `items`; basketball lists them bare."""
+    rows = payload.get("athletes") if isinstance(payload, dict) else None
+    athletes = [
+        athlete
+        for row in rows or []
+        if isinstance(row, dict)
+        for athlete in (row.get("items") if "items" in row else [row]) or []
+    ]
     return [
         {"id": str(row["id"]), "name": str(row["fullName"])}
-        for group in groups or []
-        if isinstance(group, dict)
-        for row in group.get("items") or []
+        for row in athletes
         if isinstance(row, dict) and row.get("id") and row.get("fullName")
     ]
 
@@ -346,9 +394,23 @@ def _article(row: Any) -> NewsArticle | None:
         headline=str(row["headline"]),
         summary=str(row.get("description") or ""),
         url=str(((row.get("links") or {}).get("web") or {}).get("href") or ""),
+        api_url=str((((row.get("links") or {}).get("api") or {}).get("self") or {}).get("href") or ""),
         athletes=[
             str(c["description"])
             for c in row.get("categories") or []
             if isinstance(c, dict) and c.get("type") == "athlete" and c.get("description")
         ],
     )
+
+
+def _news_rows(payload: Any) -> list[dict[str, Any]]:
+    """A player page's news rows, the only part of it read."""
+    rows = payload.get("news") if isinstance(payload, dict) else None
+    return [row for row in rows or [] if isinstance(row, dict)]
+
+
+def _story_text(payload: Any) -> str:
+    """A story's text, its tags stripped; empty where the payload serves none."""
+    headlines = payload.get("headlines") if isinstance(payload, dict) else None
+    story = headlines[0].get("story") if headlines and isinstance(headlines[0], dict) else None
+    return " ".join(TAGS.sub(" ", html.unescape(str(story))).split()) if story else ""

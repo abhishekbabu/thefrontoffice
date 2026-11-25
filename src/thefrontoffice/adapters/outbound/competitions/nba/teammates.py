@@ -44,8 +44,10 @@ from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
 from thefrontoffice.adapters.outbound.competitions.nba.form import (
     MIN_FORM_GAMES,
     RECENT_GAMES,
+    ROLE_GAMES,
     BoxScores,
     nine_cat,
+    role,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
@@ -254,6 +256,26 @@ def shares_position(eligible: str, position: str) -> bool:
     """Whether a player eligible at `eligible` ('PF,C') plays a position in `position`'s group ('C')."""
     group = GROUPS.get(position.upper())
     return group is not None and any(GROUPS.get(p.strip().upper()) == group for p in eligible.split(","))
+
+
+def taking(scores: BoxScores, player: Player) -> str:
+    """The teammate taking his minutes, by name: one at his position (`shares_position`) on his Sleeper club whose
+    last `ROLE_GAMES` rose over the window by `ROLE.moved` as his fell by as much — the most of them; empty where
+    his did not fall, or nobody's rose."""
+    player_id = scores.index.lookup(player.name)
+    games: Sequence[NBAGameLog] = scores.logs.get(player_id, ()) if player_id else ()
+    if len(games) <= ROLE_GAMES or (mine := role(games)).window - mine.minutes < ROLE.moved:
+        return ""
+    club = games[0].team
+    risen: dict[str, float] = {}
+    for other, logs in scores.logs.items():
+        meta = scores.players.get(other)
+        if other == player_id or not logs or logs[0].team != club or len(logs) <= ROLE_GAMES or meta is None:
+            continue
+        theirs = role(logs)
+        if theirs.minutes - theirs.window >= ROLE.moved and shares_position(player.position, meta.position):
+            risen[meta.name] = theirs.minutes - theirs.window
+    return max(risen, key=lambda name: risen[name], default="")
 
 
 @dataclass(frozen=True)
