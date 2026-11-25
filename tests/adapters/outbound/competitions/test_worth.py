@@ -60,18 +60,19 @@ def test_a_form_call_weighs_form_three_to_one_against_the_outlook() -> None:
     assert call(4.0, 12.0) == pytest.approx(CALL_FORM * 4.0 + (1 - CALL_FORM) * 12.0) == pytest.approx(6.0)
 
 
-def test_a_run_under_a_share_below_one_must_hold_on_average_and_in_all_but_the_spare_games() -> None:
+def test_a_run_under_a_share_below_one_holds_without_its_worst_game_on_average_and_in_all_but_the_spare() -> None:
     lines = [10.0] * 4
 
-    assert sustained([5.0, 5.0, 5.0, 8.0], lines, 0.6)
-    assert not sustained([5.0, 5.0, 9.0, 9.0], lines, 0.6)  # two games past the bar with one spare
+    assert sustained([5.0, 5.0, 5.0, 0.0], lines, 0.6)
+    assert not sustained([5.0, 5.0, 9.0, 0.0], lines, 0.6)  # one zero is not a slump: 6.3 without it
+    assert not sustained([5.0, 5.0, 9.0, 9.0], lines, 0.6)  # one of the three left under the bar, with one spare
     assert sustained([5.0, 5.0, 9.0, 9.0], lines, 0.8, spare=2)
-    assert not sustained([0.0, 0.0, 0.0, 30.0], lines, 0.6)  # three bad games, but not on average
+    assert not sustained([0.0, 0.0, 0.0, 30.0], lines, 0.6)  # bad games, but not on average
 
 
-def test_a_run_over_a_share_above_one_reads_the_other_way() -> None:
+def test_a_run_over_a_share_above_one_holds_without_its_best_game() -> None:
     assert sustained([15.0, 16.0, 15.0, 13.0], [10.0] * 4, 1.4)
-    assert not sustained([15.0, 16.0, 9.0, 9.0], [10.0] * 4, 1.4)
+    assert not sustained([30.0, 15.0, 15.0, 9.0], [10.0] * 4, 1.4)  # one big night: 13.0 without it
 
 
 def test_no_games_or_a_line_short_of_them_is_no_run() -> None:

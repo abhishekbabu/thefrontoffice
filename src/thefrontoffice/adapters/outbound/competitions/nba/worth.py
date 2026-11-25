@@ -368,17 +368,24 @@ is a fifth of it — and the run his last five already average."""
 SHORT_OF = 0.6
 """The share of his projection's value a game his last games must fall under, on average and game by game, to be a
 slump. A single game's value swings by about his projection either way — a 4-point night with four blocks is a good
-one in categories — so a run averaging under three-fifths of it is not a projection running cold: of the 119 players a Yahoo
-league's week read on 24 Nov 2026, it marked 8."""
+one in categories — so a run averaging under three-fifths of it, his worst night left out, is not a projection
+running cold. With that night out, none of the 119 players that week held one; 8 did with it, Ajay Mitchell's on
+two good nights of five."""
 
 HOT_OVER = 1.4
-"""The share of his projection's value his last games must run over to be hot: the slump's margin the other way.
-The same week marked 17, most of them wire players Sleeper projects for a bench role they have outgrown."""
+"""The share of his projection's value his last games must run over to be hot, his best night left out: the slump's
+margin the other way. Myles Turner's 14.6 a game over 10.2 projected on 24 Nov 2026 was one 27-point night; the
+other four average 12.7, under the 14.3 bar."""
 
-SPARE = 2
-"""The games of `STREAK_GAMES` that may miss the bar and the run still hold: most of them must clear it. NFL's
-weekly games allow one of four; a basketball game is a single night of a week's three or four, and a run of five
-cut by two quiet nights is still three of five well past the projection."""
+SPARE = 1
+"""The games of the four left, once his most telling night is out (`competitions.worth.sustained`), that may miss the
+bar: three of the four must clear it, as NFL's weekly slump needs all but one of its games."""
+
+HOT_MINUTES = 24.0
+"""The minutes a game over the run a hot one needs, and a keeper (`actions.Weigh.keeper`): half the game. Under it a
+big night is a bench player's garbage time or a starter's night off. Of the 8 runs in a Yahoo league's week on 24 Nov
+2026 that held without their best night (17 with it), 3 were on 11.7 to 19.3 minutes; Alex Caruso, offered as a
+keeper on no streak at all, played 20.6."""
 
 
 @dataclass(frozen=True)
@@ -427,11 +434,37 @@ class Streak:
         return " · ".join([lead, *(swing.short() for swing in self.swings)])
 
 
+def backed(stats: PlayerStats | None, healthy: bool) -> bool:
+    """Whether a hot run is his role's and not a night's: `HOT_MINUTES` a game or more over it, and no open
+    injury report — a questionable or game-time call is open."""
+    played = (stats or PlayerStats()).get("minutes", ())[:STREAK_GAMES]
+    return healthy and bool(played) and statistics.fmean(played) >= HOT_MINUTES
+
+
+SEASON_SETTLING = 10
+"""The games a streak is weighed against for the rest of the season (`competitions.worth.settled`): his usual
+reading — fifteen games beside a projection of the season — holds about ten games' worth, so his last five pull it a
+third of the way (5 / 15). The week's call (`competitions.worth.CALL_FORM`, three quarters) reads the next few
+games; a season's sixty-odd more regress toward who he has been, and five games at three to one made Ajay Mitchell,
+projected 12.8, a drop."""
+
+
+def season_line(stats: PlayerStats | None, projected: ProjectedTotals | None, called: Streak | None) -> Line | None:
+    """His line a game for the rest of the season: his usual reading (`per_game`), pulled toward a streak's games by
+    `settled(STREAK_GAMES, SEASON_SETTLING)`; the usual reading where there is no streak."""
+    usual = per_game(stats, projected)
+    if called is None or usual is None:
+        return usual
+    pull = shared.settled(called.games, SEASON_SETTLING)
+    return {label: value + pull * (called.line.get(label, value) - value) for label, value in usual.items()}
+
+
 def streak(stats: PlayerStats | None, projected: ProjectedTotals | None, value: Valuer) -> Streak | None:
     """His last `STREAK_GAMES` games against his projection, where they ran past it for long enough; None otherwise.
 
-    A slump: his value a game under `SHORT_OF` of the projection's, on average and in all but `SPARE` of the games.
-    Hot: over `HOT_OVER` of it, the same way (`competitions.worth.sustained`). Read in the league's own scoring —
+    A slump: his value a game under `SHORT_OF` of the projection's, on average and in all but `SPARE` of the games,
+    his worst left out. Hot: over `HOT_OVER` of it, the same way, his best left out (`competitions.worth.sustained`);
+    whether his minutes and health back it is `backed`'s to say. Read in the league's own scoring —
     across its categories in a category league, so a shooting collapse counts as the drag on his value it is —
     and only against a projection: his form alone has nothing to run past.
     """
@@ -585,6 +618,24 @@ class Reading:
     """Games his club has played in a row without him while the report gives no firm return (`reads.doubts`): his
     games are then not counted on a return; nought otherwise."""
 
+    season: Line | None = None
+    """His line a game for the rest of the season (`season_line`): what a keeper, or a player kept, is weighed on.
+    None reads `line`."""
+
+    season_value: float | None = None
+    """That line in the league's scoring; None reads `per_game`."""
+
+    unproven: bool = False
+    """Whether his last games ran hot without the minutes or health to back them (`backed`): never a keeper."""
+
+    talk: str = ""
+    """The story his own news puts him in trade talk with, 'Fri 21 Nov: …' (`news.talked`); empty otherwise."""
+
+    @property
+    def held(self) -> Line | None:
+        """His line a game for the rest of the season."""
+        return self.season if self.season is not None else self.line
+
     @property
     def cold(self) -> bool:
         """Whether he is in a slump (`streak`)."""
@@ -612,8 +663,15 @@ class Reading:
 
 
 def game_value(reading: Reading) -> float | None:
-    """What a game of him is worth, nudged by his minutes: whether he is one to keep at all, whatever his week."""
+    """What a game of him is worth this week, nudged by his minutes."""
     return None if reading.per_game is None else reading.per_game * reading.usage
+
+
+def kept_value(reading: Reading) -> float | None:
+    """What a game of him is worth for the rest of the season, nudged by his minutes: whether he is one to keep at
+    all, whatever his week (`season_line`)."""
+    per = reading.season_value if reading.season_value is not None else reading.per_game
+    return None if per is None else per * reading.usage
 
 
 def read(
@@ -624,11 +682,18 @@ def read(
     games: int | None,
     provisional: bool = False,
     back: date | None = None,
+    healthy: bool = True,
 ) -> Reading:
     """One player's `Reading`, from his form, his projection, the games he can play (a floor where
-    `provisional`) and when he is back: on his recent form where it ran past his projection (`streak`)."""
+    `provisional`) and when he is back: this week on his recent form where it ran past his projection (`streak`),
+    the season a third of the way toward it (`season_line`). A hot run his minutes or health — `healthy`, no injury
+    reported — do not back (`backed`) is no streak, and marks him `unproven`."""
     called = streak(stats, projected, value)
+    unproven = called is not None and called.hot and not backed(stats, healthy)
+    if unproven:
+        called = None
     figures = per_game(stats, projected, called)
+    kept = season_line(stats, projected, called) if called is not None else None
     played = minutes(stats)
     return Reading(
         player=player,
@@ -642,4 +707,7 @@ def read(
         role=(stats or PlayerStats()).get("role"),
         rising=rising(stats),
         streak=called,
+        season=kept,
+        season_value=value(kept) if kept else None,
+        unproven=unproven,
     )

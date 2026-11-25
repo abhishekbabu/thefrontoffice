@@ -85,8 +85,8 @@ def decide(
     The wire is enrichment here: one that will not load (a sync that has not
     carried it) leaves the week's rows and starts standing, with nothing to stream.
     Nobody you already have a claim waiting on (`claimed`, by Yahoo key) is suggested again,
-    and nobody `untouchable` is offered as a drop. The wire's own news says who is in trade talk
-    (`news.talked`), which a keeper is weighed against; enrichment, like every feed.
+    and nobody `untouchable` is offered as a drop. Each player's own news says who is in trade talk
+    (`news.talked`), which a keeper, and a slumping drop, are weighed against; enrichment, like every feed.
     """
     try:
         free_agents = reads.wire(yahoo, reads.STREAM_DEPTH)
@@ -111,8 +111,10 @@ def decide(
         current_week=league.current_week or 0,
     )
     open_wire = [p for p in free_agents if p.player_key not in claimed]
-    talk = nba_news.talked(feeds.team_news(open_wire), open_wire) if open_wire else {}
-    plan = replace(plan, untouchable=frozenset(untouchable), win=win, talk=talk)
+    talked = [*roster, *open_wire]
+    talk = nba_news.talked(feeds.team_news(talked), talked)
+    readings = {key: replace(r, talk=talk[key]) if key in talk else r for key, r in readings.items()}
+    plan = replace(plan, untouchable=frozenset(untouchable), win=win)
     items = actions.build(roster, open_wire, readings, adds_left, weights is not None, today, plan)
     return Decided(readings, items, plan.volume, plan.streams)
 
@@ -142,6 +144,7 @@ def read_week(
     projections = index_for(feeds.sleeper, start, end)
     clubs = feeds.games.get_remaining_games_bulk([p.team for p in unique], start, end)
     reports = feeds.reports()
+    hurt = reads.injuries(unique, reports)
     doubted = reads.doubts(unique, reports, feeds.scores())
     returns = {key: back for key, back in reads.returns(unique, reports).items() if key not in doubted}
     provisional = bool(feeds.games.unscheduled(start, end))
@@ -162,6 +165,7 @@ def read_week(
             counted(feeds.playable(p, clubs, returns.get(p.player_key), end), p.player_key in doubted),
             provisional,
             returns.get(p.player_key),
+            healthy=not p.status and hurt.of(p.player_key) is None,
         )
         for p in unique
     )

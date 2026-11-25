@@ -85,12 +85,20 @@ def call(recent: float, ahead: float) -> float:
 
 def sustained(scored: Sequence[float], lines: Sequence[float], share: float, spare: int = 1) -> bool:
     """Whether a player's games ran past `share` of what each was expected to give — under it for a share below
-    one, over it for one above — on average and in all but `spare` of them.
+    one, over it for one above — on average and in all but `spare` of them, his most telling game left out.
 
-    One night is noise either way; the run has to hold on average and game by game.
+    One night is noise either way, so the run is read without its most telling game — his best for a run over, his
+    worst for one under — and has to hold on average and game by game over the rest: one 27-point night is not a hot
+    run, one zero not a slump.
     """
     if not scored or len(scored) != len(lines):
         return False
-    beyond = (lambda game, line: game < share * line) if share < 1 else (lambda game, line: game > share * line)
-    held = sum(beyond(game, line) for game, line in zip(scored, lines, strict=True))
-    return beyond(fmean(scored), fmean(lines)) and held >= len(scored) - spare
+    over = share >= 1
+    beyond = (lambda game, line: game > share * line) if over else (lambda game, line: game < share * line)
+    games = list(zip(scored, lines, strict=True))
+    if len(games) > 1:
+        telling = max if over else min
+        games.remove(telling(games, key=lambda pair: pair[0] - share * pair[1]))
+    held = sum(beyond(game, line) for game, line in games)
+    average = beyond(fmean(g for g, _ in games), fmean(line for _, line in games))
+    return average and held >= len(games) - spare
