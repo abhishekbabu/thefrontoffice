@@ -11,7 +11,7 @@ import pytest
 from support.espn import FakeESPN
 from support.nba import FakeNBA, FakeYahoo, make_player, nba_provider, toronto, yahoo_league
 
-from thefrontoffice.adapters.outbound.competitions.nba.form import RecentForm
+from thefrontoffice.adapters.outbound.competitions.nba.form import Availability, RecentForm, Role
 from thefrontoffice.adapters.outbound.competitions.nba.rules import ASSISTS, BLOCKS, CATEGORIES, POINTS, REBOUNDS
 from thefrontoffice.adapters.outbound.competitions.nba.views import (
     BACK,
@@ -23,6 +23,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.views import (
     cards,
     cell,
     compared,
+    priced,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.worth import COLD_SHOOTING, Reading, Shooting, Streak, Swing
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
@@ -604,3 +605,27 @@ def test_a_shooting_collapse_is_its_own_form_row_and_row_note() -> None:
     form = {f.label: f for f in player.figures}[FORM]
     assert (form.value, form.tone) == (COLD_SHOOTING, "warning") and ".292" in (form.hint or "")
     assert COLD_SHOOTING in row.notes[VALUE]
+
+
+def test_a_trades_pricing_line_carries_every_label_the_week_plan_reads_him_by() -> None:
+    day = date(2026, 11, 2)
+    often = replace(
+        READING,
+        per_game=12.0,
+        season_value=10.0,
+        streak=SLUMP,
+        availability=Availability(
+            played=12, scheduled=18, spells=((day, day), (date(2026, 11, 20), date(2026, 11, 23)))
+        ),
+        injury="Left hip, soreness",
+        role=Role(games=5, minutes=22.0, window=28.0),
+        taking="Kel'el Ware",
+        missed=5,
+    )
+
+    found = priced(often, by_points=False)
+
+    assert found is not None and found.label == READING.player.name
+    for said in (SLUMP_LABEL, "Left hip, soreness", "12 of 18", "Kel'el Ware", "5 straight", f"{10.0 * 12 / 18:.1f}"):
+        assert said in found.value
+    assert priced(READING, by_points=False) is None

@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player
+from thefrontoffice.adapters.outbound.competitions.nba.news import TRADE_TALK
 from thefrontoffice.adapters.outbound.competitions.nba.rules import INJURED_SLOTS, ruled_out
 from thefrontoffice.adapters.outbound.competitions.nba.strength import (
     FITTED,
@@ -51,6 +52,7 @@ from thefrontoffice.adapters.outbound.competitions.trades import offers
 from thefrontoffice.domain.models import (
     Fixture,
     SeasonInput,
+    Stat,
     TeamRecord,
     TeamWeek,
     TradeMarket,
@@ -118,6 +120,11 @@ class League:
     """How far a week may stray from what its games add up to (`strength.FITTED`)."""
     untouchable: frozenset[str] = frozenset()
     """Your players the manager marked untouchable, by key: never given away."""
+    form: Mapping[str, Stat] = field(default_factory=dict)
+    """Each player's pricing line, by key, where something beyond his blend prices him (`views.priced`)."""
+    talk: Mapping[str, str] = field(default_factory=dict)
+    """Each player his news puts in trade talk, by key: the story (`news.talked`). One you would receive is said on
+    the idea; one you would give is fine to move."""
 
     @property
     def measure(self) -> TradeMeasure:
@@ -331,6 +338,7 @@ class _Search:
             their_points=theirs,
             playoff_points=gain[1] if self.playoffs else None,
             pickup=self._pickup(rosters) if len(give) > 1 else "",
+            form=self._form([*give, get], get),
             scoring=()
             if self.league.categories
             else tuple(model.scored(team, rosters[team], week) for team in changed for week in self.regular),
@@ -382,6 +390,21 @@ class _Search:
             if more > gain:
                 best, gain = self._label(player.player_key), more
         return best
+
+    def _form(self, keys: Sequence[str], received: str) -> tuple[Stat, ...]:
+        """The pricing lines for the players a trade moves (`League.form`), the one received in trade talk with his
+        story: you would take on a role that may move again."""
+        lines = []
+        for key in keys:
+            found = self.league.form.get(key)
+            story = self.league.talk.get(key) if key == received else None
+            if story:
+                talk = f"{TRADE_TALK}: {story}"
+                name = self.model.players[key].name
+                found = Stat(label=name, value=f"{found.value} · {talk}" if found else talk)
+            if found is not None:
+                lines.append(found)
+        return tuple(lines)
 
     def _label(self, key: str) -> str:
         player = self.model.players[key]

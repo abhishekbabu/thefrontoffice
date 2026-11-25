@@ -37,6 +37,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl import form
 from thefrontoffice.adapters.outbound.competitions.nfl.league import SeasonModel, last_week, season_model
 from thefrontoffice.adapters.outbound.competitions.nfl.model import NFLSource, Projection, Team, active
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import FANTASY_POSITIONS, STREAMED
+from thefrontoffice.adapters.outbound.competitions.nfl.slump import slump
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Scoreboard, Week, lineup_for
 from thefrontoffice.adapters.outbound.competitions.trades import FAIR_SHARE, offers
 from thefrontoffice.domain.models import TeamWeek, TradeMarket, TradeOption
@@ -160,6 +161,7 @@ def _with(
     ]
 
     names = {pid: meta.name for pid in [*my_ids, *wanted] if (meta := state.players.get(pid))}
+    labels = slumped(state, [*my_ids, *wanted])
     options = []
     for get in wanted:
         for give in offers(my_ids, worth, worth(get)):
@@ -180,7 +182,7 @@ def _with(
                     their_points=per_week(theirs_after, weeks.every) - their_now,
                     playoff_points=per_week(mine_after, weeks.playoffs) - my_playoffs if weeks.playoffs else None,
                     pickup=_label(added, state) if (added := pickup(mine_after, len(give) - 1)) else "",
-                    form=form.said(found, [*give, get], names),
+                    form=form.said(found, [*give, get], names, labels),
                     scoring=tuple(
                         TeamWeek(
                             team_id=str(roster.roster_id),
@@ -194,6 +196,16 @@ def _with(
                 )
             )
     return sorted(options, key=lambda option: -(option.playoff_points or option.points))
+
+
+def slumped(state: Week, player_ids: Iterable[str]) -> dict[str, str]:
+    """Each player the week plan calls in trouble (`slump.slump`), by id: 'Slump: 4.95/g L4 vs 11.90 proj', said
+    beside his price on a trade — which his form already bends (`form.forms`), as the week's call does not."""
+    return {
+        pid: f"{sunk.label}: {sunk.short()}"
+        for pid in player_ids
+        if (projection := state.projections.get(pid)) is not None and (sunk := slump(state, projection)) is not None
+    }
 
 
 def _overpays(give: Sequence[str], worth: Callable[[str], float], asked: float) -> bool:

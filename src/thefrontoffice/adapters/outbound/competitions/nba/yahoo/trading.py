@@ -2,21 +2,25 @@
 
 Each reads the league through the provider's readers (`feeds`, a league's
 `yahoo`); the market searches on the rosters' week (`weighing.read_week`) and
-every week left (`market.build`).
+every week left (`market.build`), each player priced on his season's reading (`strength.profile`), a return in
+doubt counted from a week later (`doubted`), and each trade's players' pricing and trade talk said on it.
 """
 
 import logging
-from datetime import datetime
+from collections.abc import Mapping
+from datetime import date, datetime, timedelta
 
 from thefrontoffice.adapters.outbound.competitions import untouchables
+from thefrontoffice.adapters.outbound.competitions.nba import day as nba_day
 from thefrontoffice.adapters.outbound.competitions.nba import forecast as nba_forecast
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
 from thefrontoffice.adapters.outbound.competitions.nba import market as nba_market
 from thefrontoffice.adapters.outbound.competitions.nba import news as nba_news
-from thefrontoffice.adapters.outbound.competitions.nba import prompt
+from thefrontoffice.adapters.outbound.competitions.nba import prompt, views
 from thefrontoffice.adapters.outbound.competitions.nba import strength as nba_strength
 from thefrontoffice.adapters.outbound.competitions.nba.context import PlayerContextBuilder
 from thefrontoffice.adapters.outbound.competitions.nba.rules import PACIFIC, amount
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import reads, weighing
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo.feeds import Feeds
 from thefrontoffice.adapters.outbound.competitions.seeds import seed
@@ -76,7 +80,11 @@ def context(
 
 
 def market(
-    feeds: Feeds, yahoo: YahooSource, league: YahooLeague, untouchable: frozenset[str] = frozenset()
+    feeds: Feeds,
+    yahoo: YahooSource,
+    league: YahooLeague,
+    untouchable: frozenset[str] = frozenset(),
+    days: nba_day.DayLog | None = None,
 ) -> TradeMarket | None:
     """The rest of the season, and every trade near even in worth that improves your weeks (`market.build`).
 
@@ -114,8 +122,9 @@ def market(
     players = once(p for roster in [*rosters.values(), wire] for p in roster)
     weights = reads.weights(league, yahoo)
     start, end = dates[current]
-    readings = weighing.read_week(feeds, yahoo, weights, players, start, end)
-    returns = reads.returns(players, feeds.reports())
+    readings = weighing.read_week(feeds, yahoo, weights, players, start, end, days=days)
+    returns = doubted(reads.returns(players, feeds.reports()), readings, datetime.now(PACIFIC).date())
+    talk = nba_news.talked(feeds.team_news(players), players, others=[p.name for p in players])
     weeks = [
         nba_market.Week(
             week=week,
@@ -157,5 +166,21 @@ def market(
             deadline=rules.trade_end,
             seed=seed(league.league_key, current),
             untouchable=untouchable,
+            form={
+                key: found for key, reading in readings.items() if (found := views.priced(reading, weights is not None))
+            },
+            talk=talk,
         )
     )
+
+
+DOUBT_DELAY = timedelta(days=7)
+"""How far past what the report estimates — or past today, with no estimate — a return in doubt (`Reading.missed`)
+is counted from: a matchup week, the span `teammates.RETURN_SOON` reads a return as soon within."""
+
+
+def doubted(returns: Mapping[str, date], readings: Mapping[str, Reading], today: date) -> dict[str, date]:
+    """Each player's return, a doubted one's `DOUBT_DELAY` later: a season is priced from a return he may not make,
+    rather than from none, which would price him at nothing."""
+    later = {key: (returns.get(key) or today) + DOUBT_DELAY for key, reading in readings.items() if reading.missed}
+    return {**returns, **later}

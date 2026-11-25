@@ -15,7 +15,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.market import THEIR_GAIN,
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS
 from thefrontoffice.adapters.outbound.competitions.nba.strength import POINTS, Profile, Scored, Totals, Uncertainty
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import YahooPlayer
-from thefrontoffice.domain.models import TeamRecord, TradeMarket, TradeOption
+from thefrontoffice.domain.models import Stat, TeamRecord, TradeMarket, TradeOption
 
 EARLY, LATE = "early", "late"
 """Clubs that play the first three nights of every week, and the next three."""
@@ -274,3 +274,28 @@ def test_a_side_ahead_in_every_category_is_less_sure_of_the_week_when_they_move_
     together = _chance_of_week_5(replace(EXACT, loadings=dict.fromkeys(ROUNDED, 0.7)))
 
     assert 0.5 < together < independent
+
+
+def test_a_trade_says_its_players_pricing_and_the_trade_talk_of_the_one_you_would_take_on() -> None:
+    """M3 for B2: both priced off their blend; B2 in trade talk is said, M3's talk is no matter — he is moving."""
+    league = replace(
+        _league(),
+        form={"m3": Stat(label="M3", value="priced 9.0 · Slump"), "b2": Stat(label="B2", value="priced 15.0 · Hot")},
+        talk={"b2": "Fri 21 Nov: B2 a trade candidate", "m3": "Fri 21 Nov: M3 on the block"},
+    )
+
+    trade = _trade(_market(league), "M3", "B2")
+
+    assert trade is not None
+    lines = {line.label: line.value for line in trade.form}
+    assert lines["M3"] == "priced 9.0 · Slump"
+    assert "Hot" in lines["B2"] and "B2 a trade candidate" in lines["B2"]
+
+
+def test_a_player_you_would_take_on_in_trade_talk_is_said_with_no_pricing_line_of_his_own() -> None:
+    league = replace(_league(), talk={"b2": "Fri 21 Nov: B2 a trade candidate"})
+
+    trade = _trade(_market(league), "M3", "B2")
+
+    assert trade is not None
+    assert [(line.label, "B2 a trade candidate" in line.value) for line in trade.form] == [("B2", True)]

@@ -99,3 +99,16 @@ def test_only_a_price_moved_enough_to_matter_is_said_beside_a_trade() -> None:
 
     assert line.label == "Lead Back"
     assert "projected 10.0" in line.value and "priced 13.0" in line.value
+
+
+def test_a_player_the_week_plan_labels_is_said_with_his_label_beside_his_price_or_alone() -> None:
+    found = forms(_played("rb", 20, 20, 20, recent=20), _projected("rb", 10.0), WEEKS)
+    labels = {"rb": "Slump: 4.95/g L4", "te": "Slump: 3.00/g L4"}
+
+    lines = said(found, ["rb", "te", "wr"], {"rb": "Lead Back", "te": "Tight End"}, labels)
+
+    assert [(line.label, line.value.endswith(labels[pid])) for line, pid in zip(lines, ["rb", "te"], strict=True)] == [
+        ("Lead Back", True),
+        ("Tight End", True),
+    ]
+    assert lines[1].value == labels["te"] and "priced" in lines[0].value

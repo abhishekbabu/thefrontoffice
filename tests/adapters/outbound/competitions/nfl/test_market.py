@@ -2,9 +2,11 @@
 
 from dataclasses import replace
 
-from support.nfl import SLEEPER_USER_ID, FakeSleeper, game_line, nfl_provider, proj
+from support.nfl import SLEEPER_USER_ID, SLUMPING_TE, FakeSleeper, game_line, nfl_provider, proj, slumping
 from support.stores import FakeUntouchable
 
+from thefrontoffice.adapters.outbound.competitions.nfl.market import slumped
+from thefrontoffice.adapters.outbound.competitions.worth import SLUMP_LABEL
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import PlayerMeta, SleeperMatchup, SleeperRoster
 from thefrontoffice.domain.models import TradeMarket, TradeOption
 
@@ -308,3 +310,15 @@ def test_a_second_quarterback_is_traded_for_where_a_superflex_starts_him() -> No
     superflex = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX", "K", "DEF", "BN", "BN"]
 
     assert _for_the_backup(_backup_qb_on_offer(superflex))
+
+
+def test_a_slumping_starter_is_labelled_for_a_trade_as_the_week_plan_labels_him() -> None:
+    state = nfl_provider(slumping(SLUMP_STREAMER))._week("L1")
+
+    labels = slumped(state, [SLUMPING_TE.player_id, "fa"])
+
+    assert set(labels) == {SLUMPING_TE.player_id}
+    assert labels[SLUMPING_TE.player_id].startswith(SLUMP_LABEL)
+
+
+SLUMP_STREAMER = proj("fa", "Aj Streamer", "TE", 7.0, team="SEA", opp="ARI")

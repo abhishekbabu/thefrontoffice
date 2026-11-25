@@ -39,7 +39,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     printed,
     ruled_out,
 )
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, game_value
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, counted, kept_value
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, ScheduledGame
 from thefrontoffice.domain.errors import UnsupportedError
 
@@ -203,15 +203,28 @@ def profile(
     weights: Mapping[str, float] | None,
     uncertainty: Uncertainty = FITTED,
 ) -> Profile:
-    """A player's `Profile` from his reading — his form beside his projection — and his last games for the spread.
+    """A player's `Profile` for the rest of the season from his reading — his season's line (`worth.season_line`: a
+    streak pulled a third of the way, not the week's three to one), counted at the games he has played where he keeps
+    going missing (`worth.kept_value`) — and his last games for the spread.
 
     A points league's game is his fantasy points nudged by his minutes, as his
     worth is; a category league's is his line (`line_profile`).
     """
-    value = game_value(reading) or 0.0
+    value = kept_value(reading) or 0.0
     if weights is None:
-        return line_profile(value, reading.line or {}, games, uncertainty)
+        return line_profile(value, _counted(reading.held or {}, counted(reading)), games, uncertainty)
     return points_profile(value, games, weights, uncertainty)
+
+
+RATES = frozenset(c.label for c in CATEGORIES if c.is_percentage)
+
+
+def _counted(figures: Line, share: float) -> Line:
+    """His line a game with its counts, attempts among them, at `share` of a game: a player who plays two games in
+    three gives two thirds of each a game his club plays. A rate is his rate whenever he plays."""
+    if share == 1.0:
+        return figures
+    return {label: value if label in RATES else value * share for label, value in figures.items()}
 
 
 def points_profile(
