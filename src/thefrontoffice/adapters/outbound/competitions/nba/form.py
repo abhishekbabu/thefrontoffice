@@ -77,6 +77,9 @@ class PlayerStats(TypedDict, total=False):
     """The minutes he played in each game of `recent`, newest first: how steady his role is."""
     role: Role
     """His recent minutes against the window's, once the window holds games before the recent run."""
+    run: tuple[Line, ...]
+    """Each of his last `ROLE_GAMES` games as a line of its own, newest first: whether a run of them held
+    (`worth.streak`)."""
 
 
 def nine_cat(games: list[NBAGameLog]) -> Line:
@@ -105,6 +108,17 @@ class BoxScores:
     """Sleeper's catalog, by its id: a teammate's name, and ESPN's id for him."""
     index: NameIndex[str] = field(default_factory=NameIndex)
     """Sleeper's id by a player's name, refusing ambiguity: how a Yahoo player is found in `logs`."""
+
+
+def missed(scores: BoxScores, name: str) -> int:
+    """The games his club has played since his last in the window, in a row: nought where he cannot be placed, or
+    has played none of it — a club cannot be read off nobody's games."""
+    player_id = scores.index.lookup(name)
+    games = scores.logs.get(player_id, ()) if player_id else ()
+    if not games:
+        return 0
+    club, last = games[0].team, games[0].date
+    return len({g.date for logs in scores.logs.values() for g in logs if g.team == club and g.date > last})
 
 
 class FormSource(Protocol):
@@ -188,6 +202,8 @@ class SleeperNBAForm:
             stats["minutes"] = tuple(game.minutes for game in run)
         if len(games) > ROLE_GAMES:
             stats["role"] = role(games)
+        if len(games) >= ROLE_GAMES:
+            stats["run"] = tuple(nine_cat([game]) for game in games[:ROLE_GAMES])
         return stats or None
 
     def box_scores(self) -> BoxScores:

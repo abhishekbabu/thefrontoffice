@@ -70,6 +70,20 @@ def matched(
     return found
 
 
+UNSURE = (
+    *("day to day", "no timetable", "without a timetable", "no return date", "no set return", "week to week"),
+    *("uncertain", "unclear", "indefinitely", "no target date"),
+)
+"""What a report's latest word says of a return it does not firm: 'considered day-to-day as he progresses in his
+rehab' under an estimated date is still no date."""
+
+
+def unsure(report: InjuryReport) -> bool:
+    """Whether the report gives him no firm return: none at all, or one its own latest word leaves open (`UNSURE`)."""
+    text = f" {normalize_name(report.comment)} "
+    return report.returns is None or any(f" {word} " in text for word in UNSURE)
+
+
 def approximately(back: date) -> str:
     """'~22 Nov': an estimate, and it says so."""
     return f"~{day_month(back)}"

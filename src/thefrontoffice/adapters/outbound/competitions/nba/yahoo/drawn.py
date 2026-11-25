@@ -4,6 +4,7 @@ on the to-do list's own scale, and what his next opponent allows his position.
 
 import logging
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 from thefrontoffice.adapters.outbound.competitions.nba import defense, drawer, views
 from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
@@ -33,7 +34,7 @@ def week_of(
     """His matchup week as the drawer shows it, and what a game is worth on the week's scale; None without one.
 
     Counted as his row counts it (`Feeds.playable`): none while ruled out, or from
-    his return. Weighed on the to-do list's own pool (`weighing.valued`), so the
+    his return — none where that return is in doubt (`reads.doubts`). Weighed on the to-do list's own pool (`weighing.valued`), so the
     value it shows is the one his row shows. Each part is enrichment:
     whatever will not load is left out, and the rest stands.
     """
@@ -48,9 +49,10 @@ def week_of(
     if found is None:
         return None
     start, end = found.start, found.end
-    back = reads.returns([player], reports).get(player.player_key)
+    doubted = reads.doubts([player], reports, feeds.scores()).get(player.player_key, 0)
+    back = None if doubted else reads.returns([player], reports).get(player.player_key)
     clubs = feeds.games.get_remaining_games_bulk([player.team], start, end)
-    games = feeds.playable(player, clubs, back, end)
+    games = weighing.counted(feeds.playable(player, clubs, back, end), bool(doubted))
     provisional = bool(feeds.games.unscheduled(start, end))
     club = player.team.upper()
     # A claim's games are those from the day he clears waivers, as `Feeds.playable` counts them.
@@ -64,8 +66,12 @@ def week_of(
     projections = index_for(feeds.sleeper, start, end)
     stats = feeds.form.get_player_stats(player.name)
     projected = projections.find(player.name, player.team, stats) if projections else None
-    value = weighing.week_valuer(feeds, yahoo, weights, found)
-    reading = nba_worth.read(player, stats, projected, value, games, provisional, back) if value else None
+    scaled = weighing.week_valuer(feeds, yahoo, weights, found)
+    value, reading = None, None
+    if scaled is not None:
+        value, by_category = scaled
+        read = nba_worth.read(player, stats, projected, value, games, provisional, back)
+        reading = replace(read, streak=nba_worth.swings(read.streak, by_category), missed=doubted)
     matchup = None
     if fixtures and profile:
         opponent = fixtures[0].away if fixtures[0].home == club else fixtures[0].home

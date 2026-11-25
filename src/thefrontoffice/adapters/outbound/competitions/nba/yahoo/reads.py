@@ -8,13 +8,14 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 from itertools import zip_longest
 
-from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries, by_club, matched
+from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries, by_club, matched, unsure
 from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nba import history
 from thefrontoffice.adapters.outbound.competitions.nba import league as nba_league
 from thefrontoffice.adapters.outbound.competitions.nba import strength as nba_strength
 from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
+from thefrontoffice.adapters.outbound.competitions.nba.form import BoxScores, missed
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     PACIFIC,
@@ -214,6 +215,23 @@ def returns(players: Sequence[Player], reports: Sequence[InjuryReport]) -> dict[
     """The day ESPN expects each of `players` back, keyed by Yahoo's key; nobody it gives none for."""
     found = injuries(players, reports)
     return {p.player_key: back for p in players if (back := found.returns(p.player_key))}
+
+
+MISSED = 4
+"""Games in a row his club has played without him from which a return the report leaves open (`injuries.unsure`) is
+not counted on: over a week out, past the short-term knock 'day-to-day' is first said of."""
+
+
+def doubts(players: Sequence[Player], reports: Sequence[InjuryReport], scores: BoxScores) -> dict[str, int]:
+    """Each of `players` hurt, out `MISSED` games in a row or more, whose report gives no firm return, by Yahoo's key:
+    the games missed. His games are then counted from no return, rather than from one the report only estimates."""
+    found = injuries(players, reports)
+    doubted: dict[str, int] = {}
+    for p in players:
+        report = found.of(p.player_key)
+        if p.status and report is not None and unsure(report) and (gone := missed(scores, p.name)) >= MISSED:
+            doubted[p.player_key] = gone
+    return doubted
 
 
 def valuer(

@@ -23,7 +23,7 @@ from support.nfl import (
 from support.stores import FakeStarterLog
 
 from thefrontoffice.adapters.outbound.competitions.nfl.rules import status_word
-from thefrontoffice.adapters.outbound.competitions.nfl.slump import SLUMP_LABEL
+from thefrontoffice.adapters.outbound.competitions.worth import SLUMP_LABEL
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,

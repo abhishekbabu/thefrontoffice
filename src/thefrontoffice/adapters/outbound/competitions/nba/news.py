@@ -11,6 +11,9 @@ players it names — Sleeper's regulars, the players whose minutes a change move
 - a coach: the head coach hired, fired or replaced; an assistant's is not the rotation's;
 - out long-term: one of this club's regulars named beside a season-ending,
   indefinite or month-long absence (`stories.out_long`) — his shots and minutes are somebody else's for a while.
+
+A player's own news can say his role may not last though nothing has moved yet: named in trade talk
+(`stories.trade_talk`), which a keeper is read against (`talked`).
 """
 
 from collections import defaultdict
@@ -29,6 +32,9 @@ from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 
 TRADE, COACH, OUT_LONG = "Trade", "Coach", "Out long-term"
 """The kinds of club story, as the drawer and the prompt label them."""
+
+TRADE_TALK = "Trade talk"
+"""What a player named in trade talk is flagged as, wherever the plan shows him."""
 
 HEAD_COACH = ("head coach", "interim coach", "interim head coach")
 COACH_MOVES = (
@@ -94,3 +100,15 @@ def block(found: PlayerNews, players: Iterable[Player]) -> str:
     """Each club's stories once, for the clubs of `players`, set off from what it follows; empty where none has any."""
     told = news.team_block(found, (p.player_key for p in players))
     return f"\n{told}" if told else ""
+
+
+def talked(found: PlayerNews, players: Iterable[Player]) -> dict[str, str]:
+    """Each of `players` his own news puts in trade talk (`stories.trade_talk`), by Yahoo's key: the newest such
+    story, 'Fri 21 Nov: Bucks open to trading Myles Turner'."""
+    told: dict[str, str] = {}
+    for player in players:
+        key = normalize_name(player.name)
+        story = next((a for a in found.by_player.get(player.player_key, []) if stories.trade_talk(a, [key])), None)
+        if story is not None:
+            told[player.player_key] = f"{news.dated(story)}: {story.headline}"
+    return told

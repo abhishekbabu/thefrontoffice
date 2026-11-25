@@ -12,7 +12,6 @@ from support.nfl import SLEEPER_USER_ID, game_line, proj, week_of
 from thefrontoffice.adapters.outbound.competitions.news import ClubStory, PlayerNews
 from thefrontoffice.adapters.outbound.competitions.nfl.news import QB_CHANGE
 from thefrontoffice.adapters.outbound.competitions.nfl.slump import (
-    CALL_FORM,
     DEPTH,
     GAMES,
     NEWS,
@@ -27,6 +26,7 @@ from thefrontoffice.adapters.outbound.competitions.nfl.slump import (
 )
 from thefrontoffice.adapters.outbound.competitions.nfl.starters import DEPTH_CHART
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
+from thefrontoffice.adapters.outbound.competitions.worth import CALL_FORM
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,

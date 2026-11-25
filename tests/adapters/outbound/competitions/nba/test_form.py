@@ -11,11 +11,14 @@ from typing import Any
 import pytest
 from support.nba import FakeSleeperNBA
 
+from thefrontoffice.adapters.outbound.competitions.names import NameIndex
 from thefrontoffice.adapters.outbound.competitions.nba.form import (
     MIN_FORM_GAMES,
     RECENT_GAMES,
     ROLE_GAMES,
+    BoxScores,
     SleeperNBAForm,
+    missed,
     nine_cat,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES
@@ -72,14 +75,14 @@ def test_a_window_is_reported_only_once_it_can_be_filled() -> None:
     stats = _form(logs=_run(7)).get_player_stats("Nikola Jokic")
 
     assert stats is not None
-    assert set(stats) == {"last_5", "recent", "minutes", "role"}
+    assert set(stats) == {"last_5", "recent", "minutes", "role", "run"}
 
 
 def test_every_window_appears_once_there_are_enough_games() -> None:
     stats = _form(logs=_run(20)).get_player_stats("Nikola Jokic")
 
     assert stats is not None
-    assert set(stats) == {"last_5", "last_10", "last_15", "recent", "minutes", "role"}
+    assert set(stats) == {"last_5", "last_10", "last_15", "recent", "minutes", "role", "run"}
 
 
 def test_the_recent_run_is_every_game_while_short_of_fifteen() -> None:
@@ -235,3 +238,42 @@ def test_his_minutes_are_kept_game_by_game_newest_first() -> None:
 
     assert stats is not None
     assert stats["minutes"] == (33.0, 32.0, 31.0)
+
+
+def test_his_last_five_games_are_kept_each_as_a_line_newest_first() -> None:
+    """What a streak reads game by game, not as one average."""
+    logs = {"p1": [_game(f"2026-01-{20 - i:02d}", pts=float(i)) for i in range(8)]}
+
+    stats = _form(logs=logs).get_player_stats("Nikola Jokic")
+
+    assert stats is not None
+    assert [game["PTS"] for game in stats["run"]] == [0.0, 1.0, 2.0, 3.0, 4.0]
+
+
+# ── games missed ────────────────────────────────────────────────────────
+
+
+def _played(player: str, team: str, *days: str) -> list[NBAGameLog]:
+    return [replace(_game(day), player_id=player, team=team) for day in sorted(days, reverse=True)]
+
+
+def _scores(**logs: list[NBAGameLog]) -> BoxScores:
+    index: NameIndex[str] = NameIndex()
+    index.add("Nikola Jokic", "p1")
+    return BoxScores(logs=logs, index=index)
+
+
+def test_the_games_he_missed_are_his_clubs_since_his_last() -> None:
+    """Denver played twice after his last game; a Laker game the same week is not his club's."""
+    scores = _scores(
+        p1=_played("p1", "DEN", "2026-01-08", "2026-01-10"),
+        p2=_played("p2", "DEN", "2026-01-08", "2026-01-10", "2026-01-12", "2026-01-14"),
+        p3=_played("p3", "LAL", "2026-01-13"),
+    )
+
+    assert missed(scores, "Nikola Jokic") == 2
+
+
+def test_a_player_who_cannot_be_placed_or_has_no_games_missed_none() -> None:
+    assert missed(_scores(p2=_played("p2", "DEN", "2026-01-12")), "Nikola Jokic") == 0
+    assert missed(_scores(), "Somebody Else") == 0

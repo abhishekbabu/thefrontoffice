@@ -12,7 +12,11 @@ import pytest
 from support.espn import FakeESPN
 from support.nba import FakeNBA, FakeSleeperProjections, FakeYahoo, make_player, nba_provider, toronto, yahoo_league
 
+from thefrontoffice.adapters.outbound.competitions.nba.drawer import Drawer, DrawerWeek, detail
 from thefrontoffice.adapters.outbound.competitions.nba.form import BoxScores, RecentForm, nine_cat
+from thefrontoffice.adapters.outbound.competitions.nba.views import BACK
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Streak
+from thefrontoffice.adapters.outbound.competitions.worth import SLUMP_LABEL
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -315,3 +319,16 @@ def test_box_scores_that_will_not_load_leave_his_clubs_stories_that_name_nobody(
     groups = _tab("News", nba=nba, espn=FakeESPN(news={"LAL": [story]})).groups
 
     assert [g.title for g in groups] == ["Team news"]
+
+
+def test_the_week_names_his_streak_and_a_return_in_doubt() -> None:
+    """Labelled as every view labels it, so the drawer and the to-do list read one call."""
+    player = make_player("A B", "PG", key="ab", status="O")
+    sunk = Streak(hot=False, games=5, recent=4.1, usual=10.2, line={}, ahead={})
+    reading = Reading(player=player, line={}, per_game=6.0, games=0, streak=sunk, missed=5)
+
+    opened = detail(Drawer(player, None, None, (), None, week=DrawerWeek(left="0", reading=reading)))
+
+    week = {s.label: s for s in opened.groups[0].stats}
+    assert week[SLUMP_LABEL].tone == "warning" and "4.1" in week[SLUMP_LABEL].value
+    assert week[BACK].tone == "warning" and "5" in week[BACK].value

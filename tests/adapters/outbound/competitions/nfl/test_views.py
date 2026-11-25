@@ -10,8 +10,8 @@ import pytest
 from support.nfl import SLEEPER_USER_ID, SLUMPING_TE, FakeSleeper, game_line, nfl_provider, proj, slumping
 
 from thefrontoffice.adapters.outbound.competitions.matchups import MATCHUP_SWING, RECENT_GAMES, Matchup, Recent
-from thefrontoffice.adapters.outbound.competitions.nfl.slump import SLUMP_LABEL
 from thefrontoffice.adapters.outbound.competitions.nfl.views import ON_FORM, ease
+from thefrontoffice.adapters.outbound.competitions.worth import SLUMP_LABEL
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
     NFLGameLine,
     PlayerMeta,

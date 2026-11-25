@@ -29,10 +29,11 @@ from thefrontoffice.adapters.outbound.competitions.nfl.news import QB_CHANGE
 from thefrontoffice.adapters.outbound.competitions.nfl.starters import DEPTH_CHART
 from thefrontoffice.adapters.outbound.competitions.nfl.week import Week
 from thefrontoffice.adapters.outbound.competitions.nfl.worth import plays, usage
+from thefrontoffice.adapters.outbound.competitions.worth import SLUMP_LABEL, call, sustained
 
-SLUMP_LABEL, QB_CHANGE_LABEL = "Slump", "QB change"
+QB_CHANGE_LABEL = "QB change"
 """What a starter in trouble is called wherever he is shown — the drawer, a roster row's note, a model's player
-line: a slump where his games fell short, a QB change where only his quarterback did."""
+line: a slump (`worth.SLUMP_LABEL`) where his games fell short, a QB change where only his quarterback did."""
 
 SLUMP_GAMES = 4
 """His last games played that a slump is read over, games he missed left out: one bad afternoon is a quarter of it."""
@@ -196,11 +197,7 @@ def slump(state: Week, player: Projection) -> Slump | None:
     lines, basis = _lines(state, player, window)
     scored = sum(game.points for game in window) / len(window)
     projected = sum(lines) / len(lines)
-    short_of = (
-        scored < SHORT_OF * projected
-        and projected - scored >= SHORT_BY
-        and sum(game.points < SHORT_OF * line for game, line in zip(window, lines, strict=True)) >= len(window) - 1
-    )
+    short_of = sustained([game.points for game in window], lines, SHORT_OF) and projected - scored >= SHORT_BY
     qb = _qb_change(state, player, played) if player.position in TARGET_POSITIONS else None
     if not short_of and qb is None:
         return None
@@ -335,22 +332,18 @@ def _name(state: Week, player_id: str) -> str:
 
 # ── the form call ───────────────────────────────────────────────────────
 
-CALL_FORM = 0.75
-"""Form's share of a form call, against the projection's: `worth` weighs them evenly, which is what kept a
-slumping starter ahead of every streamer. A quarter stays with the projection, which still reads the week."""
-
 CALL_BY = 2.0
 """Points a form call must favour the player coming in by: under it the two are a coin flip, and a hunch is no move."""
 
 
 def called(state: Week, player: Projection, since: int | None = None) -> float | None:
-    """What a form call weighs him by: `CALL_FORM` of his points a game over his last `SLUMP_GAMES` played — or his
-    games from week `since`, where his quarterback changed then — and the rest his projection, times his `usage`
-    and his `matchup_factor`. None with too few games to read form from, or no game this week."""
+    """What a form call weighs him by (`worth.call`): his points a game over his last `SLUMP_GAMES` played — or his
+    games from week `since`, where his quarterback changed then — against his projection, times his `usage` and
+    his `matchup_factor`. None with too few games to read form from, or no game this week."""
     form = recent(state, player.player_id, since)
     if form is None or not plays(state, player):
         return None
-    blended = CALL_FORM * form + (1 - CALL_FORM) * player.points
+    blended = call(form, player.points)
     return blended * usage(state, player.player_id) * matchup_factor(state.evidence.matchup(player))
 
 
