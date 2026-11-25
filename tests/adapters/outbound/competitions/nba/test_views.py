@@ -13,9 +13,20 @@ from support.nba import FakeNBA, FakeYahoo, make_player, nba_provider, toronto, 
 
 from thefrontoffice.adapters.outbound.competitions.nba.form import RecentForm
 from thefrontoffice.adapters.outbound.competitions.nba.rules import ASSISTS, BLOCKS, CATEGORIES, POINTS, REBOUNDS
-from thefrontoffice.adapters.outbound.competitions.nba.views import by_worth, cards, cell, compared
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
+from thefrontoffice.adapters.outbound.competitions.nba.views import (
+    BACK,
+    DOWN,
+    FORM,
+    UP,
+    VALUE,
+    by_worth,
+    cards,
+    cell,
+    compared,
+)
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Streak, Swing
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
+from thefrontoffice.adapters.outbound.competitions.worth import HOT_LABEL, SLUMP_LABEL
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
@@ -544,3 +555,40 @@ def test_a_wire_row_without_his_minutes_or_his_rostered_share_shows_dashes() -> 
 
     assert (bare.columns["Min"], bare.columns["Rost"]) == ("—", "—")
     assert "Min" not in bare.values and "Rost" not in bare.values
+
+
+SLUMP = Streak(
+    hot=False,
+    games=5,
+    recent=4.1,
+    usual=10.2,
+    line={},
+    ahead={},
+    swings=(Swing(StatCategory("5", "FG%"), 0.226, 0.470), Swing(StatCategory("18", "BLK"), 0.4, 1.3)),
+)
+
+
+def test_an_item_carries_a_players_streak_and_a_return_in_doubt() -> None:
+    sunk = replace(READING, streak=SLUMP, missed=5)
+
+    [player, steady] = compared([("out", "starter", sunk), ("in", "free agent", READING)], False)
+
+    figures = {f.label: f for f in player.figures}
+    assert (figures[FORM].value, figures[FORM].tone) == (SLUMP_LABEL, "warning")
+    hint = figures[FORM].hint or ""
+    assert "4.1" in hint and ".226" in hint and "1.3" in hint
+    assert figures[BACK].tone == "warning" and "5" in figures[BACK].value
+    assert {f.label: f.value for f in steady.figures}[FORM] == "—"
+
+
+def test_a_category_row_marks_a_value_read_on_a_streak_and_says_which() -> None:
+    sunk = replace(READING, player=make_player("Sunk", key="sunk"), streak=SLUMP)
+    hot = replace(READING, player=make_player("Hot", key="hot"), streak=replace(SLUMP, hot=True, swings=()))
+    steady = replace(READING, player=make_player("Steady", key="steady"))
+    readings = {r.player.player_key: r for r in (sunk, hot, steady)}
+
+    rows = {r.player_id: r for r in cards([r.player for r in readings.values()], {}, {}, False, readings=readings)}
+
+    assert rows["sunk"].columns[VALUE].endswith(DOWN) and rows["sunk"].notes[VALUE].startswith(SLUMP_LABEL)
+    assert rows["hot"].columns[VALUE].endswith(UP) and rows["hot"].notes[VALUE].startswith(HOT_LABEL)
+    assert VALUE not in rows["steady"].notes

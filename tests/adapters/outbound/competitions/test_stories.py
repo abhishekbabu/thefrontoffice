@@ -16,6 +16,7 @@ from thefrontoffice.adapters.outbound.competitions.stories import (
     roundup,
     talk,
     text_of,
+    trade_talk,
 )
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 
@@ -105,3 +106,23 @@ def test_a_phrase_is_near_a_player_within_a_few_words_of_one_clause() -> None:
 )
 def test_a_recap_has_a_score_and_a_result_in_its_headline(headline: str, is_recap: bool) -> None:
     assert recap(_story(headline)) is is_recap
+
+
+TURNER = "myles turner"
+
+
+@pytest.mark.parametrize(
+    ("headline", "summary", "talked"),
+    [
+        ("Bucks' Myles Turner emerging as a trade candidate", "", True),
+        ("Shams: Myles Turner has requested a trade from the Bucks", "", True),
+        ("Rivals could trade for Myles Turner before the deadline", "", True),
+        ("Turner adds 27 as Bucks snap skid", "Myles Turner fouled out with a season-high 27.", False),
+        ("Bucks acquire Myles Turner from Pacers", "", False),
+        ("Trade candidates to watch", "The Bucks' rebuild goes on. Myles Turner scored 27 on Monday night.", False),
+    ],
+)
+def test_trade_talk_names_the_player_beside_it_and_never_a_trade_made(
+    headline: str, summary: str, talked: bool
+) -> None:
+    assert trade_talk(_story(headline, summary), [TURNER]) is talked

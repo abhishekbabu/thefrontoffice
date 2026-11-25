@@ -3,6 +3,8 @@
 from dataclasses import replace
 from datetime import UTC, date, datetime
 
+import pytest
+
 from thefrontoffice.adapters.outbound.competitions.injuries import (
     BODY_PART,
     PlayerInjuries,
@@ -12,6 +14,7 @@ from thefrontoffice.adapters.outbound.competitions.injuries import (
     in_words,
     injury_stats,
     matched,
+    unsure,
 )
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 
@@ -133,3 +136,20 @@ def test_a_platforms_designation_says_only_what_it_has() -> None:
     assert designation("") == []
     assert [(s.label, s.value) for s in designation("Out", "Knee")] == [("Status", "Out"), (BODY_PART, "Knee")]
     assert [s.label for s in designation("", "Knee")] == [BODY_PART]
+
+
+@pytest.mark.parametrize(
+    ("comment", "returns", "open_"),
+    [
+        ("Robinson (quadriceps) is considered day-to-day as he progresses in his rehab.", date(2026, 11, 27), True),
+        ("He remains out indefinitely.", date(2026, 12, 1), True),
+        ("Coach says he will return for Friday's game.", date(2026, 11, 27), False),
+        ("Coach says he will return soon.", None, True),
+    ],
+)
+def test_a_return_is_unsure_without_a_date_or_where_the_latest_word_leaves_it_open(
+    comment: str, returns: date | None, open_: bool
+) -> None:
+    report = replace(_report("Duncan Robinson", "DET"), comment=comment, returns=returns)
+
+    assert unsure(report) is open_

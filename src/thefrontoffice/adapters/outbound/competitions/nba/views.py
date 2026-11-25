@@ -129,7 +129,8 @@ def cards(
     scores (`scored`), then his `VALUE` a game from `readings`. The lineup slot
     is a column only where somebody holds one: on the wire nobody does, and
     the column would be blank down its whole length. `returns` is the day ESPN
-    expects each player back, by Yahoo's key. `splits`, on the wire, adds the
+    expects each player back, by Yahoo's key. A value read on a streak carries its arrow and, in its note, what the streak was
+    (`form_note`). `splits`, on the wire, adds the
     teammate whose absence matters most to each (`teammates.Teammate`), the rest
     being in his drawer. The `wire` adds who is trending: his minutes against
     the window's (`MINUTES_COLUMN`), and how many leagues are adding him
@@ -155,7 +156,7 @@ def cards(
             reading = valued.get(player.player_key)
             game = reading.per_game if reading else None
             shown[VALUE] = f"{game:.2f}" if game is not None else ""
-            cells[VALUE] = f"{game:.1f}" if game is not None else NO_FIGURE
+            cells[VALUE] = f"{game:.1f}{streaking(reading)}" if game is not None else NO_FIGURE
         trends = trending(player, valued.get(player.player_key), rostered) if wire else {}
         for column, (cell, figure, _) in trends.items():
             cells[column] = cell
@@ -179,10 +180,24 @@ def cards(
                     **({STATUS_COLUMN: note} if (note := status_note(player, back)) else {}),
                     **({WITHOUT_COLUMN: split.note()} if split else {}),
                     **{column: said for column, (_, _, said) in trends.items() if said},
+                    **({VALUE: said} if not by_points and (said := form_note(valued.get(player.player_key))) else {}),
                 },
             )
         )
     return ranked(rows, by_points)
+
+
+def streaking(reading: Reading | None) -> str:
+    """' ↓' beside a value read on a slump, ' ↑' on a hot run (`worth.streak`); nothing otherwise."""
+    found = reading.streak if reading else None
+    return "" if found is None else f" {UP if found.hot else DOWN}"
+
+
+def form_note(reading: Reading | None) -> str:
+    """'Slump: 4.1/g over his last 5 vs 10.2 projected · FG% .226, proj .470; value weighed on them', for a player
+    on a streak; empty otherwise."""
+    found = reading.streak if reading else None
+    return "" if found is None else f"{found.label}: {found.short()}; value weighed on them"
 
 
 Trend = tuple[str, float | None, str]
@@ -395,8 +410,32 @@ def figures(reading: Reading, by_points: bool) -> list[Stat]:
         Stat(label="Min/g", value=f"{reading.minutes:.1f}" if reading.minutes is not None else NO_FIGURE),
         Stat(label=WEEK, value=f"{worth:.1f}" if worth is not None else NO_FIGURE),
         Stat(label=STATUS_COLUMN, value=status or NO_FIGURE, tone="warning" if ruled_out(status) else "neutral"),
-        Stat(label=BACK, value=approximately(reading.back) if reading.back else NO_FIGURE),
+        Stat(label=BACK, value=back(reading), tone="warning" if reading.missed else "neutral"),
+        form_stat(reading),
     ]
+
+
+FORM = "Form"
+"""A to-do item's row for a player on a streak: the label it carries everywhere (`worth.Streak.label`)."""
+
+
+def form_stat(reading: Reading) -> Stat:
+    """'Slump' or 'Hot', with the streak in its hint; a dash for neither."""
+    found = reading.streak
+    if found is None:
+        return Stat(label=FORM, value=NO_FIGURE)
+    return Stat(label=FORM, value=found.label, tone="good" if found.hot else "warning", hint=found.short())
+
+
+UNCLEAR = "unclear"
+"""What his return reads as where it is in doubt (`Reading.missed`)."""
+
+
+def back(reading: Reading) -> str:
+    """'~27 Nov', 'unclear, out 5 straight' where the report leaves it open, or a dash."""
+    if reading.missed:
+        return f"{UNCLEAR}, out {reading.missed} straight"
+    return approximately(reading.back) if reading.back else NO_FIGURE
 
 
 def compared(moved: Sequence[tuple[MoveSide, Held, Reading]], by_points: bool) -> list[MovePlayer]:

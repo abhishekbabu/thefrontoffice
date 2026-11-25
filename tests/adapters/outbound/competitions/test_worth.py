@@ -2,7 +2,16 @@
 
 import pytest
 
-from thefrontoffice.adapters.outbound.competitions.worth import FORM_WEIGHT, USAGE_SWING, blend, settled, usage
+from thefrontoffice.adapters.outbound.competitions.worth import (
+    CALL_FORM,
+    FORM_WEIGHT,
+    USAGE_SWING,
+    blend,
+    call,
+    settled,
+    sustained,
+    usage,
+)
 
 
 def test_form_and_outlook_blend_by_the_form_weight() -> None:
@@ -45,3 +54,26 @@ def test_games_in_a_new_role_count_by_how_many_there_are() -> None:
     assert settled(4, 4) == pytest.approx(0.5)
     assert settled(1, 4) == pytest.approx(0.2)
     assert settled(0, 4) == 0.0
+
+
+def test_a_form_call_weighs_form_three_to_one_against_the_outlook() -> None:
+    assert call(4.0, 12.0) == pytest.approx(CALL_FORM * 4.0 + (1 - CALL_FORM) * 12.0) == pytest.approx(6.0)
+
+
+def test_a_run_under_a_share_below_one_must_hold_on_average_and_in_all_but_the_spare_games() -> None:
+    lines = [10.0] * 4
+
+    assert sustained([5.0, 5.0, 5.0, 8.0], lines, 0.6)
+    assert not sustained([5.0, 5.0, 9.0, 9.0], lines, 0.6)  # two games past the bar with one spare
+    assert sustained([5.0, 5.0, 9.0, 9.0], lines, 0.8, spare=2)
+    assert not sustained([0.0, 0.0, 0.0, 30.0], lines, 0.6)  # three bad games, but not on average
+
+
+def test_a_run_over_a_share_above_one_reads_the_other_way() -> None:
+    assert sustained([15.0, 16.0, 15.0, 13.0], [10.0] * 4, 1.4)
+    assert not sustained([15.0, 16.0, 9.0, 9.0], [10.0] * 4, 1.4)
+
+
+def test_no_games_or_a_line_short_of_them_is_no_run() -> None:
+    assert not sustained([], [], 0.6)
+    assert not sustained([1.0, 1.0], [10.0], 0.6)

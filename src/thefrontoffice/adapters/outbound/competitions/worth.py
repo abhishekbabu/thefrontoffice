@@ -6,6 +6,7 @@ and this says how they combine, so the two read a player by one rule.
 """
 
 from collections.abc import Sequence
+from statistics import fmean
 
 FORM_WEIGHT = 0.5
 """The share of a player's worth that is his recent form; the rest is his outlook.
@@ -64,3 +65,32 @@ def usage(readings: Sequence[float], *, steady_from: float, swings_by: float, fe
     if not grew and max(readings) - min(readings) >= swings_by:
         return 1 - USAGE_SWING
     return 1.0
+
+
+SLUMP_LABEL, HOT_LABEL = "Slump", "Hot"
+"""What a player is called wherever he is shown — a drawer, a row's note, a model's player line, a to-do — whose last
+few games ran well under what he was expected to give (`sustained`), or well over it."""
+
+CALL_FORM = 0.75
+"""Form's share of a form call, against the outlook's: `blend` weighs them evenly, which is what kept a slumping
+player ahead of every streamer, and a hot one behind players he now outplays. A quarter stays with the outlook,
+which still reads his week."""
+
+
+def call(recent: float, ahead: float) -> float:
+    """A form call: `CALL_FORM` of `recent` and the rest `ahead`, for a player whose games and outlook disagree by
+    enough, for long enough (`sustained`)."""
+    return CALL_FORM * recent + (1 - CALL_FORM) * ahead
+
+
+def sustained(scored: Sequence[float], lines: Sequence[float], share: float, spare: int = 1) -> bool:
+    """Whether a player's games ran past `share` of what each was expected to give — under it for a share below
+    one, over it for one above — on average and in all but `spare` of them.
+
+    One night is noise either way; the run has to hold on average and game by game.
+    """
+    if not scored or len(scored) != len(lines):
+        return False
+    beyond = (lambda game, line: game < share * line) if share < 1 else (lambda game, line: game > share * line)
+    held = sum(beyond(game, line) for game, line in zip(scored, lines, strict=True))
+    return beyond(fmean(scored), fmean(lines)) and held >= len(scored) - spare

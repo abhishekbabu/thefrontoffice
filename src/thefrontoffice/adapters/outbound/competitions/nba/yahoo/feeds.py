@@ -12,7 +12,7 @@ from thefrontoffice.adapters.outbound.competitions.dates import parse_day
 from thefrontoffice.adapters.outbound.competitions.nba import news as nba_news
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
-from thefrontoffice.adapters.outbound.competitions.nba.form import FormSource
+from thefrontoffice.adapters.outbound.competitions.nba.form import BoxScores, FormSource
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player
 from thefrontoffice.adapters.outbound.competitions.nba.projections import index_for
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
@@ -146,6 +146,15 @@ class Feeds:
             if game.state == "pre" and game.kickoff is not None
             for club in (game.home, game.away)
         }
+
+    def scores(self) -> BoxScores:
+        """Every game in the form window, by player; none where they would not load: who has missed games in a row
+        (`reads.doubts`) is enrichment, and nobody's return is then doubted."""
+        try:
+            return self.form.box_scores()
+        except FrontOfficeError as e:
+            logger.warning(f"Reading returns without who has missed games, Sleeper's box scores would not load: {e}")
+            return BoxScores()
 
     def recent(self, player: Player) -> list[NBAGameLog]:
         return self.form.recent_games(player.name)

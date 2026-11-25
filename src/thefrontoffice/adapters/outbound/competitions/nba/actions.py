@@ -18,6 +18,12 @@ player on waivers is a claim, weighed on the games from the day he clears them
 The adds are one plan within the adds left (`streams`): no two share a drop
 or a pickup, an open roster or IL spot goes first, and a week all but
 decided either way spends them on the season rather than its own games.
+
+Form and news reach the plan as they reach each reading: a player whose last
+games ran well under his projection (a slump, `worth.streak`) is let go
+first and never kept, one running well over it is never let go, and a keeper
+his own news puts in trade talk (`Plan.talk`) ranks behind every clean one and
+says so.
 """
 
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -28,6 +34,7 @@ from thefrontoffice.adapters.outbound.competitions.dates import day_month, weekd
 from thefrontoffice.adapters.outbound.competitions.injuries import approximately
 from thefrontoffice.adapters.outbound.competitions.nba import lineup, views
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player
+from thefrontoffice.adapters.outbound.competitions.nba.news import TRADE_TALK
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     INJURED_SLOTS,
     RESERVABLE,
@@ -285,12 +292,13 @@ def _matchup(today: Today, player: Player) -> str:
 
 
 def droppable(roster: Sequence[Player], readings: Mapping[str, Reading], keep: set[str]) -> list[Reading]:
-    """Who you could let go: a falling role first (`worth.falling`), then the least worth this week.
+    """Who you could let go: a falling role or a slump first (`_fading`), then the least worth this week.
 
     Never a player in an injured slot — dropping him frees no active spot —
     nor one in the better `KEPT` of the roster by value a game, nor one whose
     role is growing (`settled`): his value a game is still catching up with
-    his minutes, however cold his last few nights. Nor one another item
+    his minutes, however cold his last few nights. Nor one on a hot run
+    (`Reading.hot`): a cold player goes before him. Nor one another item
     already moves, nor one with nothing to read him by: an unknown is not a
     weak player.
     """
@@ -301,8 +309,15 @@ def droppable(roster: Sequence[Player], readings: Mapping[str, Reading], keep: s
     ]
     ranked = sorted(active, key=lambda r: -_game(r))
     kept = {r.player.player_key for r in ranked[: round(len(ranked) * KEPT)]}
-    open_to = [r for r in active if r.player.player_key not in kept | keep and r.worth is not None and settled(r)]
-    return sorted(open_to, key=lambda r: (not falling(r.role), _worth(r)))
+    open_to = [
+        r for r in active if r.player.player_key not in kept | keep and r.worth is not None and settled(r) and not r.hot
+    ]
+    return sorted(open_to, key=lambda r: (not _fading(r), _worth(r)))
+
+
+def _fading(reading: Reading) -> bool:
+    """Whether he is the first to let go: his minutes falling (`worth.falling`), or his games in a slump."""
+    return falling(reading.role) or reading.cold
 
 
 DECIDED = 0.1
@@ -343,6 +358,8 @@ class Plan:
     """Active roster spots open now: an add into one lets nobody go."""
     reserve: tuple[str, ...] = ()
     """The injured slots open now, once per place: ('IL',)."""
+    talk: Mapping[str, str] = field(default_factory=dict)
+    """Each free agent his own news puts in trade talk, by Yahoo key: the story (`news.talked`)."""
 
     @property
     def behind(self) -> bool:
@@ -474,11 +491,14 @@ class Weigh:
 
         Never one whose role leans on a teammate due back (`Plan.returning`) — one at his position he has barely
         played beside, or one his split says he does clearly more without —
-        nor one whose minutes have just grown (`settled`), nor one out beyond `RETURN_SOON`, nor one the roster's
-        needs (`Plan.needs`) read as no better than the drop. One out now is added on the week's first day without
+        nor one whose minutes have just grown (`settled`), nor one out beyond `RETURN_SOON` or with no firm
+        return (`Reading.missed`), nor one in a slump (`Reading.cold`), nor one the roster's needs (`Plan.needs`)
+        read as no better than the drop. One out now is added on the week's first day without
         games before his return, where it has one, so the drop plays until then.
         """
         if pickup.player.player_key in self.plan.returning or not settled(pickup) or not self.back_soon(pickup):
+            return None
+        if pickup.cold or pickup.missed:
             return None
         season = self.season(pickup) - self.season(drop)
         if not beats(_game(pickup), floor if drop is None else _game(drop)) or season <= 0:
@@ -571,9 +591,9 @@ def _doubted(played: float, nights: Sequence[date], reading: Reading) -> float:
 def _weakest_first(
     drops: Sequence[Reading | None], key: Callable[[Reading], float | tuple[float, ...]]
 ) -> list[Reading | None]:
-    """Open spots first, then a falling role (`worth.falling`), then by `key`, weakest first."""
+    """Open spots first, then a falling role or a slump (`_fading`), then by `key`, weakest first."""
     spots: list[Reading | None] = [d for d in drops if d is None]
-    players = sorted((d for d in drops if d is not None), key=lambda d: (not falling(d.role), key(d)))
+    players = sorted((d for d in drops if d is not None), key=lambda d: (not _fading(d), key(d)))
     return [*spots, *players]
 
 
@@ -691,7 +711,11 @@ def _chase(
     def best_keeper() -> Swap | None:
         left = _left(drops, chosen)
         found = (s for r in wire if r.player.player_key not in taken() and (s := weigh.best_keeper(r, left)))
-        return min(found, key=lambda s: (-weigh.season(s.pickup), -s.gain), default=None)
+        return min(
+            found,
+            key=lambda s: (s.pickup.player.player_key in plan.talk, -weigh.season(s.pickup), -s.gain),
+            default=None,
+        )
 
     first = best_stream()
     kept = best_keeper()
@@ -736,7 +760,8 @@ def _season(
 ) -> Added:
     """A week all but decided: every add goes to a keeper, up to `SEASON_ADDS` and the adds left.
 
-    The keepers and drops are paired as a whole (`_assign`), so the best
+    A keeper in trade talk (`Plan.talk`) is planned only where no clean one is, and is otherwise at most the
+    alternative. The keepers and drops are paired as a whole (`_assign`), so the best
     pickup does not take the one drop a second keeper needed. The best keeper
     left over, on a drop of his own, is named as the alternative to the
     planned one who adds least. In the order they are made: one out now on
@@ -745,11 +770,13 @@ def _season(
     budget = min(SEASON_ADDS, adds_left)
     pool = budget + SEASON_POOL
     keepers = [r for r in wire if weigh.best_keeper(r, drops) is not None]
-    pickups = sorted(keepers, key=lambda r: -weigh.season(r))[:pool]
+    pickups = sorted(keepers, key=lambda r: (r.player.player_key in weigh.plan.talk, -weigh.season(r)))[:pool]
     entries = list(enumerate(_weakest_first(drops, _game)[:pool]))
     floor = min((_game(d) for d in drops if d is not None), default=0.0)
     pairs = [(at, swap) for r in pickups for at, d in entries if (swap := weigh.keeper(r, d, floor)) is not None]
-    chosen = _assign(pairs, budget)
+    talk = weigh.plan.talk
+    clean = [(at, swap) for at, swap in pairs if swap.pickup.player.player_key not in talk]
+    chosen = _assign(clean, budget) or _assign(pairs, budget)
     if not chosen:
         return Added()
     places = {at for at, _ in chosen}
@@ -861,6 +888,7 @@ def _item(swap: Swap, by_points: bool, plan: Plan, instead: Swap | None = None) 
             + _close(swap)
             + _needs(swap)
             + _out(swap)
+            + _talk(plan, pickup)
         )
     else:
         games = f", {swap.nights} games in open slots" if swap.nights is not None else ""
@@ -877,7 +905,13 @@ def _item(swap: Swap, by_points: bool, plan: Plan, instead: Swap | None = None) 
         kind="waiver",
         urgency="now" if swap.term == "streamer" and plan.behind and not plan.decided else "soon",
         title=f"{title}, drop {drop.player.name}" if drop is not None else title,
-        reason=lead + why + _stakes(plan, swap) + _pending(pickup) + _waiting(pickup, plan.priority),
+        reason=lead
+        + why
+        + _form(pickup)
+        + _form(drop)
+        + _stakes(plan, swap)
+        + _pending(pickup)
+        + _waiting(pickup, plan.priority),
         when=weekday_day_month(swap.add_on) if swap.add_on else _today(plan),
         player_id=pickup.player.player_key,
         drop=drop.player.player_key if drop is not None else "",
@@ -907,20 +941,37 @@ def _close(swap: Swap) -> str:
     return f" Close: {mine:.2f} a game clears the {bar:.2f} a keeper needs by {mine / bar - 1:.1%}."
 
 
+def _form(reading: Reading | None) -> str:
+    """' Slump, Rudy Gobert: 4.1/g over his last 5 vs 6.8 projected · FG% .226, proj .470.' for a player on a
+    streak (`worth.streak`), whom the item weighs on it; nothing otherwise."""
+    found = reading.streak if reading is not None else None
+    if found is None or reading is None:
+        return ""
+    return f" {found.label}, {reading.player.name}: {found.short()}."
+
+
+def _talk(plan: Plan, pickup: Reading) -> str:
+    """' Trade talk: Fri 21 Nov: Bucks open to trading Myles Turner.' for a keeper his news puts in it."""
+    story = plan.talk.get(pickup.player.player_key)
+    return f" {TRADE_TALK}: {story}." if story else ""
+
+
 def _today(plan: Plan) -> str:
     """The day an add made now is made on, where there is a week to place it; empty otherwise."""
     return weekday_day_month(plan.week.today) if plan.week is not None else ""
 
 
 def _let_go(swap: Swap, weakest: str) -> str:
-    """'Gobert: weakest a game you can drop (FT% .441).', 'Gobert: role falling, 22 min a game, was 29.', or the open
-    spot it goes into."""
+    """'Gobert: weakest a game you can drop (FT% .441).', 'Gobert: role falling, 22 min a game, was 29.', 'Gobert: in
+    a slump, the first you can drop.', or the open spot it goes into."""
     drop = swap.drop
     if drop is None:
         return "Into an open roster spot."
     role = drop.role
     if falling(role) and role is not None:
         return f"{drop.player.name}: role falling, {role.minutes:.0f} min a game, was {role.window:.0f}."
+    if drop.cold:
+        return f"{drop.player.name}: in a slump, the first you can drop."
     return f"{drop.player.name}: {weakest}" + _drags(drop) + "."
 
 

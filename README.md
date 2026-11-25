@@ -262,9 +262,9 @@ players lock days before Monday's. An FPL row does the same from FPL's fixture
 list, at his club's first match of the gameweek; one more than a week off is
 dated ("Sat 6 Dec 3:00 PM"). An NBA player's
 worth this week is that game's value (his recent run blended with Sleeper's
-projection, in fantasy points or across the scored categories, each counted in
+projection, or 3:1 his last 5 games where most ran under 0.6× or over 1.4× its value (Slump, Hot), in fantasy points or across the scored categories, each counted in
 its spread over the players read) × games left (none while ruled out, or from
-ESPN's return date), ±10% for steady or swinging minutes. Sleeper's projection
+ESPN's return date; none once out 4 straight with no firm return), ±10% for steady or swinging minutes. Sleeper's projection
 joins Yahoo by name and club: a player Sleeper projects nothing (ruled out), a
 match on another club, or a projection over 2.5× his recent run either way (with
 a gap of 6 PTS, 4 REB, 3 AST or 1.5 3PTM a game) carries none, and he is read on
@@ -275,7 +275,7 @@ is a fifth worse a game. Nobody resting today is started, nobody whose game has
 tipped off is moved, and without today's schedule there are no starts. Then up to
 two streamers (from the wire's top 75 by season and top 50 by last week, five
 requests) within the adds left, each a fifth more worth this week on the nights he fills an open slot, by at least 1.5 of its drop's games, and at least as
-good a game as it, and a keeper taking one add, a fifth better a game; a week under 10% or over 90% to win spends every add on keepers. No two adds share a drop, an open roster spot or IL slot (for a player out all week, naming who to drop when he is back) is used first, a keeper past the adds left is named as an alternative, one within 5% of the bar is called close, and a drop is a falling role first — never from IL, the better half of the roster or minutes that are growing.
+good a game as it, and a keeper taking one add, a fifth better a game, never in a slump, behind every clean keeper if his news has him in trade talk; a week under 10% or over 90% to win spends every add on keepers. No two adds share a drop, an open roster spot or IL slot (for a player out all week, naming who to drop when he is back) is used first, a keeper past the adds left is named as an alternative, one within 5% of the bar is called close, and a drop is a falling role or a slump first — never from IL, the better half of the roster, minutes that are growing or a hot run.
 While the NBA has yet to schedule days of a week (3+ days in a row with under 3
 games, 1–20 Dec: the Cup knockouts, before eliminated clubs get games), the header
 says "Schedule: not final", games left read "3+G", Fixtures carries a note naming

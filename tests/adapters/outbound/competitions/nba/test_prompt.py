@@ -8,7 +8,8 @@ from support.prompts import named_fields, schema_fields
 
 from thefrontoffice.adapters.outbound.competitions.nba import prompt
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, POINTS, STEALS, TURNOVERS
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
+from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Streak
+from thefrontoffice.adapters.outbound.competitions.worth import SLUMP_LABEL
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import Matchup, MatchupSide
 from thefrontoffice.application.formats import ScoutAnswer, TradeAnswer, WireAnswer
 from thefrontoffice.domain.models import Action
@@ -168,3 +169,13 @@ def test_a_wire_target_is_the_candidates_line_by_id_with_the_drop_he_streams_ove
     assert all(line in context.prompt for line in context.targets.values())
     assert "Mine One (PF)" in context.prompt
     assert set(context.candidate_lines) == {"Free One", "Free Two"}
+
+
+def test_a_players_week_names_his_slump_and_a_return_in_doubt() -> None:
+    sunk = Streak(hot=False, games=5, recent=4.1, usual=10.2, line={}, ahead={})
+    reading = Reading(player=make_player("A"), line={}, per_game=6.0, games=0, streak=sunk, missed=5)
+
+    line = prompt.week_line(reading)
+
+    assert SLUMP_LABEL.upper() in line and "4.1" in line and "10.2" in line
+    assert "5 straight" in line

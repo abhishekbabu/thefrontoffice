@@ -38,10 +38,12 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     UNNEEDED,
     Reading,
     Scale,
+    Streak,
     Targeting,
     category_value,
     scales,
 )
+from thefrontoffice.adapters.outbound.competitions.worth import SLUMP_LABEL
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import ScheduledGame
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory, YahooLine, YahooPlayer
 
@@ -432,6 +434,75 @@ def test_a_player_whose_minutes_are_growing_is_never_the_drop() -> None:
     assert [r.player.name for r in droppable(roster, readings, set())] == ["Weak"]
     [item] = streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set())
     assert item.drop == "Weak"
+
+
+COLD = Streak(hot=False, games=5, recent=8.0, usual=20.0, line={}, ahead={})
+HOT = Streak(hot=True, games=5, recent=32.0, usual=20.0, line={}, ahead={})
+
+
+def test_a_player_on_a_hot_run_is_never_the_drop_and_one_in_a_slump_goes_first() -> None:
+    """Weaker is hot, so Weak makes way; once Weak is in a slump he goes first even over a weaker week."""
+    roster, readings = _team()
+    readings["Weaker"] = replace(readings["Weaker"], streak=HOT)
+
+    assert [r.player.name for r in droppable(roster, readings, set())] == ["Weak"]
+
+    readings["Weaker"] = replace(readings["Weaker"], streak=None)
+    readings["Weak"] = replace(readings["Weak"], streak=COLD)
+
+    assert [r.player.name for r in droppable(roster, readings, set())] == ["Weak", "Weaker"]
+    pickup = _player("Pickup", position="SF")
+    readings |= _readings((pickup, 21.0, 4))
+    [item] = streams(roster, [pickup], readings, adds_left=2, by_points=True, named=set())
+    assert item.drop == "Weak" and SLUMP_LABEL in item.reason
+
+
+def test_a_free_agent_in_a_slump_is_never_a_keeper() -> None:
+    """Clearly better a game on his reading, but his last games ran well under it: he can stream, not be kept."""
+    roster, readings = _team()
+    sunk = _player("Sunk", position="SF")
+    readings |= {"Sunk": replace(_read(sunk, 30.0, 3), streak=COLD)}
+
+    items = streams(roster, [sunk], readings, adds_left=2, by_points=True, named=set())
+
+    assert [item.pickup for item in items] == ["streamer"]
+    assert SLUMP_LABEL in items[0].reason
+
+
+def test_a_free_agent_whose_return_is_in_doubt_is_never_a_keeper() -> None:
+    roster, readings = _team()
+    doubted = _player("Doubted", position="SF", status="O")
+    readings |= {"Doubted": replace(_read(doubted, 30.0, 0), missed=5)}
+
+    assert streams(roster, [doubted], readings, adds_left=2, by_points=True, named=set()) == []
+
+
+def test_a_keeper_in_trade_talk_ranks_behind_a_clean_one_and_says_so() -> None:
+    """The talked-of keeper is better a game, yet the clean one is planned and he is the alternative, with his story."""
+    roster, readings = _team()
+    talked, clean = _player("Talked", position="SF"), _player("Clean", position="SF")
+    readings |= _readings((talked, 32.0, 1), (clean, 30.0, 3))
+    story = "Fri 21 Nov: Talked emerges as a trade candidate"
+    plan = Plan(talk={"Talked": story})
+
+    planned, alternative = streams(roster, [talked, clean], readings, 1, True, set(), plan=plan)
+
+    assert [(item.player_id, item.pickup) for item in (planned, alternative)] == [
+        ("Clean", "keeper"),
+        ("Talked", "keeper"),
+    ]
+    assert story in alternative.reason and story not in planned.reason
+
+
+def test_a_decided_week_weighs_a_keeper_in_trade_talk_after_every_clean_one() -> None:
+    roster, readings = _team()
+    talked, clean = _player("Talked", position="SF"), _player("Clean", position="SF")
+    readings |= _readings((talked, 32.0, 3), (clean, 30.0, 3))
+    plan = Plan(win=0.02, talk={"Talked": "Fri 21 Nov: Talked emerges as a trade candidate"})
+
+    items = streams(roster, [talked, clean], readings, 1, True, set(), plan=plan)
+
+    assert [item.player_id for item in items][0] == "Clean"
 
 
 def test_a_pickup_no_better_a_game_is_a_streamer_and_one_clearly_better_a_keeper() -> None:

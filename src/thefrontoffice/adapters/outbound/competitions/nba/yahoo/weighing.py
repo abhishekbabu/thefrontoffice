@@ -10,6 +10,7 @@ from datetime import date, datetime
 
 from thefrontoffice.adapters.outbound.competitions.nba import actions
 from thefrontoffice.adapters.outbound.competitions.nba import lineup as nba_lineup
+from thefrontoffice.adapters.outbound.competitions.nba import news as nba_news
 from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.projections import index_for
@@ -84,7 +85,8 @@ def decide(
     The wire is enrichment here: one that will not load (a sync that has not
     carried it) leaves the week's rows and starts standing, with nothing to stream.
     Nobody you already have a claim waiting on (`claimed`, by Yahoo key) is suggested again,
-    and nobody `untouchable` is offered as a drop.
+    and nobody `untouchable` is offered as a drop. The wire's own news says who is in trade talk
+    (`news.talked`), which a keeper is weighed against; enrichment, like every feed.
     """
     try:
         free_agents = reads.wire(yahoo, reads.STREAM_DEPTH)
@@ -108,8 +110,9 @@ def decide(
         their_adds,
         current_week=league.current_week or 0,
     )
-    plan = replace(plan, untouchable=frozenset(untouchable), win=win)
     open_wire = [p for p in free_agents if p.player_key not in claimed]
+    talk = nba_news.talked(feeds.team_news(open_wire), open_wire) if open_wire else {}
+    plan = replace(plan, untouchable=frozenset(untouchable), win=win, talk=talk)
     items = actions.build(roster, open_wire, readings, adds_left, weights is not None, today, plan)
     return Decided(readings, items, plan.volume, plan.streams)
 
@@ -130,14 +133,17 @@ def read_week(
     is shown beside the week and never weighed in it.
 
     His games are his club's left, none while he is ruled out, or those from
-    the day ESPN expects him back. A category league values a game across
+    the day ESPN expects him back — none for a player out several games whose
+    return the report leaves open (`reads.doubts`). A category league values a game across
     the categories it scores, scaled over `players` alone.
     """
     pool = {p.player_key for p in players}
     unique = list({p.player_key: p for p in [*players, *(also or [])]}.values())
     projections = index_for(feeds.sleeper, start, end)
     clubs = feeds.games.get_remaining_games_bulk([p.team for p in unique], start, end)
-    returns = reads.returns(unique, feeds.reports())
+    reports = feeds.reports()
+    doubted = reads.doubts(unique, reports, feeds.scores())
+    returns = {key: back for key, back in reads.returns(unique, reports).items() if key not in doubted}
     provisional = bool(feeds.games.unscheduled(start, end))
     stats = {p.player_key: feeds.form.get_player_stats(p.name) for p in unique}
     projected = {
@@ -153,7 +159,7 @@ def read_week(
             stats[p.player_key],
             projected[p.player_key],
             value,
-            feeds.playable(p, clubs, returns.get(p.player_key), end),
+            counted(feeds.playable(p, clubs, returns.get(p.player_key), end), p.player_key in doubted),
             provisional,
             returns.get(p.player_key),
         )
@@ -162,10 +168,19 @@ def read_week(
     shown = averages or {}
     return {
         r.player.player_key: replace(
-            r, weak=tuple(nba_worth.weakest(r.line, found)), average=shown.get(r.player.player_key)
+            r,
+            weak=tuple(nba_worth.weakest(r.line, found)),
+            average=shown.get(r.player.player_key),
+            streak=nba_worth.swings(r.streak, found),
+            missed=doubted.get(r.player.player_key, 0),
         )
         for r in readings
     }
+
+
+def counted(games: int | None, doubted: bool) -> int | None:
+    """His games, or none where his return is in doubt (`reads.doubts`); None where the schedule would not load."""
+    return 0 if doubted and games is not None else games
 
 
 def plan_for(
@@ -324,15 +339,16 @@ def valued(
 
 def week_valuer(
     feeds: Feeds, yahoo: YahooSource, weights: Mapping[str, float] | None, found: Pairing
-) -> nba_worth.Valuer | None:
-    """What a game is worth on the week's scale: fantasy points, or a category league's value across the pool.
+) -> tuple[nba_worth.Valuer, dict[str, nba_worth.Scale]] | None:
+    """What a game is worth on the week's scale — fantasy points, or a category league's value across the pool —
+    and each category's scale over it (none in a points league).
 
     The pool is the to-do list's (`decide`): both rosters of this week's
     matchup and the top of the wire, most of it read already by the page
     the drawer opened from. None where it will not load.
     """
     if weights:
-        return nba_worth.points_value(weights)
+        return nba_worth.points_value(weights), {}
     try:
         pool = [
             *yahoo.roster(found.mine.team_key),
@@ -346,7 +362,7 @@ def week_valuer(
             projected = projections.find(p.name, p.team, stats) if projections else None
             if line := nba_worth.per_game(stats, projected):
                 lines.append(line)
-        return reads.valuer(yahoo, None, lines)[0]
+        return reads.valuer(yahoo, None, lines)
     except FrontOfficeError as e:
         logger.warning(f"Showing the drawer without a value a game: {e}")
         return None

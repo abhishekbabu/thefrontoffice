@@ -16,6 +16,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.news import (
     attach,
     block,
     lines_with_team_news,
+    talked,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Regular
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
@@ -119,3 +120,17 @@ def test_each_line_points_to_its_clubs_stories_stated_once_in_the_block() -> Non
     assert lines["Nobody"] == "- Nobody\n"
     assert told.count(story.headline) == 1
     assert block(found, [make_player("Free Agent", team="BOS", key="fa")]) == ""
+
+
+def test_a_player_his_own_news_puts_in_trade_talk_is_named_with_the_story() -> None:
+    """Reaves' own story is trade talk; Doncic's recap beside it is not, though both are in the Lakers' feed."""
+    feed = [
+        _article("Austin Reaves emerges as a trade candidate for the Lakers"),
+        _article("Luka Doncic scores 40 as Lakers beat Jazz 120-110", days_ago=2),
+    ]
+    found = attach({"LAL": feed}, [REAVES, LUKA], REGULARS, NOW)
+
+    told = talked(found, [REAVES, LUKA])
+
+    assert set(told) == {"reaves"}
+    assert "trade candidate" in told["reaves"]

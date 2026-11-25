@@ -35,6 +35,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Teammate
 from thefrontoffice.adapters.outbound.competitions.nba.views import (
+    BACK,
     FANTASY_POINTS,
     GAMES_LEFT,
     LAST_MONTH,
@@ -45,6 +46,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.views import (
     WEEK,
     WINDOW,
     averages,
+    back,
     number,
     per_game,
 )
@@ -220,6 +222,10 @@ def _week(drawer: Drawer) -> list[Stat]:
         )
         if reading.worth is not None:
             stats.append(Stat(label=WEEK, value=f"{reading.worth:.1f}", better="higher"))
+        if (found := reading.streak) is not None:
+            stats.append(Stat(label=found.label, value=found.short(), tone="good" if found.hot else "warning"))
+        if reading.missed:
+            stats.append(Stat(label=BACK, value=back(reading), tone="warning"))
     stats += _trend(drawer.games)
     return stats
 

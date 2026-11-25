@@ -11,7 +11,9 @@ competition says which players a story has to name and how (`nfl/news.py`,
   'Daniel Jones traded to Minnesota', 'deal sends Daniel Jones' — never a
   player merely mentioned beside the verb (`moved`);
 - talk of a change is not one: a question, a rumor, a hope (`talk`);
-- a roundup naming players of more than `ROUNDUP` clubs is the league's, not one club's.
+- a roundup naming players of more than `ROUNDUP` clubs is the league's, not one club's;
+- a player in trade talk is named beside it, in the story's own words (`trade_talk`): no trade yet, but a role
+  that may not last.
 """
 
 import re
@@ -175,3 +177,22 @@ def recap(article: NewsArticle) -> bool:
 def roundup(clubs: Iterable[str]) -> bool:
     """Whether the clubs a story's players come from make it the league's story rather than one club's."""
     return len(set(clubs)) > ROUNDUP
+
+
+TRADE_TALK = (
+    *("trade candidate", "trade candidates", "trade target", "trade targets", "trade block", "on the block"),
+    *("trade market", "trade talks", "trade talk", "trade rumors", "trade buzz", "trade interest", "trade request"),
+    *("requested a trade", "requests a trade", "request a trade", "requested trade", "requests trade"),
+    *("wants a trade", "wants trade", "wants out", "shopping", "shopped", "available in trades", "available via trade"),
+)
+"""Words of a player's possible move, said of him: a trade not yet made."""
+
+
+def trade_talk(article: NewsArticle, keys: Iterable[str]) -> bool:
+    """Whether the story puts one of the players in trade talk: named within `NEAR` words of it (`TRADE_TALK`), or of a
+    trade where the story is talk of one (`talk`) — never a trade made, which is the club's story."""
+    keys = tuple(keys)
+    text = text_of(article)
+    if moved(text, keys, TRADED, TRADED_TO) and not talk(article, text):
+        return False
+    return near(text, keys, TRADE_TALK) or (talk(article, text) and near(text, keys, TRADED))

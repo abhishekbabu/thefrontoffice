@@ -40,6 +40,10 @@ TO DO — WHAT LEAGUE STATE ALREADY SAYS NEEDS DECIDING:
 - "WEEK" on a player line, and "Week" in an item, is his worth this week: a game's value ({value_unit}),
   blending his recent run with Sleeper's projection, nudged up to a tenth by how steady his minutes are,
   times the games he can play before the week ends. Items need a fifth more worth than the player replaced.
+- "SLUMP" or "HOT" on a player line: his value a game over his last 5 ran well under or over Sleeper's
+  projection, on average and in most of the games, with the categories it shows in; his value is then weighed
+  three-quarters on those games. "RETURN UNCLEAR": out several straight with no firm return, so no games counted.
+  A to-do's "Trade talk" is a story naming him in trade talk: his role may not last.
 - Yahoo lineups are set daily: a start item is for today, a bench player with a game tonight over a starter without one or clearly weaker a game.
 - The manager sees this list; your verdicts appear beside it, so judge these items rather than restating them.
 {tasks_str}
@@ -373,12 +377,16 @@ def scout(
 
 
 def week_line(reading: Reading) -> str:
-    """' | WEEK: 3G × 41.5/g × 1.1 (minutes) = 137.0': his worth this week, and what it is made of."""
+    """' | WEEK: 3G × 41.5/g × 1.1 (minutes) = 137.0': his worth this week, and what it is made of — then his
+    streak (`worth.streak`) and a return in doubt (`Reading.missed`), where either is his."""
     worth = reading.worth
     if worth is None or reading.per_game is None:
         return ""
     nudge = f" × {reading.usage:g} (minutes)" if reading.usage != 1 else ""
-    return f" | WEEK: {reading.games}G × {reading.per_game:.1f}/g{nudge} = {worth:.1f}"
+    found = reading.streak
+    streak = f" | {found.label.upper()}: {found.short()}" if found is not None else ""
+    doubt = f" | RETURN UNCLEAR: out {reading.missed} straight" if reading.missed else ""
+    return f" | WEEK: {reading.games}G × {reading.per_game:.1f}/g{nudge} = {worth:.1f}{streak}{doubt}"
 
 
 def trade(

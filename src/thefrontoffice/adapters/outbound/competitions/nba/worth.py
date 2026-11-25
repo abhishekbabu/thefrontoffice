@@ -9,18 +9,19 @@ A game's value is his recent form beside Sleeper's projection for the week
 scoring: fantasy points under its weights, or his contribution across the
 categories it scores (`category_value`). Where his minutes have moved, his
 last few games pull it toward the role he plays now (`ROLE`), and his minutes
-nudge it (`MINUTES`).
+nudge it (`MINUTES`). Where his last few games ran well under or over his
+projection, game after game (`streak`), he is weighed on that form instead.
 """
 
 import statistics
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import NamedTuple
 
 from thefrontoffice.adapters.outbound.competitions import worth as shared
 from thefrontoffice.adapters.outbound.competitions.availability import expected_games
-from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES, PlayerStats, Role
+from thefrontoffice.adapters.outbound.competitions.nba.form import MIN_FORM_GAMES, ROLE_GAMES, PlayerStats, Role
 from thefrontoffice.adapters.outbound.competitions.nba.model import LeagueCategory, Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.projections import ProjectedTotals
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
@@ -32,6 +33,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     line,
     ruled_out,
 )
+from thefrontoffice.adapters.outbound.competitions.worth import HOT_LABEL, SLUMP_LABEL
 
 
 class MinutesRule(NamedTuple):
@@ -359,6 +361,117 @@ def weakest(figures: Line | None, found: Mapping[str, Scale]) -> list[LeagueCate
     return [found[label].scored for label in sorted(below, key=lambda label: below[label])[:WEAKEST]]
 
 
+STREAK_GAMES = ROLE_GAMES
+"""His last games played a streak is read over: five, about a week and a half of a club's games, so one bad night
+is a fifth of it — and the run his last five already average."""
+
+SHORT_OF = 0.6
+"""The share of his projection's value a game his last games must fall under, on average and game by game, to be a
+slump. A single game's value swings by about his projection either way — a 4-point night with four blocks is a good
+one in categories — so a run averaging under three-fifths of it is not a projection running cold: of the 119 players a Yahoo
+league's week read on 24 Nov 2026, it marked 8."""
+
+HOT_OVER = 1.4
+"""The share of his projection's value his last games must run over to be hot: the slump's margin the other way.
+The same week marked 17, most of them wire players Sleeper projects for a bench role they have outgrown."""
+
+SPARE = 2
+"""The games of `STREAK_GAMES` that may miss the bar and the run still hold: most of them must clear it. NFL's
+weekly games allow one of four; a basketball game is a single night of a week's three or four, and a run of five
+cut by two quiet nights is still three of five well past the projection."""
+
+
+@dataclass(frozen=True)
+class Swing:
+    """One category his streak shows in: his figure a game over it against his projection's."""
+
+    category: LeagueCategory
+    now: float
+    usual: float
+
+    def short(self) -> str:
+        """'FG% .226, proj .470' or '1.2 BLK, proj 2.3'."""
+        if BY_STAT[self.category.stat_id].is_percentage:
+            return f"{self.category.name} {_rate(self.now)}, proj {_rate(self.usual)}"
+        return f"{self.now:.1f} {self.category.name}, proj {self.usual:.1f}"
+
+
+def _rate(value: float) -> str:
+    return f"{value:.3f}".removeprefix("0")
+
+
+@dataclass(frozen=True)
+class Streak:
+    """His last games running well under his projection (a slump) or well over it (hot): `streak`."""
+
+    hot: bool
+    games: int
+    recent: float
+    """His value a game over them, game by game."""
+    usual: float
+    """His projection's value a game."""
+    line: Line
+    """His line a game over them: what he is weighed on, beside the projection (`competitions.worth.call`)."""
+    ahead: Line
+    """Sleeper's projection a game this week."""
+    swings: tuple[Swing, ...] = ()
+    """The categories it shows in most, in a category league (`swings`); none in a points league."""
+
+    @property
+    def label(self) -> str:
+        return HOT_LABEL if self.hot else SLUMP_LABEL
+
+    def short(self) -> str:
+        """'4.1/g over his last 5 vs 10.2 projected · FG% .226, proj .470'."""
+        lead = f"{self.recent:.1f}/g over his last {self.games} vs {self.usual:.1f} projected"
+        return " · ".join([lead, *(swing.short() for swing in self.swings)])
+
+
+def streak(stats: PlayerStats | None, projected: ProjectedTotals | None, value: Valuer) -> Streak | None:
+    """His last `STREAK_GAMES` games against his projection, where they ran past it for long enough; None otherwise.
+
+    A slump: his value a game under `SHORT_OF` of the projection's, on average and in all but `SPARE` of the games.
+    Hot: over `HOT_OVER` of it, the same way (`competitions.worth.sustained`). Read in the league's own scoring —
+    across its categories in a category league, so a shooting collapse counts as the drag on his value it is —
+    and only against a projection: his form alone has nothing to run past.
+    """
+    found = stats or PlayerStats()
+    run, latest = found.get("run", ()), found.get("last_5")
+    if len(run) < STREAK_GAMES or not latest or projected is None or not projected.games:
+        return None
+    ahead = line(projected.totals, games=projected.games)
+    usual = value(ahead)
+    scored = [figure for game in run if (figure := value(game)) is not None]
+    if usual is None or usual <= 0 or len(scored) < len(run):
+        return None
+    for share, hot in ((SHORT_OF, False), (HOT_OVER, True)):
+        if shared.sustained(scored, [usual] * len(scored), share, SPARE):
+            return Streak(hot, len(run), statistics.fmean(scored), usual, latest, ahead)
+    return None
+
+
+SWUNG = 0.5
+"""How far, in a category's spread across the pool, his figure over the streak must sit from his projection's for the
+streak to name it: as far as a weak category sits under the pool (`WEAK_BELOW`)."""
+
+SWINGS = 2
+"""The categories a streak names: the two it shows in most."""
+
+
+def swings(found: Streak | None, scaled: Mapping[str, Scale]) -> Streak | None:
+    """`found` with the categories it shows in most, the way it ran: at most `SWINGS`, by `SWUNG` of a spread or more."""
+    if found is None or not scaled:
+        return found
+    moved: dict[str, float] = {}
+    for label, scale in scaled.items():
+        now, usual = scale.against_pool(found.line), scale.against_pool(found.ahead)
+        if now is not None and usual is not None and (change := now - usual if found.hot else usual - now) >= SWUNG:
+            moved[label] = change
+    ranked = sorted(moved, key=lambda label: -moved[label])[:SWINGS]
+    named = tuple(Swing(scaled[label].scored, found.line[label], found.ahead[label]) for label in ranked)
+    return replace(found, swings=named)
+
+
 def moved(role: Role | None) -> bool:
     """Whether his minutes over his last few have moved from the window's by `ROLE.moved`, either way."""
     return role is not None and abs(role.minutes - role.window) >= ROLE.moved
@@ -378,12 +491,20 @@ def rising(stats: PlayerStats | None) -> bool:
     return role is not None and len(latest) == ROLE.latest and min(latest) >= role.window + ROLE.moved
 
 
-def per_game(stats: PlayerStats | None, projected: ProjectedTotals | None) -> Line | None:
+def per_game(stats: PlayerStats | None, projected: ProjectedTotals | None, called: Streak | None = None) -> Line | None:
     """His line a game: his recent run beside Sleeper's projection a game this week, category by category,
-    pulled toward his last few games where his role has moved (`ROLE`).
+    pulled toward his last few games where his role has moved (`ROLE`) — or, on a streak (`called`), his last few
+    games called against the projection (`competitions.worth.call`).
 
     Either alone where the other is missing; None with neither.
     """
+    if called is not None:
+        labels = dict.fromkeys([*called.line, *called.ahead])
+        return {
+            label: shared.call(called.line.get(label, ahead), ahead)
+            for label in labels
+            if (ahead := called.ahead.get(label, called.line.get(label))) is not None
+        }
     recent = run.line if stats and (run := stats.get("recent")) else {}
     ahead = line(projected.totals, games=projected.games) if projected and projected.games else {}
     if not recent and not ahead:
@@ -457,6 +578,23 @@ class Reading:
     rising: bool = False
     """Whether his minutes are growing now (`rising`): a role on its way up is never the one let go."""
 
+    streak: Streak | None = None
+    """His last games run well under or over his projection (`streak`): what `line` is then called on."""
+
+    missed: int = 0
+    """Games his club has played in a row without him while the report gives no firm return (`reads.doubts`): his
+    games are then not counted on a return; nought otherwise."""
+
+    @property
+    def cold(self) -> bool:
+        """Whether he is in a slump (`streak`)."""
+        return self.streak is not None and not self.streak.hot
+
+    @property
+    def hot(self) -> bool:
+        """Whether he is on a hot run (`streak`): never the player let go over a cold one."""
+        return self.streak is not None and self.streak.hot
+
     @property
     def worth(self) -> float | None:
         """`per_game` × `usage` × `games`: what he adds this week. None where either is unknown."""
@@ -488,8 +626,9 @@ def read(
     back: date | None = None,
 ) -> Reading:
     """One player's `Reading`, from his form, his projection, the games he can play (a floor where
-    `provisional`) and when he is back."""
-    figures = per_game(stats, projected)
+    `provisional`) and when he is back: on his recent form where it ran past his projection (`streak`)."""
+    called = streak(stats, projected, value)
+    figures = per_game(stats, projected, called)
     played = minutes(stats)
     return Reading(
         player=player,
@@ -502,4 +641,5 @@ def read(
         back=back,
         role=(stats or PlayerStats()).get("role"),
         rising=rising(stats),
+        streak=called,
     )

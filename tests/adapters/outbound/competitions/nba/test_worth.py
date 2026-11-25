@@ -34,12 +34,14 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     read,
     rising,
     scales,
+    streak,
+    swings,
     team_rates,
     usage,
     weakest,
     winnable,
 )
-from thefrontoffice.adapters.outbound.competitions.worth import USAGE_SWING, settled
+from thefrontoffice.adapters.outbound.competitions.worth import CALL_FORM, HOT_LABEL, SLUMP_LABEL, USAGE_SWING, settled
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import StatCategory
 
@@ -504,3 +506,90 @@ def test_the_game_a_player_ruled_out_got_hurt_in_says_nothing_of_his_role() -> N
     assert usage(stats, hurt=True) == 1.0
     # A short night earlier in the run, not his latest, is still a swing.
     assert usage(PlayerStats(minutes=(30.0, 31.0, 29.0, 12.0, 32.0)), hurt=True) == 1 - USAGE_SWING
+
+
+# ── a streak ────────────────────────────────────────────────────────
+
+POINTS_ONLY = points_value({POINTS.yahoo_stat: 1.0})
+TWENTY = ProjectedTotals(games=2, totals={"pts": 40.0})
+"""Sleeper projects 20 points a game."""
+
+
+def _run(*games: dict[str, float]) -> PlayerStats:
+    """His last games, newest first, each a box score of its own."""
+    logs = [
+        NBAGameLog(player_id="p", date=f"2026-11-{20 - i:02d}", opponent="BOS", stats=g) for i, g in enumerate(games)
+    ]
+    line = nine_cat(logs)
+    return PlayerStats(last_5=line, run=tuple(nine_cat([g]) for g in logs), recent=RecentForm(len(logs), line))
+
+
+def _scoring(*points: float) -> PlayerStats:
+    return _run(*({"pts": p} for p in points))
+
+
+def test_most_of_his_last_games_well_under_the_projection_are_a_slump() -> None:
+    """Under three-fifths of 20 is 12: 11.8 a game, four of the five under it, the 25 a night that does not undo it."""
+    found = streak(_scoring(10, 8, 25, 9, 7), TWENTY, POINTS_ONLY)
+
+    assert found is not None
+    assert (found.hot, found.games, found.label) == (False, 5, SLUMP_LABEL)
+    assert (found.recent, found.usual) == (pytest.approx(11.8), pytest.approx(20.0))
+
+
+def test_a_low_average_from_two_bad_nights_is_no_slump() -> None:
+    """Two games of nothing drag the average to 11.2, but three of the five were fine: most must fall short."""
+    assert streak(_scoring(0, 0, 13, 13, 30), TWENTY, POINTS_ONLY) is None
+
+
+def test_most_of_his_last_games_well_over_the_projection_are_hot() -> None:
+    found = streak(_scoring(30, 31, 30, 10, 40), TWENTY, POINTS_ONLY)
+
+    assert found is not None
+    assert (found.hot, found.label) == (True, HOT_LABEL)
+
+
+def test_games_around_the_projection_are_no_streak() -> None:
+    assert streak(_scoring(18, 22, 15, 25, 20), TWENTY, POINTS_ONLY) is None
+
+
+def test_without_a_projection_or_five_games_there_is_nothing_to_run_past() -> None:
+    assert streak(_scoring(5, 5, 5, 5, 5), None, POINTS_ONLY) is None
+    assert streak(_scoring(5, 5, 5, 5), TWENTY, POINTS_ONLY) is None
+    assert streak(_scoring(5, 5, 5, 5, 5), ProjectedTotals(games=2, totals={}), POINTS_ONLY) is None
+
+
+def test_a_streak_weighs_him_on_his_last_games_called_against_the_projection() -> None:
+    """Three-quarters his last five's 11.8, a quarter the projection's 20, in place of the even blend."""
+    reading = read(make_player("A"), _scoring(10, 8, 25, 9, 7), TWENTY, POINTS_ONLY, 3)
+
+    assert reading.cold and not reading.hot
+    assert reading.per_game == pytest.approx(CALL_FORM * 11.8 + (1 - CALL_FORM) * 20.0)
+
+
+def test_a_hot_run_lifts_him_the_same_way() -> None:
+    reading = read(make_player("A"), _scoring(30, 31, 30, 10, 40), TWENTY, POINTS_ONLY, 3)
+
+    assert reading.hot and not reading.cold
+    assert reading.per_game == pytest.approx(CALL_FORM * 28.2 + (1 - CALL_FORM) * 20.0)
+
+
+def test_a_slump_names_the_categories_it_shows_in_the_way_it_ran() -> None:
+    """A shooting collapse and the points with it, in a category league; blocks that held are not named."""
+    stats = _run(*({"pts": 8.0, "fgm": 3.0, "fga": 12.0, "blk": 1.0} for _ in range(5)))
+    projected = ProjectedTotals(games=1, totals={"pts": 20.0, "fgm": 7.0, "fga": 13.0, "blk": 1.0})
+    found = scales(SCORED, POOL)
+    value = category_value(SCORED, POOL)
+
+    sunk = swings(streak(stats, projected, value), found)
+
+    assert sunk is not None and not sunk.hot
+    assert [s.category.name for s in sunk.swings] == ["FG%", "PTS"]
+    assert (sunk.swings[0].now, sunk.swings[0].usual) == (pytest.approx(0.25), pytest.approx(7 / 13))
+
+
+def test_a_points_league_names_no_category() -> None:
+    sunk = streak(_scoring(10, 8, 25, 9, 7), TWENTY, POINTS_ONLY)
+
+    assert swings(sunk, {}) == sunk
+    assert swings(None, scales(SCORED, POOL)) is None

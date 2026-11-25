@@ -38,7 +38,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.prompt import NO_MATCHUP
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, CATEGORIES, PACIFIC
 from thefrontoffice.adapters.outbound.competitions.nba.week import SleeperNBASchedule
 from thefrontoffice.adapters.outbound.competitions.nba.yahoo import YahooNBAProvider
-from thefrontoffice.adapters.outbound.competitions.nba.yahoo.reads import WIRE_DEPTH
+from thefrontoffice.adapters.outbound.competitions.nba.yahoo.reads import MISSED, WIRE_DEPTH
 from thefrontoffice.adapters.outbound.competitions.tasks import task_lines
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
 from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport, NewsArticle, ScoreboardGame
@@ -1461,6 +1461,51 @@ def test_a_hurt_player_counts_only_the_games_from_his_return() -> None:
 
     assert row(ESPN_REPORT).startswith("1G")  # back the 22nd, the week's last game
     assert row(FakeESPN()).startswith("0G")  # out, and nobody says when he is back
+
+
+def test_a_hurt_player_out_several_straight_with_no_firm_return_counts_no_games() -> None:
+    """ESPN still dates his return the 21st, but its own word is 'day-to-day' four games into his absence."""
+    week = (date(2026, 11, 16), date(2026, 11, 22))
+    dated = {"GSW": [date(2026, 11, 18), date(2026, 11, 21), date(2026, 11, 22)]}
+    hurt = replace(CURRY, slot="PG")
+
+    def row(missed: int) -> str:
+        scores = box_scores(
+            {
+                "curry": [game_log("curry", 8, 34.0, "GSW", pts=30)],
+                "mate": [game_log("mate", 8 + d, 30.0, "GSW", pts=10) for d in range(missed + 1)],
+            },
+            {"curry": "Stephen Curry", "mate": "Draymond Green"},
+        )
+        report = replace(
+            _espn_report("Stephen Curry", "GS", back=date(2026, 11, 21)),
+            comment="Curry (calf) is considered day-to-day as he progresses in his rehab.",
+        )
+        nba = FakeNBA(stats={"Stephen Curry": _line(30)}, dated=dated, scores=scores)
+        yahoo = FakeYahoo(roster=[hurt], weights=WEIGHTS, matchup_dates=week)
+        summary = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE, espn=FakeESPN(injuries=[report])).summary("")
+        assert summary.mine is not None
+        return summary.mine.lineup[0].value
+
+    assert row(MISSED).startswith("0G")
+    assert row(MISSED - 1).startswith("2G")  # the 21st and 22nd, from the return the report gives
+
+
+def test_a_keeper_his_own_news_puts_in_trade_talk_says_so() -> None:
+    story = NewsArticle(
+        article_id="1",
+        published=datetime.now(UTC) - timedelta(days=1),
+        headline="Knicks' Streamer emerges as a trade candidate",
+    )
+    forecast = FakeForecast(categories={"PTS": 0.99}, win=0.02)
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+    nba = FakeNBA(stats={**WEEK_FORM, "Streamer": _line(24)}, games=WEEK_GAMES)
+    espn = FakeESPN(news={"NY": [story]})
+
+    summary = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE, forecast=forecast, espn=espn).summary("")
+
+    [item] = [a for a in summary.actions or [] if a.kind == "waiver"]
+    assert item.pickup == "keeper" and story.headline in item.reason
 
 
 @pytest.mark.parametrize("league", [yahoo_league(), POINTS_LEAGUE], ids=["categories", "points"])
