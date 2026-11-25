@@ -15,7 +15,7 @@ from support.nba import FakeNBA, FakeSleeperProjections, FakeYahoo, make_player,
 from thefrontoffice.adapters.outbound.competitions.nba.drawer import Drawer, DrawerWeek, detail
 from thefrontoffice.adapters.outbound.competitions.nba.form import BoxScores, RecentForm, nine_cat
 from thefrontoffice.adapters.outbound.competitions.nba.views import BACK
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Streak
+from thefrontoffice.adapters.outbound.competitions.nba.worth import COLD_SHOOTING, Reading, Shooting, Streak
 from thefrontoffice.adapters.outbound.competitions.worth import SLUMP_LABEL
 from thefrontoffice.adapters.outbound.platforms.espn.types import NewsArticle
 from thefrontoffice.adapters.outbound.platforms.sleeper.errors import SleeperAPIError
@@ -28,6 +28,7 @@ from thefrontoffice.adapters.outbound.platforms.sleeper.types import (
 )
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import (
     MovedPlayer,
+    StatCategory,
     YahooTransaction,
 )
 from thefrontoffice.domain.errors import NotFoundError, PlayerNotFoundError
@@ -325,10 +326,12 @@ def test_the_week_names_his_streak_and_a_return_in_doubt() -> None:
     """Labelled as every view labels it, so the drawer and the to-do list read one call."""
     player = make_player("A B", "PG", key="ab", status="O")
     sunk = Streak(hot=False, games=5, recent=4.1, usual=10.2, line={}, ahead={})
-    reading = Reading(player=player, line={}, per_game=6.0, games=0, streak=sunk, missed=5)
+    cold = Shooting(StatCategory("5", "FG%"), now=0.292, usual=0.463, attempts=15.6)
+    reading = Reading(player=player, line={}, per_game=6.0, games=0, streak=sunk, missed=5, shooting=(cold,))
 
     opened = detail(Drawer(player, None, None, (), None, week=DrawerWeek(left="0", reading=reading)))
 
     week = {s.label: s for s in opened.groups[0].stats}
     assert week[SLUMP_LABEL].tone == "warning" and "4.1" in week[SLUMP_LABEL].value
     assert week[BACK].tone == "warning" and "5" in week[BACK].value
+    assert ".292" in week[COLD_SHOOTING].value

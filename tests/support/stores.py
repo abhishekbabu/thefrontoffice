@@ -7,6 +7,7 @@ object the real store would have had to parse.
 
 from datetime import date
 
+from thefrontoffice.adapters.outbound.competitions.nba.day import Hurt
 from thefrontoffice.domain.models import ItemState, Remembered
 from thefrontoffice.domain.ports import TModel
 
@@ -102,6 +103,7 @@ class FakeDayLog:
         self.kept_statuses: dict[date, dict[str, str]] = dict(statuses or {})
         self.kept_minutes: dict[date, dict[str, float]] = dict(minutes or {})
         self.kept_pregame: dict[date, dict[str, str]] = {}
+        self.kept_injuries: dict[str, list[Hurt]] = {}
 
     def statuses(self, day: date) -> dict[str, str]:
         return dict(self.kept_statuses.get(day, {}))
@@ -120,3 +122,9 @@ class FakeDayLog:
 
     def keep_minutes(self, day: date, minutes: dict[str, float]) -> None:
         self.kept_minutes[day] = dict(minutes)
+
+    def injuries(self) -> dict[str, list[Hurt]]:
+        return {key: list(rows) for key, rows in self.kept_injuries.items()}
+
+    def keep_injuries(self, injuries: dict[str, list[Hurt]]) -> None:
+        self.kept_injuries = {key: list(rows) for key, rows in injuries.items()}

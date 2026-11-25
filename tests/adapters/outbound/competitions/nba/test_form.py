@@ -6,6 +6,7 @@ kept out of the average.
 """
 
 from dataclasses import replace
+from datetime import date
 from typing import Any
 
 import pytest
@@ -302,3 +303,21 @@ def test_an_absence_is_two_games_in_a_row_or_one_straight_after_a_game_he_left()
 
 def test_availability_needs_a_player_it_can_place_with_games() -> None:
     assert availability(_scores(), "Nikola Jokic") is None
+
+
+def test_a_night_his_record_calls_rest_is_neither_played_nor_an_absence() -> None:
+    """Out the 3rd and 4th — two in a row — but the 4th was a rested back-to-back: one lone miss is left."""
+    days = [f"2026-11-{d:02d}" for d in (1, 2, 3, 4, 6)]
+    mate = _minutes("p2", "OKC", dict.fromkeys(days, 30.0))
+    scores = _scores(p1=_minutes("p1", "OKC", {days[0]: 30.0, days[1]: 30.0, days[4]: 30.0}), p2=mate)
+    asked: list[tuple[int, bool]] = []
+
+    def rest(day: date, back_to_back: bool) -> bool:
+        asked.append((day.day, back_to_back))
+        return day.day == 4
+
+    found = availability(scores, "Nikola Jokic", rest)
+
+    assert found is not None
+    assert (found.played, found.scheduled, found.rested, found.spells) == (3, 4, 1, ())
+    assert asked == [(3, True), (4, True)]

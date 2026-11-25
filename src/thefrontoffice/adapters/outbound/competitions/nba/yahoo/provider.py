@@ -235,6 +235,7 @@ class YahooNBAProvider:
                     their_adds=self._adds_left(yahoo, found.opponent.team_key, limit),
                     claimed=claimed,
                     untouchable=self.untouchable.of(league.league_key),
+                    days=self.days,
                 )
             )
             return decided[0].readings

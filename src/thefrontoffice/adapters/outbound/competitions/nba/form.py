@@ -11,9 +11,9 @@ or four cannot be cut at.
 
 import logging
 import statistics
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Literal, NamedTuple, Protocol, TypedDict
 
 from thefrontoffice.adapters.outbound.competitions.dates import parse_day
@@ -138,19 +138,27 @@ class Availability:
 
     played: int
     scheduled: int
-    """His club's games since his first for it in the window."""
+    """His club's games since his first for it in the window, less the nights he was rested (`rested`)."""
     spells: tuple[tuple[date, date], ...]
     """Each absence, as its first and last missed day: `ABSENCE_GAMES` in a row, or one straight after a game he
     left (`EXIT_SHARE`)."""
+    rested: int = 0
+    """The games he missed that were nights off, not absences."""
 
     @property
     def share(self) -> float:
         return self.played / self.scheduled if self.scheduled else 1.0
 
 
-def availability(scores: BoxScores, name: str) -> Availability | None:
+Rest = Callable[[date, bool], bool]
+"""Whether a game he missed was a night off: given its day and whether it was the second night of his club's
+back-to-back. Which evidence says so — a report's words, a status kept — is the caller's (`day.rest_of`)."""
+
+
+def availability(scores: BoxScores, name: str, rest: Rest | None = None) -> Availability | None:
     """His games against his club's over the window, and each absence in it; None where he cannot be placed or has
-    played none of it."""
+    played none of it. A game `rest` calls a night off is neither a game he played nor one he missed: it leaves the
+    count and breaks no run, so a rested second night of a back-to-back is no absence."""
     player_id = scores.index.lookup(name)
     games = scores.logs.get(player_id, ()) if player_id else ()
     if not games:
@@ -159,25 +167,28 @@ def availability(scores: BoxScores, name: str) -> Availability | None:
     mine = {g.date: g for g in games if g.team == club}
     first = min(mine)
     dates = sorted({g.date for logs in scores.logs.values() for g in logs if g.team == club and g.date >= first})
+    days = {label: day for label in dates if (day := parse_day(label)) is not None}
     usual = statistics.median(g.minutes for g in mine.values())
     spells: list[tuple[date, date]] = []
-    run: list[str] = []
+    run: list[date] = []
     left = False
-    for day in [*dates, ""]:
-        game = mine.get(day) if day else None
-        if day and game is None:
+    rested = 0
+    for label in [*dates, ""]:
+        game = mine.get(label) if label else None
+        if label and game is None:
+            day = days.get(label)
+            if day is None:
+                continue
+            if rest is not None and rest(day, day - timedelta(days=1) in days.values()):
+                rested += 1
+                continue
             run.append(day)
             continue
-        if (
-            run
-            and (len(run) >= ABSENCE_GAMES or left)
-            and (first_day := parse_day(run[0]))
-            and (last := parse_day(run[-1]))
-        ):
-            spells.append((first_day, last))
+        if run and (len(run) >= ABSENCE_GAMES or left):
+            spells.append((run[0], run[-1]))
         run = []
         left = game is not None and game.minutes < EXIT_SHARE * usual
-    return Availability(played=len(mine), scheduled=len(dates), spells=tuple(spells))
+    return Availability(played=len(mine), scheduled=len(dates) - rested, spells=tuple(spells), rested=rested)
 
 
 class FormSource(Protocol):

@@ -148,3 +148,36 @@ def test_a_storys_text_is_read_a_sentence_at_a_time_with_the_player_named_in_it(
     assert not trade_talk(apart, [TURNER])
     assert sentences("One. Two, J.R. Smith said! ") == ["One.", "Two, J.R. Smith said!"]
     assert sentences("") == []
+
+
+def _about(headline: str, body: str) -> NewsArticle:
+    return NewsArticle(article_id="1", published=datetime(2026, 11, 20, tzinfo=UTC), headline=headline, body=body)
+
+
+@pytest.mark.parametrize(
+    ("headline", "body", "talked"),
+    [
+        # About him, the sentence before names him: 'him' and 'the center' are his.
+        ("Myles Turner keeps blocking shots", "Myles Turner had four blocks. The Bucks could trade him.", True),
+        ("Bucks notebook", "Myles Turner had four blocks Monday. The center could be traded by February.", True),
+        # Not a story about him: neither the headline nor its first sentence names him.
+        ("Bucks notebook", "The Bucks won. Myles Turner had four blocks. The Bucks could trade him.", False),
+        # The sentence before is not his.
+        (
+            "Myles Turner keeps blocking shots",
+            "Myles Turner had four blocks. Milwaukee won. They could trade him.",
+            False,
+        ),
+        # The sentence names somebody else, a coach or another player.
+        (
+            "Myles Turner keeps blocking shots",
+            "Myles Turner had four blocks. Doc Rivers said he would trade for a guard.",
+            False,
+        ),
+        ("Myles Turner keeps blocking shots", "Myles Turner had four blocks. Giannis could be traded, he said.", False),
+    ],
+)
+def test_a_sentence_referring_back_to_him_counts_only_straight_after_one_naming_him_in_a_story_about_him(
+    headline: str, body: str, talked: bool
+) -> None:
+    assert trade_talk(_about(headline, body), [TURNER, "turner"], ["giannis"]) is talked

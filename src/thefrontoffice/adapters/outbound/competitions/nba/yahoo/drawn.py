@@ -72,7 +72,12 @@ def week_of(
         value, by_category = scaled
         healthy = not player.status and reads.injuries([player], reports).of(player.player_key) is None
         read = nba_worth.read(player, stats, projected, value, games, provisional, back, healthy)
-        reading = replace(read, streak=nba_worth.swings(read.streak, by_category), missed=doubted)
+        reading = replace(
+            read,
+            streak=nba_worth.swings(read.streak, by_category),
+            shooting=nba_worth.shooting(stats, projected, by_category),
+            missed=doubted,
+        )
     matchup = None
     if fixtures and profile:
         opponent = fixtures[0].away if fixtures[0].home == club else fixtures[0].home

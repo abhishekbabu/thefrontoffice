@@ -153,3 +153,23 @@ def test_his_own_storys_text_may_name_him_by_surname_once_it_names_him_in_full()
 
     assert set(talked(found, [REAVES], {"reaves": [own]})) == {"reaves"}
     assert talked(found, [REAVES], {"reaves": [elsewhere]}) == {}
+
+
+def test_a_sentence_referring_back_to_him_is_not_his_where_it_names_another_player_read() -> None:
+    """Doncic is among the players read: 'he could be traded' beside his name is not Reaves'."""
+    story = NewsArticle(
+        article_id="own",
+        published=NOW - timedelta(days=1),
+        headline="Austin Reaves stays hot",
+        body="Austin Reaves scored 30 again. With Doncic hurt, he could be traded.",
+    )
+    clean = NewsArticle(
+        article_id="clean",
+        published=NOW - timedelta(days=1),
+        headline="Austin Reaves stays hot",
+        body="Austin Reaves scored 30 again. The Lakers could trade him.",
+    )
+    found = attach({}, [REAVES], REGULARS, NOW)
+
+    assert talked(found, [REAVES], {"reaves": [story]}, ["Luka Doncic"]) == {}
+    assert set(talked(found, [REAVES], {"reaves": [clean]}, ["Luka Doncic"])) == {"reaves"}

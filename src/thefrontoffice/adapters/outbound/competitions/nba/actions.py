@@ -48,6 +48,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import RETURN_SOON, Leaning
 from thefrontoffice.adapters.outbound.competitions.nba.week import BENCH, Today, if_streamed, off_il
 from thefrontoffice.adapters.outbound.competitions.nba.worth import (
+    COLD_SHOOTING,
     HOT_MINUTES,
     ROLE,
     Reading,
@@ -99,7 +100,8 @@ def build(
     today: Today | None = None,
     plan: Plan | None = None,
 ) -> list[Action]:
-    """Every decision the week asks for: IL moves first, then today's starts, then pickups each with its drop.
+    """Every decision the week asks for: IL moves first, then today's starts, then pickups each with its drop, then
+    a note for each of your players in trade talk (`rumored`).
 
     `today` is the day's games while it falls inside the week; None leaves out starts, which turn on it.
     `plan` is what weighs a pickup beyond the readings (`Plan`). A player out moved to an open injured slot
@@ -117,7 +119,28 @@ def build(
     plan = replace(plan, open_spots=plan.open_spots + len(moves))
     added = adds(after, free_agents, readings, adds_left, by_points, named, plan)
     returns = _returns([player for player, _ in moves], after, readings, named | plan.untouchable, added)
-    return [_with_return(item, returns) for item in items] + added.items
+    return [_with_return(item, returns) for item in items] + added.items + rumored(roster, readings)
+
+
+TALK = "talk:"
+"""What a rostered player's trade-talk note's key leads with."""
+
+
+def rumored(roster: Sequence[Player], readings: Mapping[str, Reading]) -> list[Action]:
+    """A note for each of your players his news puts in trade talk (`Reading.talk`): 'Trade talk: Myles Turner' —
+    his role, and his club, may change before the deadline, which nothing in his line says yet."""
+    return [
+        Action(
+            kind="trade",
+            urgency="soon",
+            title=f"{TRADE_TALK}: {player.name}",
+            reason=f"{reading.talk}. His role may change if he is moved; weigh holding him against selling now.",
+            player_id=player.player_key,
+            key=f"{TALK}{player.player_key}",
+        )
+        for player in roster
+        if (reading := readings.get(player.player_key)) is not None and reading.talk
+    ]
 
 
 def reserving(
@@ -500,7 +523,7 @@ class Weigh:
         Never one whose role leans on a teammate due back (`Plan.returning`) — one at his position he has barely
         played beside, or one his split says he does clearly more without —
         nor one whose minutes have just grown (`settled`), nor one out beyond `RETURN_SOON` or with no firm
-        return (`Reading.missed`), nor one in a slump (`Reading.cold`), nor one on a hot run his minutes or
+        return (`Reading.missed`), nor one in a slump (`Reading.cold`) or shooting cold (`Reading.shooting`), nor one on a hot run his minutes or
         health do not back (`Reading.unproven`), nor one under `worth.HOT_MINUTES` a game, nor one whose role is
         falling (`worth.falling`, a teammate taking it where `Reading.taking` names one) — as it makes a player the
         first let go — nor one the roster's needs (`Plan.needs`) read as no better than the drop. One who keeps going
@@ -509,7 +532,9 @@ class Weigh:
         """
         if pickup.player.player_key in self.plan.returning or not settled(pickup) or not self.back_soon(pickup):
             return None
-        if pickup.cold or pickup.missed or pickup.unproven or not _plays(pickup) or falling(pickup.role):
+        if pickup.cold or pickup.shooting or pickup.missed or pickup.unproven or not _plays(pickup):
+            return None
+        if falling(pickup.role):
             return None
         season = self.season(pickup) - self.season(drop)
         if not beats(_kept(pickup), floor if drop is None else _kept(drop)) or season <= 0:
@@ -985,11 +1010,13 @@ def _close(swap: Swap) -> str:
 
 def _form(reading: Reading | None) -> str:
     """' Slump, Rudy Gobert: 4.1/g over his last 5 vs 6.8 projected · FG% .226, proj .470.' for a player on a
-    streak (`worth.streak`), whom the item weighs on it; nothing otherwise."""
-    found = reading.streak if reading is not None else None
-    if found is None or reading is None:
+    streak (`worth.streak`), whom the item weighs on it, then ' Cold shooting, Gobert: FG% .292 over his last 5 vs
+    .463 projected, 11.4 attempts a game.' for each collapse (`worth.shooting`); nothing otherwise."""
+    if reading is None:
         return ""
-    return f" {found.label}, {reading.player.name}: {found.short()}."
+    found = reading.streak
+    said = f" {found.label}, {reading.player.name}: {found.short()}." if found is not None else ""
+    return said + "".join(f" {COLD_SHOOTING}, {reading.player.name}: {shot.short()}." for shot in reading.shooting)
 
 
 def _shooting(reading: Reading) -> str:

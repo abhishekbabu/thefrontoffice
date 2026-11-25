@@ -26,7 +26,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.rules import (
     ruled_out,
 )
 from thefrontoffice.adapters.outbound.competitions.nba.teammates import Teammate
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, game_value, moved
+from thefrontoffice.adapters.outbound.competitions.nba.worth import COLD_SHOOTING, Reading, game_value, moved
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.domain.models import (
     PLAYER_COLUMN,
@@ -195,9 +195,13 @@ def streaking(reading: Reading | None) -> str:
 
 def form_note(reading: Reading | None) -> str:
     """'Slump: 4.1/g over his last 5 vs 10.2 projected · FG% .226, proj .470; value weighed on them', for a player
-    on a streak; empty otherwise."""
-    found = reading.streak if reading else None
-    return "" if found is None else f"{found.label}: {found.short()}; value weighed on them"
+    on a streak, then each shooting collapse (`worth.shooting`); empty for neither."""
+    if reading is None:
+        return ""
+    found = reading.streak
+    parts = [f"{found.label}: {found.short()}; value weighed on them"] if found is not None else []
+    parts += [f"{COLD_SHOOTING}: {shot.short()}" for shot in reading.shooting]
+    return " · ".join(parts)
 
 
 Trend = tuple[str, float | None, str]
@@ -422,11 +426,13 @@ FORM = "Form"
 
 
 def form_stat(reading: Reading) -> Stat:
-    """'Slump' or 'Hot', with the streak in its hint; a dash for neither."""
+    """'Slump', 'Hot' or 'Cold shooting', with what it was in its hint; a dash for none."""
     found = reading.streak
+    if found is None and reading.shooting:
+        return Stat(label=FORM, value=COLD_SHOOTING, tone="warning", hint=form_note(reading))
     if found is None:
         return Stat(label=FORM, value=NO_FIGURE)
-    return Stat(label=FORM, value=found.label, tone="good" if found.hot else "warning", hint=found.short())
+    return Stat(label=FORM, value=found.label, tone="good" if found.hot else "warning", hint=form_note(reading))
 
 
 UNCLEAR = "unclear"

@@ -103,24 +103,40 @@ def block(found: PlayerNews, players: Iterable[Player]) -> str:
 
 
 def talked(
-    found: PlayerNews, players: Iterable[Player], own: Mapping[str, Sequence[NewsArticle]] | None = None
+    found: PlayerNews,
+    players: Iterable[Player],
+    own: Mapping[str, Sequence[NewsArticle]] | None = None,
+    others: Iterable[str] = (),
 ) -> dict[str, str]:
     """Each of `players` his news puts in trade talk (`stories.trade_talk`), by Yahoo's key: the newest such story,
     'Fri 21 Nov: Bucks open to trading Myles Turner'. Read from his club's feed, and from `own` — his ESPN page's
     stories, their text read — where given. In a story's text he may be named by surname once it names him in
-    full: 'Turner' four paragraphs after 'Myles Turner'."""
+    full: 'Turner' four paragraphs after 'Myles Turner'; or referred back to, 'he', in one about him, where the
+    sentence names nobody among `others` (every player read) or `players`."""
     told: dict[str, str] = {}
+    players = list(players)
+    names = {normalize_name(n) for n in others} | {normalize_name(p.name) for p in players}
     for player in players:
         full = normalize_name(player.name)
+        strangers = _strangers(names - {full}, full)
         read = [*found.by_player.get(player.player_key, []), *(own or {}).get(player.player_key, [])]
-        story = next((a for a in sorted(read, key=lambda a: a.published, reverse=True) if _talks(a, full)), None)
+        story = next(
+            (a for a in sorted(read, key=lambda a: a.published, reverse=True) if _talks(a, full, strangers)), None
+        )
         if story is not None:
             told[player.player_key] = f"{news.dated(story)}: {story.headline}"
     return told
 
 
-def _talks(article: NewsArticle, full: str) -> bool:
-    """Whether the story talks of trading him, named in full, or by surname in a story that names him in full."""
+def _talks(article: NewsArticle, full: str, strangers: Iterable[str] = ()) -> bool:
+    """Whether the story talks of trading him, named in full, or by surname in a story that names him in full, or
+    referred back to (`stories.REFERS`) in one about him that names none of `strangers` in that sentence."""
     named = f" {full} " in f" {normalize_name(f'{article.headline} {article.summary} {article.body}')} "
     keys = [full, *([full.split()[-1]] if named and " " in full else [])]
-    return stories.trade_talk(article, keys)
+    return stories.trade_talk(article, keys, strangers)
+
+
+def _strangers(names: Iterable[str], full: str) -> set[str]:
+    """Other players' names, in full and each part apart — 'giannis', 'antetokounmpo' — less any part he shares."""
+    mine = set(full.split())
+    return {part for name in names for part in (name, *name.split()) if part and part not in mine}
