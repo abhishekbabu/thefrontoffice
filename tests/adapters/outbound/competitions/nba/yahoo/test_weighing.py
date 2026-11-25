@@ -1,13 +1,22 @@
 """Tests for the week weighed: `nba/yahoo/weighing.py`."""
 
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime
 
 from support.nba import DEFAULT_TEAMS, FakeYahoo, make_player
+from support.stores import FakeDayLog
 
 from thefrontoffice.adapters.outbound.competitions.nba.rules import BLOCKS, POINTS
 from thefrontoffice.adapters.outbound.competitions.nba.worth import scales
-from thefrontoffice.adapters.outbound.competitions.nba.yahoo.weighing import games_played, open_reserve, season_standing
+from thefrontoffice.adapters.outbound.competitions.nba.yahoo import reads
+from thefrontoffice.adapters.outbound.competitions.nba.yahoo.weighing import (
+    games_played,
+    history,
+    open_reserve,
+    remembered,
+    season_standing,
+)
+from thefrontoffice.adapters.outbound.platforms.espn.types import InjuryReport
 from thefrontoffice.adapters.outbound.platforms.yahoo.errors import YahooAPIError
 from thefrontoffice.adapters.outbound.platforms.yahoo.types import MatchupSide, Pairing, StatCategory
 
@@ -78,3 +87,25 @@ def test_the_injured_slots_open_are_those_the_settings_give_that_nobody_holds() 
     assert open_reserve({"PG": 1, "IL": 2, "IL+": 1}, held) == ("IL", "IL+")
     assert open_reserve({"PG": 1, "IL": 1}, held) == ()
     assert open_reserve({"PG": 1}, []) == ()
+
+
+def test_each_report_is_kept_as_seen_and_its_body_part_outlives_it() -> None:
+    """Monday's report kept; on a day ESPN no longer lists him, the hip is what his history remembers."""
+    caruso = make_player("Alex Caruso", "SG", "OKC", key="caruso")
+    log = FakeDayLog()
+    hip = InjuryReport(
+        name="Alex Caruso",
+        club="OKC",
+        status="Out",
+        updated=datetime(2026, 11, 18, tzinfo=UTC),
+        injury="Left hip, soreness",
+    )
+
+    kept, rests = history(log, [caruso], reads.injuries([caruso], [hip]), date(2026, 11, 16))
+    later, _ = history(log, [caruso], reads.injuries([caruso], []), date(2026, 11, 16))
+
+    assert [h.injury for h in kept["caruso"]] == ["Left hip, soreness"]
+    assert remembered(later, caruso) == "Left hip, soreness"
+    assert remembered({}, caruso) == ""
+    assert not rests["caruso"](date(2026, 11, 17), True)
+    assert history(None, [caruso], reads.injuries([caruso], [hip]), date(2026, 11, 16)) == ({}, {})

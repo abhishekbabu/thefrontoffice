@@ -6,13 +6,15 @@ import logging
 from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
+from thefrontoffice.adapters.outbound.competitions.injuries import PlayerInjuries
 from thefrontoffice.adapters.outbound.competitions.nba import actions
+from thefrontoffice.adapters.outbound.competitions.nba import day as nba_day
 from thefrontoffice.adapters.outbound.competitions.nba import lineup as nba_lineup
 from thefrontoffice.adapters.outbound.competitions.nba import news as nba_news
 from thefrontoffice.adapters.outbound.competitions.nba import worth as nba_worth
-from thefrontoffice.adapters.outbound.competitions.nba.form import availability
+from thefrontoffice.adapters.outbound.competitions.nba.form import FORM_WEEKS, Rest, availability
 from thefrontoffice.adapters.outbound.competitions.nba.model import Player, PrintedLine
 from thefrontoffice.adapters.outbound.competitions.nba.projections import index_for
 from thefrontoffice.adapters.outbound.competitions.nba.rules import (
@@ -67,6 +69,7 @@ def decide(
     claimed: Collection[str] = (),
     untouchable: Collection[str] = (),
     win: float | None = None,
+    days: nba_day.DayLog | None = None,
 ) -> Decided:
     """Every shown player's week, and the to-do list weighed on it.
 
@@ -97,7 +100,9 @@ def decide(
         free_agents = []
     weights = reads.weights(league, yahoo)
     averages = {**(shown or {}), **reads.carried(free_agents)}
-    readings = read_week(feeds, yahoo, weights, [*roster, *theirs, *free_agents], start, end, also or [], averages)
+    readings = read_week(
+        feeds, yahoo, weights, [*roster, *theirs, *free_agents], start, end, also or [], averages, days=days
+    )
     today = feeds.today(start, end)
     plan = plan_for(
         feeds,
@@ -115,13 +120,15 @@ def decide(
     open_wire = [p for p in free_agents if p.player_key not in claimed]
     talked = [*roster, *open_wire]
     found = feeds.team_news(talked)
-    readings = _talked(readings, nba_news.talked(found, talked))
+    everyone = [r.player.name for r in readings.values()]
+    # Every rostered player's own news, read in full: whom the list could let go, and whom to tell of.
+    readings = _talked(readings, nba_news.talked(found, talked, feeds.player_news(roster), everyone))
     plan = replace(plan, untouchable=frozenset(untouchable), win=win)
     items = actions.build(roster, open_wire, readings, adds_left, weights is not None, today, plan)
     # A keeper's own news, read in full, for the few the list names: a story his club's feed cut short can still
     # put him in trade talk, and the list is weighed again where one does.
     named = [p for p in open_wire if p.player_key in _keepers(items) and not readings[p.player_key].talk]
-    if told := nba_news.talked(found, named, feeds.player_news(named)):
+    if told := nba_news.talked(found, named, feeds.player_news(named), everyone):
         readings = _talked(readings, told)
         items = actions.build(roster, open_wire, readings, adds_left, weights is not None, today, plan)
     return Decided(readings, items, plan.volume, plan.streams)
@@ -136,6 +143,7 @@ def read_week(
     end: date,
     also: Sequence[Player] | None = None,
     averages: Mapping[str, PrintedLine] | None = None,
+    days: nba_day.DayLog | None = None,
 ) -> dict[str, Reading]:
     """Each of `players`' week between `start` and `end`, by Yahoo's key (`worth.read`), and `also`'s.
 
@@ -146,6 +154,10 @@ def read_week(
     the day ESPN expects him back — none for a player out several games whose
     return the report leaves open (`reads.doubts`). A category league values a game across
     the categories it scores, scaled over `players` alone.
+
+    With the day log (`days`), each injury ESPN's report gives is kept as it is seen (`day.record_injuries`), so a
+    keeper's history keeps its body part once the report drops it, and a missed night his record calls rest is no
+    absence (`day.rest_of`).
     """
     pool = {p.player_key for p in players}
     unique = list({p.player_key: p for p in [*players, *(also or [])]}.values())
@@ -179,15 +191,17 @@ def read_week(
         for p in unique
     )
     shown = averages or {}
+    kept, rests = history(days, unique, hurt, start)
     return {
         r.player.player_key: replace(
             r,
             weak=tuple(nba_worth.weakest(r.line, found)),
             average=shown.get(r.player.player_key),
             streak=nba_worth.swings(r.streak, found),
+            shooting=nba_worth.shooting(stats[r.player.player_key], projected[r.player.player_key], found),
             missed=doubted.get(r.player.player_key, 0),
-            availability=availability(scores, r.player.name),
-            injury=report.injury if (report := hurt.of(r.player.player_key)) else "",
+            availability=availability(scores, r.player.name, rests.get(r.player.player_key)),
+            injury=report.injury if (report := hurt.of(r.player.player_key)) else remembered(kept, r.player),
             taking=taking(scores, r.player),
         )
         for r in readings
@@ -202,6 +216,36 @@ def _talked(readings: Mapping[str, Reading], talk: Mapping[str, str]) -> dict[st
 def _keepers(items: Sequence[Action]) -> set[str]:
     """The keepers a to-do list names, by Yahoo key, each item's runner-up among them."""
     return {p.player_id for item in items if item.pickup == "keeper" for p in item.players or [] if p.side == "in"}
+
+
+HISTORY = timedelta(weeks=FORM_WEEKS)
+"""How far back kept statuses are read for a rest night: the box scores' window."""
+
+
+def history(
+    days: nba_day.DayLog | None, players: Sequence[Player], hurt: PlayerInjuries, start: date
+) -> tuple[dict[str, list[nba_day.Hurt]], dict[str, Rest]]:
+    """Each player's kept injuries, today's report kept among them, and what calls a missed night of his a rest
+    (`day.rest_of`); none of either without the day log."""
+    if days is None:
+        return {}, {}
+    today = datetime.now(PACIFIC).date()
+    seen = {p.player_key: (report.injury, report.comment) for p in players if (report := hurt.of(p.player_key))}
+    kept = nba_day.record_injuries(days, today, seen)
+    logged = {day: nba_day.recorded(days, day) for day in nba_day.days(min(start, today) - HISTORY, today)}
+    rests = {
+        p.player_key: nba_day.rest_of(
+            kept.get(p.player_key, []),
+            {day: found[p.player_key] for day, found in logged.items() if p.player_key in found},
+        )
+        for p in players
+    }
+    return kept, rests
+
+
+def remembered(kept: Mapping[str, Sequence[nba_day.Hurt]], player: Player) -> str:
+    """The injury last kept for him that was no rest night: his history's body part, once ESPN drops the report."""
+    return next((h.injury for h in reversed(kept.get(player.player_key, [])) if not h.rest), "")
 
 
 def counted(games: int | None, doubted: bool) -> int | None:

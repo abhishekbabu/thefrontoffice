@@ -10,6 +10,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.actions import (
     PROVISIONAL,
     STREAM_GAMES,
     STREAMS,
+    TALK,
     Plan,
     Weigh,
     acquire,
@@ -35,10 +36,12 @@ from thefrontoffice.adapters.outbound.competitions.nba.teammates import (
 )
 from thefrontoffice.adapters.outbound.competitions.nba.week import Today
 from thefrontoffice.adapters.outbound.competitions.nba.worth import (
+    COLD_SHOOTING,
     HOT_MINUTES,
     UNNEEDED,
     Reading,
     Scale,
+    Shooting,
     Streak,
     Targeting,
     category_value,
@@ -1265,3 +1268,28 @@ def test_two_keepers_close_for_the_same_drop_are_named_on_one_item_with_what_eac
     assert (item.player_id, item.drop) == ("Blocker", "Weaker")
     assert [p.player_id for p in item.players if p.side == "in"] == ["Blocker", "Scorer"]
     assert "Scorer" in item.reason and "BLK" in item.reason and "PTS" in item.reason
+
+
+def test_a_free_agent_shooting_cold_is_never_a_keeper_and_a_drops_collapse_is_named() -> None:
+    roster, readings = _team()
+    cold = Shooting(StatCategory("5", "FG%"), now=0.29, usual=0.46, attempts=15.6)
+    brick = replace(_read(_player("Brick", position="SF"), 30.0, 1), shooting=(cold,))
+
+    assert "keeper" not in [
+        i.pickup for i in streams(roster, [brick.player], readings | {"Brick": brick}, 2, True, set())
+    ]
+
+    readings["Weaker"] = replace(readings["Weaker"], shooting=(cold,))
+    pickup = _player("Pickup", position="SF")
+    [item] = streams(roster, [pickup], readings | _readings((pickup, 21.0, 4)), 2, True, set())
+    assert item.drop == "Weaker" and COLD_SHOOTING in item.reason and ".290" in item.reason
+
+
+def test_each_of_your_players_in_trade_talk_is_a_note_of_its_own() -> None:
+    roster, readings = _team()
+    readings["Second"] = replace(readings["Second"], talk="Fri 21 Nov: Second emerges as a trade candidate")
+
+    notes = [a for a in build(roster, [], readings, 0, True) if a.key.startswith(TALK)]
+
+    assert [(a.player_id, a.kind) for a in notes] == [("Second", "trade")]
+    assert "Fri 21 Nov" in notes[0].reason

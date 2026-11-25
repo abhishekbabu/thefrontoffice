@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from thefrontoffice.adapters.outbound.cache import DiskCache
+from thefrontoffice.adapters.outbound.competitions.nba.day import Hurt
 from thefrontoffice.adapters.outbound.storage.days import DiskDayLog
 
 
@@ -20,3 +21,16 @@ def test_a_days_statuses_and_minutes_survive_the_round_trip_and_a_day_not_kept_i
     assert log.pregame(monday) == {"466.p.1": "Q"}
     other = date(2026, 11, 24)
     assert (log.statuses(other), log.minutes(other), log.pregame(other)) == ({}, {}, {})
+
+
+def test_the_seasons_injuries_survive_the_round_trip(tmp_path: Path) -> None:
+    kept = {
+        "466.p.1": [
+            Hurt("Left hip, soreness", date(2026, 11, 18), date(2026, 11, 23)),
+            Hurt("Rest", date(2026, 11, 24), date(2026, 11, 24), rest=True),
+        ]
+    }
+    DiskDayLog(DiskCache(tmp_path)).keep_injuries(kept)
+
+    assert DiskDayLog(DiskCache(tmp_path)).injuries() == kept
+    assert DiskDayLog(DiskCache(tmp_path / "empty")).injuries() == {}

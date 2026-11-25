@@ -24,7 +24,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.views import (
     cell,
     compared,
 )
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Streak, Swing
+from thefrontoffice.adapters.outbound.competitions.nba.worth import COLD_SHOOTING, Reading, Shooting, Streak, Swing
 from thefrontoffice.adapters.outbound.competitions.teammates import WITHOUT_COLUMN
 from thefrontoffice.adapters.outbound.competitions.worth import HOT_LABEL, SLUMP_LABEL
 from thefrontoffice.adapters.outbound.platforms.espn.errors import ESPNAPIError
@@ -592,3 +592,15 @@ def test_a_category_row_marks_a_value_read_on_a_streak_and_says_which() -> None:
     assert rows["sunk"].columns[VALUE].endswith(DOWN) and rows["sunk"].notes[VALUE].startswith(SLUMP_LABEL)
     assert rows["hot"].columns[VALUE].endswith(UP) and rows["hot"].notes[VALUE].startswith(HOT_LABEL)
     assert VALUE not in rows["steady"].notes
+
+
+def test_a_shooting_collapse_is_its_own_form_row_and_row_note() -> None:
+    cold = Shooting(StatCategory("5", "FG%"), now=0.292, usual=0.463, attempts=15.6)
+    brick = replace(READING, player=make_player("Brick", key="brick"), shooting=(cold,))
+
+    [player] = compared([("out", "starter", brick)], False)
+    [row] = cards([brick.player], {}, {}, False, readings={"brick": brick})
+
+    form = {f.label: f for f in player.figures}[FORM]
+    assert (form.value, form.tone) == (COLD_SHOOTING, "warning") and ".292" in (form.hint or "")
+    assert COLD_SHOOTING in row.notes[VALUE]

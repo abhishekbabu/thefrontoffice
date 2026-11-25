@@ -50,7 +50,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.views import (
     number,
     per_game,
 )
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading, Valuer
+from thefrontoffice.adapters.outbound.competitions.nba.worth import COLD_SHOOTING, Reading, Valuer
 from thefrontoffice.adapters.outbound.platforms.sleeper.types import NBAGameLog, NBASeason, PlayerMeta, ScheduledGame
 from thefrontoffice.domain.models import (
     NOT_APPLICABLE,
@@ -224,6 +224,7 @@ def _week(drawer: Drawer) -> list[Stat]:
             stats.append(Stat(label=WEEK, value=f"{reading.worth:.1f}", better="higher"))
         if (found := reading.streak) is not None:
             stats.append(Stat(label=found.label, value=found.short(), tone="good" if found.hot else "warning"))
+        stats += [Stat(label=COLD_SHOOTING, value=shot.short(), tone="warning") for shot in reading.shooting]
         if reading.missed:
             stats.append(Stat(label=BACK, value=back(reading), tone="warning"))
     stats += _trend(drawer.games)

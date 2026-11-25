@@ -41,6 +41,7 @@ from thefrontoffice.adapters.outbound.competitions.nba.worth import (
     read,
     rising,
     scales,
+    shooting,
     streak,
     swings,
     team_rates,
@@ -647,3 +648,25 @@ def test_the_edges_are_the_categories_one_line_leads_another_in_by_a_real_margin
     assert edges(found, blocker, scorer) == ["BLK"]
     assert edges(found, scorer, blocker) == ["PTS"]
     assert edges(found, scorer, None) == []
+
+
+FG_SCORED = [StatCategory(FIELD_GOALS.yahoo_stat, "FG%"), StatCategory(POINTS.yahoo_stat, "PTS")]
+
+
+def _shots(*made: float, attempts: float = 10.0) -> PlayerStats:
+    return _run(*({"pts": 2 * m, "fgm": m, "fga": attempts} for m in made))
+
+
+def test_a_shooting_collapse_on_real_volume_is_named_with_its_best_night_left_out() -> None:
+    """Projected .500; three, three, three, two and a hot six of ten: .300 a game without the six."""
+    projected = ProjectedTotals(games=1, totals={"pts": 20.0, "fgm": 5.0, "fga": 10.0})
+    found = scales(FG_SCORED, POOL)
+
+    [cold] = shooting(_shots(3, 3, 3, 2, 6), projected, found)
+
+    assert (cold.category.name, cold.usual, cold.attempts) == ("FG%", pytest.approx(0.5), pytest.approx(10.0))
+    assert cold.now == pytest.approx(0.34)
+    assert shooting(_shots(3, 3, 6, 6, 6), projected, found) == ()  # most nights fine
+    assert shooting(_shots(1, 1, 1, 1, 1, attempts=4.0), projected, found) == ()  # a few bricks, no volume
+    assert shooting(_shots(3, 3, 3, 2, 6), projected, {}) == ()  # a points league names none
+    assert shooting(_shots(3, 3, 3, 2), projected, found) == ()

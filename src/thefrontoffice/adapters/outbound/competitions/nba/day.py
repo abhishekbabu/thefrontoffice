@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta
 from typing import Protocol
 
 from thefrontoffice.adapters.outbound.competitions.dates import weekday_day_month
+from thefrontoffice.adapters.outbound.competitions.names import normalize_name
 from thefrontoffice.adapters.outbound.competitions.nba import views
 from thefrontoffice.adapters.outbound.competitions.nba import week as nba_week
 from thefrontoffice.adapters.outbound.competitions.nba.clubs import espn_club
@@ -87,6 +88,66 @@ class DayLog(Protocol):
     def keep_minutes(self, day: date, minutes: dict[str, float]) -> None:
         """Keep these as the day's, replacing what was kept for it."""
         ...
+
+    def injuries(self) -> dict[str, list[Hurt]]:
+        """Every injury ESPN's report has been seen giving each player this season, oldest first."""
+        ...
+
+    def keep_injuries(self, injuries: dict[str, list[Hurt]]) -> None:
+        """Keep these as the season's, replacing what was kept."""
+        ...
+
+
+@dataclass(frozen=True)
+class Hurt:
+    """One injury as ESPN's report gave it, over the days it was seen: what the report drops, the log remembers."""
+
+    injury: str
+    """What was hurt, as ESPN said it: 'Left hip, soreness'; 'Rest' where the report rested him."""
+    first: date
+    last: date
+    rest: bool = False
+    """Whether the report's own words were a rest night or load management, not an injury (`RESTED`)."""
+
+    def covers(self, day: date) -> bool:
+        return self.first <= day <= self.last
+
+
+RESTED = ("rest", "resting", "rested", "load management", "injury management", "not injury related")
+"""What a report says of a night off that is no injury."""
+
+
+def record_injuries(log: DayLog, day: date, seen: Mapping[str, tuple[str, str]]) -> dict[str, list[Hurt]]:
+    """Keep what ESPN's report says of each player on `day` — his injury and its latest word, by Yahoo key — as
+    one more day of the same injury where it is the one kept last, else as a new one; and answer the season's.
+
+    A report ESPN drops is no longer seen, and the injury it gave stays kept, its last day the last it was seen.
+    """
+    kept = log.injuries()
+    changed = False
+    for key, (injury, comment) in seen.items():
+        rest = says_rest(f"{injury} {comment}")
+        what = injury or ("Rest" if rest else "")
+        if not what:
+            continue
+        history = kept.setdefault(key, [])
+        latest = history[-1] if history else None
+        if latest is not None and latest.injury == what and latest.first <= day:
+            if latest.last < day:
+                history[-1] = Hurt(what, latest.first, day, latest.rest or rest)
+                changed = True
+            continue
+        history.append(Hurt(what, day, day, rest))
+        changed = True
+    if changed:
+        log.keep_injuries(kept)
+    return kept
+
+
+def says_rest(text: str) -> bool:
+    """Whether a report's words are a night off rather than an injury (`RESTED`)."""
+    padded = f" {normalize_name(text)} "
+    return any(f" {word} " in padded for word in RESTED)
 
 
 def record_statuses(
@@ -465,3 +526,23 @@ def _fantasy(total: float) -> str:
 
 def _ahead(margin: float) -> Tone:
     return "good" if margin > 0 else "warning" if margin < 0 else "neutral"
+
+
+INJURED = frozenset({"O", "INJ", "IL", "IL+", "GTD", "DTD", "SUSP", "NA"})
+"""Yahoo statuses kept for a day that say the night was no rest: hurt, doubtful, or not with the club."""
+
+
+def rest_of(history: Sequence[Hurt], statuses: Mapping[date, str]) -> Callable[[date, bool], bool]:
+    """Whether a game he missed was a night off (`form.Rest`), by what was kept of the day — never by the schedule
+    alone, which cannot tell a rested night from a sore knee: one his report called rest or load management
+    (`Hurt.rest`); or the second night of a back-to-back he sat with a status kept for it that says he was well —
+    none, while no injury report covers the day."""
+
+    def rest(day: date, back_to_back: bool) -> bool:
+        covering = [h for h in history if h.covers(day)]
+        if any(h.rest for h in covering):
+            return True
+        well = day in statuses and statuses[day].upper() not in INJURED
+        return back_to_back and well and not covering
+
+    return rest

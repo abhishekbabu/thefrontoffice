@@ -10,7 +10,7 @@ from datetime import date
 from thefrontoffice.adapters.outbound.competitions.dates import span
 from thefrontoffice.adapters.outbound.competitions.nba.model import WeekMatchup
 from thefrontoffice.adapters.outbound.competitions.nba.rules import CATEGORIES, COUNTED, fantasy_points
-from thefrontoffice.adapters.outbound.competitions.nba.worth import Reading
+from thefrontoffice.adapters.outbound.competitions.nba.worth import COLD_SHOOTING, Reading
 from thefrontoffice.adapters.outbound.competitions.tasks import task_lines
 from thefrontoffice.domain.models import Action, CompetitionContext, task_id
 
@@ -43,6 +43,7 @@ TO DO — WHAT LEAGUE STATE ALREADY SAYS NEEDS DECIDING:
 - "SLUMP" or "HOT" on a player line: his value a game over his last 5 ran well under or over Sleeper's
   projection, on average and in most of the games, with the categories it shows in; his value is then weighed
   three-quarters on those games. "RETURN UNCLEAR": out several straight with no firm return, so no games counted.
+  "COLD SHOOTING": a percentage his last 5 shot well under its projection on real volume, his best night left out.
   A to-do's "Trade talk" is a story naming him in trade talk: his role may not last.
 - Yahoo lineups are set daily: a start item is for today, a bench player with a game tonight over a starter without one or clearly weaker a game.
 - The manager sees this list; your verdicts appear beside it, so judge these items rather than restating them.
@@ -386,6 +387,7 @@ def week_line(reading: Reading) -> str:
     found = reading.streak
     streak = f" | {found.label.upper()}: {found.short()}" if found is not None else ""
     doubt = f" | RETURN UNCLEAR: out {reading.missed} straight" if reading.missed else ""
+    doubt += "".join(f" | {COLD_SHOOTING.upper()}: {shot.short()}" for shot in reading.shooting)
     return f" | WEEK: {reading.games}G × {reading.per_game:.1f}/g{nudge} = {worth:.1f}{streak}{doubt}"
 
 

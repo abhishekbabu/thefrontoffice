@@ -188,18 +188,55 @@ TRADE_TALK = (
 """Words of a player's possible move, said of him: a trade not yet made."""
 
 
-def trade_talk(article: NewsArticle, keys: Iterable[str]) -> bool:
+def trade_talk(article: NewsArticle, keys: Iterable[str], others: Iterable[str] = ()) -> bool:
     """Whether the story puts one of the players in trade talk: named within `NEAR` words of it (`TRADE_TALK`), or of a
     trade where the story is talk of one (`talk`) — never a trade made, which is the club's story. Its headline and
     summary are read as one, and each sentence of its text, where it was read, on its own: the player has to be
-    named in the sentence that talks of trading him."""
+    named in the sentence that talks of trading him.
+
+    Or referred back to there (`REFERS`: 'he', 'the center'), in a story about him — its headline, summary or first
+    sentence names him — straight after a sentence that names him, and only where it names nobody of `others`, the
+    other players' names: 'He could be traded, he said of Giannis' is not his.
+    """
     keys = tuple(keys)
     if _talked(article, keys):
         return True
-    return any(
-        _talked(NewsArticle(article_id="", published=article.published, headline=s), keys)
-        for s in sentences(article.body)
-    )
+    lines = sentences(article.body)
+    about = _names(f"{article.headline} {article.summary} {lines[0] if lines else ''}", keys)
+    strangers = tuple(others)
+    after = False
+    for line in lines:
+        sentence = NewsArticle(article_id="", published=article.published, headline=line)
+        if _talked(sentence, keys):
+            return True
+        if about and after and not _names(line, strangers) and not _someone(line, keys) and _talked(sentence, REFERS):
+            return True
+        after = _names(line, keys)
+    return False
+
+
+REFERS = (
+    *("he", "him", "his", "the center", "the big man", "the forward", "the guard", "the wing", "the veteran"),
+    *("the rookie", "the star", "the point guard", "the shooting guard", "the power forward", "the small forward"),
+)
+"""How a story refers back to the player it just named: a pronoun, or his position."""
+
+
+PROPER = re.compile(r"\b[A-Z][a-z'.]+(?:\s+[A-Z][a-z'.]+)+")
+"""A run of capitalized words: somebody's name, or a club's."""
+
+
+def _someone(text: str, keys: Iterable[str]) -> bool:
+    """Whether the sentence names somebody in full who is not one of the players — a coach, another player — a
+    sentence-opening 'The' left aside, so 'The Bucks' names a club, not a person."""
+    found = (normalize_name(m.group().removeprefix("The ")) for m in PROPER.finditer(text))
+    return any(name and " " in name and name not in keys for name in found)
+
+
+def _names(text: str, keys: Iterable[str]) -> bool:
+    """Whether the text names one of these normalized names as whole words."""
+    padded = f" {normalize_name(text)} "
+    return any(key and f" {key} " in padded for key in keys)
 
 
 SENTENCE = re.compile(r"(?<=[a-z0-9\"')]{2}[.!?])\s+(?=[A-Z\"'])")

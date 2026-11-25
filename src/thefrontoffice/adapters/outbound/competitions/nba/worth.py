@@ -518,6 +518,66 @@ SWINGS = 2
 """The categories a streak names: the two it shows in most."""
 
 
+COLD_SHOOTING = "Cold shooting"
+"""What a player whose shooting has collapsed is flagged as wherever the plan shows him (`shooting`)."""
+
+SHOT_SHARE = 0.85
+"""The share of his projected rate his games must shoot under, his best night left out, on average and in three of
+the four left (`competitions.worth.sustained`): a .470 shooter at .400. Of the 119 players a Yahoo league's week read
+on 24 Nov 2026 it marked two on FG% — Yaxel Lendeborg .292 against .463, Toumani Camara .269 against .435 — and
+none on FT%; at 0.9 it would add Ajay Mitchell's .354, which one good night of five carries back over."""
+
+SHOT_VOLUME = {"FG%": 8.0, "FT%": 3.0}
+"""The attempts a game over the run a collapse needs, by category: a starter's shots, a scorer's trips to the line.
+On fewer, a rate is a few bricks: three for nine is a night, not a collapse."""
+
+
+@dataclass(frozen=True)
+class Shooting:
+    """A percentage his last games shot well under his projection's, on real volume (`shooting`)."""
+
+    category: LeagueCategory
+    now: float
+    """His rate a game over the run, game by game."""
+    usual: float
+    attempts: float
+    """His attempts a game over it."""
+
+    def short(self) -> str:
+        """'FG% .292 over his last 5 vs .463 projected, 11.4 FGA a game'."""
+        return (
+            f"{self.category.name} {_rate(self.now)} over his last {STREAK_GAMES} vs {_rate(self.usual)} projected,"
+            f" {self.attempts:.1f} attempts a game"
+        )
+
+
+def shooting(
+    stats: PlayerStats | None, projected: ProjectedTotals | None, scaled: Mapping[str, Scale]
+) -> tuple[Shooting, ...]:
+    """Each percentage the league scores (`scaled`) that his last `STREAK_GAMES` games shot under `SHOT_SHARE` of his
+    projection's rate, his best night left out, on `SHOT_VOLUME` attempts a game or more: a collapse his value reads
+    only as the drag it is, and that a category league needs named. None in a points league."""
+    run = (stats or PlayerStats()).get("run", ())
+    if len(run) < STREAK_GAMES or projected is None or not projected.games:
+        return ()
+    ahead = line(projected.totals, games=projected.games)
+    found = []
+    for label, scale in scaled.items():
+        category = BY_STAT[scale.scored.stat_id]
+        usual, volume = ahead.get(label), SHOT_VOLUME.get(label)
+        if not category.is_percentage or not usual or volume is None:
+            continue
+        attempts = statistics.fmean(game.get(category.attempted, 0.0) for game in run)
+        rates = [game[label] for game in run if game.get(category.attempted) and label in game]
+        if (
+            attempts >= volume
+            and len(rates) > SPARE
+            and shared.sustained(rates, [usual] * len(rates), SHOT_SHARE, SPARE)
+        ):
+            found.append(Shooting(scale.scored, statistics.fmean(rates), usual, attempts))
+    return tuple(found)
+
+
 def swings(found: Streak | None, scaled: Mapping[str, Scale]) -> Streak | None:
     """`found` with the categories it shows in most, the way it ran: at most `SWINGS`, by `SWUNG` of a spread or more."""
     if found is None or not scaled:
@@ -657,6 +717,9 @@ class Reading:
 
     talk: str = ""
     """The story his own news puts him in trade talk with, 'Fri 21 Nov: …' (`news.talked`); empty otherwise."""
+
+    shooting: tuple[Shooting, ...] = ()
+    """Each percentage his last games shot well under his projection's, on real volume (`shooting`): never kept."""
 
     availability: Availability | None = None
     """His games against his club's over the window, and his absences (`form.availability`); None unread."""

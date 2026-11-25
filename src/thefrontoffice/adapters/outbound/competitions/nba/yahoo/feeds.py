@@ -48,6 +48,11 @@ from thefrontoffice.domain.errors import (
 logger = logging.getLogger(__name__)
 
 
+STORIES_READ = 3
+"""A player's own newest stories read in full: a roster's fifteen is then at most forty-five texts, each cached a day,
+fetched together with his page (`ESPNSource.get_stories`), and a week's trade talk is rarely older than his third."""
+
+
 @dataclass(frozen=True)
 class Feeds:
     """What the provider reads beside Yahoo: Sleeper's form, schedule and seasons, and ESPN's report and scoreboard.
@@ -262,7 +267,8 @@ class Feeds:
         return nba_news.attach(feeds, players, self.regulars(), datetime.now(UTC))
 
     def player_news(self, players: Sequence[Player]) -> dict[str, list[NewsArticle]]:
-        """Each of `players`' own stories from the last `news.NEWS_WINDOW`, their text read, by Yahoo's key: his
+        """Each of `players`' own newest `STORIES_READ` stories from the last `news.NEWS_WINDOW`, their text read, by
+        Yahoo's key: his
         ESPN page's news, found by his name on his club's ESPN roster (`injuries.by_club`, refusing a name two
         share). Nobody it cannot place; none at all where ESPN will not load — news is enrichment."""
         if not players:
@@ -276,7 +282,10 @@ class Feeds:
                 if (key := clubs.get(athlete.club, {}).get(normalize_name(athlete.name)))
             }
             pages = self.espn.get_athlete_news(NBA, sorted(set(ids.values())))
-            recent = {key: [a for a in pages.get(espn_id, []) if news.recent(a, now)] for key, espn_id in ids.items()}
+            recent = {
+                key: [a for a in pages.get(espn_id, []) if news.recent(a, now)][:STORIES_READ]
+                for key, espn_id in ids.items()
+            }
             read = {a.article_id: a for a in self.espn.get_stories([a for found in recent.values() for a in found])}
         except ESPNAPIError as e:
             logger.warning(f"Reading trade talk from club feeds alone, players' own news would not load: {e}")

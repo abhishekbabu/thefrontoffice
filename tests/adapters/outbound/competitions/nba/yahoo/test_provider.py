@@ -1514,6 +1514,28 @@ def test_a_keeper_whose_own_storys_text_puts_him_in_trade_talk_says_so() -> None
     assert espn.athletes_asked == ["9"]
 
 
+def test_a_rostered_player_his_own_story_puts_in_trade_talk_is_a_note_and_his_injury_is_kept() -> None:
+    story = NewsArticle(
+        article_id="51",
+        published=datetime.now(UTC) - timedelta(days=1),
+        headline="Starter keeps rolling",
+        api_url="https://content.example/v1/sports/news/51",
+    )
+    espn = FakeESPN(injuries=[_espn_report("Spare", "MIA")])
+    espn.rosters = [Athlete(athlete_id="5", name="Starter", club="LAL")]
+    espn.athlete_news = {"5": [story]}
+    espn.stories = {"51": "Starter scored 30. The Lakers could trade him before the deadline."}
+    days = FakeDayLog()
+    yahoo = FakeYahoo(roster=[STARTER, BENCHED, SPARE], available=[STREAMER], weights=WEIGHTS)
+    nba = FakeNBA(stats=WEEK_FORM, games=WEEK_GAMES)
+
+    summary = nba_provider(yahoo, nba=nba, league=POINTS_LEAGUE, espn=espn, days=days).summary("")
+
+    [note] = [a for a in summary.actions or [] if a.key == "talk:starter"]
+    assert note.kind == "trade" and "Starter keeps rolling" in note.reason
+    assert [h.injury for h in days.injuries()["spare"]] == ["Left calf, strain"]
+
+
 def test_a_keeper_his_own_news_puts_in_trade_talk_says_so() -> None:
     story = NewsArticle(
         article_id="1",

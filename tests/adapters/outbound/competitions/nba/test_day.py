@@ -416,3 +416,54 @@ def test_with_no_status_seen_before_tip_off_the_days_last_stands() -> None:
     nba_day.record_statuses(log, WEDNESDAY, [make_player("B", team="NYK", status="INJ")])
 
     assert nba_day.recorded(log, WEDNESDAY) == {"a": "O", "b": "INJ"}
+
+
+# ── injuries kept, and rest nights ──────────────────────────────────
+
+MON, TUE, WED = date(2026, 11, 23), date(2026, 11, 24), date(2026, 11, 25)
+
+
+def test_an_injury_is_kept_as_it_is_seen_and_stays_once_the_report_drops_it() -> None:
+    log = FakeDayLog()
+
+    nba_day.record_injuries(log, MON, {"a": ("Left hip, soreness", "Caruso left with hip soreness.")})
+    nba_day.record_injuries(log, TUE, {"a": ("Left hip, soreness", "Out Tuesday.")})
+    kept = nba_day.record_injuries(log, WED, {})
+
+    assert kept == {"a": [nba_day.Hurt("Left hip, soreness", MON, TUE)]}
+    assert log.injuries() == kept
+
+
+def test_a_new_injury_starts_a_record_of_its_own_and_a_rest_night_is_kept_as_one() -> None:
+    log = FakeDayLog()
+    nba_day.record_injuries(log, MON, {"a": ("Left ankle, sprain", "")})
+
+    kept = nba_day.record_injuries(log, WED, {"a": ("Left ankle, sprain", ""), "b": ("", "He is out for rest.")})
+    again = nba_day.record_injuries(log, WED, {"a": ("Left ankle, sprain", ""), "c": ("", "")})
+
+    assert kept["a"] == [nba_day.Hurt("Left ankle, sprain", MON, WED)]
+    assert kept["b"] == [nba_day.Hurt("Rest", WED, WED, rest=True)]
+    assert again == kept and "c" not in again
+    nba_day.record_injuries(log, TUE, {"a": ("Right knee, soreness", "")})
+    assert [h.injury for h in log.injuries()["a"]] == ["Left ankle, sprain", "Right knee, soreness"]
+
+
+@pytest.mark.parametrize(
+    ("words", "rest"),
+    [("Load management", True), ("He is resting on the second night", True), ("Left knee, soreness", False)],
+)
+def test_a_reports_words_say_whether_a_night_off_is_rest(words: str, rest: bool) -> None:
+    assert nba_day.says_rest(words) is rest
+
+
+def test_a_missed_night_is_rest_only_by_what_was_kept_of_it() -> None:
+    """A rest report rests him any night; a back-to-back's second night only with a well status kept for it."""
+    rested = nba_day.Hurt("Rest", MON, MON, rest=True)
+    hurt = nba_day.Hurt("Left knee, soreness", WED, WED)
+    rest = nba_day.rest_of([rested, hurt], {TUE: "", WED: ""})
+
+    assert rest(MON, False)
+    assert rest(TUE, True) and not rest(TUE, False)
+    assert not rest(WED, True)  # well by Yahoo, but a report covers the day
+    assert not nba_day.rest_of([], {TUE: "O"})(TUE, True)
+    assert not nba_day.rest_of([], {})(TUE, True)  # the schedule alone says nothing
