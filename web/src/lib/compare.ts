@@ -1,68 +1,51 @@
-import { useSyncExternalStore } from "react";
-
-/** The most players one comparison holds; the server holds the same line. */
-export const MAX_COMPARED = 4;
-
 /**
  * Who is being compared, per league: kept across pages and reloads.
  *
  * A player is added from wherever his drawer opens, and the Compare page reads
- * the same list. Kept in the browser, as a convenience of this viewer's.
+ * the same list (`components/league/compare-provider.ts`). Kept in the
+ * browser, as a convenience of this viewer's: read once as the app starts,
+ * written back on every change.
  */
-const listeners = new Set<() => void>();
-const memory = new Map<string, string[]>();
 
-const storageKey = (scope: string) => `compare:${scope}`;
+/** The most players one comparison holds; the server holds the same line. */
+export const MAX_COMPARED = 4;
 
-function read(scope: string): string[] {
-  if (!memory.has(scope)) memory.set(scope, stored(scope).slice(0, MAX_COMPARED));
+const PREFIX = "compare:";
 
-  return memory.get(scope)!;
-}
+/** The key one league's comparison is kept under: `nba-yahoo:478.l.1`. */
+export const scopeOf = (competition: string, league: string) => `${competition}:${league}`;
 
-function stored(scope: string): string[] {
-  try {
-    const raw = window.localStorage.getItem(storageKey(scope));
+/** `ids` without repeats, cut to what one comparison holds. */
+export const kept = (ids: readonly string[]) => [...new Set(ids)].slice(0, MAX_COMPARED);
 
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function write(scope: string, ids: string[]) {
-  const kept = [...new Set(ids)].slice(0, MAX_COMPARED);
-
-  memory.set(scope, kept);
+/** Every league's comparison the browser holds. A private window, or blocked storage, holds none. */
+export function readCompared() {
+  const found = new Map<string, string[]>();
 
   try {
-    window.localStorage.setItem(storageKey(scope), JSON.stringify(kept));
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+
+      if (!key?.startsWith(PREFIX)) continue;
+
+      const parsed: unknown = JSON.parse(window.localStorage.getItem(key) ?? "[]");
+
+      if (Array.isArray(parsed)) found.set(key.slice(PREFIX.length), kept(parsed.filter((id): id is string => typeof id === "string")));
+    }
   } catch {
     // A private window keeps it for this page only.
+    return Object.fromEntries(found);
   }
 
-  listeners.forEach((listener) => listener());
+  return Object.fromEntries(found);
 }
 
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-
-  return () => listeners.delete(listener);
-}
-
-/** The players compared in one league, and the ways to change them. */
-export function useCompared(competition: string, league: string) {
-  const scope = `${competition}:${league}`;
-  const ids = useSyncExternalStore(subscribe, () => read(scope));
-
-  return {
-    ids,
-    full: ids.length >= MAX_COMPARED,
-    has: (id: string) => ids.includes(id),
-    add: (id: string) => write(scope, [...ids, id]),
-    remove: (id: string) => write(scope, ids.filter((x) => x !== id)),
-    set: (next: string[]) => write(scope, next),
-  };
+/** Keep one league's comparison for the next visit. */
+export function writeCompared(scope: string, ids: readonly string[]): void {
+  try {
+    window.localStorage.setItem(PREFIX + scope, JSON.stringify(ids));
+  } catch {
+    // A private window keeps it for this page only.
+    return;
+  }
 }

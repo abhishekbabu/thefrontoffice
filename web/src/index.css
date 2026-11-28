@@ -2,7 +2,7 @@
 @import "./themes/themes.css";
 
 /* Dark mode is a class on <html>, set by the pre-paint script in index.html and
-   by useTheme. The same class drives `color-scheme` below, which is what selects
+   by the theme commands in `lib/theme.ts`. The same class drives `color-scheme` below, which is what selects
    the arm of every `light-dark()` token — so the utility variant and the token
    values can never disagree about which mode is active. */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -78,7 +78,41 @@
     from { transform: translateX(-100%); }
     to { transform: translateX(250%); }
   }
+
+  /* The app's motion vocabulary, in CSS so it runs before any script and costs
+     the entry bundle nothing. Every transition is short and every distance is
+     small: this is a page you check before a deadline, and animation that
+     draws attention to itself is a delay you notice on the second visit.
+     The reduced-motion rule at the foot of this file holds every one of them
+     at its end for a viewer who asked for stillness. */
+
+  /* The default ease: fast enough to feel immediate, eased so it does not snap. */
+  --ease-quick: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* A panel arriving: content shifting up a few pixels as it fades in. */
+  --animate-rise: rise 180ms var(--ease-quick) both;
+  /* Something on its way, or a figure replacing another: a fade alone. */
+  --animate-fade: fade 180ms var(--ease-quick) both;
+  /* A list revealing its rows, each a hair after the one above it
+     (`sibling-index()` where the browser has it; at once where it does not). */
+  --animate-list-item: list-item 180ms var(--ease-quick) both;
+  /* One week's content replacing another's, in from the side it was stepped toward. */
+  --animate-step-next: step-next 180ms var(--ease-quick) both;
+  --animate-step-back: step-back 180ms var(--ease-quick) both;
+  /* A portrait opening its room beside a name rather than appearing in it. */
+  --animate-portrait: portrait 260ms var(--ease-quick) both;
+
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes list-item { from { opacity: 0; transform: translateY(4px); } }
+  @keyframes step-next { from { opacity: 0; transform: translateX(16px); } }
+  @keyframes step-back { from { opacity: 0; transform: translateX(-16px); } }
+  @keyframes portrait { from { opacity: 0; width: 0; margin-right: -16px; } }
 }
+
+/* The stagger: 12ms a row after a 20ms wait, capped so a long list does not
+   take longer to arrive the longer it is. */
+.animate-list-item { animation-delay: calc(20ms + min(sibling-index() - 1, 25) * 12ms); }
 
 /* The load-bearing line for theming. `color-scheme` tells the browser to render
    native controls, scrollbars and focus rings in the matching mode, and selects
@@ -103,7 +137,37 @@
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* A choice's marker sliding from the option it left to the one picked
+   (`components/ui/controls/tabs.ts`), with the faintest give at the end. The
+   rest of the page stays where it is rather than crossfading under it. */
+::view-transition-group(*.marker) {
+  animation-duration: 220ms;
+  animation-timing-function: cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+:root:active-view-transition-type(marker)::view-transition-old(root),
+:root:active-view-transition-type(marker)::view-transition-new(root) {
+  animation: none;
+}
+
+/* A to-do item put aside or brought back (`components/league/actions.ts`):
+   its row fades as the rows after it move up into its place, or down to make
+   room. The rest of the page stays put rather than crossfading. */
+::view-transition-group(*.row),
+::view-transition-old(*.row),
+::view-transition-new(*.row) {
+  animation-duration: 240ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+:root:active-view-transition-type(row)::view-transition-old(root),
+:root:active-view-transition-type(row)::view-transition-new(root) {
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*.row),
+  ::view-transition-old(*.row),
+  ::view-transition-new(*.row),
+  ::view-transition-group(*.marker),
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation: none;
@@ -122,7 +186,7 @@ body {
 }
 
 /* How wide a page runs, set per view by what its content needs (`WIDTH` in
-   App.tsx), and centred in the column so a wide screen frames it evenly
+   App.ts), and centred in the column so a wide screen frames it evenly
    instead of leaving it against the rail with the rest empty.
    - `reading`: a list or a few-column table, whose figures read across a row.
      Left to a wide screen, a week's result sat 1200px from its opponent.
@@ -133,6 +197,8 @@ body {
    header, the stat strip), which spans the column so its rule reaches the
    edge — its contents take the same cap, so a title and its controls line up
    with the body below.
+   A panel whose root is a box-less `contents` wrapper has its pieces capped
+   through it, as if they sat in the page directly.
    It sits in the base layer, so any utility on the element wins: unlayered
    CSS beats every Tailwind layer whatever its specificity, which once capped
    a full-screen overlay at the page's width. */
@@ -141,7 +207,8 @@ body {
   [data-page="reading"] { --page-max: 75rem; }
   [data-page="wide"] { --page-max: none; }
   :where([data-page]) { container-type: inline-size; }
-  :where([data-page]) > :where(:not([data-bleed])) { max-width: var(--page-max); margin-inline: auto; }
+  :where([data-page]) > :where(:not([data-bleed], .contents)),
+  :where([data-page]) > :where(.contents) > :where(:not([data-bleed], .contents)) { max-width: var(--page-max); margin-inline: auto; }
 }
 
 /* Digits line up in columns nearly everywhere in this app, so tabular figures
@@ -162,10 +229,8 @@ details::details-content {
 }
 details[open]::details-content { block-size: auto; }
 
-/* A tooltip growing out of the control it names, and shrinking back into it.
-   Radix waits for the closing animation before it unmounts the content. */
+/* A tooltip growing out of the control it names. */
 @keyframes tooltip-in { from { opacity: 0; transform: scale(0.96); } }
-@keyframes tooltip-out { to { opacity: 0; transform: scale(0.96); } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }

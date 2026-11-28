@@ -589,12 +589,12 @@ The backend is Python with FastAPI, organised as ports and adapters:
   per competition;
 - `bootstrap.py` is the only module that names a concrete class.
 
-The front end in `web/` is React, Vite, TanStack Query and Tailwind. Its API
+The front end in `web/` is Effect UI, Vite and Tailwind. Its API
 types are generated from the backend. It is linted and type-checked by Oxlint (`web/.oxlintrc.json`)
-in one pass, type-aware through `tsrs` (there is no separate `tsc` step): its correctness rules (the React Compiler's included),
+in one pass, type-aware through `tsrs` (there is no separate `tsc` step): its correctness rules,
 the promise and `any` checks, landmines' and anti-slop's rules (the latter vendored
 in `web/lint/anti-slop/`), and the app's own in `web/lint/` (semantic colors
-only, no native `title` tooltips). Tests answer the app's requests with MSW
+only, no native `title` tooltips). Tests run components on Effect UI's `TestHost` and answer the app's requests with MSW
 (`web/src/test/server.ts`); a request no handler answers fails the test.
 
 Architecture rules and conventions for contributors and coding agents are in

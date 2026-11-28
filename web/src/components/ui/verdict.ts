@@ -1,0 +1,52 @@
+import type { Html } from "@effect/ui/html";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import type { Variant } from "@/lib/tone";
+import { cn } from "@/lib/utils";
+
+/**
+ * The model's word on one thing on screen — a to-do item, a free agent — under the thing it is about.
+ *
+ * A stale one stays, faded and labelled beside its badge: the reasoning may
+ * still hold, but it was about something that has changed since. The label
+ * sits with the badge rather than at the row's far edge, where on a wide
+ * screen it ended up a long way from what it qualifies. Where one notice
+ * already covers a whole list — the to-do card says so in its header —
+ * `noted` is false and a stale verdict is only faded.
+ */
+export function Verdict<M>(
+  h: Html.H<M>,
+  {
+    label,
+    variant,
+    reason,
+    stale = false,
+    noted = true,
+  }: {
+    label: string;
+    variant: Variant;
+    reason: string;
+    stale?: boolean;
+    /** Whether a stale verdict says so beside its badge; false where the list it is in says so once. */
+    noted?: boolean;
+  },
+) {
+  return h.div
+    .attr(
+      "class",
+      cn(
+        "flex max-w-[90ch] flex-wrap items-baseline gap-x-2 gap-y-1 rounded-md bg-muted px-2.5 py-1.5 text-[12.5px] leading-relaxed",
+        stale && "opacity-60",
+      ),
+    )
+    .children(
+      h.span
+        .class("flex shrink-0 items-center gap-1.5 self-center")
+        .children(
+          Badge(h, { variant: stale ? "muted" : variant, appearance: "status" }).children(label),
+          stale && noted && Label(h).children("stale — re-judge"),
+        ),
+      // Under the badge once beside it would leave the reason a few words a line.
+      h.span.class("min-w-0 flex-[1_1_14rem] text-foreground").children(reason),
+    );
+}

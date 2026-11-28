@@ -12,26 +12,24 @@
  * here instead of handing a component the wrong shape.
  */
 import createClient from "openapi-fetch";
+import { Schema } from "effect";
 import type { components, paths } from "@/lib/schema";
 import type { ErrorBody, ErrorCode, FreeAgentQuery, ItemDecision, PlayerOrder, Remedy, Subject } from "@/lib/types";
+import { wire } from "@/lib/wire";
 
 /**
  * A failure the server described in its own words, ready to show as-is.
  *
  * `code` names the condition and `remedy` what can be done about it, both the
- * server's to say: the page renders the remedy rather than deciding one.
+ * server's to say: the page renders the remedy rather than deciding one. A
+ * Schema, so a query that fails carries it as its error and a page reads the
+ * remedy off the result.
  */
-export class ApiError extends Error {
-  readonly code: ErrorCode;
-  readonly remedy: Remedy | null;
-
-  constructor({ detail, code, remedy }: ErrorBody) {
-    super(detail);
-
-    this.code = code;
-    this.remedy = remedy;
-  }
-}
+export class ApiError extends Schema.TaggedError<ApiError>()("ApiError", {
+  message: Schema.String,
+  code: wire<ErrorCode>(),
+  remedy: Schema.NullOr(wire<Remedy>()),
+}) {}
 
 /** Whether `error` is the server saying it no longer holds a conversation: it restarted, or dropped it as the oldest. */
 export function isExpired(error: Error | null): boolean {
@@ -49,7 +47,9 @@ function isErrorBody(body: unknown): body is ErrorBody {
  * never reached it — a proxy with the server down — and says so by its status.
  */
 export function failure(body: ErrorBody | null, status: string): ApiError {
-  return new ApiError(body ?? { detail: `The server did not answer (${status}).`, code: "error", remedy: null });
+  const { detail, code, remedy } = body ?? { detail: `The server did not answer (${status}).`, code: "error", remedy: null };
+
+  return new ApiError({ message: detail, code, remedy });
 }
 
 /**
@@ -67,8 +67,11 @@ async function settle<T>(pending: Promise<{ data?: T; error?: unknown; response:
   return data;
 }
 
+/** A query's parameters, any of them left out or `undefined`. */
+type Loose<Query> = { [K in keyof Query]?: Query[K] | undefined };
+
 /** `query` without the values left empty, so the server applies its own default. */
-function present<Query extends object>(query: Query): Query {
+function present<Query extends object>(query: Loose<Query>): Query {
   // SAFETY: only keys whose value is empty are dropped, and every such key is optional in a query.
   return Object.fromEntries(Object.entries(query).filter(([, value]) => value !== "" && value !== undefined)) as Query;
 }
@@ -83,7 +86,7 @@ export function leagueApi(key: string, league: string) {
   const at = { key, league_id: league };
 
   return {
-    roster: (order: PlayerOrder = {}) =>
+    roster: (order: Loose<PlayerOrder> = {}) =>
       settle(client.GET("/api/competitions/{key}/leagues/{league_id}/roster", { params: { path: at, query: present(order) } })),
     player: (id: string) =>
       settle(
@@ -139,7 +142,7 @@ export function leagueApi(key: string, league: string) {
       ),
     trades: () => settle(client.GET("/api/competitions/{key}/leagues/{league_id}/trades", { params: { path: at } })),
     teams: () => settle(client.GET("/api/competitions/{key}/leagues/{league_id}/teams", { params: { path: at } })),
-    teamRoster: (team: string, order: PlayerOrder = {}) =>
+    teamRoster: (team: string, order: Loose<PlayerOrder> = {}) =>
       settle(
         client.GET("/api/competitions/{key}/leagues/{league_id}/teams/{team_id}/roster", {
           params: { path: { ...at, team_id: team }, query: present(order) },
@@ -157,7 +160,7 @@ export function leagueApi(key: string, league: string) {
       settle(
         client.POST("/api/competitions/{key}/leagues/{league_id}/items", { params: { path: at }, body: decision }),
       ),
-    freeAgents: (query: FreeAgentQuery = {}) =>
+    freeAgents: (query: Loose<FreeAgentQuery> = {}) =>
       settle(
         client.GET("/api/competitions/{key}/leagues/{league_id}/free-agents", {
           params: { path: at, query: present(query) },

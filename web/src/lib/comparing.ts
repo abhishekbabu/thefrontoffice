@@ -14,7 +14,7 @@ import type { PlayerComparison, TradeIdea } from "@/lib/types";
 export type Comparing = { ids: string[]; title?: string; tags?: Record<string, string> };
 
 /** What a trade opens, wherever it is listed: both sides of it, what you give then what you get, each column saying which. */
-export function traded(idea: TradeIdea, onCompare: (comparing: Comparing) => void): (() => void) | undefined {
+export function traded<R>(idea: TradeIdea, onCompare: (comparing: Comparing) => R): (() => R) | undefined {
   const ids = [...idea.giving_ids, ...idea.receiving_ids];
 
   if (ids.length < 2) return undefined;

@@ -14,7 +14,7 @@ import { server } from "@/test/server";
 const APP = "http://127.0.0.1:8000";
 const YAHOO = "http://yahoo.test/";
 
-type Call = { url: string; init?: RequestInit };
+type Call = { url: string; init?: RequestInit | undefined };
 
 /**
  * The app and Yahoo, answered through the real `fetch`: the app plans one step

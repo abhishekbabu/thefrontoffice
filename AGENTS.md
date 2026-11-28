@@ -103,9 +103,9 @@ rather than offered and refused. Never ship a canned report in the package.
 (primitives) or `components/league/` (app widgets), never a file shared with
 whatever else had no home. Reach for `ui/` before writing a card, table, loading state or
 control: those drifted per panel, and waiting should look the same everywhere.
-Controls are `IconButton`, whose one required `label` is both tooltip and
-accessible name. Motion lives in `lib/motion/`, via `LazyMotion` from its own
-module, or the library lands in the entry bundle.
+The UI is Effect UI (`node_modules/@effect/ui/AGENTS.md`); reads are `lib/queries/`, writes
+`Command.Service`s. Controls are `IconButton`, whose one required `label` is both tooltip and
+accessible name. Motion is CSS (`animate-*` in `index.css`, `$.viewTransition`).
 
 In `web/`, color comes only from semantic tokens (`bg-card`,
 `text-muted-foreground`) — never a raw Tailwind palette utility, which cannot
