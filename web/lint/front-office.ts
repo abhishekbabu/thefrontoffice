@@ -43,26 +43,48 @@ export const semanticColor: Rule = {
 };
 
 /**
- * Tooltips go through components/ui/tooltip.tsx. A native one cannot be
- * styled, waits a second before appearing, and never shows on keyboard focus,
- * so a control whose only label is a `title` has no label at all for anyone
- * not using a mouse. Host elements only: `title` is a legitimate prop on our
- * own components, and <Empty title="..."> is not a tooltip.
+ * Tooltips go through `IconButton`, `Hint`, `ExternalLink` or `Tip`
+ * (components/ui/overlays/tooltip.ts). A native one cannot be styled, waits a
+ * second before appearing, and never shows on keyboard focus, so a control
+ * whose only label is a `title` has no label at all for anyone not using a
+ * mouse.
+ *
+ * An element's attributes are set on its builder: `.attr("title", …)` and
+ * `.attrs({ title: … })`, so those are what this catches. A `title` anywhere
+ * else is no attribute — `Empty(h, { title })` is a heading, and a
+ * component's `title` prop is its own — and is left alone.
+ *
+ * That an `IconButton` carries its `label` needs no rule: the label is a
+ * required field of its props Schema, so leaving it out fails the type check.
  */
 export const noNativeTitle: Rule = {
-  meta: { type: "problem", docs: { description: "Use <Tooltip>, not a native title attribute." } },
+  meta: { type: "problem", docs: { description: "Use a tooltip component, not a native title attribute." } },
   create(context) {
-    return {
-      JSXOpeningElement(element) {
-        if (element.name.type !== "JSXIdentifier" || !/^[a-z]/.test(element.name.name)) return;
+    const message = "Use IconButton, Hint or Tip: a native title is invisible to keyboard focus and cannot be styled.";
 
-        for (const attribute of element.attributes) {
-          if (attribute.type === "JSXAttribute" && attribute.name.type === "JSXIdentifier" && attribute.name.name === "title")
-            context.report({
-              node: attribute,
-              message: "Use <Tooltip>: a native title is invisible to keyboard focus and cannot be styled.",
-            });
-        }
+    return {
+      CallExpression(call) {
+        const { callee } = call;
+
+        if (callee.type !== "MemberExpression" || callee.computed || callee.property.type !== "Identifier") return;
+
+        const [first] = call.arguments;
+
+        if (first === undefined) return;
+
+        if (callee.property.name === "attr" && first.type === "Literal" && first.value === "title")
+          context.report({ node: first, message });
+
+        if (callee.property.name === "attrs" && first.type === "ObjectExpression")
+          for (const property of first.properties) {
+            if (property.type !== "Property") continue;
+
+            // `{ title }`, `{ "title": … }`; a computed key is not known to be one.
+            const { key } = property;
+            const named = key.type === "Identifier" ? !property.computed && key.name === "title" : false;
+
+            if (named || (key.type === "Literal" && key.value === "title")) context.report({ node: property, message });
+          }
       },
     };
   },

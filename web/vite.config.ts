@@ -1,5 +1,4 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
-import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -11,9 +10,8 @@ const prePaint = (): Plugin => ({
   transformIndexHtml: () => [{ tag: "script", children: prePaintScript(), injectTo: "head" }],
 });
 
-// 150, raised from 140 for react-router: routing is load-bearing for every
-// page and belongs in the entry bundle, and the canonical library is worth its
-// 10 kB over a smaller one nobody else has to learn.
+// 150: the framework, its Router and query cache, and the shell. Every page,
+// Settings, the landing page and the assistant load in chunks of their own.
 const BUDGET_KB = 150;
 
 /**
@@ -56,7 +54,7 @@ const bundleBudget = (): Plugin => ({
 const apiPort = (mode: string): string => loadEnv(mode, fileURLToPath(new URL("..", import.meta.url)), "").PORT || "8000";
 
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), tailwindcss(), prePaint(), bundleBudget()],
+  plugins: [tailwindcss(), prePaint(), bundleBudget()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   server: {
     // The dev server owns the page; anything under /api is the Python process.

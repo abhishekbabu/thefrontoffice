@@ -1,7 +1,7 @@
 import { RuleTester } from "oxlint/plugins-dev";
 import { noNativeTitle, semanticColor } from "./front-office";
 
-const tester = new RuleTester({ languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } }, sourceType: "module" } });
+const tester = new RuleTester({ languageOptions: { sourceType: "module" } });
 
 tester.run("semantic-color", semanticColor, {
   valid: [
@@ -16,6 +16,19 @@ tester.run("semantic-color", semanticColor, {
 });
 
 tester.run("no-native-title", noNativeTitle, {
-  valid: [{ code: '<Empty title="Nothing to do" />;' }, { code: '<span aria-label="x" />;' }],
-  invalid: [{ code: '<span title="Projected points">12.3</span>;', errors: 1 }],
+  valid: [
+    // A component's own `title`, and a heading's, are no attribute.
+    { code: 'Empty(h, { title: "Nothing to do" });' },
+    { code: 'SlideOverHeader(h, { title: "Trade", onClose });' },
+    { code: 'h.span.attr("aria-label", "x");' },
+    { code: 'h.span.attrs({ "aria-label": "x", class: "y" });' },
+    // A key held in a variable is not known to be `title`.
+    { code: "h.span.attrs({ [name]: value });" },
+  ],
+  invalid: [
+    { code: 'h.span.attr("title", "Projected points").children("12.3");', errors: 1 },
+    { code: 'h.span.attrs({ title: "Projected points", class: "x" });', errors: 1 },
+    { code: 'h.span.attrs({ "title": hint });', errors: 1 },
+    { code: "h.button.attrs({ title });", errors: 1 },
+  ],
 });
